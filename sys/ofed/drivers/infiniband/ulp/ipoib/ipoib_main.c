@@ -799,7 +799,7 @@ ipoib_dev_init(struct ipoib_dev_priv *priv, struct ib_device *ca, int port)
 		goto out;
 	}
 
-	priv->tx_ring = kzalloc(ipoib_sendq_size * sizeof *priv->tx_ring, GFP_KERNEL);
+	priv->tx_ring = vmalloc(ipoib_sendq_size * sizeof *priv->tx_ring);
 	if (!priv->tx_ring) {
 		printk(KERN_WARNING "%s: failed to allocate TX ring (%d entries)\n",
 		       ca->name, ipoib_sendq_size);
@@ -815,7 +815,7 @@ ipoib_dev_init(struct ipoib_dev_priv *priv, struct ib_device *ca, int port)
 	return 0;
 
 out_tx_ring_cleanup:
-	kfree(priv->tx_ring);
+	vfree(priv->tx_ring);
 
 out_rx_ring_cleanup:
 	kfree(priv->rx_ring);
@@ -866,7 +866,7 @@ ipoib_dev_cleanup(struct ipoib_dev_priv *priv)
 	ipoib_ib_dev_cleanup(priv);
 
 	kfree(priv->rx_ring);
-	kfree(priv->tx_ring);
+	vfree(priv->tx_ring);
 
 	priv->rx_ring = NULL;
 	priv->tx_ring = NULL;

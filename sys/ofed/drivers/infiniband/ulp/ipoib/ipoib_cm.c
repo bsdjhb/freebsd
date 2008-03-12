@@ -44,6 +44,7 @@
 #include <rdma/ib_cm.h>
 #include <rdma/ib_cache.h>
 #include <linux/delay.h>
+#include <linux/vmalloc.h>
 
 int ipoib_max_conn_qp = 128;
 
@@ -1007,7 +1008,7 @@ static int ipoib_cm_tx_init(struct ipoib_cm_tx *p, u32 qpn,
 	struct ipoib_dev_priv *priv = p->priv;
 	int ret;
 
-	p->tx_ring = kzalloc(ipoib_sendq_size * sizeof *p->tx_ring, GFP_KERNEL);
+	p->tx_ring = vmalloc(ipoib_sendq_size * sizeof *p->tx_ring);
 	if (!p->tx_ring) {
 		ipoib_warn(priv, "failed to allocate tx ring\n");
 		ret = -ENOMEM;
@@ -1054,7 +1055,7 @@ err_id:
 	ib_destroy_qp(p->qp);
 err_qp:
 	p->qp = NULL;
-	kfree(p->tx_ring);
+	vfree(p->tx_ring);
 err_tx:
 	return ret;
 }
@@ -1105,7 +1106,7 @@ timeout:
 	if (p->qp)
 		ib_destroy_qp(p->qp);
 
-	kfree(p->tx_ring);
+	vfree(p->tx_ring);
 	kfree(p);
 }
 
