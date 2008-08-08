@@ -166,7 +166,7 @@ static void ipoib_cm_free_rx_ring(struct ipoib_dev_priv *priv,
 			m_freem(rx_ring[i].mb);
 		}
 
-	kfree(rx_ring);
+	vfree(rx_ring);
 }
 
 static void ipoib_cm_start_rx_drain(struct ipoib_dev_priv *priv)
@@ -308,7 +308,7 @@ static int ipoib_cm_nonsrq_init_rx(struct ipoib_dev_priv *priv,
 	int ret;
 	int i;
 
-	rx->rx_ring = kzalloc(ipoib_recvq_size * sizeof *rx->rx_ring, GFP_KERNEL);
+	rx->rx_ring = vmalloc(ipoib_recvq_size * sizeof *rx->rx_ring);
 	if (!rx->rx_ring) {
 		printk(KERN_WARNING "%s: failed to allocate CM non-SRQ ring (%d entries)\n",
 		       priv->ca->name, ipoib_recvq_size);
@@ -1368,7 +1368,7 @@ static void ipoib_cm_create_srq(struct ipoib_dev_priv *priv, int max_sge)
 		return;
 	}
 
-	priv->cm.srq_ring = kzalloc(ipoib_recvq_size * sizeof *priv->cm.srq_ring, GFP_KERNEL);
+	priv->cm.srq_ring = vmalloc(ipoib_recvq_size * sizeof *priv->cm.srq_ring);
 	if (!priv->cm.srq_ring) {
 		printk(KERN_WARNING "%s: failed to allocate CM SRQ ring (%d entries)\n",
 		       priv->ca->name, ipoib_recvq_size);
