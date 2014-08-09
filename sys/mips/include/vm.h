@@ -39,4 +39,12 @@
 #define	VM_MEMATTR_WRITE_COMBINING	((vm_memattr_t)MIPS_CCA_WC)
 #endif
 
+/* Mips Kernel Thread Stack Allocation. */
+struct vm_object;
+struct vm_page;
+
+vm_offset_t vm_kstack_valloc(int pages);
+int vm_kstack_palloc(struct vm_object *ksobj, vm_offset_t ks,
+	int allocflags, int pages, struct vm_page *ma[]);
+
 #endif /* !_MACHINE_VM_H_ */
