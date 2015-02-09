@@ -136,10 +136,8 @@ set_positive_time_to_live(struct configuration *config,
 	lifetime.tv_sec = ttl;
 
 	entry = find_create_entry(config, entry_name);
-	memcpy(&entry->positive_cache_params.max_lifetime,
-		&lifetime, sizeof(struct timeval));
-	memcpy(&entry->mp_cache_params.max_lifetime,
-		&lifetime, sizeof(struct timeval));
+	entry->positive_cache_params.max_lifetime = lifetime;
+	entry->mp_cache_params.max_lifetime = lifetime;
 
 	TRACE_OUT(set_positive_time_to_live);
 }
@@ -159,8 +157,7 @@ set_negative_time_to_live(struct configuration *config,
 
 	entry = find_create_entry(config, entry_name);
 	assert(entry != NULL);
-	memcpy(&entry->negative_cache_params.max_lifetime,
-		&lifetime, sizeof(struct timeval));
+	entry->negative_cache_params.max_lifetime = lifetime;
 
 	TRACE_OUT(set_negative_time_to_live);
 }

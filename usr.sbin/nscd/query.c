@@ -448,9 +448,8 @@ on_write_request_process(struct query_state *qstate)
 
 		if ((qstate->config_entry->common_query_timeout.tv_sec != 0) ||
 		    (qstate->config_entry->common_query_timeout.tv_usec != 0))
-			memcpy(&qstate->timeout,
-				&qstate->config_entry->common_query_timeout,
-				sizeof(struct timeval));
+			qstate->timeout =
+			    qstate->config_entry->common_query_timeout;
 
 	} else
 		write_response->error_code = -1;
@@ -529,9 +528,8 @@ on_negative_write_request_process(struct query_state *qstate)
 
 		if ((qstate->config_entry->common_query_timeout.tv_sec != 0) ||
 		    (qstate->config_entry->common_query_timeout.tv_usec != 0))
-			memcpy(&qstate->timeout,
-				&qstate->config_entry->common_query_timeout,
-				sizeof(struct timeval));
+			qstate->timeout =
+			    qstate->config_entry->common_query_timeout;
 	} else
 		write_response->error_code = -1;
 
@@ -808,9 +806,8 @@ on_read_request_process(struct query_state *qstate)
 
 		if ((qstate->config_entry->common_query_timeout.tv_sec != 0) ||
 		    (qstate->config_entry->common_query_timeout.tv_usec != 0))
-			memcpy(&qstate->timeout,
-				&qstate->config_entry->common_query_timeout,
-				sizeof(struct timeval));
+			qstate->timeout =
+			    qstate->config_entry->common_query_timeout;
 	} else
 		read_response->error_code = -1;
 

@@ -157,22 +157,17 @@ create_configuration_entry(const char *name,
 		return (NULL);
 	}
 
-	memcpy(&retval->positive_cache_params, positive_params,
-		sizeof(struct common_cache_entry_params));
-	memcpy(&retval->negative_cache_params, negative_params,
-		sizeof(struct common_cache_entry_params));
-	memcpy(&retval->mp_cache_params, mp_params,
-		sizeof(struct mp_cache_entry_params));
+	retval->positive_cache_params = *positive_params;
+	retval->negative_cache_params = *negative_params;
+	retval->mp_cache_params = *mp_params;
 
 	size = strlen(name);
 	retval->name = calloc(1, size + 1);
 	assert(retval->name != NULL);
 	memcpy(retval->name, name, size);
 
-	memcpy(&retval->common_query_timeout, common_timeout,
-		sizeof(struct timeval));
-	memcpy(&retval->mp_query_timeout, mp_timeout,
-		sizeof(struct timeval));
+	retval->common_query_timeout = *common_timeout;
+	retval->mp_query_timeout = *mp_timeout;
 
 	asprintf(&retval->positive_cache_params.cep.entry_name, "%s+", name);
 	assert(retval->positive_cache_params.cep.entry_name != NULL);
@@ -210,8 +205,7 @@ create_def_configuration_entry(const char *name)
 	positive_params.confidence_threshold = DEFAULT_POSITIVE_CONF_THRESH;
 	positive_params.policy = CPT_LRU;
 
-	memcpy(&negative_params, &positive_params,
-		sizeof(struct common_cache_entry_params));
+	negative_params = positive_params;
 	negative_params.max_elemsize = DEFAULT_NEGATIVE_ELEMENTS_SIZE;
 	negative_params.satisf_elemsize = DEFAULT_NEGATIVE_ELEMENTS_SIZE / 2;
 	negative_params.max_lifetime.tv_sec = DEFAULT_NEGATIVE_LIFETIME;
