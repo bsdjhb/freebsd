@@ -520,7 +520,6 @@ register_cache_entry(struct cache_ *the_cache,
 	struct cache_entry_params const *params)
 {
 	int policies_size;
-	size_t entry_name_size;
 	struct cache_common_entry_	*new_common_entry;
 	struct cache_mp_entry_		*new_mp_entry;
 
@@ -550,7 +549,6 @@ register_cache_entry(struct cache_ *the_cache,
 		the_cache->entries = new_entries;
 	}
 
-	entry_name_size = strlen(params->entry_name) + 1;
 	switch (params->entry_type)
 	{
 	case CET_COMMON:
@@ -561,11 +559,9 @@ register_cache_entry(struct cache_ *the_cache,
 		new_common_entry->common_params.cep = *params;
 		new_common_entry->params = &new_common_entry->common_params.cep;
 
-		new_common_entry->common_params.cep.entry_name = calloc(1,
-			entry_name_size);
+		new_common_entry->common_params.cep.entry_name =
+		    strdup(params->entry_name);
 		assert(new_common_entry->common_params.cep.entry_name != NULL);
-		strlcpy(new_common_entry->common_params.cep.entry_name,
-			params->entry_name, entry_name_size);
 		new_common_entry->name =
 			new_common_entry->common_params.cep.entry_name;
 
@@ -613,11 +609,9 @@ register_cache_entry(struct cache_ *the_cache,
 		new_mp_entry->mp_params.cep = *params;
 		new_mp_entry->params = &new_mp_entry->mp_params.cep;
 
-		new_mp_entry->mp_params.cep.entry_name = calloc(1,
-			entry_name_size);
+		new_mp_entry->mp_params.cep.entry_name =
+		    strdup(params->entry_name);
 		assert(new_mp_entry->mp_params.cep.entry_name != NULL);
-		strlcpy(new_mp_entry->mp_params.cep.entry_name, params->entry_name,
-			entry_name_size);
 		new_mp_entry->name = new_mp_entry->mp_params.cep.entry_name;
 
 		TAILQ_INIT(&new_mp_entry->ws_head);

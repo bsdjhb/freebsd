@@ -114,7 +114,6 @@ create_configuration_entry(const char *name,
 	struct mp_cache_entry_params const *mp_params)
 {
 	struct configuration_entry *retval;
-	size_t	size;
 	int res;
 
 	TRACE_IN(create_configuration_entry);
@@ -161,10 +160,8 @@ create_configuration_entry(const char *name,
 	retval->negative_cache_params = *negative_params;
 	retval->mp_cache_params = *mp_params;
 
-	size = strlen(name);
-	retval->name = calloc(1, size + 1);
+	retval->name = strdup(name);
 	assert(retval->name != NULL);
-	memcpy(retval->name, name, size);
 
 	retval->common_query_timeout = *common_timeout;
 	retval->mp_query_timeout = *mp_timeout;
@@ -534,15 +531,12 @@ fill_configuration_defaults(struct configuration *config)
 	if (config->socket_path != NULL)
 		free(config->socket_path);
 
-	len = strlen(DEFAULT_SOCKET_PATH);
-	config->socket_path = calloc(1, len + 1);
+	config->socket_path = strdup(DEFAULT_SOCKET_PATH);
 	assert(config->socket_path != NULL);
-	memcpy(config->socket_path, DEFAULT_SOCKET_PATH, len);
 
-	len = strlen(DEFAULT_PIDFILE_PATH);
+	config->pidfile_path = strdup(DEFAULT_PIDFILE_PATH);
 	config->pidfile_path = calloc(1, len + 1);
 	assert(config->pidfile_path != NULL);
-	memcpy(config->pidfile_path, DEFAULT_PIDFILE_PATH, len);
 
 	config->socket_mode =  S_IFSOCK | S_IRUSR | S_IWUSR |
 		S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
