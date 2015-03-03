@@ -13,6 +13,7 @@ SUBDIR+=	boot0cfg
 SUBDIR+=	btxld
 .endif
 SUBDIR+=	cpucontrol
+SUBDIR+=	ecc
 .if ${MK_HYPERV} != "no"
 SUBDIR+=	hyperv
 .endif

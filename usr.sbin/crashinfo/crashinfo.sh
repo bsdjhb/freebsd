@@ -349,3 +349,10 @@ echo "ddb capture buffer"
 echo
 
 ddb capture -M $VMCORE -N $KERNEL print
+
+echo
+echo "------------------------------------------------------------------------"
+echo "ECC error summary"
+echo
+
+ecc -M $VMCORE -N $KERNEL
