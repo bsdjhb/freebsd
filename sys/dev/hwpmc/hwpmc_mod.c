@@ -4039,6 +4039,12 @@ pmc_syscall_handler(struct thread *td, void *syscall_args)
 	if (error)
 		atomic_add_int(&pmc_stats.pm_syscall_errors, 1);
 
+#ifdef HWPMC_DEBUG
+	/* XXX: Hack */
+	if (error)
+		bzero(&pmc_debugflags, sizeof(pmc_debugflags));
+#endif
+
 	PICKUP_GIANT();
 
 	return error;
