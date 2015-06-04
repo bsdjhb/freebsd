@@ -116,6 +116,9 @@ static struct cpuset *cpuset_zero, *cpuset_default;
 SYSCTL_INT(_kern_sched, OID_AUTO, cpusetsize, CTLFLAG_RD | CTLFLAG_CAPRD,
     SYSCTL_NULL_INT_PTR, sizeof(cpuset_t), "sizeof(cpuset_t)");
 
+/* Used by kernel debuggers to determine the size of the kernel cpuset. */
+const int cpuset_size = sizeof(cpuset_t);
+
 cpuset_t *cpuset_root;
 cpuset_t cpuset_domain[MAXMEMDOM];
 
