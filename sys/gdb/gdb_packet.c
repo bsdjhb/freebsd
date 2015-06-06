@@ -220,6 +220,7 @@ gdb_tx_end(void)
 	int runlen;
 	unsigned char c, cksum;
 
+	printf("GDB: sending '%.*s'\n", (int)(gdb_txp - gdb_txbuf), gdb_txbuf);
 	do {
 		gdb_cur->gdb_putc('$');
 
