@@ -89,6 +89,7 @@ struct ddp_buffer {
 	int len;
 	int npages;
 	vm_page_t *pages;
+	struct aiocblist *cbe;
 };
 
 struct toepcb {
@@ -302,6 +303,8 @@ void t4_init_ddp(struct adapter *, struct tom_data *);
 void t4_uninit_ddp(struct adapter *, struct tom_data *);
 int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,
     struct mbuf **, struct mbuf **, int *);
+void t4_aio_cancel_ddp(struct socket *, struct aiocblist *);
+void t4_aio_queue_ddp(struct socket *, struct aiocblist *);
 void enable_ddp(struct adapter *, struct toepcb *toep);
 void release_ddp_resources(struct toepcb *toep);
 void handle_ddp_close(struct toepcb *, struct tcpcb *, struct sockbuf *,

@@ -153,6 +153,13 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 	INP_WLOCK_ASSERT(inp);
 	SOCKBUF_LOCK_ASSERT(sb);
 
+	/*
+	 * XXX: Would need an 'active_id' to guess which DDP buffers
+	 * were completed (and in which order).  For now, just panic
+	 * if this ever happens during prototyping.
+	 */
+	panic("insert_ddp_data");
+
 	m = get_ddp_mbuf(n);
 	tp->rcv_nxt += n;
 #ifndef USE_DDP_RX_FLOW_CONTROL
@@ -1277,4 +1284,83 @@ out:
 	return (error);
 }
 
+static void
+disable_ddp_bu
+void
+enable_ddp(struct adapter *sc, struct toepcb *toep)
+{
+
+	KASSERT((toep->ddp_flags & (DDP_ON | DDP_OK | DDP_SC_REQ)) == DDP_OK,
+	    ("%s: toep %p has bad ddp_flags 0x%x",
+	    __func__, toep, toep->ddp_flags));
+
+	CTR3(KTR_CXGBE, "%s: tid %u (time %u)",
+	    __func__, toep->tid, time_uptime);
+
+	toep->ddp_flags |= DDP_SC_REQ;
+	t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
+	    V_TF_DDP_OFF(1) | V_TF_DDP_INDICATE_OUT(1) |
+	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1) |
+	    V_TF_DDP_BUF0_VALID(1) | V_TF_DDP_BUF1_VALID(1),
+	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1));
+	t4_set_tcb_field(sc, toep, 1, W_TCB_T_FLAGS,
+	    V_TF_RCV_COALESCE_ENABLE(1), 0);
+}
+
+void
+t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
+{
+	struct tcpcb *tp = so_sototcpcb(so);
+	struct toepcb *toep = tp->t_toe;
+	struct adapter *sc = td_adapter(toep->td);
+	struct sockbuf *sb = &so->so_rcv;
+	uint32_t valid_flag;
+	int i;
+
+	/* NB: Called with AIO_LOCK(ki) held. */
+
+	/* XXX: This is not perfect for now. */
+
+	/* Ignore writes. */
+	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
+		return;
+
+	SOCKBUF_LOCK(sb);
+	for (i = 0; i < nitems(toep->db); i++) {
+		if (toep->db[i] != NULL && toep->db[i]->cbe == cbe) {
+			/* Cancel DDP to this buffer. */
+			valid_flag = i == 0 ? V_TF_DDP_BUF0_VALID(1) :
+			    V_TF_DDP_BUF1_VALID(1);
+			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
+			    valid_flag, 0);
+
+			/* XXX: What to do with a partial DDP completion? */
+			/*
+			 * XXX: Eventually we should do something
+			 * better than this to wait for the disable to
+			 * be ACK'd.
+			 */
+			toep->db[i]->cbe == NULL;
+
+			aio_requeue_ddp(so, toep);
+		}
+}
+
+void
+t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
+{
+	struct tcpcb *tp = so_sototcpcb(so);
+	struct toepcb *toep = tp->t_toe;
+	struct adapter *sc = td_adapter(toep->td);
+	struct sockbuf *sb = &so->so_rcv;
+
+	/* NB: Called with AIO_LOCK(ki) held. */
+
+	/* Ignore writes. */
+	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
+		return;
+
+	SOCKBUF_LOCK(sb);
+	
+}
 #endif

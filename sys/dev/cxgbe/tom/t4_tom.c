@@ -1114,7 +1114,9 @@ t4_tom_mod_load(void)
 		return (ENOPROTOOPT);
 	bcopy(tcp_protosw, &ddp_protosw, sizeof(ddp_protosw));
 	bcopy(tcp_protosw->pr_usrreqs, &ddp_usrreqs, sizeof(ddp_usrreqs));
-	ddp_usrreqs.pru_soreceive = t4_soreceive_ddp;
+//	ddp_usrreqs.pru_soreceive = t4_soreceive_ddp;
+	ddp_usrreqs.pru_aio_queue = t4_aio_queue_ddp;
+	ddp_usrreqs.pru_aio_cancel = t4_aio_cancel_ddp;
 	ddp_protosw.pr_usrreqs = &ddp_usrreqs;
 
 	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
@@ -1122,7 +1124,9 @@ t4_tom_mod_load(void)
 		return (ENOPROTOOPT);
 	bcopy(tcp6_protosw, &ddp6_protosw, sizeof(ddp6_protosw));
 	bcopy(tcp6_protosw->pr_usrreqs, &ddp6_usrreqs, sizeof(ddp6_usrreqs));
-	ddp6_usrreqs.pru_soreceive = t4_soreceive_ddp;
+//	ddp6_usrreqs.pru_soreceive = t4_soreceive_ddp;
+	ddp6_usrreqs.pru_aio_queue = t4_aio_queue_ddp;
+	ddp6_usrreqs.pru_aio_cancel = t4_aio_cancel_ddp;
 	ddp6_protosw.pr_usrreqs = &ddp6_usrreqs;
 
 	TIMEOUT_TASK_INIT(taskqueue_thread, &clip_task, 0, t4_clip_task, NULL);
