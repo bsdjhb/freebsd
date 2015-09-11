@@ -841,6 +841,9 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 	i = empty_slot;
 	if (i < 0) {
 		i = arc4random() % nitems(toep->db);
+		if (toep->db[i]->cbe != NULL)
+			i ^= 1;
+		MPASS(toep->db[i]->cbe == NULL);
 		free_ddp_buffer(td, toep->db[i]);
 	}
 	toep->db[i] = db;
@@ -1284,30 +1287,131 @@ out:
 	return (error);
 }
 
-static void
-disable_ddp_bu
-void
-enable_ddp(struct adapter *sc, struct toepcb *toep)
+static int
+hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
+    vm_offset_t *ppgoff)
 {
+	struct vm_map *map;
+	vm_offset_t start, end;
+	vm_page_t *pp;
+	int n;
 
-	KASSERT((toep->ddp_flags & (DDP_ON | DDP_OK | DDP_SC_REQ)) == DDP_OK,
-	    ("%s: toep %p has bad ddp_flags 0x%x",
-	    __func__, toep, toep->ddp_flags));
+	/*
+	 * The AIO subsystem will cancel and drain all requests before
+	 * permitting a process to exit or exec, so p_vmspace should
+	 * be stable here.
+	 */
+	map = &aiocbe->userproc->p_vmspace->vm_map;
+	start = (uintptr_t)aiocbe->uaiocb.aio_buf +
+	    aiocbe->uaiocb.aio_offset;
+	*pgoff = start & PAGE_MASK;
+	end = round_page(start + aiocbe->uaiocb.aio_nbytes);
+	start = trunc_page(start);
 
-	CTR3(KTR_CXGBE, "%s: tid %u (time %u)",
-	    __func__, toep->tid, time_uptime);
+	if (end - start > MAX_DDP_BUFFER_SIZE)
+		/*
+		 * TODO: What we should do is DDP in chunks.
+		 * Alternatively we could return a short read.
+		 */
+		panic("large aio buffer not yet implemented");
 
-	toep->ddp_flags |= DDP_SC_REQ;
-	t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
-	    V_TF_DDP_OFF(1) | V_TF_DDP_INDICATE_OUT(1) |
-	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1) |
-	    V_TF_DDP_BUF0_VALID(1) | V_TF_DDP_BUF1_VALID(1),
-	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1));
-	t4_set_tcb_field(sc, toep, 1, W_TCB_T_FLAGS,
-	    V_TF_RCV_COALESCE_ENABLE(1), 0);
+	n = atop(end - start);
+	pp = malloc(n * sizeof(vm_page_t), M_CXGBE, M_WAITOK);
+	if (vm_fault_quick_hold_pages(map, start, end - start,
+	    VM_PROT_WRITE, pp, n) < 0) {
+		free(pp, M_CXGBE);
+		return (EFAULT);
+	}
+
+	**ppages = pp;
+	*pnpages = n;
+	return (0);
 }
 
-void
+static void
+aio_ddp_requeue(void *context, int pending)
+{
+	struct toepcb *toep = context;
+	struct inpcb *inp = toep->inp;
+	struct socket *so = inp->inp_socket;
+	struct sockbuf *sb = &so->so_rcv;
+	struct adapter *sc = td_adapter(toep->td);
+	struct aiocblist *cbe;
+	struct ddp_buffer *db;
+	vm_offset_t pgoff;
+	vm_pages_t *pages;
+	uint64_t ddp_flags, ddp_flags_mask;
+	struct wrqe *wr;
+	int buf_flag, db_idx, error, npages;
+
+restart:
+	SOCKBUF_LOCK(sb);
+
+	/* XXX: Fail all pending requests if so_error or SBS_CANTRCVMORE? */
+
+	if (toep->ddp_waiting_count == 0 ||
+	    toep->ddp_active_count == nitems(toep->db)) {
+		SOCKBUF_UNLOCK(sb);
+		return;
+	}
+
+	/* Take the next job to prep it for DDP. */
+	cbe = TAILQ_HEAD(&toep->ddp_aiojobq);
+	toep->ddp_waiting_count--;
+	TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
+	toep->ddp_queueing = cbe;
+	SOCKBUF_UNLOCK(sb);
+
+	error = hold_aio(cbe, &pages, &npages, &pgoff);
+	if (error != 0) {
+		aio_complete(-1, error);
+		SOCKBUF_LOCK(sb);
+		toep->ddp_queueing = NULL;
+		SOCKBUF_UNLOCK(sb);
+		goto restart;
+	}
+
+	SOCKBUF_LOCK(sb);
+
+	/* XXX: Recheck so_error and SBS_CANTRCVMORE? */
+
+	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
+	    cbe->uaiocb->nbytes);
+	pages = NULL;
+	if (db_idx < 0) {
+		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
+		toep->ddp_waiting_count++;
+		SOCKBUF_UNLOCK(sb);
+
+		/*
+		 * XXX: Need to retry this later.  Mostly need a trigger
+		 * when page pods are freed up.
+		 */
+		return;
+	}
+	dp = toep->db[db_idx];
+	buf_flag = db_idx == 0 ? DDP_BUF0_ACTIVE : DDP_BUF1_ACTIVE;
+
+	ddp_flags = 
+
+	ddp_flags = 0;
+	ddp_flags_mask = 0;
+	buf_flag = 0;
+	if (tp->db[0]
+	if (toep->ddp_waiting_count > 0 && tp->db[0] == NULL ||
+	    tp->db[0]->cbe == NULL) {
+		
+	count = min(toep->ddp_waiting_count, nitems(toep->db));
+	if (count > 0 && 
+	TAILQ_FOREACH(cbe, &toep->ddp_aiojobq, list) {
+		count++;
+		if (count >= 2)
+			break;
+	}
+	if (count > 0 && 
+}
+
+int
 t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 {
 	struct tcpcb *tp = so_sototcpcb(so);
@@ -1319,34 +1423,52 @@ t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 
 	/* NB: Called with AIO_LOCK(ki) held. */
 
-	/* XXX: This is not perfect for now. */
-
-	/* Ignore writes. */
-	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
-		return;
-
 	SOCKBUF_LOCK(sb);
+
+	/*
+	 * If this job is currently being queued by the task handler,
+	 * just punt.
+	 */
+	if (cbe == toep->ddp_queueing) {
+		SOCKBUF_UNLOCK(sb);
+		return (EINPROGRESS);
+	}
+
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (toep->db[i] != NULL && toep->db[i]->cbe == cbe) {
-			/* Cancel DDP to this buffer. */
-			valid_flag = i == 0 ? V_TF_DDP_BUF0_VALID(1) :
-			    V_TF_DDP_BUF1_VALID(1);
+			/* Cancel is pending. */
+			if (toep->db[i]->cancel_pending) {
+				SOCKBUF_UNLOCK(sb);
+				return (EINPROGRESS);
+			}
+
+			/*
+			 * Flush this buffer.  It will be cancelled or
+			 * partially completed once the card ACKs the
+			 * flush.
+			 */
+			valid_flag = i == 0 ? V_TF_DDP_BUF0_FLUSH(1) :
+			    V_TF_DDP_BUF1_FLUSH(1);
 			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
 			    valid_flag, 0);
-
-			/* XXX: What to do with a partial DDP completion? */
-			/*
-			 * XXX: Eventually we should do something
-			 * better than this to wait for the disable to
-			 * be ACK'd.
-			 */
-			toep->db[i]->cbe == NULL;
-
-			aio_requeue_ddp(so, toep);
+			toep->db[i]->cancel_pending = 1;
+			SOCKBUF_UNLOCK(sb);
+			return (EINPROGRESS);
 		}
+	}
+
+	TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
+	toep->ddp_waiting_count--;
+	if (toep->ddp_active_count + toep->ddp_waiting_count == 0) {
+		toep->ddp_flags &= ~DDP_OK;
+		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == DDP_ON)
+			disable_ddp(sc, toep);
+	}
+	SOCKBUF_UNLOCK(sb);
+	return (0);
 }
 
-void
+int
 t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 {
 	struct tcpcb *tp = so_sototcpcb(so);
@@ -1355,12 +1477,35 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	struct sockbuf *sb = &so->so_rcv;
 
 	/* NB: Called with AIO_LOCK(ki) held. */
+	SOCKBUF_LOCK_ASSERT(sb);
 
 	/* Ignore writes. */
 	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
-		return;
+		return (EOPNOTSUPP);
 
-	SOCKBUF_LOCK(sb);
-	
+	/* No need to manually copy out data. */
+	MPASS(!soreadable(so));
+
+	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
+	toep->ddp_waiting_count++;
+	toep->ddp_flags |= DDP_OK;
+	if (toep->ddp_flags & (DDP_ON | DDP_SC_REQ) == 0) {
+		/*
+		 * Wait for the card to ACK that DDP is enabled before
+		 * queueing any buffers.  Currently this waits for an
+		 * indicate to arrive.  It is not clear if it is possible
+		 * to force an ACK of the enable request sooner if there
+		 * is no data pending.  (Would be nice to not always
+		 * require a copy of the indicated data.)
+		 *
+		 * XXX: Might want to limit the indicate size to the
+		 * first queued request. (TODO)
+		 */
+		enable_ddp(sc, toep);
+	} else if (toep->ddp_flags & DDP_ON &&
+	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE) !=
+	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE))) {
+		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
+	}
 }
 #endif

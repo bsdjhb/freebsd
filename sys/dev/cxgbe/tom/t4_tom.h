@@ -90,6 +90,7 @@ struct ddp_buffer {
 	int npages;
 	vm_page_t *pages;
 	struct aiocblist *cbe;
+	int cancel_pending;
 };
 
 struct toepcb {
@@ -125,6 +126,11 @@ struct toepcb {
 	struct ddp_buffer *db[2];
 	time_t ddp_disabled;
 	uint8_t ddp_score;
+	TAILQ_HEAD(, aiocblist) ddp_aiojobq;
+	u_int ddp_waiting_count;
+	u_int ddp_active_count;
+	struct task ddp_requeue_task;
+	struct aiocblist *ddp_queueing;
 
 	/* Tx software descriptor */
 	uint8_t txsd_total;
