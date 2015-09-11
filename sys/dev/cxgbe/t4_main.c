@@ -4901,6 +4901,7 @@ t4_sysctls(struct adapter *sc)
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "ddp", CTLFLAG_RW,
 		    &sc->tt.ddp, 0, "DDP allowed");
 
+		/* XXX: These next two should be read-only? */
 		sc->tt.indsz = G_INDICATESIZE(t4_read_reg(sc, A_TP_PARA_REG5));
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "indsz", CTLFLAG_RW,
 		    &sc->tt.indsz, 0, "DDP max indicate size allowed");
