@@ -119,6 +119,11 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 	if (db == NULL)
 		return;
 
+	if (db->cbe) {
+		unwire_ddp_buffer(db);
+		aio_complete(db->cbe, -1, EBADF);
+	}
+		
 	if (db->pages)
 		free(db->pages, M_CXGBE);
 
@@ -243,6 +248,7 @@ mk_rx_data_ack_ulp(struct ulp_txpkt *ulpmc, struct toepcb *toep)
 	return (ulpsc);
 }
 
+#if 0
 static inline uint64_t
 select_ddp_flags(struct socket *so, int flags, int db_idx)
 {
@@ -273,10 +279,11 @@ select_ddp_flags(struct socket *so, int flags, int db_idx)
 
 	return (ddp_flags);
 }
+#endif
 
 static struct wrqe *
 mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
-    int offset, uint64_t ddp_flags)
+    int offset, uint64_t ddp_flags, uint64_t ddp_flags_mask)
 {
 	struct ddp_buffer *db = toep->db[db_idx];
 	struct wrqe *wr;
@@ -329,10 +336,7 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 
 	/* Update DDP flags */
 	ulpmc = mk_set_tcb_field_ulp(ulpmc, toep, W_TCB_RX_DDP_FLAGS,
-	    V_TF_DDP_BUF0_FLUSH(1) | V_TF_DDP_BUF1_FLUSH(1) |
-	    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PUSH_DISABLE_1(1) |
-	    V_TF_DDP_BUF0_VALID(1) | V_TF_DDP_BUF1_VALID(1) |
-	    V_TF_DDP_ACTIVE_BUF(1) | V_TF_DDP_INDICATE_OUT(1), ddp_flags);
+	    ddp_flags, ddp_flags_mask);
 
 	/* Gratuitous RX_DATA_ACK with RX_MODULATE set to speed up delivery. */
 	ulpmc = mk_rx_data_ack_ulp(ulpmc, toep);
@@ -340,6 +344,7 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 	return (wr);
 }
 
+#if 0
 static void
 discourage_ddp(struct toepcb *toep)
 {
@@ -351,6 +356,7 @@ discourage_ddp(struct toepcb *toep)
 		    __func__, toep->tid, time_uptime);
 	}
 }
+#endif
 
 static int
 handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
@@ -575,6 +581,7 @@ disable_ddp(struct adapter *sc, struct toepcb *toep)
 	    V_TF_DDP_OFF(1));
 }
 
+#if 0
 static int
 hold_uio(struct uio *uio, vm_page_t **ppages, int *pnpages)
 {
@@ -614,6 +621,7 @@ hold_uio(struct uio *uio, vm_page_t **ppages, int *pnpages)
 
 	return (0);
 }
+#endif
 
 static int
 bufcmp(struct ddp_buffer *db, vm_page_t *pages, int npages, int offset, int len)
@@ -818,7 +826,10 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 
 	/* Try to reuse */
 	for (i = 0; i < nitems(toep->db); i++) {
-		if (bufcmp(toep->db[i], pages, npages, db_off, db_len) == 0) {
+		if (toep->db[i].cbe != NULL)
+			continue;
+		else if (bufcmp(toep->db[i], pages, npages, db_off, db_len) ==
+		    0) {
 			free(pages, M_CXGBE);
 			return (i);	/* pages still held */
 		} else if (toep->db[i] == NULL && empty_slot < 0)
@@ -844,6 +855,8 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 		if (toep->db[i]->cbe != NULL)
 			i ^= 1;
 		MPASS(toep->db[i]->cbe == NULL);
+		MPASS((toep->ddp_flags & (i == 0 ? DDP_BUF0_ACTIVE :
+		    DDP_BUF1_ACTIVE)) == 0);
 		free_ddp_buffer(td, toep->db[i]);
 	}
 	toep->db[i] = db;
@@ -1004,6 +1017,7 @@ t4_uninit_ddp(struct adapter *sc __unused, struct tom_data *td)
 	}
 }
 
+#if 0
 #define	VNET_SO_ASSERT(so)						\
 	VNET_ASSERT(curvnet != NULL,					\
 	    ("%s:%d curvnet is NULL, so=%p", __func__, __LINE__, (so)));
@@ -1286,6 +1300,7 @@ out:
 	sbunlock(sb);
 	return (error);
 }
+#endif
 
 static int
 hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
@@ -1344,9 +1359,9 @@ aio_ddp_requeue(void *context, int pending)
 	struct wrqe *wr;
 	int buf_flag, db_idx, error, npages;
 
-restart:
 	SOCKBUF_LOCK(sb);
 
+restart:
 	/* XXX: Fail all pending requests if so_error or SBS_CANTRCVMORE? */
 
 	if (toep->ddp_waiting_count == 0 ||
@@ -1364,10 +1379,9 @@ restart:
 
 	error = hold_aio(cbe, &pages, &npages, &pgoff);
 	if (error != 0) {
-		aio_complete(-1, error);
+		aio_complete(cbe, -1, error);
 		SOCKBUF_LOCK(sb);
 		toep->ddp_queueing = NULL;
-		SOCKBUF_UNLOCK(sb);
 		goto restart;
 	}
 
@@ -1381,34 +1395,88 @@ restart:
 	if (db_idx < 0) {
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count++;
+		toep->ddp_queueing = NULL;
 		SOCKBUF_UNLOCK(sb);
 
 		/*
 		 * XXX: Need to retry this later.  Mostly need a trigger
 		 * when page pods are freed up.
 		 */
+		printf("%s: select_ddp_buffer failed\n", __func__);
 		return;
 	}
 	dp = toep->db[db_idx];
 	buf_flag = db_idx == 0 ? DDP_BUF0_ACTIVE : DDP_BUF1_ACTIVE;
 
-	ddp_flags = 
-
+	/*
+	 * XXX: Not sure what to do about SS_NBIO.  The stock aio would
+	 * wait for some data to come in and then do a non-blocking read
+	 * of the socket to get whatever was there.  I don't want to set
+	 * the FLUSH flag as that does an immediate flush.  However, I
+	 * do want a sort of "flush on first data" flag.  There doesn't
+	 * seem to be anything equivalent.
+	 */
 	ddp_flags = 0;
-	ddp_flags_mask = 0;
+	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
 	buf_flag = 0;
-	if (tp->db[0]
-	if (toep->ddp_waiting_count > 0 && tp->db[0] == NULL ||
-	    tp->db[0]->cbe == NULL) {
-		
-	count = min(toep->ddp_waiting_count, nitems(toep->db));
-	if (count > 0 && 
-	TAILQ_FOREACH(cbe, &toep->ddp_aiojobq, list) {
-		count++;
-		if (count >= 2)
-			break;
+	if (db_idx == 0) {
+		ddp_flags |= V_TF_DDP_PSHF_ENABLE_0(1) |
+		    V_TF_DDP_BUF0_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_0(1) |
+		    V_TF_DDP_PSHF_ENABLE_0(1) | V_TF_DDP_BUF0_FLUSH(1) |
+		    V_TF_DDP_BUF0_VALID(1);
+		buf_flag |= DDP_BUF0_ACTIVE;
+	} else {
+		ddp_flags |= V_TF_DDP_PSHF_ENABLE_1(1) |
+		    V_TF_DDP_BUF1_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_1(1) |
+		    V_TF_DDP_PSHF_ENABLE_1(1) | V_TF_DDP_BUF1_FLUSH(1) |
+		    V_TF_DDP_BUF1_VALID(1);
+		buf_flag |= DDP_BUF1_ACTIVE;
 	}
-	if (count > 0 && 
+	MPASS((tp->ddp_flags & buf_flag) == 0);
+	if ((tp->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0) {
+		if (db_idx == 1)
+			ddp_flags |= V_TF_DDP_ACTIVE_BUF(1);
+		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
+	}
+
+	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, pgoff, ddp_flags,
+	    ddp_flags_mask);
+	if (wr == NULL) {
+		/*
+		 * Need to unload the pages though the page pods are
+		 * left in tact in case they are can be reused in the
+		 * future.  Need a way to kick a retry here.
+		 *
+		 * XXX: We know the fixed size needed and could
+		 * preallocate this using a blocking request at the
+		 * start of the task to avoid having to handle this
+		 * edge case.
+		 */
+		vm_page_unhold_pages(db->pages, db->npages);
+		SOCKBUF_UNLOCK(sb);
+		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
+		return;
+	}
+
+	/*
+	 * Hmmm: The AIO phys path just uses held pages and doesn't bother
+	 * wiring.  OTOH, those requests expect the I/O to be satisified
+	 * as soon as the hardware can service the request.  They aren't
+	 * waiting for something to send packets.  It remains to be seen
+	 * if it would be 
+	/* Wire (and then unhold) the pages, and give the chip the go-ahead. */
+	wire_ddp_buffer(db);
+	t4_wrq_tx(sc, wr);
+#if 0
+	sb->sb_flags &= ~SB_DDP_INDICATE;  /* XXX: Not sure? */
+#endif
+	db->cbe = cbe;
+	toep->ddp_queueing = NULL;
+	toep->ddp_flags |= buf_flag;
+	toep->ddp_active_count++;
+	goto restart;
 }
 
 int
@@ -1503,8 +1571,8 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		 */
 		enable_ddp(sc, toep);
 	} else if (toep->ddp_flags & DDP_ON &&
-	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE) !=
-	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE))) {
+	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
+	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) {
 		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	}
 }
