@@ -1511,7 +1511,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			 * payload that arrived in this indicate is appended
 			 * to the socket buffer as usual.
 			 */
-			handle_ddp_indicate(sc, toep);
+			handle_ddp_indicate(toep, sb);
 		}
 #endif
 			

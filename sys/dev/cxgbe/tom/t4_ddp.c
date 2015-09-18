@@ -31,7 +31,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet.h"
 
 #include <sys/param.h>
-#include <sys/types.h>
+#include <sys/aio.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/ktr.h>
@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/domain.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
+#include <sys/taskqueue.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
@@ -72,7 +73,11 @@ VNET_DECLARE(int, tcp_autorcvbuf_inc);
 VNET_DECLARE(int, tcp_autorcvbuf_max);
 #define V_tcp_autorcvbuf_max VNET(tcp_autorcvbuf_max)
 
+#if 0
 static struct mbuf *get_ddp_mbuf(int len);
+#endif
+static void aio_ddp_requeue(void *context, int pending);
+static void unwire_ddp_buffer(struct ddp_buffer *db);
 
 #define PPOD_SZ(n)	((n) * sizeof(struct pagepod))
 #define PPOD_SIZE	(PPOD_SZ(1))
@@ -141,12 +146,20 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 }
 
 void
+ddp_init_toep(struct toepcb *toep)
+{
+
+	TAILQ_INIT(&toep->ddp_aiojobq);
+	TASK_INIT(&toep->ddp_requeue_task, 0, aio_ddp_requeue, toep);
+}
+
+void
 release_ddp_resources(struct toepcb *toep)
 {
 	int i;
 
 	/* XXX: Can't drain as this is called with INP lock held. */
-	taskqueue_cancel(taskqueue_thread, &toep->ddp_requeue_task);
+	taskqueue_cancel(taskqueue_thread, &toep->ddp_requeue_task, NULL);
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (toep->db[i] != NULL) {
 			free_ddp_buffer(toep->td, toep->db[i]);
@@ -160,9 +173,13 @@ void
 insert_ddp_data(struct toepcb *toep, uint32_t n)
 {
 	struct inpcb *inp = toep->inp;
+#ifdef notyet
 	struct tcpcb *tp = intotcpcb(inp);
+#endif
 	struct sockbuf *sb = &inp->inp_socket->so_rcv;
+#if 0
 	struct mbuf *m;
+#endif
 
 	INP_WLOCK_ASSERT(inp);
 	SOCKBUF_LOCK_ASSERT(sb);
@@ -174,6 +191,7 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 	 */
 	panic("insert_ddp_data");
 
+#if 0
 	m = get_ddp_mbuf(n);
 	tp->rcv_nxt += n;
 #ifndef USE_DDP_RX_FLOW_CONTROL
@@ -190,6 +208,7 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 #endif
 	sbappendstream_locked(sb, m, 0);
 	toep->sb_cc = sbused(sb);
+#endif
 }
 
 /* SET_TCB_FIELD sent as a ULP command looks like this */
@@ -377,7 +396,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	struct tcpcb *tp;
 	struct socket *so;
 	struct sockbuf *sb;
-	struct aiocbe *cbe;
+	struct aiocblist *cbe;
 	long copied;
 	int cancelled;
 
@@ -486,11 +505,10 @@ completed:
 }
 
 void
-handle_ddp_indicate(struct adapter *sc, struct toepcb *toep, struct mbuf *m)
+handle_ddp_indicate(struct toepcb *toep, struct sockbuf *sb)
 {
 
 	SOCKBUF_LOCK_ASSERT(sb);
-	MPASS(toep->ddp_indicate == NULL);
 	MPASS(toep->ddp_active_count == 0);
 	MPASS((toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0);
 	if (toep->ddp_waiting_count == 0) {
@@ -509,13 +527,16 @@ void
 handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
     __be32 rcv_nxt)
 {
+#if 0
 	struct mbuf *m;
+#endif
 	int len;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	INP_WLOCK_ASSERT(toep->inp);
 	len = be32toh(rcv_nxt) - tp->rcv_nxt;
 
+#ifdef notyet
 	/* Signal handle_ddp() to break out of its sleep loop. */
 	toep->ddp_flags &= ~(DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE);
 	if (len == 0)
@@ -534,6 +555,7 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
 
 	sbappendstream_locked(sb, m, 0);
 	toep->sb_cc = sbused(sb);
+#endif
 }
 
 #define DDP_ERR (F_DDP_PPOD_MISMATCH | F_DDP_LLIMIT_ERR | F_DDP_ULIMIT_ERR |\
@@ -874,7 +896,7 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 
 	/* Try to reuse */
 	for (i = 0; i < nitems(toep->db); i++) {
-		if (toep->db[i].cbe != NULL)
+		if (toep->db[i]->cbe != NULL)
 			continue;
 		else if (bufcmp(toep->db[i], pages, npages, db_off, db_len) ==
 		    0) {
@@ -1368,7 +1390,7 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 	 */
 	map = &aiocbe->userproc->p_vmspace->vm_map;
 	start = (uintptr_t)aiocbe->uaiocb.aio_buf;
-	*pgoff = start & PAGE_MASK;
+	*ppgoff = start & PAGE_MASK;
 	end = round_page(start + aiocbe->uaiocb.aio_nbytes);
 	start = trunc_page(start);
 
@@ -1387,7 +1409,7 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 		return (EFAULT);
 	}
 
-	**ppages = pp;
+	*ppages = pp;
 	*pnpages = n;
 	return (0);
 }
@@ -1404,7 +1426,7 @@ aio_ddp_requeue(void *context, int pending)
 	struct ddp_buffer *db;
 	vm_offset_t pgoff;
 	size_t copied, offset, resid;
-	vm_pages_t *pages;
+	vm_page_t *pages;
 	struct mbuf *m;
 	uint64_t ddp_flags, ddp_flags_mask;
 	struct wrqe *wr;
@@ -1450,25 +1472,25 @@ restart:
 	resid = cbe->uaiocb.aio_nbytes - cbe->uaiocb._aiocb_private.status;
 	m = sb->sb_mb;
 	KASSERT(m == NULL || toep->ddp_active_count == 0,
-	    ("%s: sockbuf data with active DDP"));
+	    ("%s: sockbuf data with active DDP", __func__));
 	while (m != NULL && resid > 0) {
 		struct iovec iov[1];
 		struct uio uio;
 		int error;
 
 		iov[0].iov_base = mtod(m, void *);
-		iov[0].iov_length = m->m_len;
-		if (iov[0].iov_length > resid)
-			iov[0].iov_length = resid;
+		iov[0].iov_len = m->m_len;
+		if (iov[0].iov_len > resid)
+			iov[0].iov_len = resid;
 		uio.uio_iov = iov;
 		uio.uio_iovcnt = 1;
 		uio.uio_offset = 0;
-		uio.uio_resid = iov[0].iov_length;
+		uio.uio_resid = iov[0].iov_len;
 		uio.uio_segflg = UIO_SYSSPACE;
 		uio.uio_rw = UIO_WRITE;
 		error = uiomove_fromphys(pages, offset + copied, uio.uio_resid,
 		    &uio);
-		MPASS(error == 0 && uio->uio_resid == 0);
+		MPASS(error == 0 && uio.uio_resid == 0);
 		copied += uio.uio_offset;
 		resid -= uio.uio_offset;
 		m = m->m_next;
@@ -1491,7 +1513,7 @@ restart:
 	}	
 
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
-	    cbe->uaiocb->nbytes);
+	    cbe->uaiocb.aio_nbytes);
 	pages = NULL;
 	if (db_idx < 0) {
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
@@ -1506,7 +1528,7 @@ restart:
 		printf("%s: select_ddp_buffer failed\n", __func__);
 		return;
 	}
-	dp = toep->db[db_idx];
+	db = toep->db[db_idx];
 	buf_flag = db_idx == 0 ? DDP_BUF0_ACTIVE : DDP_BUF1_ACTIVE;
 
 	/*
@@ -1544,8 +1566,8 @@ restart:
 		    V_TF_DDP_BUF1_VALID(1);
 		buf_flag |= DDP_BUF1_ACTIVE;
 	}
-	MPASS((tp->ddp_flags & buf_flag) == 0);
-	if ((tp->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0) {
+	MPASS((toep->ddp_flags & buf_flag) == 0);
+	if ((toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0) {
 		if (db_idx == 1)
 			ddp_flags |= V_TF_DDP_ACTIVE_BUF(1);
 		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
@@ -1599,7 +1621,7 @@ t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 	struct toepcb *toep = tp->t_toe;
 	struct adapter *sc = td_adapter(toep->td);
 	struct sockbuf *sb = &so->so_rcv;
-	uint32_t valid_flag;
+	uint64_t valid_flag;
 	int i;
 
 	/* NB: Called with AIO_LOCK(ki) held. */
@@ -1674,7 +1696,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
 	toep->ddp_flags |= DDP_OK;
-	if (toep->ddp_flags & (DDP_ON | DDP_SC_REQ) == 0) {
+	if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
 		/*
 		 * Wait for the card to ACK that DDP is enabled before
 		 * queueing any buffers.  Currently this waits for an
@@ -1692,5 +1714,6 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) {
 		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	}
+	return (0);
 }
 #endif
