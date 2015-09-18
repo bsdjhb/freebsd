@@ -93,7 +93,6 @@ struct ddp_buffer {
 	struct aiocblist *cbe;
 	/* These belong in 'struct aiocblist'? */
 	int cancel_pending;
-	size_t copied;
 };
 
 struct toepcb {

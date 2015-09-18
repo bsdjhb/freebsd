@@ -378,7 +378,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	struct socket *so;
 	struct sockbuf *sb;
 	struct aiocbe *cbe;
-	size_t copied;
+	long copied;
 
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 	db = toep->db[report & F_DDP_BUF_IDX ? 1 : 0];
@@ -460,9 +460,9 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 #endif
 
 	db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
-	copied = db->copied;
 	SOCKBUF_UNLOCK(sb);
 	INP_WUNLOCK(inp);
+	copied = cbe->uaiocb._aiocb_private.status;
 	aio_complete(cbe, copied + len, 0);
 
 completed:
@@ -1398,7 +1398,7 @@ aio_ddp_requeue(void *context, int pending)
 	struct aiocblist *cbe;
 	struct ddp_buffer *db;
 	vm_offset_t pgoff;
-	size_t copied, resid;
+	size_t copied, offset, resid;
 	vm_pages_t *pages;
 	struct mbuf *m;
 	uint64_t ddp_flags, ddp_flags_mask;
@@ -1440,8 +1440,12 @@ restart:
 	 * copy those mbufs out directly.
 	 */
 	copied = 0;
-	resid = cbe->uaiocb.aio_nbytes;
+	offset = pgoff + cbe->uaiocb._aiocb_private.status;
+	MPASS(cbe->uaiocb._aiocb_private.status <= cbe->uaiocb.aio_nbytes);
+	resid = cbe->uaiocb.aio_nbytes - cbe->uaiocb._aiocb_private.status;
 	m = sb->sb_mb;
+	KASSERT(m == NULL || toep->ddp_active_count == 0,
+	    ("%s: sockbuf data with active DDP"));
 	while (m != NULL && resid > 0) {
 		struct iovec iov[1];
 		struct uio uio;
@@ -1457,7 +1461,7 @@ restart:
 		uio.uio_resid = iov[0].iov_length;
 		uio.uio_segflg = UIO_SYSSPACE;
 		uio.uio_rw = UIO_WRITE;
-		error = uiomove_fromphys(pages, pgoff + copied, uio.uio_resid,
+		error = uiomove_fromphys(pages, offset + copied, uio.uio_resid,
 		    &uio);
 		MPASS(error == 0 && uio->uio_resid == 0);
 		copied += uio.uio_offset;
@@ -1466,6 +1470,7 @@ restart:
 	}
 	if (copied != 0) {
 		sbdrop_locked(sb, copied);
+		cbe->uaiocb._aiocb_private.status += copied;
 		if (resid == 0) {
 			/*
 			 * We filled the entire buffer with socket data,
@@ -1479,14 +1484,11 @@ restart:
 			goto restart;
 		}
 	}	
-	
+
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
 	    cbe->uaiocb->nbytes);
 	pages = NULL;
 	if (db_idx < 0) {
-		if (copied != 0)
-			panic(
-	    "%s: failed to create DDP buffer for partially filled request");
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count++;
 		toep->ddp_queueing = NULL;
@@ -1510,7 +1512,7 @@ restart:
 	 * do want a sort of "flush on first data" flag.  There doesn't
 	 * seem to be anything equivalent.
 	 *
-	 * If there was pending data from an indicate, then it is ok to
+	 * If the request has been partially filled, then it is ok to
 	 * set FLUSH for SS_NBIO.
 	 */
 	ddp_flags = 0;
@@ -1519,7 +1521,8 @@ restart:
 	if (db_idx == 0) {
 		ddp_flags |= V_TF_DDP_PSHF_ENABLE_0(1) |
 		    V_TF_DDP_BUF0_VALID(1);
-		if (copied != 0 && so->so_state & SS_NBIO)
+		if (cbe->uaiocb._aiocb_private.status != 0 &&
+		    so->so_state & SS_NBIO)
 			ddp_flags |= V_TF_DDP_BUF0_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_0(1) |
 		    V_TF_DDP_PSHF_ENABLE_0(1) | V_TF_DDP_BUF0_FLUSH(1) |
@@ -1528,7 +1531,8 @@ restart:
 	} else {
 		ddp_flags |= V_TF_DDP_PSHF_ENABLE_1(1) |
 		    V_TF_DDP_BUF1_VALID(1);
-		if (copied != 0 && so->so_state & SS_NBIO)
+		if (cbe->uaiocb._aiocb_private.status != 0 &&
+		    so->so_state & SS_NBIO)
 			ddp_flags |= V_TF_DDP_BUF1_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_1(1) |
 		    V_TF_DDP_PSHF_ENABLE_1(1) | V_TF_DDP_BUF1_FLUSH(1) |
@@ -1558,8 +1562,6 @@ restart:
 		vm_page_unhold_pages(db->pages, db->npages);
 		SOCKBUF_UNLOCK(sb);
 		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
-		if (copied != 0)
-			panic("bad form");
 		return;
 	}
 
@@ -1579,7 +1581,6 @@ restart:
 	sb->sb_flags &= ~SB_DDP_INDICATE;  /* XXX: Not sure? */
 #endif
 	db->cbe = cbe;
-	db->copied = copied;
 	toep->ddp_queueing = NULL;
 	toep->ddp_flags |= buf_flag;
 	toep->ddp_active_count++;
@@ -1665,6 +1666,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	MPASS(!soreadable(so));
 
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
+	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
 	toep->ddp_flags |= DDP_OK;
 	if (toep->ddp_flags & (DDP_ON | DDP_SC_REQ) == 0) {
