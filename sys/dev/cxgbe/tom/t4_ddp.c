@@ -121,7 +121,14 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 
 	if (db->cbe) {
 		unwire_ddp_buffer(db);
-		aio_complete(db->cbe, -1, EBADF);
+
+		/*
+		 * XXX: If we are un-offloading the socket then we
+		 * should requeue these on the socket somehow.  If we
+		 * got a FIN from the remote end, then this completes
+		 * any remaining requests with an EOF read.
+		 */
+		aio_complete(db->cbe, 0, 0);
 	}
 		
 	if (db->pages)
@@ -364,12 +371,15 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	uint32_t report = be32toh(ddp_report);
 	unsigned int db_flag;
 	struct inpcb *inp = toep->inp;
+	struct ddp_buffer *db;
 	struct tcpcb *tp;
 	struct socket *so;
 	struct sockbuf *sb;
-	struct mbuf *m;
+	struct aiocbe *cbe;
 
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+	db = toep->db[report & F_DDP_BUF_IDX ? 1 : 0];
+	cbe = db->cbe;
 
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
@@ -378,18 +388,18 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	so = inp_inpcbtosocket(inp);
 	sb = &so->so_rcv;
 	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
-
 		/*
-		 * XXX: think a bit more.
-		 * tcpcb probably gone, but socket should still be around
-		 * because we always wait for DDP completion in soreceive no
-		 * matter what.  Just wake it up and let it clean up.
+		 * This can happen due to an administrative tcpdrop(8).
+		 * Just fail the request with ECONNRESET.
 		 */
-
 		CTR5(KTR_CXGBE, "%s: tid %u, seq 0x%x, len %d, inp_flags 0x%x",
 		    __func__, toep->tid, be32toh(rcv_nxt), len, inp->inp_flags);
 		SOCKBUF_LOCK(sb);
-		goto wakeup;
+		db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
+		SOCKBUF_UNLOCK(sb);
+		INP_WUNLOCK(inp);
+		aio_complete(cbe, -1, ECONNRESET);
+		goto completed;
 	}
 
 	tp = intotcpcb(inp);
@@ -413,13 +423,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	KASSERT(tp->rcv_wnd >= len, ("%s: negative window size", __func__));
 	tp->rcv_wnd -= len;
 #endif
-	m = get_ddp_mbuf(len);
-
 	SOCKBUF_LOCK(sb);
-	if (report & F_DDP_BUF_COMPLETE)
-		toep->ddp_score = DDP_HIGH_SCORE;
-	else
-		discourage_ddp(toep);
 
 	/* receive buffer autosize */
 	if (sb->sb_flags & SB_AUTOSIZE &&
@@ -436,24 +440,37 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 			toep->rx_credits += newsize - hiwat;
 	}
 
+#if 0
 	KASSERT(toep->sb_cc >= sbused(sb),
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
 	toep->rx_credits += toep->sb_cc - sbused(sb);
+#else
+	/*
+	 * XXX: Not at all sure what to do here since we now bypass the
+	 * socket buffer.
+	 */
+	toep->rx_credits += len;
+#endif
 #ifdef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits -= len;	/* adjust for F_RX_FC_DDP */
 #endif
-	sbappendstream_locked(sb, m, 0);
-	toep->sb_cc = sbused(sb);
-wakeup:
+
+	db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
+	SOCKBUF_UNLOCK(sb);
+	INP_WUNLOCK(inp);
+	aio_complete(cbe, len, 0);
+
+completed:
+	SOCKBUF_LOCK(sb);
+	db->cancel_pending = 0;
+	db->cbe = NULL;
 	KASSERT(toep->ddp_flags & db_flag,
 	    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x, report 0x%x",
 	    __func__, toep, toep->ddp_flags, report));
 	toep->ddp_flags &= ~db_flag;
-	sorwakeup_locked(so);
-	SOCKBUF_UNLOCK_ASSERT(sb);
+	SOCKBUF_UNLOCK(sb);
 
-	INP_WUNLOCK(inp);
 	return (0);
 }
 
@@ -1502,6 +1519,9 @@ t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 		return (EINPROGRESS);
 	}
 
+	/*
+	 * XXX: Does not handle a request being completed.
+	 */
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (toep->db[i] != NULL && toep->db[i]->cbe == cbe) {
 			/* Cancel is pending. */
