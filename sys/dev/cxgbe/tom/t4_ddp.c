@@ -1415,6 +1415,25 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 }
 
 static void
+ddp_complete_all(struct toepcb *toep, struct sockbuf *sb, long status,
+    int error)
+{
+	struct aiocblist *cbe;
+
+	SOCKBUF_LOCK_ASSERT(sb);
+	while (!TAILQ_EMPTY(&toep->ddp_aiojobq)) {
+		cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
+		TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
+		toep->ddp_waiting_count--;
+		toep->ddp_queueing = cbe;
+		SOCKBUF_UNLOCK(sb);
+		aio_complete(cbe, status, error);
+		SOCKBUF_LOCK(sb);
+	}
+	toep->ddp_queueing = NULL;
+}
+
+static void
 aio_ddp_requeue(void *context, int pending)
 {
 	struct toepcb *toep = context;
@@ -1434,11 +1453,52 @@ aio_ddp_requeue(void *context, int pending)
 
 	SOCKBUF_LOCK(sb);
 
-restart:
-	/* XXX: Fail all pending requests if so_error or SBS_CANTRCVMORE? */
+	/* We will never ever get anything unless we are or were connected. */
+	if (!(so->so_state & (SS_ISCONNECTED|SS_ISDISCONNECTED))) {
+		ddp_complete_all(toep, sb, -1, ENOTCONN);
+		SOCKBUF_UNLOCK(sb);
+		return;
+	}
 
+restart:
+	KASSERT(toep->ddp_queueing == NULL,
+	    ("%s: still queueing at restart", __func__));
 	if (toep->ddp_waiting_count == 0 ||
 	    toep->ddp_active_count == nitems(toep->db)) {
+		SOCKBUF_UNLOCK(sb);
+		return;
+	}
+
+	KASSERT(toep->ddp_active_count == 0 || sbavail(sb) == 0,
+	    ("%s: pending sockbuf data and DDP is active", __func__));
+
+	/* Abort if socket has reported problems. */
+	/* XXX: Wait for any queued DDP's to finish and/or flush them? */
+	if (so->so_error && sbavail(sb) == 0) {
+		error = so->so_error;
+		so->so_error = 0;
+		cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
+		toep->ddp_waiting_count--;
+		TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
+		toep->ddp_queueing = cbe;
+		SOCKBUF_UNLOCK(sb);
+		aio_complete(cbe, -1, error);
+		SOCKBUF_LOCK(sb);
+		toep->ddp_queueing = NULL;
+		goto restart;
+	}
+
+	/*
+	 * Door is closed.  If there is pending data in the socket buffer,
+	 * deliver it.  If there are pending DDP requests, wait for those
+	 * to complete.  Once they have completed, return EOF reads.
+	 */
+	if (sb->sb_state & SBS_CANTRCVMORE && sbavail(sb) == 0) {
+		if (toep->ddp_active_count != 0) {
+			SOCKBUF_UNLOCK(sb);
+			return;
+		}
+		ddp_complete_all(toep, sb, 0, 0);
 		SOCKBUF_UNLOCK(sb);
 		return;
 	}
@@ -1459,7 +1519,34 @@ restart:
 	}
 
 	SOCKBUF_LOCK(sb);
-	/* XXX: Recheck so_error and SBS_CANTRCVMORE? */
+
+	if (so->so_error && sbavail(sb) == 0) {
+		error = so->so_error;
+		so->so_error = 0;
+		SOCKBUF_UNLOCK(sb);
+		vm_page_unhold_pages(pages, npages);
+		aio_complete(cbe, -1, error);
+		SOCKBUF_LOCK(sb);
+		toep->ddp_queueing = NULL;
+		goto restart;
+	}		
+
+	if (sb->sb_state & SBS_CANTRCVMORE && sbavail(sb) == 0) {
+		vm_page_unhold_pages(pages, npages);
+		if (toep->ddp_active_count != 0) {
+			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
+			toep->ddp_waiting_count++;
+			toep->ddp_queueing = NULL;
+			SOCKBUF_UNLOCK(sb);
+			return;
+		}
+		SOCKBUF_UNLOCK(sb);
+		aio_complete(cbe, 0, 0);
+		SOCKBUF_LOCK(sb);
+		ddp_complete_all(toep, sb, 0, 0);
+		SOCKBUF_UNLOCK(sb);
+		return;
+	}	
 
 	/*
 	 * If there is pending data in the socket buffer (either
@@ -1637,12 +1724,9 @@ t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 		return (EINPROGRESS);
 	}
 
-	/*
-	 * XXX: Does not handle a request being completed.
-	 */
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (toep->db[i] != NULL && toep->db[i]->cbe == cbe) {
-			/* Cancel is pending. */
+			/* Cancel is pending or DDP has completed. */
 			if (toep->db[i]->cancel_pending) {
 				SOCKBUF_UNLOCK(sb);
 				return (EINPROGRESS);
@@ -1689,9 +1773,6 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
 		return (EOPNOTSUPP);
 
-	/* No need to manually copy out data. */
-	MPASS(!soreadable(so));
-
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
@@ -1707,6 +1788,9 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		 *
 		 * XXX: Might want to limit the indicate size to the
 		 * first queued request. (TODO)
+		 *
+		 * XXX: Could use a TCB_SET_FIELD_RPL message to know
+		 * that DDP was enabled.
 		 */
 		enable_ddp(sc, toep);
 	} else if (toep->ddp_flags & DDP_ON &&
