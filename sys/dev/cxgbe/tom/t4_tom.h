@@ -131,6 +131,7 @@ struct toepcb {
 	TAILQ_HEAD(, aiocblist) ddp_aiojobq;
 	u_int ddp_waiting_count;
 	u_int ddp_active_count;
+	int ddp_active_id;	/* the currently active DDP buffer */
 	struct task ddp_requeue_task;
 	struct aiocblist *ddp_queueing;
 

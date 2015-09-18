@@ -390,7 +390,7 @@ static int
 handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 {
 	uint32_t report = be32toh(ddp_report);
-	unsigned int db_flag;
+	unsigned int db_flag, db_idx;
 	struct inpcb *inp = toep->inp;
 	struct ddp_buffer *db;
 	struct tcpcb *tp;
@@ -400,9 +400,21 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	long copied;
 	int cancelled;
 
+	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
-	db = toep->db[report & F_DDP_BUF_IDX ? 1 : 0];
+	KASSERT(toep->ddp_active_id == db_idx,
+	    ("completed DDP buffer (%d) != active_id (%d)", db_idx,
+	    toep->ddp_active_id));
+	if (toep->ddp_active_count == 1) {
+		KASSERT(toep->db[db_idx ^ 1] == NULL ||
+		    toep->db[db_idx ^ 1]->cbe == NULL,
+		    ("%s: active_count mismatch", __func__));
+		toep->ddp_active_id = -1;
+	} else
+		toep->ddp_active_id ^= 1;
+	db = toep->db[db_idx];
 	cbe = db->cbe;
+	
 
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
@@ -1698,6 +1710,10 @@ restart:
 	toep->ddp_queueing = NULL;
 	toep->ddp_flags |= buf_flag;
 	toep->ddp_active_count++;
+	if (toep->ddp_active_count == 1) {
+		MPASS(toep->ddp_active_id == -1);
+		toep->ddp_active_id = db_idx;
+	}
 	goto restart;
 }
 
