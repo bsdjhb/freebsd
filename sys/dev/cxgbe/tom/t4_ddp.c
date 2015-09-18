@@ -379,6 +379,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	struct sockbuf *sb;
 	struct aiocbe *cbe;
 	long copied;
+	int cancelled;
 
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 	db = toep->db[report & F_DDP_BUF_IDX ? 1 : 0];
@@ -459,11 +460,15 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	toep->rx_credits -= len;	/* adjust for F_RX_FC_DDP */
 #endif
 
+	cancelled = db->cancel_pending;
 	db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
 	SOCKBUF_UNLOCK(sb);
 	INP_WUNLOCK(inp);
 	copied = cbe->uaiocb._aiocb_private.status;
-	aio_complete(cbe, copied + len, 0);
+	if (cancelled && copied + len == 0)
+		aio_complete(cbe, -1, ECANCELED);
+	else
+		aio_complete(cbe, copied + len, 0);
 
 completed:
 	SOCKBUF_LOCK(sb);
@@ -1417,7 +1422,7 @@ restart:
 	}
 
 	/* Take the next job to prep it for DDP. */
-	cbe = TAILQ_HEAD(&toep->ddp_aiojobq);
+	cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
 	toep->ddp_waiting_count--;
 	TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
 	toep->ddp_queueing = cbe;
