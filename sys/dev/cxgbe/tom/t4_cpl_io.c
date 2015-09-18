@@ -1507,11 +1507,11 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		if (toep->ddp_flags & DDP_ON) {
 			/*
 			 * CPL_RX_DATA with DDP on can only be an indicate.
-			 * Copy this data to the pending request and
-			 * start DDP.
+			 * Start posting queued AIO requests via DDP.  The
+			 * payload that arrived in this indicate is appended
+			 * to the socket buffer as usual.
 			 */
-			ddp_indicate(sc, toep, m);
-			return;
+			handle_ddp_indicate(sc, toep);
 		}
 #endif
 			

@@ -89,8 +89,11 @@ struct ddp_buffer {
 	int len;
 	int npages;
 	vm_page_t *pages;
+
 	struct aiocblist *cbe;
+	/* These belong in 'struct aiocblist'? */
 	int cancel_pending;
+	size_t copied;
 };
 
 struct toepcb {

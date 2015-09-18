@@ -145,6 +145,8 @@ release_ddp_resources(struct toepcb *toep)
 {
 	int i;
 
+	/* XXX: Can't drain as this is called with INP lock held. */
+	taskqueue_cancel(taskqueue_thread, &toep->ddp_requeue_task);
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (toep->db[i] != NULL) {
 			free_ddp_buffer(toep->td, toep->db[i]);
@@ -376,6 +378,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	struct socket *so;
 	struct sockbuf *sb;
 	struct aiocbe *cbe;
+	size_t copied;
 
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 	db = toep->db[report & F_DDP_BUF_IDX ? 1 : 0];
@@ -457,9 +460,10 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 #endif
 
 	db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
+	copied = db->copied;
 	SOCKBUF_UNLOCK(sb);
 	INP_WUNLOCK(inp);
-	aio_complete(cbe, len, 0);
+	aio_complete(cbe, copied + len, 0);
 
 completed:
 	SOCKBUF_LOCK(sb);
@@ -469,9 +473,31 @@ completed:
 	    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x, report 0x%x",
 	    __func__, toep, toep->ddp_flags, report));
 	toep->ddp_flags &= ~db_flag;
+	if (toep->ddp_waiting_count > 0)
+		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	SOCKBUF_UNLOCK(sb);
 
 	return (0);
+}
+
+void
+handle_ddp_indicate(struct adapter *sc, struct toepcb *toep, struct mbuf *m)
+{
+
+	SOCKBUF_LOCK_ASSERT(sb);
+	MPASS(toep->ddp_indicate == NULL);
+	MPASS(toep->ddp_active_count == 0);
+	MPASS((toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0);
+	if (toep->ddp_waiting_count == 0) {
+		/*
+		 * The pending requests that triggered the request for an
+		 * an indicate were cancelled.  Those cancels should have
+		 * already disabled DDP.  Just ignore this as the data is
+		 * going into the socket buffer anyway.
+		 */
+		return;
+	}
+	taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 }
 
 void
@@ -913,6 +939,7 @@ unwire_ddp_buffer(struct ddp_buffer *db)
 	}
 }
 
+#if 0
 static int
 handle_ddp(struct socket *so, struct uio *uio, int flags, int error)
 {
@@ -1011,6 +1038,7 @@ no_ddp:
 	sb->sb_flags &= ~SB_DDP_INDICATE;
 	return (0);
 }
+#endif
 
 void
 t4_init_ddp(struct adapter *sc, struct tom_data *td)
@@ -1334,8 +1362,7 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 	 * be stable here.
 	 */
 	map = &aiocbe->userproc->p_vmspace->vm_map;
-	start = (uintptr_t)aiocbe->uaiocb.aio_buf +
-	    aiocbe->uaiocb.aio_offset;
+	start = (uintptr_t)aiocbe->uaiocb.aio_buf;
 	*pgoff = start & PAGE_MASK;
 	end = round_page(start + aiocbe->uaiocb.aio_nbytes);
 	start = trunc_page(start);
@@ -1371,7 +1398,9 @@ aio_ddp_requeue(void *context, int pending)
 	struct aiocblist *cbe;
 	struct ddp_buffer *db;
 	vm_offset_t pgoff;
+	size_t copied, resid;
 	vm_pages_t *pages;
+	struct mbuf *m;
 	uint64_t ddp_flags, ddp_flags_mask;
 	struct wrqe *wr;
 	int buf_flag, db_idx, error, npages;
@@ -1403,13 +1432,61 @@ restart:
 	}
 
 	SOCKBUF_LOCK(sb);
-
 	/* XXX: Recheck so_error and SBS_CANTRCVMORE? */
 
+	/*
+	 * If there is pending data in the socket buffer (either
+	 * from before the requests were queued or a DDP indicate),
+	 * copy those mbufs out directly.
+	 */
+	copied = 0;
+	resid = cbe->uaiocb.aio_nbytes;
+	m = sb->sb_mb;
+	while (m != NULL && resid > 0) {
+		struct iovec iov[1];
+		struct uio uio;
+		int error;
+
+		iov[0].iov_base = mtod(m, void *);
+		iov[0].iov_length = m->m_len;
+		if (iov[0].iov_length > resid)
+			iov[0].iov_length = resid;
+		uio.uio_iov = iov;
+		uio.uio_iovcnt = 1;
+		uio.uio_offset = 0;
+		uio.uio_resid = iov[0].iov_length;
+		uio.uio_segflg = UIO_SYSSPACE;
+		uio.uio_rw = UIO_WRITE;
+		error = uiomove_fromphys(pages, pgoff + copied, uio.uio_resid,
+		    &uio);
+		MPASS(error == 0 && uio->uio_resid == 0);
+		copied += uio.uio_offset;
+		resid -= uio.uio_offset;
+		m = m->m_next;
+	}
+	if (copied != 0) {
+		sbdrop_locked(sb, copied);
+		if (resid == 0) {
+			/*
+			 * We filled the entire buffer with socket data,
+			 * so complete the request.
+			 */
+			SOCKBUF_UNLOCK(sb);
+			vm_page_unhold_pages(pages, npages);
+			aio_complete(cbe, copied, 0);
+			SOCKBUF_LOCK(sb);
+			toep->ddp_queueing = NULL;
+			goto restart;
+		}
+	}	
+	
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
 	    cbe->uaiocb->nbytes);
 	pages = NULL;
 	if (db_idx < 0) {
+		if (copied != 0)
+			panic(
+	    "%s: failed to create DDP buffer for partially filled request");
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count++;
 		toep->ddp_queueing = NULL;
@@ -1432,6 +1509,9 @@ restart:
 	 * the FLUSH flag as that does an immediate flush.  However, I
 	 * do want a sort of "flush on first data" flag.  There doesn't
 	 * seem to be anything equivalent.
+	 *
+	 * If there was pending data from an indicate, then it is ok to
+	 * set FLUSH for SS_NBIO.
 	 */
 	ddp_flags = 0;
 	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
@@ -1439,6 +1519,8 @@ restart:
 	if (db_idx == 0) {
 		ddp_flags |= V_TF_DDP_PSHF_ENABLE_0(1) |
 		    V_TF_DDP_BUF0_VALID(1);
+		if (copied != 0 && so->so_state & SS_NBIO)
+			ddp_flags |= V_TF_DDP_BUF0_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_0(1) |
 		    V_TF_DDP_PSHF_ENABLE_0(1) | V_TF_DDP_BUF0_FLUSH(1) |
 		    V_TF_DDP_BUF0_VALID(1);
@@ -1446,6 +1528,8 @@ restart:
 	} else {
 		ddp_flags |= V_TF_DDP_PSHF_ENABLE_1(1) |
 		    V_TF_DDP_BUF1_VALID(1);
+		if (copied != 0 && so->so_state & SS_NBIO)
+			ddp_flags |= V_TF_DDP_BUF1_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_1(1) |
 		    V_TF_DDP_PSHF_ENABLE_1(1) | V_TF_DDP_BUF1_FLUSH(1) |
 		    V_TF_DDP_BUF1_VALID(1);
@@ -1463,7 +1547,7 @@ restart:
 	if (wr == NULL) {
 		/*
 		 * Need to unload the pages though the page pods are
-		 * left in tact in case they are can be reused in the
+		 * left intact in case they can be reused in the
 		 * future.  Need a way to kick a retry here.
 		 *
 		 * XXX: We know the fixed size needed and could
@@ -1474,6 +1558,8 @@ restart:
 		vm_page_unhold_pages(db->pages, db->npages);
 		SOCKBUF_UNLOCK(sb);
 		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
+		if (copied != 0)
+			panic("bad form");
 		return;
 	}
 
@@ -1482,7 +1568,10 @@ restart:
 	 * wiring.  OTOH, those requests expect the I/O to be satisified
 	 * as soon as the hardware can service the request.  They aren't
 	 * waiting for something to send packets.  It remains to be seen
-	 * if it would be 
+	 * if it would be better to just leave them held and skip the
+	 * wiring/unwiring.
+	 */
+
 	/* Wire (and then unhold) the pages, and give the chip the go-ahead. */
 	wire_ddp_buffer(db);
 	t4_wrq_tx(sc, wr);
@@ -1490,6 +1579,7 @@ restart:
 	sb->sb_flags &= ~SB_DDP_INDICATE;  /* XXX: Not sure? */
 #endif
 	db->cbe = cbe;
+	db->copied = copied;
 	toep->ddp_queueing = NULL;
 	toep->ddp_flags |= buf_flag;
 	toep->ddp_active_count++;
