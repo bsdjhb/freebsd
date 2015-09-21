@@ -1765,12 +1765,18 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	struct adapter *sc = td_adapter(toep->td);
 	struct sockbuf *sb = &so->so_rcv;
 
-	/* NB: Called with AIO_LOCK(ki) held. */
-	SOCKBUF_LOCK_ASSERT(sb);
 
 	/* Ignore writes. */
 	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
 		return (EOPNOTSUPP);
+
+	SOCKBUF_LOCK(sb);
+
+	/*
+	 * XXX: Think about possibly returning errors for ENOTCONN,
+	 * etc.  Perhaps the caller would only queue the request
+	 * if it failed with EOPNOTSUPP?
+	 */
 
 	aio_queue(cbe);
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
@@ -1796,8 +1802,13 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	} else if (toep->ddp_flags & DDP_ON &&
 	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
 	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) {
+		/*
+		 * XXX: We could possibly do some of this work inline
+		 * instead of queueing the task?
+		 */
 		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	}
+	SOCKBUF_UNLOCK(sb);
 	return (0);
 }
 #endif
