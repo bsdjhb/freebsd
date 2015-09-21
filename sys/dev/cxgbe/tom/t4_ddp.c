@@ -1553,6 +1553,17 @@ restart:
 		return;
 	}
 
+	/*
+	 * If the DDP is not enabled and there is no pending socket buffer
+	 * data, try to enable DDP.
+	 */
+	if (sbavail(sb) == 0 && (toep->ddp_flags & DDP_ON) == 0) {
+		if ((toep->ddp_flags & DDP_SC_REQ) == 0)
+			enable_ddp(sc, toep);
+		SOCKBUF_UNLOCK(sb);
+		return;
+	}
+
 	/* Take the next job to prep it for DDP. */
 	cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
 	toep->ddp_waiting_count--;
@@ -1643,12 +1654,18 @@ restart:
 			toep->ddp_queueing = NULL;
 			goto restart;
 		}
+
+		/*
+		 * If DDP is not enabled, requeue this request and restart.
+		 * This will either enable DDP or wait for more data to
+		 * arrive on the socket buffer.
+		 */
+		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
+		toep->ddp_waiting_count++;
+		toep->ddp_queueing = NULL;
+		goto restart;
 	}	
 
-	/*
-	 * XXX: Handle the case where we fell out of DDP mode and
-	 * just want to do copies here.
-	 */
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
 	    cbe->uaiocb.aio_nbytes);
 	pages = NULL;

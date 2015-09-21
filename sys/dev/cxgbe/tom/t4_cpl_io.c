@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sglist.h>
+#include <sys/taskqueue.h>
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
 #include <netinet/ip.h>
@@ -1531,6 +1532,10 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		tp->rcv_wnd += credits;
 		tp->rcv_adv += credits;
 	}
+
+	/* XXX: Make this a ddp callout? */
+	if (toep->ddp_waiting_count > 0 && sbavail(sb) != 0)
+		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	sorwakeup_locked(so);
 	SOCKBUF_UNLOCK_ASSERT(sb);
 
