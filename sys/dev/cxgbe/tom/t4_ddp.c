@@ -77,6 +77,8 @@ VNET_DECLARE(int, tcp_autorcvbuf_max);
 static struct mbuf *get_ddp_mbuf(int len);
 #endif
 static void aio_ddp_requeue(void *context, int pending);
+static void ddp_complete_all(struct toepcb *toep, struct sockbuf *sb,
+    long status, int error);
 static void unwire_ddp_buffer(struct ddp_buffer *db);
 
 #define PPOD_SZ(n)	((n) * sizeof(struct pagepod))
@@ -173,42 +175,69 @@ void
 insert_ddp_data(struct toepcb *toep, uint32_t n)
 {
 	struct inpcb *inp = toep->inp;
-#ifdef notyet
 	struct tcpcb *tp = intotcpcb(inp);
-#endif
 	struct sockbuf *sb = &inp->inp_socket->so_rcv;
-#if 0
-	struct mbuf *m;
-#endif
+	struct ddp_buffer *db;
+	struct aiocblist *cbe;
+	size_t placed;
+	long copied;
+	unsigned int db_flag, db_idx;
 
 	INP_WLOCK_ASSERT(inp);
 	SOCKBUF_LOCK_ASSERT(sb);
 
-	/*
-	 * XXX: Would need an 'active_id' to guess which DDP buffers
-	 * were completed (and in which order).  For now, just panic
-	 * if this ever happens during prototyping.
-	 */
-	panic("insert_ddp_data");
-
-#if 0
-	m = get_ddp_mbuf(n);
 	tp->rcv_nxt += n;
 #ifndef USE_DDP_RX_FLOW_CONTROL
 	KASSERT(tp->rcv_wnd >= n, ("%s: negative window size", __func__));
 	tp->rcv_wnd -= n;
 #endif
-
+#if 0
 	KASSERT(toep->sb_cc >= sbused(sb),
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
 	toep->rx_credits += toep->sb_cc - sbused(sb);
+#else
+	/*
+	 * XXX: Not at all sure what to do here since we now bypass the
+	 * socket buffer.
+	 */
+	toep->rx_credits += n;
+#endif
 #ifdef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits -= n;	/* adjust for F_RX_FC_DDP */
 #endif
-	sbappendstream_locked(sb, m, 0);
-	toep->sb_cc = sbused(sb);
-#endif
+	while (toep->ddp_active_count > 0) {
+		MPASS(toep->ddp_active_id != -1);
+		db_idx = toep->ddp_active_id;
+		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+		MPASS((toep->ddp_flags & db_flag) != 0);
+		db = toep->db[db_idx];
+		cbe = db->cbe;
+		copied = cbe->uaiocb._aiocb_private.status;
+		placed = n;
+		if (placed > cbe->uaiocb.aio_nbytes - copied)
+			placed = cbe->uaiocb.aio_nbytes - copied;
+		if (copied + placed != 0)
+			aio_complete(cbe, copied + placed, 0);
+		else {
+			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
+			toep->ddp_waiting_count++;
+		}
+		n -= placed;
+		toep->ddp_active_count--;
+		if (toep->ddp_active_count == 0) {
+			KASSERT(toep->db[db_idx ^ 1] == NULL ||
+			    toep->db[db_idx ^ 1]->cbe == NULL,
+			    ("%s: active_count mismatch", __func__));
+			toep->ddp_active_id = -1;
+		} else
+			toep->ddp_active_id ^= 1;
+		toep->ddp_flags &= ~db_flag;
+	}
+
+	MPASS(n == 0);
+	if (toep->ddp_waiting_count > 0 && sbavail(sb) != 0)
+		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 }
 
 /* SET_TCB_FIELD sent as a ULP command looks like this */
@@ -404,7 +433,8 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	KASSERT(toep->ddp_active_id == db_idx,
 	    ("completed DDP buffer (%d) != active_id (%d)", db_idx,
 	    toep->ddp_active_id));
-	if (toep->ddp_active_count == 1) {
+	toep->ddp_active_count--;
+	if (toep->ddp_active_count == 0) {
 		KASSERT(toep->db[db_idx ^ 1] == NULL ||
 		    toep->db[db_idx ^ 1]->cbe == NULL,
 		    ("%s: active_count mismatch", __func__));
@@ -413,7 +443,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		toep->ddp_active_id ^= 1;
 	db = toep->db[db_idx];
 	cbe = db->cbe;
-	
 
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
@@ -532,35 +561,59 @@ void
 handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
     __be32 rcv_nxt)
 {
-#if 0
-	struct mbuf *m;
-#endif
-	int len;
+	struct ddp_buffer *db;
+	struct aiocblist *cbe;
+	long copied;
+	unsigned int db_flag, db_idx;
+	int len, placed;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	INP_WLOCK_ASSERT(toep->inp);
 	len = be32toh(rcv_nxt) - tp->rcv_nxt;
 
-#ifdef notyet
-	/* Signal handle_ddp() to break out of its sleep loop. */
-	toep->ddp_flags &= ~(DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE);
-	if (len == 0)
-		return;
-
 	tp->rcv_nxt += len;
+#if 0
 	KASSERT(toep->sb_cc >= sbused(sb),
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
 	toep->rx_credits += toep->sb_cc - sbused(sb);
+#else
+	/*
+	 * XXX: Not at all sure what to do here since we now bypass the
+	 * socket buffer.
+	 */
+	toep->rx_credits += len;
+#endif
 #ifdef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits -= len;	/* adjust for F_RX_FC_DDP */
 #endif
 
-	m = get_ddp_mbuf(len);
+	while (toep->ddp_active_count > 0) {
+		MPASS(toep->ddp_active_id != -1);
+		db_idx = toep->ddp_active_id;
+		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+		MPASS((toep->ddp_flags & db_flag) != 0);
+		db = toep->db[db_idx];
+		cbe = db->cbe;
+		copied = cbe->uaiocb._aiocb_private.status;
+		placed = len;
+		if (placed > cbe->uaiocb.aio_nbytes - copied)
+			placed = cbe->uaiocb.aio_nbytes - copied;
+		aio_complete(cbe, copied + placed, 0);
+		len -= placed;
+		toep->ddp_active_count--;
+		if (toep->ddp_active_count == 0) {
+			KASSERT(toep->db[db_idx ^ 1] == NULL ||
+			    toep->db[db_idx ^ 1]->cbe == NULL,
+			    ("%s: active_count mismatch", __func__));
+			toep->ddp_active_id = -1;
+		} else
+			toep->ddp_active_id ^= 1;
+		toep->ddp_flags &= ~db_flag;
+	}
 
-	sbappendstream_locked(sb, m, 0);
-	toep->sb_cc = sbused(sb);
-#endif
+	MPASS(len == 0);
+	ddp_complete_all(toep, sb, 0, 0);
 }
 
 #define DDP_ERR (F_DDP_PPOD_MISMATCH | F_DDP_LLIMIT_ERR | F_DDP_ULIMIT_ERR |\
@@ -1592,6 +1645,10 @@ restart:
 		}
 	}	
 
+	/*
+	 * XXX: Handle the case where we fell out of DDP mode and
+	 * just want to do copies here.
+	 */
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
 	    cbe->uaiocb.aio_nbytes);
 	pages = NULL;
