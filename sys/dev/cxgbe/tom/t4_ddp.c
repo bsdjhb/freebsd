@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/domain.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
+#include <sys/sysctl.h>		/* XXX */
 #include <sys/taskqueue.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
@@ -72,6 +73,23 @@ VNET_DECLARE(int, tcp_autorcvbuf_inc);
 #define V_tcp_autorcvbuf_inc VNET(tcp_autorcvbuf_inc)
 VNET_DECLARE(int, tcp_autorcvbuf_max);
 #define V_tcp_autorcvbuf_max VNET(tcp_autorcvbuf_max)
+
+/* XXX: For debugging. */
+SYSCTL_NODE(_hw, OID_AUTO, cxgbe, CTLFLAG_RD, NULL, "cxgbe");
+SYSCTL_NODE(_hw_cxgbe, OID_AUTO, ddp, CTLFLAG_RD, NULL, "DDP stats");
+
+static int ddp_aio_enable = 0;
+SYSCTL_INT(_hw_cxgbe_ddp, OID_AUTO, aio_enable, CTLFLAG_RW, &ddp_aio_enable,
+    0, "Use DDP for aio_read()");
+static unsigned long ddp_aio_placed = 0;
+SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_placed, CTLFLAG_RW, &ddp_aio_placed,
+    0, "AIO requests completed via DDP");
+static unsigned long ddp_aio_copied = 0;
+SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_copied, CTLFLAG_RW, &ddp_aio_copied,
+    0, "AIO requests completed via copies");
+static unsigned long ddp_aio_mixed = 0;
+SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_mixed, CTLFLAG_RW, &ddp_aio_mixed,
+    0, "AIO requests completed via copies and DDP");
 
 #if 0
 static struct mbuf *get_ddp_mbuf(int len);
@@ -217,9 +235,16 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 		placed = n;
 		if (placed > cbe->uaiocb.aio_nbytes - copied)
 			placed = cbe->uaiocb.aio_nbytes - copied;
-		if (copied + placed != 0)
+		if (copied + placed != 0) {
+			/* XXX: This always completes if there is some data. */
 			aio_complete(cbe, copied + placed, 0);
-		else {
+			if (copied != 0 && placed != 0)
+				ddp_aio_mixed++;
+			else if (copied != 0)
+				ddp_aio_copied++;
+			else
+				ddp_aio_placed++;
+		} else {
 			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 			toep->ddp_waiting_count++;
 		}
@@ -520,8 +545,13 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	copied = cbe->uaiocb._aiocb_private.status;
 	if (db->cancel_pending && copied + len == 0)
 		aio_complete(cbe, -1, ECANCELED);
-	else
+	else {
 		aio_complete(cbe, copied + len, 0);
+		if (copied != 0)
+			ddp_aio_mixed++;
+		else
+			ddp_aio_placed++;
+	}
 
 completed:
 	db->cancel_pending = 0;
@@ -600,6 +630,12 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
 		if (placed > cbe->uaiocb.aio_nbytes - copied)
 			placed = cbe->uaiocb.aio_nbytes - copied;
 		aio_complete(cbe, copied + placed, 0);
+		if (copied != 0 && placed != 0)
+			ddp_aio_mixed++;
+		else if (copied != 0)
+			ddp_aio_copied++;
+		else if (placed != 0)
+			ddp_aio_placed++;
 		len -= placed;
 		toep->ddp_active_count--;
 		if (toep->ddp_active_count == 0) {
@@ -1651,6 +1687,7 @@ restart:
 			vm_page_unhold_pages(pages, npages);
 			aio_complete(cbe, copied, 0);
 			SOCKBUF_LOCK(sb);
+			ddp_aio_copied++;
 			toep->ddp_queueing = NULL;
 			goto restart;
 		}
