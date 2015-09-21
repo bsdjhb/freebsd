@@ -398,7 +398,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	struct sockbuf *sb;
 	struct aiocblist *cbe;
 	long copied;
-	int cancelled;
 
 	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
@@ -430,10 +429,8 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		CTR5(KTR_CXGBE, "%s: tid %u, seq 0x%x, len %d, inp_flags 0x%x",
 		    __func__, toep->tid, be32toh(rcv_nxt), len, inp->inp_flags);
 		SOCKBUF_LOCK(sb);
-		db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
-		SOCKBUF_UNLOCK(sb);
-		INP_WUNLOCK(inp);
-		aio_complete(cbe, -1, ECONNRESET);
+		aio_complete(cbe, -1, db->cancel_pending ? ECANCELED :
+		    ECONNRESET);
 		goto completed;
 	}
 
@@ -491,18 +488,13 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	toep->rx_credits -= len;	/* adjust for F_RX_FC_DDP */
 #endif
 
-	cancelled = db->cancel_pending;
-	db->cancel_pending = 1;	/* XXX: Avoid any cancels. */
-	SOCKBUF_UNLOCK(sb);
-	INP_WUNLOCK(inp);
 	copied = cbe->uaiocb._aiocb_private.status;
-	if (cancelled && copied + len == 0)
+	if (db->cancel_pending && copied + len == 0)
 		aio_complete(cbe, -1, ECANCELED);
 	else
 		aio_complete(cbe, copied + len, 0);
 
 completed:
-	SOCKBUF_LOCK(sb);
 	db->cancel_pending = 0;
 	db->cbe = NULL;
 	KASSERT(toep->ddp_flags & db_flag,
@@ -512,6 +504,7 @@ completed:
 	if (toep->ddp_waiting_count > 0)
 		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	SOCKBUF_UNLOCK(sb);
+	INP_WUNLOCK(inp);
 
 	return (0);
 }
@@ -1437,12 +1430,8 @@ ddp_complete_all(struct toepcb *toep, struct sockbuf *sb, long status,
 		cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
 		TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count--;
-		toep->ddp_queueing = cbe;
-		SOCKBUF_UNLOCK(sb);
 		aio_complete(cbe, status, error);
-		SOCKBUF_LOCK(sb);
 	}
-	toep->ddp_queueing = NULL;
 }
 
 static void
@@ -1492,11 +1481,7 @@ restart:
 		cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
 		toep->ddp_waiting_count--;
 		TAILQ_REMOVE(&toep->ddp_aiojobq, cbe, list);
-		toep->ddp_queueing = cbe;
-		SOCKBUF_UNLOCK(sb);
 		aio_complete(cbe, -1, error);
-		SOCKBUF_LOCK(sb);
-		toep->ddp_queueing = NULL;
 		goto restart;
 	}
 
@@ -1535,10 +1520,8 @@ restart:
 	if (so->so_error && sbavail(sb) == 0) {
 		error = so->so_error;
 		so->so_error = 0;
-		SOCKBUF_UNLOCK(sb);
 		vm_page_unhold_pages(pages, npages);
 		aio_complete(cbe, -1, error);
-		SOCKBUF_LOCK(sb);
 		toep->ddp_queueing = NULL;
 		goto restart;
 	}		
@@ -1552,9 +1535,7 @@ restart:
 			SOCKBUF_UNLOCK(sb);
 			return;
 		}
-		SOCKBUF_UNLOCK(sb);
 		aio_complete(cbe, 0, 0);
-		SOCKBUF_LOCK(sb);
 		ddp_complete_all(toep, sb, 0, 0);
 		SOCKBUF_UNLOCK(sb);
 		return;
@@ -1729,7 +1710,9 @@ t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
 
 	/* NB: Called with AIO_LOCK(ki) held. */
 
-	SOCKBUF_LOCK(sb);
+	/* XXX: This isn't ideal, but is ok for a prototype. */
+	if (!SOCKBUF_TRYLOCK(sb))
+		return (EINPROGRESS);
 
 	/*
 	 * If this job is currently being queued by the task handler,
@@ -1789,6 +1772,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	if (cbe->uaiocb.aio_lio_opcode != LIO_READ)
 		return (EOPNOTSUPP);
 
+	aio_queue(cbe);
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
