@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/aio.h>
+#include <sys/file.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/ktr.h>
@@ -584,6 +585,8 @@ handle_ddp_indicate(struct toepcb *toep, struct sockbuf *sb)
 		 */
 		return;
 	}
+	CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
+	    toep->tid, toep->ddp_waiting_count);
 	taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 }
 
@@ -629,6 +632,8 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
 		placed = len;
 		if (placed > cbe->uaiocb.aio_nbytes - copied)
 			placed = cbe->uaiocb.aio_nbytes - copied;
+		CTR4(KTR_CXGBE, "%s: tid %d completed buf %d len %d", __func__,
+		    toep->tid, db_idx, placed);
 		aio_complete(cbe, copied + placed, 0);
 		if (copied != 0 && placed != 0)
 			ddp_aio_mixed++;
@@ -1809,9 +1814,10 @@ restart:
 	goto restart;
 }
 
-int
-t4_aio_cancel_ddp(struct socket *so, struct aiocblist *cbe)
+static int
+t4_aio_cancel_ddp(struct aiocblist *cbe)
 {
+	struct socket *so = cbe->fd_file->f_data;
 	struct tcpcb *tp = so_sototcpcb(so);
 	struct toepcb *toep = tp->t_toe;
 	struct adapter *sc = td_adapter(toep->td);
@@ -1889,7 +1895,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	 * if it failed with EOPNOTSUPP?
 	 */
 
-	aio_queue(cbe);
+	aio_queue(cbe, t4_aio_cancel_ddp);
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
