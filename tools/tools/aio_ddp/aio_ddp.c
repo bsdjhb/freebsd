@@ -52,7 +52,7 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "Usage: aio_ddp [-F] [-b burst] [-c count] [-s size] "
+	fprintf(stderr, "Usage: aio_ddp [-AFw] [-b burst] [-c count] [-s size] "
 	    "[-S size] <host> [port]\n");
 	exit(1);
 }
@@ -242,7 +242,7 @@ main(int ac, char **av)
 	wait = false;
 	aio = false;
 	aio_active = false;
-	while ((ch = getopt(ac, av, "b:c:DFS:s:")) != -1)
+	while ((ch = getopt(ac, av, "Ab:c:FS:s:w")) != -1)
 		switch (ch) {
 		case 'A':
 			aio = true;
