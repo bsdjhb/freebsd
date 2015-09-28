@@ -76,7 +76,7 @@ VNET_DECLARE(int, tcp_autorcvbuf_max);
 #define V_tcp_autorcvbuf_max VNET(tcp_autorcvbuf_max)
 
 /* XXX: For debugging. */
-SYSCTL_NODE(_hw, OID_AUTO, cxgbe, CTLFLAG_RD, NULL, "cxgbe");
+SYSCTL_DECL(_hw_cxgbe);
 SYSCTL_NODE(_hw_cxgbe, OID_AUTO, ddp, CTLFLAG_RD, NULL, "DDP stats");
 
 static int ddp_aio_enable = 0;
