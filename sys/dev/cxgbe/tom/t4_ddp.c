@@ -172,6 +172,7 @@ ddp_init_toep(struct toepcb *toep)
 
 	TAILQ_INIT(&toep->ddp_aiojobq);
 	TASK_INIT(&toep->ddp_requeue_task, 0, aio_ddp_requeue, toep);
+	toep->ddp_active_id = -1;
 }
 
 void
