@@ -1907,6 +1907,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	 * if it failed with EOPNOTSUPP?
 	 */
 
+	CTR2(KTR_CXGBE, "%s: queueing %p", __func__, cbe);
 	aio_queue(cbe, t4_aio_cancel_ddp);
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
 	cbe->uaiocb._aiocb_private.status = 0;
