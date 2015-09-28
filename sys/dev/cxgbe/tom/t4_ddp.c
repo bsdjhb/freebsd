@@ -238,6 +238,9 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 		if (placed > cbe->uaiocb.aio_nbytes - copied)
 			placed = cbe->uaiocb.aio_nbytes - copied;
 		if (copied + placed != 0) {
+			CTR4(KTR_CXGBE,
+			    "%s: completing %p (copied %ld, placed %lu)",
+			    __func__, cbe, copied, placed);
 			/* XXX: This always completes if there is some data. */
 			aio_complete(cbe, copied + placed, 0);
 			if (copied != 0 && placed != 0)
@@ -545,9 +548,12 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 #endif
 
 	copied = cbe->uaiocb._aiocb_private.status;
-	if (db->cancel_pending && copied + len == 0)
+	if (db->cancel_pending && copied + len == 0) {
+		CTR2(KTR_CXGBE, "%s: cancelling %p", __func__, cbe);
 		aio_complete(cbe, -1, ECANCELED);
-	else {
+	} else {
+		CTR4(KTR_CXGBE, "%s: completing %p (copied %ld, placed %d)",
+		    __func__, cbe, copied, len);
 		aio_complete(cbe, copied + len, 0);
 		if (copied != 0)
 			ddp_aio_mixed++;
@@ -1835,6 +1841,7 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 	 * just punt.
 	 */
 	if (cbe == toep->ddp_queueing) {
+		CTR2(KTR_CXGBE, "%s: request %p queueing", __func__, cbe);
 		SOCKBUF_UNLOCK(sb);
 		return (EINPROGRESS);
 	}
@@ -1843,6 +1850,9 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 		if (toep->db[i] != NULL && toep->db[i]->cbe == cbe) {
 			/* Cancel is pending or DDP has completed. */
 			if (toep->db[i]->cancel_pending) {
+				CTR2(KTR_CXGBE,
+				    "%s: request %p already pending", __func__,
+				    cbe);
 				SOCKBUF_UNLOCK(sb);
 				return (EINPROGRESS);
 			}
@@ -1857,6 +1867,8 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
 			    valid_flag, 0);
 			toep->db[i]->cancel_pending = 1;
+			CTR2(KTR_CXGBE, "%s: request %p marked pending",
+			    __func__, cbe);
 			SOCKBUF_UNLOCK(sb);
 			return (EINPROGRESS);
 		}
@@ -1869,6 +1881,7 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == DDP_ON)
 			disable_ddp(sc, toep);
 	}
+	CTR2(KTR_CXGBE, "%s: request %p dequeued", __func__, cbe);
 	SOCKBUF_UNLOCK(sb);
 	return (0);
 }
