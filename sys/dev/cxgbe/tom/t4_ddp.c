@@ -1707,10 +1707,14 @@ restart:
 		 * This will either enable DDP or wait for more data to
 		 * arrive on the socket buffer.
 		 */
-		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
-		toep->ddp_waiting_count++;
-		toep->ddp_queueing = NULL;
-		goto restart;
+		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) != DDP_ON) {
+			vm_page_unhold_pages(pages, npages);
+			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
+			toep->ddp_waiting_count++;
+			toep->ddp_queueing = NULL;
+			goto restart;
+		}
+		MPASS(sbavail(sb) == 0);
 	}	
 
 	db_idx = select_ddp_buffer(sc, toep, pages, npages, pgoff,
