@@ -1778,6 +1778,8 @@ restart:
 		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
 	}
 
+	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
+	    __func__, cbe, db_idx, ddp_flags, ddp_flags_mask);
 	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, pgoff, ddp_flags,
 	    ddp_flags_mask);
 	if (wr == NULL) {
