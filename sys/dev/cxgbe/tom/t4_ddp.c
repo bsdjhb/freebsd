@@ -798,7 +798,7 @@ bufcmp(struct ddp_buffer *db, vm_page_t *pages, int npages, int offset, int len)
 	int i;
 
 	if (db == NULL || db->npages != npages || db->offset != offset ||
-	    db->len != len)
+	    db->len != len || db->cbe != NULL)
 		return (1);
 
 	for (i = 0; i < npages; i++) {
@@ -995,9 +995,7 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 
 	/* Try to reuse */
 	for (i = 0; i < nitems(toep->db); i++) {
-		if (toep->db[i]->cbe != NULL)
-			continue;
-		else if (bufcmp(toep->db[i], pages, npages, db_off, db_len) ==
+		if (bufcmp(toep->db[i], pages, npages, db_off, db_len) ==
 		    0) {
 			free(pages, M_CXGBE);
 			return (i);	/* pages still held */
