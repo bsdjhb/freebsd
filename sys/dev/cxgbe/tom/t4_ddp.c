@@ -1787,8 +1787,8 @@ restart:
 
 	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
 	    __func__, cbe, db_idx, ddp_flags, ddp_flags_mask);
-	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, pgoff, ddp_flags,
-	    ddp_flags_mask);
+	wr = mk_update_tcb_for_ddp(sc, toep, db_idx,
+	    cbe->uaiocb._aiocb_private.status, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
 		/*
 		 * Need to unload the pages though the page pods are
