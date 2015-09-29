@@ -1447,6 +1447,10 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			toep->rx_credits += newsize - hiwat;
 	}
 
+	if (toep->ddp_waiting_count != 0)
+		CTR3(KTR_CXGBE, "%s: tid %u, non-ddp rx (%d bytes)", __func__,
+		    tid, len);
+
 	if (toep->ulp_mode == ULP_MODE_TCPDDP) {
 		int changed = !(toep->ddp_flags & DDP_ON) ^ cpl->ddp_off;
 
