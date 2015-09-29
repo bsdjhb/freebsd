@@ -1606,7 +1606,7 @@ restart:
 	 * data, try to enable DDP.
 	 */
 	if (sbavail(sb) == 0 && (toep->ddp_flags & DDP_ON) == 0) {
-		if ((toep->ddp_flags & DDP_SC_REQ) == 0)
+		if ((toep->ddp_flags & DDP_SC_REQ) == 0 && ddp_aio_enable)
 			enable_ddp(sc, toep);
 		SOCKBUF_UNLOCK(sb);
 		return;
@@ -1936,7 +1936,8 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		 * XXX: Could use a TCB_SET_FIELD_RPL message to know
 		 * that DDP was enabled.
 		 */
-		enable_ddp(sc, toep);
+		if (ddp_aio_enable)
+			enable_ddp(sc, toep);
 	} else if (toep->ddp_flags & DDP_ON &&
 	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
 	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) {
