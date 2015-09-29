@@ -1748,31 +1748,18 @@ restart:
 	 * seem to be anything equivalent.  On the other hand, if a
 	 * protocol cares it is probably using PSH and the PUSH timer
 	 * completions is probably good enough.
-	 *
-	 * If the request has been partially filled, set FLUSH.  An
-	 * indicate may have contained all of the data in a small
-	 * segment with PSH, so we don't want to wait forever for more
-	 * data to arrive in that case.
 	 */
 	ddp_flags = 0;
 	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
 	buf_flag = 0;
 	if (db_idx == 0) {
 		ddp_flags |= V_TF_DDP_BUF0_VALID(1);
-#ifdef notyet
-		if (cbe->uaiocb._aiocb_private.status != 0)
-			ddp_flags |= V_TF_DDP_BUF0_FLUSH(1);
-#endif
 		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE0(1) |
 		    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PSHF_ENABLE_0(1) |
 		    V_TF_DDP_BUF0_FLUSH(1) | V_TF_DDP_BUF0_VALID(1);
 		buf_flag |= DDP_BUF0_ACTIVE;
 	} else {
 		ddp_flags |= V_TF_DDP_BUF1_VALID(1);
-#ifdef notyet
-		if (cbe->uaiocb._aiocb_private.status != 0)
-			ddp_flags |= V_TF_DDP_BUF1_FLUSH(1);
-#endif
 		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE1(1) |
 		    V_TF_DDP_PUSH_DISABLE_1(1) | V_TF_DDP_PSHF_ENABLE_1(1) |
 		    V_TF_DDP_BUF1_FLUSH(1) | V_TF_DDP_BUF1_VALID(1);
