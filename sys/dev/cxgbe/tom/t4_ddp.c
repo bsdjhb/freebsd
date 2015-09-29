@@ -1753,24 +1753,22 @@ restart:
 	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
 	buf_flag = 0;
 	if (db_idx == 0) {
-		ddp_flags |= V_TF_DDP_PSHF_ENABLE_0(1) |
-		    V_TF_DDP_BUF0_VALID(1);
+		ddp_flags |= V_TF_DDP_BUF0_VALID(1);
 		if (cbe->uaiocb._aiocb_private.status != 0 &&
 		    so->so_state & SS_NBIO)
 			ddp_flags |= V_TF_DDP_BUF0_FLUSH(1);
-		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_0(1) |
-		    V_TF_DDP_PSHF_ENABLE_0(1) | V_TF_DDP_BUF0_FLUSH(1) |
-		    V_TF_DDP_BUF0_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE0(1) |
+		    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PSHF_ENABLE_0(1) |
+		    V_TF_DDP_BUF0_FLUSH(1) | V_TF_DDP_BUF0_VALID(1);
 		buf_flag |= DDP_BUF0_ACTIVE;
 	} else {
-		ddp_flags |= V_TF_DDP_PSHF_ENABLE_1(1) |
-		    V_TF_DDP_BUF1_VALID(1);
+		ddp_flags |= V_TF_DDP_BUF1_VALID(1);
 		if (cbe->uaiocb._aiocb_private.status != 0 &&
 		    so->so_state & SS_NBIO)
 			ddp_flags |= V_TF_DDP_BUF1_FLUSH(1);
-		ddp_flags_mask |= V_TF_DDP_PUSH_DISABLE_1(1) |
-		    V_TF_DDP_PSHF_ENABLE_1(1) | V_TF_DDP_BUF1_FLUSH(1) |
-		    V_TF_DDP_BUF1_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE1(1) |
+		    V_TF_DDP_PUSH_DISABLE_1(1) | V_TF_DDP_PSHF_ENABLE_1(1) |
+		    V_TF_DDP_BUF1_FLUSH(1) | V_TF_DDP_BUF1_VALID(1);
 		buf_flag |= DDP_BUF1_ACTIVE;
 	}
 	MPASS((toep->ddp_flags & buf_flag) == 0);
