@@ -1866,7 +1866,7 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 			valid_flag = i == 0 ? V_TF_DDP_BUF0_FLUSH(1) :
 			    V_TF_DDP_BUF1_FLUSH(1);
 			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
-			    valid_flag, 0);
+			    valid_flag, valid_flag);
 			toep->db[i]->cancel_pending = 1;
 			CTR2(KTR_CXGBE, "%s: request %p marked pending",
 			    __func__, cbe);
