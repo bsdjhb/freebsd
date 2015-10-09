@@ -1718,6 +1718,11 @@ do_set_tcb_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	if (is_ftid(sc, tid))
 		return (t4_filter_rpl(iq, rss, m)); /* TCB is a filter */
 
+	if (toep->ulp_mode == ULP_MODE_TCPDDP) {
+		handle_ddp_tcb_rpl(toep, cpl);
+		return (0);
+	}
+
 	/*
 	 * TOM and/or other ULPs don't request replies for CPL_SET_TCB or
 	 * CPL_SET_TCB_FIELD requests.  This can easily change and when it does
@@ -1752,6 +1757,29 @@ t4_set_tcb_field(struct adapter *sc, struct toepcb *toep, int ctrl,
 	req->reply_ctrl = htobe16(V_NO_REPLY(1) |
 	    V_QUEUENO(toep->ofld_rxq->iq.abs_id));
 	req->word_cookie = htobe16(V_WORD(word) | V_COOKIE(0));
+	req->mask = htobe64(mask);
+	req->val = htobe64(val);
+
+	t4_wrq_tx(sc, wr);
+}
+
+void
+t4_set_tcb_field_rpl(struct adapter *sc, struct toepcb *toep, int ctrl,
+    uint16_t word, uint64_t mask, uint64_t val, uint8_t cookie)
+{
+	struct wrqe *wr;
+	struct cpl_set_tcb_field *req;
+
+	wr = alloc_wrqe(sizeof(*req), ctrl ? toep->ctrlq : toep->ofld_txq);
+	if (wr == NULL) {
+		/* XXX */
+		panic("%s: allocation failure.", __func__);
+	}
+	req = wrtod(wr);
+
+	INIT_TP_WR_MIT_CPL(req, CPL_SET_TCB_FIELD, toep->tid);
+	req->reply_ctrl = htobe16(V_QUEUENO(toep->ofld_rxq->iq.abs_id));
+	req->word_cookie = htobe16(V_WORD(word) | V_COOKIE(cookie));
 	req->mask = htobe64(mask);
 	req->val = htobe64(val);
 

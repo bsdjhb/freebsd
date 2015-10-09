@@ -464,6 +464,15 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 
 	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
 	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+
+	if (__predict_false(!(report & F_DDP_INV)))
+		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
+
+	INP_WLOCK(inp);
+	so = inp_inpcbtosocket(inp);
+	sb = &so->so_rcv;
+	SOCKBUF_LOCK(sb);
+
 	KASSERT(toep->ddp_active_id == db_idx,
 	    ("completed DDP buffer (%d) != active_id (%d)", db_idx,
 	    toep->ddp_active_id));
@@ -478,12 +487,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	db = toep->db[db_idx];
 	cbe = db->cbe;
 
-	if (__predict_false(!(report & F_DDP_INV)))
-		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
-
-	INP_WLOCK(inp);
-	so = inp_inpcbtosocket(inp);
-	sb = &so->so_rcv;
 	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
 		/*
 		 * This can happen due to an administrative tcpdrop(8).
@@ -491,7 +494,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		 */
 		CTR5(KTR_CXGBE, "%s: tid %u, seq 0x%x, len %d, inp_flags 0x%x",
 		    __func__, toep->tid, be32toh(rcv_nxt), len, inp->inp_flags);
-		SOCKBUF_LOCK(sb);
 		aio_complete(cbe, -1, db->cancel_pending ? ECANCELED :
 		    ECONNRESET);
 		goto completed;
@@ -601,6 +603,92 @@ handle_ddp_indicate(struct toepcb *toep, struct sockbuf *sb)
 	CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
 	    toep->tid, toep->ddp_waiting_count);
 	taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
+}
+
+enum {
+	DDP_BUF0_INVALIDATED = 0x10,
+	DDP_BUF1_INVALIDATED
+};
+
+void
+handle_ddp_tcb_rpl(struct toepcb *toep, struct cpl_set_tcb_rpl *cpl)
+{
+	struct inpcb *inp = toep->inp;
+	struct ddp_buffer *db;
+	unsigned db_idx;
+
+	if (cpl->status != CPL_ERR_NONE)
+		panic("XXX: tcp_rpl failed: %d", cpl->status);
+
+	switch (cpl->cookie) {
+	case DDP_BUF0_INVALIDATED:
+	case DDP_BUF1_INVALIDATED:
+		db_idx = cpl->cookie - DDP_BUF0_INVALIDATED;
+		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+		INP_WLOCK(inp);
+		so = inp_inpcbtosocket(inp);
+		sb = &so->so_rcv;
+		SOCKBUF_LOCK(sb);
+		db = toep->db[db_idx];
+		if (db == NULL || db->cbe == NULL || !db->cancel_pending) {
+			/*
+			 * The buffer completed while the invalidation was
+			 * in flight.  Nothing more to do.
+			 */
+			SOCKBUF_UNLOCK(sb);
+			INP_WUNLOCK(inp);
+			return;
+		}
+
+		toep->ddp_active_count--;
+		if (toep->ddp_active_id == db_idx) {
+			if (toep->ddp_active_count == 0) {
+				KASSERT(toep->db[db_idx ^ 1] == NULL ||
+				    toep->db[db_idx ^ 1]->cbe == NULL,
+				    ("%s: active_count mismatch", __func__));
+				toep->ddp_active_id = -1;
+			} else
+				toep->ddp_active_id ^= 1;
+		} else {
+			KASSERT(toep->ddp_active_count != 0 &&
+			    toep->ddp_active_id != -1,
+			    ("%s: active count mismatch", __func__));
+		}
+
+		/*
+		 * XXX: It's not clear what happens if there is data
+		 * placed when the buffer is invalidated.  I suspect we
+		 * need to read the TCB to see how much data was placed.
+		 *
+		 * For now this just pretends like nothing was placed.
+		 */
+		cbe = db->cbe;
+		copied = cbe->uaiocb._aiocb_private.status;
+		if (copied == 0) {
+			CTR2(KTR_CXGBE, "%s: cancelling %p", __func__, cbe);
+			aio_complete(cbe, -1, ECANCELED);
+		} else {
+			CTR4(KTR_CXGBE, "%s: completing %p (copied %ld)",
+			    __func__, cbe, copied);
+			aio_complete(cbe, copied, 0);
+			ddp_aio_copied++;
+		}
+
+		db->cancel_pending = 0;
+		db->cbe = NULL;
+		KASSERT(toep->ddp_flags & db_flag,
+		    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x",
+		    __func__, toep, toep->ddp_flags));
+		toep->ddp_flags &= ~db_flag;
+		if (toep->ddp_waiting_count > 0)
+			taskqueue_enqueue(taskqueue_thread,
+			    &toep->ddp_requeue_task);
+		SOCKBUF_UNLOCK(sb);
+		INP_WUNLOCK(inp);
+		break;
+	default:
+		panic("XXX: unknown tcb_rpl cookie %#x", cpl->cookie);
+	}
 }
 
 void
@@ -1875,8 +1963,8 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 #else
 			valid_flag = i == 0 ? V_TF_DDP_BUF0_VALID(1) :
 			    V_TF_DDP_BUF1_VALID(1);
-			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
-			    valid_flag, 0);
+			t4_set_tcb_field_rpl(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
+			    valid_flag, 0, i + DDP_BUF0_INVALIDATED);
 #endif
 			toep->db[i]->cancel_pending = 1;
 			CTR2(KTR_CXGBE, "%s: request %p marked pending",

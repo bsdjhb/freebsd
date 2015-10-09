@@ -304,6 +304,8 @@ int t4_send_fin(struct toedev *, struct tcpcb *);
 int t4_send_rst(struct toedev *, struct tcpcb *);
 void t4_set_tcb_field(struct adapter *, struct toepcb *, int, uint16_t,
     uint64_t, uint64_t);
+void t4_set_tcb_field_rpl(struct adapter *, struct toepcb *, int, uint16_t,
+    uint64_t, uint64_t, uint8_t);
 void t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop);
 void t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop);
 
@@ -319,6 +321,7 @@ void release_ddp_resources(struct toepcb *toep);
 void handle_ddp_close(struct toepcb *, struct tcpcb *, struct sockbuf *,
     uint32_t);
 void handle_ddp_indicate(struct toepcb *, struct sockbuf *);
+void handle_ddp_tcb_rpl(struct toepcb *, struct cpl_set_tcb_rpl *);
 void insert_ddp_data(struct toepcb *, uint32_t);
 
 #endif
