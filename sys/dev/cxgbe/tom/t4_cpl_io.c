@@ -1770,6 +1770,8 @@ t4_set_tcb_field_rpl(struct adapter *sc, struct toepcb *toep, int ctrl,
 	struct wrqe *wr;
 	struct cpl_set_tcb_field *req;
 
+	KASSERT((cookie & ~M_COOKIE) == 0, ("%s: invalid cookie %#x", __func__,
+	    cookie));
 	wr = alloc_wrqe(sizeof(*req), ctrl ? toep->ctrlq : toep->ofld_txq);
 	if (wr == NULL) {
 		/* XXX */
