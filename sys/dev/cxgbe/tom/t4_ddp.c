@@ -624,7 +624,6 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 		panic("XXX: tcp_rpl failed: %d", cpl->status);
 
 	switch (cpl->cookie) {
-		case hto
 	case V_WORD(W_TCB_RX_DDP_FLAGS) | V_COOKIE(DDP_BUF0_INVALIDATED):
 	case V_WORD(W_TCB_RX_DDP_FLAGS) | V_COOKIE(DDP_BUF1_INVALIDATED):
 		/*
