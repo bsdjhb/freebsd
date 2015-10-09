@@ -321,7 +321,7 @@ void release_ddp_resources(struct toepcb *toep);
 void handle_ddp_close(struct toepcb *, struct tcpcb *, struct sockbuf *,
     uint32_t);
 void handle_ddp_indicate(struct toepcb *, struct sockbuf *);
-void handle_ddp_tcb_rpl(struct toepcb *, struct cpl_set_tcb_rpl *);
+void handle_ddp_tcb_rpl(struct toepcb *, const struct cpl_set_tcb_rpl *);
 void insert_ddp_data(struct toepcb *, uint32_t);
 
 #endif

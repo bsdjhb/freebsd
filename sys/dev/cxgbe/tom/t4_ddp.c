@@ -611,18 +611,25 @@ enum {
 };
 
 void
-handle_ddp_tcb_rpl(struct toepcb *toep, struct cpl_set_tcb_rpl *cpl)
+handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 {
+	unsigned int db_flag, db_idx;
 	struct inpcb *inp = toep->inp;
 	struct ddp_buffer *db;
-	unsigned db_idx;
-
+	struct socket *so;
+	struct sockbuf *sb;
+	struct aiocblist *cbe;
+	long copied;
+	
 	if (cpl->status != CPL_ERR_NONE)
 		panic("XXX: tcp_rpl failed: %d", cpl->status);
 
 	switch (cpl->cookie) {
 	case DDP_BUF0_INVALIDATED:
 	case DDP_BUF1_INVALIDATED:
+		/*
+		 * XXX: This duplicates a lot of code with handle_ddp_data().
+		 */
 		db_idx = cpl->cookie - DDP_BUF0_INVALIDATED;
 		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 		INP_WLOCK(inp);
@@ -661,6 +668,9 @@ handle_ddp_tcb_rpl(struct toepcb *toep, struct cpl_set_tcb_rpl *cpl)
 		 * need to read the TCB to see how much data was placed.
 		 *
 		 * For now this just pretends like nothing was placed.
+		 *
+		 * XXX: Note that if we did check the PCB we would need to
+		 * also take care of updating the tp, etc.
 		 */
 		cbe = db->cbe;
 		copied = cbe->uaiocb._aiocb_private.status;
@@ -668,7 +678,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, struct cpl_set_tcb_rpl *cpl)
 			CTR2(KTR_CXGBE, "%s: cancelling %p", __func__, cbe);
 			aio_complete(cbe, -1, ECANCELED);
 		} else {
-			CTR4(KTR_CXGBE, "%s: completing %p (copied %ld)",
+			CTR3(KTR_CXGBE, "%s: completing %p (copied %ld)",
 			    __func__, cbe, copied);
 			aio_complete(cbe, copied, 0);
 			ddp_aio_copied++;
