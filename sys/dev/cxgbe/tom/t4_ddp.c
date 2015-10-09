@@ -605,7 +605,7 @@ handle_ddp_indicate(struct toepcb *toep, struct sockbuf *sb)
 }
 
 enum {
-	DDP_BUF0_INVALIDATED = 0x10,
+	DDP_BUF0_INVALIDATED = 0x2,
 	DDP_BUF1_INVALIDATED
 };
 
@@ -624,12 +624,13 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 		panic("XXX: tcp_rpl failed: %d", cpl->status);
 
 	switch (cpl->cookie) {
-	case DDP_BUF0_INVALIDATED:
-	case DDP_BUF1_INVALIDATED:
+		case hto
+	case V_WORD(W_TCB_RX_DDP_FLAGS) | V_COOKIE(DDP_BUF0_INVALIDATED):
+	case V_WORD(W_TCB_RX_DDP_FLAGS) | V_COOKIE(DDP_BUF1_INVALIDATED):
 		/*
 		 * XXX: This duplicates a lot of code with handle_ddp_data().
 		 */
-		db_idx = cpl->cookie - DDP_BUF0_INVALIDATED;
+		db_idx = G_COOKIE(cpl->cookie) - DDP_BUF0_INVALIDATED;
 		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 		INP_WLOCK(inp);
 		so = inp_inpcbtosocket(inp);
@@ -696,7 +697,8 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 		INP_WUNLOCK(inp);
 		break;
 	default:
-		panic("XXX: unknown tcb_rpl cookie %#x", cpl->cookie);
+		panic("XXX: unknown tcb_rpl offset %#x, cookie %#x",
+		    G_WORD(cpl->cookie), G_COOKIE(cpl->cookie));
 	}
 }
 
