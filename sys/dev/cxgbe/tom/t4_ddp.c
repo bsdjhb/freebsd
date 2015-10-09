@@ -522,7 +522,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 #endif
 	CTR4(KTR_CXGBE, "%s: DDP[%d] placed %d bytes (%#x)", __func__, db_idx,
 	    len, report);
-	SOCKBUF_LOCK(sb);
 
 	/* receive buffer autosize */
 	if (sb->sb_flags & SB_AUTOSIZE &&
