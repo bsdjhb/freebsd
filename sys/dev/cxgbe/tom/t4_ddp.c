@@ -520,8 +520,10 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	KASSERT(tp->rcv_wnd >= len, ("%s: negative window size", __func__));
 	tp->rcv_wnd -= len;
 #endif
+#if 0
 	CTR4(KTR_CXGBE, "%s: DDP[%d] placed %d bytes (%#x)", __func__, db_idx,
 	    len, report);
+#endif
 
 	/* receive buffer autosize */
 	if (sb->sb_flags & SB_AUTOSIZE &&
@@ -559,8 +561,10 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		CTR2(KTR_CXGBE, "%s: cancelling %p", __func__, cbe);
 		aio_complete(cbe, -1, ECANCELED);
 	} else {
+#if 0
 		CTR4(KTR_CXGBE, "%s: completing %p (copied %ld, placed %d)",
 		    __func__, cbe, copied, len);
+#endif
 		aio_complete(cbe, copied + len, 0);
 		if (copied != 0)
 			ddp_aio_mixed++;
@@ -1874,8 +1878,10 @@ restart:
 		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
 	}
 
+#if 0
 	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
 	    __func__, cbe, db_idx, ddp_flags, ddp_flags_mask);
+#endif
 	wr = mk_update_tcb_for_ddp(sc, toep, db_idx,
 	    cbe->uaiocb._aiocb_private.status, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
@@ -2017,7 +2023,9 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	 * if it failed with EOPNOTSUPP?
 	 */
 
+#if 0
 	CTR2(KTR_CXGBE, "%s: queueing %p", __func__, cbe);
+#endif
 	aio_queue(cbe, t4_aio_cancel_ddp);
 	TAILQ_INSERT_TAIL(&toep->ddp_aiojobq, cbe, list);
 	cbe->uaiocb._aiocb_private.status = 0;
