@@ -299,6 +299,7 @@ void send_flowc_wr(struct toepcb *, struct flowc_tx_params *);
 void send_reset(struct adapter *, struct toepcb *, uint32_t);
 void make_established(struct toepcb *, uint32_t, uint32_t, uint16_t);
 void t4_rcvd(struct toedev *, struct tcpcb *);
+void t4_rcvd_locked(struct toedev *, struct tcpcb *);
 int t4_tod_output(struct toedev *, struct tcpcb *);
 int t4_send_fin(struct toedev *, struct tcpcb *);
 int t4_send_rst(struct toedev *, struct tcpcb *);

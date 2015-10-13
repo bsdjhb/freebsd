@@ -568,6 +568,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 			ddp_aio_mixed++;
 		else
 			ddp_aio_placed++;
+		t4_rcvd_locked(toep->td, toep);
 	}
 
 completed:
@@ -683,6 +684,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 			    __func__, cbe, copied);
 			aio_complete(cbe, copied, 0);
 			ddp_aio_copied++;
+			t4_rcvd_locked(toep->td, toep);
 		}
 
 		db->cancel_pending = 0;

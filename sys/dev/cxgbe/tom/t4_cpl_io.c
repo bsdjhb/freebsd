@@ -344,7 +344,7 @@ send_rx_credits(struct adapter *sc, struct toepcb *toep, int credits)
 }
 
 void
-t4_rcvd(struct toedev *tod, struct tcpcb *tp)
+t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 {
 	struct adapter *sc = tod->tod_softc;
 	struct inpcb *inp = tp->t_inpcb;
@@ -355,7 +355,7 @@ t4_rcvd(struct toedev *tod, struct tcpcb *tp)
 
 	INP_WLOCK_ASSERT(inp);
 
-	SOCKBUF_LOCK(sb);
+	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(toep->sb_cc >= sbused(sb),
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
@@ -373,9 +373,20 @@ t4_rcvd(struct toedev *tod, struct tcpcb *tp)
 		tp->rcv_wnd += credits;
 		tp->rcv_adv += credits;
 	}
-	SOCKBUF_UNLOCK(sb);
 }
 
+void
+t4_rcvd(struct toedev *tod, struct tcpcb *tp)
+{
+	struct inpcb *inp = tp->t_inpcb;
+	struct socket *so = inp->inp_socket;
+	struct sockbuf *sb = &so->so_rcv;
+
+	SOCKBUF_LOCK(sb);
+	t4_rcvd_locked(tod, tp);
+	SOCKBUF_UNLOCK(sb);
+}
+	
 /*
  * Close a connection by sending a CPL_CLOSE_CON_REQ message.
  */
