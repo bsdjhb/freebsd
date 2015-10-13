@@ -568,7 +568,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 			ddp_aio_mixed++;
 		else
 			ddp_aio_placed++;
-		t4_rcvd_locked(&toep->td->tod, toep);
+		t4_rcvd_locked(&toep->td->tod, tp);
 	}
 
 completed:
@@ -684,7 +684,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 			    __func__, cbe, copied);
 			aio_complete(cbe, copied, 0);
 			ddp_aio_copied++;
-			t4_rcvd_locked(&toep->td->tod, toep);
+			t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
 		}
 
 		db->cancel_pending = 0;
@@ -1301,10 +1301,10 @@ t4_uninit_ddp(struct adapter *sc __unused, struct tom_data *td)
 	}
 }
 
-#if 0
 #define	VNET_SO_ASSERT(so)						\
 	VNET_ASSERT(curvnet != NULL,					\
 	    ("%s:%d curvnet is NULL, so=%p", __func__, __LINE__, (so)));
+#if 0
 #define	SBLOCKWAIT(f)	(((f) & MSG_DONTWAIT) ? 0 : SBL_WAIT)
 static int
 soreceive_rcvoob(struct socket *so, struct uio *uio, int flags)
