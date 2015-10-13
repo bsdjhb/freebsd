@@ -270,8 +270,6 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 	}
 
 	MPASS(n == 0);
-	if (toep->ddp_waiting_count > 0 && sbavail(sb) != 0)
-		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 }
 
 /* SET_TCB_FIELD sent as a ULP command looks like this */
