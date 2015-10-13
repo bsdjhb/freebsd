@@ -1659,6 +1659,8 @@ aio_ddp_requeue(void *context, int pending)
 	struct wrqe *wr;
 	int buf_flag, db_idx, error, npages;
 
+	/* XXX: Probably need to set/clear vnet since this is in a task. */
+
 	SOCKBUF_LOCK(sb);
 
 	/* We will never ever get anything unless we are or were connected. */
@@ -1804,6 +1806,13 @@ restart:
 			 */
 			SOCKBUF_UNLOCK(sb);
 			vm_page_unhold_pages(pages, npages);
+
+			/* Notify protocol that we drained some data. */
+			if (so->so_proto->pr_flags & PR_WANTRCVD) {
+				VNET_SO_ASSERT(so);
+				(*so->so_proto->pr_usrreqs->pru_rcvd)(so, 0);
+			}
+
 			aio_complete(cbe, copied, 0);
 			SOCKBUF_LOCK(sb);
 			ddp_aio_copied++;
