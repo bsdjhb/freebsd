@@ -194,6 +194,39 @@ release_ddp_resources(struct toepcb *toep)
 	}
 }
 
+static void
+complete_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db,
+    unsigned int db_idx)
+{
+	unsigned int db_flag;
+
+	unwire_ddp_buffer(db);
+
+	toep->ddp_active_count--;
+	if (toep->ddp_active_id == db_idx) {
+		if (toep->ddp_active_count == 0) {
+			KASSERT(toep->db[db_idx ^ 1] == NULL ||
+			    toep->db[db_idx ^ 1]->cbe == NULL,
+			    ("%s: active_count mismatch", __func__));
+			toep->ddp_active_id = -1;
+		} else
+			toep->ddp_active_id ^= 1;
+	} else {
+		KASSERT(toep->ddp_active_count != 0 &&
+		    toep->ddp_active_id != -1,
+		    ("%s: active count mismatch", __func__));
+	}
+
+	db->cancel_pending = 0;
+	db->cbe = NULL;
+
+	db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
+	KASSERT(toep->ddp_flags & db_flag,
+	    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x",
+	    __func__, toep, toep->ddp_flags));
+	toep->ddp_flags &= ~db_flag;
+}
+
 /* XXX: handle_ddp_data code duplication */
 void
 insert_ddp_data(struct toepcb *toep, uint32_t n)
@@ -258,15 +291,7 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 			toep->ddp_waiting_count++;
 		}
 		n -= placed;
-		toep->ddp_active_count--;
-		if (toep->ddp_active_count == 0) {
-			KASSERT(toep->db[db_idx ^ 1] == NULL ||
-			    toep->db[db_idx ^ 1]->cbe == NULL,
-			    ("%s: active_count mismatch", __func__));
-			toep->ddp_active_id = -1;
-		} else
-			toep->ddp_active_id ^= 1;
-		toep->ddp_flags &= ~db_flag;
+		complete_ddp_buffer(toep, db, db_idx);
 	}
 
 	MPASS(n == 0);
@@ -451,7 +476,7 @@ static int
 handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 {
 	uint32_t report = be32toh(ddp_report);
-	unsigned int db_flag, db_idx;
+	unsigned int db_idx;
 	struct inpcb *inp = toep->inp;
 	struct ddp_buffer *db;
 	struct tcpcb *tp;
@@ -461,7 +486,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	long copied;
 
 	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
-	db_flag = report & F_DDP_BUF_IDX ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
@@ -474,14 +498,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	KASSERT(toep->ddp_active_id == db_idx,
 	    ("completed DDP buffer (%d) != active_id (%d)", db_idx,
 	    toep->ddp_active_id));
-	toep->ddp_active_count--;
-	if (toep->ddp_active_count == 0) {
-		KASSERT(toep->db[db_idx ^ 1] == NULL ||
-		    toep->db[db_idx ^ 1]->cbe == NULL,
-		    ("%s: active_count mismatch", __func__));
-		toep->ddp_active_id = -1;
-	} else
-		toep->ddp_active_id ^= 1;
 	db = toep->db[db_idx];
 	cbe = db->cbe;
 
@@ -572,12 +588,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	}
 
 completed:
-	db->cancel_pending = 0;
-	db->cbe = NULL;
-	KASSERT(toep->ddp_flags & db_flag,
-	    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x, report 0x%x",
-	    __func__, toep, toep->ddp_flags, report));
-	toep->ddp_flags &= ~db_flag;
+	complete_ddp_buffer(toep, db, db_idx);
 	if (toep->ddp_waiting_count > 0)
 		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	SOCKBUF_UNLOCK(sb);
@@ -615,7 +626,7 @@ enum {
 void
 handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 {
-	unsigned int db_flag, db_idx;
+	unsigned int db_idx;
 	struct inpcb *inp = toep->inp;
 	struct ddp_buffer *db;
 	struct socket *so;
@@ -633,7 +644,6 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 		 * XXX: This duplicates a lot of code with handle_ddp_data().
 		 */
 		db_idx = G_COOKIE(cpl->cookie) - DDP_BUF0_INVALIDATED;
-		db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 		INP_WLOCK(inp);
 		so = inp_inpcbtosocket(inp);
 		sb = &so->so_rcv;
@@ -647,21 +657,6 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 			SOCKBUF_UNLOCK(sb);
 			INP_WUNLOCK(inp);
 			return;
-		}
-
-		toep->ddp_active_count--;
-		if (toep->ddp_active_id == db_idx) {
-			if (toep->ddp_active_count == 0) {
-				KASSERT(toep->db[db_idx ^ 1] == NULL ||
-				    toep->db[db_idx ^ 1]->cbe == NULL,
-				    ("%s: active_count mismatch", __func__));
-				toep->ddp_active_id = -1;
-			} else
-				toep->ddp_active_id ^= 1;
-		} else {
-			KASSERT(toep->ddp_active_count != 0 &&
-			    toep->ddp_active_id != -1,
-			    ("%s: active count mismatch", __func__));
 		}
 
 		/*
@@ -687,12 +682,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 			t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
 		}
 
-		db->cancel_pending = 0;
-		db->cbe = NULL;
-		KASSERT(toep->ddp_flags & db_flag,
-		    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x",
-		    __func__, toep, toep->ddp_flags));
-		toep->ddp_flags &= ~db_flag;
+		complete_ddp_buffer(toep, db, db_idx);
 		if (toep->ddp_waiting_count > 0)
 			taskqueue_enqueue(taskqueue_thread,
 			    &toep->ddp_requeue_task);
@@ -757,15 +747,7 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, struct sockbuf *sb,
 		else if (placed != 0)
 			ddp_aio_placed++;
 		len -= placed;
-		toep->ddp_active_count--;
-		if (toep->ddp_active_count == 0) {
-			KASSERT(toep->db[db_idx ^ 1] == NULL ||
-			    toep->db[db_idx ^ 1]->cbe == NULL,
-			    ("%s: active_count mismatch", __func__));
-			toep->ddp_active_id = -1;
-		} else
-			toep->ddp_active_id ^= 1;
-		toep->ddp_flags &= ~db_flag;
+		complete_ddp_buffer(toep, db, db_idx);
 	}
 
 	MPASS(len == 0);
