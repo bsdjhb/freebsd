@@ -233,7 +233,9 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 {
 	struct inpcb *inp = toep->inp;
 	struct tcpcb *tp = intotcpcb(inp);
+#ifdef INVARIANTS
 	struct sockbuf *sb = &inp->inp_socket->so_rcv;
+#endif
 	struct ddp_buffer *db;
 	struct aiocblist *cbe;
 	size_t placed;
