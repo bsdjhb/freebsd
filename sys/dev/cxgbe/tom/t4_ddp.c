@@ -99,7 +99,7 @@ static unsigned long ddp_held_pages = 0;
 SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, held_pages, CTLFLAG_RW, &ddp_held_pages,
     0, "Pages held for DDP");
 static unsigned long ddp_wired_pages = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, held_pages, CTLFLAG_RW, &ddp_held_pages,
+SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, wired_pages, CTLFLAG_RW, &ddp_wired_pages,
     0, "Pages wired for DDP");
 
 #if 0
