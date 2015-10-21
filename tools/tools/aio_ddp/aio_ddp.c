@@ -52,8 +52,8 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "Usage: aio_ddp [-AFw] [-b burst] [-c count] [-s size] "
-	    "[-S size] <host> [port]\n");
+	fprintf(stderr, "Usage: aio_ddp [-AFNw] [-b burst] [-c count] "
+	    "[-s size] [-S size] <host> [port]\n");
 	exit(1);
 }
 
@@ -178,6 +178,7 @@ read_plain(int s, const char *data, size_t len)
 {
 	static char *buf;
 	static size_t buflen;
+	struct pollfd pfd[1];
 	ssize_t nread;
 
 	if (buflen < len) {
@@ -189,8 +190,17 @@ read_plain(int s, const char *data, size_t len)
 
 	while (len > 0) {
 		nread = read(s, buf, buflen);
-		if (nread < 0)
+		if (nread < 0) {
+			if (errno == EAGAIN) {
+				pfd[0].fd = s;
+				pfd[0].events = POLLIN;
+				pfd[0].revents = 0;
+				if (poll(pfd, 1, INFTIM) == -1)
+					err(1, "poll");
+				continue;
+			}
 			err(1, "socket read");
+		}
 		if (nread == 0)
 			errx(1, "socket EOF");
 		if ((size_t)nread > len)
@@ -224,6 +234,18 @@ build_burst(int len)
 	return (buf);
 }
 
+static void
+set_nonblocking(int fd)
+{
+	int flags;
+
+	flags = fcntl(fd, F_GETFL);
+	if (flags == -1)
+		err(1, "fcntl(F_GETFL)");
+	if (fcntl(f, F_SETFL, flags | O_NONBLOCK) == -1)
+		err(1, "fcntl(F_SETFL)");
+}
+
 int
 main(int ac, char **av)
 {
@@ -231,7 +253,7 @@ main(int ac, char **av)
 	char *line;
 	size_t linecap;
 	ssize_t linelen, nwritten;
-	bool aio, aio_active, force_fin, wait;
+	bool aio, aio_active, force_fin, nonblock, wait;
 	int ch, burst, count, rcv_size, s, size;
 
 	burst = 0;
@@ -242,7 +264,8 @@ main(int ac, char **av)
 	wait = false;
 	aio = false;
 	aio_active = false;
-	while ((ch = getopt(ac, av, "Ab:c:FS:s:w")) != -1)
+	nonblock = false;
+	while ((ch = getopt(ac, av, "Ab:c:FNS:s:w")) != -1)
 		switch (ch) {
 		case 'A':
 			aio = true;
@@ -255,6 +278,9 @@ main(int ac, char **av)
 			break;
 		case 'F':
 			force_fin = true;
+			break;
+		case 'N':
+			nonblock = true;
 			break;
 		case 'S':
 			rcv_size = atoi(optarg);
@@ -274,6 +300,8 @@ main(int ac, char **av)
 	if (ac < 1 || ac > 2)
 		usage();
 	s = opensock(av[0], ac == 2 ? av[1] : "echo", rcv_size);
+	if (nonblock)
+		set_nonblocking(s);
 	check_for_toe(s);
 	if (aio) {
 		req = alloc_aio_requests(count, size);
