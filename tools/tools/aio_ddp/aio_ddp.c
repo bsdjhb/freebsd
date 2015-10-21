@@ -40,8 +40,11 @@
 #include <aio.h>
 #include <ctype.h>
 #include <err.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <malloc_np.h>
 #include <netdb.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -242,7 +245,7 @@ set_nonblocking(int fd)
 	flags = fcntl(fd, F_GETFL);
 	if (flags == -1)
 		err(1, "fcntl(F_GETFL)");
-	if (fcntl(f, F_SETFL, flags | O_NONBLOCK) == -1)
+	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
 		err(1, "fcntl(F_SETFL)");
 }
 
