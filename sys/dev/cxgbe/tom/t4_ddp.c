@@ -2046,7 +2046,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		 * XXX: We could possibly do some of this work inline
 		 * instead of queueing the task?
 		 */
--		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
+		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	else if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
 		/*
 		 * Wait for the card to ACK that DDP is enabled before
