@@ -1859,30 +1859,21 @@ restart:
 	db = toep->db[db_idx];
 	buf_flag = db_idx == 0 ? DDP_BUF0_ACTIVE : DDP_BUF1_ACTIVE;
 
-	/*
-	 * XXX: Not sure what to do about SS_NBIO.  The stock aio would
-	 * wait for some data to come in and then do a non-blocking read
-	 * of the socket to get whatever was there.  I don't want to set
-	 * the FLUSH flag as that does an immediate flush.  However, I
-	 * do want a sort of "flush on first data" flag.  There doesn't
-	 * seem to be anything equivalent.  On the other hand, if a
-	 * protocol cares it is probably using PSH and the PUSH timer
-	 * completions is probably good enough.
-	 *
-	 * XXX: Actually, FLUSH does do "flush on first data", so I
-	 * believe it should be fine to enable it.
-	 */
 	ddp_flags = 0;
 	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
 	buf_flag = 0;
 	if (db_idx == 0) {
 		ddp_flags |= V_TF_DDP_BUF0_VALID(1);
+		if (so->so_state & SS_NBIO)
+			ddp_flags |= V_TF_DDP_BUF0_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE0(1) |
 		    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PSHF_ENABLE_0(1) |
 		    V_TF_DDP_BUF0_FLUSH(1) | V_TF_DDP_BUF0_VALID(1);
 		buf_flag |= DDP_BUF0_ACTIVE;
 	} else {
 		ddp_flags |= V_TF_DDP_BUF1_VALID(1);
+		if (so->so_state & SS_NBIO)
+			ddp_flags |= V_TF_DDP_BUF1_FLUSH(1);
 		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE1(1) |
 		    V_TF_DDP_PUSH_DISABLE_1(1) | V_TF_DDP_PSHF_ENABLE_1(1) |
 		    V_TF_DDP_BUF1_FLUSH(1) | V_TF_DDP_BUF1_VALID(1);
