@@ -1801,7 +1801,7 @@ restart:
 	if (copied != 0) {
 		sbdrop_locked(sb, copied);
 		cbe->uaiocb._aiocb_private.status += copied;
-		t4_rcvd_locked(&toep->td->tod, tp);
+		t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
 		if (resid == 0 || !ddp_aio_enable) {
 			/*
 			 * We filled the entire buffer with socket data,
