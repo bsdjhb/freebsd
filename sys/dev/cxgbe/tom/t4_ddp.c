@@ -2049,7 +2049,17 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
 	toep->ddp_flags |= DDP_OK;
-	if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
+	if (sbavail(sb) > 0 || (toep->ddp_flags & DDP_ON &&
+	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
+	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
+		/*
+		 * If there is pending data or DDP is already active and
+		 * there is an available slot, queue the task.
+		 *
+		 * XXX: We could possibly do some of this work inline
+		 * instead of queueing the task?
+		 */
+	else if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
 		/*
 		 * Wait for the card to ACK that DDP is enabled before
 		 * queueing any buffers.  Currently this waits for an
@@ -2066,14 +2076,6 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		 */
 		if (ddp_aio_enable)
 			enable_ddp(sc, toep);
-	} else if (toep->ddp_flags & DDP_ON &&
-	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
-	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) {
-		/*
-		 * XXX: We could possibly do some of this work inline
-		 * instead of queueing the task?
-		 */
-		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
 	}
 	SOCKBUF_UNLOCK(sb);
 	return (0);
