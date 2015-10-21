@@ -1801,24 +1801,16 @@ restart:
 	if (copied != 0) {
 		sbdrop_locked(sb, copied);
 		cbe->uaiocb._aiocb_private.status += copied;
+		t4_rcvd_locked(&toep->td->tod, tp);
 		if (resid == 0 || !ddp_aio_enable) {
 			/*
 			 * We filled the entire buffer with socket data,
 			 * or DDP is not being used, so complete the
 			 * request.
 			 */
-			SOCKBUF_UNLOCK(sb);
 			vm_page_unhold_pages(pages, npages);
 			ddp_held_pages -= npages;
-
-			/* Notify protocol that we drained some data. */
-			if (so->so_proto->pr_flags & PR_WANTRCVD) {
-				VNET_SO_ASSERT(so);
-				(*so->so_proto->pr_usrreqs->pru_rcvd)(so, 0);
-			}
-
 			aio_complete(cbe, copied, 0);
-			SOCKBUF_LOCK(sb);
 			ddp_aio_copied++;
 			toep->ddp_queueing = NULL;
 			goto restart;
