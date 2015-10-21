@@ -1588,7 +1588,7 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 	struct vm_map *map;
 	vm_offset_t start, end;
 	vm_page_t *pp;
-	int n;
+	int actual, n;
 
 	/*
 	 * The AIO subsystem will cancel and drain all requests before
@@ -1610,14 +1610,19 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 
 	n = atop(end - start);
 	pp = malloc(n * sizeof(vm_page_t), M_CXGBE, M_WAITOK);
-	if (vm_fault_quick_hold_pages(map, start, end - start,
-	    VM_PROT_WRITE, pp, n) < 0) {
+	actual = vm_fault_quick_hold_pages(map, start, end - start,
+	    VM_PROT_WRITE, pp, n);
+	if (actual < 0) {
 		free(pp, M_CXGBE);
 		return (EFAULT);
 	}
 
+	/* XXX */
+	if (actual != n)
+		printf("hold_aio: page count mismatch: %d vs %d\n", actual, n);
+
 	*ppages = pp;
-	*pnpages = n;
+	*pnpages = actual;
 	return (0);
 }
 
