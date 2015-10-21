@@ -1868,6 +1868,9 @@ restart:
 	 * seem to be anything equivalent.  On the other hand, if a
 	 * protocol cares it is probably using PSH and the PUSH timer
 	 * completions is probably good enough.
+	 *
+	 * XXX: Actually, FLUSH does do "flush on first data", so I
+	 * believe it should be fine to enable it.
 	 */
 	ddp_flags = 0;
 	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
@@ -1985,21 +1988,14 @@ t4_aio_cancel_ddp(struct aiocblist *cbe)
 			}
 
 			/*
-			 * Flush this buffer.  It will be cancelled or
-			 * partially completed once the card ACKs the
-			 * flush.
+			 * Invalidate this buffer.  It will be
+			 * cancelled or partially completed once the
+			 * card ACKs the invalidate.
 			 */
-#if 0
-			valid_flag = i == 0 ? V_TF_DDP_BUF0_FLUSH(1) :
-			    V_TF_DDP_BUF1_FLUSH(1);
-			t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
-			    valid_flag, valid_flag);
-#else
 			valid_flag = i == 0 ? V_TF_DDP_BUF0_VALID(1) :
 			    V_TF_DDP_BUF1_VALID(1);
 			t4_set_tcb_field_rpl(sc, toep, 1, W_TCB_RX_DDP_FLAGS,
 			    valid_flag, 0, i + DDP_BUF0_INVALIDATED);
-#endif
 			toep->db[i]->cancel_pending = 1;
 			CTR2(KTR_CXGBE, "%s: request %p marked pending",
 			    __func__, cbe);
