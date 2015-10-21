@@ -1801,7 +1801,19 @@ restart:
 	if (copied != 0) {
 		sbdrop_locked(sb, copied);
 		cbe->uaiocb._aiocb_private.status += copied;
+		if (!INP_TRY_WLOCK(inp)) {
+			SOCKBUF_UNLOCK(sb);
+			INP_WLOCK(inp);
+			SOCKBUF_LOCK(sb);
+			/*
+			 * XXX: We probably need to check for INP_DROPPED and
+			 * INP_TIMEWAIT here and bail if they are set.
+			 */
+			if (inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))
+				printf("%s: inp is dropped\n", __func__);
+		}
 		t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
+		INP_WUNLOCK(inp);
 		if (resid == 0 || !ddp_aio_enable) {
 			/*
 			 * We filled the entire buffer with socket data,
