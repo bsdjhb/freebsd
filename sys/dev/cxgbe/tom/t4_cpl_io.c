@@ -1458,7 +1458,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			toep->rx_credits += newsize - hiwat;
 	}
 
-	if (toep->ddp_waiting_count != 0)
+	if (toep->ddp_waiting_count != 0 || toep->ddp_active_count != 0)
 		CTR3(KTR_CXGBE, "%s: tid %u, non-ddp rx (%d bytes)", __func__,
 		    tid, len);
 
@@ -1476,9 +1476,10 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 				/* Fell out of DDP mode */
 				toep->ddp_flags &= ~(DDP_ON | DDP_BUF0_ACTIVE |
 				    DDP_BUF1_ACTIVE);
+				CTR1(KTR_CXGBE, "%s: fell out of DDP mode",
+				    __func__);
 
-				if (ddp_placed)
-					insert_ddp_data(toep, ddp_placed);
+				insert_ddp_data(toep, ddp_placed);
 			}
 		}
 
