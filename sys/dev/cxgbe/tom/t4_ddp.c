@@ -1726,6 +1726,10 @@ restart:
 	/*
 	 * If another thread is queueing a buffer for DDP, wait for it
 	 * to finish (or bail).
+	 *
+	 * XXX: Actually, we know that some other thread is going to
+	 * drain this no matter what, so we should probably just always
+	 * act as if sleep ok is false and remove all the wakeups.
 	 */
 	if (toep->ddp_queueing != NULL) {
 		if (!sleep_ok)
