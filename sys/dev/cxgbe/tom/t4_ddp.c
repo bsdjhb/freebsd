@@ -1665,8 +1665,6 @@ aio_ddp_requeue(struct toepcb *toep, struct socket *so, struct sockbuf *sb,
 	}
 
 restart:
-	KASSERT(toep->ddp_queueing == NULL,
-	    ("%s: still queueing at restart", __func__));
 	if (toep->ddp_waiting_count == 0 ||
 	    toep->ddp_active_count == nitems(toep->db)) {
 		return;
