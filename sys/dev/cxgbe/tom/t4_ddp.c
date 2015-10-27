@@ -105,7 +105,7 @@ SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, wired_pages, CTLFLAG_RW, &ddp_wired_pages,
 #if 0
 static struct mbuf *get_ddp_mbuf(int len);
 #endif
-static void aio_ddp_requeue(void *context, int pending);
+static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, struct sockbuf *sb,
     long status, int error);
 static void unwire_ddp_buffer(struct ddp_buffer *db);
@@ -181,7 +181,7 @@ ddp_init_toep(struct toepcb *toep)
 {
 
 	TAILQ_INIT(&toep->ddp_aiojobq);
-	TASK_INIT(&toep->ddp_requeue_task, 0, aio_ddp_requeue, toep);
+	TASK_INIT(&toep->ddp_requeue_task, 0, aio_ddp_requeue_task, toep);
 	toep->ddp_active_id = -1;
 }
 
@@ -1642,13 +1642,10 @@ ddp_complete_all(struct toepcb *toep, struct sockbuf *sb, long status,
 }
 
 static void
-aio_ddp_requeue(void *context, int pending)
+aio_ddp_requeue(struct toepcb *toep, struct socket *so, struct sockbuf *sb,
+    struct adapter *sc, int sleep_ok)
 {
-	struct toepcb *toep = context;
 	struct inpcb *inp = toep->inp;
-	struct socket *so = inp->inp_socket;
-	struct sockbuf *sb = &so->so_rcv;
-	struct adapter *sc = td_adapter(toep->td);
 	struct aiocblist *cbe;
 	struct ddp_buffer *db;
 	vm_offset_t pgoff;
@@ -1659,14 +1656,11 @@ aio_ddp_requeue(void *context, int pending)
 	struct wrqe *wr;
 	int buf_flag, db_idx, error, npages;
 
-	/* XXX: Probably need to set/clear vnet since this is in a task. */
-
-	SOCKBUF_LOCK(sb);
+	SOCKBUF_LOCK_ASSERT(sb);
 
 	/* We will never ever get anything unless we are or were connected. */
 	if (!(so->so_state & (SS_ISCONNECTED|SS_ISDISCONNECTED))) {
 		ddp_complete_all(toep, sb, -1, ENOTCONN);
-		SOCKBUF_UNLOCK(sb);
 		return;
 	}
 
@@ -1675,7 +1669,6 @@ restart:
 	    ("%s: still queueing at restart", __func__));
 	if (toep->ddp_waiting_count == 0 ||
 	    toep->ddp_active_count == nitems(toep->db)) {
-		SOCKBUF_UNLOCK(sb);
 		return;
 	}
 
@@ -1700,12 +1693,9 @@ restart:
 	 * to complete.  Once they have completed, return EOF reads.
 	 */
 	if (sb->sb_state & SBS_CANTRCVMORE && sbavail(sb) == 0) {
-		if (toep->ddp_active_count != 0) {
-			SOCKBUF_UNLOCK(sb);
+		if (toep->ddp_active_count != 0)
 			return;
-		}
 		ddp_complete_all(toep, sb, 0, 0);
-		SOCKBUF_UNLOCK(sb);
 		return;
 	}
 
@@ -1714,12 +1704,36 @@ restart:
 	 * data, try to enable DDP.
 	 */
 	if (sbavail(sb) == 0 && (toep->ddp_flags & DDP_ON) == 0) {
+		/*
+		 * Wait for the card to ACK that DDP is enabled before
+		 * queueing any buffers.  Currently this waits for an
+		 * indicate to arrive.  It is not clear if it is possible
+		 * to force an ACK of the enable request sooner if there
+		 * is no data pending.  (Would be nice to not always
+		 * require a copy of the indicated data.)
+		 *
+		 * XXX: Might want to limit the indicate size to the
+		 * first queued request. (TODO)
+		 *
+		 * XXX: Could use a TCB_SET_FIELD_RPL message to know
+		 * that DDP was enabled.
+		 */
 		if ((toep->ddp_flags & DDP_SC_REQ) == 0 && ddp_aio_enable)
 			enable_ddp(sc, toep);
-		SOCKBUF_UNLOCK(sb);
 		return;
 	}
 
+	/*
+	 * If another thread is queueing a buffer for DDP, wait for it
+	 * to finish (or bail).
+	 */
+	if (toep->ddp_queueing != NULL) {
+		if (!sleep_ok)
+			return;
+		mtx_sleep(&toep->ddp_queueing, &sb->sb_mtx, 0, "ddpque", 0);
+		goto restart;
+	}
+	   
 	/* Take the next job to prep it for DDP. */
 	cbe = TAILQ_FIRST(&toep->ddp_aiojobq);
 	toep->ddp_waiting_count--;
@@ -1732,6 +1746,7 @@ restart:
 		aio_complete(cbe, -1, error);
 		SOCKBUF_LOCK(sb);
 		toep->ddp_queueing = NULL;
+		wakeup(&toep->ddp_queueing);
 		goto restart;
 	}
 
@@ -1745,6 +1760,7 @@ restart:
 		ddp_held_pages -= npages;
 		aio_complete(cbe, -1, error);
 		toep->ddp_queueing = NULL;
+		wakeup(&toep->ddp_queueing);
 		goto restart;
 	}		
 
@@ -1755,12 +1771,13 @@ restart:
 			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 			toep->ddp_waiting_count++;
 			toep->ddp_queueing = NULL;
-			SOCKBUF_UNLOCK(sb);
+			wakeup(&toep->ddp_queueing);
 			return;
 		}
 		aio_complete(cbe, 0, 0);
 		ddp_complete_all(toep, sb, 0, 0);
-		SOCKBUF_UNLOCK(sb);
+		toep->ddp_queueing = NULL;
+		wakeup(&toep->ddp_queueing);
 		return;
 	}	
 
@@ -1825,6 +1842,7 @@ restart:
 			aio_complete(cbe, copied, 0);
 			ddp_aio_copied++;
 			toep->ddp_queueing = NULL;
+			wakeup(&toep->ddp_queueing);
 			goto restart;
 		}
 
@@ -1839,6 +1857,7 @@ restart:
 			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 			toep->ddp_waiting_count++;
 			toep->ddp_queueing = NULL;
+			wakeup(&toep->ddp_queueing);
 			goto restart;
 		}
 		MPASS(sbavail(sb) == 0);
@@ -1851,7 +1870,7 @@ restart:
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count++;
 		toep->ddp_queueing = NULL;
-		SOCKBUF_UNLOCK(sb);
+		wakeup(&toep->ddp_queueing);
 
 		/*
 		 * XXX: Need to retry this later.  Mostly need a trigger
@@ -1910,9 +1929,9 @@ restart:
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, cbe, list);
 		toep->ddp_waiting_count++;
 		toep->ddp_queueing = NULL;
+		wakeup(&toep->ddp_queueing);
 		vm_page_unhold_pages(db->pages, db->npages);
 		ddp_held_pages -= db->npages;
-		SOCKBUF_UNLOCK(sb);
 		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
 		return;
 	}
@@ -1941,9 +1960,26 @@ restart:
 		MPASS(toep->ddp_active_id == -1);
 		toep->ddp_active_id = db_idx;
 	}
+	wakeup(&toep->ddp_queueing);
 	goto restart;
 }
 
+static void
+aio_ddp_requeue_task(void *context, int pending)
+{
+	struct toepcb *toep = context;
+	struct inpcb *inp = toep->inp;
+	struct socket *so = inp->inp_socket;
+	struct sockbuf *sb = &so->so_rcv;
+	struct adapter *sc = td_adapter(toep->td);
+
+	/* XXX: Probably need to set/clear vnet since this is in a task. */
+
+	SOCKBUF_LOCK(sb);
+	aio_ddp_requeue(toep, so, sb, sc, 1);
+	SOCKBUF_UNLOCK(sb);
+}
+	
 static int
 t4_aio_cancel_ddp(struct aiocblist *cbe)
 {
@@ -2040,6 +2076,15 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 	cbe->uaiocb._aiocb_private.status = 0;
 	toep->ddp_waiting_count++;
 	toep->ddp_flags |= DDP_OK;
+
+#if 1
+	/*
+	 * Try to handle this request synchronously.  If this has
+	 * to block because the task is running, it will just bail
+	 * and let the task handle it instead.
+	 */
+	aio_ddp_requeue(toep, so, sb, sc, 0);
+#else
 	if (sbavail(sb) > 0 || (toep->ddp_flags & DDP_ON &&
 	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
 	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
@@ -2069,6 +2114,7 @@ t4_aio_queue_ddp(struct socket *so, struct aiocblist *cbe)
 		if (ddp_aio_enable)
 			enable_ddp(sc, toep);
 	}
+#endif
 	SOCKBUF_UNLOCK(sb);
 	return (0);
 }
