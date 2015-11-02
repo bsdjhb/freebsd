@@ -105,6 +105,9 @@ static int		vmnet_clone_create(struct if_clone *, int, caddr_t);
 static void		vmnet_clone_destroy(struct ifnet *);
 static struct if_clone *vmnet_cloner;
 
+/* cloning device */
+static d_fdopen_t	tapcloneopen;
+
 /* character device */
 static d_open_t		tapopen;
 static d_close_t	tapclose;
@@ -131,6 +134,13 @@ static struct filterops	tap_write_filterops = {
 	.f_attach =	NULL,
 	.f_detach =	tapkqdetach,
 	.f_event =	tapkqwrite,
+};
+
+static struct cdevsw	tap_clone_cdevsw = {
+	.d_version =	D_VERSION,
+	.d_flags =	D_NEEDMINOR,
+	.d_fdopen =	tapcloneopen,
+	.d_name =	CDEV_NAME,
 };
 
 static struct cdevsw	tap_cdevsw = {
@@ -281,12 +291,10 @@ tapmodevent(module_t mod, int type, void *data)
 		    tap_clone_destroy, 0);
 		vmnet_cloner = if_clone_simple(vmnetname, vmnet_clone_create,
 		    vmnet_clone_destroy, 0);
-#if 0
-		tapcdev = make_dev(&tap_cdevsw, 0, UID_ROOT, GID_WHEEL, 0600,
-		    "%s", tapname);
-		vmnetcdev = make_dev(&tap_cdevsw, VMNET_DEV_MASK, UID_ROOT,
-		    GID_WHEEL, 0600, "%s", vmnetname);
-#endif
+		tapcdev = make_dev(&tap_clone_cdevsw, 0, UID_ROOT, GID_WHEEL,
+		    0600, "%s", tapname);
+		vmnetcdev = make_dev(&tap_clone_cdevsw, VMNET_DEV_MASK,
+		    UID_ROOT, GID_WHEEL, 0600, "%s", vmnetname);
 		return (0);
 
 	case MOD_UNLOAD:
@@ -449,13 +457,39 @@ tapcreate(struct cdev *dev)
 		ifp->if_xname, dev2unit(dev));
 } /* tapcreate */
 
-#if 0
-static struct tap_softc *
-tap_open_clone(struct cdev *dev)
+static void
+tap_open_common(struct tap_softc *tp, struct thread *td)
+{
+	struct ifnet		*ifp;
+
+	mtx_assert(&tapmtx, MA_OWNED);
+	bcopy(IF_LLADDR(tp->tap_ifp), tp->ether_addr, sizeof(tp->ether_addr));
+	tp->tap_pid = td->td_proc->p_pid;
+	tp->tap_flags |= TAP_OPEN;
+	ifp = tp->tap_ifp;
+
+	ifp->if_drv_flags |= IFF_DRV_RUNNING;
+	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
+	if (tapuponopen)
+		ifp->if_flags |= IFF_UP;
+	if_link_state_change(ifp, LINK_STATE_UP);
+
+	TAPDEBUG("%s is open. minor = %#x\n", ifp->if_xname,
+	    dev2unit(tp->tap_dev));
+}
+
+static int
+tapcloneopen(struct cdev *dev, int fflags, struct thread *td, struct file *fp)
 {
 	struct tap_softc	*tp;
 	struct cdev		*new;
-	int			 extra, i, unit;
+	int			 error, extra, i, unit;
+
+	if (tapuopen == 0) {
+		error = priv_check(td, PRIV_NET_TAP);
+		if (error)
+			return (error);
+	}
 
 	extra = dev2unit(dev);
 
@@ -463,7 +497,7 @@ restart:
 	/* First, try to find an existing closed interface. */
 	mtx_lock(&tapmtx);
 	if (tapunloading)
-		return (NULL);
+		return (ENXIO);
 	SLIST_FOREACH(tp, &taphead, tap_next) {
 		mtx_lock(&tp->tap_mtx);
 		if ((tp->tap_flags & TAP_OPEN) ||
@@ -472,7 +506,9 @@ restart:
 			mtx_unlock(&tp->tap_mtx);
 			continue;
 		}
+		tap_open_common(tp, td);
 		mtx_unlock(&tapmtx);
+		finit(fp, fp->f_flag, DTYPE_VNODE, tp->tap_dev, &devfs_ops_f);
 		dev_ref(tp->tap_dev);
 		return (tp);
 	}
@@ -507,7 +543,6 @@ static int
 tapopen(struct cdev *dev, int flag, int mode, struct thread *td)
 {
 	struct tap_softc	*tp = NULL;
-	struct ifnet		*ifp = NULL;
 	int			 error;
 
 	if (tapuopen == 0) {
@@ -526,20 +561,8 @@ tapopen(struct cdev *dev, int flag, int mode, struct thread *td)
 		mtx_unlock(&tp->tap_mtx);
 		return (EBUSY);
 	}
-
-	bcopy(IF_LLADDR(tp->tap_ifp), tp->ether_addr, sizeof(tp->ether_addr));
-	tp->tap_pid = td->td_proc->p_pid;
-	tp->tap_flags |= TAP_OPEN;
-	ifp = tp->tap_ifp;
-
-	ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	if (tapuponopen)
-		ifp->if_flags |= IFF_UP;
-	if_link_state_change(ifp, LINK_STATE_UP);
+	tap_open_common(tp, td);
 	mtx_unlock(&tp->tap_mtx);
-
-	TAPDEBUG("%s is open. minor = %#x\n", ifp->if_xname, dev2unit(dev));
 
 	return (0);
 } /* tapopen */
