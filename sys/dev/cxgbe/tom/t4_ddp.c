@@ -156,7 +156,6 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 		return;
 
 	if (db->cbe) {
-		unwire_ddp_buffer(db);
 
 		/*
 		 * XXX: If we are un-offloading the socket then we
@@ -167,8 +166,10 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 		aio_complete(db->cbe, 0, 0);
 	}
 		
-	if (db->pages)
+	if (db->pages) {
+		unwire_ddp_buffer(db);
 		free(db->pages, M_CXGBE);
+	}
 
 	if (db->nppods > 0)
 		free_ppods(td, db->ppod_addr, db->nppods);
@@ -205,8 +206,6 @@ complete_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db,
     unsigned int db_idx)
 {
 	unsigned int db_flag;
-
-	unwire_ddp_buffer(db);
 
 	toep->ddp_active_count--;
 	if (toep->ddp_active_id == db_idx) {
@@ -1134,6 +1133,7 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 		free_ddp_buffer(td, toep->db[i]);
 	}
 	toep->db[i] = db;
+	wire_ddp_buffer(db);
 
 	CTR5(KTR_CXGBE, "%s: tid %d, DDP buffer[%d] = %p (tag 0x%x)",
 	    __func__, toep->tid, i, db, db->tag);
@@ -1923,9 +1923,13 @@ restart:
 	    cbe->uaiocb._aiocb_private.status, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
 		/*
-		 * Need to unload the pages though the page pods are
-		 * left intact in case they can be reused in the
-		 * future.  Need a way to kick a retry here.
+		 * The page pods are left intact and the pages are left
+		 * wired in case they can be reused in the future.
+		 * The number of wired pages is capped by only allowing
+		 * for two DDP buffers per connection.  This is not a
+		 * perfect cap, but is a trade-off for performance.
+		 *
+		 * XXX: Need a way to kick a retry here.
 		 *
 		 * XXX: We know the fixed size needed and could
 		 * preallocate this using a blocking request at the
@@ -1936,8 +1940,6 @@ restart:
 		toep->ddp_waiting_count++;
 		toep->ddp_queueing = NULL;
 		wakeup(&toep->ddp_queueing);
-		vm_page_unhold_pages(db->pages, db->npages);
-		ddp_held_pages -= db->npages;
 		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
 		return;
 	}
@@ -1951,8 +1953,7 @@ restart:
 	 * wiring/unwiring.
 	 */
 
-	/* Wire (and then unhold) the pages, and give the chip the go-ahead. */
-	wire_ddp_buffer(db);
+	/* Give the chip the go-ahead. */
 	t4_wrq_tx(sc, wr);
 #if 0
 	sb->sb_flags &= ~SB_DDP_INDICATE;  /* XXX: Not sure? */
