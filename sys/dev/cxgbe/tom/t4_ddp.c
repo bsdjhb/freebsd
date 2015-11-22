@@ -1620,9 +1620,8 @@ hold_aio(struct aiocblist *aiocbe, vm_page_t **ppages, int *pnpages,
 		return (EFAULT);
 	}
 
-	/* XXX */
-	if (actual != n)
-		printf("hold_aio: page count mismatch: %d vs %d\n", actual, n);
+	KASSERT(actual == n, ("hold_aio: page count mismatch: %d vs %d",
+	    actual, n));
 
 	*ppages = pp;
 	*pnpages = actual;
