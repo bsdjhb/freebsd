@@ -1102,8 +1102,10 @@ select_ddp_buffer(struct adapter *sc, struct toepcb *toep, vm_page_t *pages,
 	for (i = 0; i < nitems(toep->db); i++) {
 		if (bufcmp(toep->db[i], pages, npages, db_off, db_len) ==
 		    0) {
+			vm_page_unhold_pages(pages, npages);
+			ddp_held_pages -= npages;
 			free(pages, M_CXGBE);
-			return (i);	/* pages still held */
+			return (i);	/* pages already wired */
 		} else if (toep->db[i] == NULL && empty_slot < 0)
 			empty_slot = i;
 	}
