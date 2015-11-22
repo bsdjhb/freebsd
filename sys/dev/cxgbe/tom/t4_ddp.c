@@ -108,6 +108,7 @@ static struct mbuf *get_ddp_mbuf(int len);
 static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, struct sockbuf *sb,
     long status, int error);
+static void wire_ddp_buffer(struct ddp_buffer *db);
 static void unwire_ddp_buffer(struct ddp_buffer *db);
 
 #define PPOD_SZ(n)	((n) * sizeof(struct pagepod))
