@@ -1154,6 +1154,15 @@ prep_pageset(struct adapter *sc, struct toepcb *toep, struct pageset *ps)
 {
 	struct tom_data *td = sc->tom_softc;
 
+	/*
+	 * Hmmm: The AIO phys path just uses held pages and doesn't bother
+	 * wiring.  OTOH, those requests expect the I/O to be satisified
+	 * as soon as the hardware can service the request.  They aren't
+	 * waiting for something to send packets.  It remains to be seen
+	 * if it would be better to just leave them held and skip the
+	 * wiring/unwiring.
+	 */
+
 	if (!(ps->flags & PS_WIRED))
 		wire_pageset(ps);
 	if (ps->nppods == 0 && !alloc_page_pods(td, ps)) {
@@ -1964,15 +1973,6 @@ restart:
 		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
 		return;
 	}
-
-	/*
-	 * Hmmm: The AIO phys path just uses held pages and doesn't bother
-	 * wiring.  OTOH, those requests expect the I/O to be satisified
-	 * as soon as the hardware can service the request.  They aren't
-	 * waiting for something to send packets.  It remains to be seen
-	 * if it would be better to just leave them held and skip the
-	 * wiring/unwiring.
-	 */
 
 	/* Give the chip the go-ahead. */
 	t4_wrq_tx(sc, wr);
