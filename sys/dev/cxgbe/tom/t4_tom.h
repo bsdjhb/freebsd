@@ -81,17 +81,28 @@ struct ofld_tx_sdesc {
 	uint8_t tx_credits;	/* firmware tx credits (unit is 16B) */
 };
 
-struct ddp_buffer {
-	uint32_t tag;	/* includes color, page pod addr, and DDP page size */
+struct pageset {
+	TAILQ_ENTRY(pageset) link;
+	vm_page_t *pages;
+	int npages;
+	int flags;
 	u_int ppod_addr;
 	int nppods;
-	int offset;
+	uint32_t tag;	/* includes color, page pod addr, and DDP page size */
+	int offset;		/* offset in first page */
 	int len;
-	int npages;
-	vm_page_t *pages;
+};
+
+TAILQ_HEAD(pagesetq, pageset);
+
+#define	PS_WIRED		0x0001	/* Pages wired rather than held. */
+#define	PS_PPODS_WRITTEN	0x0002	/* Page pods written to the card. */
+
+struct ddp_buffer {
+	struct pageset *ps;
 
 	struct aiocblist *cbe;
-	/* These belong in 'struct aiocblist'? */
+	/* This belongs in 'struct aiocblist'? */
 	int cancel_pending;
 };
 
@@ -125,12 +136,16 @@ struct toepcb {
 	struct mbufq ulp_pdu_reclaimq;
 
 	u_int ddp_flags;
-	struct ddp_buffer *db[2];
+	struct ddp_buffer db[2];
+#if 0
 	time_t ddp_disabled;
 	uint8_t ddp_score;
+#endif
+	TAILQ_HEAD(, pageset) ddp_cached_pagesets;
 	TAILQ_HEAD(, aiocblist) ddp_aiojobq;
 	u_int ddp_waiting_count;
 	u_int ddp_active_count;
+	u_int ddp_cached_count;
 	int ddp_active_id;	/* the currently active DDP buffer */
 	struct task ddp_requeue_task;
 	struct aiocblist *ddp_queueing;
