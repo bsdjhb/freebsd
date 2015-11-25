@@ -1683,7 +1683,7 @@ hold_aio(struct toepcb *toep, struct sockbuf *sb, struct aiocblist *aiocbe,
 	ps->len = aiocbe->uaiocb.aio_nbytes;
 
 	CTR5(KTR_CXGBE, "%s: tid %d, new pageset %p for cbe %p, npages %d",
-	    __func__, toep->tid, ps, cbe, ps->npages);
+	    __func__, toep->tid, ps, aiocbe, ps->npages);
 	*pps = ps;
 	return (0);
 }
