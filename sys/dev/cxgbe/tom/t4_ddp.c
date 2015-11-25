@@ -1664,7 +1664,8 @@ hold_aio(struct toepcb *toep, struct sockbuf *sb, struct aiocblist *aiocbe,
 	SOCKBUF_UNLOCK(sb);
 
 	/* Create a new pageset. */
-	ps = malloc(sizeof(*ps) + n * sizeof(vm_page_t), M_CXGBE, M_WAITOK);
+	ps = malloc(sizeof(*ps) + n * sizeof(vm_page_t), M_CXGBE, M_WAITOK |
+	    M_ZERO);
 	ps->pages = (vm_page_t *)(ps + 1);
 	ps->npages = vm_fault_quick_hold_pages(map, start, end - start,
 	    VM_PROT_WRITE, ps->pages, n);
