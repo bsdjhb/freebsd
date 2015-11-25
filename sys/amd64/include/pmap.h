@@ -388,6 +388,7 @@ struct thread;
 void	pmap_activate_sw(struct thread *);
 void	pmap_bootstrap(vm_paddr_t *);
 int	pmap_change_attr(vm_offset_t, vm_size_t, int);
+int	pmap_compare(pmap_t, vm_offset_t, vm_page_t *, int);
 void	pmap_demote_DMAP(vm_paddr_t base, vm_size_t len, boolean_t invalidate);
 void	pmap_init_pat(void);
 void	pmap_kenter(vm_offset_t va, vm_paddr_t pa);
