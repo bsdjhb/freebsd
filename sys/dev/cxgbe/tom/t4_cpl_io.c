@@ -1483,44 +1483,6 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			}
 		}
 
-#if 0
-		if ((toep->ddp_flags & DDP_OK) == 0 &&
-		    time_uptime >= toep->ddp_disabled + DDP_RETRY_WAIT) {
-			toep->ddp_score = DDP_LOW_SCORE;
-			toep->ddp_flags |= DDP_OK;
-			CTR3(KTR_CXGBE, "%s: tid %u DDP_OK @ %u",
-			    __func__, tid, time_uptime);
-		}
-#endif
-
-#if 0
-		if (toep->ddp_flags & DDP_ON) {
-
-			/*
-			 * CPL_RX_DATA with DDP on can only be an indicate.  Ask
-			 * soreceive to post a buffer or disable DDP.  The
-			 * payload that arrived in this indicate is appended to
-			 * the socket buffer as usual.
-			 */
-
-#if 0
-			CTR5(KTR_CXGBE,
-			    "%s: tid %u (0x%x) DDP indicate (seq 0x%x, len %d)",
-			    __func__, tid, toep->flags, be32toh(cpl->seq), len);
-#endif
-			sb->sb_flags |= SB_DDP_INDICATE;
-		} else if ((toep->ddp_flags & (DDP_OK|DDP_SC_REQ)) == DDP_OK &&
-		    tp->rcv_wnd > DDP_RSVD_WIN && len >= sc->tt.ddp_thres) {
-
-			/*
-			 * DDP allowed but isn't on (and a request to switch it
-			 * on isn't pending either), and conditions are ripe for
-			 * it to work.  Switch it on.
-			 */
-
-			enable_ddp(sc, toep);
-		}
-#else
 		if (toep->ddp_flags & DDP_ON) {
 			/*
 			 * CPL_RX_DATA with DDP on can only be an indicate.
@@ -1530,8 +1492,6 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			 */
 			handle_ddp_indicate(toep, sb);
 		}
-#endif
-			
 	}
 
 	KASSERT(toep->sb_cc >= sbused(sb),

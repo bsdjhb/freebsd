@@ -600,9 +600,6 @@ set_tcpddp_ulp_mode(struct toepcb *toep)
 
 	toep->ulp_mode = ULP_MODE_TCPDDP;
 	toep->ddp_flags = DDP_OK;
-#if 0
-	toep->ddp_score = DDP_LOW_SCORE;
-#endif
 }
 
 int

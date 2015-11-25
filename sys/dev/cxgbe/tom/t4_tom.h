@@ -137,10 +137,6 @@ struct toepcb {
 
 	u_int ddp_flags;
 	struct ddp_buffer db[2];
-#if 0
-	time_t ddp_disabled;
-	uint8_t ddp_score;
-#endif
 	TAILQ_HEAD(, pageset) ddp_cached_pagesets;
 	TAILQ_HEAD(, aiocblist) ddp_aiojobq;
 	u_int ddp_waiting_count;
