@@ -4,7 +4,7 @@ TESTSDIR=	${TESTSBASE}/sys/aio
 
 PLAIN_TESTS_C+=	aio_kqueue_test
 PLAIN_TESTS_C+=	lio_kqueue_test
-ATF_TESTS_C+=	aio_test
+ATF_TESTS_C+=	aio_socket_test aio_test
 
 LIBADD.aio_test+=	util
 
