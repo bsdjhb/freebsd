@@ -4,6 +4,8 @@
 # stdio sources
 .PATH: ${LIBC_SRCTOP}/stdio
 
+CFLAGS+= -DSTDIO_INTERNALS
+
 SRCS+=	_flock_stub.c asprintf.c clrerr.c dprintf.c \
 	fclose.c fcloseall.c fdopen.c \
 	feof.c ferror.c fflush.c fgetc.c fgetln.c fgetpos.c fgets.c fgetwc.c \

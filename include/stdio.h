@@ -123,6 +123,7 @@ struct __sFILE {
 
 	/* operations */
 	void	*_cookie;	/* (*) cookie passed to io functions */
+#ifdef STDIO_INTERNALS
 	int	(*_close)(void *);
 	int	(*_read)(void *, char *, int);
 	fpos_t	(*_seek)(void *, fpos_t, int);
@@ -150,6 +151,7 @@ struct __sFILE {
 	int	_orientation;	/* orientation for fwide() */
 	__mbstate_t _mbstate;	/* multibyte conversion state */
 	int	_flags2;	/* additional flags */
+#endif
 };
 #ifndef _STDFILE_DECLARED
 #define _STDFILE_DECLARED
