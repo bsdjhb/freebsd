@@ -81,7 +81,7 @@ ATF_TC_BODY(aio_socket_two_reads, tc)
 
 	/*
 	 * Try to cancel the other request.  On broken systems this
-	 * will hang.
+	 * will fail and the process will hang on exit.
 	 */
 	ATF_REQUIRE(aio_error(&ioreq[i].iocb) == EINPROGRESS);
 	ATF_REQUIRE(aio_cancel(s[0], &ioreq[i].iocb) == AIO_CANCELED);
