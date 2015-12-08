@@ -28,6 +28,7 @@ __FBSDID("$FreeBSD$");
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
@@ -103,7 +104,7 @@ struct name_table {
 	print_or(fp,#flag,orflag); }               \
 	while (0)
 
-const char *
+static const char *
 lookup_value(struct name_table *table, uintmax_t val)
 {
 
@@ -136,7 +137,7 @@ print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp)
 			 */
 			if (table->val == 0 && *valp != 0)
 				continue;
-			fprintf(fp, "%s%s", or ? "|" : "", table->name);
+			fprintf(fp, "%s%s", or ? "|" : "", table->str);
 			or = true;
 			rem &= ~table->val;
 		}
@@ -161,10 +162,10 @@ print_mask_suffix(FILE *fp, uintmax_t rem, bool printed)
 	if (_sd_flags_format == KDUMP) {
 		fprintf(fp, ">");
 		if (!printed)
-			fprintf(fp, "<invalid>%ju", val);
+			fprintf(fp, "<invalid>%ju", rem);
 	} else {
 		if (!printed || rem != 0)
-			fprintf(fp, "%s0x%jx", printed ? "|" : "", val);
+			fprintf(fp, "%s0x%jx", printed ? "|" : "", rem);
 	}
 }
 
@@ -190,7 +191,7 @@ print_mask_0(FILE *fp, struct name_table *table, uintmax_t val)
 {
 
 	if (val == 0)
-		fputs(fp, "0");
+		fputs("0", fp);
 	else
 		print_mask(fp, table, val);
 }
@@ -226,7 +227,7 @@ print_value(FILE *fp, struct name_table *table, uintmax_t val, int base)
 
 	str = lookup_value(table, val);
 	if (str != NULL)
-		fputs(fp, str);
+		fputs(str, fp);
 	else {
 		if (_sd_flags_format == KDUMP)
 			fprintf(fp, "<invalid=");
@@ -560,7 +561,7 @@ sysdecode_quotactl_cmd(FILE *fp, int cmd, int base)
 	 * into its components and rebuild the corresponding QCMD()
 	 * invocation.
 	 */
-	print_value(fp, quotactlname, cmd, base);
+	print_value(fp, quotactlcmds, cmd, base);
 }
 
 void
@@ -602,84 +603,84 @@ void
 sysdecode_shmat_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, shmatname, flags);
+	print_mask(fp, shmatflags, flags);
 }
 
 void
 sysdecode_shutdown_how(FILE *fp, int how, int base)
 {
 
-	print_value(fp, shutdownhowname, how, base);
+	print_value(fp, shutdownhow, how, base);
 }
 
 void
 sysdecode_sigbus_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigbuscodename, si_code, base);
+	print_value(fp, sigbuscode, si_code, base);
 }
 
 void
 sysdecode_sigchld_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigchldcodename, si_code, base);
+	print_value(fp, sigchldcode, si_code, base);
 }
 
 void
 sysdecode_sigfpe_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigfpecodename, si_code, base);
+	print_value(fp, sigfpecode, si_code, base);
 }
 
 void
 sysdecode_sigill_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigillcodename, si_code, base);
+	print_value(fp, sigillcode, si_code, base);
 }
 
 void
 sysdecode_sigsegv_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigsegvcodename, si_code, base);
+	print_value(fp, sigsegvcode, si_code, base);
 }
 
 void
 sysdecode_sigtrap_code(FILE *fp, int si_code, int base)
 {
 
-	print_value(fp, sigtrapcodename, si_code, base);
+	print_value(fp, sigtrapcode, si_code, base);
 }
 
 void
 sysdecode_sigprocmask_how(FILE *fp, int how, int base)
 {
 
-	print_value(fp, sigprocmaskhowname, how, base);
+	print_value(fp, sigprocmaskhow, how, base);
 }
 
 void
 sysdecode_socketdomain(FILE *fp, int domain, int base)
 {
 
-	print_value(fp, sockdomainname, domain, base);
+	print_value(fp, sockdomain, domain, base);
 }
 
 void
 sysdecode_sockaddr_family(FILE *fp, int sa_family, int base)
 {
 
-	print_value(fp, sockfamilyname, sa_family, base);
+	print_value(fp, sockfamily, sa_family, base);
 }
 
 void
 sysdecode_ipproto(FILE *fp, int protocol, int base)
 {
 
-	print_value(fp, sockipprotoname, protocol, base);
+	print_value(fp, sockipproto, protocol, base);
 }
 
 /* Accept level and optname? */
@@ -687,49 +688,49 @@ void
 sysdecode_sockopt_name(FILE *fp, int optname, int base)
 {
 
-	print_value(fp, sockoptname, optname, base);
+	print_value(fp, sockopt, optname, base);
 }
 
 void
 sysdecode_sockettype(FILE *fp, int type, int base)
 {
 
-	print_value(fp, socktypename, type, base);
+	print_value(fp, socktype, type, base);
 }
 
 void
 sysdecode_thr_create_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, thrcreateflagsname, flags);
+	print_mask(fp, thrcreateflags, flags);
 }
 
 void
 sysdecode_umtx_op(FILE *fp, int op, int base)
 {
 
-	print_value(fp, umtxopname, op, base);
+	print_value(fp, umtxop, op, base);
 }
 
 void
 sysdecode_vmresult(FILE *fp, int result, int base)
 {
 
-	print_value(fp, vmresultname, result, base);
+	print_value(fp, vmresult, result, base);
 }
 
 void
 sysdecode_wait6_options(FILE *fp, int options)
 {
 
-	print_mask(fp, wait6optname, options);
+	print_mask(fp, wait6opt, options);
 }
 
 void
 sysdecode_whence(FILE *fp, int whence, int base)
 {
 
-	print_value(fp, whencename, whence, base);
+	print_value(fp, whence, whence, base);
 }
 
 void
@@ -816,7 +817,7 @@ sysdecode_sigcode(FILE *fp, int sig, int code)
 
 	s = lookup_value(sigcode, code);
 	if (s != NULL) {
-		fputs(fp, s);
+		fputs(s, fp);
 		return;
 	}
 	
@@ -869,13 +870,13 @@ sysdecode_capname(FILE *fp, cap_rights_t *rightsp)
 	bool comma;
 
 	comma = false;
-	for (t = caprights; t != NULL; t++) {
+	for (t = caprights; t->str != NULL; t++) {
 		idx = ffs(CAPIDXBIT(t->val)) - 1;
 		if (CAPARSIZE(rightsp) < idx)
 			continue;
 		if ((rightsp->cr_rights[CAPIDXBIT(t->val)] & CAPMASK(t->val)) ==
 		    CAPMASK(t->val)) {
-			fprintf(fp, "%s%s", comma ? "," : "", t->name);
+			fprintf(fp, "%s%s", comma ? "," : "", t->str);
 			comma = true;
 		}
 	}
