@@ -8,6 +8,7 @@ LIB=	sysdecode
 SRCS=	errno.c flags.c ioctl.c syscallnames.c utrace.c
 INCS=	sysdecode.h
 
+CFLAGS+= -I${.OBJDIR}
 CFLAGS+= -I${.CURDIR}/../../sys
 CFLAGS+= -I${.CURDIR}/../../libexec/rtld-elf
 
@@ -43,6 +44,6 @@ ioctl.c: mkioctls
 	env MACHINE=${MACHINE} CPP="${CPP}" \
 		/bin/sh ${.CURDIR}/mkioctls ${DESTDIR}${INCLUDEDIR} > ${.TARGET}
 
-beforedepend: ioctl.c
+beforedepend: ioctl.c tables.h
 
 .include <bsd.lib.mk>
