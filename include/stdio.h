@@ -111,6 +111,10 @@ struct __sbuf {
  * Certain members of __sFILE are accessed directly via macros or
  * inline functions.  To preserve ABI compat, these members must not
  * be disturbed.  These members are marked below with (*).
+ *
+ * Other members of __sFILE are known to be accessed directly by
+ * external software.  These members must also be preserved for ABI
+ * compat.  These members are marked below with (+).
  */
 struct __sFILE {
 	unsigned char *_p;	/* (*) current position in (some) buffer */
@@ -123,16 +127,15 @@ struct __sFILE {
 
 	/* operations */
 	void	*_cookie;	/* (*) cookie passed to io functions */
-#ifdef STDIO_INTERNALS
 	int	(*_close)(void *);
 	int	(*_read)(void *, char *, int);
 	fpos_t	(*_seek)(void *, fpos_t, int);
 	int	(*_write)(void *, const char *, int);
 
 	/* separate buffer for long sequences of ungetc() */
-	struct	__sbuf _ub;	/* ungetc buffer */
+	struct	__sbuf _ub;	/* (+) ungetc buffer */
 	unsigned char	*_up;	/* saved _p when _p is doing ungetc data */
-	int	_ur;		/* saved _r when _r is counting ungetc data */
+	int	_ur;		/* (+) saved _r when _r is counting ungetc data */
 
 	/* tricks to meet minimum requirements even when malloc() fails */
 	unsigned char _ubuf[3];	/* guarantee an ungetc() buffer */
@@ -143,8 +146,9 @@ struct __sFILE {
 
 	/* Unix stdio files get aligned to block boundaries on fseek() */
 	int	_blksize;	/* stat.st_blksize (may be != _bf._size) */
-	fpos_t	_offset;	/* current lseek offset */
+	fpos_t	_offset;	/* (+) current lseek offset */
 
+#ifdef STDIO_INTERNALS
 	struct pthread_mutex *_fl_mutex;	/* used for MT-safety */
 	struct pthread *_fl_owner;	/* current owner */
 	int	_fl_count;	/* recursive lock count */
