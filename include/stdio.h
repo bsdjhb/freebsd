@@ -137,12 +137,17 @@ struct __sFILE {
 	unsigned char	*_up;	/* saved _p when _p is doing ungetc data */
 	int	_ur;		/* (+) saved _r when _r is counting ungetc data */
 
+#ifdef STDIO_INTERNALS
 	/* tricks to meet minimum requirements even when malloc() fails */
 	unsigned char _ubuf[3];	/* guarantee an ungetc() buffer */
 	unsigned char _nbuf[1];	/* guarantee a getc() buffer */
 
 	/* separate buffer for fgetln() when line crosses buffer boundary */
 	struct	__sbuf _lb;	/* buffer for fgetln() */
+#else
+	unsigned char _pad0[4];
+	struct	__sbuf _pad1;
+#endif
 
 	/* Unix stdio files get aligned to block boundaries on fseek() */
 	int	_blksize;	/* stat.st_blksize (may be != _bf._size) */
