@@ -39,8 +39,11 @@ enum sysdecode_abi {
 };
 
 int	sysdecode_abi_to_freebsd_errno(enum sysdecode_abi _abi, int _error);
+void	sysdecode_atfd(FILE *_fp, int _fd, int _decimal);
 int	sysdecode_freebsd_to_abi_errno(enum sysdecode_abi _abi, int _error);
 const char *sysdecode_ioctlname(unsigned long _val);
+void	sysdecode_semctl_op(FILE *_fp, int _cmd);
+void	sysdecode_signal(FILE *_fp, int _sig);
 const char *sysdecode_syscallname(enum sysdecode_abi _abi, unsigned int _code);
 int	sysdecode_utrace(FILE *_fp, void *_buf, size_t _len);
 

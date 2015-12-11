@@ -34,9 +34,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/unistd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-#define _KERNEL
+//#define _KERNEL
 #include <sys/socket.h>
-#undef _KERNEL
+//#undef _KERNEL
 #include <netinet/in.h>
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -46,9 +46,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/reboot.h>
 #include <sched.h>
 #include <sys/linker.h>
-#define _KERNEL
+//#define _KERNEL
 #include <sys/thr.h>
-#undef _KERNEL
+//#undef _KERNEL
 #include <sys/extattr.h>
 #include <sys/acl.h>
 #include <aio.h>
@@ -62,6 +62,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/capsicum.h>
 #include <vm/vm.h>
 #include <vm/vm_param.h>
+#include <signal.h>
 
 #include <sysdecode.h>
 #include "local.h"
@@ -79,7 +80,7 @@ struct name_table {
 #define	XEND	{ 0, NULL }
 
 #define	TABLE_START(n)	static struct name_table n[] = {
-#define	TABLE_ENTRY(x)	X(x)
+#define	TABLE_ENTRY	X
 #define	TABLE_END	XEND };
 
 #include "tables.h"
@@ -254,7 +255,7 @@ sysdecode_signal(FILE *fp, int sig)
 {
 
 	if (sig > 0 && sig < NSIG)
-		fprintf(fp, "SIG%s", sys_signames[sig]);
+		fprintf(fp, "SIG%s", sys_signame[sig]);
 	else
 		fprintf(fp, "SIG %d", sig);
 }
