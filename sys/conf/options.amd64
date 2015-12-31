@@ -51,7 +51,6 @@ ATKBD_DFLT_KEYMAP	opt_atkbd.h
 # -------------------------------
 # EOF
 # -------------------------------
-HAMMER			opt_cpu.h
 PSM_HOOKRESUME		opt_psm.h
 PSM_RESETAFTERSUSPEND	opt_psm.h
 PSM_DEBUG		opt_psm.h
