@@ -34,21 +34,21 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <dev/pci/pcivar.h>
 
-struct t5vfp_softc {
+struct t5iov_softc {
 	device_t sc_dev;
 };
 
 static int
-t5vfp_probe(device_t dev)
+t5iov_probe(device_t dev)
 {
 
 	return (ENXIO);
 }
 
 static int
-t5vfp_attach(device_t dev)
+t5iov_attach(device_t dev)
 {
-	struct t5vfp_softc *sc;
+	struct t5iov_softc *sc;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -56,53 +56,52 @@ t5vfp_attach(device_t dev)
 }
 
 static int
-t5vfp_detach(device_t dev)
+t5iov_detach(device_t dev)
 {
 
 	return (ENXIO);
 }
 
 static int
-t5vfp_init_iov(device_t dev, uint16_t num_vfs, const struct nvlist *config)
+t5iov_init_iov(device_t dev, uint16_t num_vfs, const struct nvlist *config)
 {
 
 	return (ENXIO);
 }
 
 static void
-t5vfp_uninit_iov(device_t dev)
+t5iov_uninit_iov(device_t dev)
 {
 }
 
 static int
-t5vfp_add_vf(device_t dev, uint16_t vfnum, const struct nvlist *config)
+t5iov_add_vf(device_t dev, uint16_t vfnum, const struct nvlist *config)
 {
 
 	return (ENXIO);
 }
 
 
-static device_method_t t5vfp_methods[] = {
-	DEVMETHOD(device_probe,		t5vfp_probe),
-	DEVMETHOD(device_attach,	t5vfp_attach),
-	DEVMETHOD(device_detach,	t5vfp_detach),
+static device_method_t t5iov_methods[] = {
+	DEVMETHOD(device_probe,		t5iov_probe),
+	DEVMETHOD(device_attach,	t5iov_attach),
+	DEVMETHOD(device_detach,	t5iov_detach),
 
-	DEVMETHOD(pci_init_iov,		t5vfp_init_iov),
-	DEVMETHOD(pci_uninit_iov,	t5vfp_uninit_iov),
-	DEVMETHOD(pci_add_vf,		t5vfp_add_vf),
+	DEVMETHOD(pci_init_iov,		t5iov_init_iov),
+	DEVMETHOD(pci_uninit_iov,	t5iov_uninit_iov),
+	DEVMETHOD(pci_add_vf,		t5iov_add_vf),
 
 	DEVMETHOD_END
 };
 
-static driver_t t5vfp_driver = {
-	"t5vfp",
-	t5vfp_methods,
-	sizeof(struct t5vfp_softc)
+static driver_t t5iov_driver = {
+	"t5iov",
+	t5iov_methods,
+	sizeof(struct t5iov_softc)
 };
 
-static devclass_t t5vfp_devclass;
+static devclass_t t5iov_devclass;
 
-DRIVER_MODULE(t5vfp, pci, t5vfp_driver, t5vfp_devclass, 0, 0);
-MODULE_VERSION(t5vfp, 1);
-
+DRIVER_MODULE(t5iov, pci, t5iov_driver, t5iov_devclass, 0, 0);
+MODULE_VERSION(t5iov, 1);
 
