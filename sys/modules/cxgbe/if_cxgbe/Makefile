@@ -15,13 +15,13 @@ SRCS+=	opt_ofed.h
 SRCS+=	opt_rss.h
 SRCS+=	pci_if.h
 SRCS+=	t4_hw.c
+SRCS+=	t4_iov.c
 SRCS+=	t4_l2t.c
 SRCS+=	t4_main.c
 SRCS+=	t4_mp_ring.c
 SRCS+=	t4_netmap.c
 SRCS+=	t4_sge.c
 SRCS+=	t4_tracer.c
-SRCS+=	t4_vfp.c
 
 # Provide the timestamp of a packet in its header mbuf.
 #CFLAGS+= -DT4_PKT_TIMESTAMP
