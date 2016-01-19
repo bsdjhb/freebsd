@@ -14,6 +14,7 @@ SRCS+=	opt_inet6.h
 SRCS+=	opt_ofed.h
 SRCS+=	opt_rss.h
 SRCS+=	pci_if.h
+SRCS+=	t4_if.c t4_if.h
 SRCS+=	t4_hw.c
 SRCS+=	t4_iov.c
 SRCS+=	t4_l2t.c

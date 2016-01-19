@@ -76,15 +76,19 @@ __FBSDID("$FreeBSD$");
 #include "t4_ioctl.h"
 #include "t4_l2t.h"
 #include "t4_mp_ring.h"
+#include "t4_if.h"
 
 /* T4 bus driver interface */
 static int t4_probe(device_t);
 static int t4_attach(device_t);
 static int t4_detach(device_t);
+static int t4_ready(device_t);
 static device_method_t t4_methods[] = {
 	DEVMETHOD(device_probe,		t4_probe),
 	DEVMETHOD(device_attach,	t4_attach),
 	DEVMETHOD(device_detach,	t4_detach),
+
+	DEVMETHOD(chelsio_t4_is_main_ready, t4_ready),
 
 	DEVMETHOD_END
 };
@@ -146,6 +150,8 @@ static device_method_t t5_methods[] = {
 	DEVMETHOD(device_probe,		t5_probe),
 	DEVMETHOD(device_attach,	t4_attach),
 	DEVMETHOD(device_detach,	t4_detach),
+
+	DEVMETHOD(chelsio_t4_is_main_ready, t4_ready),
 
 	DEVMETHOD_END
 };
@@ -533,6 +539,7 @@ static int set_sched_queue(struct adapter *, struct t4_sched_queue *);
 static int toe_capability(struct vi_info *, int);
 #endif
 static int mod_event(module_t, int, void *);
+static int notify_siblings(device_t, int);
 
 struct {
 	uint16_t device;
@@ -1078,6 +1085,38 @@ done:
 	return (rc);
 }
 
+static int
+t4_ready(device_t)
+{
+
+	/* TODO: Not sure when the driver is "ready"? */
+	return (EOPNOTSUPP);
+}
+
+static int
+notify_siblings(device_t dev, int detaching)
+{
+	device_t sibling;
+	int error, i;
+
+	error = 0;
+	for (i = 0; i < PCI_FUNCMAX) {
+		if (i == pci_get_function(dev))
+			continue;
+		sibling = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
+		    pci_get_slot(dev), i);
+		if (sibling == NULL || !device_is_attached(sibling))
+			continue;
+		if (detaching)
+			error = CHELSIO_T4_DETACH_CHILD(sibling);
+		else
+			(void)CHELSIO_T4_ATTACH_CHILD(sibling);
+		if (error)
+			break;
+	}
+	return (error);
+}
+
 /*
  * Idempotent
  */
@@ -1089,6 +1128,13 @@ t4_detach(device_t dev)
 	int i, rc;
 
 	sc = device_get_softc(dev);
+
+	rc = notify_siblings(dev, 1);
+	if (rc) {
+		device_printf(dev,
+		    "failed to detach sibling devices: %d\n", rc);
+		return (rc);
+	}
 
 	if (sc->flags & FULL_INIT_DONE)
 		t4_intr_disable(sc);
