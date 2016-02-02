@@ -32,7 +32,14 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
+#include <sys/systm.h>
 #include <dev/pci/pcivar.h>
+
+#ifdef PCI_IOV
+#include <dev/pci/pci_iov.h>
+#endif
+
+#include "t4_if.h"
 
 struct t4iov_softc {
 	device_t sc_dev;
@@ -82,17 +89,22 @@ struct {
 #endif
 };
 
+static int	t4iov_attach_child(device_t dev);
+
 static int
 t4iov_probe(device_t dev)
 {
+	uint16_t d; 
+	size_t i;
 
 	/*
 	 * TODO: Need to fail probing if there is not an active port
 	 * for this function.
 	 */
-	for (i = 0; i < nitems(t4_pciids); i++) {
-		if (d == t4_pciids[i].device) {
-			device_set_desc(dev, t4_pciids[i].desc);
+	d = pci_get_device(dev);
+	for (i = 0; i < nitems(t4iov_pciids); i++) {
+		if (d == t4iov_pciids[i].device) {
+			device_set_desc(dev, t4iov_pciids[i].desc);
 			return (BUS_PROBE_DEFAULT);
 		}
 	}
@@ -102,14 +114,17 @@ t4iov_probe(device_t dev)
 static int
 t5iov_probe(device_t dev)
 {
+	uint16_t d; 
+	size_t i;
 
 	/*
 	 * TODO: Need to fail probing if there is not an active port
 	 * for this function.
 	 */
-	for (i = 0; i < nitems(t5_pciids); i++) {
-		if (d == t5_pciids[i].device) {
-			device_set_desc(dev, t5_pciids[i].desc);
+	d = pci_get_device(dev);
+	for (i = 0; i < nitems(t5iov_pciids); i++) {
+		if (d == t5iov_pciids[i].device) {
+			device_set_desc(dev, t5iov_pciids[i].desc);
 			return (BUS_PROBE_DEFAULT);
 		}
 	}
@@ -127,8 +142,8 @@ t4iov_attach(device_t dev)
 
 	main = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
 	    pci_get_slot(dev), 4);
-	if (CHELSIO_T4_IS_PARENT_READY(main) == 0)
-		return (t4iov_attach_child);
+	if (T4_IS_MAIN_READY(main) == 0)
+		return (t4iov_attach_child(dev));
 	return (0);
 }
 
@@ -136,9 +151,23 @@ static int
 t4iov_attach_child(device_t dev)
 {
 	struct t4iov_softc *sc;
+#ifdef PCI_IOV
+	nvlist_t *pf_schema, *vf_schema;
+	int error;
+#endif
 
 	sc = device_get_softc(dev);
 	MPASS(!sc->sc_attached);
+
+#ifdef PCI_IOV
+	pf_schema = pci_iov_schema_alloc_node();
+	vf_schema = pci_iov_schema_alloc_node();
+	error = pci_iov_attach(dev, pf_schema, vf_schema);
+	if (error) {
+		device_printf(dev, "Failed to initialize SR-IOV: %d\n", error);
+		return;
+	}
+#endif
 
 	sc->sc_attached = true;
 	return (0);
@@ -148,9 +177,20 @@ static int
 t4iov_detach_child(device_t dev)
 {
 	struct t4iov_softc *sc;
+#ifdef PCI_IOV
+	int error;
+#endif
 
 	sc = device_get_softc(dev);
 	MPASS(sc->sc_attached);
+
+#ifdef PCI_IOV
+	error = pci_iov_detach(dev);
+	if (error != 0) {
+		device_printf(dev, "Failed to disable SR-IOV\n");
+		return (error);
+	}
+#endif
 
 	sc->sc_attached = false;
 	return (0);
@@ -159,17 +199,21 @@ t4iov_detach_child(device_t dev)
 static int
 t4iov_detach(device_t dev)
 {
+	struct t4iov_softc *sc;
 
+	sc = device_get_softc(dev);
 	if (sc->sc_attached)
 		return (t4iov_detach_child(dev));
 	return (0);
 }
 
+#ifdef PCI_IOV
 static int
 t4iov_init_iov(device_t dev, uint16_t num_vfs, const struct nvlist *config)
 {
 
-	return (ENXIO);
+	/* XXX: The Linux driver sets up a vf_monitor task on T4 adapters. */
+	return (0);
 }
 
 static void
@@ -181,17 +225,23 @@ static int
 t4iov_add_vf(device_t dev, uint16_t vfnum, const struct nvlist *config)
 {
 
-	return (ENXIO);
+	return (0);
 }
+#endif
 
 static device_method_t t4iov_methods[] = {
 	DEVMETHOD(device_probe,		t4iov_probe),
 	DEVMETHOD(device_attach,	t4iov_attach),
 	DEVMETHOD(device_detach,	t4iov_detach),
 
+#ifdef PCI_IOV
 	DEVMETHOD(pci_init_iov,		t4iov_init_iov),
 	DEVMETHOD(pci_uninit_iov,	t4iov_uninit_iov),
 	DEVMETHOD(pci_add_vf,		t4iov_add_vf),
+#endif
+
+	DEVMETHOD(t4_attach_child,	t4iov_attach_child),
+	DEVMETHOD(t4_detach_child,	t4iov_detach_child),
 
 	DEVMETHOD_END
 };
@@ -207,9 +257,14 @@ static device_method_t t5iov_methods[] = {
 	DEVMETHOD(device_attach,	t4iov_attach),
 	DEVMETHOD(device_detach,	t4iov_detach),
 
+#ifdef PCI_IOV
 	DEVMETHOD(pci_init_iov,		t4iov_init_iov),
 	DEVMETHOD(pci_uninit_iov,	t4iov_uninit_iov),
 	DEVMETHOD(pci_add_vf,		t4iov_add_vf),
+#endif
+
+	DEVMETHOD(t4_attach_child,	t4iov_attach_child),
+	DEVMETHOD(t4_detach_child,	t4iov_detach_child),
 
 	DEVMETHOD_END
 };

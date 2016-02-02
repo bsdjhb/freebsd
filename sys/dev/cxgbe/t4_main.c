@@ -88,7 +88,7 @@ static device_method_t t4_methods[] = {
 	DEVMETHOD(device_attach,	t4_attach),
 	DEVMETHOD(device_detach,	t4_detach),
 
-	DEVMETHOD(chelsio_t4_is_main_ready, t4_ready),
+	DEVMETHOD(t4_is_main_ready,	t4_ready),
 
 	DEVMETHOD_END
 };
@@ -151,7 +151,7 @@ static device_method_t t5_methods[] = {
 	DEVMETHOD(device_attach,	t4_attach),
 	DEVMETHOD(device_detach,	t4_detach),
 
-	DEVMETHOD(chelsio_t4_is_main_ready, t4_ready),
+	DEVMETHOD(t4_is_main_ready,	t4_ready),
 
 	DEVMETHOD_END
 };
@@ -1086,7 +1086,7 @@ done:
 }
 
 static int
-t4_ready(device_t)
+t4_ready(device_t dev)
 {
 
 	/* TODO: Not sure when the driver is "ready"? */
@@ -1100,7 +1100,7 @@ notify_siblings(device_t dev, int detaching)
 	int error, i;
 
 	error = 0;
-	for (i = 0; i < PCI_FUNCMAX) {
+	for (i = 0; i < PCI_FUNCMAX; i++) {
 		if (i == pci_get_function(dev))
 			continue;
 		sibling = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
@@ -1108,9 +1108,9 @@ notify_siblings(device_t dev, int detaching)
 		if (sibling == NULL || !device_is_attached(sibling))
 			continue;
 		if (detaching)
-			error = CHELSIO_T4_DETACH_CHILD(sibling);
+			error = T4_DETACH_CHILD(sibling);
 		else
-			(void)CHELSIO_T4_ATTACH_CHILD(sibling);
+			(void)T4_ATTACH_CHILD(sibling);
 		if (error)
 			break;
 	}

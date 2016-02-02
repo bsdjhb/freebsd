@@ -29,7 +29,7 @@
 
 #include <sys/bus.h>
 
-INTERFACE t4iov;
+INTERFACE t4;
 
 # The "main" device of a T4/T5 NIC is the PF4 device.  Drivers for other
 # functions on the NIC need to wait for the main device to be initialized
