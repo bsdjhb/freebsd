@@ -1069,6 +1069,8 @@ t4_attach(device_t dev)
 
 	t4_set_desc(sc);
 
+	notify_siblings(dev, 0);
+
 done:
 	if (rc != 0 && sc->cdev) {
 		/* cdev was created and so cxgbetool works; recover that way. */
@@ -1088,9 +1090,12 @@ done:
 static int
 t4_ready(device_t dev)
 {
+	struct adapter *sc;
 
-	/* TODO: Not sure when the driver is "ready"? */
-	return (EOPNOTSUPP);
+	sc = device_get_softc(dev);
+	if (sc->flags & FW_OK)
+		return (0);
+	return (ENXIO);
 }
 
 static int
