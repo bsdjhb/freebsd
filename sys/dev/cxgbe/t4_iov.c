@@ -36,6 +36,8 @@ __FBSDID("$FreeBSD$");
 #include <dev/pci/pcivar.h>
 
 #ifdef PCI_IOV
+#include <sys/nv.h>
+#include <sys/iov_schema.h>
 #include <dev/pci/pci_iov.h>
 #endif
 
@@ -165,7 +167,7 @@ t4iov_attach_child(device_t dev)
 	error = pci_iov_attach(dev, pf_schema, vf_schema);
 	if (error) {
 		device_printf(dev, "Failed to initialize SR-IOV: %d\n", error);
-		return;
+		return (0);
 	}
 #endif
 
@@ -209,7 +211,7 @@ t4iov_detach(device_t dev)
 
 #ifdef PCI_IOV
 static int
-t4iov_init_iov(device_t dev, uint16_t num_vfs, const struct nvlist *config)
+t4iov_iov_init(device_t dev, uint16_t num_vfs, const struct nvlist *config)
 {
 
 	/* XXX: The Linux driver sets up a vf_monitor task on T4 adapters. */
@@ -217,7 +219,7 @@ t4iov_init_iov(device_t dev, uint16_t num_vfs, const struct nvlist *config)
 }
 
 static void
-t4iov_uninit_iov(device_t dev)
+t4iov_iov_uninit(device_t dev)
 {
 }
 
@@ -235,9 +237,9 @@ static device_method_t t4iov_methods[] = {
 	DEVMETHOD(device_detach,	t4iov_detach),
 
 #ifdef PCI_IOV
-	DEVMETHOD(pci_init_iov,		t4iov_init_iov),
-	DEVMETHOD(pci_uninit_iov,	t4iov_uninit_iov),
-	DEVMETHOD(pci_add_vf,		t4iov_add_vf),
+	DEVMETHOD(pci_iov_init,		t4iov_iov_init),
+	DEVMETHOD(pci_iov_uninit,	t4iov_iov_uninit),
+	DEVMETHOD(pci_iov_add_vf,	t4iov_add_vf),
 #endif
 
 	DEVMETHOD(t4_attach_child,	t4iov_attach_child),
@@ -258,9 +260,9 @@ static device_method_t t5iov_methods[] = {
 	DEVMETHOD(device_detach,	t4iov_detach),
 
 #ifdef PCI_IOV
-	DEVMETHOD(pci_init_iov,		t4iov_init_iov),
-	DEVMETHOD(pci_uninit_iov,	t4iov_uninit_iov),
-	DEVMETHOD(pci_add_vf,		t4iov_add_vf),
+	DEVMETHOD(pci_iov_init,		t4iov_iov_init),
+	DEVMETHOD(pci_iov_uninit,	t4iov_iov_uninit),
+	DEVMETHOD(pci_iov_add_vf,	t4iov_add_vf),
 #endif
 
 	DEVMETHOD(t4_attach_child,	t4iov_attach_child),
