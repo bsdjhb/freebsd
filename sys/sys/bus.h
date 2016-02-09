@@ -307,6 +307,7 @@ struct resource_map_request {
 #define	resource_init_map_request(rmr) do {				\
 	bzero((rmr), sizeof(*(rmr)));					\
 	(rmr)->size = sizeof(*(rmr));					\
+	(rmr)->memattr = VM_MEMATTR_DEVICE_DEFAULT;			\
 } while (0)
 
 /*
