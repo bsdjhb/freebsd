@@ -4060,6 +4060,41 @@ bus_generic_deactivate_resource(device_t dev, device_t child, int type,
 }
 
 /**
+ * @brief Helper function for implementing BUS_MAP_RESOURCE().
+ *
+ * This simple implementation of BUS_MAP_RESOURCE() simply calls the
+ * BUS_MAP_RESOURCE() method of the parent of @p dev.
+ */
+int
+bus_generic_map_resource(device_t dev, device_t child, int type,
+    struct resource *r, struct resource_map_request *args, bus_space_tag_t *tag,
+    bus_space_handle_t *handle)
+{
+	/* Propagate up the bus hierarchy until someone handles it. */
+	if (dev->parent)
+		return (BUS_MAP_RESOURCE(dev->parent, child, type, r, args, tag,
+		    handle));
+	return (EINVAL);
+}
+
+/**
+ * @brief Helper function for implementing BUS_UNMAP_RESOURCE().
+ *
+ * This simple implementation of BUS_UNMAP_RESOURCE() simply calls the
+ * BUS_UNMAP_RESOURCE() method of the parent of @p dev.
+ */
+int
+bus_generic_unmap_resource(device_t dev, device_t child, int type,
+    struct resource *r, bus_space_tag_t tag, bus_space_handle_t handle)
+{
+	/* Propagate up the bus hierarchy until someone handles it. */
+	if (dev->parent)
+		return (BUS_UNMAP_RESOURCE(dev->parent, child, type, r, tag,
+		    handle));
+	return (EINVAL);
+}
+
+/**
  * @brief Helper function for implementing BUS_BIND_INTR().
  *
  * This simple implementation of BUS_BIND_INTR() simply calls the
@@ -4418,6 +4453,37 @@ bus_deactivate_resource(device_t dev, int type, int rid, struct resource *r)
 	if (dev->parent == NULL)
 		return (EINVAL);
 	return (BUS_DEACTIVATE_RESOURCE(dev->parent, dev, type, rid, r));
+}
+
+/**
+ * @brief Wrapper function for BUS_MAP_RESOURCE().
+ *
+ * This function simply calls the BUS_MAP_RESOURCE() method of the
+ * parent of @p dev.
+ */
+int
+bus_map_resource(device_t dev, int type, struct resource *r,
+    struct resource_map_request *args, bus_space_tag_t *tag,
+    bus_space_handle_t *handle)
+{
+	if (dev->parent == NULL)
+		return (EINVAL);
+	return (BUS_MAP_RESOURCE(dev->parent, dev, type, r, args, tag, handle));
+}
+
+/**
+ * @brief Wrapper function for BUS_UNMAP_RESOURCE().
+ *
+ * This function simply calls the BUS_UNMAP_RESOURCE() method of the
+ * parent of @p dev.
+ */
+int
+bus_unmap_resource(device_t dev, int type, struct resource *r,
+    bus_space_tag_t tag, bus_space_handle_t handle)
+{
+	if (dev->parent == NULL)
+		return (EINVAL);
+	return (BUS_UNMAP_RESOURCE(dev->parent, dev, type, r, tag, handle));
 }
 
 /**

@@ -287,8 +287,9 @@ METHOD struct resource * alloc_resource {
  * @brief Activate a resource
  *
  * Activate a resource previously allocated with
- * BUS_ALLOC_RESOURCE(). This may for instance map a memory region
- * into the kernel's virtual address space.
+ * BUS_ALLOC_RESOURCE().  This may enable decoding of this resource in a
+ * device for instance.  It will also establish a mapping for the resource
+ * unless RF_UNMAPPED was set when allocating the resource.
  *
  * @param _dev		the parent device of @p _child
  * @param _child	the device which allocated the resource
@@ -304,12 +305,62 @@ METHOD int activate_resource {
 	struct resource *_r;
 };
 
+
+/**
+ * @brief Map a resource
+ *
+ * Allocate a mapping for a range of an active resource.  The mapping
+ * is described by a bus space tag and handle.  This may for instance
+ * map a memory region into the kernel's virtual address space.
+ *
+ * @param _dev		the parent device of @p _child
+ * @param _child	the device which allocated the resource
+ * @param _type		the type of resource
+ * @param _r		the resource to map
+ * @param _args		optional attributes of the mapping
+ * @param _tag		the tag for the mapping
+ * @param _handle	the handle for the mapping
+ */
+METHOD int map_resource {
+	device_t	_dev;
+	device_t	_child;
+	int		_type;
+	struct resource *_r;
+	struct resource_map_request *_args;
+	bus_space_tag_t	*_tag;
+	bus_space_handle_t *_handle;
+};
+
+
+/**
+ * @brief Unmap a resource
+ *
+ * Release a mapping previously allocated with
+ * BUS_MAP_RESOURCE(). This may for instance unmap a memory region
+ * from the kernel's virtual address space.
+ *
+ * @param _dev		the parent device of @p _child
+ * @param _child	the device which allocated the resource
+ * @param _type		the type of resource
+ * @param _r		the resource
+ * @param _tag		the tag of the mapping to release
+ * @param _handle	the handle of the mapping to release
+ */
+METHOD int unmap_resource {
+	device_t	_dev;
+	device_t	_child;
+	int		_type;
+	struct resource *_r;
+	bus_space_tag_t	_tag;
+	bus_space_handle_t _handle;
+};
+
+
 /**
  * @brief Deactivate a resource
  *
  * Deactivate a resource previously allocated with
- * BUS_ALLOC_RESOURCE(). This may for instance unmap a memory region
- * from the kernel's virtual address space.
+ * BUS_ALLOC_RESOURCE(). 
  *
  * @param _dev		the parent device of @p _child
  * @param _child	the device which allocated the resource
