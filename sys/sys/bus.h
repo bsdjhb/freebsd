@@ -298,12 +298,14 @@ struct driver {
  * @brief Optional properties of a resource mapping request.
  */
 struct resource_map_request {
-	int	size;
+	size_t	size;
 	rman_res_t offset;
 	rman_res_t length;
 	vm_memattr_t memattr;
 };
 
+void	resource_init_map_request_impl(struct resource_map_request *_args,
+	    size_t _sz);
 #define	resource_init_map_request(rmr) do {				\
 	bzero((rmr), sizeof(*(rmr)));					\
 	(rmr)->size = sizeof(*(rmr));					\
