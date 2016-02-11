@@ -945,6 +945,8 @@ struct adapter {
 /* One for errors, one for firmware events */
 #define T4_EXTRA_INTR 2
 
+extern int t5_write_combine;
+
 static inline uint32_t
 t4_read_reg(struct adapter *sc, uint32_t reg)
 {

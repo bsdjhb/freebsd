@@ -765,4 +765,25 @@ int t4_config_watchdog(struct adapter *adapter, unsigned int mbox,
 int t4_get_devlog_level(struct adapter *adapter, unsigned int *level);
 int t4_set_devlog_level(struct adapter *adapter, unsigned int level);
 void t4_sge_decode_idma_state(struct adapter *adapter, int state);
+
+static inline int t4vf_query_params(struct adapter *adapter,
+				    unsigned int nparams, const u32 *params,
+				    u32 *vals)
+{
+	return (t4_query_params(adapter, adapter->mbox, 0, 0, nparams, params,
+	    vals));
+}
+
+static inline int t4vf_wr_mbox(struct adapter *adap, const void *cmd,
+			       int size, void *rpl)
+{
+	return t4_wr_mbox(adap, adap->mbox, cmd, size, rpl);
+}
+
+int t4vf_wait_dev_ready(struct adapter *adapter);
+int t4vf_fw_reset(struct adapter *adapter);
+int t4vf_get_sge_params(struct adapter *adapter);
+int t4vf_get_rss_glb_config(struct adapter *adapter);
+int t4vf_prep_adapter(struct adapter *adapter);
+
 #endif /* __CHELSIO_COMMON_H */

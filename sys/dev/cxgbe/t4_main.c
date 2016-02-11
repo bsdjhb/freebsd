@@ -364,7 +364,7 @@ TUNABLE_INT("hw.cxgbe.iscsicaps_allowed", &t4_iscsicaps_allowed);
 static int t4_fcoecaps_allowed = 0;
 TUNABLE_INT("hw.cxgbe.fcoecaps_allowed", &t4_fcoecaps_allowed);
 
-static int t5_write_combine = 0;
+int t5_write_combine = 0;
 TUNABLE_INT("hw.cxl.write_combine", &t5_write_combine);
 
 static int t4_num_vis = 1;
