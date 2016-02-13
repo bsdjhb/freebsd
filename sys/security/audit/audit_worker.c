@@ -92,10 +92,9 @@ static struct ucred	*audit_cred;
 static struct vnode	*audit_vp;
 static off_t		 audit_size;
 static struct sx	 audit_worker_lock;
+SX_SYSINIT((&audit_worker_lock, "audit_worker_lock");
 
-#define	AUDIT_WORKER_LOCK_INIT()	sx_init(&audit_worker_lock, \
-					    "audit_worker_lock");
-#define	AUDIT_WORKER_LOCK_ASSERT()	sx_assert(&audit_worker_lock, \
+#define	AUDIT_WORKER_LOCK_ASSERT()	sx_assert(&audit_worker_lock,	\
 					    SA_XLOCKED)
 #define	AUDIT_WORKER_LOCK()		sx_xlock(&audit_worker_lock)
 #define	AUDIT_WORKER_UNLOCK()		sx_xunlock(&audit_worker_lock)
@@ -517,7 +516,6 @@ audit_worker_init(void)
 {
 	int error;
 
-	AUDIT_WORKER_LOCK_INIT();
 	error = kproc_create(audit_worker, NULL, &audit_thread, RFHIGHPID,
 	    0, "audit");
 	if (error)
