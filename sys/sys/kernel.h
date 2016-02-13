@@ -125,6 +125,7 @@ enum sysinit_sub_id {
 	SI_SUB_AUDIT		= 0x24C0000,	/* audit */
 	SI_SUB_CREATE_INIT	= 0x2500000,	/* create init process*/
 	SI_SUB_SCHED_IDLE	= 0x2600000,	/* required idle procs */
+	SI_SUB_SMP		= 0x2680000,	/* start the APs*/
 	SI_SUB_MBUF		= 0x2700000,	/* mbuf subsystem */
 	SI_SUB_INTR		= 0x2800000,	/* interrupt threads */
 	SI_SUB_SOFTINTR		= 0x2800001,	/* start soft interrupt thread */
@@ -168,7 +169,6 @@ enum sysinit_sub_id {
 	SI_SUB_KTHREAD_BUF	= 0xea00000,	/* buffer daemon*/
 	SI_SUB_KTHREAD_UPDATE	= 0xec00000,	/* update daemon*/
 	SI_SUB_KTHREAD_IDLE	= 0xee00000,	/* idle procs*/
-	SI_SUB_SMP		= 0xf000000,	/* start the APs*/
 	SI_SUB_RACCTD		= 0xf100000,	/* start raccd*/
 	SI_SUB_LAST		= 0xfffffff	/* final initialization */
 };
