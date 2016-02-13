@@ -446,16 +446,9 @@ lapic_enable_pmc(void)
 	lvts[APIC_LVT_PMC].lvt_masked = 0;
 
 #ifdef SMP
-	/*
-	 * If hwpmc was loaded at boot time then the APs may not be
-	 * started yet.  In that case, don't forward the request to
-	 * them as they will program the lvt when they start.
-	 */
-	if (smp_started)
-		smp_rendezvous(NULL, lapic_update_pmc, NULL, NULL);
-	else
+	MPASS(mp_ncpus == 1 || smp_started);
 #endif
-		lapic_update_pmc(NULL);
+	smp_rendezvous(NULL, lapic_update_pmc, NULL, NULL);
 	return (1);
 #else
 	return (0);

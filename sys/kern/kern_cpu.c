@@ -261,18 +261,7 @@ cf_set_method(device_t dev, const struct cf_level *level, int priority)
 	CF_MTX_LOCK(&sc->lock);
 
 #ifdef SMP
-	/*
-	 * If still booting and secondary CPUs not started yet, don't allow
-	 * changing the frequency until they're online.  This is because we
-	 * can't switch to them using sched_bind() and thus we'd only be
-	 * switching the main CPU.  XXXTODO: Need to think more about how to
-	 * handle having different CPUs at different frequencies.  
-	 */
-	if (mp_ncpus > 1 && !smp_started) {
-		device_printf(dev, "rejecting change, SMP not started yet\n");
-		error = ENXIO;
-		goto out;
-	}
+	MPASS(mp_ncpus == 1 || smp_started);
 #endif /* SMP */
 
 	/*

@@ -325,9 +325,10 @@ timercb(struct eventtimer *et, void *arg)
 	    curcpu, (int)(now >> 32), (u_int)(now & 0xffffffff));
 
 #ifdef SMP
+	MPASS(mp_ncpus == 1 || smp_started);
 	/* Prepare broadcasting to other CPUs for non-per-CPU timers. */
 	bcast = 0;
-	if ((et->et_flags & ET_FLAGS_PERCPU) == 0 && smp_started) {
+	if ((et->et_flags & ET_FLAGS_PERCPU) == 0) {
 		CPU_FOREACH(cpu) {
 			state = DPCPU_ID_PTR(cpu, timerstate);
 			ET_HW_LOCK(state);
@@ -488,13 +489,11 @@ configtimer(int start)
 			nexttick = next;
 		else
 			nexttick = -1;
+		MPASS(mp_ncpus == 1 || smp_started);
 		CPU_FOREACH(cpu) {
 			state = DPCPU_ID_PTR(cpu, timerstate);
 			state->now = now;
-			if (!smp_started && cpu != CPU_FIRST())
-				state->nextevent = INT64_MAX;
-			else
-				state->nextevent = next;
+			state->nextevent = next;
 			if (periodic)
 				state->nexttick = next;
 			else
@@ -516,8 +515,8 @@ configtimer(int start)
 	}
 	ET_HW_UNLOCK(DPCPU_PTR(timerstate));
 #ifdef SMP
-	/* If timer is global or there is no other CPUs yet - we are done. */
-	if ((timer->et_flags & ET_FLAGS_PERCPU) == 0 || !smp_started) {
+	/* If timer is global we are done. */
+	if ((timer->et_flags & ET_FLAGS_PERCPU) == 0) {
 		critical_exit();
 		return;
 	}
