@@ -77,8 +77,10 @@ static struct mtx intr_table_lock;
 static struct mtx intrcnt_lock;
 static TAILQ_HEAD(pics_head, pic) pics;
 
+#if 0
 #ifdef SMP
 static int assign_cpu;
+#endif
 #endif
 
 u_long intrcnt[INTRCNT_COUNT];
@@ -320,11 +322,8 @@ intr_assign_cpu(void *arg, u_char cpu)
 	struct intsrc *isrc;
 	int error;
 
-	/*
-	 * Don't do anything during early boot.  We will pick up the
-	 * assignment once the APs are started.
-	 */
-	if (assign_cpu && cpu != NOCPU) {
+	MPASS(smp_started);
+	if (cpu != NOCPU) {
 		isrc = arg;
 		mtx_lock(&intr_table_lock);
 		error = isrc->is_pic->pic_assign_cpu(isrc, cpu_apic_ids[cpu]);
@@ -470,9 +469,13 @@ intr_next_cpu(void)
 {
 	u_int apic_id;
 
+#if 0
 	/* Leave all interrupts on the BSP during boot. */
 	if (!assign_cpu)
 		return (PCPU_GET(apic_id));
+#else
+	MPASS(smp_started);
+#endif
 
 	mtx_lock_spin(&icu_lock);
 	apic_id = cpu_apic_ids[current_cpu];
@@ -514,6 +517,7 @@ intr_add_cpu(u_int cpu)
 	CPU_SET(cpu, &intr_cpus);
 }
 
+#if 0
 /*
  * Distribute all the interrupt sources among the available CPUs once the
  * AP's have been launched.
@@ -561,6 +565,7 @@ intr_shuffle_irqs(void *arg __unused)
 }
 SYSINIT(intr_shuffle_irqs, SI_SUB_SMP, SI_ORDER_SECOND, intr_shuffle_irqs,
     NULL);
+#endif
 #else
 /*
  * Always route interrupts to the current processor in the UP case.
