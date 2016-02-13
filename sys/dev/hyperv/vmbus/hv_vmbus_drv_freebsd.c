@@ -723,6 +723,7 @@ vmbus_modevent(module_t mod, int what, void *arg)
 	switch (what) {
 
 	case MOD_LOAD:
+		vmbus_init();
 		vmbus_mod_load();
 		break;
 	case MOD_UNLOAD:
@@ -759,7 +760,4 @@ devclass_t vmbus_devclass;
 DRIVER_MODULE(vmbus, acpi, vmbus_driver, vmbus_devclass, vmbus_modevent, 0);
 MODULE_DEPEND(vmbus, acpi, 1, 1, 1);
 MODULE_VERSION(vmbus, 1);
-
-/* We want to be started after SMP is initialized */
-SYSINIT(vmb_init, SI_SUB_SMP + 1, SI_ORDER_FIRST, vmbus_init, NULL);
 
