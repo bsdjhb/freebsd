@@ -258,7 +258,7 @@ random_harvestq_start_kproc(void *arg __unused)
 	if (error != 0)
 		panic("Cannot create entropy maintenance thread.");
 }
-SYSINIT(random_kthread, SI_SUB_DRIVERS, SI_ORDER_ANY,
+SYSINIT(random_kthread, SI_SUB_KICK_SCHEDULER, SI_ORDER_ANY,
     random_harvestq_start_kproc, NULL);
 
 void
