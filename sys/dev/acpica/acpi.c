@@ -2759,11 +2759,10 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     stop_all_proc();
     EVENTHANDLER_INVOKE(power_suspend);
 
-    if (smp_started) {
-	thread_lock(curthread);
-	sched_bind(curthread, 0);
-	thread_unlock(curthread);
-    }
+    MPASS(mp_ncpus == 1 || smp_started);
+    thread_lock(curthread);
+    sched_bind(curthread, 0);
+    thread_unlock(curthread);
 
     /*
      * Be sure to hold Giant across DEVICE_SUSPEND/RESUME since non-MPSAFE
@@ -2894,11 +2893,9 @@ backout:
 
     mtx_unlock(&Giant);
 
-    if (smp_started) {
-	thread_lock(curthread);
-	sched_unbind(curthread);
-	thread_unlock(curthread);
-    }
+    thread_lock(curthread);
+    sched_unbind(curthread);
+    thread_unlock(curthread);
 
     resume_all_proc();
 
