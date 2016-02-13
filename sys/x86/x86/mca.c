@@ -728,7 +728,7 @@ mca_startup(void *dummy)
 
 	callout_reset(&mca_timer, mca_ticks * hz, mca_periodic_scan, NULL);
 }
-SYSINIT(mca_startup, SI_SUB_SMP, SI_ORDER_ANY, mca_startup, NULL);
+SYSINIT(mca_startup, SI_SUB_KICK_SCHEDULER, SI_ORDER_ANY, mca_startup, NULL);
 
 #ifdef DEV_APIC
 static void
