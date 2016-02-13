@@ -1119,6 +1119,8 @@ netisr_start_swi(u_int cpuid, struct pcpu *pc)
 static void
 netisr_init(void *arg)
 {
+	struct pcpu *pc;
+
 	KASSERT(curcpu == 0, ("%s: not on CPU 0", __func__));
 
 	NETISR_LOCK_INIT();
@@ -1149,29 +1151,14 @@ netisr_init(void *arg)
 		netisr_bindthreads = 0;
 	}
 #endif
-	netisr_start_swi(curcpu, pcpu_find(curcpu));
-}
-SYSINIT(netisr_init, SI_SUB_SOFTINTR, SI_ORDER_FIRST, netisr_init, NULL);
-
-/*
- * Start worker threads for additional CPUs.  No attempt to gracefully handle
- * work reassignment, we don't yet support dynamic reconfiguration.
- */
-static void
-netisr_start(void *arg)
-{
-	struct pcpu *pc;
 
 	STAILQ_FOREACH(pc, &cpuhead, pc_allcpu) {
 		if (nws_count >= netisr_maxthreads)
 			break;
-		/* Worker will already be present for boot CPU. */
-		if (pc->pc_netisr != NULL)
-			continue;
 		netisr_start_swi(pc->pc_cpuid, pc);
 	}
 }
-SYSINIT(netisr_start, SI_SUB_SMP, SI_ORDER_MIDDLE, netisr_start, NULL);
+SYSINIT(netisr_init, SI_SUB_SOFTINTR, SI_ORDER_FIRST, netisr_init, NULL);
 
 /*
  * Sysctl monitoring for netisr: query a list of registered protocols.
