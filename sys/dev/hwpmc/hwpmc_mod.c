@@ -339,7 +339,7 @@ static moduledata_t pmc_mod = {
 	&pmc_syscall_mod
 };
 
-DECLARE_MODULE(pmc, pmc_mod, SI_SUB_SMP, SI_ORDER_ANY);
+DECLARE_MODULE(pmc, pmc_mod, SI_SUB_SYSCALLS, SI_ORDER_ANY);
 MODULE_VERSION(pmc, PMC_VERSION);
 
 #ifdef	HWPMC_DEBUG
