@@ -322,7 +322,7 @@ intr_assign_cpu(void *arg, u_char cpu)
 	struct intsrc *isrc;
 	int error;
 
-	MPASS(smp_started);
+	MPASS(mp_ncpus == 1 || smp_started);
 	if (cpu != NOCPU) {
 		isrc = arg;
 		mtx_lock(&intr_table_lock);
@@ -474,7 +474,7 @@ intr_next_cpu(void)
 	if (!assign_cpu)
 		return (PCPU_GET(apic_id));
 #else
-	MPASS(smp_started);
+	MPASS(mp_ncpus == 1 || smp_started);
 #endif
 
 	mtx_lock_spin(&icu_lock);
