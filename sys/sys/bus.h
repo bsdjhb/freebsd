@@ -306,11 +306,8 @@ struct resource_map_request {
 
 void	resource_init_map_request_impl(struct resource_map_request *_args,
 	    size_t _sz);
-#define	resource_init_map_request(rmr) do {				\
-	bzero((rmr), sizeof(*(rmr)));					\
-	(rmr)->size = sizeof(*(rmr));					\
-	(rmr)->memattr = VM_MEMATTR_DEVICE_DEFAULT;			\
-} while (0)
+#define	resource_init_map_request(rmr) 					\
+	resource_init_map_request_impl((rmr), sizeof(*(rmr)))
 
 /*
  * Definitions for drivers which need to keep simple lists of resources
