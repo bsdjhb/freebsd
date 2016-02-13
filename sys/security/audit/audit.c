@@ -324,12 +324,9 @@ audit_init(void)
 	/* Register shutdown handler. */
 	EVENTHANDLER_REGISTER(shutdown_pre_sync, audit_shutdown, NULL,
 	    SHUTDOWN_PRI_FIRST);
-
-	/* Start audit worker thread. */
-	audit_worker_init();
 }
-
 SYSINIT(audit_init, SI_SUB_AUDIT, SI_ORDER_FIRST, audit_init, NULL);
+SYSINIT(audit_worker_init, SI_SUB_LAST, SI_ORDER_ANY, audit_worker_init, NULL);
 
 /*
  * Drain the audit queue and close the log at shutdown.  Note that this can
