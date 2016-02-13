@@ -479,13 +479,7 @@ g_eli_worker(void *arg)
 
 	wr = arg;
 	sc = wr->w_softc;
-#ifdef SMP
-	/* Before sched_bind() to a CPU, wait for all CPUs to go on-line. */
-	if (sc->sc_cpubind) {
-		while (!smp_started)
-			tsleep(wr, 0, "geli:smp", hz / 4);
-	}
-#endif
+	MPASS(!sc->sc_cpubind || smp_started);
 	thread_lock(curthread);
 	sched_prio(curthread, PUSER);
 	if (sc->sc_cpubind)
