@@ -432,7 +432,7 @@ dtrace_gethrtime_init(void *arg)
 	sched_unpin();
 }
 
-SYSINIT(dtrace_gethrtime_init, SI_SUB_SMP, SI_ORDER_ANY, dtrace_gethrtime_init, NULL);
+SYSINIT(dtrace_gethrtime_init, SI_SUB_DTRACE, SI_ORDER_ANY, dtrace_gethrtime_init, NULL);
 
 /*
  * DTrace needs a high resolution time function which can
