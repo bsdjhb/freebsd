@@ -290,17 +290,9 @@ _cv_timedwait_sbt(struct cv *cvp, struct lock_object *lock, sbintime_t sbt,
 	if (SCHEDULER_STOPPED())
 		return (0);
 	if (cold) {
-		/*
-		 * During early startup, just yield the
-		 * CPU.  This will effect a round-robin cycle
-		 * between runnable threads until timeouts are
-		 * known to work.
-		 */
 		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
 		    td->td_tid, td->td_name);
-		thread_lock(td);
-		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-		thread_unlock(td);
+		_early_sleep(lock, 0);
 		/* XXX: EWOULDBLOCK instead? */
 		return (0);
 	}
@@ -367,17 +359,9 @@ _cv_timedwait_sig_sbt(struct cv *cvp, struct lock_object *lock,
 	if (SCHEDULER_STOPPED())
 		return (0);
 	if (cold) {
-		/*
-		 * During early startup, just yield the
-		 * CPU.  This will effect a round-robin cycle
-		 * between runnable threads until timeouts are
-		 * known to work.
-		 */
 		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
 		    td->td_tid, td->td_name);
-		thread_lock(td);
-		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-		thread_unlock(td);
+		_early_sleep(lock, 0);
 		/* XXX: EWOULDBLOCK instead? */
 		return (0);
 	}
