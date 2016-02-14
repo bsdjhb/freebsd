@@ -180,7 +180,7 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 	else
 		class = NULL;
 
-	if (cold || SCHEDULER_STOPPED()) {
+	if ((cold && sbt != 0) || SCHEDULER_STOPPED()) {
 		if (lock != NULL && priority & PDROP)
 			class->lc_unlock(lock);
 

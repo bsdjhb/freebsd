@@ -124,18 +124,6 @@ _cv_wait(struct cv *cvp, struct lock_object *lock)
 
 	if (SCHEDULER_STOPPED())
 		return;
-	if (cold) {
-		/*
-		 * During early startup, just yield the
-		 * CPU.  This will effect a round-robin cycle
-		 * between runnable threads until timeouts are
-		 * known to work.
-		 */
-		thread_lock(td);
-		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-		thread_unlock(td);
-		return;
-	}
 
 	sleepq_lock(cvp);
 
@@ -188,20 +176,8 @@ _cv_wait_unlock(struct cv *cvp, struct lock_object *lock)
 	    ("cv_wait_unlock cannot be used with Giant"));
 	class = LOCK_CLASS(lock);
 
-	if (cold || SCHEDULER_STOPPED()) {
+	if (SCHEDULER_STOPPED()) {
 		class->lc_unlock(lock);
-
-		/*
-		 * During early startup, just yield the
-		 * CPU.  This will effect a round-robin cycle
-		 * between runnable threads until timeouts are
-		 * known to work.
-		 */
-		if (!SCHEDULER_STOPPED()) {
-			thread_lock(td);
-			mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-			thread_unlock(td);
-		}
 		return;
 	}
 
@@ -253,18 +229,6 @@ _cv_wait_sig(struct cv *cvp, struct lock_object *lock)
 
 	if (SCHEDULER_STOPPED())
 		return;
-	if (cold) {
-		/*
-		 * During early startup, just yield the
-		 * CPU.  This will effect a round-robin cycle
-		 * between runnable threads until timeouts are
-		 * known to work.
-		 */
-		thread_lock(td);
-		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-		thread_unlock(td);
-		return;
-	}
 
 	sleepq_lock(cvp);
 
