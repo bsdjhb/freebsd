@@ -92,7 +92,7 @@ static struct ucred	*audit_cred;
 static struct vnode	*audit_vp;
 static off_t		 audit_size;
 static struct sx	 audit_worker_lock;
-SX_SYSINIT((&audit_worker_lock, "audit_worker_lock");
+SX_SYSINIT(audit_worker_lock, &audit_worker_lock, "audit_worker_lock");
 
 #define	AUDIT_WORKER_LOCK_ASSERT()	sx_assert(&audit_worker_lock,	\
 					    SA_XLOCKED)
