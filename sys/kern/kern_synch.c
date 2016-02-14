@@ -144,6 +144,13 @@ void
 _early_sleep(struct lock_object *lock, int drop)
 {
 	struct thread *td;
+	struct lock_class *class;
+	uintptr_t lock_state;
+
+	if (lock != NULL)
+		class = LOCK_CLASS(lock);
+	else
+		class = NULL;
 
 	critical_enter();
 	td = curthread;
