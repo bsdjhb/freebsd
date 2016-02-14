@@ -228,7 +228,7 @@ _cv_wait_sig(struct cv *cvp, struct lock_object *lock)
 	class = LOCK_CLASS(lock);
 
 	if (SCHEDULER_STOPPED())
-		return;
+		return (0);
 
 	sleepq_lock(cvp);
 
@@ -288,7 +288,7 @@ _cv_timedwait_sbt(struct cv *cvp, struct lock_object *lock, sbintime_t sbt,
 	class = LOCK_CLASS(lock);
 
 	if (SCHEDULER_STOPPED())
-		return;
+		return (0);
 	if (cold) {
 		/*
 		 * During early startup, just yield the
@@ -299,7 +299,8 @@ _cv_timedwait_sbt(struct cv *cvp, struct lock_object *lock, sbintime_t sbt,
 		thread_lock(td);
 		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
 		thread_unlock(td);
-		return;
+		/* XXX: EWOULDBLOCK instead? */
+		return (0);
 	}
 
 	sleepq_lock(cvp);
@@ -362,7 +363,7 @@ _cv_timedwait_sig_sbt(struct cv *cvp, struct lock_object *lock,
 	class = LOCK_CLASS(lock);
 
 	if (SCHEDULER_STOPPED())
-		return;
+		return (0);
 	if (cold) {
 		/*
 		 * During early startup, just yield the
@@ -373,7 +374,8 @@ _cv_timedwait_sig_sbt(struct cv *cvp, struct lock_object *lock,
 		thread_lock(td);
 		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
 		thread_unlock(td);
-		return;
+		/* XXX: EWOULDBLOCK instead? */
+		return (0);
 	}
 
 	sleepq_lock(cvp);

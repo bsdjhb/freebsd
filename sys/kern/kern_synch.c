@@ -177,6 +177,7 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 			mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
 			thread_unlock(td);
 		}
+		/* XXX: EWOULDBLOCK instead? */
 		return (0);
 	}
 	catch = priority & PCATCH;
@@ -280,6 +281,7 @@ msleep_spin_sbt(void *ident, struct mtx *mtx, const char *wmesg,
 		thread_lock(td);
 		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
 		thread_unlock(td);
+		/* XXX: EWOULDBLOCK instead? */
 		return (0);
 	}
 
