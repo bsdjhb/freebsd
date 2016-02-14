@@ -181,16 +181,20 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 		class = NULL;
 
 	if (cold || SCHEDULER_STOPPED()) {
-		/*
-		 * During autoconfiguration, just return;
-		 * don't run any other threads or panic below,
-		 * in case this is the idle thread and already asleep.
-		 * XXX: this used to do "s = splhigh(); splx(safepri);
-		 * splx(s);" to give interrupts a chance, but there is
-		 * no way to give interrupts a chance now.
-		 */
 		if (lock != NULL && priority & PDROP)
 			class->lc_unlock(lock);
+
+		/*
+		 * During early startup, just yield the
+		 * CPU.  This will effect a round-robin cycle
+		 * between runnable threads until timeouts are
+		 * known to work.
+		 */
+		if (!SCHEDULER_STOPPED()) {
+			thread_lock(td);
+			mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
+			thread_unlock(td);
+		}
 		return (0);
 	}
 	catch = priority & PCATCH;
@@ -282,15 +286,18 @@ msleep_spin_sbt(void *ident, struct mtx *mtx, const char *wmesg,
 	KASSERT(p != NULL, ("msleep1"));
 	KASSERT(ident != NULL && TD_IS_RUNNING(td), ("msleep"));
 
-	if (cold || SCHEDULER_STOPPED()) {
+	if (SCHEDULER_STOPPED())
+		return (0);
+	if (cold) {
 		/*
-		 * During autoconfiguration, just return;
-		 * don't run any other threads or panic below,
-		 * in case this is the idle thread and already asleep.
-		 * XXX: this used to do "s = splhigh(); splx(safepri);
-		 * splx(s);" to give interrupts a chance, but there is
-		 * no way to give interrupts a chance now.
+		 * During early startup, just yield the
+		 * CPU.  This will effect a round-robin cycle
+		 * between runnable threads until timeouts are
+		 * known to work.
 		 */
+		thread_lock(td);
+		mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
+		thread_unlock(td);
 		return (0);
 	}
 
