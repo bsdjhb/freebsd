@@ -334,6 +334,8 @@ t4vf_attach(device_t dev)
 		return err;
 	}
 
+#if 0
+	/* jhb: No idea what this means and if cxgbe handles it already. */
 	/* If we're running on newer firmware, let it know that we're
 	 * prepared to deal with encapsulated CPL messages.  Older
 	 * firmware won't understand this and we'll just get
@@ -343,6 +345,7 @@ t4vf_attach(device_t dev)
 		V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_PFVF_CPLFW4MSG_ENCAP);
 	val = 1;
 	(void) t4vf_set_params(adapter, 1, &param, &val);
+#endif
 
 	/*
 	 * Retrieve our RX interrupt holdoff timer values and counter
