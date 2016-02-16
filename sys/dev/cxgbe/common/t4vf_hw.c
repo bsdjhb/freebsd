@@ -91,7 +91,7 @@ int t4vf_fw_reset(struct adapter *adapter)
  */
 int t4vf_get_sge_params(struct adapter *adapter)
 {
-	struct sgev_params *sge_params = &adapter->params.vsge;
+	struct sge_params *sp = &adapter->params.sge;
 	u32 params[7], vals[7];
 	int v;
 
@@ -99,26 +99,63 @@ int t4vf_get_sge_params(struct adapter *adapter)
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONTROL));
 	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_HOST_PAGE_SIZE));
-	params[2] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE0));
-	params[3] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE1));
-	params[4] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_0_AND_1));
-	params[5] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+	params[2] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_2_AND_3));
-	params[6] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+	params[3] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_4_AND_5));
+	params[4] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONM_CTRL));
+	params[6] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_INGRESS_RX_THRESHOLD));
 	v = t4vf_query_params(adapter, 7, params, vals);
 	if (v != FW_SUCCESS)
 		return v;
-	sge_params->sge_control = vals[0];
-	sge_params->sge_host_page_size = vals[1];
-	sge_params->sge_fl_buffer_size[0] = vals[2];
-	sge_params->sge_fl_buffer_size[1] = vals[3];
-	sge_params->sge_timer_value_0_and_1 = vals[4];
-	sge_params->sge_timer_value_2_and_3 = vals[5];
-	sge_params->sge_timer_value_4_and_5 = vals[6];
+
+	sp->sge_control = vals[0];
+	sp->counter_val[0] = G_THRESHOLD_0(vals[6]);
+	sp->counter_val[1] = G_THRESHOLD_1(vals[6]);
+	sp->counter_val[2] = G_THRESHOLD_2(vals[6]);
+	sp->counter_val[3] = G_THRESHOLD_3(vals[6]);
+	sp->timer_val[0] = core_ticks_to_us(adapter, G_TIMERVALUE0(vals[1]));
+	sp->timer_val[1] = core_ticks_to_us(adapter, G_TIMERVALUE1(vals[1]));
+	sp->timer_val[2] = core_ticks_to_us(adapter, G_TIMERVALUE2(vals[2]));
+	sp->timer_val[3] = core_ticks_to_us(adapter, G_TIMERVALUE3(vals[2]));
+	sp->timer_val[4] = core_ticks_to_us(adapter, G_TIMERVALUE4(vals[3]));
+	sp->timer_val[5] = core_ticks_to_us(adapter, G_TIMERVALUE5(vals[3]));
+
+	sp->fl_starve_threshold = G_EGRTHRESHOLD(vals[4]) * 2 + 1;
+	if (is_t4(adapter))
+		sp->fl_starve_threshold2 = sp->fl_starve_threshold;
+	else
+		sp->fl_starve_threshold2 = G_EGRTHRESHOLDPACKING(vals[4]) * 2 +
+		    1;
+
+	/*
+	 * We need the Queues/Page for our VF.  This is based on the
+	 * PF from which we're instantiated and is indexed in the
+	 * register we just read.  This is an annoying enough effort
+	 * that we'll go ahead and do it once here so other code in
+	 * the driver can just use it.
+	 */
+	whoami = t4_read_reg(adapter, T4VF_PL_BASE_ADDR + A_PL_VF_WHOAMI);
+	pf = G_SOURCEPF(whoami);
+
+	s_hps = (S_HOSTPAGESIZEPF0 +
+	    (S_HOSTPAGESIZEPF1 - S_HOSTPAGESIZEPF0) * pf);
+	sp->page_shift = ((vals[1] >> s_hps) & M_HOSTPAGESIZEPF0) + 10;
+
+	params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE0));
+	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE1));
+	v = t4vf_query_params(adapter, 2, params, vals);
+	if (v != FW_SUCCESS)
+		return v;
+
+	sp->sge_fl_buffer_size[0] = vals[0];
+	sp->sge_fl_buffer_size[1] = vals[1];
 
 	/*
 	 * T4 uses a single control field to specify both the PCIe Padding and
@@ -131,7 +168,12 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	 * failure grabbing it we throw an error since we can't figure out the
 	 * right value.
 	 */
-	if (!is_t4(adapter)) {
+	sp->spg_len = sp->sge_control & F_EGRSTATUSPAGESIZE ? 128 : 64;
+	sp->fl_pktshift = G_PKTSHIFT(sp->sge_control);
+	sp->pad_boundary = 1 << (G_INGPADBOUNDARY(sp->sge_control) + 5);
+	if (is_t4(adapter))
+		sp->pack_boundary = sp->pad_boundary;
+	else {
 		params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 			     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONTROL2));
 		v = t4vf_query_params(adapter, 1, params, vals);
@@ -140,18 +182,12 @@ int t4vf_get_sge_params(struct adapter *adapter)
 			       "probably old firmware.\n");
 			return v;
 		}
-		sge_params->sge_control2 = vals[0];
+		if (G_INGPACKBOUNDARY(vals[0]) == 0)
+			sp->pack_boundary = 16;
+		else
+			sp->pack_boundary = 1 << (G_INGPACKBOUNDARY(vals[0]) +
+			    5);
 	}
-
-	params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_INGRESS_RX_THRESHOLD));
-	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONM_CTRL));
-	v = t4vf_query_params(adapter, 2, params, vals);
-	if (v != FW_SUCCESS)
-		return v;
-	sge_params->sge_ingress_rx_threshold = vals[0];
-	sge_params->sge_congestion_control = vals[1];
 
 	/*
 	 * For T5 and later we want to use the new BAR2 Doorbells.
@@ -172,33 +208,11 @@ int t4vf_get_sge_params(struct adapter *adapter)
 				"probably old firmware.\n");
 			return v;
 		}
-		sge_params->sge_egress_queues_per_page = vals[0];
-		sge_params->sge_ingress_queues_per_page = vals[1];
-
-		/*
-		 * We need the Queues/Page for our VF.  This is based on the
-		 * PF from which we're instantiated and is indexed in the
-		 * register we just read.  This is an annoying enough effort
-		 * that we'll go ahead and do it once here so other code in
-		 * the driver can just use it.
-		 */
-		whoami = t4_read_reg(adapter, T4VF_PL_BASE_ADDR + A_PL_VF_WHOAMI);
-		pf = G_SOURCEPF(whoami);
-
-		s_hps = (S_HOSTPAGESIZEPF0 +
-			 (S_HOSTPAGESIZEPF1 - S_HOSTPAGESIZEPF0) * pf);
-		sge_params->sge_vf_hps =
-			((sge_params->sge_host_page_size >> s_hps)
-			 & M_HOSTPAGESIZEPF0);
 
 		s_qpp = (S_QUEUESPERPAGEPF0 +
 			 (S_QUEUESPERPAGEPF1 - S_QUEUESPERPAGEPF0) * pf);
-		sge_params->sge_vf_eq_qpp =
-			((sge_params->sge_egress_queues_per_page >> s_qpp)
-			 & M_QUEUESPERPAGEPF0);
-		sge_params->sge_vf_iq_qpp =
-			((sge_params->sge_ingress_queues_per_page >> s_qpp)
-			 & M_QUEUESPERPAGEPF0);
+		sp->eq_s_qpp = ((vals[0] >> s_qpp) & M_QUEUESPERPAGEPF0);
+		sp->iq_s_qpp = ((vals[1] >> s_qpp) & M_QUEUESPERPAGEPF0);
 	}
 
 	return 0;
