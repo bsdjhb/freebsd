@@ -630,14 +630,7 @@ vmbus_attach(device_t dev)
 		device_printf(dev, "VMBUS: attach dev: %p\n", dev);
 	vmbus_devp = dev;
 
-	/* 
-	 * If the system has already booted and thread
-	 * scheduling is possible indicated by the global
-	 * cold set to zero, we just call the driver
-	 * initialization directly.
-	 */
-	if (!cold)
-		vmbus_bus_init();
+	vmbus_bus_init();
 
 	return (0);
 }
@@ -648,14 +641,7 @@ vmbus_init(void)
 	if (vm_guest != VM_GUEST_HV)
 		return;
 
-	/* 
-	 * If the system has already booted and thread
-	 * scheduling is possible, as indicated by the
-	 * global cold set to zero, we just call the driver
-	 * initialization directly.
-	 */
-	if (!cold) 
-		vmbus_bus_init();
+	vmbus_bus_init();
 }
 
 static void
