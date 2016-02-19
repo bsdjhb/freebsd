@@ -324,7 +324,7 @@ int t4_wr_mbox_meat_timeout(struct adapter *adap, int mbox, const void *cmd,
 	if (v != X_MBOWNER_PL) {
 		t4_report_fw_error(adap);
 		ret = (v == X_MBOWNER_FW) ? -EBUSY : -ETIMEDOUT;
-		if (sc->flags & IS_VF)
+		if (adap->flags & IS_VF)
 			device_printf(adap->dev,
 			    "VF[%d]: timed out waiting for mbox: %d\n", mbox,
 			    v);
@@ -425,9 +425,9 @@ int t4_wr_mbox_meat_timeout(struct adapter *adap, int mbox, const void *cmd,
 				res = V_FW_CMD_RETVAL(EIO);
 			} else if (rpl)
 				memcpy(rpl, cmd_rpl, size);
-			if (sc->flags & IS_VF)
+			if (adap->flags & IS_VF)
 				device_printf(adap->dev, "VF[%d]: retval %d\n",
-				    mbox, G_FW_CMD_RETVAL((int)res);
+				    mbox, G_FW_CMD_RETVAL((int)res));
 			return -G_FW_CMD_RETVAL((int)res);
 		}
 	}
