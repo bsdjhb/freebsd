@@ -265,6 +265,7 @@ t4vf_attach(device_t dev)
 	sc->mbox = G_VFID(val);
 
 	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
+
 #if defined(__i386__)
 	if ((cpu_feature & CPUID_CX8) == 0) {
 		device_printf(dev, "64 bit atomics not available.\n");
@@ -325,15 +326,6 @@ t4vf_attach(device_t dev)
 #endif
 
 	/* XXX: adap_init0 end */
-#if 0
-	/* XXX: Not sure yet. */
-	sc->an_handler = an_not_handled;
-	for (i = 0; i < nitems(sc->cpl_handler); i++)
-		sc->cpl_handler[i] = cpl_not_handled;
-	for (i = 0; i < nitems(sc->fw_msg_handler); i++)
-		sc->fw_msg_handler[i] = fw_msg_not_handled;
-	t4_init_sge_cpl_handlers(sc);
-#endif
 
 done:
 	mtx_destroy(&sc->regwin_lock);
