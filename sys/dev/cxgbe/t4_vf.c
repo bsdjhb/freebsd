@@ -286,6 +286,8 @@ t4vf_attach(device_t dev)
 	 * use the firmware based reset in order to reset any per function
 	 * state.
 	 */
+	device_printf(dev, "PF %d mbox %d flags %#x\n", sc->pf, sc->mbox,
+	    sc->flags);
 	rc = -t4vf_fw_reset(sc);
 	if (rc != 0) {
 		device_printf(dev, "FW reset failed: %d\n", rc);
