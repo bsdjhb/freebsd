@@ -28,7 +28,7 @@
 __FBSDID("$FreeBSD$");
 
 #include "common.h"
-#include "t4vf_defs.h"
+#include "t4_regs.h"
 
 #undef msleep
 #define msleep(x) do { \
