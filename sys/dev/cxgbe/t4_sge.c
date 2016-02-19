@@ -750,6 +750,9 @@ t4_read_chip_settings(struct adapter *sc)
 		}
 	}
 
+	if (sc->flags & IS_VF)
+		return (0);
+
 	v = V_HPZ0(0) | V_HPZ1(2) | V_HPZ2(4) | V_HPZ3(6);
 	r = t4_read_reg(sc, A_ULP_RX_TDDP_PSZ);
 	if (r != v) {

@@ -235,6 +235,29 @@ get_params__pre_init(struct adapter *sc)
 }
 
 static int
+get_params__post_init(struct adapter *sc)
+{
+	int rc;
+
+	rc = t4_read_chip_settings(sc);
+
+	return (rc);
+}
+
+static int
+set_params__post_init(struct adapter *sc)
+{
+	uint32_t param, val;
+
+	/* ask for encapsulated CPLs */
+	param = FW_PARAM_PFVF(CPLFW4MSG_ENCAP);
+	val = 1;
+	(void)t4_set_params(sc, sc->mbox, sc->pf, 0, 1, &param, &val);
+
+	return (0);
+}
+
+static int
 t4vf_attach(device_t dev)
 {
 	struct adapter *sc;
@@ -270,12 +293,20 @@ t4vf_attach(device_t dev)
 		goto done;
 
 	/*
-	 * XXX: Not sure if we need the PF?  The mbox should only be used
-	 * for logging, so set it to the VF ID.
+	 * Note the PF is the parent of this VF.  The mbox is only
+	 * used for logging mbox messages, so set it to the VF ID.
 	 */
 	val = t4_read_reg(sc, VF_PL_REG(A_PL_VF_WHOAMI));
 	sc->pf = G_SOURCEPF(val);
 	sc->mbox = G_VFID(val);
+
+#if defined(__i386__)
+	if ((cpu_feature & CPUID_CX8) == 0) {
+		device_printf(dev, "64 bit atomics not available.\n");
+		rc = ENOTSUP;
+		goto done;
+	}
+#endif
 
 	/* XXX: Somewhere we have to setup the MBDATA base. */
 
@@ -326,49 +357,20 @@ t4vf_attach(device_t dev)
 		rc = EINVAL;
 		goto done;
 	}
+
+	rc = get_params__post_init(sc);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
+	rc = set_params__post_init(sc);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
+	rc = map_bar_2(sc);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
 #ifdef notyet
-	err = t4vf_sge_init(adapter);
-	if (err) {
-		dev_err(adapter->pdev_dev, "unable to use adapter parameters:"
-			" err=%d\n", err);
-		return err;
-	}
-
-#if 0
-	/* jhb: No idea what this means and if cxgbe handles it already. */
-	/* If we're running on newer firmware, let it know that we're
-	 * prepared to deal with encapsulated CPL messages.  Older
-	 * firmware won't understand this and we'll just get
-	 * unencapsulated messages ...
-	 */
-	param = V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_PFVF) |
-		V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_PFVF_CPLFW4MSG_ENCAP);
-	val = 1;
-	(void) t4vf_set_params(adapter, 1, &param, &val);
-#endif
-
-	/*
-	 * Retrieve our RX interrupt holdoff timer values and counter
-	 * threshold values from the SGE parameters.
-	 */
-	s->timer_val[0] = core_ticks_to_us(adapter,
-		G_TIMERVALUE0(sge_params->sge_timer_value_0_and_1));
-	s->timer_val[1] = core_ticks_to_us(adapter,
-		G_TIMERVALUE1(sge_params->sge_timer_value_0_and_1));
-	s->timer_val[2] = core_ticks_to_us(adapter,
-		G_TIMERVALUE2(sge_params->sge_timer_value_2_and_3));
-	s->timer_val[3] = core_ticks_to_us(adapter,
-		G_TIMERVALUE3(sge_params->sge_timer_value_2_and_3));
-	s->timer_val[4] = core_ticks_to_us(adapter,
-		G_TIMERVALUE4(sge_params->sge_timer_value_4_and_5));
-	s->timer_val[5] = core_ticks_to_us(adapter,
-		G_TIMERVALUE5(sge_params->sge_timer_value_4_and_5));
-
-	s->counter_val[0] = G_THRESHOLD_0(sge_params->sge_ingress_rx_threshold);
-	s->counter_val[1] = G_THRESHOLD_1(sge_params->sge_ingress_rx_threshold);
-	s->counter_val[2] = G_THRESHOLD_2(sge_params->sge_ingress_rx_threshold);
-	s->counter_val[3] = G_THRESHOLD_3(sge_params->sge_ingress_rx_threshold);
-
 	/*
 	 * Grab our Virtual Interface resource allocation, extract the
 	 * features that we're interested in and do a bit of sanity testing on

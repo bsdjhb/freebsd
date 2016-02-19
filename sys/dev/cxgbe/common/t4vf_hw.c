@@ -93,6 +93,8 @@ int t4vf_get_sge_params(struct adapter *adapter)
 {
 	struct sge_params *sp = &adapter->params.sge;
 	u32 params[7], vals[7];
+	u32 whoami;
+	unsigned int pf, s_hps;
 	int v;
 
 	params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
@@ -195,8 +197,7 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	 * read.
 	 */
 	if (!is_t4(adapter)) {
-		u32 whoami;
-		unsigned int pf, s_hps, s_qpp;
+		unsigned int s_qpp;
 
 		params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 			     V_FW_PARAMS_PARAM_XYZ(A_SGE_EGRESS_QUEUES_PER_PAGE_VF));
