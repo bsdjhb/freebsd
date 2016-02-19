@@ -1169,11 +1169,13 @@ t4_detach_common(device_t dev)
 		sc->cdev = NULL;
 	}
 
-	rc = bus_generic_detach(dev);
-	if (rc) {
-		device_printf(dev,
-		    "failed to detach child devices: %d\n", rc);
-		return (rc);
+	if (device_is_attached(dev)) {
+		rc = bus_generic_detach(dev);
+		if (rc) {
+			device_printf(dev,
+			    "failed to detach child devices: %d\n", rc);
+			return (rc);
+		}
 	}
 
 	for (i = 0; i < sc->intr_count; i++)
