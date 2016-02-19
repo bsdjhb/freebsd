@@ -316,16 +316,30 @@ t4vf_attach(device_t dev)
 	if (rc != 0)
 		goto done; /* error message displayed already */
 
+	rc = t4_create_dma_tag(sc);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
+	/*
+	 * The number of "ports" which we support is equal to the number of
+	 * Virtual Interfaces with which we've been provisioned.
+	 */
+	sc->params.nports = imin(sc->params.vfres.nvi, MAX_NPORTS);
+
+	/*
+	 * We may have been provisioned with more VIs than the number of
+	 * ports we're allowed to access (our Port Access Rights Mask).
+	 * Just use a single VI for each port.
+	 */
+	sc->params.nports = imin(sc->params.nports,
+	    bitcount32(sc->params.vfres.pmask));
+		
 #ifdef notyet
 	/*
-	 * Initialize nports and max_ethqsets now that we have our Virtual
-	 * Function Resources.
+	 * XXX: The Linux VF driver will lower nports if it thinks there
+	 * are too few resources in vfres (niqflint, nethctrl, neq).
 	 */
-	size_nports_qsets(adapter);
-
 #endif
-
-	/* XXX: adap_init0 end */
 
 done:
 	mtx_destroy(&sc->regwin_lock);
