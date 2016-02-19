@@ -39,7 +39,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 #include "common/common.h"
-#include "common/t4vf_defs.h"
+#include "common/t4_regs.h"
 
 /*
  * Some notes:
