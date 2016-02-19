@@ -1980,7 +1980,7 @@ void
 t4_add_adapter(struct adapter *sc)
 {
 	sx_xlock(&t4_list_lock);
-	device_printf(dev, "Adding to t4_list\n");
+	device_printf(sc->dev, "Adding to t4_list\n");
 	SLIST_INSERT_HEAD(&t4_list, sc, link);
 	sx_xunlock(&t4_list_lock);
 }
