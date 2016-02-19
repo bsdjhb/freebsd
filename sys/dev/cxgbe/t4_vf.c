@@ -352,8 +352,96 @@ done:
 static int
 t4vf_detach(device_t dev)
 {
+	struct adapter *sc;
+	struct port_info *pi;
+	int i, rc;
 
-	return (ENXIO);
+	sc = device_get_softc(dev);
+
+	if (sc->flags & FULL_INIT_DONE)
+		t4_intr_disable(sc);
+
+	rc = bus_generic_detach(dev);
+	if (rc) {
+		device_printf(dev,
+		    "failed to detach child devices: %d\n", rc);
+		return (rc);
+	}
+
+	for (i = 0; i < sc->intr_count; i++)
+		t4_free_irq(sc, &sc->irq[i]);
+
+	for (i = 0; i < MAX_NPORTS; i++) {
+		pi = sc->port[i];
+		if (pi) {
+			t4_free_vi(sc, sc->mbox, sc->pf, 0, pi->vi[0].viid);
+			if (pi->dev)
+				device_delete_child(dev, pi->dev);
+
+			mtx_destroy(&pi->pi_lock);
+			free(pi->vi, M_CXGBE);
+			free(pi, M_CXGBE);
+		}
+	}
+
+	if (sc->flags & FULL_INIT_DONE)
+		adapter_full_uninit(sc);
+
+	if (sc->flags & FW_OK)
+		t4_fw_bye(sc, sc->mbox);
+
+	if (sc->intr_type == INTR_MSI || sc->intr_type == INTR_MSIX)
+		pci_release_msi(dev);
+
+	if (sc->regs_res)
+		bus_release_resource(dev, SYS_RES_MEMORY, sc->regs_rid,
+		    sc->regs_res);
+
+	if (sc->udbs_res)
+		bus_release_resource(dev, SYS_RES_MEMORY, sc->udbs_rid,
+		    sc->udbs_res);
+
+	if (sc->msix_res)
+		bus_release_resource(dev, SYS_RES_MEMORY, sc->msix_rid,
+		    sc->msix_res);
+
+	if (sc->l2t)
+		t4_free_l2t(sc->l2t);
+
+#ifdef TCP_OFFLOAD
+	free(sc->sge.ofld_rxq, M_CXGBE);
+	free(sc->sge.ofld_txq, M_CXGBE);
+#endif
+#ifdef DEV_NETMAP
+	free(sc->sge.nm_rxq, M_CXGBE);
+	free(sc->sge.nm_txq, M_CXGBE);
+#endif
+	free(sc->irq, M_CXGBE);
+	free(sc->sge.rxq, M_CXGBE);
+	free(sc->sge.txq, M_CXGBE);
+	free(sc->sge.ctrlq, M_CXGBE);
+	free(sc->sge.iqmap, M_CXGBE);
+	free(sc->sge.eqmap, M_CXGBE);
+	free(sc->tids.ftid_tab, M_CXGBE);
+	t4_destroy_dma_tag(sc);
+	if (mtx_initialized(&sc->sc_lock)) {
+		sx_xlock(&t4_list_lock);
+		SLIST_REMOVE(&t4_list, sc, adapter, link);
+		sx_xunlock(&t4_list_lock);
+		mtx_destroy(&sc->sc_lock);
+	}
+
+	callout_drain(&sc->sfl_callout);
+	if (mtx_initialized(&sc->tids.ftid_lock))
+		mtx_destroy(&sc->tids.ftid_lock);
+	if (mtx_initialized(&sc->sfl_lock))
+		mtx_destroy(&sc->sfl_lock);
+	if (mtx_initialized(&sc->ifp_lock))
+		mtx_destroy(&sc->ifp_lock);
+	if (mtx_initialized(&sc->regwin_lock))
+		mtx_destroy(&sc->regwin_lock);
+
+	return (0);
 }
 
 static device_method_t t4vf_methods[] = {
