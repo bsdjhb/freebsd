@@ -239,6 +239,25 @@ get_params__post_init(struct adapter *sc)
 {
 	int rc;
 
+	rc = -t4vf_get_sge_params(sc);
+	if (rc != 0) {
+		device_printf(sc->dev,
+		    "unable to retrieve adapter SGE parameters: %d\n", rc);
+		return (rc);
+	}
+	rc = -t4vf_get_rss_glb_config(sc);
+	if (rc != 0) {
+		device_printf(sc->dev,
+		    "unable to retrieve adapter RSS parameters: %d\n", rc);
+		return (rc);
+	}
+	if (sc->params.rss.mode != FW_RSS_GLB_CONFIG_CMD_MODE_BASICVIRTUAL) {
+		device_printf(sc->dev,
+		    "unable to operate with global RSS mode %d\n",
+		    sc->params.rss.mode);
+		return (EINVAL);
+	}
+
 	rc = t4_read_chip_settings(sc);
 
 	return (rc);
@@ -338,26 +357,6 @@ t4vf_attach(device_t dev)
 	rc = get_params__pre_init(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
-	rc = -t4vf_get_sge_params(sc);
-	if (rc != 0) {
-		device_printf(dev,
-		    "unable to retrieve adapter SGE parameters: %d\n", rc);
-		goto done;
-	}
-	rc = -t4vf_get_rss_glb_config(sc);
-	if (rc != 0) {
-		device_printf(dev,
-		    "unable to retrieve adapter RSS parameters: %d\n", rc);
-		goto done;
-	}
-	if (sc->params.rss.mode != FW_RSS_GLB_CONFIG_CMD_MODE_BASICVIRTUAL) {
-		device_printf(dev,
-		    "unable to operate with global RSS mode %d\n",
-		    sc->params.rss.mode);
-		rc = EINVAL;
-		goto done;
-	}
-
 	rc = get_params__post_init(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
