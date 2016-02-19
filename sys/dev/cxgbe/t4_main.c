@@ -1073,7 +1073,7 @@ done:
 	}
 
 	if (rc != 0)
-		t4_detach(dev);
+		t4_detach_common(dev);
 	else
 		t4_sysctls(sc);
 
@@ -1138,8 +1138,7 @@ static int
 t4_detach(device_t dev)
 {
 	struct adapter *sc;
-	struct port_info *pi;
-	int i, rc;
+	int rc;
 
 	sc = device_get_softc(dev);
 
@@ -1149,6 +1148,18 @@ t4_detach(device_t dev)
 		    "failed to detach sibling devices: %d\n", rc);
 		return (rc);
 	}
+
+	return (t4_detach_common(dev));
+}
+
+int
+t4_detach_common(device_t dev)
+{
+	struct adapter *sc;
+	struct port_info *pi;
+	int i, rc;
+
+	sc = device_get_softc(dev);
 
 	if (sc->flags & FULL_INIT_DONE)
 		t4_intr_disable(sc);
