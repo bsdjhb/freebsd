@@ -945,8 +945,6 @@ struct adapter {
 /* One for errors, one for firmware events */
 #define T4_EXTRA_INTR 2
 
-extern int t5_write_combine;
-
 static inline uint32_t
 t4_read_reg(struct adapter *sc, uint32_t reg)
 {
@@ -1088,6 +1086,8 @@ void t4_os_portmod_changed(const struct adapter *, int);
 void t4_os_link_changed(struct adapter *, int, int, int);
 void t4_iterate(void (*)(struct adapter *, void *), void *);
 int t4_filter_rpl(struct sge_iq *, const struct rss_header *, struct mbuf *);
+int t4_map_bars_0_and_4(struct adapter *);
+int t4_map_bar_2(struct adapter *);
 int begin_synchronized_op(struct adapter *, struct vi_info *, int, char *);
 void doom_vi(struct adapter *, struct vi_info *);
 void end_synchronized_op(struct adapter *, int);

@@ -131,88 +131,6 @@ t5vf_probe(device_t dev)
 }
 
 static int
-map_bars_0_and_4(struct adapter *sc)
-{
-	sc->regs_rid = PCIR_BAR(0);
-	sc->regs_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->regs_rid, RF_ACTIVE);
-	if (sc->regs_res == NULL) {
-		device_printf(sc->dev, "cannot map registers.\n");
-		return (ENXIO);
-	}
-	sc->bt = rman_get_bustag(sc->regs_res);
-	sc->bh = rman_get_bushandle(sc->regs_res);
-	sc->mmio_len = rman_get_size(sc->regs_res);
-	setbit(&sc->doorbells, DOORBELL_KDB);
-
-	sc->msix_rid = PCIR_BAR(4);
-	sc->msix_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->msix_rid, RF_ACTIVE);
-	if (sc->msix_res == NULL) {
-		device_printf(sc->dev, "cannot map MSI-X BAR.\n");
-		return (ENXIO);
-	}
-
-	return (0);
-}
-
-static int
-map_bar_2(struct adapter *sc)
-{
-
-	/*
-	 * T4: only iWARP driver uses the userspace doorbells.  There is no need
-	 * to map it if RDMA is disabled.
-	 */
-	if (is_t4(sc) && sc->rdmacaps == 0)
-		return (0);
-
-	sc->udbs_rid = PCIR_BAR(2);
-	sc->udbs_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->udbs_rid, RF_ACTIVE);
-	if (sc->udbs_res == NULL) {
-		device_printf(sc->dev, "cannot map doorbell BAR.\n");
-		return (ENXIO);
-	}
-	sc->udbs_base = rman_get_virtual(sc->udbs_res);
-
-	if (is_t5(sc)) {
-		setbit(&sc->doorbells, DOORBELL_UDB);
-#if defined(__i386__) || defined(__amd64__)
-		if (t5_write_combine) {
-			int rc;
-
-			/*
-			 * Enable write combining on BAR2.  This is the
-			 * userspace doorbell BAR and is split into 128B
-			 * (UDBS_SEG_SIZE) doorbell regions, each associated
-			 * with an egress queue.  The first 64B has the doorbell
-			 * and the second 64B can be used to submit a tx work
-			 * request with an implicit doorbell.
-			 */
-
-			rc = pmap_change_attr((vm_offset_t)sc->udbs_base,
-			    rman_get_size(sc->udbs_res), PAT_WRITE_COMBINING);
-			if (rc == 0) {
-				clrbit(&sc->doorbells, DOORBELL_UDB);
-				setbit(&sc->doorbells, DOORBELL_WCWR);
-				setbit(&sc->doorbells, DOORBELL_UDBWC);
-			} else {
-				device_printf(sc->dev,
-				    "couldn't enable write combining: %d\n",
-				    rc);
-			}
-
-			t4_write_reg(sc, A_SGE_STAT_CFG,
-			    V_STATSOURCE_T5(7) | V_STATMODE(0));
-		}
-#endif
-	}
-
-	return (0);
-}
-
-static int
 get_params__pre_init(struct adapter *sc)
 {
 	int rc;
@@ -259,8 +177,35 @@ get_params__post_init(struct adapter *sc)
 	}
 
 	rc = t4_read_chip_settings(sc);
+	if (rc != 0)
+		return (rc);
 
-	return (rc);
+	/*
+	 * Grab our Virtual Interface resource allocation, extract the
+	 * features that we're interested in and do a bit of sanity testing on
+	 * what we discover.
+	 */
+	rc = -t4vf_get_vfres(sc);
+	if (rc != 0) {
+		device_printf(sc->dev,
+		    "unable to get virtual interface resources: %d\n", rc);
+		return (rc);
+	}
+
+	/*
+	 * Check for various parameter sanity issues.
+	 */
+	if (sc->params.vfres.pmask == 0) {
+		device_printf(sc->dev, "no port access configured/usable!\n");
+		return (EINVAL);
+	}
+	if (sc->params.vfres.nvi == 0) {
+		device_printf(sc->dev,
+		    "no virtual interfaces configured/usable!\n");
+		return (EINVAL);
+	}
+
+	return (0);
 }
 
 static int
@@ -303,7 +248,7 @@ t4vf_attach(device_t dev)
 
 	mtx_init(&sc->regwin_lock, "register and memory window", 0, MTX_DEF);
 
-	rc = map_bars_0_and_4(sc);
+	rc = t4_map_bars_0_and_4(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
 
@@ -319,6 +264,7 @@ t4vf_attach(device_t dev)
 	sc->pf = G_SOURCEPF(val);
 	sc->mbox = G_VFID(val);
 
+	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
 #if defined(__i386__)
 	if ((cpu_feature & CPUID_CX8) == 0) {
 		device_printf(dev, "64 bit atomics not available.\n");
@@ -327,9 +273,8 @@ t4vf_attach(device_t dev)
 	}
 #endif
 
-	/* XXX: Somewhere we have to setup the MBDATA base. */
+	/* XXX: Somewhere we have to setup the MBDATA base? */
 
-	/* XXX: adap_init0 start */
 	/*
 	 * Some environments do not properly handle PCIE FLRs -- e.g. in Linux
 	 * 2.6.31 and later we can't call pci_reset_function() in order to
@@ -345,6 +290,7 @@ t4vf_attach(device_t dev)
 		device_printf(dev, "FW reset failed: %d\n", rc);
 		goto done;
 	}
+	sc->flags |= FW_OK;
 
 	/*
 	 * Grab basic operational parameters.  These will predominantly have
@@ -365,50 +311,22 @@ t4vf_attach(device_t dev)
 	if (rc != 0)
 		goto done; /* error message displayed already */
 
-	rc = map_bar_2(sc);
+	rc = t4_map_bar_2(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
 
 #ifdef notyet
-	/*
-	 * Grab our Virtual Interface resource allocation, extract the
-	 * features that we're interested in and do a bit of sanity testing on
-	 * what we discover.
-	 */
-	err = t4vf_get_vfres(adapter);
-	if (err) {
-		dev_err(adapter->pdev_dev, "unable to get virtual interface"
-			" resources: err=%d\n", err);
-		return err;
-	}
-
-	/*
-	 * Check for various parameter sanity issues.
-	 */
-	if (adapter->params.vfres.pmask == 0) {
-		dev_err(adapter->pdev_dev, "no port access configured\n"
-			"usable!\n");
-		return -EINVAL;
-	}
-	if (adapter->params.vfres.nvi == 0) {
-		dev_err(adapter->pdev_dev, "no virtual interfaces configured/"
-			"usable!\n");
-		return -EINVAL;
-	}
-
 	/*
 	 * Initialize nports and max_ethqsets now that we have our Virtual
 	 * Function Resources.
 	 */
 	size_nports_qsets(adapter);
 
-	adapter->flags |= FW_OK;
 #endif
 
 	/* XXX: adap_init0 end */
 #if 0
 	/* XXX: Not sure yet. */
-	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
 	sc->an_handler = an_not_handled;
 	for (i = 0; i < nitems(sc->cpl_handler); i++)
 		sc->cpl_handler[i] = cpl_not_handled;

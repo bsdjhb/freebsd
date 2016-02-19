@@ -784,6 +784,7 @@ int t4vf_wait_dev_ready(struct adapter *adapter);
 int t4vf_fw_reset(struct adapter *adapter);
 int t4vf_get_sge_params(struct adapter *adapter);
 int t4vf_get_rss_glb_config(struct adapter *adapter);
+int t4vf_get_vfres(struct adapter *adapter);
 int t4vf_prep_adapter(struct adapter *adapter);
 
 #endif /* __CHELSIO_COMMON_H */
