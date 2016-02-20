@@ -207,6 +207,7 @@ get_params__post_init(struct adapter *sc)
 		    "no virtual interfaces configured/usable!\n");
 		return (EINVAL);
 	}
+	sc->params.portvec = sc->params.vfres.pmask;
 
 	return (0);
 }
