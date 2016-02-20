@@ -1235,7 +1235,6 @@ t4_detach_common(device_t dev)
 	t4_destroy_dma_tag(sc);
 	if (mtx_initialized(&sc->sc_lock)) {
 		sx_xlock(&t4_list_lock);
-		device_printf(dev, "Removing from t4_list\n");
 		SLIST_REMOVE(&t4_list, sc, adapter, link);
 		sx_xunlock(&t4_list_lock);
 		mtx_destroy(&sc->sc_lock);
@@ -1980,7 +1979,6 @@ void
 t4_add_adapter(struct adapter *sc)
 {
 	sx_xlock(&t4_list_lock);
-	device_printf(sc->dev, "Adding to t4_list\n");
 	SLIST_INSERT_HEAD(&t4_list, sc, link);
 	sx_xunlock(&t4_list_lock);
 }
