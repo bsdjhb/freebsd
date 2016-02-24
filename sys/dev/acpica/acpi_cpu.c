@@ -437,7 +437,8 @@ acpi_cpu_postattach(void *unused __unused)
 	bus_generic_attach(devices[i]);
     free(devices, M_TEMP);
 
-    acpi_cpu_startup();
+    if (attached)
+	acpi_cpu_startup();
 }
 
 SYSINIT(acpi_cpu, SI_SUB_CONFIGURE, SI_ORDER_MIDDLE,
