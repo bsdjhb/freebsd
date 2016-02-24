@@ -400,19 +400,25 @@ acpi_cpu_postattach(void *unused __unused)
     device_t *devices;
     int err;
     int i, n;
+    int attached;
 
     err = devclass_get_devices(acpi_cpu_devclass, &devices, &n);
     if (err != 0) {
 	printf("devclass_get_devices(acpi_cpu_devclass) failed\n");
 	return;
     }
+    attached = 0;
+    for (i = 0; i < n; i++)
+	if (device_is_attached(devices[i]))
+	    attached = 1;
     for (i = 0; i < n; i++)
 	bus_generic_probe(devices[i]);
     for (i = 0; i < n; i++)
 	bus_generic_attach(devices[i]);
     free(devices, M_TEMP);
 
-    acpi_cpu_startup();
+    if (attached)
+	acpi_cpu_startup();
 }
 
 SYSINIT(acpi_cpu, SI_SUB_CONFIGURE, SI_ORDER_MIDDLE,
