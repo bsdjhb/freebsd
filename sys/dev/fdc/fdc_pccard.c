@@ -109,7 +109,9 @@ fdc_pccard_attach(device_t dev)
 		device_set_flags(child, 0x24);
 		error = bus_generic_attach(dev);
 	}
-	if (error)
+	if (error == 0)
+		fdc_start_worker(dev);
+	else
 		fdc_release_resources(fdc);
 	return (error);
 }
