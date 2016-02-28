@@ -55,7 +55,15 @@ __FBSDID("$FreeBSD$");
  * XXX: Add a TUNABLE and possible per-device sysctl for this?
  */
 
-struct t4vf_softc {
+struct intrs_and_queues {
+	uint16_t intr_type;	/* MSI, or MSI-X */
+	uint16_t nirq;		/* Total # of vectors */
+	uint16_t intr_flags_10g;/* Interrupt flags for each 10G port */
+	uint16_t intr_flags_1g;	/* Interrupt flags for each 1G port */
+	uint16_t ntxq10g;	/* # of NIC txq's for each 10G port */
+	uint16_t nrxq10g;	/* # of NIC rxq's for each 10G port */
+	uint16_t ntxq1g;	/* # of NIC txq's for each 1G port */
+	uint16_t nrxq1g;	/* # of NIC rxq's for each 1G port */
 };
 
 struct {
@@ -226,11 +234,204 @@ set_params__post_init(struct adapter *sc)
 }
 
 static int
+cfg_itype_and_nqueues(struct adapter *sc, int n10g, int n1g,
+    struct intrs_and_queues *iaq)
+{
+	struct vf_resources *vfres;
+	int nrxq10g, nrxq1g, nrxq;
+	int ntxq10g, ntxq1g, ntxq;
+	int itype, iq_avail, navail, rc;
+
+	/*
+	 * Figure out the layout of queues across our VIs and ensure
+	 * we can allocate enough interrupts for our layout.
+	 */
+	vfres = &sc->params.vfres;
+	bzero(iaq, sizeof(*iaq));
+
+	iaq->ntxq10g = t4_ntxq10g;
+	iaq->ntxq1g = t4_ntxq1g;
+	iaq->nrxq10g = nrxq10g = t4_nrxq10g;
+	iaq->nrxq1g = nrxq1g = t4_nrxq1g;
+
+	for (itype = INTR_MSIX; itype != 0; itype >>= 1) {
+		if (itype == INTR_INTX)
+			continue;
+
+		if (itype == INTR_MSIX)
+			navail = pci_msix_count(sc->dev);
+		else
+			navail = pci_msi_count(sc->dev);
+
+		if (navail == 0)
+			continue;
+
+		iaq->intr_type = itype;
+		iaq->intr_flags_10g = 0;
+		iaq->intr_flags_1g = 0;
+
+		/*
+		 * XXX: The Linux driver reserves an Ingress Queue for
+		 * forwarded interrupts when using MSI (but not MSI-X).
+		 * It seems it just always asks for 2 interrupts and
+		 * forwards all rxqs to the forwarded interrupt.
+		 *
+		 * We must reserve one IRQ for the for the firmware
+		 * event queue.
+		 *
+		 * Every rxq requires an ingress queue with a free
+		 * list and interrupts and an egress queue.  Every txq
+		 * requires an ETH egress queue.
+		 */
+		iaq->nirq = T4VF_EXTRA_INTR;
+
+		/*
+		 * First, determine how many queues we can allocate.
+		 * Start by finding the upper bound on rxqs from the
+		 * limit on ingress queues.
+		 */
+		iq_avail = vfres->niqflint - iaq->nirq;
+		if (iq_avail < n10g + n1g) {
+			device_printf(sc->dev,
+			    "Not enough ingress queues (%d) for %d ports\n",
+			    vfres->niqflint, n10g + n1g);
+			return (ENXIO);
+		}
+
+		/*
+		 * Try to honor the cap on interrupts.  If there aren't
+		 * enough interrupts for at least one interrupt per
+		 * port, then don't bother, we will just forward all
+		 * interrupts to one interrupt in that case.
+		 */
+		if (iaq->nirq + n10g + n1g <= navail) {
+			if (iq_avail > navail - iaq->nirq)
+				iq_avail = navail - iaq->nirq;
+		}
+
+		nrxq10g = t4_nrxq10g;
+		nrxq1g = t4_nrxq1g;
+		nrxq = n10g * nrxq10g + n1g * nrxq1g;
+		if (nrxq > iq_avail && nrxq1g > 1) {
+			/* Too many ingress queues.  Try just 1 for 1G. */
+			nrxq1g = 1;
+			nrxq = n10g * nrxq10g + n1g * nrxq1g;
+		}
+		if (nrxq > iq_avail) {
+			/*
+			 * Still too many ingress queues.  Use what we
+			 * can for each 10G port.
+			 */
+			nrxq10g = (iq_avail - n1g) / n10g;
+			nrxq = n10g * nrxq10g + n1g * nrxq1g;
+		}
+		KASSERT(nrxq <= iq_avail, ("too many ingress queues"));
+
+		/*
+		 * Next, determine the upper bound on txqs from the limit
+		 * on ETH queues.
+		 */
+		if (vfres->nethctrl < n10g + n1g) {
+			device_printf(sc->dev,
+			    "Not enough ETH queues (%d) for %d ports\n",
+			    vfres->nethctrl, n10g + n1g);
+			return (ENXIO);
+		}
+
+		ntxq10g = t4_ntxq10g;
+		ntxq1g = t4_ntxq1g;
+		ntxq = n10g * ntxq10g + n1g * ntxq1g;
+		if (ntxq > vfres->nethctrl) {
+			/* Too many ETH queues.  Try just 1 for 1G. */
+			ntxq1g = 1;
+			ntxq = n10g * ntxq10g + n1g * ntxq1g;
+		}
+		if (ntxq > vfres->nethctrl) {
+			/*
+			 * Still too many ETH queues.  Use what we
+			 * can for each 10G port.
+			 */
+			ntxq10g = (vfres->nethctrl - n1g) / n10g;
+			ntxq = n10g * ntxq10g + n1g * ntxq1g;
+		}
+		KASSERT(ntxq <= vfres->nethctrl, ("too many ETH queues"));
+
+		/*
+		 * Finally, ensure we have enough egress queues.
+		 */
+		if (vfres->neq < (n10g + n1g) * 2) {
+			device_printf(sc->dev,
+			    "Not enough egress queues (%d) for %d ports\n",
+			    vfres->neq, n10g + n1g);
+			return (ENXIO);
+		}
+		if (nrxq + ntxq > vfres->neq) {
+			/* Just punt and use 1 for everything. */
+			nrxq1g = ntxq1g = nrxq10g = ntxq10g = 1;
+			nrxq = n10g * nrxq10g + n1g * nrxq1g;
+			ntxq = n10g * ntxq10g + n1g * ntxq1g;
+		}
+		KASSERT(nrxq <= iq_avail, ("too many ingress queues"));
+		KASSERT(ntxq <= vfres->nethctrl, ("too many ETH queues"));
+		KASSERT(nrxq + ntxq <= vfres->neq, ("too many egress queues"));
+
+		/*
+		 * Do we have enough interrupts?  For MSI the interrupts
+		 * have to be a power of 2 as well.
+		 */
+		iaq->nirq += nrxq;
+		if (iaq->nirq <= navail &&
+		    (itype != INTR_MSI || powerof2(iaq->nirq))) {
+			navail = iaq->nirq;
+			if (itype == INTR_MSIX)
+				rc = pci_alloc_msix(sc->dev, &navail);
+			else
+				rc = pci_alloc_msi(sc->dev, &navail);
+			if (rc != 0) {
+				device_printf(sc->dev,
+		    "failed to allocate vectors:%d, type=%d, req=%d, rcvd=%d\n",
+				    itype, rc, iaq->nirq, navail);
+				return (rc);
+			}
+			if (navail == iaq->nirq) {
+				iaq->intr_flags_10g = INTR_RXQ;
+				iaq->intr_flags_1g = INTR_RXQ;
+				return (0);
+			}
+		}
+
+		/* Fall back to a single interrupt. */
+		iaq->nirq = 1;
+		navail = iaq->nirq;
+		if (itype == INTR_MSIX)
+			rc = pci_alloc_msix(sc->dev, &navail);
+		else
+			rc = pci_alloc_msi(sc->dev, &navail);
+		if (rc != 0)
+			device_printf(sc->dev,
+		    "failed to allocate vectors:%d, type=%d, req=%d, rcvd=%d\n",
+			    itype, rc, iaq->nirq, navail);
+		iaq->intr_flags_10g = 0;
+		iaq->intr_flags_1g = 0;
+		return (rc);
+	}
+
+	device_printf(sc->dev,
+	    "failed to find a usable interrupt type.  "
+	    "allowed=%d, msi-x=%d, msi=%d, intx=1", t4_intr_types,
+	    pci_msix_count(sc->dev), pci_msi_count(sc->dev));
+
+	return (ENXIO);
+}
+
+static int
 t4vf_attach(device_t dev)
 {
 	struct adapter *sc;
+	int rc = 0, i, j, n10g, n1g, rqidx, tqidx;
+	struct intrs_and_queues iaq;
+	struct sge *s;
 	uint32_t val;
-	int rc;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -278,8 +479,6 @@ t4vf_attach(device_t dev)
 		goto done;
 	}
 #endif
-
-	/* XXX: Somewhere we have to setup the MBDATA base? */
 
 	/*
 	 * Some environments do not properly handle PCIE FLRs -- e.g. in Linux
@@ -338,12 +537,175 @@ t4vf_attach(device_t dev)
 	 */
 	sc->params.nports = imin(sc->params.nports,
 	    bitcount32(sc->params.vfres.pmask));
-		
+
 #ifdef notyet
 	/*
 	 * XXX: The Linux VF driver will lower nports if it thinks there
 	 * are too few resources in vfres (niqflint, nethctrl, neq).
 	 */
+#endif
+
+	/*
+	 * XXX: This is a big cut and paste for now.  Once it is working
+	 * I will go back and refactor this.
+	 */
+
+	/*
+	 * First pass over all the ports - allocate VIs and initialize some
+	 * basic parameters like mac address, port type, etc.  We also figure
+	 * out whether a port is 10G or 1G and use that information when
+	 * calculating how many interrupts to attempt to allocate.
+	 */
+	n10g = n1g = 0;
+	for_each_port(sc, i) {
+		struct port_info *pi;
+		struct vi_info *vi;
+
+		pi = malloc(sizeof(*pi), M_CXGBE, M_ZERO | M_WAITOK);
+		sc->port[i] = pi;
+
+		/* These must be set before t4_port_init */
+		pi->adapter = sc;
+		pi->port_id = i;
+		pi->nvi = 1;
+		pi->vi = malloc(sizeof(struct vi_info) * pi->nvi, M_CXGBE,
+		    M_ZERO | M_WAITOK);
+
+		/*
+		 * Allocate the "main" VI and initialize parameters
+		 * like mac addr.
+		 */
+		rc = -t4_port_init(pi, sc->mbox, sc->pf, 0);
+		if (rc != 0) {
+			device_printf(dev, "unable to initialize port %d: %d\n",
+			    i, rc);
+			free(pi->vi, M_CXGBE);
+			free(pi, M_CXGBE);
+			sc->port[i] = NULL;
+			goto done;
+		}
+
+		/* No t4_link_start. */
+
+		snprintf(pi->lockname, sizeof(pi->lockname), "%sp%d",
+		    device_get_nameunit(dev), i);
+		mtx_init(&pi->pi_lock, pi->lockname, 0, MTX_DEF);
+		sc->chan_map[pi->tx_chan] = i;
+
+		if (is_10G_port(pi) || is_40G_port(pi)) {
+			n10g++;
+			for_each_vi(pi, j, vi) {
+				vi->tmr_idx = t4_tmr_idx_10g;
+				vi->pktc_idx = t4_pktc_idx_10g;
+			}
+		} else {
+			n1g++;
+			for_each_vi(pi, j, vi) {
+				vi->tmr_idx = t4_tmr_idx_1g;
+				vi->pktc_idx = t4_pktc_idx_1g;
+			}
+		}
+
+		pi->linkdnrc = -1;
+
+		for_each_vi(pi, j, vi) {
+			vi->qsize_rxq = t4_qsize_rxq;
+			vi->qsize_txq = t4_qsize_txq;
+			vi->pi = pi;
+		}
+
+		pi->dev = device_add_child(dev, is_t4(sc) ? "cxgbe" : "cxl", -1);
+		if (pi->dev == NULL) {
+			device_printf(dev,
+			    "failed to add device for port %d.\n", i);
+			rc = ENXIO;
+			goto done;
+		}
+		pi->vi[0].dev = pi->dev;
+		device_set_softc(pi->dev, pi);
+	}
+		
+	/*
+	 * Interrupt type, # of interrupts, # of rx/tx queues, etc.
+	 */
+	rc = cfg_itype_and_nqueues(sc, n10g, n1g, &iaq);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
+	sc->intr_type = iaq.intr_type;
+	sc->intr_count = iaq.nirq;
+
+	s = &sc->sge;
+	s->nrxq = n10g * iaq.nrxq10g + n1g * iaq.nrxq1g;
+	s->ntxq = n10g * iaq.ntxq10g + n1g * iaq.ntxq1g;
+	s->neq = s->ntxq + s->nrxq;	/* the free list in an rxq is an eq */
+	s->neq += sc->params.nports + 1;/* ctrl queues: 1 per port + 1 mgmt */
+	s->niq = s->nrxq + 1;		/* 1 extra for firmware event queue */
+
+	s->ctrlq = malloc(sc->params.nports * sizeof(struct sge_wrq), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+	s->rxq = malloc(s->nrxq * sizeof(struct sge_rxq), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+	s->txq = malloc(s->ntxq * sizeof(struct sge_txq), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+	s->iqmap = malloc(s->niq * sizeof(struct sge_iq *), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+	s->eqmap = malloc(s->neq * sizeof(struct sge_eq *), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+
+	sc->irq = malloc(sc->intr_count * sizeof(struct irq), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+
+#ifdef notsure
+	t4_init_l2t(sc, M_WAITOK);
+#endif
+
+	/*
+	 * Second pass over the ports.  This time we know the number of rx and
+	 * tx queues that each port should get.
+	 */
+	rqidx = tqidx = 0;
+	for_each_port(sc, i) {
+		struct port_info *pi = sc->port[i];
+		struct vi_info *vi;
+
+		if (pi == NULL)
+			continue;
+
+		for_each_vi(pi, j, vi) {
+			vi->first_rxq = rqidx;
+			vi->first_txq = tqidx;
+			if (is_10G_port(pi) || is_40G_port(pi)) {
+				vi->flags |= iaq.intr_flags_10g & INTR_RXQ;
+				vi->nrxq = j == 0 ? iaq.nrxq10g : 1;
+				vi->ntxq = j == 0 ? iaq.ntxq10g : 1;
+			} else {
+				vi->flags |= iaq.intr_flags_1g & INTR_RXQ;
+				vi->nrxq = j == 0 ? iaq.nrxq1g : 1;
+				vi->ntxq = j == 0 ? iaq.ntxq1g : 1;
+			}
+
+			vi->rsrv_noflowq = 0;
+
+			rqidx += vi->nrxq;
+			tqidx += vi->ntxq;
+		}
+	}
+
+	rc = t4_setup_intr_handlers(sc);
+	if (rc != 0) {
+		device_printf(dev,
+		    "failed to setup interrupt handlers: %d\n", rc);
+		goto done;
+	}
+
+#ifdef notyet
+	rc = bus_generic_attach(dev);
+	if (rc != 0) {
+		device_printf(dev,
+		    "failed to attach all child ports: %d\n", rc);
+		goto done;
+	}
 #endif
 
 	device_printf(dev,
@@ -353,7 +715,9 @@ t4vf_attach(device_t dev)
 	    (sc->intr_type == INTR_MSI ? "MSI" : "INTx"),
 	    sc->intr_count > 1 ? "s" : "", sc->sge.neq, sc->sge.niq);
 
-
+#ifdef probablynot
+	t4_set_desc(sc);
+#endif
 
 done:
 	if (rc != 0)

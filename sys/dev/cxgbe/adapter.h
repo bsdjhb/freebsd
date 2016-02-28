@@ -945,6 +945,9 @@ struct adapter {
 /* One for errors, one for firmware events */
 #define T4_EXTRA_INTR 2
 
+/* One for firmware events */
+#define T4VF_EXTRA_INTR 1
+
 static inline uint32_t
 t4_read_reg(struct adapter *sc, uint32_t reg)
 {
@@ -1079,6 +1082,18 @@ t4_use_ldst(struct adapter *sc)
 }
 
 /* t4_main.c */
+extern int t4_ntxq10g;
+extern int t4_nrxq10g;
+extern int t4_ntxq1g;
+extern int t4_nrxq1g;
+extern int t4_intr_types;
+extern int t4_tmr_idx_10g;
+extern int t4_pktc_idx_10g;
+extern int t4_tmr_idx_1g;
+extern int t4_pktc_idx_1g;
+extern unsigned int t4_qsize_rxq;
+extern unsigned int t4_qsize_txq;
+
 int t4_os_find_pci_capability(struct adapter *, int);
 int t4_os_pci_save_state(struct adapter *);
 int t4_os_pci_restore_state(struct adapter *);
@@ -1090,6 +1105,7 @@ int t4_detach_common(device_t);
 int t4_filter_rpl(struct sge_iq *, const struct rss_header *, struct mbuf *);
 int t4_map_bars_0_and_4(struct adapter *);
 int t4_map_bar_2(struct adapter *);
+int t4_setup_intr_handlers(struct adapter *);
 int begin_synchronized_op(struct adapter *, struct vi_info *, int, char *);
 void doom_vi(struct adapter *, struct vi_info *);
 void end_synchronized_op(struct adapter *, int);
