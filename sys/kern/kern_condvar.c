@@ -289,13 +289,8 @@ _cv_timedwait_sbt(struct cv *cvp, struct lock_object *lock, sbintime_t sbt,
 
 	if (SCHEDULER_STOPPED())
 		return (0);
-	if (cold) {
-		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
-		    td->td_tid, td->td_name);
-		_early_sleep(lock, 0);
-		/* XXX: EWOULDBLOCK instead? */
-		return (0);
-	}
+	if (cold)
+		panic("timed sleep before timers are working");
 
 	sleepq_lock(cvp);
 
@@ -358,13 +353,8 @@ _cv_timedwait_sig_sbt(struct cv *cvp, struct lock_object *lock,
 
 	if (SCHEDULER_STOPPED())
 		return (0);
-	if (cold) {
-		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
-		    td->td_tid, td->td_name);
-		_early_sleep(lock, 0);
-		/* XXX: EWOULDBLOCK instead? */
-		return (0);
-	}
+	if (cold)
+		panic("timed sleep before timers are working");
 
 	sleepq_lock(cvp);
 
