@@ -734,6 +734,13 @@ t4vf_attach(device_t dev)
 #endif
 
 done:
+
+	/* XXX */
+	if (rc != 0) {
+		device_printf(dev, "attach should fail with %d\n", rc);
+		return (0);
+	}
+
 	if (rc != 0)
 		t4_detach_common(dev);
 #if 0
