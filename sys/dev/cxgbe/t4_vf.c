@@ -174,6 +174,17 @@ get_params__post_init(struct adapter *sc)
 		    "unable to retrieve adapter SGE parameters: %d\n", rc);
 		return (rc);
 	}
+
+	/* XXX */
+	device_printf(sc->dev, "SGE params:\n");
+	printf("\tcontrol:  0x%08x\n", sc->params.sge.sge_control);
+	printf("\tcontrol2: 0x%08x\n", sc->params.sge.sge_control2);
+	printf("\thps:      0x%08x\n", sc->params.sge.sge_host_page_size);
+	printf("\teq_qpp:   0x%08x\n", sc->params.sge.sge_egress_queues_per_page);
+	printf("\tiq_qpp:   0x%08x\n", sc->params.sge.sge_ingress_queues_per_page);
+	printf("\tfl[0]:    %d\n", sc->params.sge.sge_fl_buffer_size[0]);
+	printf("\tfl[1]:    %d\n", sc->params.sge.sge_fl_buffer_size[1]);
+
 	rc = -t4vf_get_rss_glb_config(sc);
 	if (rc != 0) {
 		device_printf(sc->dev,
