@@ -3789,7 +3789,7 @@ cxgbe_init_synchronized(struct vi_info *vi)
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	pi->up_vis++;
 
-	if (pi->nvi > 1)
+	if (pi->nvi > 1 || sc->flags & IS_VF)
 		callout_reset(&vi->tick, hz, vi_tick, vi);
 	else
 		callout_reset(&pi->tick, hz, cxgbe_tick, pi);
@@ -3841,10 +3841,10 @@ cxgbe_uninit_synchronized(struct vi_info *vi)
 	}
 
 	PORT_LOCK(pi);
-	if (pi->nvi == 1)
-		callout_stop(&pi->tick);
-	else
+	if (pi->nvi > 1 || sc->flags & IS_VF)
 		callout_stop(&vi->tick);
+	else
+		callout_stop(&pi->tick);
 	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
 		PORT_UNLOCK(pi);
 		return (0);
