@@ -628,7 +628,8 @@ t4vf_attach(device_t dev)
 			vi->pi = pi;
 		}
 
-		pi->dev = device_add_child(dev, is_t4(sc) ? "cxgbe" : "cxl", -1);
+		pi->dev = device_add_child(dev, is_t4(sc) ? "cxgbev" : "cxlv",
+		    -1);
 		if (pi->dev == NULL) {
 			device_printf(dev,
 			    "failed to add device for port %d.\n", i);
@@ -777,7 +778,20 @@ static driver_t t5vf_driver = {
 	sizeof(struct adapter)
 };
 
+static driver_t cxgbev_driver = {
+	"cxgbev",
+	cxgbe_methods,
+	sizeof(struct port_info)
+};
+
+static driver_t cxlv_driver = {
+	"cxlv",
+	cxgbe_methods,
+	sizeof(struct port_info)
+};
+
 static devclass_t t4vf_devclass, t5vf_devclass;
+static devclass_t cxgbev_devclass, cxlv_devclass;
 
 DRIVER_MODULE(t4vf, pci, t4vf_driver, t4vf_devclass, 0, 0);
 MODULE_VERSION(t4vf, 1);
@@ -786,3 +800,9 @@ MODULE_DEPEND(t4vf, t4nex, 1, 1, 1);
 DRIVER_MODULE(t5vf, pci, t5vf_driver, t5vf_devclass, 0, 0);
 MODULE_VERSION(t5vf, 1);
 MODULE_DEPEND(t5vf, t5nex, 1, 1, 1);
+
+DRIVER_MODULE(cxgbev, t4vf, cxgbev_driver, cxgbev_devclass, 0, 0);
+MODULE_VERSION(cxgbev, 1);
+
+DRIVER_MODULE(cxlv, t5vf, cxlv_driver, cxlv_devclass, 0, 0);
+MODULE_VERSION(cxlv, 1);

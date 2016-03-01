@@ -1093,6 +1093,7 @@ extern int t4_tmr_idx_1g;
 extern int t4_pktc_idx_1g;
 extern unsigned int t4_qsize_rxq;
 extern unsigned int t4_qsize_txq;
+extern device_method_t cxgbe_methods[];
 
 int t4_os_find_pci_capability(struct adapter *, int);
 int t4_os_pci_save_state(struct adapter *);
