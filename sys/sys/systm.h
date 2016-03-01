@@ -370,7 +370,6 @@ static __inline void		splx(intrmask_t ipl __unused)	{ return; }
  * Common `proc' functions are declared here so that proc.h can be included
  * less often.
  */
-void	_early_sleep(struct lock_object *lock, int drop);
 int	_sleep(void *chan, struct lock_object *lock, int pri, const char *wmesg,
 	   sbintime_t sbt, sbintime_t pr, int flags) __nonnull(1);
 #define	msleep(chan, mtx, pri, wmesg, timo)				\

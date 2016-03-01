@@ -117,38 +117,6 @@ sleepinit(void *unused)
 SYSINIT(sleepinit, SI_SUB_KMEM, SI_ORDER_ANY, sleepinit, 0);
 
 /*
- * During early startup, just yield the CPU when a thread requests a
- * sleep with a timeout.  This will effect a round-robin cycle between
- * runnable threads and threads waiting with a timeout until timeouts
- * are known to work.
- */
-void
-_early_sleep(struct lock_object *lock, int drop)
-{
-	struct thread *td;
-	struct lock_class *class;
-	uintptr_t lock_state;
-
-	if (lock != NULL)
-		class = LOCK_CLASS(lock);
-	else
-		class = NULL;
-
-	critical_enter();
-	td = curthread;
-	if (lock != NULL && lock != &Giant.lock_object)
-		lock_state = class->lc_unlock(lock);
-	DROP_GIANT();
-	thread_lock(td);
-	critical_exit();
-	mi_switch(SW_VOL | SWT_RELINQUISH, NULL);
-	thread_unlock(td);
-	PICKUP_GIANT();
-	if (lock != NULL && lock != &Giant.lock_object && !drop)
-		class->lc_lock(lock, lock_state);
-}
-
-/*
  * General sleep call.  Suspends the current thread until a wakeup is
  * performed on the specified identifier.  The thread will then be made
  * runnable with the specified priority.  Sleeps at most sbt units of time
@@ -199,13 +167,8 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 			class->lc_unlock(lock);
 		return (0);
 	}
-	if (cold && sbt != 0) {
-		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
-		    td->td_tid, td->td_name);
-		_early_sleep(lock, priority & PDROP);
-		/* XXX: EWOULDBLOCK instead? */
-		return (0);
-	}
+	if (cold && sbt != 0)
+		panic("timed sleep before timers are working");
 	catch = priority & PCATCH;
 	pri = priority & PRIMASK;
 
@@ -297,13 +260,8 @@ msleep_spin_sbt(void *ident, struct mtx *mtx, const char *wmesg,
 
 	if (SCHEDULER_STOPPED())
 		return (0);
-	if (cold && sbt != 0) {
-		printf("%s: faking sleep via yielding for %d (%s)\n", __func__,
-		    td->td_tid, td->td_name);
-		_early_sleep(&mtx->lock_object, 0);
-		/* XXX: EWOULDBLOCK instead? */
-		return (0);
-	}
+	if (cold && sbt != 0)
+		panic("timed sleep before timers are working");
 
 	sleepq_lock(ident);
 	CTR5(KTR_PROC, "msleep_spin: thread %ld (pid %ld, %s) on %s (%p)",
