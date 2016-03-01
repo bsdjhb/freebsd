@@ -713,14 +713,12 @@ t4vf_attach(device_t dev)
 		goto done;
 	}
 
-#ifdef notyet
 	rc = bus_generic_attach(dev);
 	if (rc != 0) {
 		device_printf(dev,
 		    "failed to attach all child ports: %d\n", rc);
 		goto done;
 	}
-#endif
 
 	device_printf(dev,
 	    "PCIe gen%d x%d, %d ports, %d %s interrupt%s, %d eq, %d iq\n",
