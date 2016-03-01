@@ -1169,7 +1169,7 @@ t4_setup_vi_queues(struct vi_info *vi)
 	/*
 	 * Finally, the control queue.
 	 */
-	if (!IS_MAIN_VI(vi))
+	if (!IS_MAIN_VI(vi) || sc->flags & IS_VF)
 		goto done;
 	oid = SYSCTL_ADD_NODE(&vi->ctx, children, OID_AUTO, "ctrlq", CTLFLAG_RD,
 	    NULL, "ctrl queue");
@@ -1230,7 +1230,7 @@ t4_teardown_vi_queues(struct vi_info *vi)
 	 * (for egress updates, etc.).
 	 */
 
-	if (IS_MAIN_VI(vi))
+	if (IS_MAIN_VI(vi) && !(sc->flags & IS_VF))
 		free_wrq(sc, &sc->sge.ctrlq[pi->port_id]);
 
 	for_each_txq(vi, i, txq) {
