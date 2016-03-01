@@ -481,6 +481,9 @@ t4vf_attach(device_t dev)
 	sc->pf = G_SOURCEPF(val);
 	sc->mbox = G_VFID(val);
 
+	/* XXX */
+	sc->debug_flags |= DF_DUMP_MBOX;
+
 	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
 
 #if defined(__i386__)
