@@ -260,11 +260,6 @@ cfg_itype_and_nqueues(struct adapter *sc, int n10g, int n1g,
 	vfres = &sc->params.vfres;
 	bzero(iaq, sizeof(*iaq));
 
-	iaq->ntxq10g = t4_ntxq10g;
-	iaq->ntxq1g = t4_ntxq1g;
-	iaq->nrxq10g = nrxq10g = t4_nrxq10g;
-	iaq->nrxq1g = nrxq1g = t4_nrxq1g;
-
 	for (itype = INTR_MSIX; itype != 0; itype >>= 1) {
 		if (itype == INTR_INTX)
 			continue;
@@ -391,6 +386,10 @@ cfg_itype_and_nqueues(struct adapter *sc, int n10g, int n1g,
 		 * have to be a power of 2 as well.
 		 */
 		iaq->nirq += nrxq;
+		iaq->ntxq10g = ntxq10g;
+		iaq->ntxq1g = ntxq1g;
+		iaq->nrxq10g = nrxq10g;
+		iaq->nrxq1g = nrxq1g;
 		if (iaq->nirq <= navail &&
 		    (itype != INTR_MSI || powerof2(iaq->nirq))) {
 			navail = iaq->nirq;
@@ -409,6 +408,7 @@ cfg_itype_and_nqueues(struct adapter *sc, int n10g, int n1g,
 				iaq->intr_flags_1g = INTR_RXQ;
 				return (0);
 			}
+			pci_release_msi(sc->dev);
 		}
 
 		/* Fall back to a single interrupt. */
