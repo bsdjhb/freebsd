@@ -805,11 +805,6 @@ init_secondary(void)
 	while (smp_started == 0)
 		ia32_pause();
 
-#if 0
-	/* Start per-CPU event timers. */
-	cpu_initclocks_ap();
-#endif
-
 	/* Enter the scheduler. */
 	sched_throw(NULL);
 
