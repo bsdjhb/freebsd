@@ -933,11 +933,6 @@ init_secondary_tail(void)
 	while (atomic_load_acq_int(&smp_started) == 0)
 		ia32_pause();
 
-#if 0
-	/* Start per-CPU event timers. */
-	cpu_initclocks_ap();
-#endif
-
 	sched_throw(NULL);
 
 	panic("scheduler returned us to %s", __func__);
