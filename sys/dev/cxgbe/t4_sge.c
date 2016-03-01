@@ -863,7 +863,8 @@ t4_setup_adapter_queues(struct adapter *sc)
 	 * Management queue.  This is just a control queue that uses the fwq as
 	 * its associated iq.
 	 */
-	rc = alloc_mgmtq(sc);
+	if (!(sc->flags & IS_VF))
+		rc = alloc_mgmtq(sc);
 
 	return (rc);
 }
