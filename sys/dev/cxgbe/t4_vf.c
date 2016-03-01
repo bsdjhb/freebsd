@@ -722,11 +722,10 @@ t4vf_attach(device_t dev)
 	}
 
 	device_printf(dev,
-	    "PCIe gen%d x%d, %d ports, %d %s interrupt%s, %d eq, %d iq\n",
-	    sc->params.pci.speed, sc->params.pci.width, sc->params.nports,
-	    sc->intr_count, sc->intr_type == INTR_MSIX ? "MSI-X" :
-	    (sc->intr_type == INTR_MSI ? "MSI" : "INTx"),
-	    sc->intr_count > 1 ? "s" : "", sc->sge.neq, sc->sge.niq);
+	    "%d ports, %d %s interrupt%s, %d eq, %d iq\n",
+	    sc->params.nports, sc->intr_count, sc->intr_type == INTR_MSIX ?
+	    "MSI-X" : "MSI", sc->intr_count > 1 ? "s" : "", sc->sge.neq,
+	    sc->sge.niq);
 
 #ifdef probablynot
 	t4_set_desc(sc);
