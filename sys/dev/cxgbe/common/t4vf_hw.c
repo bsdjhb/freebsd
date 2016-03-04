@@ -369,9 +369,7 @@ int __devinit t4vf_prep_adapter(struct adapter *adapter)
 	 * firmware.
 	 */
 	adapter->params.nports = 1;
-#ifdef notyet
 	adapter->params.vfres.pmask = 1;
-#endif
 	adapter->params.vpd.cclk = 50000;
 
 	return 0;
