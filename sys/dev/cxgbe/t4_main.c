@@ -1786,7 +1786,7 @@ cxgbe_get_counter(struct ifnet *ifp, ift_counter c)
 	struct adapter *sc = pi->adapter;
 	struct port_stats *s = &pi->stats;
 
-	if (pi->nvi > 1)
+	if (pi->nvi > 1 || sc->flags & IS_VF)
 		return (vi_get_counter(ifp, c));
 
 	cxgbe_refresh_stats(sc, pi);
