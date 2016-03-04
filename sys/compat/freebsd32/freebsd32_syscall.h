@@ -255,9 +255,9 @@
 #define	FREEBSD32_SYS_freebsd32_aio_suspend	315
 #define	FREEBSD32_SYS_freebsd32_aio_cancel	316
 #define	FREEBSD32_SYS_freebsd32_aio_error	317
-#define	FREEBSD32_SYS_freebsd32_oaio_read	318
-#define	FREEBSD32_SYS_freebsd32_oaio_write	319
-#define	FREEBSD32_SYS_freebsd32_olio_listio	320
+#define	FREEBSD32_SYS_freebsd6_freebsd32_aio_read	318
+#define	FREEBSD32_SYS_freebsd6_freebsd32_aio_write	319
+#define	FREEBSD32_SYS_freebsd6_freebsd32_lio_listio	320
 #define	FREEBSD32_SYS_yield	321
 				/* 322 is obsolete thr_sleep */
 				/* 323 is obsolete thr_wakeup */

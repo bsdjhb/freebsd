@@ -211,9 +211,9 @@ MIASM =  \
 	aio_suspend.o \
 	aio_cancel.o \
 	aio_error.o \
-	oaio_read.o \
-	oaio_write.o \
-	olio_listio.o \
+	freebsd6_aio_read.o \
+	freebsd6_aio_write.o \
+	freebsd6_lio_listio.o \
 	yield.o \
 	mlockall.o \
 	munlockall.o \
