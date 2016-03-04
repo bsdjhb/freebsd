@@ -370,18 +370,7 @@ static moduledata_t aio_mod = {
 	NULL
 };
 
-#ifdef COMPAT_FREEBSD32
-#include <sys/mount.h>
-#include <sys/socket.h>
-#include <compat/freebsd32/freebsd32.h>
-#include <compat/freebsd32/freebsd32_proto.h>
-#include <compat/freebsd32/freebsd32_signal.h>
-#include <compat/freebsd32/freebsd32_syscall.h>
-#include <compat/freebsd32/freebsd32_util.h>
-#endif
-
-DECLARE_MODULE(aio, aio_mod,
-	SI_SUB_VFS, SI_ORDER_ANY);
+DECLARE_MODULE(aio, aio_mod, SI_SUB_VFS, SI_ORDER_ANY);
 MODULE_VERSION(aio, 1);
 
 /*
@@ -2551,6 +2540,13 @@ filt_lio(struct knote *kn, long hint)
 }
 
 #ifdef COMPAT_FREEBSD32
+#include <sys/mount.h>
+#include <sys/socket.h>
+#include <compat/freebsd32/freebsd32.h>
+#include <compat/freebsd32/freebsd32_proto.h>
+#include <compat/freebsd32/freebsd32_signal.h>
+#include <compat/freebsd32/freebsd32_syscall.h>
+#include <compat/freebsd32/freebsd32_util.h>
 
 struct __aiocb_private32 {
 	int32_t	status;
