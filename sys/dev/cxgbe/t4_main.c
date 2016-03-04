@@ -1157,8 +1157,10 @@ t4_detach_common(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	if (sc->flags & FULL_INIT_DONE)
-		t4_intr_disable(sc);
+	if (sc->flags & FULL_INIT_DONE) {
+		if (!(sc->flags & IS_VF))
+			t4_intr_disable(sc);
+	}
 
 	if (sc->cdev) {
 		destroy_dev(sc->cdev);
@@ -4020,7 +4022,8 @@ adapter_full_init(struct adapter *sc)
 		    device_get_nameunit(sc->dev), i);
 	}
 
-	t4_intr_enable(sc);
+	if (!(sc->flags & IS_VF))
+		t4_intr_enable(sc);
 	sc->flags |= FULL_INIT_DONE;
 done:
 	if (rc != 0)
