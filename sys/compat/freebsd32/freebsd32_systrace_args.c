@@ -1556,11 +1556,11 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 3;
 		break;
 	}
-	/* freebsd32_aio_cancel */
+	/* aio_cancel */
 	case 316: {
-		struct freebsd32_aio_cancel_args *p = params;
+		struct aio_cancel_args *p = params;
 		iarg[0] = p->fd; /* int */
-		uarg[1] = (intptr_t) p->aiocbp; /* struct aiocb32 * */
+		uarg[1] = (intptr_t) p->aiocbp; /* struct aiocb * */
 		*n_args = 2;
 		break;
 	}
@@ -5789,14 +5789,14 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* freebsd32_aio_cancel */
+	/* aio_cancel */
 	case 316:
 		switch(ndx) {
 		case 0:
 			p = "int";
 			break;
 		case 1:
-			p = "struct aiocb32 *";
+			p = "struct aiocb *";
 			break;
 		default:
 			break;
@@ -9821,7 +9821,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* freebsd32_aio_cancel */
+	/* aio_cancel */
 	case 316:
 		if (ndx == 0 || ndx == 1)
 			p = "int";

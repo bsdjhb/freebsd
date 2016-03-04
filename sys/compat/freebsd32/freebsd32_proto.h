@@ -285,10 +285,6 @@ struct freebsd32_aio_suspend_args {
 	char nent_l_[PADL_(int)]; int nent; char nent_r_[PADR_(int)];
 	char timeout_l_[PADL_(const struct timespec32 *)]; const struct timespec32 * timeout; char timeout_r_[PADR_(const struct timespec32 *)];
 };
-struct freebsd32_aio_cancel_args {
-	char fd_l_[PADL_(int)]; int fd; char fd_r_[PADR_(int)];
-	char aiocbp_l_[PADL_(struct aiocb32 *)]; struct aiocb32 * aiocbp; char aiocbp_r_[PADR_(struct aiocb32 *)];
-};
 struct freebsd32_aio_error_args {
 	char aiocbp_l_[PADL_(struct aiocb32 *)]; struct aiocb32 * aiocbp; char aiocbp_r_[PADR_(struct aiocb32 *)];
 };
@@ -743,7 +739,6 @@ int	freebsd32_modstat(struct thread *, struct freebsd32_modstat_args *);
 int	freebsd32_kldstat(struct thread *, struct freebsd32_kldstat_args *);
 int	freebsd32_aio_return(struct thread *, struct freebsd32_aio_return_args *);
 int	freebsd32_aio_suspend(struct thread *, struct freebsd32_aio_suspend_args *);
-int	freebsd32_aio_cancel(struct thread *, struct freebsd32_aio_cancel_args *);
 int	freebsd32_aio_error(struct thread *, struct freebsd32_aio_error_args *);
 int	freebsd32_jail(struct thread *, struct freebsd32_jail_args *);
 int	freebsd32_sigtimedwait(struct thread *, struct freebsd32_sigtimedwait_args *);
@@ -1181,7 +1176,6 @@ int	freebsd7_freebsd32_shmctl(struct thread *, struct freebsd7_freebsd32_shmctl_
 #define	FREEBSD32_SYS_AUE_freebsd32_kldstat	AUE_NULL
 #define	FREEBSD32_SYS_AUE_freebsd32_aio_return	AUE_NULL
 #define	FREEBSD32_SYS_AUE_freebsd32_aio_suspend	AUE_NULL
-#define	FREEBSD32_SYS_AUE_freebsd32_aio_cancel	AUE_NULL
 #define	FREEBSD32_SYS_AUE_freebsd32_aio_error	AUE_NULL
 #define	FREEBSD32_SYS_AUE_freebsd6_freebsd32_aio_read	AUE_NULL
 #define	FREEBSD32_SYS_AUE_freebsd6_freebsd32_aio_write	AUE_NULL
