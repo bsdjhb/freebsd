@@ -2771,13 +2771,6 @@ freebsd32_aio_suspend(struct thread *td, struct freebsd32_aio_suspend_args *uap)
 }
 
 int
-freebsd32_aio_cancel(struct thread *td, struct freebsd32_aio_cancel_args *uap)
-{
-
-	return (sys_aio_cancel(td, (struct aio_cancel_args *)uap));
-}
-
-int
 freebsd32_aio_error(struct thread *td, struct freebsd32_aio_error_args *uap)
 {
 

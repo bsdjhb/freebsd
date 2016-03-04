@@ -567,8 +567,8 @@
 315	AUE_NULL	STD	{ int freebsd32_aio_suspend( \
 				    struct aiocb32 * const * aiocbp, int nent, \
 				    const struct timespec32 *timeout); }
-316	AUE_NULL	STD	{ int freebsd32_aio_cancel(int fd, \
-				    struct aiocb32 *aiocbp); }
+316	AUE_NULL	NOPROTO	{ int aio_cancel(int fd, \
+				    struct aiocb *aiocbp); }
 317	AUE_NULL	STD	{ int freebsd32_aio_error( \
 				    struct aiocb32 *aiocbp); }
 318	AUE_NULL	COMPAT6	{ int freebsd32_aio_read( \
