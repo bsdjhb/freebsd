@@ -372,5 +372,9 @@ int __devinit t4vf_prep_adapter(struct adapter *adapter)
 	adapter->params.vfres.pmask = 1;
 	adapter->params.vpd.cclk = 50000;
 
+	adapter->chip_params = t4_get_chip_params(chip_id(adapter));
+	if (adapter->chip_params == NULL)
+		return -EINVAL;
+
 	return 0;
 }
