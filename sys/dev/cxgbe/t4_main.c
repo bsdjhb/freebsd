@@ -5051,6 +5051,7 @@ cxgbe_sysctls(struct port_info *pi)
 	oid = device_get_sysctl_tree(pi->dev);
 	children = SYSCTL_CHILDREN(oid);
 
+	/* XXX: Not sure if we should expose these for VFs. */
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "linkdnrc", CTLTYPE_STRING |
 	   CTLFLAG_RD, pi, 0, sysctl_linkdnrc, "A", "reason why link is down");
 	if (pi->port_type == FW_PORT_TYPE_BT_XAUI) {
@@ -5062,12 +5063,16 @@ cxgbe_sysctls(struct port_info *pi)
 		    "PHY firmware version");
 	}
 
+	/* XXX: Not sure if we should expose this for VFs. */
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "pause_settings",
 	    CTLTYPE_STRING | CTLFLAG_RW, pi, PAUSE_TX, sysctl_pause_settings,
 	    "A", "PAUSE settings (bit 0 = rx_pause, bit 1 = tx_pause)");
 
 	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "max_speed", CTLFLAG_RD, NULL,
 	    port_top_speed(pi), "max speed (in Gbps)");
+
+	if (sc->flags & IS_VF)
+		return;
 
 	/*
 	 * dev.(cxgbe|cxl).X.tc.
