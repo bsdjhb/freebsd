@@ -2634,8 +2634,10 @@ alloc_iq_fl(struct vi_info *vi, struct sge_iq *iq, struct sge_fl *fl,
 
 	bzero(&c, sizeof(c));
 	c.op_to_vfn = htobe32(V_FW_CMD_OP(FW_IQ_CMD) | F_FW_CMD_REQUEST |
-	    F_FW_CMD_WRITE | F_FW_CMD_EXEC | V_FW_IQ_CMD_PFN(sc->pf) |
-	    V_FW_IQ_CMD_VFN(0));
+	    F_FW_CMD_WRITE | F_FW_CMD_EXEC);
+	if (!(sc->flags & IS_VF))
+		c.op_to_vfn |= htobe32(V_FW_IQ_CMD_PFN(sc->pf) |
+		    V_FW_IQ_CMD_VFN(0));
 
 	c.alloc_to_len16 = htobe32(F_FW_IQ_CMD_ALLOC | F_FW_IQ_CMD_IQSTART |
 	    FW_LEN16(c));
@@ -2769,6 +2771,7 @@ alloc_iq_fl(struct vi_info *vi, struct sge_iq *iq, struct sge_fl *fl,
 		FL_UNLOCK(fl);
 	}
 
+	/* XXX: This fails on VFs, should we always skip? */
 	if (is_t5(sc) && cong >= 0) {
 		uint32_t param, val;
 
@@ -3305,8 +3308,10 @@ eth_eq_alloc(struct adapter *sc, struct vi_info *vi, struct sge_eq *eq)
 	bzero(&c, sizeof(c));
 
 	c.op_to_vfn = htobe32(V_FW_CMD_OP(FW_EQ_ETH_CMD) | F_FW_CMD_REQUEST |
-	    F_FW_CMD_WRITE | F_FW_CMD_EXEC | V_FW_EQ_ETH_CMD_PFN(sc->pf) |
-	    V_FW_EQ_ETH_CMD_VFN(0));
+	    F_FW_CMD_WRITE | F_FW_CMD_EXEC);
+	if (!(sc->flags & IS_VF))
+		c.op_to_vfn |= htobe32(V_FW_EQ_ETH_CMD_PFN(sc->pf) |
+		    V_FW_EQ_ETH_CMD_VFN(0));
 	c.alloc_to_len16 = htobe32(F_FW_EQ_ETH_CMD_ALLOC |
 	    F_FW_EQ_ETH_CMD_EQSTART | FW_LEN16(c));
 	c.autoequiqe_to_viid = htobe32(F_FW_EQ_ETH_CMD_AUTOEQUIQE |
