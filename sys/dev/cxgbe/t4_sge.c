@@ -2896,9 +2896,13 @@ alloc_fwq(struct adapter *sc)
 
 	init_iq(fwq, sc, 0, 0, FW_IQ_QSIZE);
 	fwq->flags |= IQ_INTR;	/* always */
-	intr_idx = sc->intr_count > 1 ? 1 : 0;
-	fwq->set_tcb_rpl = t4_filter_rpl;
-	fwq->l2t_write_rpl = do_l2t_write_rpl;
+	if (sc->flags & IS_VF)
+		intr_idx = 0;
+	else {
+		intr_idx = sc->intr_count > 1 ? 1 : 0;
+		fwq->set_tcb_rpl = t4_filter_rpl;
+		fwq->l2t_write_rpl = do_l2t_write_rpl;
+	}
 	rc = alloc_iq_fl(&sc->port[0]->vi[0], fwq, NULL, intr_idx, -1);
 	if (rc != 0) {
 		device_printf(sc->dev,
