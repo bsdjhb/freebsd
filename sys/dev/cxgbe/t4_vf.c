@@ -445,6 +445,7 @@ t4vf_attach(device_t dev)
 	sc->flags |= IS_VF;
 
 	sc->sge_gts_reg = VF_SGE_REG(A_SGE_VF_GTS);
+	sc->sge_kdoorbell_reg = VF_SGE_REG(A_SGE_VF_KDOORBELL);
 	snprintf(sc->lockname, sizeof(sc->lockname), "%s",
 	    device_get_nameunit(dev));
 	mtx_init(&sc->sc_lock, sc->lockname, 0, MTX_DEF);
