@@ -329,7 +329,7 @@ METHOD int map_resource {
 	struct resource_map_request *_args;
 	bus_space_tag_t	*_tag;
 	bus_space_handle_t *_handle;
-};
+} DEFAULT bus_generic_map_resource;
 
 
 /**
@@ -353,7 +353,7 @@ METHOD int unmap_resource {
 	struct resource *_r;
 	bus_space_tag_t	_tag;
 	bus_space_handle_t _handle;
-};
+} DEFAULT bus_generic_unmap_resource;
 
 
 /**
