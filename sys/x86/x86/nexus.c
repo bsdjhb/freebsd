@@ -544,6 +544,10 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 		if (error)
 			return (error);
 #endif
+#ifndef PC98
+		if (size != rman_get_start(r))
+			return (EOPNOTSUPP);
+#endif
 		vaddr = pmap_mapdev_attr(start, size, args.memattr);
 		*tag = X86_BUS_SPACE_MEM;
 #ifdef PC98
