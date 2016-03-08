@@ -101,8 +101,8 @@ TAILQ_HEAD(pagesetq, pageset);
 struct ddp_buffer {
 	struct pageset *ps;
 
-	struct aiocblist *cbe;
-	/* This belongs in 'struct aiocblist'? */
+	struct kaiocb *job;
+	/* This belongs in 'struct kaiocb'? */
 	int cancel_pending;
 };
 
@@ -138,13 +138,13 @@ struct toepcb {
 	u_int ddp_flags;
 	struct ddp_buffer db[2];
 	TAILQ_HEAD(, pageset) ddp_cached_pagesets;
-	TAILQ_HEAD(, aiocblist) ddp_aiojobq;
+	TAILQ_HEAD(, kaiocb) ddp_aiojobq;
 	u_int ddp_waiting_count;
 	u_int ddp_active_count;
 	u_int ddp_cached_count;
 	int ddp_active_id;	/* the currently active DDP buffer */
 	struct task ddp_requeue_task;
-	struct aiocblist *ddp_queueing;
+	struct kaiocb *ddp_queueing;
 
 	/* Tx software descriptor */
 	uint8_t txsd_total;
@@ -326,7 +326,7 @@ void t4_init_ddp(struct adapter *, struct tom_data *);
 void t4_uninit_ddp(struct adapter *, struct tom_data *);
 int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,
     struct mbuf **, struct mbuf **, int *);
-int t4_aio_queue_ddp(struct socket *, struct aiocblist *);
+int t4_aio_queue_ddp(struct socket *, struct kaiocb *);
 void ddp_init_toep(struct toepcb *);
 void enable_ddp(struct adapter *, struct toepcb *toep);
 void release_ddp_resources(struct toepcb *toep);
