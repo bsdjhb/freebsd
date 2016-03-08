@@ -3056,13 +3056,7 @@ resource_init_map_request_impl(struct resource_map_request *args, size_t sz)
 
 	bzero(args, sz);
 	args->size = sz;
-
-	/*
-	 * XXX: I really want a VM_MEMATTR_DEFAULT that means
-	 * "use the default for this case" rather than having
-	 * it be equal to a specific type (e.g. WB on x86).
-	 */
-	args->memattr = VM_MEMATTR_DEVICE_DEFAULT;
+	args->memattr = VM_MEMATTR_UNCACHEABLE;
 }
 
 /**
