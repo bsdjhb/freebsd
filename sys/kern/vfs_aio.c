@@ -1446,8 +1446,8 @@ aio_aqueue(struct thread *td, struct aiocb *ujob, struct aioliojob *lj,
 		return (error);
 	}
 
-	/* XXX: aio_nbytes is later casted to signed types. */
-	if (job->uaiocb.aio_nbytes > INT_MAX) {
+	/* XXX: aio_nbytes is later cast to signed types. */
+	if (job->uaiocb.aio_nbytes > SSIZE_MAX) {
 		uma_zfree(aiocb_zone, job);
 		return (EINVAL);
 	}
