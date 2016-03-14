@@ -102,6 +102,7 @@ static unsigned long ddp_wired_pages = 0;
 SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, wired_pages, CTLFLAG_RW, &ddp_wired_pages,
     0, "Pages wired for DDP");
 
+static void aio_ddp_enqueue(struct toepcb *toep);
 static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, struct sockbuf *sb,
     long status, int error);
@@ -612,7 +613,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 completed:
 	complete_ddp_buffer(toep, db, db_idx);
 	if (toep->ddp_waiting_count > 0)
-		soaio_enqueue(&toep->ddp_requeue_task);
+		aio_ddp_enqueue(toep);
 out:
 	SOCKBUF_UNLOCK(sb);
 	INP_WUNLOCK(inp);
@@ -638,7 +639,7 @@ handle_ddp_indicate(struct toepcb *toep, struct sockbuf *sb)
 	}
 	CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
 	    toep->tid, toep->ddp_waiting_count);
-	soaio_enqueue(&toep->ddp_requeue_task);
+	aio_ddp_enqueue(toep);
 }
 
 enum {
@@ -706,7 +707,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 
 		complete_ddp_buffer(toep, db, db_idx);
 		if (toep->ddp_waiting_count > 0)
-			soaio_enqueue(&toep->ddp_requeue_task);
+			aio_ddp_enqueue(toep);
 		SOCKBUF_UNLOCK(sb);
 		INP_WUNLOCK(inp);
 		break;
@@ -1588,6 +1589,23 @@ restart:
 }
 
 static void
+aio_ddp_enqueue(struct toepcb *toep)
+{
+	struct inpcb *inp = toep->inp;
+	struct socket *so = inp->inp_socket;
+#ifdef INVARIANTS
+	struct sockbuf *sb = &so->so_rcv;
+#endif
+
+	SOCKBUF_LOCK_ASSERT(sb);
+	if (toep->ddp_flags & DDP_TASK_ACTIVE)
+		return;
+	toep->ddp_flags |= DDP_TASK_ACTIVE;
+	soref(so);
+	soaio_enqueue(&toep->ddp_requeue_task);
+}
+
+static void
 aio_ddp_requeue_task(void *context, int pending)
 {
 	struct toepcb *toep = context;
@@ -1600,7 +1618,12 @@ aio_ddp_requeue_task(void *context, int pending)
 
 	SOCKBUF_LOCK(sb);
 	aio_ddp_requeue(toep, so, sb, sc);
+	toep->ddp_flags &= ~DDP_TASK_ACTIVE;
 	SOCKBUF_UNLOCK(sb);
+
+	ACCEPT_LOCK();
+	SOCK_LOCK(so);
+	sorele(so);
 }
 
 static void
@@ -1657,7 +1680,7 @@ t4_aio_cancel_queued(struct kaiocb *job)
 	if (!aio_cancel_cleared(job)) {
 		TAILQ_REMOVE(&toep->ddp_aiojobq, job, list);
 		toep->ddp_waiting_count--;
-		soaio_enqueue(&toep->ddp_requeue_task);
+		aio_ddp_enqueue(toep);
 	}
 	CTR2(KTR_CXGBE, "%s: request %p cancelled", __func__, job);
 	SOCKBUF_UNLOCK(sb);
@@ -1714,7 +1737,7 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 		 * XXX: We could possibly do some of this work inline
 		 * instead of queueing the task?
 		 */
-		soaio_enqueue(&toep->ddp_requeue_task);
+		aio_ddp_enqueue(toep);
 	else if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
 		/*
 		 * Wait for the card to ACK that DDP is enabled before

@@ -74,6 +74,7 @@ enum {
 	DDP_ON		= (1 << 2),	/* DDP is turned on */
 	DDP_BUF0_ACTIVE	= (1 << 3),	/* buffer 0 in use (not invalidated) */
 	DDP_BUF1_ACTIVE	= (1 << 4),	/* buffer 1 in use (not invalidated) */
+	DDP_TASK_ACTIVE = (1 << 5),	/* requeue task is queued / running */
 };
 
 struct ofld_tx_sdesc {
@@ -102,7 +103,6 @@ struct ddp_buffer {
 	struct pageset *ps;
 
 	struct kaiocb *job;
-	/* This belongs in 'struct kaiocb'? */
 	int cancel_pending;
 };
 
