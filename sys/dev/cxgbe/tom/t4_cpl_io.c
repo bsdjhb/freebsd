@@ -1679,6 +1679,7 @@ do_set_tcb_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct adapter *sc = iq->adapter;
 	const struct cpl_set_tcb_rpl *cpl = (const void *)(rss + 1);
 	unsigned int tid = GET_TID(cpl);
+	struct toepcb *toep;
 #ifdef INVARIANTS
 	unsigned int opcode = G_CPL_OPCODE(be32toh(OPCODE_TID(cpl)));
 #endif
@@ -1690,6 +1691,7 @@ do_set_tcb_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	if (is_ftid(sc, tid))
 		return (t4_filter_rpl(iq, rss, m)); /* TCB is a filter */
 
+	toep = lookup_tid(sc, tid);
 	if (toep->ulp_mode == ULP_MODE_TCPDDP) {
 		handle_ddp_tcb_rpl(toep, cpl);
 		return (0);

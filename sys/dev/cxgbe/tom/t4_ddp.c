@@ -105,6 +105,8 @@ SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, wired_pages, CTLFLAG_RW, &ddp_wired_pages,
 static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, struct sockbuf *sb,
     long status, int error);
+static void t4_aio_cancel_active(struct kaiocb *job);
+static void t4_aio_cancel_queued(struct kaiocb *job);
 
 #define PPOD_SZ(n)	((n) * sizeof(struct pagepod))
 #define PPOD_SIZE	(PPOD_SZ(1))
@@ -1233,7 +1235,6 @@ ddp_complete_all(struct toepcb *toep, struct sockbuf *sb, long status,
     int error)
 {
 	struct kaiocb *job;
-	bool cancelled;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	while (!TAILQ_EMPTY(&toep->ddp_aiojobq)) {
@@ -1268,10 +1269,10 @@ aio_ddp_cancel_one(struct kaiocb *job)
  * examined.
  */
 static void
-aio_ddp_requeue_one(struct kaiocb *job, struct sockbuf *sb)
+aio_ddp_requeue_one(struct toepcb *toep, struct sockbuf *sb, struct kaiocb *job)
 {
 
-	SOCKBUF_LOCK_ASSERT(sb, MA_OWNED);
+	SOCKBUF_LOCK_ASSERT(sb);
 	if (aio_set_cancel_function(job, t4_aio_cancel_queued)) {
 		TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, job, list);
 		toep->ddp_waiting_count++;
@@ -1405,7 +1406,7 @@ restart:
 			 * DDP buffers.  Requeue.  These jobs will all be
 			 * completed once those buffers drain.
 			 */
-			aio_ddp_requeue_one(job, sb);
+			aio_ddp_requeue_one(toep, sb, job);
 			toep->ddp_queueing = NULL;
 			return;
 		}
@@ -1486,7 +1487,7 @@ restart:
 		 */
 		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) != DDP_ON) {
 			recycle_pageset(toep, ps);
-			aio_ddp_requeue_one(job, sb);
+			aio_ddp_requeue_one(toep, sb, job);
 			toep->ddp_queueing = NULL;
 			goto restart;
 		}
@@ -1495,7 +1496,7 @@ restart:
 
 	if (prep_pageset(sc, toep, ps) == 0) {
 		recycle_pageset(toep, ps);
-		aio_ddp_requeue_one(job, sb);
+		aio_ddp_requeue_one(toep, sb, job);
 		toep->ddp_queueing = NULL;
 
 		/*
@@ -1547,7 +1548,7 @@ restart:
 	    job->uaiocb._aiocb_private.status, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
 		recycle_pageset(toep, ps);
-		aio_ddp_requeue_one(job, sb);
+		aio_ddp_requeue_one(toep, sb, job);
 		toep->ddp_queueing = NULL;
 
 		/*
@@ -1565,9 +1566,7 @@ restart:
 	if (!aio_set_cancel_function(job, t4_aio_cancel_active)) {
 		free_wrqe(wr);
 		recycle_pageset(toep, ps);
-		SOCKBUF_UNLOCK(sb);
 		aio_ddp_cancel_one(job);
-		SOCKBUF_LOCK(sb);
 		toep->ddp_queueing = NULL;
 		goto restart;
 	}
@@ -1652,7 +1651,6 @@ t4_aio_cancel_queued(struct kaiocb *job)
 	struct socket *so = job->fd_file->f_data;
 	struct tcpcb *tp = so_sototcpcb(so);
 	struct toepcb *toep = tp->t_toe;
-	struct adapter *sc = td_adapter(toep->td);
 	struct sockbuf *sb = &so->so_rcv;
 
 	SOCKBUF_LOCK(sb);
