@@ -77,6 +77,10 @@ static struct mtx intr_table_lock;
 static struct mtx intrcnt_lock;
 static TAILQ_HEAD(pics_head, pic) pics;
 
+#if defined(SMP) && !defined(EARLY_AP_STARTUP)
+static int assign_cpu;
+#endif
+
 u_long intrcnt[INTRCNT_COUNT];
 char intrnames[INTRCNT_COUNT * (MAXCOMLEN + 1)];
 size_t sintrcnt = sizeof(intrcnt);
@@ -316,8 +320,16 @@ intr_assign_cpu(void *arg, u_char cpu)
 	struct intsrc *isrc;
 	int error;
 
+#ifdef EARLY_AP_STARTUP
 	MPASS(mp_ncpus == 1 || smp_started);
 	if (cpu != NOCPU) {
+#else
+	/*
+	 * Don't do anything during early boot.  We will pick up the
+	 * assignment once the APs are started.
+	 */
+	if (assign_cpu && cpu != NOCPU) {
+#endif
 		isrc = arg;
 		mtx_lock(&intr_table_lock);
 		error = isrc->is_pic->pic_assign_cpu(isrc, cpu_apic_ids[cpu]);
@@ -478,7 +490,13 @@ intr_next_cpu(void)
 {
 	u_int apic_id;
 
+#ifdef EARLY_AP_STARTUP
 	MPASS(mp_ncpus == 1 || smp_started);
+#else
+	/* Leave all interrupts on the BSP during boot. */
+	if (!assign_cpu)
+		return (PCPU_GET(apic_id));
+#endif
 
 	mtx_lock_spin(&icu_lock);
 	apic_id = cpu_apic_ids[current_cpu];
@@ -519,6 +537,49 @@ intr_add_cpu(u_int cpu)
 
 	CPU_SET(cpu, &intr_cpus);
 }
+
+#ifndef EARLY_AP_STARTUP
+/*
+ * Distribute all the interrupt sources among the available CPUs once the
+ * AP's have been launched.
+ */
+static void
+intr_shuffle_irqs(void *arg __unused)
+{
+	struct intsrc *isrc;
+	int i;
+
+	/* Don't bother on UP. */
+	if (mp_ncpus == 1)
+		return;
+
+	/* Round-robin assign a CPU to each enabled source. */
+	mtx_lock(&intr_table_lock);
+	assign_cpu = 1;
+	for (i = 0; i < NUM_IO_INTS; i++) {
+		isrc = interrupt_sources[i];
+		if (isrc != NULL && isrc->is_handlers > 0) {
+			/*
+			 * If this event is already bound to a CPU,
+			 * then assign the source to that CPU instead
+			 * of picking one via round-robin.  Note that
+			 * this is careful to only advance the
+			 * round-robin if the CPU assignment succeeds.
+			 */
+			if (isrc->is_event->ie_cpu != NOCPU)
+				(void)isrc->is_pic->pic_assign_cpu(isrc,
+				    cpu_apic_ids[isrc->is_event->ie_cpu]);
+			else if (isrc->is_pic->pic_assign_cpu(isrc,
+				cpu_apic_ids[current_cpu]) == 0)
+				(void)intr_next_cpu();
+
+		}
+	}
+	mtx_unlock(&intr_table_lock);
+}
+SYSINIT(intr_shuffle_irqs, SI_SUB_SMP, SI_ORDER_SECOND, intr_shuffle_irqs,
+    NULL);
+#endif
 #else
 /*
  * Always route interrupts to the current processor in the UP case.

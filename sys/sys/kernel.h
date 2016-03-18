@@ -127,7 +127,9 @@ enum sysinit_sub_id {
 	SI_SUB_SCHED_IDLE	= 0x2600000,	/* required idle procs */
 	SI_SUB_MBUF		= 0x2700000,	/* mbuf subsystem */
 	SI_SUB_INTR		= 0x2800000,	/* interrupt threads */
+#ifdef EARLY_AP_STARTUP
 	SI_SUB_SMP		= 0x2900000,	/* start the APs*/
+#endif
 	SI_SUB_SOFTINTR		= 0x2A00000,	/* start soft interrupt thread */
 	SI_SUB_ACL		= 0x2E00000,	/* start for filesystem ACLs */
 	SI_SUB_DEVFS		= 0x2F00000,	/* devfs ready for devices */
@@ -170,6 +172,9 @@ enum sysinit_sub_id {
 	SI_SUB_KTHREAD_BUF	= 0xea00000,	/* buffer daemon*/
 	SI_SUB_KTHREAD_UPDATE	= 0xec00000,	/* update daemon*/
 	SI_SUB_KTHREAD_IDLE	= 0xee00000,	/* idle procs*/
+#ifndef EARLY_AP_STARTUP
+	SI_SUB_SMP		= 0xf000000,	/* start the APs*/
+#endif	
 	SI_SUB_RACCTD		= 0xf100000,	/* start raccd*/
 	SI_SUB_LAST		= 0xfffffff	/* final initialization */
 };

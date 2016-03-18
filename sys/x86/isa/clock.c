@@ -517,6 +517,7 @@ startrtclock()
 void
 cpu_initclocks(void)
 {
+#ifdef EARLY_AP_STARTUP
 	struct thread *td;
 	int i;
 
@@ -534,6 +535,9 @@ cpu_initclocks(void)
 	if (sched_is_bound(td))
 		sched_unbind(td);
 	thread_unlock(td);
+#else
+	cpu_initclocks_bsp();
+#endif
 }
 
 static int

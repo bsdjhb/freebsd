@@ -345,10 +345,18 @@ xctrl_suspend()
 
 	EVENTHANDLER_INVOKE(power_suspend);
 
+#ifdef EARLY_AP_STARTUP
 	MPASS(mp_ncpus == 1 || smp_started);
 	thread_lock(curthread);
 	sched_bind(curthread, 0);
 	thread_unlock(curthread);
+#else
+	if (smp_started) {
+		thread_lock(curthread);
+		sched_bind(curthread, 0);
+		thread_unlock(curthread);
+	}
+#endif
 	KASSERT((PCPU_GET(cpuid) == 0), ("Not running on CPU#0"));
 
 	/*
@@ -370,6 +378,7 @@ xctrl_suspend()
 	mtx_unlock(&Giant);
 
 #ifdef SMP
+#ifdef EARLY_AP_STARTUP
 	/*
 	 * Suspend other CPUs. This prevents IPIs while we
 	 * are resuming, and will allow us to reset per-cpu
@@ -379,6 +388,19 @@ xctrl_suspend()
 	CPU_CLR(PCPU_GET(cpuid), &cpu_suspend_map);
 	if (!CPU_EMPTY(&cpu_suspend_map))
 		suspend_cpus(cpu_suspend_map);
+#else
+	CPU_ZERO(&cpu_suspend_map);	/* silence gcc */
+	if (smp_started) {
+		/*
+		 * Suspend other CPUs. This prevents IPIs while we
+		 * are resuming, and will allow us to reset per-cpu
+		 * vcpu_info on resume.
+		 */
+		cpu_suspend_map = all_cpus;
+		CPU_CLR(PCPU_GET(cpuid), &cpu_suspend_map);
+		if (!CPU_EMPTY(&cpu_suspend_map))
+			suspend_cpus(cpu_suspend_map);
+	}
 #endif
 
 	/*
@@ -419,9 +441,17 @@ xctrl_suspend()
 	DEVICE_RESUME(root_bus);
 	mtx_unlock(&Giant);
 
+#ifdef EARLY_AP_STARTUP
 	thread_lock(curthread);
 	sched_unbind(curthread);
 	thread_unlock(curthread);
+#else
+	if (smp_started) {
+		thread_lock(curthread);
+		sched_unbind(curthread);
+		thread_unlock(curthread);
+	}
+#endif
 
 	EVENTHANDLER_INVOKE(power_resume);
 
