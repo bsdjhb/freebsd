@@ -53,6 +53,7 @@ ATF_TC_BODY(aio_socket_two_reads, tc)
 	char c;
 
 	ATF_REQUIRE_KERNEL_MODULE("aio");
+	ATF_REQUIRE_OSRELDATE(1100101);
 
 	ATF_REQUIRE(socketpair(PF_UNIX, SOCK_STREAM, 0, s) != -1);
 
