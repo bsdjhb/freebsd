@@ -41,7 +41,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sglist.h>
-#include <sys/taskqueue.h>
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
 #include <netinet/ip.h>
@@ -1513,7 +1512,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	if (toep->ddp_waiting_count > 0 && sbavail(sb) != 0) {
 		CTR2(KTR_CXGBE, "%s: tid %u queueing AIO task", __func__,
 		    tid);
-		taskqueue_enqueue(taskqueue_thread, &toep->ddp_requeue_task);
+		ddp_queue_toep(toep);
 	}
 	sorwakeup_locked(so);
 	SOCKBUF_UNLOCK_ASSERT(sb);
