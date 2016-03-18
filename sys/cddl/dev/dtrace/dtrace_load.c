@@ -22,11 +22,35 @@
  *
  */
 
+#ifndef EARLY_AP_STARTUP
+static void
+dtrace_ap_start(void *dummy)
+{
+	int i;
+
+	mutex_enter(&cpu_lock);
+
+	/* Setup the rest of the CPUs. */
+	CPU_FOREACH(i) {
+		if (i == 0)
+			continue;
+
+		(void) dtrace_cpu_setup(CPU_CONFIG, i);
+	}
+
+	mutex_exit(&cpu_lock);
+}
+
+SYSINIT(dtrace_ap_start, SI_SUB_SMP, SI_ORDER_ANY, dtrace_ap_start, NULL);
+#endif
+
 static void
 dtrace_load(void *dummy)
 {
 	dtrace_provider_id_t id;
+#ifdef EARLY_AP_STARTUP
 	int i;
+#endif
 
 	/* Hook into the trap handler. */
 	dtrace_trap_func = dtrace_trap;
@@ -123,9 +147,14 @@ dtrace_load(void *dummy)
 
 	mutex_enter(&cpu_lock);
 
+#ifdef EARLY_AP_STARTUP
 	CPU_FOREACH(i) {
 		(void) dtrace_cpu_setup(CPU_CONFIG, i);
 	}
+#else
+	/* Setup the boot CPU */
+	(void) dtrace_cpu_setup(CPU_CONFIG, 0);
+#endif
 
 	mutex_exit(&cpu_lock);
 

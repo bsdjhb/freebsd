@@ -180,7 +180,7 @@ static int	acpi_cpu_shutdown(device_t dev);
 static void	acpi_cpu_cx_probe(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_generic_cx_probe(struct acpi_cpu_softc *sc);
 static int	acpi_cpu_cx_cst(struct acpi_cpu_softc *sc);
-static void	acpi_cpu_startup(void);
+static void	acpi_cpu_startup(void * arg);
 static void	acpi_cpu_startup_cx(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_cx_list(struct acpi_cpu_softc *sc);
 #if defined(__i386__) || defined(__amd64__)
@@ -437,8 +437,14 @@ acpi_cpu_postattach(void *unused __unused)
 	bus_generic_attach(devices[i]);
     free(devices, M_TEMP);
 
-    if (attached)
-	acpi_cpu_startup();
+    if (attached) {
+#ifdef EARLY_AP_STARTUP
+	acpi_cpu_startup(NULL);
+#else
+	/* Queue post cpu-probing task handler */
+	AcpiOsExecute(OSL_NOTIFY_HANDLER, acpi_cpu_startup, NULL);
+#endif
+    }
 }
 
 SYSINIT(acpi_cpu, SI_SUB_CONFIGURE, SI_ORDER_MIDDLE,
@@ -939,7 +945,7 @@ acpi_cpu_cx_cst(struct acpi_cpu_softc *sc)
  * Call this *after* all CPUs have been attached.
  */
 static void
-acpi_cpu_startup(void)
+acpi_cpu_startup(void *arg)
 {
     struct acpi_cpu_softc *sc;
     int i;

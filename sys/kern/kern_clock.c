@@ -391,8 +391,10 @@ static void
 initclocks(dummy)
 	void *dummy;
 {
+#ifdef EARLY_AP_STARTUP
 	struct proc *p;
 	struct thread *td;
+#endif
 	register int i;
 
 	/*
@@ -418,6 +420,7 @@ initclocks(dummy)
 	 */
 	ticks = INT_MAX - (hz * 10 * 60);
 
+#ifdef EARLY_AP_STARTUP
 	/*
 	 * Fixup the tick counts in any blocked or sleeping threads to
 	 * account for the jump above.
@@ -444,6 +447,7 @@ initclocks(dummy)
 		PROC_UNLOCK(p);
 	}
 	sx_sunlock(&allproc_lock);
+#endif
 }
 
 /*
