@@ -1601,7 +1601,7 @@ aio_ddp_enqueue(struct toepcb *toep)
 	if (toep->ddp_flags & DDP_TASK_ACTIVE)
 		return;
 	toep->ddp_flags |= DDP_TASK_ACTIVE;
-	CTR5(KTR_CXGBE, "aio_ddp_enqueue: soref %d -> %d", so->so_count,
+	CTR2(KTR_CXGBE, "aio_ddp_enqueue: soref %d -> %d", so->so_count,
 	    so->so_count + 1);
 	soref(so);
 	soaio_enqueue(&toep->ddp_requeue_task);
@@ -1625,7 +1625,7 @@ aio_ddp_requeue_task(void *context, int pending)
 
 	ACCEPT_LOCK();
 	SOCK_LOCK(so);
-	CTR5(KTR_CXGBE, "aio_ddp_requeue_task: sorele %d -> %d", so->so_count,
+	CTR2(KTR_CXGBE, "aio_ddp_requeue_task: sorele %d -> %d", so->so_count,
 	    so->so_count - 1);
 	sorele(so);
 }
