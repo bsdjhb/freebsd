@@ -2618,8 +2618,6 @@ aiocb32_copyin_old_sigevent(struct aiocb *ujob, struct aiocb *kjob)
 	if (error)
 		return (error);
 
-	if (job32.aio_nbytes > INT_MAX)
-		return (EINVAL);
 	CP(job32, *kjob, aio_fildes);
 	CP(job32, *kjob, aio_offset);
 	PTRIN_CP(job32, *kjob, aio_buf);
@@ -2644,8 +2642,6 @@ aiocb32_copyin(struct aiocb *ujob, struct aiocb *kjob)
 	if (error)
 		return (error);
 
-	if (job32.aio_nbytes > INT_MAX)
-		return (EINVAL);
 	CP(job32, *kjob, aio_fildes);
 	CP(job32, *kjob, aio_offset);
 	PTRIN_CP(job32, *kjob, aio_buf);
