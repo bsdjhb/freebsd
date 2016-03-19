@@ -64,7 +64,7 @@
 	}								\
 	if (_osreldate < (_version)) {					\
 		atf_tc_skip("kernel version %d is too old (%d required)", \
-		    _osrelate, _version);				\
+		    _osreldate, _version);				\
 	}								\
 } while (0)
 
@@ -97,7 +97,7 @@
 	}								\
 	if (_osreldate < (_version)) {					\
 		printf("kernel version %d is too old (%d required)",	\
-		    _osrelate, _version);				\
+		    _osreldate, _version);				\
 		_exit(_exit_code);					\
 	}								\
 } while (0)
