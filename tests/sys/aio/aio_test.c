@@ -652,6 +652,7 @@ ATF_TC_BODY(aio_md_test, tc)
 ATF_TC_WITHOUT_HEAD(aio_large_read_test);
 ATF_TC_BODY(aio_large_read_test, tc)
 {
+	char pathname[PATH_MAX];
 	struct aiocb cb, *cbp;
 	ssize_t nread;
 	size_t len;
@@ -677,10 +678,12 @@ ATF_TC_BODY(aio_large_read_test, tc)
 		len = INT_MAX;
 #endif
 
-	fd = open("/dev/null", O_RDONLY);
-	ATF_REQUIRE_MSG(fd != -1,
-	    "opening /dev/null failed: %s", strerror(errno));
-		
+	strcpy(pathname, PATH_TEMPLATE);
+	fd = mkstemp(pathname);
+	ATF_REQUIRE_MSG(fd != -1, "mkstemp failed: %s", strerror(errno));
+
+	unlink(pathname);
+
 	memset(&cb, 0, sizeof(cb));
 	cb.aio_nbytes = len;
 	cb.aio_fildes = fd;
