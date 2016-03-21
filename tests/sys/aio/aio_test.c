@@ -691,7 +691,7 @@ ATF_TC_BODY(aio_large_read_test, tc)
 
 	nread = aio_waitcomplete(&cbp, NULL);
 	if (nread == -1)
-		atf_tc_fail("aio_waitcomplete() failed: %s\n", strerror(errno));
+		atf_tc_fail("aio_waitcomplete() failed: %s", strerror(errno));
 	if (nread != 0)
 		atf_tc_fail("aio_read() from /dev/null returned data: %zd",
 		    nread);
@@ -711,7 +711,7 @@ ATF_TC_BODY(aio_large_read_test, tc)
 	if (nread == -1) {
 		if (errno == EINVAL)
 			goto finished;
-		atf_tc_fail("aio_waitcomplete() failed: %s\n", strerror(errno));
+		atf_tc_fail("aio_waitcomplete() failed: %s", strerror(errno));
 	}
 	atf_tc_fail(
 	    "aio_read() of too large read size from /dev/null returned: %zd",
