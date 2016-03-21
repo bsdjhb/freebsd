@@ -1243,10 +1243,10 @@ aio_qphysio(struct proc *p, struct kaiocb *job)
 	prot = VM_PROT_READ;
 	if (cb->aio_lio_opcode == LIO_READ)
 		prot |= VM_PROT_WRITE;	/* Less backwards than it looks */
-	if ((job->npages = vm_fault_quick_hold_pages(
-	    &curproc->p_vmspace->vm_map,
+	job->npages = vm_fault_quick_hold_pages(&curproc->p_vmspace->vm_map,
 	    (vm_offset_t)bp->bio_data, bp->bio_length, prot, job->pages,
-	    nitems(job->pages))) < 0) {
+	    nitems(job->pages));
+	if (job->npages < 0) {
 		error = EFAULT;
 		goto doerror;
 	}
