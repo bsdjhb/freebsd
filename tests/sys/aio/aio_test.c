@@ -649,8 +649,8 @@ ATF_TC_BODY(aio_md_test, tc)
 	aio_md_cleanup(&arg);
 }
 
-ATF_TC_WITHOUT_HEAD(aio_large_read_test)
-ATF_TC_BODY(aio_large_read_test)
+ATF_TC_WITHOUT_HEAD(aio_large_read_test);
+ATF_TC_BODY(aio_large_read_test, tc)
 {
 	struct aiocb cb, *cbp;
 	ssize_t nread;
@@ -730,6 +730,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, aio_pty_test);
 	ATF_TP_ADD_TC(tp, aio_pipe_test);
 	ATF_TP_ADD_TC(tp, aio_md_test);
+	ATF_TP_ADD_TC(tp, aio_large_read_test);
 
 	return (atf_no_error());
 }
