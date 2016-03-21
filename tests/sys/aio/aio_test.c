@@ -655,7 +655,7 @@ ATF_TC_BODY(aio_large_read_test, tc)
 	struct aiocb cb, *cbp;
 	ssize_t nread;
 	size_t len;
-	int error, fd;
+	int fd;
 #ifdef __LP64__
 	int clamped;
 #endif
@@ -665,8 +665,8 @@ ATF_TC_BODY(aio_large_read_test, tc)
 
 #ifdef __LP64__
 	len = sizeof(clamped);
-	if (sysctlbyname("debug.iosize_max_clamp", &clamped, &len, NULL,
-	    NULL) == -1)
+	if (sysctlbyname("debug.iosize_max_clamp", &clamped, &len, NULL, 0) ==
+	    -1)
 		atf_libc_error(errno, "Failed to read debug.iosize_max_clamp");
 #endif
 
