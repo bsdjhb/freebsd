@@ -58,14 +58,11 @@
 									\
 	_len = sizeof(_osreldate);					\
 	if (sysctlbyname("kern.osreldate", &_osreldate, &_len, NULL,	\
-	    0) == -1) {							\
-		atf_tc_skip("could not fetch kern.osreldate: %s",	\
-		    strerror(errno));					\
-	}								\
-	if (_osreldate < (_version)) {					\
+	    0) == -1)							\
+		atf_libc_error(errno, "Failed to read kern.osreldate");	\
+	if (_osreldate < (_version))					\
 		atf_tc_skip("kernel version %d is too old (%d required)", \
 		    _osreldate, _version);				\
-	}								\
 } while (0)
 
 #define	PLAIN_REQUIRE_FEATURE(_feature_name, _exit_code) do {		\
@@ -91,9 +88,9 @@
 	_len = sizeof(_osreldate);					\
 	if (sysctlbyname("kern.osreldate", &_osreldate, &_len, NULL,	\
 	    0) == -1) {							\
-		printf("could not fetch kern.osreldate: %s",		\
+		printf("Failed to read kern.osreldate: %s\n",		\
 		    strerror(errno));					\
-		_exit(_exit_code);					\
+		_exit(1);						\
 	}								\
 	if (_osreldate < (_version)) {					\
 		printf("kernel version %d is too old (%d required)",	\
