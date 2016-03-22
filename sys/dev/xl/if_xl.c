@@ -275,7 +275,6 @@ static void xl_wait(struct xl_softc *);
 static void xl_mediacheck(struct xl_softc *);
 static void xl_choose_media(struct xl_softc *sc, int *media);
 static void xl_choose_xcvr(struct xl_softc *, int);
-static void xl_dma_map_addr(void *, bus_dma_segment_t *, int, int);
 #ifdef notdef
 static void xl_testpacket(struct xl_softc *);
 #endif
@@ -332,15 +331,6 @@ static devclass_t xl_devclass;
 DRIVER_MODULE_ORDERED(xl, pci, xl_driver, xl_devclass, NULL, NULL,
     SI_ORDER_ANY);
 DRIVER_MODULE(miibus, xl, miibus_driver, miibus_devclass, NULL, NULL);
-
-static void
-xl_dma_map_addr(void *arg, bus_dma_segment_t *segs, int nseg, int error)
-{
-	u_int32_t *paddr;
-
-	paddr = arg;
-	*paddr = segs->ds_addr;
-}
 
 /*
  * Murphy's law says that it's possible the chip can wedge and
@@ -1065,6 +1055,7 @@ xl_attach(device_t dev)
 {
 	u_char			eaddr[ETHER_ADDR_LEN];
 	u_int16_t		sinfo2, xcvr[2];
+	struct bus_dmamem_args	args;
 	struct xl_softc		*sc;
 	struct ifnet		*ifp;
 	int			media, pmcap;
@@ -1220,73 +1211,24 @@ xl_attach(device_t dev)
 	TASK_INIT(&sc->xl_task, 0, xl_rxeof_task, sc);
 
 	/*
-	 * Now allocate a tag for the DMA descriptor lists and a chunk
-	 * of DMA-able memory based on the tag.  Also obtain the DMA
-	 * addresses of the RX and TX ring, which we'll need later.
-	 * All of our lists are allocated as a contiguous block
-	 * of memory.
+	 * Now allocate a chunk of DMA-able memory for the DMA
+	 * descriptor lists.  All of our lists are allocated as a
+	 * contiguous block of memory.
 	 */
-	error = bus_dma_tag_create(bus_get_dma_tag(dev), 8, 0,
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL, NULL,
-	    XL_RX_LIST_SZ, 1, XL_RX_LIST_SZ, 0, NULL, NULL,
-	    &sc->xl_ldata.xl_rx_tag);
+	bus_dma_mem_args_init(&args);
+	args.dma_alignment = 8;
+	args.dma_lowaddr = BUS_SPACE_MAXADDR_32BIT;
+	error = bus_dma_mem_alloc(bus_get_dma_tag(dev), XL_RX_LIST_SZ, 0, &args,
+	    &sc->xl_ldata.xl_rx_ring);
 	if (error) {
-		device_printf(dev, "failed to allocate rx dma tag\n");
+		device_printf(dev, "failed to allocate rx ring\n");
 		goto fail;
 	}
 
-	error = bus_dmamem_alloc(sc->xl_ldata.xl_rx_tag,
-	    (void **)&sc->xl_ldata.xl_rx_list, BUS_DMA_NOWAIT |
-	    BUS_DMA_COHERENT | BUS_DMA_ZERO, &sc->xl_ldata.xl_rx_dmamap);
+	error = bus_dma_mem_alloc(bus_get_dma_tag(dev), XL_TX_LIST_SZ, 0, &args,
+	    &sc->xl_ldata.xl_tx_ring);
 	if (error) {
-		device_printf(dev, "no memory for rx list buffers!\n");
-		bus_dma_tag_destroy(sc->xl_ldata.xl_rx_tag);
-		sc->xl_ldata.xl_rx_tag = NULL;
-		goto fail;
-	}
-
-	error = bus_dmamap_load(sc->xl_ldata.xl_rx_tag,
-	    sc->xl_ldata.xl_rx_dmamap, sc->xl_ldata.xl_rx_list,
-	    XL_RX_LIST_SZ, xl_dma_map_addr,
-	    &sc->xl_ldata.xl_rx_dmaaddr, BUS_DMA_NOWAIT);
-	if (error) {
-		device_printf(dev, "cannot get dma address of the rx ring!\n");
-		bus_dmamem_free(sc->xl_ldata.xl_rx_tag, sc->xl_ldata.xl_rx_list,
-		    sc->xl_ldata.xl_rx_dmamap);
-		bus_dma_tag_destroy(sc->xl_ldata.xl_rx_tag);
-		sc->xl_ldata.xl_rx_tag = NULL;
-		goto fail;
-	}
-
-	error = bus_dma_tag_create(bus_get_dma_tag(dev), 8, 0,
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL, NULL,
-	    XL_TX_LIST_SZ, 1, XL_TX_LIST_SZ, 0, NULL, NULL,
-	    &sc->xl_ldata.xl_tx_tag);
-	if (error) {
-		device_printf(dev, "failed to allocate tx dma tag\n");
-		goto fail;
-	}
-
-	error = bus_dmamem_alloc(sc->xl_ldata.xl_tx_tag,
-	    (void **)&sc->xl_ldata.xl_tx_list, BUS_DMA_NOWAIT |
-	    BUS_DMA_COHERENT | BUS_DMA_ZERO, &sc->xl_ldata.xl_tx_dmamap);
-	if (error) {
-		device_printf(dev, "no memory for list buffers!\n");
-		bus_dma_tag_destroy(sc->xl_ldata.xl_tx_tag);
-		sc->xl_ldata.xl_tx_tag = NULL;
-		goto fail;
-	}
-
-	error = bus_dmamap_load(sc->xl_ldata.xl_tx_tag,
-	    sc->xl_ldata.xl_tx_dmamap, sc->xl_ldata.xl_tx_list,
-	    XL_TX_LIST_SZ, xl_dma_map_addr,
-	    &sc->xl_ldata.xl_tx_dmaaddr, BUS_DMA_NOWAIT);
-	if (error) {
-		device_printf(dev, "cannot get dma address of the tx ring!\n");
-		bus_dmamem_free(sc->xl_ldata.xl_tx_tag, sc->xl_ldata.xl_tx_list,
-		    sc->xl_ldata.xl_tx_dmamap);
-		bus_dma_tag_destroy(sc->xl_ldata.xl_tx_tag);
-		sc->xl_ldata.xl_tx_tag = NULL;
+		device_printf(dev, "failed to allocate tx ring\n");
 		goto fail;
 	}
 
@@ -1606,20 +1548,8 @@ xl_detach(device_t dev)
 		bus_dmamap_destroy(sc->xl_mtag, sc->xl_tmpmap);
 		bus_dma_tag_destroy(sc->xl_mtag);
 	}
-	if (sc->xl_ldata.xl_rx_tag) {
-		bus_dmamap_unload(sc->xl_ldata.xl_rx_tag,
-		    sc->xl_ldata.xl_rx_dmamap);
-		bus_dmamem_free(sc->xl_ldata.xl_rx_tag, sc->xl_ldata.xl_rx_list,
-		    sc->xl_ldata.xl_rx_dmamap);
-		bus_dma_tag_destroy(sc->xl_ldata.xl_rx_tag);
-	}
-	if (sc->xl_ldata.xl_tx_tag) {
-		bus_dmamap_unload(sc->xl_ldata.xl_tx_tag,
-		    sc->xl_ldata.xl_tx_dmamap);
-		bus_dmamem_free(sc->xl_ldata.xl_tx_tag, sc->xl_ldata.xl_tx_list,
-		    sc->xl_ldata.xl_tx_dmamap);
-		bus_dma_tag_destroy(sc->xl_ldata.xl_tx_tag);
-	}
+	bus_dma_mem_free(&sc->xl_ldata.xl_rx_ring);
+	bus_dma_mem_free(&sc->xl_ldata.xl_tx_ring);
 
 	mtx_destroy(&sc->xl_mtx);
 
@@ -1646,7 +1576,7 @@ xl_list_tx_init(struct xl_softc *sc)
 		    &cd->xl_tx_chain[i].xl_map);
 		if (error)
 			return (error);
-		cd->xl_tx_chain[i].xl_phys = ld->xl_tx_dmaaddr +
+		cd->xl_tx_chain[i].xl_phys = ld->xl_tx_ring.dma_baddr +
 		    i * sizeof(struct xl_list);
 		if (i == (XL_TX_LIST_CNT - 1))
 			cd->xl_tx_chain[i].xl_next = NULL;
@@ -1657,7 +1587,7 @@ xl_list_tx_init(struct xl_softc *sc)
 	cd->xl_tx_free = &cd->xl_tx_chain[0];
 	cd->xl_tx_tail = cd->xl_tx_head = NULL;
 
-	bus_dmamap_sync(ld->xl_tx_tag, ld->xl_tx_dmamap, BUS_DMASYNC_PREWRITE);
+	bus_dma_mem_sync(&ld->xl_tx_ring, BUS_DMASYNC_PREWRITE);
 	return (0);
 }
 
@@ -1681,7 +1611,7 @@ xl_list_tx_init_90xB(struct xl_softc *sc)
 		    &cd->xl_tx_chain[i].xl_map);
 		if (error)
 			return (error);
-		cd->xl_tx_chain[i].xl_phys = ld->xl_tx_dmaaddr +
+		cd->xl_tx_chain[i].xl_phys = ld->xl_tx_ring.dma_baddr +
 		    i * sizeof(struct xl_list);
 		if (i == (XL_TX_LIST_CNT - 1))
 			cd->xl_tx_chain[i].xl_next = &cd->xl_tx_chain[0];
@@ -1702,7 +1632,7 @@ xl_list_tx_init_90xB(struct xl_softc *sc)
 	cd->xl_tx_cons = 1;
 	cd->xl_tx_cnt = 0;
 
-	bus_dmamap_sync(ld->xl_tx_tag, ld->xl_tx_dmamap, BUS_DMASYNC_PREWRITE);
+	bus_dma_mem_sync(&ld->xl_tx_ring, BUS_DMASYNC_PREWRITE);
 	return (0);
 }
 
@@ -1737,13 +1667,13 @@ xl_list_rx_init(struct xl_softc *sc)
 			next = 0;
 		else
 			next = i + 1;
-		nextptr = ld->xl_rx_dmaaddr +
+		nextptr = ld->xl_rx_ring.dma_baddr +
 		    next * sizeof(struct xl_list_onefrag);
 		cd->xl_rx_chain[i].xl_next = &cd->xl_rx_chain[next];
 		ld->xl_rx_list[i].xl_next = htole32(nextptr);
 	}
 
-	bus_dmamap_sync(ld->xl_rx_tag, ld->xl_rx_dmamap, BUS_DMASYNC_PREWRITE);
+	bus_dma_mem_sync(&ld->xl_rx_ring, BUS_DMASYNC_PREWRITE);
 	cd->xl_rx_head = &cd->xl_rx_chain[0];
 
 	return (0);
@@ -1836,8 +1766,7 @@ xl_rxeof(struct xl_softc *sc)
 
 	XL_LOCK_ASSERT(sc);
 again:
-	bus_dmamap_sync(sc->xl_ldata.xl_rx_tag, sc->xl_ldata.xl_rx_dmamap,
-	    BUS_DMASYNC_POSTREAD);
+	bus_dma_mem_sync(&sc->xl_ldata.xl_rx_ring, BUS_DMASYNC_POSTREAD);
 	while ((rxstat = le32toh(sc->xl_cdata.xl_rx_head->xl_ptr->xl_status))) {
 #ifdef DEVICE_POLLING
 		if (ifp->if_capenable & IFCAP_POLLING) {
@@ -1869,8 +1798,8 @@ again:
 		if (rxstat & XL_RXSTAT_UP_ERROR) {
 			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			cur_rx->xl_ptr->xl_status = 0;
-			bus_dmamap_sync(sc->xl_ldata.xl_rx_tag,
-			    sc->xl_ldata.xl_rx_dmamap, BUS_DMASYNC_PREWRITE);
+			bus_dma_mem_sync(&sc->xl_ldata.xl_rx_ring,
+			    BUS_DMASYNC_PREWRITE);
 			continue;
 		}
 
@@ -1884,8 +1813,8 @@ again:
 			    "bad receive status -- packet dropped\n");
 			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			cur_rx->xl_ptr->xl_status = 0;
-			bus_dmamap_sync(sc->xl_ldata.xl_rx_tag,
-			    sc->xl_ldata.xl_rx_dmamap, BUS_DMASYNC_PREWRITE);
+			bus_dma_mem_sync(&sc->xl_ldata.xl_rx_ring,
+			    BUS_DMASYNC_PREWRITE);
 			continue;
 		}
 
@@ -1904,12 +1833,12 @@ again:
 		if (xl_newbuf(sc, cur_rx)) {
 			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			cur_rx->xl_ptr->xl_status = 0;
-			bus_dmamap_sync(sc->xl_ldata.xl_rx_tag,
-			    sc->xl_ldata.xl_rx_dmamap, BUS_DMASYNC_PREWRITE);
+			bus_dma_mem_sync(&sc->xl_ldata.xl_rx_ring,
+			    BUS_DMASYNC_PREWRITE);
 			continue;
 		}
-		bus_dmamap_sync(sc->xl_ldata.xl_rx_tag,
-		    sc->xl_ldata.xl_rx_dmamap, BUS_DMASYNC_PREWRITE);
+		bus_dma_mem_sync(&sc->xl_ldata.xl_rx_ring,
+		    BUS_DMASYNC_PREWRITE);
 
 		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		m->m_pkthdr.rcvif = ifp;
@@ -1960,7 +1889,8 @@ again:
 		CSR_READ_4(sc, XL_UPLIST_STATUS) & XL_PKTSTAT_UP_STALLED) {
 		CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_UP_STALL);
 		xl_wait(sc);
-		CSR_WRITE_4(sc, XL_UPLIST_PTR, sc->xl_ldata.xl_rx_dmaaddr);
+		CSR_WRITE_4(sc, XL_UPLIST_PTR,
+		    sc->xl_ldata.xl_rx_ring.dma_baddr);
 		sc->xl_cdata.xl_rx_head = &sc->xl_cdata.xl_rx_chain[0];
 		CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_UP_UNSTALL);
 		goto again;
@@ -2044,8 +1974,7 @@ xl_txeof_90xB(struct xl_softc *sc)
 
 	XL_LOCK_ASSERT(sc);
 
-	bus_dmamap_sync(sc->xl_ldata.xl_tx_tag, sc->xl_ldata.xl_tx_dmamap,
-	    BUS_DMASYNC_POSTREAD);
+	bus_dma_mem_sync(&sc->xl_ldata.xl_tx_ring, BUS_DMASYNC_POSTREAD);
 	idx = sc->xl_cdata.xl_tx_cons;
 	while (idx != sc->xl_cdata.xl_tx_prod) {
 		cur_tx = &sc->xl_cdata.xl_tx_chain[idx];
@@ -2545,8 +2474,7 @@ xl_start_locked(struct ifnet *ifp)
 		sc->xl_cdata.xl_tx_head = start_tx;
 		sc->xl_cdata.xl_tx_tail = cur_tx;
 	}
-	bus_dmamap_sync(sc->xl_ldata.xl_tx_tag, sc->xl_ldata.xl_tx_dmamap,
-	    BUS_DMASYNC_PREWRITE);
+	bus_dma_mem_sync(&sc->xl_ldata.xl_tx_ring, BUS_DMASYNC_PREWRITE);
 	if (!CSR_READ_4(sc, XL_DOWNLIST_PTR))
 		CSR_WRITE_4(sc, XL_DOWNLIST_PTR, start_tx->xl_phys);
 
@@ -2653,8 +2581,7 @@ xl_start_90xB_locked(struct ifnet *ifp)
 	/* Start transmission */
 	sc->xl_cdata.xl_tx_prod = idx;
 	start_tx->xl_prev->xl_ptr->xl_next = htole32(start_tx->xl_phys);
-	bus_dmamap_sync(sc->xl_ldata.xl_tx_tag, sc->xl_ldata.xl_tx_dmamap,
-	    BUS_DMASYNC_PREWRITE);
+	bus_dma_mem_sync(&sc->xl_ldata.xl_tx_ring, BUS_DMASYNC_PREWRITE);
 
 	/*
 	 * Set a timeout in case the chip goes out to lunch.
@@ -2789,7 +2716,7 @@ xl_init_locked(struct xl_softc *sc)
 	 */
 	CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_UP_STALL);
 	xl_wait(sc);
-	CSR_WRITE_4(sc, XL_UPLIST_PTR, sc->xl_ldata.xl_rx_dmaaddr);
+	CSR_WRITE_4(sc, XL_UPLIST_PTR, sc->xl_ldata.xl_rx_ring.dma_baddr);
 	CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_UP_UNSTALL);
 	xl_wait(sc);
 

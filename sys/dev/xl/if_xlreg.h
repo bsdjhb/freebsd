@@ -480,12 +480,8 @@ struct xl_list_onefrag {
 struct xl_list_data {
 	struct xl_list_onefrag	*xl_rx_list;
 	struct xl_list		*xl_tx_list;
-	u_int32_t		xl_rx_dmaaddr;
-	bus_dma_tag_t		xl_rx_tag;
-	bus_dmamap_t		xl_rx_dmamap;
-	u_int32_t		xl_tx_dmaaddr;
-	bus_dma_tag_t		xl_tx_tag;
-	bus_dmamap_t		xl_tx_dmamap;
+	struct bus_dmamem	xl_rx_ring;
+	struct bus_dmamem	xl_tx_ring;
 };
 
 struct xl_chain {
