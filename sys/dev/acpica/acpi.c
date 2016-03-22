@@ -1083,7 +1083,7 @@ acpi_hint_device_unit(device_t acdev, device_t child, const char *name,
 int
 acpi_parse_pxm(device_t dev, int *domain)
 {
-#if MAXMEMDOM > 1
+#if defined(DEVICE_NUMA) && MAXMEMDOM > 1
 	ACPI_HANDLE h;
 	int d, pxm;
 

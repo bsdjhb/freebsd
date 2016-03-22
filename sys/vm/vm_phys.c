@@ -48,7 +48,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 #include <sys/proc.h>
 #endif
 #include <sys/queue.h>
@@ -144,7 +144,7 @@ static int sysctl_vm_phys_segs(SYSCTL_HANDLER_ARGS);
 SYSCTL_OID(_vm, OID_AUTO, phys_segs, CTLTYPE_STRING | CTLFLAG_RD,
     NULL, 0, sysctl_vm_phys_segs, "A", "Phys Seg Info");
 
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 static int sysctl_vm_phys_locality(SYSCTL_HANDLER_ARGS);
 SYSCTL_OID(_vm, OID_AUTO, phys_locality, CTLTYPE_STRING | CTLFLAG_RD,
     NULL, 0, sysctl_vm_phys_locality, "A", "Phys Locality Info");
@@ -159,7 +159,7 @@ SYSCTL_INT(_vm, OID_AUTO, ndomains, CTLFLAG_RD,
 static struct mtx vm_default_policy_mtx;
 MTX_SYSINIT(vm_default_policy, &vm_default_policy_mtx, "default policy mutex",
     MTX_DEF);
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 static struct vm_domain_policy vm_default_policy =
     VM_DOMAIN_POLICY_STATIC_INITIALISER(VM_POLICY_FIRST_TOUCH_ROUND_ROBIN, 0);
 #else
@@ -277,7 +277,7 @@ vm_phys_fictitious_cmp(struct vm_phys_fictitious_seg *p1,
 static __inline int
 vm_rr_selectdomain(void)
 {
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	struct thread *td;
 
 	td = curthread;
@@ -303,13 +303,13 @@ vm_rr_selectdomain(void)
 static void
 vm_policy_iterator_init(struct vm_domain_iterator *vi)
 {
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	struct vm_domain_policy lcl;
 #endif
 
 	vm_domain_iterator_init(vi);
 
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	/* Copy out the thread policy */
 	vm_domain_policy_localcopy(&lcl, &curthread->td_vm_dom_policy);
 	if (lcl.p.policy != VM_POLICY_NONE) {
@@ -433,7 +433,7 @@ int
 vm_phys_mem_affinity(int f, int t)
 {
 
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	if (mem_locality == NULL)
 		return (-1);
 	if (f >= vm_ndomains || t >= vm_ndomains)
@@ -444,7 +444,7 @@ vm_phys_mem_affinity(int f, int t)
 #endif
 }
 
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 /*
  * Outputs the VM locality table.
  */

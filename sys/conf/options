@@ -597,6 +597,8 @@ REGRESSION		opt_global.h
 RWLOCK_NOINLINE		opt_global.h
 SX_NOINLINE		opt_global.h
 VFS_BIO_DEBUG		opt_global.h
+VM_NUMA_ALLOC		opt_global.h
+DEVICE_NUMA		opt_global.h
 
 # These are VM related options
 VM_KMEM_SIZE		opt_vm.h

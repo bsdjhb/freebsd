@@ -1656,12 +1656,12 @@ static void
 vm_pageout(void)
 {
 	int error;
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	int i;
 #endif
 
 	swap_pager_swap_init();
-#if MAXMEMDOM > 1
+#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
 	for (i = 1; i < vm_ndomains; i++) {
 		error = kthread_add(vm_pageout_worker, (void *)(uintptr_t)i,
 		    curproc, NULL, 0, 0, "dom%d", i);
