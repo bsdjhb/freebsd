@@ -138,7 +138,7 @@ geom_shutdown(void *foo __unused)
 	g_shutdown = 1;
 }
 
-static void
+void
 g_init(void)
 {
 
@@ -147,25 +147,17 @@ g_init(void)
 	g_io_init();
 	g_event_init();
 	g_ctl_init();
-	EVENTHANDLER_REGISTER(shutdown_pre_sync, geom_shutdown, NULL,
-		SHUTDOWN_PRI_FIRST);
-}
-SYSINIT(g_init, SI_SUB_GEOM, SI_ORDER_FIRST, g_init, NULL);
-
-static void
-g_start_kproc(void *dummy __unused)
-{
-
+	mtx_lock(&Giant);
 	kproc_kthread_add(g_event_procbody, NULL, &g_proc, &g_event_td,
 	    RFHIGHPID, 0, "geom", "g_event");
 	kproc_kthread_add(g_up_procbody, NULL, &g_proc, &g_up_td,
 	    RFHIGHPID, 0, "geom", "g_up");
 	kproc_kthread_add(g_down_procbody, NULL, &g_proc, &g_down_td,
 	    RFHIGHPID, 0, "geom", "g_down");
+	mtx_unlock(&Giant);
+	EVENTHANDLER_REGISTER(shutdown_pre_sync, geom_shutdown, NULL,
+		SHUTDOWN_PRI_FIRST);
 }
-SYSINIT(g_start_kproc, SI_SUB_KICK_SCHEDULER, SI_ORDER_ANY, g_start_kproc,
-    NULL);
-
 
 static int
 sysctl_kern_geom_conftxt(SYSCTL_HANDLER_ARGS)
