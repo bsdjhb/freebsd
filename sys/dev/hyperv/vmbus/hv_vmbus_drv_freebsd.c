@@ -630,9 +630,7 @@ vmbus_attach(device_t dev)
 		device_printf(dev, "VMBUS: attach dev: %p\n", dev);
 	vmbus_devp = dev;
 
-#ifdef EARLY_AP_STARTUP
-	vmbus_bus_init();
-#else
+#ifndef EARLY_AP_STARTUP
 	/* 
 	 * If the system has already booted and thread
 	 * scheduling is possible indicated by the global
@@ -640,8 +638,8 @@ vmbus_attach(device_t dev)
 	 * initialization directly.
 	 */
 	if (!cold)
-		vmbus_bus_init();
 #endif
+		vmbus_bus_init();
 
 	return (0);
 }
@@ -652,9 +650,7 @@ vmbus_init(void)
 	if (vm_guest != VM_GUEST_HV)
 		return;
 
-#ifdef EARLY_AP_STARTUP
-	vmbus_bus_init();
-#else
+#ifndef EARLY_AP_STARTUP
 	/* 
 	 * If the system has already booted and thread
 	 * scheduling is possible, as indicated by the
@@ -662,8 +658,8 @@ vmbus_init(void)
 	 * initialization directly.
 	 */
 	if (!cold) 
-		vmbus_bus_init();
 #endif
+		vmbus_bus_init();
 }
 
 static void
