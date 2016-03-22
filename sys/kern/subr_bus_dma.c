@@ -587,8 +587,8 @@ bus_dma_mem_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 }
 
 int
-bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent, bus_size_t len,
-    int flags, struct bus_dmamem_args *args1);
+bus_dma_mem_alloc(bus_dma_tag_t parent, bus_size_t len, int flags,
+    struct bus_dmamem_args *args1, struct bus_dmamem *mem);
 {
 	struct bus_dma_mem_cb_data d;
 	struct bus_dmamem_args args;

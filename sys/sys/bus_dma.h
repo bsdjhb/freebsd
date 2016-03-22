@@ -378,8 +378,8 @@ void bus_dma_mem_args_init_impl(struct bus_dmamem_args *args, size_t sz);
  * and the 'dma_vaddr' and 'dma_baddr' fields are populated with the
  * virtual and bus addresses, respectively, of the mapping.
  */
-int bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
-		      bus_size_t len, int flags, struct bus_dmamem_args *args);
+int bus_dma_mem_alloc(bus_dma_tag_t parent, bus_size_t len, int flags,
+		      struct bus_dmamem_args *args, struct bus_dmamem *mem);
 
 /*
  * Wrapper for bus_dmamap_sync() for memory allocated via
