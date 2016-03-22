@@ -1224,6 +1224,7 @@ xl_attach(device_t dev)
 		device_printf(dev, "failed to allocate rx ring\n");
 		goto fail;
 	}
+	sc->xl_ldata.xl_rx_list = sc->xl_ldata.xl_rx_ring.dma_vaddr;
 
 	error = bus_dma_mem_alloc(bus_get_dma_tag(dev), XL_TX_LIST_SZ, 0, &args,
 	    &sc->xl_ldata.xl_tx_ring);
@@ -1231,6 +1232,7 @@ xl_attach(device_t dev)
 		device_printf(dev, "failed to allocate tx ring\n");
 		goto fail;
 	}
+	sc->xl_ldata.xl_tx_list = sc->xl_ldata.xl_tx_ring.dma_vaddr;
 
 	/*
 	 * Allocate a DMA tag for the mapping of mbufs.
