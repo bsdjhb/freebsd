@@ -186,7 +186,6 @@ static ndis_status NdisQueryMapRegisterCount(uint32_t, uint32_t *);
 static ndis_status NdisMAllocateMapRegisters(ndis_handle,
 	uint32_t, uint8_t, uint32_t, uint32_t);
 static void NdisMFreeMapRegisters(ndis_handle);
-static void ndis_mapshared_cb(void *, bus_dma_segment_t *, int, int);
 static void NdisMAllocateSharedMemory(ndis_handle, uint32_t,
 	uint8_t, void **, ndis_physaddr *);
 static void ndis_asyncmem_complete(device_object *, void *);
@@ -1387,23 +1386,6 @@ NdisMFreeMapRegisters(adapter)
 	bus_dma_tag_destroy(sc->ndis_mtag);
 }
 
-static void
-ndis_mapshared_cb(arg, segs, nseg, error)
-	void			*arg;
-	bus_dma_segment_t	*segs;
-	int			nseg;
-	int			error;
-{
-	ndis_physaddr		*p;
-
-	if (error || nseg > 1)
-		return;
-
-	p = arg;
-
-	p->np_quad = segs[0].ds_addr;
-}
-
 /*
  * This maps to bus_dmamem_alloc().
  */
@@ -1443,34 +1425,16 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	 * than 1GB of physical memory.
 	 */
 
-	error = bus_dma_tag_create(sc->ndis_parent_tag, 64,
-	    0, NDIS_BUS_SPACE_SHARED_MAXADDR, BUS_SPACE_MAXADDR, NULL,
-	    NULL, len, 1, len, BUS_DMA_ALLOCNOW, NULL, NULL,
-	    &sh->ndis_stag);
+	error = bus_dma_mem_create(&sh->ndis_mem, sc->ndis_parent_tag, 64,
+	    NDIS_BUS_SPACE_SHARED_MAXADDR, len, BUS_DMA_NOWAIT | BUS_DMA_ZERO);
 
 	if (error) {
 		free(sh, M_DEVBUF);
 		return;
 	}
 
-	error = bus_dmamem_alloc(sh->ndis_stag, vaddr,
-	    BUS_DMA_NOWAIT | BUS_DMA_ZERO, &sh->ndis_smap);
-
-	if (error) {
-		bus_dma_tag_destroy(sh->ndis_stag);
-		free(sh, M_DEVBUF);
-		return;
-	}
-
-	error = bus_dmamap_load(sh->ndis_stag, sh->ndis_smap, *vaddr,
-	    len, ndis_mapshared_cb, (void *)paddr, BUS_DMA_NOWAIT);
-
-	if (error) {
-		bus_dmamem_free(sh->ndis_stag, *vaddr, sh->ndis_smap);
-		bus_dma_tag_destroy(sh->ndis_stag);
-		free(sh, M_DEVBUF);
-		return;
-	}
+	*vaddr = sh->ndis_mem.dma_vaddr;
+	paddr->np_quad = sh->ndis_mem.dma_baddr;
 
 	/*
 	 * Save the physical address along with the source address.
@@ -1482,8 +1446,6 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	 */
 
 	NDIS_LOCK(sc);
-	sh->ndis_paddr.np_quad = paddr->np_quad;
-	sh->ndis_saddr = *vaddr;
 	InsertHeadList((&sc->ndis_shlist), (&sh->ndis_list));
 	NDIS_UNLOCK(sc);
 }
@@ -1581,13 +1543,13 @@ NdisMFreeSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	l = sc->ndis_shlist.nle_flink;
 	while (l != &sc->ndis_shlist) {
 		sh = CONTAINING_RECORD(l, struct ndis_shmem, ndis_list);
-		if (sh->ndis_saddr == vaddr)
+		if (sh->ndis_mem.dma_vaddr == vaddr)
 			break;
 		/*
 		 * Check the physaddr too, just in case the driver lied
 		 * about the virtual address.
 		 */
-		if (sh->ndis_paddr.np_quad == paddr.np_quad)
+		if (sh->ndis_mem.dma_baddr == paddr.np_quad)
 			break;
 		l = l->nle_flink;
 	}
@@ -1604,9 +1566,7 @@ NdisMFreeSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 
 	NDIS_UNLOCK(sc);
 
-	bus_dmamap_unload(sh->ndis_stag, sh->ndis_smap);
-	bus_dmamem_free(sh->ndis_stag, sh->ndis_saddr, sh->ndis_smap);
-	bus_dma_tag_destroy(sh->ndis_stag);
+	bus_dma_mem_free(&sh->ndis_mem);
 
 	free(sh, M_DEVBUF);
 }

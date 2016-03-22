@@ -66,10 +66,7 @@ struct ndis_usb_type {
 
 struct ndis_shmem {
 	list_entry		ndis_list;
-	bus_dma_tag_t		ndis_stag;
-	bus_dmamap_t		ndis_smap;
-	void			*ndis_saddr;
-	ndis_physaddr		ndis_paddr;
+	struct bus_dmamem	ndis_mem;
 };
 
 struct ndis_cfglist {
