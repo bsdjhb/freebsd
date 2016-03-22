@@ -349,4 +349,29 @@ bus_dma_segment_t *_bus_dmamap_complete(bus_dma_tag_t dmat,
 
 #endif /* __sparc64__ */
 
+/*
+ * A wrapper API to simplify management of static mappings.
+ */
+
+struct bus_dmamem {
+	bus_dma_tag_t	dma_tag;
+	bus_dmamap_t	dma_map;
+	void		*dma_vaddr;
+	bus_addr_t	dma_baddr;
+};
+
+/*
+ * Allocate a mapping.  On success, zero is returned and the 'dma_vaddr'
+ * and 'dma_baddr' fields are populated with the virtual and bus addresses,
+ * respectively, of the mapping.
+ */
+int bus_dma_mem_create(struct bus_dmamem *mem, bus_dma_tag_t parent,
+		       bus_size_t alignment, bus_addr_t lowaddr,
+		       bus_size_t len, int flags);
+
+/*
+ * Release a mapping created by bus_dma_mem_create().
+ */
+void bus_dma_mem_free(struct bus_dmamem *mem);
+
 #endif /* _BUS_DMA_H_ */

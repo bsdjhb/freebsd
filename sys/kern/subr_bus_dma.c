@@ -557,3 +557,66 @@ bus_dmamap_load_mem(bus_dma_tag_t dmat, bus_dmamap_t map,
 
 	return (0);
 }
+
+struct bus_dma_mem_cb_data {
+	struct bus_dmamem *mem;
+	int	error;
+};
+
+static void
+bus_dma_mem_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
+{
+	struct bus_dma_mem_cb_data *d;
+
+	d = arg;
+	d->error = error;
+	if (error)
+		return;
+	d->mem->dma_baddr = segs[0].ds_addr;
+}
+
+int
+bus_dma_mem_create(struct bus_dmamem *mem, bus_dma_tag_t parent,
+    bus_size_t alignment, bus_addr_t lowaddr, bus_size_t len, int flags)
+{
+	struct bus_dma_mem_cb_data d;
+	int error;
+
+	bzero(mem, sizeof(*mem));
+	error = bus_dma_tag_create(parent, alignment, 0, lowaddr,
+	    BUS_SPACE_MAXADDR, NULL, NULL, len, 1, len, 0, NULL, NULL,
+	    &mem->dma_tag);
+	if (error) {
+		bus_dma_mem_free(mem);
+		return (error);
+	}
+	error = bus_dmamem_alloc(mem->dma_tag, &mem->dma_vaddr, flags,
+	    &mem->dma_map);
+	if (error) {
+		bus_dma_mem_free(mem);
+		return (error);
+	}
+	d.mem = mem;
+	error = bus_dmamap_load(mem->dma_tag, mem->dma_map, mem->dma_vaddr, len,
+	    bus_dma_mem_cb, &d, BUS_DMA_NOWAIT);
+	if (error == 0)
+		error = d.error;
+	if (error) {
+		bus_dma_mem_free(mem);
+		return (error);
+	}
+	return (0);
+}
+
+void
+bus_dma_mem_free(struct bus_dmamem *mem)
+{
+
+	if (mem->dma_baddr != 0)
+		bus_dmamap_unload(mem->dma_tag, mem->dma_map);
+	if (mem->dma_vaddr != NULL)
+		bus_dmamem_free(mem->dma_tag, mem->dma_vaddr, mem->dma_map);
+	if (mem->dma_tag != NULL)
+		bus_dma_tag_destroy(mem->dma_tag);
+	bzero(mem, sizeof(*mem));
+}
