@@ -1397,6 +1397,7 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	ndis_miniport_block	*block;
 	struct ndis_softc	*sc;
 	struct ndis_shmem	*sh;
+	struct bus_dma_mem_args args;
 	int			error;
 
 	if (adapter == NULL)
@@ -1425,8 +1426,11 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	 * than 1GB of physical memory.
 	 */
 
-	error = bus_dma_mem_create(&sh->ndis_mem, sc->ndis_parent_tag, 64,
-	    NDIS_BUS_SPACE_SHARED_MAXADDR, len, BUS_DMA_NOWAIT | BUS_DMA_ZERO);
+	bus_dma_mem_args_init(&args);
+	args.dma_alignment = 64;
+	args.dma_lowaddr = NDIS_BUS_SPACE_SHARED_MAXADDR;
+	error = bus_dma_mem_alloc(&sh->ndis_mem, sc->ndis_parent_tag, len,
+	    BUS_DMA_NOWAIT | BUS_DMA_ZERO, &args);
 
 	if (error) {
 		free(sh, M_DEVBUF);
