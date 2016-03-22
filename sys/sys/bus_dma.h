@@ -382,7 +382,7 @@ int bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
 		      bus_size_t len, int flags, struct bus_dmamem_args *args);
 
 /*
- * Release a mapping created by bus_dma_mem_create().
+ * Release a mapping created by bus_dma_mem_alloc().
  */
 void bus_dma_mem_free(struct bus_dmamem *mem);
 
