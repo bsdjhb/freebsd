@@ -166,7 +166,7 @@ static int	acpi_cpu_shutdown(device_t dev);
 static void	acpi_cpu_cx_probe(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_generic_cx_probe(struct acpi_cpu_softc *sc);
 static int	acpi_cpu_cx_cst(struct acpi_cpu_softc *sc);
-static void	acpi_cpu_startup(void * arg);
+static void	acpi_cpu_startup(void *arg);
 static void	acpi_cpu_startup_cx(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_cx_list(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_idle(sbintime_t sbt);
