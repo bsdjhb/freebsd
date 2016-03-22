@@ -360,14 +360,26 @@ struct bus_dmamem {
 	bus_addr_t	dma_baddr;
 };
 
+/* Optional properties of a DMA memory allocation request. */
+struct bus_dmamem_args {
+	size_t		dma_size;
+	bus_size_t	dma_alignment;
+	bus_addr_t	dma_boundary;
+	bus_addr_t	dma_lowaddr;
+	bus_addr_t	dma_highaddr;
+};
+
+void bus_dma_mem_args_init_impl(struct bus_dmamem_args *args, size_t sz);
+#define	bus_dma_mem_args_init(a)					\
+	bus_dma_mem_args_init_impl((a), sizeof(struct bus_dmamem_args))
+
 /*
- * Allocate a mapping.  On success, zero is returned and the 'dma_vaddr'
- * and 'dma_baddr' fields are populated with the virtual and bus addresses,
- * respectively, of the mapping.
+ * Allocates memory for DMA and maps it.  On success, zero is returned
+ * and the 'dma_vaddr' and 'dma_baddr' fields are populated with the
+ * virtual and bus addresses, respectively, of the mapping.
  */
 int bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
-		      bus_size_t alignment, bus_addr_t lowaddr,
-		      bus_size_t len, int flags);
+		      bus_size_t len, int flags, struct bus_dmamem_args *args);
 
 /*
  * Release a mapping created by bus_dma_mem_create().

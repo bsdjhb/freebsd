@@ -558,6 +558,17 @@ bus_dmamap_load_mem(bus_dma_tag_t dmat, bus_dmamap_t map,
 	return (0);
 }
 
+void
+bus_dma_mem_args_init_impl(struct bus_dmamem_args *args, size_t sz)
+{
+
+	bzero(args, sz);
+	args->dma_size = sz;
+	args->dma_alignment = 1;
+	args->dma_lowaddr = BUS_SPACE_MAXADDR;
+	args->dma_highaddr = BUS_SPACE_MAXADDR;
+}
+
 struct bus_dma_mem_cb_data {
 	struct bus_dmamem *mem;
 	int	error;
@@ -576,16 +587,23 @@ bus_dma_mem_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 }
 
 int
-bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
-    bus_size_t alignment, bus_addr_t lowaddr, bus_size_t len, int flags)
+bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent, bus_size_t len,
+    int flags, struct bus_dmamem_args *args1);
 {
 	struct bus_dma_mem_cb_data d;
+	struct bus_dmamem_args args;
 	int error;
 
+	bus_dma_mem_args_init(&args);
+	if (args1 != NULL) {
+		if (sizeof(args) < args1->dma_size)
+			return (EINVAL);
+		bcopy(args1, &args, args1->dma_size);
+	}
 	bzero(mem, sizeof(*mem));
-	error = bus_dma_tag_create(parent, alignment, 0, lowaddr,
-	    BUS_SPACE_MAXADDR, NULL, NULL, len, 1, len, 0, NULL, NULL,
-	    &mem->dma_tag);
+	error = bus_dma_tag_create(parent, args.dma_alignment,
+	    args.dma_boundary, args.dma_lowaddr, args.dma_highaddr,
+	    NULL, NULL, len, 1, len, 0, NULL, NULL, &mem->dma_tag);
 	if (error) {
 		bus_dma_mem_free(mem);
 		return (error);
