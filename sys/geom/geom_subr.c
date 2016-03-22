@@ -210,6 +210,7 @@ g_modevent(module_t mod, int type, void *data)
 {
 	struct g_hh00 *hh;
 	int error;
+	static int g_ignition;
 	struct g_class *mp;
 
 	mp = data;
@@ -217,6 +218,10 @@ g_modevent(module_t mod, int type, void *data)
 		printf("GEOM class %s has Wrong version %x\n",
 		    mp->name, mp->version);
 		return (EINVAL);
+	}
+	if (!g_ignition) {
+		g_ignition++;
+		g_init();
 	}
 	error = EOPNOTSUPP;
 	switch (type) {
