@@ -1397,7 +1397,7 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	ndis_miniport_block	*block;
 	struct ndis_softc	*sc;
 	struct ndis_shmem	*sh;
-	struct bus_dma_mem_args args;
+	struct bus_dmamem_args	args;
 	int			error;
 
 	if (adapter == NULL)
