@@ -382,6 +382,13 @@ int bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
 		      bus_size_t len, int flags, struct bus_dmamem_args *args);
 
 /*
+ * Wrapper for bus_dmamap_sync() for memory allocated via
+ * bus_dma_mem_alloc().
+ */
+#define	bus_dma_mem_sync(mem, op)					\
+	bus_dmamap_sync((mem)->dma_tag, (mem)->dma_map, (op))
+
+/*
  * Release a mapping created by bus_dma_mem_alloc().
  */
 void bus_dma_mem_free(struct bus_dmamem *mem);
