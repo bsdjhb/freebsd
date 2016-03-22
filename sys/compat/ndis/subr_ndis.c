@@ -1429,8 +1429,8 @@ NdisMAllocateSharedMemory(ndis_handle adapter, uint32_t len, uint8_t cached,
 	bus_dma_mem_args_init(&args);
 	args.dma_alignment = 64;
 	args.dma_lowaddr = NDIS_BUS_SPACE_SHARED_MAXADDR;
-	error = bus_dma_mem_alloc(&sh->ndis_mem, sc->ndis_parent_tag, len,
-	    BUS_DMA_NOWAIT | BUS_DMA_ZERO, &args);
+	error = bus_dma_mem_alloc(sc->ndis_parent_tag, len, BUS_DMA_NOWAIT |
+	    BUS_DMA_ZERO, &args, &sh->ndis_mem);
 
 	if (error) {
 		free(sh, M_DEVBUF);
