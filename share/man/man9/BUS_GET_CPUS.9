@@ -60,16 +60,15 @@ The
 argument specifies the size in bytes of the set passed in
 .Fa cpuset .
 .Pp
-The
 .Fn BUS_GET_CPUS
-method supports querying different types of CPU sets via the the
+supports querying different types of CPU sets via the the
 .Fa op argument.
-Some set types may not be supported for every device.
+Not all set types are supported for every device.
 If a set type is not supported,
 .Fn BUS_GET_CPUS
-will fail with
+fails with
 .Er EINVAL .
-The following set types are supported:
+These set types are supported:
 .Bl -tag -width ".Dv LOCAL_CPUS"
 .It Dv LOCAL_CPUS
 The set of CPUs that are local to the device.
@@ -97,5 +96,5 @@ The
 .Fn BUS_GET_CPUS
 method and
 .Fn bus_get_cpus
-functions first appeared in
+function first appeared in
 .Fx 11.0 .
