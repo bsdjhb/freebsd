@@ -256,6 +256,7 @@ xctrl_suspend()
 			suspend_cpus(cpu_suspend_map);
 	}
 #endif
+#endif
 
 	/*
 	 * Prevent any races with evtchn_interrupt() handler.
