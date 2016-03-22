@@ -365,9 +365,9 @@ struct bus_dmamem {
  * and 'dma_baddr' fields are populated with the virtual and bus addresses,
  * respectively, of the mapping.
  */
-int bus_dma_mem_create(struct bus_dmamem *mem, bus_dma_tag_t parent,
-		       bus_size_t alignment, bus_addr_t lowaddr,
-		       bus_size_t len, int flags);
+int bus_dma_mem_alloc(struct bus_dmamem *mem, bus_dma_tag_t parent,
+		      bus_size_t alignment, bus_addr_t lowaddr,
+		      bus_size_t len, int flags);
 
 /*
  * Release a mapping created by bus_dma_mem_create().
