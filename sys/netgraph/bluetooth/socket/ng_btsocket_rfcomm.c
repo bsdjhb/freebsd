@@ -103,7 +103,7 @@ static void ng_btsocket_rfcomm_sessions_task
 static void ng_btsocket_rfcomm_session_task
 	(ng_btsocket_rfcomm_session_p s);
 #define ng_btsocket_rfcomm_task_wakeup() \
-	taskqueue_enqueue(taskqueue_swi_giant, &ng_btsocket_rfcomm_task)
+	taskqueue_enqueue(taskqueue_swi, &ng_btsocket_rfcomm_task)
 
 static ng_btsocket_rfcomm_pcb_p ng_btsocket_rfcomm_connect_ind
 	(ng_btsocket_rfcomm_session_p s, int channel);

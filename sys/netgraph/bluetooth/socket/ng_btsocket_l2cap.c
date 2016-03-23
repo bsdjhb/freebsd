@@ -215,10 +215,10 @@ static int                         ng_btsocket_l2cap_result2errno(int);
 static int ng_btsock_l2cap_addrtype_to_linktype(int addrtype);
 
 #define ng_btsocket_l2cap_wakeup_input_task() \
-	taskqueue_enqueue(taskqueue_swi_giant, &ng_btsocket_l2cap_queue_task)
+	taskqueue_enqueue(taskqueue_swi, &ng_btsocket_l2cap_queue_task)
 
 #define ng_btsocket_l2cap_wakeup_route_task() \
-	taskqueue_enqueue(taskqueue_swi_giant, &ng_btsocket_l2cap_rt_task)
+	taskqueue_enqueue(taskqueue_swi, &ng_btsocket_l2cap_rt_task)
 
 
 
