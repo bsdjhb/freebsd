@@ -480,7 +480,7 @@ sdhci_card_delay(void *arg)
 {
 	struct sdhci_slot *slot = arg;
 
-	taskqueue_enqueue(taskqueue_swi_giant, &slot->card_task);
+	taskqueue_enqueue(taskqueue_swi, &slot->card_task);
 }
  
 static void
@@ -488,6 +488,8 @@ sdhci_card_task(void *arg, int pending)
 {
 	struct sdhci_slot *slot = arg;
 
+	/* XXX: Lock Giant for new-bus. */
+	mtx_lock(&Giant);
 	SDHCI_LOCK(slot);
 	if (RD4(slot, SDHCI_PRESENT_STATE) & SDHCI_CARD_PRESENT) {
 		if (slot->dev == NULL) {
@@ -508,6 +510,7 @@ sdhci_card_task(void *arg, int pending)
 		} else
 			SDHCI_UNLOCK(slot);
 	}
+	mtx_unlock(&Giant);
 }
 
 int
@@ -672,7 +675,7 @@ sdhci_cleanup_slot(struct sdhci_slot *slot)
 
 	callout_drain(&slot->timeout_callout);
 	callout_drain(&slot->card_callout);
-	taskqueue_drain(taskqueue_swi_giant, &slot->card_task);
+	taskqueue_drain(taskqueue_swi, &slot->card_task);
 
 	SDHCI_LOCK(slot);
 	d = slot->dev;
@@ -1330,8 +1333,7 @@ sdhci_generic_intr(struct sdhci_slot *slot)
 			if (bootverbose || sdhci_debug)
 				slot_printf(slot, "Card removed\n");
 			callout_stop(&slot->card_callout);
-			taskqueue_enqueue(taskqueue_swi_giant,
-			    &slot->card_task);
+			taskqueue_enqueue(taskqueue_swi, &slot->card_task);
 		}
 		if (intmask & SDHCI_INT_CARD_INSERT) {
 			if (bootverbose || sdhci_debug)

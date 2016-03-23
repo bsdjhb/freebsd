@@ -428,6 +428,8 @@ card_detect_task(void *arg, int pending)
 
 	insert = read4(sc, SDHC_PRSSTAT) & PRSSTAT_CINS;
 
+	/* XXX: Lock Giant for new-bus. */
+	mtx_lock(&Giant);
 	mtx_lock(&sc->mtx);
 
 	if (insert) {
@@ -468,6 +470,7 @@ card_detect_task(void *arg, int pending)
 			device_printf(sc->self, "Could not delete MMC bus!\n");
 		sc->child = NULL;
 	}
+	mtx_unlock(&Giant);
 }
 
 static void
@@ -475,7 +478,7 @@ card_detect_delay(void *arg)
 {
 	struct fsl_sdhc_softc *sc = arg;
 
-	taskqueue_enqueue(taskqueue_swi_giant, &sc->card_detect_task);
+	taskqueue_enqueue(taskqueue_swi, &sc->card_detect_task);
 }
 
 static void
@@ -731,7 +734,7 @@ interrupt_handler(void *arg)
 		set_bit(sc, SDHC_IRQSTATEN, IRQ_CINS);
 
 		callout_stop(&sc->card_detect_callout);
-		taskqueue_enqueue(taskqueue_swi_giant, &sc->card_detect_task);
+		taskqueue_enqueue(taskqueue_swi, &sc->card_detect_task);
 	}
 
 	/* Handle request interrupts. */
@@ -1095,7 +1098,7 @@ fsl_sdhc_detach(device_t self)
 	if (sc->child)
 		device_delete_child(self, sc->child);
 
-	taskqueue_drain(taskqueue_swi_giant, &sc->card_detect_task);
+	taskqueue_drain(taskqueue_swi, &sc->card_detect_task);
 
 #ifndef FSL_SDHC_NO_DMA
 	bus_dmamap_unload(sc->dma_tag, sc->dma_map);
