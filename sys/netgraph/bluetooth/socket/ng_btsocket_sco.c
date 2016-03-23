@@ -1044,7 +1044,7 @@ static void
 ng_btsocket_sco_rtclean(void *context, int pending)
 {
 	ng_btsocket_sco_pcb_p		pcb = NULL, pcb_next = NULL;
-	ng_btsocket_sco_rtentry_p	rt = NULL;
+	ng_btsocket_sco_rtentry_p	rt = NULL, rt_next = NULL;
 
 	/*
 	 * First disconnect all sockets that use "invalid" hook
@@ -1052,10 +1052,8 @@ ng_btsocket_sco_rtclean(void *context, int pending)
 
 	mtx_lock(&ng_btsocket_sco_sockets_mtx);
 
-	for(pcb = LIST_FIRST(&ng_btsocket_sco_sockets); pcb != NULL; ) {
+	LIST_FOREACH_SAFE(pcb, &ng_btsocket_sco_sockets, next, pcb_next) {
 		mtx_lock(&pcb->pcb_mtx);
-		pcb_next = LIST_NEXT(pcb, next);
-
 		if (pcb->rt != NULL &&
 		    pcb->rt->hook != NULL && NG_HOOK_NOT_VALID(pcb->rt->hook)) {
 			if (pcb->flags & NG_BTSOCKET_SCO_TIMO)
@@ -1066,9 +1064,7 @@ ng_btsocket_sco_rtclean(void *context, int pending)
 			pcb->state = NG_BTSOCKET_SCO_CLOSED;
 			soisdisconnected(pcb->so);
 		}
-
 		mtx_unlock(&pcb->pcb_mtx);
-		pcb = pcb_next;
 	}
 
 	mtx_unlock(&ng_btsocket_sco_sockets_mtx);
@@ -1079,9 +1075,7 @@ ng_btsocket_sco_rtclean(void *context, int pending)
 
 	mtx_lock(&ng_btsocket_sco_rt_mtx);
 
-	for (rt = LIST_FIRST(&ng_btsocket_sco_rt); rt != NULL; ) {
-		ng_btsocket_sco_rtentry_p	rt_next = LIST_NEXT(rt, next);
-
+	LIST_FOREACH_SAFE(rt, &ng_btsocket_sco_rt, next, rt_next) {
 		if (rt->hook != NULL && NG_HOOK_NOT_VALID(rt->hook)) {
 			LIST_REMOVE(rt, next);
 
@@ -1091,8 +1085,6 @@ ng_btsocket_sco_rtclean(void *context, int pending)
 			bzero(rt, sizeof(*rt));
 			free(rt, M_NETGRAPH_BTSOCKET_SCO);
 		}
-
-		rt = rt_next;
 	}
 
 	mtx_unlock(&ng_btsocket_sco_rt_mtx);

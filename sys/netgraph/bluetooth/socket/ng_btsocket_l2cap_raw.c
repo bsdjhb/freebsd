@@ -457,7 +457,7 @@ static void
 ng_btsocket_l2cap_raw_rtclean(void *context, int pending)
 {
 	ng_btsocket_l2cap_raw_pcb_p	pcb = NULL;
-	ng_btsocket_l2cap_rtentry_p	rt = NULL;
+	ng_btsocket_l2cap_rtentry_p	rt = NULL, rt_next = NULL;
 
 	/*
 	 * First disconnect all sockets that use "invalid" hook
@@ -488,9 +488,7 @@ ng_btsocket_l2cap_raw_rtclean(void *context, int pending)
 
 	mtx_lock(&ng_btsocket_l2cap_raw_rt_mtx);
 
-	for (rt = LIST_FIRST(&ng_btsocket_l2cap_raw_rt); rt != NULL; ) {
-		ng_btsocket_l2cap_rtentry_p	rt_next = LIST_NEXT(rt, next);
-
+	LIST_FOREACH_SAFE(rt, &ng_btsocket_l2cap_raw_rt, next, rt_next) {
 		if (rt->hook != NULL && NG_HOOK_NOT_VALID(rt->hook)) {
 			LIST_REMOVE(rt, next);
 
@@ -500,8 +498,6 @@ ng_btsocket_l2cap_raw_rtclean(void *context, int pending)
 			bzero(rt, sizeof(*rt));
 			free(rt, M_NETGRAPH_BTSOCKET_L2CAP_RAW);
 		}
-
-		rt = rt_next;
 	}
 
 	mtx_unlock(&ng_btsocket_l2cap_raw_rt_mtx);

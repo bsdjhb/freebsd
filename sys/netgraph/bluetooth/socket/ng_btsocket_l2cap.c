@@ -1839,7 +1839,7 @@ static void
 ng_btsocket_l2cap_rtclean(void *context, int pending)
 {
 	ng_btsocket_l2cap_pcb_p		pcb = NULL, pcb_next = NULL;
-	ng_btsocket_l2cap_rtentry_p	rt = NULL;
+	ng_btsocket_l2cap_rtentry_p	rt = NULL, rt_next = NULL;
 
 	mtx_lock(&ng_btsocket_l2cap_rt_mtx);
 	mtx_lock(&ng_btsocket_l2cap_sockets_mtx);
@@ -1848,10 +1848,8 @@ ng_btsocket_l2cap_rtclean(void *context, int pending)
 	 * First disconnect all sockets that use "invalid" hook
 	 */
 
-	for (pcb = LIST_FIRST(&ng_btsocket_l2cap_sockets); pcb != NULL; ) {
+	LIST_FOREACH_SAFE(pcb, &ng_btsocket_l2cap_sockets, next, pcb_next) {
 		mtx_lock(&pcb->pcb_mtx);
-		pcb_next = LIST_NEXT(pcb, next);
-
 		if (pcb->rt != NULL &&
 		    pcb->rt->hook != NULL && NG_HOOK_NOT_VALID(pcb->rt->hook)) {
 			if (pcb->flags & NG_BTSOCKET_L2CAP_TIMO)
@@ -1865,18 +1863,14 @@ ng_btsocket_l2cap_rtclean(void *context, int pending)
 			pcb->cid = 0;
 			pcb->rt = NULL;
 		}
-
 		mtx_unlock(&pcb->pcb_mtx);
-		pcb = pcb_next;
 	}
 
 	/*
 	 * Now cleanup routing table
 	 */
 
-	for (rt = LIST_FIRST(&ng_btsocket_l2cap_rt); rt != NULL; ) {
-		ng_btsocket_l2cap_rtentry_p	rt_next = LIST_NEXT(rt, next);
-
+	LIST_FOREACH_SAFE(rt, &ng_btsocket_l2cap_rt, next, rt_next) {
 		if (rt->hook != NULL && NG_HOOK_NOT_VALID(rt->hook)) {
 			LIST_REMOVE(rt, next);
 
@@ -1886,8 +1880,6 @@ ng_btsocket_l2cap_rtclean(void *context, int pending)
 			bzero(rt, sizeof(*rt));
 			free(rt, M_NETGRAPH_BTSOCKET_L2CAP);
 		}
-
-		rt = rt_next;
 	}
 
 	mtx_unlock(&ng_btsocket_l2cap_sockets_mtx);

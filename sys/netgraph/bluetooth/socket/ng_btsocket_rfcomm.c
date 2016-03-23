@@ -1041,10 +1041,8 @@ ng_btsocket_rfcomm_sessions_task(void *ctx, int pending)
 
 	mtx_lock(&ng_btsocket_rfcomm_sessions_mtx);
 
-	for (s = LIST_FIRST(&ng_btsocket_rfcomm_sessions); s != NULL; ) {
+	LIST_FOREACH_SAFE(s, &ng_btsocket_rfcomm_sessions, next, s_next) {
 		mtx_lock(&s->session_mtx);
-		s_next = LIST_NEXT(s, next);
-
 		ng_btsocket_rfcomm_session_task(s);
 
 		if (s->state == NG_BTSOCKET_RFCOMM_SESSION_CLOSED) {
@@ -1071,8 +1069,6 @@ ng_btsocket_rfcomm_sessions_task(void *ctx, int pending)
 			free(s, M_NETGRAPH_BTSOCKET_RFCOMM);
 		} else
 			mtx_unlock(&s->session_mtx);
-
-		s = s_next;
 	}
 
 	mtx_unlock(&ng_btsocket_rfcomm_sessions_mtx);
@@ -1226,10 +1222,8 @@ ng_btsocket_rfcomm_connect_cfm(ng_btsocket_rfcomm_session_p s)
 	 * will unlink DLC from the session
 	 */
 
-	for (pcb = LIST_FIRST(&s->dlcs); pcb != NULL; ) {
+	LIST_FOREACH_SAFE(pcb, &s->dlcs, session_next, pcb_next) {
 		mtx_lock(&pcb->pcb_mtx);
-		pcb_next = LIST_NEXT(pcb, session_next);
-
 		if (pcb->state == NG_BTSOCKET_RFCOMM_DLC_W4_CONNECT) {
 			pcb->mtu = s->mtu;
 			bcopy(&so2l2cap_pcb(s->l2so)->src, &pcb->src,
@@ -1241,9 +1235,7 @@ ng_btsocket_rfcomm_connect_cfm(ng_btsocket_rfcomm_session_p s)
 			else
 				ng_btsocket_rfcomm_pcb_kill(pcb, error);
 		}
-
 		mtx_unlock(&pcb->pcb_mtx);
-		pcb = pcb_next;
 	}
 } /* ng_btsocket_rfcomm_connect_cfm */
 
@@ -1688,10 +1680,8 @@ ng_btsocket_rfcomm_session_clean(ng_btsocket_rfcomm_session_p s)
 	 * will unlink DLC from the session
 	 */
 
-	for (pcb = LIST_FIRST(&s->dlcs); pcb != NULL; ) {
+	LIST_FOREACH_SAFE(pcb, &s->dlcs, session_next, pcb_next) {
 		mtx_lock(&pcb->pcb_mtx);
-		pcb_next = LIST_NEXT(pcb, session_next);
-
 		NG_BTSOCKET_RFCOMM_INFO(
 "%s: Disconnecting dlci=%d, state=%d, flags=%#x\n",
 			__func__, pcb->dlci, pcb->state, pcb->flags);
@@ -1704,7 +1694,6 @@ ng_btsocket_rfcomm_session_clean(ng_btsocket_rfcomm_session_p s)
 		ng_btsocket_rfcomm_pcb_kill(pcb, error);
 
 		mtx_unlock(&pcb->pcb_mtx);
-		pcb = pcb_next;
 	}
 } /* ng_btsocket_rfcomm_session_clean */
 
@@ -1725,10 +1714,8 @@ ng_btsocket_rfcomm_session_process_pcb(ng_btsocket_rfcomm_session_p s)
 	 * will unlink DLC from the session
 	 */
 
-	for (pcb = LIST_FIRST(&s->dlcs); pcb != NULL; ) {
+	LIST_FOREACH_SAFE(pcb, &s->dlcs, session_next, pcb_next) {
 		mtx_lock(&pcb->pcb_mtx);
-		pcb_next = LIST_NEXT(pcb, session_next);
-
 		switch (pcb->state) {
 
 		/*
@@ -1800,7 +1787,6 @@ ng_btsocket_rfcomm_session_process_pcb(ng_btsocket_rfcomm_session_p s)
 		}
 
 		mtx_unlock(&pcb->pcb_mtx);
-		pcb = pcb_next;
 	}
 } /* ng_btsocket_rfcomm_session_process_pcb */
 
