@@ -48,7 +48,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 #include <sys/proc.h>
 #endif
 #include <sys/queue.h>
@@ -73,8 +73,10 @@ __FBSDID("$FreeBSD$");
 _Static_assert(sizeof(long) * NBBY >= VM_PHYSSEG_MAX,
     "Too many physsegs.");
 
+#ifdef VM_NUMA_ALLOC
 struct mem_affinity *mem_affinity;
 int *mem_locality;
+#endif
 
 int vm_ndomains = 1;
 
@@ -144,7 +146,7 @@ static int sysctl_vm_phys_segs(SYSCTL_HANDLER_ARGS);
 SYSCTL_OID(_vm, OID_AUTO, phys_segs, CTLTYPE_STRING | CTLFLAG_RD,
     NULL, 0, sysctl_vm_phys_segs, "A", "Phys Seg Info");
 
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 static int sysctl_vm_phys_locality(SYSCTL_HANDLER_ARGS);
 SYSCTL_OID(_vm, OID_AUTO, phys_locality, CTLTYPE_STRING | CTLFLAG_RD,
     NULL, 0, sysctl_vm_phys_locality, "A", "Phys Locality Info");
@@ -159,7 +161,7 @@ SYSCTL_INT(_vm, OID_AUTO, ndomains, CTLFLAG_RD,
 static struct mtx vm_default_policy_mtx;
 MTX_SYSINIT(vm_default_policy, &vm_default_policy_mtx, "default policy mutex",
     MTX_DEF);
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 static struct vm_domain_policy vm_default_policy =
     VM_DOMAIN_POLICY_STATIC_INITIALISER(VM_POLICY_FIRST_TOUCH_ROUND_ROBIN, 0);
 #else
@@ -277,7 +279,7 @@ vm_phys_fictitious_cmp(struct vm_phys_fictitious_seg *p1,
 static __inline int
 vm_rr_selectdomain(void)
 {
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 	struct thread *td;
 
 	td = curthread;
@@ -303,13 +305,13 @@ vm_rr_selectdomain(void)
 static void
 vm_policy_iterator_init(struct vm_domain_iterator *vi)
 {
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 	struct vm_domain_policy lcl;
 #endif
 
 	vm_domain_iterator_init(vi);
 
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 	/* Copy out the thread policy */
 	vm_domain_policy_localcopy(&lcl, &curthread->td_vm_dom_policy);
 	if (lcl.p.policy != VM_POLICY_NONE) {
@@ -433,7 +435,7 @@ int
 vm_phys_mem_affinity(int f, int t)
 {
 
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 	if (mem_locality == NULL)
 		return (-1);
 	if (f >= vm_ndomains || t >= vm_ndomains)
@@ -444,7 +446,7 @@ vm_phys_mem_affinity(int f, int t)
 #endif
 }
 
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 /*
  * Outputs the VM locality table.
  */
@@ -520,11 +522,14 @@ _vm_phys_create_seg(vm_paddr_t start, vm_paddr_t end, int domain)
 static void
 vm_phys_create_seg(vm_paddr_t start, vm_paddr_t end)
 {
+#ifdef VM_NUMA_ALLOC
 	int i;
 
 	if (mem_affinity == NULL) {
+#endif
 		_vm_phys_create_seg(start, end, 0);
 		return;
+#ifdef VM_NUMA_ALLOC
 	}
 
 	for (i = 0;; i++) {
@@ -544,6 +549,7 @@ vm_phys_create_seg(vm_paddr_t start, vm_paddr_t end)
 		    mem_affinity[i].domain);
 		start = mem_affinity[i].end;
 	}
+#endif
 }
 
 /*

@@ -145,8 +145,10 @@ parse_slit(void)
 	acpi_unmap_table(slit);
 	slit = NULL;
 
+#ifdef VM_NUMA_ALLOC
 	/* Tell the VM about it! */
 	mem_locality = vm_locality_table;
+#endif
 	return (0);
 }
 
@@ -416,8 +418,10 @@ parse_srat(void)
 		return (-1);
 	}
 
+#ifdef VM_NUMA_ALLOC
 	/* Point vm_phys at our memory affinity table. */
 	mem_affinity = mem_info;
+#endif
 
 	return (0);
 }
