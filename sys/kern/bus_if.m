@@ -232,6 +232,19 @@ METHOD device_t add_child {
 } DEFAULT null_add_child;
 
 /**
+ * @brief Rescan the bus
+ *
+ * This method is called by a parent bridge or devctl to trigger a bus
+ * rescan.  The rescan should delete devices no longer present and
+ * enumerate devices that have newly arrived.
+ *
+ * @param _dev		the bus device
+ */
+METHOD int rescan {
+	device_t _dev;
+}
+
+/**
  * @brief Allocate a system resource
  *
  * This method is called by child devices of a bus to allocate resources.
@@ -718,3 +731,4 @@ METHOD int get_domain {
 	device_t	_child;
 	int		*_domain;
 } DEFAULT bus_generic_get_domain;
+ 
