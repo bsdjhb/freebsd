@@ -39,7 +39,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 #include <sys/proc.h>
 #endif
 #include <sys/queue.h>
@@ -64,7 +64,7 @@ __FBSDID("$FreeBSD$");
 static __inline int
 vm_domain_rr_selectdomain(int skip_domain)
 {
-#if defined(VM_NUMA_ALLOC) && MAXMEMDOM > 1
+#ifdef VM_NUMA_ALLOC
 	struct thread *td;
 
 	td = curthread;
