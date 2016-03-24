@@ -507,4 +507,13 @@ acpi_map_pxm_to_vm_domainid(int pxm)
 	return (-1);
 }
 
+#else /* MAXMEMDOM == 1 */
+
+int
+acpi_map_pxm_to_vm_domainid(int pxm)
+{
+
+	return (-1);
+}
+
 #endif /* MAXMEMDOM > 1 */
