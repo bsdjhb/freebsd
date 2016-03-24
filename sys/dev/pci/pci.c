@@ -3939,12 +3939,15 @@ pci_rescan_method(device_t dev)
 	error = device_get_children(dev, &devlist, &devcount);
 	if (error)
 		return (error);
-	unchanged = malloc(devcount * sizeof(device_t), M_TEMP, M_NOWAIT |
-	    M_ZERO);
-	if (unchanged != NULL) {
-		free(devlist, M_TEMP);
-		return (ENOMEM);
-	}
+	if (devcount != 0) {
+		unchanged = malloc(devcount * sizeof(device_t), M_TEMP,
+		    M_NOWAIT | M_ZERO);
+		if (unchanged == NULL) {
+			free(devlist, M_TEMP);
+			return (ENOMEM);
+		}
+	} else
+		unchanged = NULL;
 
 	sc = device_get_softc(dev);
 	domain = pcib_get_domain(dev);
@@ -4009,7 +4012,7 @@ pci_rescan_method(device_t dev)
 				goto next_device;
 		}
 
-		device_probe_and_attach(dev);
+		device_probe_and_attach(devlist[i]);
 	next_device:;
 	}
 
