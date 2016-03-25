@@ -894,12 +894,10 @@ pcib_pcie_intr(void *arg)
 		device_printf(dev, "Command Completed\n");
 	if (status & PCIEM_SLOT_STA_DLLSC) {
 		link_status = pcie_read_config(dev, PCIER_LINK_STA, 2);
-		device_printf(dev, "Data Link Layer State Changed to %s\n"
+		device_printf(dev, "Data Link Layer State Changed to %s\n",
 		    link_status & PCIEM_LINK_STA_DL_ACTIVE ? "active" :
 		    "inactive");
-
-	/* Handle bits in changed. */
-	device_printf(dev, "bits %#x changed in slot status\n", changed);
+	}
 }
 
 static int
