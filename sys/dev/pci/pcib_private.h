@@ -125,7 +125,6 @@ struct pcib_softc
 #endif
     uint16_t	bridgectl;	/* bridge control register */
     uint32_t	pcie_slot_cap;
-    uint16_t	pcie_slot_status;
     struct resource *pcie_irq;
     void	*pcie_ihand;
 };

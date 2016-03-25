@@ -870,17 +870,36 @@ pcib_pcie_intr(void *arg)
 {
 	struct pcib_softc *sc;
 	device_t dev;
-	uint16_t changed, status;
+	uint16_t status, link_status;
 
 	sc = arg;
 	dev = sc->dev;
 	status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
-	changed = sc->pcie_slot_status;
+
+	/* Clear the events just reported. */
+	pcie_write_config(dev, PCIER_SLOT_STA, status, 2);
+	
+	if (status & PCIEM_SLOT_STA_ABP)
+		/* TODO: Detach devices, power down slot, turn off power indicator */
+		device_printf(dev, "Attention Button Pressed\n");
+	if (status & PCIEM_SLOT_STA_PFD)
+		device_printf(dev, "Power Fault Detected\n");
+	if (status & PCIEM_SLOT_STA_MRLSC)
+		device_printf(dev, "MRL Sensor Changed to %s\n",
+		    status & PCIEM_SLOT_STA_MRLSS ? "open" : "closed");
+	if (status & PCIEM_SLOT_STA_PDC)
+		device_printf(dev, "Present Detect Changed to %s\n",
+		    status & PCIEM_SLOT_STA_PDS ? "card present" : "empty");
+	if (status & PCIEM_SLOT_STA_CC)
+		device_printf(dev, "Command Completed\n");
+	if (status & PCIEM_SLOT_STA_DLLSC) {
+		link_status = pcie_read_config(dev, PCIER_LINK_STA, 2);
+		device_printf(dev, "Data Link Layer State Changed to %s\n"
+		    link_status & PCIEM_LINK_STA_DL_ACTIVE ? "active" :
+		    "inactive");
 
 	/* Handle bits in changed. */
 	device_printf(dev, "bits %#x changed in slot status\n", changed);
-
-	sc->pcie_slot_status = status;
 }
 
 static int
@@ -962,8 +981,6 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)
 		ctl |= PCIEM_SLOT_CTL_CCIE;
 	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
-
-	sc->pcie_slot_status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
 }
 
 /*
