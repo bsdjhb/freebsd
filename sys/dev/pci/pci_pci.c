@@ -840,6 +840,133 @@ pcib_set_mem_decode(struct pcib_softc *sc)
 #endif
 
 /*
+ * PCI-express HotPlug support.
+ */
+static void
+pcib_probe_hotplug(struct pcib_softc *sc)
+{
+	device_t dev;
+
+	dev = sc->dev;
+	if (pci_find_cap(dev, PCIY_EXPRESS, NULL) != 0)
+		return;
+
+	if (!(pcie_read_config(dev, PCIER_FLAGS, 2) & PCIEM_FLAGS_SLOT))
+		return;
+
+	sc->pcie_slot_cap = pcie_read_config(dev, PCIER_SLOT_CAP, 4);
+
+	/*
+	 * Require HotPlug on the slot and Data Link Layer Active
+	 * reporting on the link.
+	 */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_HPC &&
+	    pcie_read_config(dev, PCIER_SLOT_CAP, 4) & PCIEM_LINK_CAP_DL_ACTIVE)
+		sc->flags |= PCIB_HOTPLUG;
+}
+
+static void
+pcib_pcie_intr(void *arg)
+{
+	struct pcib_softc *sc;
+	device_t dev;
+	uint16_t changed, status;
+
+	sc = arg;
+	dev = sc->dev;
+	status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+	changed = sc->pcie_slot_status;
+
+	/* Handle bits in changed. */
+	device_printf(dev, "bits %#x changed in slot status\n", changed);
+
+	sc->pcie_slot_status = status;
+}
+
+static int
+pcib_alloc_pcie_irq(struct pcib_softc *sc)
+{
+	device_t dev;
+	int count, error, rid;
+
+	rid = -1;
+	dev = sc->dev;
+
+	/*
+	 * For simplicity, only use MSI-X if there is a single message.
+	 * To support a device with multiple messages we would have to
+	 * use remap intr if the MSI number is not 0.
+	 */
+	count = pci_msix_count(dev);
+	if (count == 1) {
+		count = 1;
+		error = pci_alloc_msix(dev, &count);
+		if (error == 0)
+			rid = 1;
+	}
+
+	if (rid < 0 && pci_msi_count(dev) > 0) {
+		count = 1;
+		error = pci_alloc_msi(dev, &count);
+		if (error == 0)
+			rid = 1;
+	}
+
+	if (rid < 0)
+		rid = 0;
+
+	sc->pcie_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	    RF_ACTIVE);
+	if (sc->pcie_irq == NULL) {
+		device_printf(dev,
+		    "Failed to allocate interrupt for PCI-e events\n");
+		if (rid > 0)
+			pci_release_msi(dev);
+		return (ENXIO);
+	}
+
+	error = bus_setup_intr(dev, sc->pcie_irq, INTR_TYPE_MISC,
+	    NULL, pcib_pcie_intr, sc, &sc->pcie_ihand);
+	if (error) {
+		device_printf(dev, "Failed to setup PCI-e interrupt handler\n");
+		bus_release_resource(dev, SYS_RES_IRQ, rid, sc->pcie_irq);
+		if (rid > 0)
+			pci_release_msi(dev);
+		return (error);
+	}
+	return (0);
+}
+
+static void
+pcib_setup_hotplug(struct pcib_softc *sc)
+{
+	device_t dev;
+	uint16_t ctl;
+
+	dev = sc->dev;
+
+	/* Allocate IRQ. */
+	if (pcib_alloc_pcie_irq(sc) != 0)
+		return;
+
+	/* Enable HotPlug events. */
+	ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
+	ctl |= PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_HPIE |
+	    PCIEM_SLOT_CTL_DLLSCE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_APB)
+		ctl |= PCIEM_SLOT_CTL_ABPE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_PCP)
+		ctl |= PCIEM_SLOT_CTL_PFDE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP)
+		ctl |= PCIEM_SLOT_CTL_MRLSCE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)
+		ctl |= PCIEM_SLOT_CTL_CCIE;
+	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+
+	sc->pcie_slot_status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+}
+
+/*
  * Get current bridge configuration.
  */
 static void
@@ -1017,12 +1144,15 @@ pcib_attach_common(device_t dev)
       pci_read_config(dev, PCIR_PROGIF, 1) == PCIP_BRIDGE_PCI_SUBTRACTIVE)
 	sc->flags |= PCIB_SUBTRACTIVE;
 
+    pcib_probe_hotplug(sc);
 #ifdef NEW_PCIB
 #ifdef PCI_RES_BUS
     pcib_setup_secbus(dev, &sc->bus, 1);
 #endif
     pcib_probe_windows(sc);
 #endif
+    if (sc->flags & PCIB_HOTPLUG)
+	    pcib_setup_hotplug(sc);
     if (bootverbose) {
 	device_printf(dev, "  domain            %d\n", sc->domain);
 	device_printf(dev, "  secondary bus     %d\n", sc->bus.sec);

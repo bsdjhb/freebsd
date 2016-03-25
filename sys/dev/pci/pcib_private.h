@@ -107,6 +107,7 @@ struct pcib_softc
 #define	PCIB_DISABLE_MSI	0x2
 #define	PCIB_DISABLE_MSIX	0x4
 #define	PCIB_ENABLE_ARI		0x8
+#define	PCIB_HOTPLUG		0x10
     u_int	domain;		/* domain number */
     u_int	pribus;		/* primary bus number */
     struct pcib_secbus bus;	/* secondary bus numbers */
@@ -123,6 +124,10 @@ struct pcib_softc
     uint32_t	iolimit;	/* topmost address of port window */
 #endif
     uint16_t	bridgectl;	/* bridge control register */
+    uint32_t	pcie_slot_cap;
+    uint16_t	pcie_slot_status;
+    struct resource *pcie_irq;
+    void	*pcie_ihand;
 };
 
 #define	PCIB_SUPPORTED_ARI_VER	1
