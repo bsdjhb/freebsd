@@ -3993,7 +3993,7 @@ pci_rescan_method(device_t dev)
 	for (i = 0; i < devcount; i++) {
 		if (unchanged[i] != NULL)
 			continue;
-		pci_delete_child(dev, devlist[i]);
+		device_delete_child(dev, devlist[i]);
 	}
 
 	free(devlist, M_TEMP);
