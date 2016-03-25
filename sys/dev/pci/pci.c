@@ -4155,7 +4155,10 @@ pci_detach(device_t dev)
 	if (error)
 		return (error);
 	sc = device_get_softc(dev);
-	return (bus_release_resource(dev, PCI_RES_BUS, 0, sc->sc_bus));
+	error = bus_release_resource(dev, PCI_RES_BUS, 0, sc->sc_bus);
+	if (error)
+		return (error);
+	return (device_delete_children(dev));
 }
 #endif
 
