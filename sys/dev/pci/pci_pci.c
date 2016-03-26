@@ -993,6 +993,11 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask,
 {
 	bool card_inserted;
 
+	/* Clear DETACHING if Present Detect has cleared. */
+	if ((sc->pcie_slot_sta & (PCIEM_SLOT_STA_PDC | PCIEM_SLOT_STA_PDS)) ==
+	    PCIEM_SLOT_STA_PDC)
+		sc->flags &= ~PCIB_DETACHING;
+
 	card_inserted = pcib_hotplug_inserted(sc);
 
 	/* Turn the power indicator on if a card is inserted. */
