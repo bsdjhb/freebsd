@@ -5375,15 +5375,24 @@ devctl2_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int fflag,
 		}
 		error = BUS_RESCAN(dev);
 		break;
-	case DEV_DELETE:
+	case DEV_DELETE: {
+		device_t parent;
+
+		parent = device_get_parent(dev);
+		if (parent == NULL) {
+			error = EINVAL;
+			break;
+		}
 		if (!(req->dr_flags & DEVF_FORCE_DELETE)) {
 			if (bus_child_present(dev) != 0) {
 				error = EBUSY;
 				break;
 			}
 		}
-		error = device_delete_child(dev);
+		
+		error = device_delete_child(parent, dev);
 		break;
+	}
 	}
 	mtx_unlock(&Giant);
 	return (error);
