@@ -895,8 +895,9 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		if (new != ctl) {
 			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
 			sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
-			callout_reset(&sc->pcie_cc_timer, hz,
-			    pcib_pcie_cc_timeout, sc);
+			if (!cold)
+				callout_reset(&sc->pcie_cc_timer, hz,
+				    pcib_pcie_cc_timeout, sc);
 		}
 	}
 }
@@ -917,13 +918,17 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
 		new = ctl & ~sc->pcie_pending_link_ctl_mask;
 		new |= sc->pcie_pending_link_ctl_val;
-		if (new != ctl)
+		if (new != ctl) {
 			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
-		else
+			if (!cold)
+				callout_reset(&sc->pcie_cc_timer, hz,
+				    pcib_pcie_cc_timeout, sc);
+		} else
 			sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 		sc->pcie_pending_link_ctl_mask = 0;
 		sc->pcie_pending_link_ctl_val = 0;
 	} else {
+		callout_stop(&sc->pcie_cc_timer);
 		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 	}
 }
