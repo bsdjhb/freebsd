@@ -112,6 +112,8 @@ struct pcib_softc
 #define	PCIB_ENABLE_ARI		0x8
 #define	PCIB_HOTPLUG		0x10
 #define	PCIB_HOTPLUG_CMD_PENDING 0x20
+#define	PCIB_DETACH_PENDING	0x40
+#define	PCIB_DETACHING		0x80
     u_int	domain;		/* domain number */
     u_int	pribus;		/* primary bus number */
     struct pcib_secbus bus;	/* secondary bus numbers */
@@ -137,6 +139,7 @@ struct pcib_softc
     struct resource *pcie_irq;
     void	*pcie_ihand;
     struct task	pcie_hp_task;
+    struct callout pcie_ab_timer;
     struct callout pcie_dll_timer;
 };
 

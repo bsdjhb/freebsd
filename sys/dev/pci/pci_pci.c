@@ -68,6 +68,7 @@ static int		pcib_try_enable_ari(device_t pcib, device_t dev);
 static int		pcib_ari_enabled(device_t pcib);
 static void		pcib_ari_decode_rid(device_t pcib, uint16_t rid,
 			    int *bus, int *slot, int *func);
+static void		pcib_pcie_ab_timeout(void *arg);
 static void		pcib_pcie_dll_timeout(void *arg);
 
 static device_method_t pcib_methods[] = {
@@ -934,6 +935,10 @@ static bool
 pcib_hotplug_inserted(struct pcib_softc *sc)
 {
 
+	/* Pretend the card isn't present if a detach is forced. */
+	if (sc->flags & PCIB_DETACHING)
+		return (false);
+
 	/* Card must be present in the slot. */
 	if ((sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS) == 0)
 		return (false);
@@ -979,12 +984,12 @@ pcib_hotplug_present(struct pcib_softc *sc)
 			return (0);
 	}
 
-	/* TODO: Check software state such as pending transitions. */
 	return (-1);
 }
 
 static void
-pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
+pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask,
+    bool schedule_task)
 {
 	bool card_inserted;
 
@@ -995,6 +1000,8 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		mask |= PCIEM_SLOT_CTL_PIC;
 		if (card_inserted)
 			val |= PCIEM_SLOT_CTL_PI_ON;
+		else if (sc->flags & PCIB_DETACH_PENDING)
+			val |= PCIEM_SLOT_CTL_PI_BLINK;
 		else
 			val |= PCIEM_SLOT_CTL_PI_OFF;
 	}
@@ -1038,6 +1045,15 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 	}
 
 	pcib_pcie_hotplug_command(sc, val, mask);
+
+	/*
+	 * During attach the child "pci" device is added sychronously;
+	 * otherwise, the task is scheduled to manage the child
+	 * device.
+	 */
+	if (schedule_task &&
+	    (pcib_hotplug_present(sc) != 0) != (sc->child != NULL))
+		taskqueue_enqueue(taskqueue_thread, &sc->pcie_hp_task);
 }
 
 static void
@@ -1053,16 +1069,20 @@ pcib_pcie_intr(void *arg)
 	/* Clear the events just reported. */
 	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
 
-	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_ABP)
-		/*
-		 * TODO:
-		 * - log button press and result (initiate or cancel)
-		 * - blink power indicator for 5 seconds
-		 * - detach devices
-		 * - power down slot
-		 * - turn off power indicator
-		 */
-		device_printf(dev, "Attention Button Pressed\n");
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_ABP) {
+		if (sc->flags & PCIB_DETACH_PENDING) {	
+			device_printf(dev,
+			    "Attention Button Pressed: Detach Cancelled\n");
+			sc->flags &= ~PCIB_DETACH_PENDING;
+			callout_stop(&sc->pcie_ab_timer);
+		} else {
+			device_printf(dev,
+		    "Attention Button Pressed: Detaching in 5 seconds\n");
+			sc->flags |= PCIB_DETACH_PENDING;
+			callout_reset(&sc->pcie_ab_timer, 5 * hz,
+			    pcib_pcie_ab_timeout, sc);
+		}
+	}
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PFD)
 		device_printf(dev, "Power Fault Detected\n");
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSC)
@@ -1082,10 +1102,7 @@ pcib_pcie_intr(void *arg)
 		    "inactive");
 	}
 
-	pcib_pcie_hotplug_update(sc, 0, 0);
-
-	if ((pcib_hotplug_present(sc) != 0) != (sc->child != NULL))
-		taskqueue_enqueue(taskqueue_thread, &sc->pcie_hp_task);
+	pcib_pcie_hotplug_update(sc, 0, 0, true);
 }
 
 static void
@@ -1097,7 +1114,7 @@ pcib_pcie_hotplug_task(void *context, int pending)
 	sc = context;
 	mtx_lock(&Giant);
 	dev = sc->dev;
-	if (pcib_hotplug_present(sc)) {
+	if (pcib_hotplug_present(sc) != 0) {
 		if (sc->child == NULL) {
 			sc->child = device_add_child(dev, "pci", -1);
 			bus_generic_attach(dev);
@@ -1109,6 +1126,22 @@ pcib_pcie_hotplug_task(void *context, int pending)
 		}
 	}
 	mtx_unlock(&Giant);
+}
+
+static void
+pcib_pcie_ab_timeout(void *arg)
+{
+	struct pcib_softc *sc;
+	device_t dev;
+
+	sc = arg;
+	dev = sc->dev;
+	mtx_assert(&Giant, MA_OWNED);
+	if (sc->flags & PCIB_DETACH_PENDING) {
+		sc->flags |= PCIB_DETACHING;
+		sc->flags &= ~PCIB_DETACH_PENDING;
+		pcib_pcie_hotplug_update(sc, 0, 0, true);
+	}
 }
 
 static void
@@ -1125,7 +1158,7 @@ pcib_pcie_dll_timeout(void *arg)
 	if (!(sta & PCIEM_LINK_STA_DL_ACTIVE)) {
 		device_printf(dev,
 		    "Timed out waiting for Data Link Layer Active\n");
-		/* TODO: force power down */
+		pcib_pcie_hotplug_update(sc, 0, 0, true);
 	}
 
 	if (sta != sc->pcie_link_sta) {
@@ -1196,6 +1229,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	uint16_t mask, val;
 
 	dev = sc->dev;
+	callout_init(&sc->pcie_ab_timer, 0);
 	callout_init(&sc->pcie_dll_timer, 0);
 	TASK_INIT(&sc->pcie_hp_task, 0, pcib_pcie_hotplug_task, sc);
 
@@ -1228,7 +1262,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 		val |= PCIEM_SLOT_CTL_AI_OFF;
 	}
 
-	pcib_pcie_hotplug_update(sc, val, mask);
+	pcib_pcie_hotplug_update(sc, val, mask, false);
 }
 
 /*
