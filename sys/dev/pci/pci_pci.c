@@ -918,6 +918,7 @@ pcib_pcie_intr(void *arg)
 	/*
 	 * TODO
 	 * - if the present state changes, trigger PCI bus rescan
+	 * - if we need to wait for DLL, start a timer
 	 */
 }
 
