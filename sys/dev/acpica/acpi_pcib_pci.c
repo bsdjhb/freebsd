@@ -122,11 +122,7 @@ acpi_pcib_pci_attach(device_t dev)
     sc->ap_handle = acpi_get_handle(dev);
     acpi_pcib_fetch_prt(dev, &sc->ap_prt);
 
-    if (device_add_child(dev, "pci", -1) == NULL) {
-	device_printf(device_get_parent(dev), "couldn't attach pci bus\n");
-	return (ENXIO);
-    }
-    return (bus_generic_attach(dev));
+    return (pcib_attach_child(dev));
 }
 
 static int
