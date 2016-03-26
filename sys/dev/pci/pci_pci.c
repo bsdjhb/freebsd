@@ -867,34 +867,58 @@ pcib_pcie_intr(void *arg)
 {
 	struct pcib_softc *sc;
 	device_t dev;
-	uint16_t status, link_status;
 
 	sc = arg;
 	dev = sc->dev;
-	status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+	sc->pcie_slot_sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
 
 	/* Clear the events just reported. */
-	pcie_write_config(dev, PCIER_SLOT_STA, status, 2);
-	
-	if (status & PCIEM_SLOT_STA_ABP)
-		/* TODO: Detach devices, power down slot, turn off power indicator */
+	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
+
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_ABP)
+		/*
+		 * TODO:
+		 * - log button press and result (initiate or cancel)
+		 * - blink power indicator for 5 seconds
+		 * - detach devices
+		 * - power down slot
+		 * - turn off power indicator
+		 */
 		device_printf(dev, "Attention Button Pressed\n");
-	if (status & PCIEM_SLOT_STA_PFD)
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PFD)
+		/*
+		 * TODO:
+		 * - log condition
+		 * - detach devices
+		 * - power down slot
+		 * - turn off power indicator
+		 */
 		device_printf(dev, "Power Fault Detected\n");
-	if (status & PCIEM_SLOT_STA_MRLSC)
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSC)
 		device_printf(dev, "MRL Sensor Changed to %s\n",
-		    status & PCIEM_SLOT_STA_MRLSS ? "open" : "closed");
-	if (status & PCIEM_SLOT_STA_PDC)
+		    sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS ? "open" :
+		    "closed");
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC)
 		device_printf(dev, "Present Detect Changed to %s\n",
-		    status & PCIEM_SLOT_STA_PDS ? "card present" : "empty");
-	if (status & PCIEM_SLOT_STA_CC)
+		    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS ? "card present" :
+		    "empty");
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_CC)
+		/*
+		 * TODO
+		 * - clear pending status if using command completions
+		 */
 		device_printf(dev, "Command Completed\n");
-	if (status & PCIEM_SLOT_STA_DLLSC) {
-		link_status = pcie_read_config(dev, PCIER_LINK_STA, 2);
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_DLLSC) {
+		sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
 		device_printf(dev, "Data Link Layer State Changed to %s\n",
-		    link_status & PCIEM_LINK_STA_DL_ACTIVE ? "active" :
+		    sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE ? "active" :
 		    "inactive");
 	}
+
+	/*
+	 * TODO
+	 * - if the present state changes, trigger PCI bus rescan
+	 */
 }
 
 static int
@@ -964,6 +988,9 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	if (pcib_alloc_pcie_irq(sc) != 0)
 		return;
 
+	sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
+	sc->pcie_slot_sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+
 	/* Enable HotPlug events. */
 	ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
 	ctl |= PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_HPIE |
@@ -977,27 +1004,41 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)
 		ctl |= PCIEM_SLOT_CTL_CCIE;
 	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+
+	/* TODO: Turn on power indicator if needed, turn off attention. */
 }
 
 static int
 pcib_hotplug_present(struct pcib_softc *sc)
 {
 	device_t dev;
-	uint16_t status;
 
 	dev = sc->dev;
-	status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
-	if ((status & PCIEM_SLOT_STA_PDS) == 0)
+
+	/* Card must be present in the slot. */
+	if ((sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS) == 0)
 		return (0);
+
+	/* A power fault implicitly turns off power to the slot. */
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PFD)
+		return (0);
+
+	/* If the MRL is disengaged, the slot is powered off. */
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP &&
-	    (status & PCIEM_SLOT_STA_MRLSS) != 0)
+	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS) != 0)
 		return (0);
+
+	/*
+	 * Require the Electromechanical Interlock to be engaged if
+	 * present.
+	 */
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP &&
-	    (status & PCIEM_SLOT_STA_EIS) == 0)
+	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS) == 0)
 		return (0);
+
+	/* Require the Data Link Layer to be active. */
 	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE) {
-		status = pcie_read_config(dev, PCIER_LINK_STA, 2);
-		if (!(status & PCIEM_LINK_STA_DL_ACTIVE))
+		if (!(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE))
 			return (0);
 	}
 
