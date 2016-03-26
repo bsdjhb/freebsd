@@ -904,14 +904,17 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 
 	/* XXX */
 	device_printf(dev, "Command Completed\n");
-	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+	if (!(sc->flags & PCIB_HOTPLUG_CMD_PENDING))
+		return;
+	if (sc->pcie_pending_link_ctl_mask != 0) {
 		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
 		ctl &= ~sc->pcie_pending_link_ctl_mask;
 		ctl |= sc->pcie_pending_link_ctl_val;
 		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
-		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 		sc->pcie_pending_link_ctl_mask = 0;
 		sc->pcie_pending_link_ctl_val = 0;
+	} else {
+		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 	}
 }
 
