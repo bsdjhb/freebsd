@@ -1008,9 +1008,15 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 			val |= PCIEM_SLOT_CTL_PC_OFF;
 	}
 
-	/* Enable the Electromechanical Interlock if a card is inserted. */
+	/*
+	 * If a card is inserted, enable the Electromechanical
+	 * Interlock.  If a card is not inserted (or we are in the
+	 * process of detaching), disable the Electromechanical
+	 * Interlock.
+	 */
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP) {
-		if (card_inserted & !(sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS)) {
+		if (card_inserted !=
+		    !(sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS)) {
 			mask |= PCIEM_SLOT_CTL_EIC;
 			val |= PCIEM_SLOT_CTL_EIC;
 		}
