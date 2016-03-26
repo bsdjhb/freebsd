@@ -43,6 +43,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/rman.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
+#include <sys/taskqueue.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
@@ -67,6 +68,7 @@ static int		pcib_try_enable_ari(device_t pcib, device_t dev);
 static int		pcib_ari_enabled(device_t pcib);
 static void		pcib_ari_decode_rid(device_t pcib, uint16_t rid,
 			    int *bus, int *slot, int *func);
+static void		pcib_pcie_dll_timeout(void *arg);
 
 static device_method_t pcib_methods[] = {
     /* Device interface */
@@ -948,6 +950,39 @@ pcib_hotplug_inserted(struct pcib_softc *sc)
 	return (true);
 }
 
+/*
+ * Returns -1 if the card is fully inserted, powered, and ready for
+ * access.  Otherwise, returns 0.
+ */
+static int
+pcib_hotplug_present(struct pcib_softc *sc)
+{
+	device_t dev;
+
+	dev = sc->dev;
+
+	/* Card must be inserted. */
+	if (!pcib_hotplug_inserted(sc))
+		return (0);
+
+	/*
+	 * Require the Electromechanical Interlock to be engaged if
+	 * present.
+	 */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP &&
+	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS) == 0)
+		return (0);
+
+	/* Require the Data Link Layer to be active. */
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE) {
+		if (!(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE))
+			return (0);
+	}
+
+	/* TODO: Check software state such as pending transitions. */
+	return (-1);
+}
+
 static void
 pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 {
@@ -981,7 +1016,20 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		}
 	}
 
-	/* TODO: Start a timer if needed to wait for DLL active */
+	/*
+	 * Start a timer to see if the Data Link Layer times out.
+	 * Note that we only start the timer if Presence Detect
+	 * changed on this interrupt.
+	 */
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE && card_inserted &&
+	    !(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE) &&
+	    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC) {
+		if (cold)
+			device_printf(sc->dev, "Data Link Layer inactive\n");
+		else
+			callout_reset(&sc->pcie_dll_timer, hz,
+			    pcib_pcie_dll_timeout, sc);
+	}
 
 	pcib_pcie_hotplug_command(sc, val, mask);
 }
@@ -1038,20 +1086,47 @@ static void
 pcib_pcie_hotplug_task(void *context, int pending)
 {
 	struct pcib_softc *sc;
+	device_t dev;
 
+	sc = context;
 	mtx_lock(&Giant);
+	dev = sc->dev;
 	if (pcib_hotplug_present(sc)) {
 		if (sc->child == NULL) {
 			sc->child = device_add_child(dev, "pci", -1);
-			bus_generic_attach(sc->dev);
+			bus_generic_attach(dev);
 		}
 	} else {
 		if (sc->child != NULL) {
-			if (device_delete_child(sc->child) == 0)
+			if (device_delete_child(dev, sc->child) == 0)
 				sc->child = NULL;
 		}
 	}
 	mtx_unlock(&Giant);
+}
+
+static void
+pcib_pcie_dll_timeout(void *arg)
+{
+	struct pcib_softc *sc;
+	device_t dev;
+	uint16_t sta;
+
+	sc = arg;
+	dev = sc->dev;
+	mtx_assert(&Giant, MA_OWNED);
+	sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
+	if (!(sta & PCIEM_LINK_STA_DL_ACTIVE)) {
+		device_printf(dev,
+		    "Timed out waiting for Data Link Layer Active\n");
+		/* TODO: force power down */
+	}
+
+	if (sta != sc->pcie_link_sta) {
+		device_printf(dev,
+		    "Missed HotPlug interrupt waiting for DLL Active\n");
+		pcib_pcie_intr(sc);
+	}
 }
 
 static int
@@ -1115,7 +1190,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	uint16_t mask, val;
 
 	dev = sc->dev;
-	callout_init(&sc->pcie_hp_timer, 0);
+	callout_init(&sc->pcie_dll_timer, 0);
 	TASK_INIT(&sc->pcie_hp_task, 0, pcib_pcie_hotplug_task, sc);
 
 	/* Allocate IRQ. */
@@ -1148,35 +1223,6 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	}
 
 	pcib_pcie_hotplug_update(sc, val, mask);
-}
-
-static int
-pcib_hotplug_present(struct pcib_softc *sc)
-{
-	device_t dev;
-
-	dev = sc->dev;
-
-	/* Card must be inserted. */
-	if (!pcib_hotplug_inserted(sc))
-		return (0);
-
-	/*
-	 * Require the Electromechanical Interlock to be engaged if
-	 * present.
-	 */
-	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP &&
-	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS) == 0)
-		return (0);
-
-	/* Require the Data Link Layer to be active. */
-	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE) {
-		if (!(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE))
-			return (0);
-	}
-
-	/* TODO: Check software state such as pending transitions. */
-	return (-1);
 }
 
 /*

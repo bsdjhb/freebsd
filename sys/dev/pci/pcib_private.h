@@ -137,7 +137,7 @@ struct pcib_softc
     struct resource *pcie_irq;
     void	*pcie_ihand;
     struct task	pcie_hp_task;
-    struct callout pcie_hp_timer;
+    struct callout pcie_dll_timer;
 };
 
 #define	PCIB_SUPPORTED_ARI_VER	1
