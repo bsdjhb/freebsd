@@ -871,14 +871,14 @@ static void
 pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 {
 	device_t dev;
-	uint16_t ctl;
+	uint16_t ctl, new;
 
 	dev = sc->dev;
 	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)) {
 		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
-		ctl &= ~mask;
-		ctl |= val;
-		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+		new = (ctl & ~mask) | val;
+		if (new != ctl)
+			pcie_write_config(dev, PCIER_LINK_CTL, new, 2);
 	}
 
 	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
@@ -887,10 +887,12 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		sc->pcie_pending_link_ctl_mask |= mask;
 	} else {
 		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
-		ctl &= ~mask;
-		ctl |= val;
-		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
-		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
+		new = (ctl & ~mask) | val;
+		if (new != ctl) {
+			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+			sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
+			/* XXX: Need to start a 1 second timer. */
+		}
 	}
 }
 
@@ -898,7 +900,7 @@ static void
 pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 {
 	device_t dev;
-	uint16_t ctl;
+	uint16_t ctl, new;
 
 	dev = sc->dev;
 
@@ -908,9 +910,12 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 		return;
 	if (sc->pcie_pending_link_ctl_mask != 0) {
 		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
-		ctl &= ~sc->pcie_pending_link_ctl_mask;
-		ctl |= sc->pcie_pending_link_ctl_val;
-		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+		new = ctl & ~sc->pcie_pending_link_ctl_mask;
+		new |= sc->pcie_pending_link_ctl_val;
+		if (new != ctl)
+			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+		else
+			sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 		sc->pcie_pending_link_ctl_mask = 0;
 		sc->pcie_pending_link_ctl_val = 0;
 	} else {
@@ -1028,11 +1033,37 @@ pcib_alloc_pcie_irq(struct pcib_softc *sc)
 	return (0);
 }
 
+/*
+ * Returns true if a card is fully inserted from the user's
+ * perspective.  It may not yet be ready for access, but the driver
+ * can now start enabling access if necessary.
+ */
+static bool
+pcib_hotplug_inserted(struct pcib_softc *sc)
+{
+
+	/* Card must be present in the slot. */
+	if ((sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS) == 0)
+		return (false);
+
+	/* A power fault implicitly turns off power to the slot. */
+	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PFD)
+		return (false);
+
+	/* If the MRL is disengaged, the slot is powered off. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP &&
+	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS) != 0)
+		return (false);
+
+	return (true);
+}
+
 static void
 pcib_setup_hotplug(struct pcib_softc *sc)
 {
 	device_t dev;
-	uint16_t ctl;
+	uint16_t mask, val;
+	bool card_inserted;
 
 	dev = sc->dev;
 	callout_init(&sc->pcie_hp_timer, 0);
@@ -1045,20 +1076,56 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	sc->pcie_slot_sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
 
 	/* Enable HotPlug events. */
-	ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
-	ctl |= PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_HPIE |
-	    PCIEM_SLOT_CTL_DLLSCE;
+	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
+	    PCIEM_SLOT_CTL_CCIE | PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_MRLSCE |
+	    PCIEM_SLOT_CTL_PFDE | PCIEM_SLOT_CTL_ABPE;
+	val = PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_HPIE;
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_APB)
-		ctl |= PCIEM_SLOT_CTL_ABPE;
+		val |= PCIEM_SLOT_CTL_ABPE;
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_PCP)
-		ctl |= PCIEM_SLOT_CTL_PFDE;
+		val |= PCIEM_SLOT_CTL_PFDE;
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP)
-		ctl |= PCIEM_SLOT_CTL_MRLSCE;
+		val |= PCIEM_SLOT_CTL_MRLSCE;
 	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS))
-		ctl |= PCIEM_SLOT_CTL_CCIE;
-	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+		val |= PCIEM_SLOT_CTL_CCIE;
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE)
+		val |= PCIEM_SLOT_CTL_DLLSCE;
 
-	/* TODO: Turn on power indicator if needed, turn off attention. */
+	/* Turn the attention indicator off. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_AIP) {
+		mask |= PCIEM_SLOT_CTL_AIC;
+		val |= PCIEM_SLOT_CTL_AI_OFF;
+	}
+
+	card_inserted = pcib_hotplug_inserted(sc);
+
+	/* Turn the power indicator on if a card is inserted. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_PIP) {
+		mask |= PCIEM_SLOT_CTL_PIC;
+		if (card_inserted)
+			val |= PCIEM_SLOT_CTL_PI_ON;
+		else
+			val |= PCIEM_SLOT_CTL_PI_OFF;
+	}
+
+	/* Turn the power on via the Power Controller if a card is inserted. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_PCP) {
+		mask |= PCIEM_SLOT_CTL_PCC;
+		if (card_inserted)
+			val |= PCIEM_SLOT_CTL_PC_ON;
+		else
+			val |= PCIEM_SLOT_CTL_PC_OFF;
+	}
+
+	/* Enable the Electromechanical Interlock if a card is inserted. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP) {
+		if (card_inserted & !(sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS)) {
+			mask |= PCIEM_SLOT_CTL_EIC;
+			val |= PCIEM_SLOT_CTL_EIC;
+		}
+	}
+	
+	pcib_pcie_hotplug_command(sc, val, mask);
 }
 
 static int
@@ -1068,18 +1135,8 @@ pcib_hotplug_present(struct pcib_softc *sc)
 
 	dev = sc->dev;
 
-	/* Card must be present in the slot. */
-	if ((sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS) == 0)
-		return (0);
-
-	/* A power fault implicitly turns off power to the slot. */
-	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PFD)
-		return (0);
-
-	/* If the MRL is disengaged, the slot is powered off. */
-	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP &&
-	    (sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS) != 0)
-		return (0);
+	/* Card must be inserted. */
+	if (!pcib_hotplug_inserted(sc))
 
 	/*
 	 * Require the Electromechanical Interlock to be engaged if
