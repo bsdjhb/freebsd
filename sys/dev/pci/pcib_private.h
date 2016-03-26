@@ -33,6 +33,8 @@
 #ifndef __PCIB_PRIVATE_H__
 #define	__PCIB_PRIVATE_H__
 
+#include <sys/_callout.h>
+
 #ifdef NEW_PCIB
 /*
  * Data structure and routines that Host to PCI bridge drivers can use
