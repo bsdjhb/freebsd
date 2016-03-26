@@ -78,6 +78,7 @@ static device_method_t pcib_methods[] = {
     DEVMETHOD(device_resume,		pcib_resume),
 
     /* Bus interface */
+    DEVMETHOD(bus_child_present,	pcib_child_present),
     DEVMETHOD(bus_read_ivar,		pcib_read_ivar),
     DEVMETHOD(bus_write_ivar,		pcib_write_ivar),
     DEVMETHOD(bus_alloc_resource,	pcib_alloc_resource),
@@ -854,14 +855,10 @@ pcib_probe_hotplug(struct pcib_softc *sc)
 	if (!(pcie_read_config(dev, PCIER_FLAGS, 2) & PCIEM_FLAGS_SLOT))
 		return;
 
+	sc->pcie_link_cap = pcie_read_config(dev, PCIER_LINK_CAP, 4);
 	sc->pcie_slot_cap = pcie_read_config(dev, PCIER_SLOT_CAP, 4);
 
-	/*
-	 * Require HotPlug on the slot and Data Link Layer Active
-	 * reporting on the link.
-	 */
-	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_HPC &&
-	    pcie_read_config(dev, PCIER_SLOT_CAP, 4) & PCIEM_LINK_CAP_DL_ACTIVE)
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_HPC)
 		sc->flags |= PCIB_HOTPLUG;
 }
 
@@ -961,6 +958,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	uint16_t ctl;
 
 	dev = sc->dev;
+	callout_init(&sc->pcie_hp_timer, 0);
 
 	/* Allocate IRQ. */
 	if (pcib_alloc_pcie_irq(sc) != 0)
@@ -979,6 +977,32 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)
 		ctl |= PCIEM_SLOT_CTL_CCIE;
 	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+}
+
+static int
+pcib_hotplug_present(struct pcib_softc *sc)
+{
+	device_t dev;
+	uint16_t status;
+
+	dev = sc->dev;
+	status = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+	if ((status & PCIEM_SLOT_STA_PDS) == 0)
+		return (0);
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP &&
+	    (status & PCIEM_SLOT_STA_MRLSS) != 0)
+		return (0);
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP &&
+	    (status & PCIEM_SLOT_STA_EIS) == 0)
+		return (0);
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE) {
+		status = pcie_read_config(dev, PCIER_LINK_STA, 2);
+		if (!(status & PCIEM_LINK_STA_DL_ACTIVE))
+			return (0);
+	}
+
+	/* TODO: Check software state such as pending transitions. */
+	return (-1);
 }
 
 /*
@@ -1271,6 +1295,16 @@ pcib_bridge_init(device_t dev)
 	pci_write_config(dev, PCIR_PMBASEH_1, 0xffffffff, 4);
 	pci_write_config(dev, PCIR_PMLIMITL_1, 0, 2);
 	pci_write_config(dev, PCIR_PMLIMITH_1, 0, 4);
+}
+
+int
+pcib_child_present(device_t dev, device_t child)
+{
+	struct pcib_softc *sc = device_get_softc(dev);
+
+	if (sc->flags & PCIB_HOTPLUG)
+		return (pcib_hotplug_present(sc));
+	return (bus_generic_child_present(dev, child));
 }
 
 int
@@ -2054,7 +2088,19 @@ pcib_ari_decode_rid(device_t pcib, uint16_t rid, int *bus, int *slot,
 static uint32_t
 pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 {
+	struct pcib_softc *sc;
 
+	sc = device_get_softc(dev);
+	if (sc->flags & PCIB_HOTPLUG && pcib_hotplug_present(sc) == 0) {
+		switch (width) {
+		case 2:
+			return (0xffff);
+		case 1:
+			return (0xff);
+		default:
+			return (0xffffffff);
+		}
+	}
 	pcib_xlate_ari(dev, b, &s, &f);
 	return(PCIB_READ_CONFIG(device_get_parent(device_get_parent(dev)), b, s,
 	    f, reg, width));
@@ -2063,7 +2109,11 @@ pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 static void
 pcib_write_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, uint32_t val, int width)
 {
+	struct pcib_softc *sc;
 
+	sc = device_get_softc(dev);
+	if (sc->flags & PCIB_HOTPLUG && pcib_hotplug_present(sc) == 0)
+		return;
 	pcib_xlate_ari(dev, b, &s, &f);
 	PCIB_WRITE_CONFIG(device_get_parent(device_get_parent(dev)), b, s, f,
 	    reg, val, width);

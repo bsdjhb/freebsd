@@ -124,9 +124,11 @@ struct pcib_softc
     uint32_t	iolimit;	/* topmost address of port window */
 #endif
     uint16_t	bridgectl;	/* bridge control register */
+    uint32_t	pcie_link_cap;
     uint32_t	pcie_slot_cap;
     struct resource *pcie_irq;
     void	*pcie_ihand;
+    struct callout pcie_hp_timer;
 };
 
 #define	PCIB_SUPPORTED_ARI_VER	1
@@ -155,6 +157,7 @@ void		pcib_bridge_init(device_t dev);
 #ifdef NEW_PCIB
 const char	*pcib_child_name(device_t child);
 #endif
+int		pcib_child_present(device_t dev, device_t child);
 int		pcib_read_ivar(device_t dev, device_t child, int which, uintptr_t *result);
 int		pcib_write_ivar(device_t dev, device_t child, int which, uintptr_t value);
 struct resource *pcib_alloc_resource(device_t dev, device_t child, int type, int *rid, 
