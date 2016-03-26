@@ -34,6 +34,7 @@
 #define	__PCIB_PRIVATE_H__
 
 #include <sys/_callout.h>
+#include <sys/_task.h>
 
 #ifdef NEW_PCIB
 /*
@@ -135,6 +136,7 @@ struct pcib_softc
     uint16_t	pcie_pending_link_ctl_val;
     struct resource *pcie_irq;
     void	*pcie_ihand;
+    struct task	pcie_hp_task;
     struct callout pcie_hp_timer;
 };
 
