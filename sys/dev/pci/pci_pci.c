@@ -895,8 +895,8 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		if (new != ctl) {
 			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
 			sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
-			callout_reset(&sc->pcie_ab_timer, hz,
-			    pcib_pcie_ab_timeout, sc);
+			callout_reset(&sc->pcie_cc_timer, hz,
+			    pcib_pcie_cc_timeout, sc);
 		}
 	}
 }
