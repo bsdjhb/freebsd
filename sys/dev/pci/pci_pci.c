@@ -862,6 +862,59 @@ pcib_probe_hotplug(struct pcib_softc *sc)
 		sc->flags |= PCIB_HOTPLUG;
 }
 
+/*
+ * Send a HotPlug command to the slot control register.  If this slot
+ * uses command completion interrupts, these updates will be buffered
+ * while a previous command is completing.
+ */
+static void
+pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
+{
+	device_t dev;
+	uint16_t ctl;
+
+	dev = sc->dev;
+	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)) {
+		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
+		ctl &= ~mask;
+		ctl |= val;
+		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+	}
+
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+		sc->pcie_pending_link_ctl_val &= ~mask;
+		sc->pcie_pending_link_ctl_val |= val;
+		sc->pcie_pending_link_ctl_mask |= mask;
+	} else {
+		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
+		ctl &= ~mask;
+		ctl |= val;
+		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
+	}
+}
+
+static void
+pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
+{
+	device_t dev;
+	uint16_t ctl;
+
+	dev = sc->dev;
+
+	/* XXX */
+	device_printf(dev, "Command Completed\n");
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+		ctl = pcie_read_config(dev, PCIER_LINK_CTL, 2);
+		ctl &= ~sc->pcie_pending_link_ctl_mask;
+		ctl |= sc->pcie_pending_link_ctl_val;
+		pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
+		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
+		sc->pcie_pending_link_ctl_mask = 0;
+		sc->pcie_pending_link_ctl_val = 0;
+	}
+}
+
 static void
 pcib_pcie_intr(void *arg)
 {
@@ -903,11 +956,7 @@ pcib_pcie_intr(void *arg)
 		    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS ? "card present" :
 		    "empty");
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_CC)
-		/*
-		 * TODO
-		 * - clear pending status if using command completions
-		 */
-		device_printf(dev, "Command Completed\n");
+		pcib_pcie_hotplug_command_completed(sc);
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_DLLSC) {
 		sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
 		device_printf(dev, "Data Link Layer State Changed to %s\n",
@@ -1002,7 +1051,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 		ctl |= PCIEM_SLOT_CTL_PFDE;
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP)
 		ctl |= PCIEM_SLOT_CTL_MRLSCE;
-	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)
+	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS))
 		ctl |= PCIEM_SLOT_CTL_CCIE;
 	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
 
@@ -2133,7 +2182,7 @@ pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 	struct pcib_softc *sc;
 
 	sc = device_get_softc(dev);
-	if (sc->flags & PCIB_HOTPLUG && pcib_hotplug_present(sc) == 0) {
+	if (!pcib_present(sc)) {
 		switch (width) {
 		case 2:
 			return (0xffff);
@@ -2154,7 +2203,7 @@ pcib_write_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, uint32_t v
 	struct pcib_softc *sc;
 
 	sc = device_get_softc(dev);
-	if (sc->flags & PCIB_HOTPLUG && pcib_hotplug_present(sc) == 0)
+	if (!pcib_present(sc))
 		return;
 	pcib_xlate_ari(dev, b, &s, &f);
 	PCIB_WRITE_CONFIG(device_get_parent(device_get_parent(dev)), b, s, f,

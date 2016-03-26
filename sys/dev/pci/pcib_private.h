@@ -110,6 +110,7 @@ struct pcib_softc
 #define	PCIB_DISABLE_MSIX	0x4
 #define	PCIB_ENABLE_ARI		0x8
 #define	PCIB_HOTPLUG		0x10
+#define	PCIB_HOTPLUG_CMD_PENDING 0x20
     u_int	domain;		/* domain number */
     u_int	pribus;		/* primary bus number */
     struct pcib_secbus bus;	/* secondary bus numbers */
@@ -130,6 +131,8 @@ struct pcib_softc
     uint16_t	pcie_slot_sta;
     uint32_t	pcie_link_cap;
     uint32_t	pcie_slot_cap;
+    uint16_t	pcie_pending_link_ctl_mask;
+    uint16_t	pcie_pending_link_ctl_val;
     struct resource *pcie_irq;
     void	*pcie_ihand;
     struct callout pcie_hp_timer;
