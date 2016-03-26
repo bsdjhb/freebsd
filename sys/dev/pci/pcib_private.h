@@ -140,6 +140,7 @@ struct pcib_softc
     void	*pcie_ihand;
     struct task	pcie_hp_task;
     struct callout pcie_ab_timer;
+    struct callout pcie_cc_timer;
     struct callout pcie_dll_timer;
 };
 

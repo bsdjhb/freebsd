@@ -69,6 +69,7 @@ static int		pcib_ari_enabled(device_t pcib);
 static void		pcib_ari_decode_rid(device_t pcib, uint16_t rid,
 			    int *bus, int *slot, int *func);
 static void		pcib_pcie_ab_timeout(void *arg);
+static void		pcib_pcie_cc_timeout(void *arg);
 static void		pcib_pcie_dll_timeout(void *arg);
 
 static device_method_t pcib_methods[] = {
@@ -894,7 +895,8 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		if (new != ctl) {
 			pcie_write_config(dev, PCIER_LINK_CTL, ctl, 2);
 			sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
-			/* XXX: Need to start a 1 second timer. */
+			callout_reset(&sc->pcie_ab_timer, hz,
+			    pcib_pcie_ab_timeout, sc);
 		}
 	}
 }
@@ -1150,6 +1152,24 @@ pcib_pcie_ab_timeout(void *arg)
 }
 
 static void
+pcib_pcie_cc_timeout(void *arg)
+{
+	struct pcib_softc *sc;
+	device_t dev;
+
+	sc = arg;
+	dev = sc->dev;
+	mtx_assert(&Giant, MA_OWNED);
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+		device_printf(dev,
+		    "Hotplug Command Timed Out - forcing detach\n");
+		sc->flags &= ~(PCIB_HOTPLUG_CMD_PENDING | PCIB_DETACH_PENDING);
+		sc->flags |= PCIB_DETACHING;
+		pcib_pcie_hotplug_update(sc, 0, 0, true);
+	}
+}
+
+static void
 pcib_pcie_dll_timeout(void *arg)
 {
 	struct pcib_softc *sc;
@@ -1235,6 +1255,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 
 	dev = sc->dev;
 	callout_init(&sc->pcie_ab_timer, 0);
+	callout_init(&sc->pcie_cc_timer, 0);
 	callout_init(&sc->pcie_dll_timer, 0);
 	TASK_INIT(&sc->pcie_hp_task, 0, pcib_pcie_hotplug_task, sc);
 
