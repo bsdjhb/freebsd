@@ -731,4 +731,3 @@ METHOD int get_domain {
 	device_t	_child;
 	int		*_domain;
 } DEFAULT bus_generic_get_domain;
- 
