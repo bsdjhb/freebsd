@@ -3935,9 +3935,6 @@ pci_rescan_method(device_t dev)
 	int busno, domain, s, f, pcifunchigh;
 	uint8_t hdrtype;
 
-	if (bus_child_present(dev) == 0)
-		return (device_delete_children(dev));
-
 	/* No need to check for ARI on a rescan. */
 	error = device_get_children(dev, &devlist, &devcount);
 	if (error)
