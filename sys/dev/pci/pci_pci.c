@@ -878,15 +878,11 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 	uint16_t ctl, new;
 
 	dev = sc->dev;
-	/* XXX */
-	device_printf(dev, "slot_ctl : val %04x mask %04x\n", val, mask);
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS) {
 		ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
 		new = (ctl & ~mask) | val;
-		if (new != ctl) {
-			device_printf(dev, "slot_ctl: %04x -> %04x\n", ctl, new);
+		if (new != ctl)
 			pcie_write_config(dev, PCIER_SLOT_CTL, new, 2);
-		}
 	}
 
 	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
@@ -1105,12 +1101,14 @@ pcib_pcie_intr(void *arg)
 		device_printf(dev, "MRL Sensor Changed to %s\n",
 		    sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS ? "open" :
 		    "closed");
+	/* XXX */
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC)
 		device_printf(dev, "Present Detect Changed to %s\n",
 		    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS ? "card present" :
 		    "empty");
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_CC)
 		pcib_pcie_hotplug_command_completed(sc);
+	/* XXX */
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_DLLSC) {
 		sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
 		device_printf(dev, "Data Link Layer State Changed to %s\n",
