@@ -370,7 +370,11 @@ sysctl_vm_phys_free(SYSCTL_HANDLER_ARGS)
 	if (error != 0)
 		return (error);
 	sbuf_new_for_sysctl(&sbuf, NULL, 128 * vm_ndomains, req);
+#ifdef VM_NUMA_ALLOC
 	for (dom = 0; dom < vm_ndomains; dom++) {
+#else
+	for (dom = 0; dom < 1; dom++) {
+#endif
 		sbuf_printf(&sbuf,"\nDOMAIN %d:\n", dom);
 		for (flind = 0; flind < vm_nfreelists; flind++) {
 			sbuf_printf(&sbuf, "\nFREE LIST %d:\n"
@@ -701,7 +705,11 @@ vm_phys_init(void)
 	/*
 	 * Initialize the free queues.
 	 */
+#ifdef VM_NUMA_ALLOC
 	for (dom = 0; dom < vm_ndomains; dom++) {
+#else
+	for (dom = 0; dom < 1; dom++) {
+#endif
 		for (flind = 0; flind < vm_nfreelists; flind++) {
 			for (pind = 0; pind < VM_NFREEPOOL; pind++) {
 				fl = vm_phys_free_queues[dom][flind][pind];
@@ -1502,7 +1510,11 @@ DB_SHOW_COMMAND(freepages, db_show_freepages)
 	struct vm_freelist *fl;
 	int flind, oind, pind, dom;
 
+#ifdef VM_NUMA_ALLOC
 	for (dom = 0; dom < vm_ndomains; dom++) {
+#else
+	for (dom = 0; dom < 1; dom++) {
+#endif
 		db_printf("DOMAIN: %d\n", dom);
 		for (flind = 0; flind < vm_nfreelists; flind++) {
 			db_printf("FREE LIST %d:\n"
