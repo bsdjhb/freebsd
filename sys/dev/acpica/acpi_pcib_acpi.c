@@ -309,8 +309,8 @@ acpi_pcib_osc(struct acpi_hpcib_softc *sc)
 	/* Support Field: Extended PCI Config Space, MSI */
 	cap_set[1] = 0x11;
 
-	/* Control Field */
-	cap_set[2] = 0;
+	/* Control Field: PCI Express Native Hot Plug */
+	cap_set[2] = 0x1;
 
 	status = acpi_EvaluateOSC(sc->ap_handle, pci_host_bridge_uuid, 1,
 	    nitems(cap_set), cap_set, cap_set, false);
