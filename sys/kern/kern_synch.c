@@ -185,8 +185,6 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 			class->lc_unlock(lock);
 		return (0);
 	}
-	if (cold && sbt != 0)
-		panic("timed sleep before timers are working");
 	catch = priority & PCATCH;
 	pri = priority & PRIMASK;
 
@@ -278,8 +276,6 @@ msleep_spin_sbt(void *ident, struct mtx *mtx, const char *wmesg,
 
 	if (SCHEDULER_STOPPED())
 		return (0);
-	if (cold && sbt != 0)
-		panic("timed sleep before timers are working");
 
 	sleepq_lock(ident);
 	CTR5(KTR_PROC, "msleep_spin: thread %ld (pid %ld, %s) on %s (%p)",
