@@ -243,6 +243,7 @@ release_ddp_resources(struct toepcb *toep)
 		TAILQ_REMOVE(&toep->ddp_cached_pagesets, ps, link);
 		free_pageset(toep->td, ps);
 	}
+	ddp_complete_all(toep, sb, 0, 0);
 }
 
 static void
