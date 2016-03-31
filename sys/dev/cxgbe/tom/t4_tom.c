@@ -220,6 +220,7 @@ offload_socket(struct socket *so, struct toepcb *toep)
 	toep->inp = inp;
 	toep->flags |= TPF_ATTACHED;
 	in_pcbref(inp);
+	toep->so = so;
 
 	/* Add the TOE PCB to the active list */
 	mtx_lock(&td->toep_list_lock);
@@ -284,9 +285,7 @@ release_offload_resources(struct toepcb *toep)
 	 */
 	MPASS(mbufq_len(&toep->ulp_pduq) == 0);
 	MPASS(mbufq_len(&toep->ulp_pdu_reclaimq) == 0);
-
-	if (toep->ulp_mode == ULP_MODE_TCPDDP)
-		release_ddp_resources(toep);
+	MPASS(ddp_queues_empty(toep));
 
 	if (toep->l2te)
 		t4_l2t_release(toep->l2te);
@@ -390,12 +389,11 @@ final_cpl_received(struct toepcb *toep)
 	CTR6(KTR_CXGBE, "%s: tid %d, toep %p (0x%x), inp %p (0x%x)",
 	    __func__, toep->tid, toep, toep->flags, inp, inp->inp_flags);
 
-#if 0
-	/* XXX: Need to think about this more. */
 	toep->inp = NULL;
-#endif
 	toep->flags &= ~TPF_CPL_PENDING;
 	mbufq_drain(&toep->ulp_pdu_reclaimq);
+	if (toep->ulp_mode == ULP_MODE_TCPDDP)
+		release_ddp_resources(toep, inp);
 
 	if (!(toep->flags & TPF_ATTACHED))
 		release_offload_resources(toep);

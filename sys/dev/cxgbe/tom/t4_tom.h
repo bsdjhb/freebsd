@@ -329,6 +329,7 @@ int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,
 int t4_aio_queue_ddp(struct socket *, struct kaiocb *);
 void ddp_init_toep(struct toepcb *);
 void ddp_queue_toep(struct toepcb *);
+int ddp_queues_empty(struct toepcb *);
 void enable_ddp(struct adapter *, struct toepcb *toep);
 void release_ddp_resources(struct toepcb *toep);
 void handle_ddp_close(struct toepcb *, struct tcpcb *, struct sockbuf *,

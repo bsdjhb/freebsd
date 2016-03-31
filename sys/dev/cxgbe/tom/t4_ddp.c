@@ -215,7 +215,7 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 		if (!aio_clear_cancel_function(db->job))
 			aio_complete(db->job, 0, 0);
 	}
-		
+
 	if (db->ps)
 		free_pageset(td, db->ps);
 }
@@ -230,12 +230,16 @@ ddp_init_toep(struct toepcb *toep)
 }
 
 void
-release_ddp_resources(struct toepcb *toep)
+release_ddp_resources(struct toepcb *toep, struct inpcb *inp)
 {
+	struct socket *so;
+	struct sockbuf *sb;
 	struct pageset *ps;
 	int i;
 
 	/* XXX: No good way to stop the requeue task. */
+	so = inp_inpcbtosocket(inp);
+	sb = &so->so_rcv;
 	for (i = 0; i < nitems(toep->db); i++) {
 		free_ddp_buffer(toep->td, &toep->db[i]);
 	}
@@ -244,6 +248,20 @@ release_ddp_resources(struct toepcb *toep)
 		free_pageset(toep->td, ps);
 	}
 	ddp_complete_all(toep, sb, 0, 0);
+}
+
+int
+ddp_queues_empty(struct toepcb *)
+{
+	int i;
+
+	MPASS(!(toep->ddp_flags & DDP_TASK_ACTIVE));
+	for (i = 0; i < nitems(toep->db); i++) {
+		MPASS(db->job == NULL);
+		MPASS(db->ps == NULL);
+	}
+	MPASS(TAILQ_EMPTY(&toep->ddp_cached_pagesets));
+	MPASS(TAILQ_EMPTY(&toep->ddp_aiojobq));
 }
 
 static void
@@ -1684,7 +1702,8 @@ t4_aio_cancel_queued(struct kaiocb *job)
 	if (!aio_cancel_cleared(job)) {
 		TAILQ_REMOVE(&toep->ddp_aiojobq, job, list);
 		toep->ddp_waiting_count--;
-		ddp_queue_toep(toep);
+		if (toep->ddp_waiting_count == 0)
+			ddp_queue_toep(toep);
 	}
 	CTR2(KTR_CXGBE, "%s: request %p cancelled", __func__, job);
 	SOCKBUF_UNLOCK(sb);
