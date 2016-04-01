@@ -166,20 +166,16 @@ size_t
 devfs_iosize_max(void)
 {
 
-	if (devfs_iosize_max_clamp || SV_CURPROC_FLAG(SV_ILP32))
-		return (INT_MAX);
-	else
-		return (SSIZE_MAX);
+	return (devfs_iosize_max_clamp || SV_CURPROC_FLAG(SV_ILP32) ?
+	    INT_MAX : SSIZE_MAX);
 }
 
 size_t
 iosize_max(void)
 {
 
-	if (iosize_max_clamp || SV_CURPROC_FLAG(SV_ILP32))
-		return (INT_MAX);
-	else
-		return (SSIZE_MAX);
+	return (iosize_max_clamp || SV_CURPROC_FLAG(SV_ILP32) ?
+	    INT_MAX : SSIZE_MAX);
 }
 #endif
 
