@@ -1053,7 +1053,6 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct inpcb *inp = toep->inp;
 	struct tcpcb *tp = NULL;
 	struct socket *so;
-	struct sockbuf *sb;
 #ifdef INVARIANTS
 	unsigned int opcode = G_CPL_OPCODE(be32toh(OPCODE_TID(cpl)));
 #endif
@@ -1099,7 +1098,6 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	tp->rcv_nxt++;	/* FIN */
 
 	so = inp->inp_socket;
-	sb = &so->so_rcv;
 	if (toep->ulp_mode == ULP_MODE_TCPDDP) {
 		DDP_LOCK(toep);
 		if (__predict_false(toep->ddp_flags &
