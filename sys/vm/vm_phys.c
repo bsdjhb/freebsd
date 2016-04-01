@@ -530,10 +530,8 @@ vm_phys_create_seg(vm_paddr_t start, vm_paddr_t end)
 	int i;
 
 	if (mem_affinity == NULL) {
-#endif
 		_vm_phys_create_seg(start, end, 0);
 		return;
-#ifdef VM_NUMA_ALLOC
 	}
 
 	for (i = 0;; i++) {
@@ -553,6 +551,8 @@ vm_phys_create_seg(vm_paddr_t start, vm_paddr_t end)
 		    mem_affinity[i].domain);
 		start = mem_affinity[i].end;
 	}
+#else
+	_vm_phys_create_seg(start, end, 0);
 #endif
 }
 
