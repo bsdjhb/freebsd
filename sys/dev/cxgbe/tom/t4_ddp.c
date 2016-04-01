@@ -580,6 +580,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 #endif
 
 	/* receive buffer autosize */
+	CURVNET_SET(so->so_vnet);
 	SOCKBUF_LOCK(sb);
 	if (sb->sb_flags & SB_AUTOSIZE &&
 	    V_tcp_do_autorcvbuf &&
@@ -595,6 +596,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 			toep->rx_credits += newsize - hiwat;
 	}
 	SOCKBUF_UNLOCK(sb);
+	CURVNET_RESTORE();
 
 #ifndef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits += len;
@@ -1118,10 +1120,6 @@ t4_uninit_ddp(struct adapter *sc __unused, struct tom_data *td)
 		td->ppod_arena = NULL;
 	}
 }
-
-#define	VNET_SO_ASSERT(so)						\
-	VNET_ASSERT(curvnet != NULL,					\
-	    ("%s:%d curvnet is NULL, so=%p", __func__, __LINE__, (so)));
 
 static int
 pscmp(struct pageset *ps, vm_map_t map, vm_offset_t start, int npages,
@@ -1674,8 +1672,6 @@ static void
 aio_ddp_requeue_task(void *context, int pending)
 {
 	struct toepcb *toep = context;
-
-	/* XXX: Probably need to set/clear vnet since this is in a task. */
 
 	DDP_LOCK(toep);
 	aio_ddp_requeue(toep);
