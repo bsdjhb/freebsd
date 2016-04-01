@@ -1420,6 +1420,8 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	tp->rcv_wnd -= len;
 	tp->t_rcvtime = ticks;
 
+	if (toep->ulp_mode == ULP_MODE_TCPDDP)
+		DDP_LOCK(toep);
 	so = inp_inpcbtosocket(inp);
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
@@ -1429,6 +1431,8 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		    __func__, tid, len);
 		m_freem(m);
 		SOCKBUF_UNLOCK(sb);
+		if (toep->ulp_mode == ULP_MODE_TCPDDP)
+			DDP_UNLOCK(toep);
 		INP_WUNLOCK(inp);
 
 		INP_INFO_RLOCK(&V_tcbinfo);
@@ -1516,6 +1520,8 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 	sorwakeup_locked(so);
 	SOCKBUF_UNLOCK_ASSERT(sb);
+	if (toep->ulp_mode == ULP_MODE_TCPDDP)
+		DDP_UNLOCK(toep);
 
 	INP_WUNLOCK(inp);
 	CURVNET_RESTORE();

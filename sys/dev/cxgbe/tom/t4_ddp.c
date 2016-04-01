@@ -333,6 +333,7 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 	unsigned int db_flag, db_idx;
 
 	INP_WLOCK_ASSERT(inp);
+	DDP_ASSERT_LOCKED(toep);
 
 	tp->rcv_nxt += n;
 #ifndef USE_DDP_RX_FLOW_CONTROL
@@ -342,7 +343,6 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 #ifndef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits += n;
 #endif
-	DDP_LOCK(toep);
 	while (toep->ddp_active_count > 0) {
 		MPASS(toep->ddp_active_id != -1);
 		db_idx = toep->ddp_active_id;
@@ -381,7 +381,6 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 		n -= placed;
 		complete_ddp_buffer(toep, db, db_idx);
 	}
-	DDP_UNLOCK(toep);
 
 	MPASS(n == 0);
 }
@@ -643,7 +642,7 @@ void
 handle_ddp_indicate(struct toepcb *toep)
 {
 
-	DDP_LOCK(toep);
+	DDP_ASSERT_LOCKED(toep);
 	MPASS(toep->ddp_active_count == 0);
 	MPASS((toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0);
 	if (toep->ddp_waiting_count == 0) {
@@ -653,13 +652,11 @@ handle_ddp_indicate(struct toepcb *toep)
 		 * already disabled DDP.  Just ignore this as the data is
 		 * going into the socket buffer anyway.
 		 */
-		DDP_UNLOCK(toep);
 		return;
 	}
 	CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
 	    toep->tid, toep->ddp_waiting_count);
 	ddp_queue_toep(toep);
-	DDP_UNLOCK(toep);
 }
 
 enum {
