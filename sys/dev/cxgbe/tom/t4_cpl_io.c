@@ -1102,7 +1102,7 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
 	if (__predict_false(toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE))) {
-		handle_ddp_close(toep, tp, sb, cpl->rcv_nxt);
+		handle_ddp_close(toep, tp, cpl->rcv_nxt);
 	}
 	socantrcvmore_locked(so);	/* unlocks the sockbuf */
 
@@ -1489,7 +1489,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			 * payload that arrived in this indicate is appended
 			 * to the socket buffer as usual.
 			 */
-			handle_ddp_indicate(toep, sb);
+			handle_ddp_indicate(toep);
 		}
 	}
 

@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/protosw.h>
 #include <sys/domain.h>
+#include <sys/refcount.h>
 #include <sys/rmlock.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -152,6 +153,7 @@ alloc_toepcb(struct vi_info *vi, int txqid, int rxqid, int flags)
 	if (toep == NULL)
 		return (NULL);
 
+	refcount_init(&toep->refcount, 1);
 	toep->td = sc->tom_softc;
 	toep->vi = vi;
 	toep->tx_total = tx_credits;
@@ -170,15 +172,27 @@ alloc_toepcb(struct vi_info *vi, int txqid, int rxqid, int flags)
 	return (toep);
 }
 
+struct toepcb *
+hold_toepcb(struct toepcb *toep)
+{
+
+	refcount_acquire(&toep->refcount);
+	return (toep);
+}
+
 void
 free_toepcb(struct toepcb *toep)
 {
+
+	if (refcount_release(&toep->refcount) == 0)
+		return;
 
 	KASSERT(!(toep->flags & TPF_ATTACHED),
 	    ("%s: attached to an inpcb", __func__));
 	KASSERT(!(toep->flags & TPF_CPL_PENDING),
 	    ("%s: CPL pending", __func__));
 
+	ddp_uninit_toep(toep);
 	free(toep, M_CXGBE);
 }
 
@@ -220,7 +234,6 @@ offload_socket(struct socket *so, struct toepcb *toep)
 	toep->inp = inp;
 	toep->flags |= TPF_ATTACHED;
 	in_pcbref(inp);
-	toep->so = so;
 
 	/* Add the TOE PCB to the active list */
 	mtx_lock(&td->toep_list_lock);
@@ -261,6 +274,8 @@ undo_offload_socket(struct socket *so)
 	mtx_lock(&td->toep_list_lock);
 	TAILQ_REMOVE(&td->toep_list, toep, link);
 	mtx_unlock(&td->toep_list_lock);
+
+	free_toepcb(toep);
 }
 
 static void
@@ -285,7 +300,9 @@ release_offload_resources(struct toepcb *toep)
 	 */
 	MPASS(mbufq_len(&toep->ulp_pduq) == 0);
 	MPASS(mbufq_len(&toep->ulp_pdu_reclaimq) == 0);
-	MPASS(ddp_queues_empty(toep));
+#ifdef INVARIANTS
+	ddp_assert_empty(toep);
+#endif
 
 	if (toep->l2te)
 		t4_l2t_release(toep->l2te);
@@ -389,11 +406,11 @@ final_cpl_received(struct toepcb *toep)
 	CTR6(KTR_CXGBE, "%s: tid %d, toep %p (0x%x), inp %p (0x%x)",
 	    __func__, toep->tid, toep, toep->flags, inp, inp->inp_flags);
 
+	if (toep->ulp_mode == ULP_MODE_TCPDDP)
+		release_ddp_resources(toep);
 	toep->inp = NULL;
 	toep->flags &= ~TPF_CPL_PENDING;
 	mbufq_drain(&toep->ulp_pdu_reclaimq);
-	if (toep->ulp_mode == ULP_MODE_TCPDDP)
-		release_ddp_resources(toep, inp);
 
 	if (!(toep->flags & TPF_ATTACHED))
 		release_offload_resources(toep);
