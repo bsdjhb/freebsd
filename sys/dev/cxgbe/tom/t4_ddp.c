@@ -574,7 +574,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	KASSERT(tp->rcv_wnd >= len, ("%s: negative window size", __func__));
 	tp->rcv_wnd -= len;
 #endif
-#if 0
+#ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: DDP[%d] placed %d bytes (%#x)", __func__, db_idx,
 	    len, report);
 #endif
@@ -617,7 +617,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		job->uaiocb._aiocb_private.status += len;
 	} else {
 		copied = job->uaiocb._aiocb_private.status;
-#if 0
+#ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: completing %p (copied %ld, placed %d)",
 		    __func__, job, copied, len);
 #endif
@@ -1609,7 +1609,7 @@ restart:
 	 * which will keep it open and keep the TCP PCB attached until
 	 * after the job is completed.
 	 */
-#if 0
+#ifdef VERBOSE_TRACES
 	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
 	    __func__, job, db_idx, ddp_flags, ddp_flags_mask);
 #endif
@@ -1764,7 +1764,7 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 	 * if it failed with EOPNOTSUPP?
 	 */
 
-#if 0
+#ifdef VERBOSE_TRACES
 	CTR2(KTR_CXGBE, "%s: queueing %p", __func__, job);
 #endif
 	if (!aio_set_cancel_function(job, t4_aio_cancel_queued))
