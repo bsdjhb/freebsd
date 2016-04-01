@@ -62,7 +62,8 @@ int num_mem;
 static ACPI_TABLE_SRAT *srat;
 static vm_paddr_t srat_physaddr;
 
-static int vm_domains[VM_PHYSSEG_MAX];
+static int domain_pxm[MAXMEMDOM];
+static int ndomain;
 
 static ACPI_TABLE_SLIT *slit;
 static vm_paddr_t slit_physaddr;
@@ -342,48 +343,46 @@ renumber_domains(void)
 	int i, j, slot;
 
 	/* Enumerate all the domains. */
-	vm_ndomains = 0;
+	ndomain = 0;
 	for (i = 0; i < num_mem; i++) {
 		/* See if this domain is already known. */
-		for (j = 0; j < vm_ndomains; j++) {
-			if (vm_domains[j] >= mem_info[i].domain)
+		for (j = 0; j < ndomain; j++) {
+			if (domain_pxm[j] >= mem_info[i].domain)
 				break;
 		}
-		if (j < vm_ndomains && vm_domains[j] == mem_info[i].domain)
+		if (j < ndomain && domain_pxm[j] == mem_info[i].domain)
 			continue;
 
 		/* Insert the new domain at slot 'j'. */
 		slot = j;
-		for (j = vm_ndomains; j > slot; j--)
-			vm_domains[j] = vm_domains[j - 1];
-		vm_domains[slot] = mem_info[i].domain;
-		vm_ndomains++;
-		if (vm_ndomains > MAXMEMDOM) {
-			vm_ndomains = 1;
+		for (j = ndomain; j > slot; j--)
+			domain_pxm[j] = domain_pxm[j - 1];
+		domain_pxm[slot] = mem_info[i].domain;
+		ndomain++;
+		if (ndomain > MAXMEMDOM) {
+			ndomain = 1;
 			printf("SRAT: Too many memory domains\n");
 			return (EFBIG);
 		}
 	}
 
-	/* Renumber each domain to its index in the sorted 'domains' list. */
-	for (i = 0; i < vm_ndomains; i++) {
+	/* Renumber each domain to its index in the sorted 'domain_pxm' list. */
+	for (i = 0; i < ndomain; i++) {
 		/*
 		 * If the domain is already the right value, no need
 		 * to renumber.
 		 */
-		if (vm_domains[i] == i)
+		if (domain_pxm[i] == i)
 			continue;
 
 		/* Walk the cpu[] and mem_info[] arrays to renumber. */
 		for (j = 0; j < num_mem; j++)
-			if (mem_info[j].domain == vm_domains[i])
+			if (mem_info[j].domain == domain_pxm[i])
 				mem_info[j].domain = i;
 		for (j = 0; j <= MAX_APIC_ID; j++)
-			if (cpus[j].enabled && cpus[j].domain == vm_domains[i])
+			if (cpus[j].enabled && cpus[j].domain == domain_pxm[i])
 				cpus[j].domain = i;
 	}
-	KASSERT(vm_ndomains > 0,
-	    ("renumber_domains: invalid final vm_ndomains setup"));
 
 	return (0);
 }
@@ -420,6 +419,7 @@ parse_srat(void)
 
 #ifdef VM_NUMA_ALLOC
 	/* Point vm_phys at our memory affinity table. */
+	vm_ndomains = ndomain;
 	mem_affinity = mem_info;
 #endif
 
@@ -499,8 +499,8 @@ acpi_map_pxm_to_vm_domainid(int pxm)
 {
 	int i;
 
-	for (i = 0; i < vm_ndomains; i++) {
-		if (vm_domains[i] == pxm)
+	for (i = 0; i < ndomain; i++) {
+		if (domain_pxm[i] == pxm)
 			return (i);
 	}
 
