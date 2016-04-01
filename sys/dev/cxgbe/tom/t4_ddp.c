@@ -1523,7 +1523,6 @@ restart:
 			 */
 		}
 		t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
-		SOCKBUF_UNLOCK(sb);
 		INP_WUNLOCK(inp);
 		if (resid == 0 || !ddp_aio_enable ||
 		    toep->ddp_flags & DDP_DEAD) {
@@ -1533,6 +1532,7 @@ restart:
 			 * is being shut down, so complete the
 			 * request.
 			 */
+			SOCKBUF_UNLOCK(sb);
 			recycle_pageset(toep, ps);
 			aio_complete(job, copied, 0);
 			ddp_aio_copied++;
@@ -1546,6 +1546,7 @@ restart:
 		 * arrive on the socket buffer.
 		 */
 		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) != DDP_ON) {
+			SOCKBUF_UNLOCK(sb);
 			recycle_pageset(toep, ps);
 			aio_ddp_requeue_one(toep, job);
 			toep->ddp_queueing = NULL;
