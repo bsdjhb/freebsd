@@ -466,11 +466,7 @@ vm_page_startup(vm_offset_t vaddr)
 	mtx_init(&vm_page_queue_free_mtx, "vm page free queue", NULL, MTX_DEF);
 	for (i = 0; i < PA_LOCK_COUNT; i++)
 		mtx_init(&pa_lock[i], "vm page", NULL, MTX_DEF);
-#ifdef VM_NUMA_ALLOC
 	for (i = 0; i < vm_ndomains; i++)
-#else
-	for (i = 0; i < 1; i++)
-#endif
 		vm_page_domain_init(&vm_dom[i]);
 
 	/*
@@ -3899,11 +3895,7 @@ DB_SHOW_COMMAND(pageq, vm_page_print_pageq_info)
 
 	db_printf("pq_free %d pq_cache %d\n",
 	    vm_cnt.v_free_count, vm_cnt.v_cache_count);
-#ifdef VM_NUMA_ALLOC
 	for (dom = 0; dom < vm_ndomains; dom++) {
-#else
-	for (dom = 0; dom < 1; dom++) {
-#endif
 		db_printf(
 	"dom %d page_cnt %d free %d pq_act %d pq_inact %d pass %d\n",
 		    dom,

@@ -1341,10 +1341,8 @@ vm_pageout_mightbe_oom(struct vm_domain *vmd, int page_shortage,
 
 	vmd->vmd_oom = TRUE;
 	old_vote = atomic_fetchadd_int(&vm_pageout_oom_vote, 1);
-#ifdef VM_NUMA_ALLOC
 	if (old_vote != vm_ndomains - 1)
 		return;
-#endif
 
 	/*
 	 * The current pagedaemon thread is the last in the quorum to
