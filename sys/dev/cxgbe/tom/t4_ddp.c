@@ -259,7 +259,6 @@ release_ddp_resources(struct toepcb *toep)
 	struct pageset *ps;
 	int i;
 
-	/* XXX: No good way to stop the requeue task. */
 	DDP_LOCK(toep);
 	toep->flags |= DDP_DEAD;
 	for (i = 0; i < nitems(toep->db); i++) {
@@ -1380,7 +1379,7 @@ restart:
 	}
 
 	/*
-	 * If the DDP is not enabled and there is no pending socket buffer
+	 * If DDP is not enabled and there is no pending socket buffer
 	 * data, try to enable DDP.
 	 */
 	if (sbavail(sb) == 0 && (toep->ddp_flags & DDP_ON) == 0) {
@@ -1389,16 +1388,13 @@ restart:
 		/*
 		 * Wait for the card to ACK that DDP is enabled before
 		 * queueing any buffers.  Currently this waits for an
-		 * indicate to arrive.  It is not clear if it is possible
-		 * to force an ACK of the enable request sooner if there
-		 * is no data pending.  (Would be nice to not always
-		 * require a copy of the indicated data.)
+		 * indicate to arrive.  This could use a TCB_SET_FIELD_RPL
+		 * message to know that DDP was enabled instead of waiting
+		 * for the indicate which would avoid copying the indicate
+		 * if no data is pending.
 		 *
-		 * XXX: Might want to limit the indicate size to the
-		 * first queued request. (TODO)
-		 *
-		 * XXX: Could use a TCB_SET_FIELD_RPL message to know
-		 * that DDP was enabled.
+		 * XXX: Might want to limit the indicate size to the size
+		 * of the first queued request.
 		 */
 		if ((toep->ddp_flags & DDP_SC_REQ) == 0 && ddp_aio_enable)
 			enable_ddp(sc, toep);
@@ -1420,6 +1416,7 @@ restart:
 		goto restart;
 	toep->ddp_queueing = job;
 
+	/* NB: This drops DDP_LOCK while it holds the backing VM pages. */
 	error = hold_aio(toep, job, &ps);
 	if (error != 0) {
 		ddp_complete_one(job, error);
@@ -1609,6 +1606,14 @@ restart:
 		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
 	}
 
+	/*
+	 * The TID for this connection should still be valid.  If DDP_DEAD
+	 * is set, SBS_CANTRCVMORE should be set, so we shouldn't be
+	 * this far anyway.  Even if the socket is closing on the other
+	 * end, the AIO job holds a reference on this end of the socket
+	 * which will keep it open and keep the TCP PCB attached until
+	 * after the job is completed.
+	 */
 #if 0
 	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
 	    __func__, job, db_idx, ddp_flags, ddp_flags_mask);
