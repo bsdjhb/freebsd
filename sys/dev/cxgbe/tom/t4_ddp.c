@@ -742,6 +742,7 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 	int len, placed;
 
 	INP_WLOCK_ASSERT(toep->inp);
+	DDP_ASSERT_LOCKED(toep);
 	len = be32toh(rcv_nxt) - tp->rcv_nxt;
 
 	tp->rcv_nxt += len;
@@ -749,7 +750,6 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 	toep->rx_credits += len;
 #endif
 
-	DDP_LOCK(toep);
 	while (toep->ddp_active_count > 0) {
 		MPASS(toep->ddp_active_id != -1);
 		db_idx = toep->ddp_active_id;
@@ -785,7 +785,6 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 
 	MPASS(len == 0);
 	ddp_complete_all(toep, 0);
-	DDP_UNLOCK(toep);
 }
 
 #define DDP_ERR (F_DDP_PPOD_MISMATCH | F_DDP_LLIMIT_ERR | F_DDP_ULIMIT_ERR |\

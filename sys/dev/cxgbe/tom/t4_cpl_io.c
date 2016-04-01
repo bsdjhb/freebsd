@@ -1100,11 +1100,14 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
-	SOCKBUF_LOCK(sb);
-	if (__predict_false(toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE))) {
-		handle_ddp_close(toep, tp, cpl->rcv_nxt);
+	if (toep->ulp_mode == ULP_MODE_TCPDDP) {
+		DDP_LOCK(toep);
+		if (__predict_false(toep->ddp_flags &
+		    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
+			handle_ddp_close(toep, tp, cpl->rcv_nxt);
+		DDP_UNLOCK(toep);
 	}
-	socantrcvmore_locked(so);	/* unlocks the sockbuf */
+	socantrcvmore(so);
 
 	if (toep->ulp_mode != ULP_MODE_RDMA) {
 		KASSERT(tp->rcv_nxt == be32toh(cpl->rcv_nxt),
