@@ -242,6 +242,9 @@ cardbus_detach_card(device_t cbdev)
 {
 	int err = 0;
 
+	err = bus_generic_detach(cbdev);
+	if (err)
+		return (err);
 	err = device_delete_children(cbdev);
 	if (err)
 		return (err);
