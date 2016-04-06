@@ -294,7 +294,7 @@ acpi_pci_save_handle(ACPI_HANDLE handle, UINT32 level, void *context,
 	return_ACPI_STATUS (AE_OK);
 }
 
-static void
+void
 acpi_pci_child_added(device_t dev, device_t child)
 {
 
