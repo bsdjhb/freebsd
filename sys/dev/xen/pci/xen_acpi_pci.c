@@ -65,6 +65,14 @@ xen_acpi_pci_probe(device_t dev)
 	return (BUS_PROBE_SPECIFIC);
 }
 
+static void
+xen_acpi_pci_child_added(device_t dev, device_t child)
+{
+
+	acpi_pci_child_added(dev, child);
+	xen_pci_child_added_method(dev, child);
+}
+
 static device_method_t xen_acpi_pci_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		xen_acpi_pci_probe),
@@ -72,7 +80,7 @@ static device_method_t xen_acpi_pci_methods[] = {
 	/* PCI interface overwrites */
 	DEVMETHOD(pci_enable_msi,	xen_pci_enable_msi_method),
 	DEVMETHOD(pci_disable_msi,	xen_pci_disable_msi_method),
-	DEVMETHOD(pci_child_added,	xen_pci_child_added_method),
+	DEVMETHOD(pci_child_added,	xen_acpi_pci_child_added),
 
 	DEVMETHOD_END
 };
