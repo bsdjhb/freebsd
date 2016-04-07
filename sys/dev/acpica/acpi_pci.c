@@ -342,7 +342,7 @@ acpi_pci_attach(device_t dev)
 	 * pci_add_children() doesn't find.  We currently just ignore
 	 * these devices.
 	 */
-	pci_add_children(dev, domain, busno, sizeof(struct acpi_pci_devinfo));
+	pci_add_children(dev, domain, busno);
 
 	return (bus_generic_attach(dev));
 }

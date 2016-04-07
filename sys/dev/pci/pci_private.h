@@ -117,8 +117,8 @@ int		pci_deactivate_resource(device_t dev, device_t child, int type,
 void		pci_delete_resource(device_t dev, device_t child, 
 		    int type, int rid);
 struct resource_list *pci_get_resource_list (device_t dev, device_t child);
-struct pci_devinfo *pci_read_device(device_t pcib, int d, int b, int s, int f,
-		    size_t size);
+struct pci_devinfo *pci_read_device(device_t pcib, device_t bus, int d, int b,
+		    int s, int f);
 void		pci_print_verbose(struct pci_devinfo *dinfo);
 int		pci_freecfg(struct pci_devinfo *dinfo);
 void		pci_child_deleted(device_t dev, device_t child);
