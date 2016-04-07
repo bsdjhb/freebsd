@@ -38,6 +38,7 @@ __FBSDID("$FreeBSD$");
 #include <contrib/dev/acpica/include/accommon.h>
 
 #include <dev/acpica/acpivar.h>
+#include <dev/acpica/acpi_pcivar.h>
 
 #include <sys/pciio.h>
 #include <dev/pci/pcireg.h>
