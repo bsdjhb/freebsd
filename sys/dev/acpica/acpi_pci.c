@@ -70,7 +70,6 @@ CTASSERT(ACPI_STATE_D1 == PCI_POWERSTATE_D1);
 CTASSERT(ACPI_STATE_D2 == PCI_POWERSTATE_D2);
 CTASSERT(ACPI_STATE_D3 == PCI_POWERSTATE_D3);
 
-static int	acpi_pci_attach(device_t dev);
 static struct pci_devinfo *acpi_pci_alloc_devinfo(device_t dev);
 static void	acpi_pci_child_deleted(device_t dev, device_t child);
 static int	acpi_pci_child_location_str_method(device_t cbdev,
@@ -90,7 +89,6 @@ static bus_dma_tag_t acpi_pci_get_dma_tag(device_t bus, device_t child);
 static device_method_t acpi_pci_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		acpi_pci_probe),
-	DEVMETHOD(device_attach,	acpi_pci_attach),
 
 	/* Bus interface */
 	DEVMETHOD(bus_read_ivar,	acpi_pci_read_ivar),
@@ -301,38 +299,6 @@ void
 acpi_pci_child_added(device_t dev, device_t child)
 {
 
-	AcpiWalkNamespace(ACPI_TYPE_DEVICE, acpi_get_handle(dev), 1,
-	    acpi_pci_save_handle, NULL, child, NULL);
-}
-
-static int
-acpi_pci_probe(device_t dev)
-{
-
-	if (acpi_get_handle(dev) == NULL)
-		return (ENXIO);
-	device_set_desc(dev, "ACPI PCI bus");
-	return (BUS_PROBE_DEFAULT);
-}
-
-static int
-acpi_pci_attach(device_t dev)
-{
-	int busno, domain, error;
-
-	error = pci_attach_common(dev);
-	if (error)
-		return (error);
-
-	/*
-	 * Since there can be multiple independantly numbered PCI
-	 * busses on systems with multiple PCI domains, we can't use
-	 * the unit number to decide which bus we are probing. We ask
-	 * the parent pcib what our domain and bus numbers are.
-	 */
-	domain = pcib_get_domain(dev);
-	busno = pcib_get_bus(dev);
-
 	/*
 	 * PCI devices are added via the bus scan in the normal PCI
 	 * bus driver.  As each device is added, the
@@ -345,9 +311,18 @@ acpi_pci_attach(device_t dev)
 	 * pci_add_children() doesn't find.  We currently just ignore
 	 * these devices.
 	 */
-	pci_add_children(dev, domain, busno);
+	AcpiWalkNamespace(ACPI_TYPE_DEVICE, acpi_get_handle(dev), 1,
+	    acpi_pci_save_handle, NULL, child, NULL);
+}
 
-	return (bus_generic_attach(dev));
+static int
+acpi_pci_probe(device_t dev)
+{
+
+	if (acpi_get_handle(dev) == NULL)
+		return (ENXIO);
+	device_set_desc(dev, "ACPI PCI bus");
+	return (BUS_PROBE_DEFAULT);
 }
 
 #ifdef ACPI_DMAR
