@@ -1598,6 +1598,8 @@ restart:
 	MPASS((toep->ddp_flags & buf_flag) == 0);
 	if ((toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0) {
 		MPASS(db_idx == 0);
+		MPASS(toep->ddp_active_id == -1);
+		MPASS(toep->ddp_active_count == 0);
 		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
 	}
 
