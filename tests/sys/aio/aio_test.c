@@ -741,7 +741,10 @@ ATF_TC_BODY(aio_socket_two_reads, tc)
 	char c;
 
 	ATF_REQUIRE_KERNEL_MODULE("aio");
-	ATF_REQUIRE_OSRELDATE(1100101);
+#if __FreeBSD_version < 1100101
+	aft_tc_skip("kernel version %d is too old (%d required)",
+	    __FreeBSD_version, 1100101);
+#endif
 
 	ATF_REQUIRE(socketpair(PF_UNIX, SOCK_STREAM, 0, s) != -1);
 
