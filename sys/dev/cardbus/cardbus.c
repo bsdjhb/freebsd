@@ -169,7 +169,7 @@ cardbus_device_setup_regs(pcicfgregs *cfg)
 	pci_write_config(dev, PCIR_MAXLAT, 0x14, 1);
 }
 
-struct pci_devinfo *
+static struct pci_devinfo *
 cardbus_alloc_devinfo(device_t dev)
 {
 	struct cardbus_devinfo *dinfo;

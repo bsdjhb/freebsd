@@ -213,7 +213,7 @@ METHOD uint16_t get_rid {
 	device_t	child;
 };
 
-METHOD struct pci_devinfo *alloc_devinfo {
+METHOD struct pci_devinfo * alloc_devinfo {
 	device_t	dev;
 };
 
