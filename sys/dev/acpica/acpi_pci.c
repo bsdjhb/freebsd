@@ -71,6 +71,7 @@ CTASSERT(ACPI_STATE_D2 == PCI_POWERSTATE_D2);
 CTASSERT(ACPI_STATE_D3 == PCI_POWERSTATE_D3);
 
 static int	acpi_pci_attach(device_t dev);
+static struct pci_devinfo *acpi_pci_alloc_devinfo(device_t dev);
 static void	acpi_pci_child_deleted(device_t dev, device_t child);
 static int	acpi_pci_child_location_str_method(device_t cbdev,
 		    device_t child, char *buf, size_t buflen);
@@ -86,11 +87,6 @@ static int	acpi_pci_set_powerstate_method(device_t dev, device_t child,
 static void	acpi_pci_update_device(ACPI_HANDLE handle, device_t pci_child);
 static bus_dma_tag_t acpi_pci_get_dma_tag(device_t bus, device_t child);
 
-#ifdef PCI_IOV
-static device_t	acpi_pci_create_iov_child(device_t bus, device_t pf,
-		    uint16_t rid, uint16_t vid, uint16_t did);
-#endif
-
 static device_method_t acpi_pci_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		acpi_pci_probe),
@@ -105,11 +101,9 @@ static device_method_t acpi_pci_methods[] = {
 	DEVMETHOD(bus_get_domain,	acpi_get_domain),
 
 	/* PCI interface */
+	DEVMETHOD(pci_alloc_devinfo,	acpi_pci_alloc_devinfo),
 	DEVMETHOD(pci_child_added,	acpi_pci_child_added),
 	DEVMETHOD(pci_set_powerstate,	acpi_pci_set_powerstate_method),
-#ifdef PCI_IOV
-	DEVMETHOD(pci_create_iov_child,	acpi_pci_create_iov_child),
-#endif
 
 	DEVMETHOD_END
 };
@@ -122,6 +116,15 @@ DRIVER_MODULE(acpi_pci, pcib, acpi_pci_driver, pci_devclass, 0, 0);
 MODULE_DEPEND(acpi_pci, acpi, 1, 1, 1);
 MODULE_DEPEND(acpi_pci, pci, 1, 1, 1);
 MODULE_VERSION(acpi_pci, 1);
+
+static struct pci_devinfo *
+acpi_pci_alloc_devinfo(device_t dev)
+{
+	struct acpi_pci_devinfo *dinfo;
+
+	dinfo = malloc(sizeof(*dinfo), M_DEVBUF, M_WAITOK | M_ZERO);
+	return (&dinfo->ap_dinfo);
+}
 
 static int
 acpi_pci_read_ivar(device_t dev, device_t child, int which, uintptr_t *result)
@@ -369,17 +372,6 @@ acpi_pci_get_dma_tag(device_t bus, device_t child)
 {
 
 	return (pci_get_dma_tag(bus, child));
-}
-#endif
-
-#ifdef PCI_IOV
-static device_t
-acpi_pci_create_iov_child(device_t bus, device_t pf, uint16_t rid, uint16_t vid,
-    uint16_t did)
-{
-
-	return (pci_add_iov_child(bus, pf, sizeof(struct acpi_pci_devinfo), rid,
-	    vid, did));
 }
 #endif
 
