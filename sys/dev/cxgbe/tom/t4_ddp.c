@@ -536,8 +536,8 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	DDP_LOCK(toep);
 
 	KASSERT(toep->ddp_active_id == db_idx,
-	    ("completed DDP buffer (%d) != active_id (%d)", db_idx,
-	    toep->ddp_active_id));
+	    ("completed DDP buffer (%d) != active_id (%d) for tid %d", db_idx,
+	    toep->ddp_active_id, toep->tid));
 	db = &toep->db[db_idx];
 	job = db->job;
 
