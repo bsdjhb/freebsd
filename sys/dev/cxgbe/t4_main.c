@@ -9190,7 +9190,7 @@ t4_dump_tcb(struct adapter *sc, int tid)
 		win_pos = tcb_addr & ~0x7f;	/* start must be 128B aligned */
 	}
 	t4_write_reg(sc, reg, win_pos | pf);
-	t4_read_reg;
+	t4_read_reg(sc, reg);
 
 	off = tcb_addr - win_pos;
 	for (i = 0; i < 4; i++) {
