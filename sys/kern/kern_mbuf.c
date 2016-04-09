@@ -424,6 +424,7 @@ mb_ctor_mbuf(void *mem, int size, void *arg, int how)
 
 	m = (struct mbuf *)mem;
 	flags = args->flags;
+	MPASS((flags & M_NOFREE) == 0);
 
 	error = m_init(m, how, type, flags);
 
@@ -572,6 +573,7 @@ mb_ctor_pack(void *mem, int size, void *arg, int how)
 	args = (struct mb_args *)arg;
 	flags = args->flags;
 	type = args->type;
+	MPASS((flags & M_NOFREE) == 0);
 
 #ifdef INVARIANTS
 	trash_ctor(m->m_ext.ext_buf, MCLBYTES, arg, how);
@@ -677,8 +679,12 @@ mb_free_ext(struct mbuf *m)
 		case EXT_NET_DRV:
 		case EXT_MOD_TYPE:
 		case EXT_DISPOSABLE:
+			KASSERT(m->m_ext.ext_free != NULL,
+				("%s: ext_free not set", __func__));
+			(*(m->m_ext.ext_free))(m, m->m_ext.ext_arg1,
+			    m->m_ext.ext_arg2);
 			uma_zfree(zone_mbuf, mref);
-			/* FALLTHROUGH */
+			break;
 		case EXT_EXTREF:
 			KASSERT(m->m_ext.ext_free != NULL,
 				("%s: ext_free not set", __func__));
@@ -727,6 +733,7 @@ m_clget(struct mbuf *m, int how)
 		zone_drain(zone_pack);
 		uma_zalloc_arg(zone_clust, m, how);
 	}
+	MBUF_PROBE2(m__clget, m, how);
 	return (m->m_flags & M_EXT);
 }
 
@@ -741,6 +748,7 @@ void *
 m_cljget(struct mbuf *m, int how, int size)
 {
 	uma_zone_t zone;
+	void *retval;
 
 	if (m != NULL) {
 		KASSERT((m->m_flags & M_EXT) == 0, ("%s: mbuf %p has M_EXT",
@@ -749,7 +757,11 @@ m_cljget(struct mbuf *m, int how, int size)
 	}
 
 	zone = m_getzone(size);
-	return (uma_zalloc_arg(zone, m, how));
+	retval = uma_zalloc_arg(zone, m, how);
+
+	MBUF_PROBE4(m__cljget, m, how, size, retval);
+
+	return (retval);
 }
 
 /*
@@ -930,6 +942,7 @@ void
 m_freem(struct mbuf *mb)
 {
 
+	MBUF_PROBE1(m__freem, mb);
 	while (mb != NULL)
 		mb = m_free(mb);
 }

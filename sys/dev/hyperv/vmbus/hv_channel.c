@@ -81,8 +81,19 @@ vmbus_channel_set_event(hv_vmbus_channel *channel)
 
 }
 
+static int
+vmbus_channel_sysctl_monalloc(SYSCTL_HANDLER_ARGS)
+{
+	struct hv_vmbus_channel *chan = arg1;
+	int alloc = 0;
+
+	if (chan->offer_msg.monitor_allocated)
+		alloc = 1;
+	return sysctl_handle_int(oidp, &alloc, 0, req);
+}
+
 static void
-hv_vmbus_channel_stat(hv_vmbus_channel* channel)
+vmbus_channel_sysctl_create(hv_vmbus_channel* channel)
 {
 	device_t dev;
 	struct sysctl_oid *devch_sysctl;
@@ -129,6 +140,10 @@ hv_vmbus_channel_stat(hv_vmbus_channel* channel)
 	}
 	SYSCTL_ADD_UINT(ctx, SYSCTL_CHILDREN(devch_id_sysctl), OID_AUTO,
 	    "cpu", CTLFLAG_RD, &channel->target_cpu, 0, "owner CPU id");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(devch_id_sysctl), OID_AUTO,
+	    "monitor_allocated", CTLTYPE_INT | CTLFLAG_RD, channel, 0,
+	    vmbus_channel_sysctl_monalloc, "I",
+	    "is monitor allocated to this channel");
 
 	devch_id_in_sysctl = SYSCTL_ADD_NODE(ctx,
                     SYSCTL_CHILDREN(devch_id_sysctl),
@@ -149,6 +164,7 @@ hv_vmbus_channel_stat(hv_vmbus_channel* channel)
 		&(channel->outbound),
 		"outbound ring buffer stats");
 }
+
 /**
  * @brief Open the specified channel
  */
@@ -212,8 +228,8 @@ hv_vmbus_channel_open(
 		in,
 		recv_ring_buffer_size);
 
-	/* setup statistic tracking for this channel */
-	hv_vmbus_channel_stat(new_channel);
+	/* Create sysctl tree for this channel */
+	vmbus_channel_sysctl_create(new_channel);
 
 	/**
 	 * Establish the gpadl for the ring buffer
@@ -254,12 +270,12 @@ hv_vmbus_channel_open(
 	if (user_data_len)
 		memcpy(open_msg->user_data, user_data, user_data_len);
 
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_INSERT_TAIL(
 		&hv_vmbus_g_connection.channel_msg_anchor,
 		open_info,
 		msg_list_entry);
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 
 	ret = hv_vmbus_post_message(
 		open_msg, sizeof(hv_vmbus_channel_open_channel));
@@ -286,12 +302,12 @@ hv_vmbus_channel_open(
 	}
 
 	cleanup:
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_REMOVE(
 		&hv_vmbus_g_connection.channel_msg_anchor,
 		open_info,
 		msg_list_entry);
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 	sema_destroy(&open_info->wait_sema);
 	free(open_info, M_DEVBUF);
 
@@ -480,13 +496,13 @@ hv_vmbus_channel_establish_gpadl(
 	gpadl_msg->child_rel_id = channel->offer_msg.child_rel_id;
 	gpadl_msg->gpadl = next_gpadl_handle;
 
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_INSERT_TAIL(
 		&hv_vmbus_g_connection.channel_msg_anchor,
 		msg_info,
 		msg_list_entry);
 
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 
 	ret = hv_vmbus_post_message(
 		gpadl_msg,
@@ -525,10 +541,10 @@ hv_vmbus_channel_establish_gpadl(
 
 cleanup:
 
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor,
 		msg_info, msg_list_entry);
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 
 	sema_destroy(&msg_info->wait_sema);
 	free(msg_info, M_DEVBUF);
@@ -567,10 +583,10 @@ hv_vmbus_channel_teardown_gpdal(
 	msg->child_rel_id = channel->offer_msg.child_rel_id;
 	msg->gpadl = gpadl_handle;
 
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_INSERT_TAIL(&hv_vmbus_g_connection.channel_msg_anchor,
 			info, msg_list_entry);
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 
 	ret = hv_vmbus_post_message(msg,
 			sizeof(hv_vmbus_channel_gpadl_teardown));
@@ -583,10 +599,10 @@ cleanup:
 	/*
 	 * Received a torndown response
 	 */
-	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_lock(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor,
 			info, msg_list_entry);
-	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	mtx_unlock(&hv_vmbus_g_connection.channel_msg_lock);
 	sema_destroy(&info->wait_sema);
 	free(info, M_DEVBUF);
 

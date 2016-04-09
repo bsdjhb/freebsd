@@ -641,7 +641,11 @@ MLINKS+=counter.9 counter_u64_alloc.9 \
 	counter.9 counter_exit.9 \
 	counter.9 counter_u64_add_protected.9 \
 	counter.9 counter_u64_fetch.9 \
-	counter.9 counter_u64_zero.9
+	counter.9 counter_u64_zero.9 \
+	counter.9 SYSCTL_COUNTER_U64.9 \
+	counter.9 SYSCTL_ADD_COUNTER_U64.9 \
+	counter.9 SYSCTL_COUNTER_U64_ARRAY.9 \
+	counter.9 SYSCTL_ADD_COUNTER_U64_ARRAY.9
 MLINKS+=cpuset.9 CPUSET_T_INITIALIZER.9 \
 	cpuset.9 CPUSET_FSET.9 \
 	cpuset.9 CPU_CLR.9 \
@@ -1055,6 +1059,7 @@ MLINKS+=\
 	mbuf.9 m_append.9 \
 	mbuf.9 m_apply.9 \
 	mbuf.9 m_cat.9 \
+	mbuf.9 m_catpkt.9 \
 	mbuf.9 MCHTYPE.9 \
 	mbuf.9 MCLGET.9 \
 	mbuf.9 m_collapse.9 \
