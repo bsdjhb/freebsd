@@ -537,6 +537,8 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	    report & F_DDP_PSH ? "PSH," : "",
 	    report & F_DDP_URG ? "URG," : "",
 	    db_idx);
+	CTR1(KTR_CXGBE, "DDP length %d",
+	    len + be32toh(rcv_nxt) - tp->rcv_nxt);
 #endif
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
