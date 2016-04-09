@@ -255,7 +255,7 @@ ofw_pcibus_enum_bus(device_t dev, u_int domain, u_int busno)
 				continue;
 
 			dinfo = (struct ofw_pcibus_devinfo *)pci_read_device(
-			    pcib, domain, busno, s, f);
+			    pcib, dev, domain, busno, s, f);
 			if (dinfo == NULL)
 				continue;
 
