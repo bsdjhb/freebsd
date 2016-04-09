@@ -9169,36 +9169,30 @@ tweak_tunables(void)
 }
 
 #ifdef DDB
-static uint32_t
-save_memwin(struct adapter *sc, int n)
-{
-	uint32_t reg;
-
-	reg = PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_OFFSET, n);
-	return (t4_read_reg(sc, reg));
-}
-
-static void
-restore_memwin(struct adapter *sc, int n, uint32_t val)
-{
-	uint32_t reg;
-
-	reg = PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_OFFSET, n);
-	t4_write_reg(sc, reg, val);
-	t4_read_reg(sc, reg);
-}
-
 static void
 t4_dump_tcb(struct adapter *sc, int tid)
 {
-	uint32_t base, tcb_base, off, i, j, save;
+	uint32_t base, i, j, off, pf, reg, save, tcb_addr, win_pos;
 
-	memwin_info(sc, 2, &base, NULL);
-	save = save_memwin(sc, 2);
+	reg = PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_OFFSET, 2);
+	save = t4_read_reg(sc, reg);
+	base = sc->memwin[2].mw_base;
 
 	/* Dump TCB for the tid */
-	tcb_base = t4_read_reg(sc, A_TP_CMM_TCB_BASE);
-	off = position_memwin(sc, 2, tcb_base + tid * TCB_SIZE);
+	tcb_addr = t4_read_reg(sc, A_TP_CMM_TCB_BASE);
+	tcb_addr += tid * TCB_SIZE;
+
+	if (is_t4(sc)) {
+		pf = 0;
+		win_pos = tcb_addr & ~0xf;	/* start must be 16B aligned */
+	} else {
+		pf = V_PFNUM(sc->pf);
+		win_pos = tcb_addr & ~0x7f;	/* start must be 128B aligned */
+	}
+	t4_write_reg(sc, reg, win_pos | pf);
+	t4_read_reg;
+
+	off = tcb_addr - win_pos;
 	for (i = 0; i < 4; i++) {
 		uint32_t buf[8];
 		for (j = 0; j < 8; j++, off += 4)
@@ -9209,7 +9203,8 @@ t4_dump_tcb(struct adapter *sc, int tid)
 		    buf[7]);
 	}
 
-	restore_memwin(sc, 2, save);
+	t4_write_reg(sc, reg, save);
+	t4_read_reg(sc, reg);
 }
 
 static struct command_table db_t4_table = LIST_HEAD_INITIALIZER(db_t4_table);
