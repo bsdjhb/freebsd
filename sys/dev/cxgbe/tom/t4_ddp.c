@@ -302,6 +302,8 @@ complete_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db,
 			toep->ddp_active_id = -1;
 		} else
 			toep->ddp_active_id ^= 1;
+		CTR2(KTR_CXGBE, "%s: ddp_active_id = %d", __func__,
+		    toep->ddp_active_id);
 	} else {
 		KASSERT(toep->ddp_active_count != 0 &&
 		    toep->ddp_active_id != -1,
@@ -527,6 +529,15 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 
 	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
 
+#ifdef VERBOSE_TRACES
+	CTR6(KTR_CXGBE, "ddp_report: %s%s%s%s%s,%d",
+	    report & F_DDP_INV ? "inv," : "",
+	    report & F_DDP_BUF_TIMED_OUT ? "pusht," : "",
+	    report & F_DDP_BUF_COMPLETE ? "complete," : "",
+	    report & F_DDP_PSH ? "PSH," : "",
+	    report & F_DDP_URG ? "URG," : "",
+	    db_idx);
+#endif
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
 
@@ -1654,6 +1665,8 @@ restart:
 	if (toep->ddp_active_count == 1) {
 		MPASS(toep->ddp_active_id == -1);
 		toep->ddp_active_id = db_idx;
+		CTR2(KTR_CXGBE, "%s: ddp_active_id = %d", __func__,
+		    toep->ddp_active_id);
 	}
 	goto restart;
 }
