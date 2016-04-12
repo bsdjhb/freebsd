@@ -1478,8 +1478,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 				    __func__));
 
 				/* Fell out of DDP mode */
-				toep->ddp_flags &= ~(DDP_ON | DDP_BUF0_ACTIVE |
-				    DDP_BUF1_ACTIVE);
+				toep->ddp_flags &= ~DDP_ON;
 				CTR1(KTR_CXGBE, "%s: fell out of DDP mode",
 				    __func__);
 
