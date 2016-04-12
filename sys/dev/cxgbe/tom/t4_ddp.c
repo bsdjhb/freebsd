@@ -506,7 +506,7 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 
 	/* Update DDP flags */
 	ulpmc = mk_set_tcb_field_ulp(ulpmc, toep, W_TCB_RX_DDP_FLAGS,
-	    ddp_flags, ddp_flags_mask);
+	    ddp_flags_mask, ddp_flags);
 
 	/* Gratuitous RX_DATA_ACK with RX_MODULATE set to speed up delivery. */
 	ulpmc = mk_rx_data_ack_ulp(ulpmc, toep);
@@ -1626,10 +1626,6 @@ restart:
 	 * which will keep it open and keep the TCP PCB attached until
 	 * after the job is completed.
 	 */
-#ifdef VERBOSE_TRACES
-	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
-	    __func__, job, db_idx, ddp_flags, ddp_flags_mask);
-#endif
 	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, ps,
 	    job->uaiocb._aiocb_private.status, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
@@ -1657,6 +1653,10 @@ restart:
 		goto restart;
 	}
 
+#ifdef VERBOSE_TRACES
+	CTR5(KTR_CXGBE, "%s: scheduling %p for DDP[%d] (flags %#lx/%#lx)",
+	    __func__, job, db_idx, ddp_flags, ddp_flags_mask);
+#endif
 	/* Give the chip the go-ahead. */
 	t4_wrq_tx(sc, wr);
 	db = &toep->db[db_idx];
