@@ -345,6 +345,8 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 #ifndef USE_DDP_RX_FLOW_CONTROL
 	toep->rx_credits += n;
 #endif
+	CTR2(KTR_CXGBE, "%s: placed %u bytes before falling out of DDP",
+	    __func__, n);
 	while (toep->ddp_active_count > 0) {
 		MPASS(toep->ddp_active_id != -1);
 		db_idx = toep->ddp_active_id;
