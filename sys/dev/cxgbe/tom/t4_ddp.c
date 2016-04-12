@@ -1320,7 +1320,8 @@ restart:
 		return;
 	}
 
-	if (toep->ddp_active_count + toep->ddp_waiting_count == 0) {
+	if (toep->ddp_active_count + toep->ddp_waiting_count == 0 &&
+	    toep->ddp_queueing == NULL) {
 		toep->ddp_flags &= ~DDP_OK;
 		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == DDP_ON)
 			disable_ddp(sc, toep);
