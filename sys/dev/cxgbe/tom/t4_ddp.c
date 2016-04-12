@@ -1592,7 +1592,7 @@ restart:
 	}
 
 	ddp_flags = 0;
-	ddp_flags_mask = V_TF_DDP_INDICATE_OUT(1);
+	ddp_flags_mask = 0;
 	if (db_idx == 0) {
 		ddp_flags |= V_TF_DDP_BUF0_VALID(1);
 		if (so->so_state & SS_NBIO)
