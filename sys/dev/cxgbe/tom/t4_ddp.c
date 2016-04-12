@@ -1472,6 +1472,7 @@ restart:
 		return;
 	}
 
+sbcopy:
 	/*
 	 * If the toep is dead, there shouldn't be any data in the socket
 	 * buffer, so the above case should have handled this.
@@ -1566,7 +1567,14 @@ restart:
 			toep->ddp_queueing = NULL;
 			goto restart;
 		}
-		MPASS(sbavail(sb) == 0);
+
+		/*
+		 * An indicate might have arrived and been added to
+		 * the socket buffer while it was unlocked after the
+		 * copy to lock the INP.  If so, restart the copy.
+		 */
+		if (sbavail(sb) != 0)
+			goto sbcopy;
 	}
 	SOCKBUF_UNLOCK(sb);
 
