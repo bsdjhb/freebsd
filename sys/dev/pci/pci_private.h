@@ -43,7 +43,6 @@ struct pci_softc {
 #ifdef PCI_RES_BUS
 	struct resource *sc_bus;
 #endif
-	size_t dinfo_size;
 };
 
 extern int 	pci_do_power_resume;

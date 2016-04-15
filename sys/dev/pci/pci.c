@@ -3879,18 +3879,11 @@ pci_add_children(device_t dev, int domain, int busno)
 {
 #define	REG(n, w)	PCIB_READ_CONFIG(pcib, busno, s, f, n, w)
 	device_t pcib = device_get_parent(dev);
-	struct pci_softc *sc;
 	struct pci_devinfo *dinfo;
 	int maxslots;
 	int s, f, pcifunchigh;
 	uint8_t hdrtype;
 	int first_func;
-
-	sc = device_get_softc(dev);
-	KASSERT(sc->dinfo_size == 0, ("multiple calls to pci_add_children"));
-	KASSERT(dinfo_size >= sizeof(struct pci_devinfo),
-	    ("dinfo_size too small"));
-	sc->dinfo_size = dinfo_size;
 
 	/*
 	 * Try to detect a device at slot 0, function 0.  If it exists, try to
@@ -3983,8 +3976,7 @@ pci_rescan_method(device_t dev)
 				}
 			}
 
-			pci_identify_function(pcib, dev, domain, busno, s, f,
-			    sc->dinfo_size);
+			pci_identify_function(pcib, dev, domain, busno, s, f);
 		next_func:;
 		}
 	}
