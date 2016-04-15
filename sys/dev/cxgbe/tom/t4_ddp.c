@@ -531,19 +531,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 
 	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
 
-#ifdef VERBOSE_TRACES
-	CTR6(KTR_CXGBE, "ddp_report: %s%s%s%s%s,%d",
-	    report & F_DDP_INV ? "inv," : "",
-	    report & F_DDP_BUF_TIMED_OUT ? "pusht," : "",
-	    report & F_DDP_BUF_COMPLETE ? "complete," : "",
-	    report & F_DDP_PSH ? "PSH," : "",
-	    report & F_DDP_URG ? "URG," : "",
-	    db_idx);
-	if (!(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
-		CTR1(KTR_CXGBE, "DDP length %d",
-		    len + be32toh(rcv_nxt) - intotcpcb(inp)->rcv_nxt);
-	}
-#endif
 	if (__predict_false(!(report & F_DDP_INV)))
 		CXGBE_UNIMPLEMENTED("DDP buffer still valid");
 
