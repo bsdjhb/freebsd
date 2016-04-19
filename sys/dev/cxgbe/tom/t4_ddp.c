@@ -865,25 +865,6 @@ enable_ddp(struct adapter *sc, struct toepcb *toep)
 	    V_TF_RCV_COALESCE_ENABLE(1), 0);
 }
 
-static inline void
-disable_ddp(struct adapter *sc, struct toepcb *toep)
-{
-
-	KASSERT((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == DDP_ON,
-	    ("%s: toep %p has bad ddp_flags 0x%x",
-	    __func__, toep, toep->ddp_flags));
-
-	CTR3(KTR_CXGBE, "%s: tid %u (time %u)",
-	    __func__, toep->tid, time_uptime);
-
-	DDP_ASSERT_LOCKED(toep);
-	toep->ddp_flags |= DDP_SC_REQ;
-	t4_set_tcb_field(sc, toep, 1, W_TCB_T_FLAGS,
-	    V_TF_RCV_COALESCE_ENABLE(1), V_TF_RCV_COALESCE_ENABLE(1));
-	t4_set_tcb_field(sc, toep, 1, W_TCB_RX_DDP_FLAGS, V_TF_DDP_OFF(1),
-	    V_TF_DDP_OFF(1));
-}
-
 static int
 calculate_hcf(int n1, int n2)
 {
@@ -1305,13 +1286,6 @@ restart:
 		MPASS(toep->ddp_waiting_count == 0);
 		MPASS(toep->ddp_active_count == 0);
 		return;
-	}
-
-	if (toep->ddp_active_count + toep->ddp_waiting_count == 0 &&
-	    toep->ddp_queueing == NULL) {
-		toep->ddp_flags &= ~DDP_OK;
-		if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == DDP_ON)
-			disable_ddp(sc, toep);
 	}
 
 	if (toep->ddp_waiting_count == 0 ||
