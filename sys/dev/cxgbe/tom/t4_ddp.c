@@ -635,7 +635,8 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 
 completed:
 	complete_ddp_buffer(toep, db, db_idx);
-	ddp_queue_toep(toep);
+	if (toep->ddp_waiting_count > 0)
+		ddp_queue_toep(toep);
 out:
 	DDP_UNLOCK(toep);
 	INP_WUNLOCK(inp);
@@ -724,7 +725,8 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 		}
 
 		complete_ddp_buffer(toep, db, db_idx);
-		ddp_queue_toep(toep);
+		if (toep->ddp_waiting_count > 0)
+			ddp_queue_toep(toep);
 		DDP_UNLOCK(toep);
 		INP_WUNLOCK(inp);
 		break;
