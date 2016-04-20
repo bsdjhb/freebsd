@@ -4011,6 +4011,7 @@ pci_rescan_method(device_t dev)
 	free(unchanged, M_TEMP);
 	free(devlist, M_TEMP);
 	return (0);
+#undef REG
 }
 
 #ifdef PCI_IOV
