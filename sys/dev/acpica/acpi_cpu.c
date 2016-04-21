@@ -305,7 +305,7 @@ acpi_cpu_attach(device_t dev)
     u_int		   features;
     int			   cpu_id, drv_count, i;
     driver_t 		  **drivers;
-    uint32_t		   cap_set[3];
+    uint32_t		   cap_set[3], cap_out[2];
 
     /* UUID needed by _OSC evaluation */
     static uint8_t cpu_oscuuid[16] = { 0x16, 0xA6, 0x77, 0x40, 0x0C, 0x29,
@@ -393,10 +393,10 @@ acpi_cpu_attach(device_t dev)
     if (sc->cpu_features) {
 	cap_set[1] = sc->cpu_features;
 	status = acpi_EvaluateOSC(sc->cpu_handle, cpu_oscuuid, 1, 2, cap_set,
-	    false);
+	    cap_out, false);
 	if (ACPI_SUCCESS(status)) {
-	    if (cap_set[0] != 0)
-		device_printf(dev, "_OSC returned status %#x\n", cap_set[0]);
+	    if (cap_out[0] != 0)
+		device_printf(dev, "_OSC returned status %#x\n", cap_out[0]);
 	}
 	else {
 	    arglist.Pointer = &arg;
