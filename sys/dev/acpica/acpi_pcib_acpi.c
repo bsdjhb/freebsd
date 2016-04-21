@@ -299,7 +299,7 @@ static void
 acpi_pcib_osc(struct acpi_hpcib_softc *sc)
 {
 	ACPI_STATUS status;
-	uint32_t cap_set[3], cap_out[3];
+	uint32_t cap_set[3];
 
 	static uint8_t pci_host_bridge_uuid[ACPI_UUID_LENGTH] = {
 		0x5b, 0x4d, 0xdb, 0x33, 0xf7, 0x1f, 0x1c, 0x40,
@@ -313,7 +313,7 @@ acpi_pcib_osc(struct acpi_hpcib_softc *sc)
 	cap_set[2] = 0;
 
 	status = acpi_EvaluateOSC(sc->ap_handle, pci_host_bridge_uuid, 1,
-	    nitems(cap_set), cap_set, cap_out, false);
+	    nitems(cap_set), cap_set, cap_set, false);
 	if (ACPI_FAILURE(status)) {
 		if (status == AE_NOT_FOUND)
 			return;
@@ -322,9 +322,9 @@ acpi_pcib_osc(struct acpi_hpcib_softc *sc)
 		return;
 	}
 
-	if (cap_out[0] != 0) {
+	if (cap_set[0] != 0) {
 		device_printf(sc->ap_dev, "_OSC returned error %#x\n",
-		    cap_out[0]);
+		    cap_set[0]);
 		return;
 	}
 }
