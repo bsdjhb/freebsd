@@ -117,11 +117,9 @@ static	int nexus_deactivate_resource(device_t, device_t, int, int,
 static	int nexus_map_resource(device_t bus, device_t child, int type,
     			       struct resource *r,
 			       struct resource_map_request *argsp,
-			       bus_space_tag_t *tag,
-			       bus_space_handle_t *handle);
+			       struct resource_map *map);
 static	int nexus_unmap_resource(device_t bus, device_t child, int type,
-				 struct resource *r, bus_space_tag_t tag,
-				 bus_space_handle_t handle);
+				 struct resource *r, struct resource_map *map);
 static	int nexus_release_resource(device_t, device_t, int, int,
 				   struct resource *);
 static	int nexus_setup_intr(device_t, device_t, struct resource *, int flags,
@@ -442,8 +440,7 @@ static int
 nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 			struct resource *r)
 {
-	bus_space_tag_t tag;
-	bus_space_handle_t handle;
+	struct resource_map map;
 	int error;
 	void *vaddr;
 
@@ -454,24 +451,15 @@ nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 	if (rman_get_flags(r) & RF_UNMAPPED)
 		return (0);
 
-	error = nexus_map_resource(bus, child, type, r, NULL, &tag, &handle);
+	error = nexus_map_resource(bus, child, type, r, NULL, &map);
 	if (error) {
 		rman_deactivate_resource(r);
 		return (error);
 	}
 
-	rman_set_bustag(r, tag);
-	rman_set_bushandle(r, handle);
-	if (type == SYS_RES_MEMORY) {
-#ifdef PC98
-		/* PC-98: the type of bus_space_handle_t is the structure. */
-		vaddr = (void *)handle->bsh_base;
-#else
-		/* IBM-PC: the type of bus_space_handle_t is u_int */
-		vaddr = (void *)handle;
-#endif
-		rman_set_virtual(r, vaddr);
-	}
+	rman_set_bustag(r, map->r_tag);
+	rman_set_bushandle(r, map->r_handle);
+	rman_set_virtual(r, map->r_vaddr);
 	return (0);
 }
 
@@ -479,6 +467,7 @@ static int
 nexus_deactivate_resource(device_t bus, device_t child, int type, int rid,
 			  struct resource *r)
 {
+	struct resource_map map;
 	int error;
 
 	error = rman_deactivate_resource(r);
@@ -488,15 +477,17 @@ nexus_deactivate_resource(device_t bus, device_t child, int type, int rid,
 	if (rman_get_flags(r) & RF_UNMAPPED)
 		return (0);
 
-	nexus_unmap_resource(bus, child, type, r, rman_get_bustag(r),
-	    rman_get_bushandle(r));
+	map.r_tag = rman_get_bustag(r);
+	map.r_handle = rman_get_bushandle(r);
+	map.r_size = rman_get_size(r);
+	map.r_vaddr = rman_get_virtual(r);
+	nexus_unmap_resource(bus, child, type, r, &map);
 	return (0);
 }
 
 static int
 nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
-    struct resource_map_request *argsp, bus_space_tag_t *tag,
-    bus_space_handle_t *handle)
+    struct resource_map_request *argsp, struct resource_map *map)
 {
 	struct resource_map_request args;
 	rman_res_t start, size;
@@ -529,33 +520,36 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	case SYS_RES_IOPORT:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_IO,
-		    start, size, handle);
+		    start, size, &map->r_handle);
 		if (error)
 			return (error);
 #else
-		*handle = start;
+		map->r_handle = start;
 #endif
-		*tag = X86_BUS_SPACE_IO;
+		map->r_tag = X86_BUS_SPACE_IO;
+		map->r_size = size;
+		map->r_vaddr = NULL;
 		break;
 	case SYS_RES_MEMORY:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_MEM,
-		    start, size, handle);
+		    start, size, &map->r_handle);
 		if (error)
 			return (error);
 #endif
-#ifndef PC98
-		if (size != rman_get_start(r))
-			return (EOPNOTSUPP);
-#endif
-		vaddr = pmap_mapdev_attr(start, size, args.memattr);
-		*tag = X86_BUS_SPACE_MEM;
+		map->r_vaddr = pmap_mapdev_attr(start, size, args.memattr);
+		map->r_tag = X86_BUS_SPACE_MEM;
+		map->r_size = size;
+
+		/*
+		 * PC-98 stores the virtual address as a member of the
+		 * structure in the handle.  On plain x86, the handle is
+		 * the virtual address.
+		 */
 #ifdef PC98
-		/* PC-98: the type of bus_space_handle_t is the structure. */
-		(*handle)->bsh_base = (bus_addr_t) vaddr;
+		map->r_handle->bsh_base = (bus_addr_t)vaddr;
 #else
-		/* IBM-PC: the type of bus_space_handle_t is u_int */
-		*handle = (bus_space_handle_t) vaddr;
+		map->r_handle = (bus_space_handle_t)vaddr;
 #endif
 		break;
 	}
@@ -564,30 +558,18 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 
 static int
 nexus_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
-    bus_space_tag_t tag, bus_space_handle_t handle)
+    struct resource_map *map)
 {
-	void *vaddr;
-	rman_res_t size;
 	
 	/*
 	 * If this is a memory resource, unmap it.
 	 */
-	if (type == SYS_RES_MEMORY) {
-#ifdef PC98
-		/* PC-98: the type of bus_space_handle_t is the structure. */
-		vaddr = (void *)handle->bsh_base;
-		size = handle->bsh_sz;
-#else
-		/* IBM-PC: the type of bus_space_handle_t is u_int */
-		vaddr = (void *)handle;
-		/* XXX: size is wrong */
-		size = rman_get_size(r)
-#endif
-		pmap_unmapdev((vm_offset_t)vaddr, size);
-	}
+	if (type == SYS_RES_MEMORY)
+		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
 #ifdef PC98
 	if (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT) {
-		i386_bus_space_handle_free(tag, handle, handle->bsh_sz);
+		i386_bus_space_handle_free(map->r_tag, map->r_handle,
+		    map->r_handle->bsh_sz);
 	}
 #endif
 	return (0);

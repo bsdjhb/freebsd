@@ -295,6 +295,16 @@ struct driver {
 };
 
 /**
+ * @brief A resource mapping.
+ */
+struct resource_map {
+	bus_space_tag_t r_bustag;
+	bus_space_handle_t r_bushandle;
+	bus_size_t r_size;
+	void	*r_virtual;
+};
+	
+/**
  * @brief Optional properties of a resource mapping request.
  */
 struct resource_map_request {
@@ -425,8 +435,7 @@ struct resource_list *
 int	bus_generic_map_resource(device_t dev, device_t child, int type,
 				 struct resource *r,
 				 struct resource_map_request *args,
-				 bus_space_tag_t *tag,
-				 bus_space_handle_t *handle);
+				 struct resource_map *map);
 void	bus_generic_new_pass(device_t dev);
 int	bus_print_child_header(device_t dev, device_t child);
 int	bus_print_child_domain(device_t dev, device_t child);
@@ -462,8 +471,7 @@ int	bus_generic_teardown_intr(device_t dev, device_t child,
 				  struct resource *irq, void *cookie);
 int	bus_generic_unmap_resource(device_t dev, device_t child, int type,
 				   struct resource *r,
-				   bus_space_tag_t tag,
-				   bus_space_handle_t handle);
+				   struct resource_map *map);
 int	bus_generic_write_ivar(device_t dev, device_t child, int which,
 			       uintptr_t value);
 int	bus_null_rescan(device_t dev);
@@ -495,9 +503,9 @@ int	bus_deactivate_resource(device_t dev, int type, int rid,
 				struct resource *r);
 int	bus_map_resource(device_t dev, int type, struct resource *r,
 			 struct resource_map_request *args,
-			 bus_space_tag_t *tag, bus_space_handle_t *handle);
+			 struct resource_map *map);
 int	bus_unmap_resource(device_t dev, int type, struct resource *r,
-			   bus_space_tag_t tag, bus_space_handle_t handle);
+			   struct resource_map *map);
 int	bus_get_cpus(device_t dev, enum cpu_sets op, size_t setsize,
 		     struct _cpuset *cpuset);
 bus_dma_tag_t bus_get_dma_tag(device_t dev);

@@ -4076,13 +4076,13 @@ bus_generic_deactivate_resource(device_t dev, device_t child, int type,
  */
 int
 bus_generic_map_resource(device_t dev, device_t child, int type,
-    struct resource *r, struct resource_map_request *args, bus_space_tag_t *tag,
-    bus_space_handle_t *handle)
+    struct resource *r, struct resource_map_request *args,
+    struct resource_map *map)
 {
 	/* Propagate up the bus hierarchy until someone handles it. */
 	if (dev->parent)
-		return (BUS_MAP_RESOURCE(dev->parent, child, type, r, args, tag,
-		    handle));
+		return (BUS_MAP_RESOURCE(dev->parent, child, type, r, args,
+		    map));
 	return (EINVAL);
 }
 
@@ -4094,12 +4094,11 @@ bus_generic_map_resource(device_t dev, device_t child, int type,
  */
 int
 bus_generic_unmap_resource(device_t dev, device_t child, int type,
-    struct resource *r, bus_space_tag_t tag, bus_space_handle_t handle)
+    struct resource *r, struct resource_map *map)
 {
 	/* Propagate up the bus hierarchy until someone handles it. */
 	if (dev->parent)
-		return (BUS_UNMAP_RESOURCE(dev->parent, child, type, r, tag,
-		    handle));
+		return (BUS_UNMAP_RESOURCE(dev->parent, child, type, r, map));
 	return (EINVAL);
 }
 
@@ -4472,12 +4471,11 @@ bus_deactivate_resource(device_t dev, int type, int rid, struct resource *r)
  */
 int
 bus_map_resource(device_t dev, int type, struct resource *r,
-    struct resource_map_request *args, bus_space_tag_t *tag,
-    bus_space_handle_t *handle)
+    struct resource_map_request *args, struct resource_map *map)
 {
 	if (dev->parent == NULL)
 		return (EINVAL);
-	return (BUS_MAP_RESOURCE(dev->parent, dev, type, r, args, tag, handle));
+	return (BUS_MAP_RESOURCE(dev->parent, dev, type, r, args, map));
 }
 
 /**
@@ -4488,11 +4486,11 @@ bus_map_resource(device_t dev, int type, struct resource *r,
  */
 int
 bus_unmap_resource(device_t dev, int type, struct resource *r,
-    bus_space_tag_t tag, bus_space_handle_t handle)
+    struct resource_map *map)
 {
 	if (dev->parent == NULL)
 		return (EINVAL);
-	return (BUS_UNMAP_RESOURCE(dev->parent, dev, type, r, tag, handle));
+	return (BUS_UNMAP_RESOURCE(dev->parent, dev, type, r, map));
 }
 
 /**
