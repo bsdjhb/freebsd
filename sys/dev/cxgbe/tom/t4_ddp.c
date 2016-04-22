@@ -1109,18 +1109,18 @@ static int
 pscmp(struct pageset *ps, vm_map_t map, vm_offset_t start, int npages,
     int pgoff, int len)
 {
-#if 0
-	int i;
-#endif
 
 	if (ps->npages != npages || ps->offset != pgoff || ps->len != len)
 		return (1);
 
 #if 1
+	return (vm_map_compare(map, start, ptoa(npages), VM_PROT_WRITE,
+	    ps->pages, npages));
+#elif 0
 	return (!pmap_compare(map->pmap, start, VM_PROT_WRITE, ps->pages,
 	    ps->npages));
 #else
-	for (i = 0; i < npages; i++) {
+	for (int i = 0; i < npages; i++) {
 		if (ps->pages[i]->phys_addr != pmap_extract(map->pmap, start))
 			return (1);
 		start += PAGE_SIZE;
