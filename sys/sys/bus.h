@@ -301,7 +301,7 @@ struct resource_map {
 	bus_space_tag_t r_bustag;
 	bus_space_handle_t r_bushandle;
 	bus_size_t r_size;
-	void	*r_virtual;
+	void	*r_vaddr;
 };
 	
 /**
