@@ -1117,7 +1117,8 @@ pscmp(struct pageset *ps, vm_map_t map, vm_offset_t start, int npages,
 		return (1);
 
 #if 1
-	return (!pmap_compare(map->pmap, start, ps->pages, ps->npages));
+	return (!pmap_compare(map->pmap, start, VM_PROT_WRITE, ps->pages,
+	    ps->npages));
 #else
 	for (i = 0; i < npages; i++) {
 		if (ps->pages[i]->phys_addr != pmap_extract(map->pmap, start))

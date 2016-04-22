@@ -1845,15 +1845,17 @@ pmap_extract(pmap_t pmap, vm_offset_t va)
  * more appropriate to do this in the vm_map layer?
  */
 int
-pmap_compare(pmap_t pmap, vm_offset_t va, vm_page_t *pages, int count)
+pmap_compare(pmap_t pmap, vm_offset_t va, vm_prot_t prot, vm_page_t *pages,
+    int count)
 {
 	pml4_entry_t *pml4e;
 	pdp_entry_t *pdpe;
 	pd_entry_t *pde;
-	pt_entry_t *pte, PG_V;
+	pt_entry_t *pte, PG_RW, PG_V;
 	vm_paddr_t pa;
 
 	va = trunc_page(va);
+	PG_RW = pmap_rw_bit(pmap);
 	PG_V = pmap_valid_bit(pmap);
 	PMAP_LOCK(pmap);
 	pml4e = NULL;
@@ -1870,19 +1872,26 @@ pmap_compare(pmap_t pmap, vm_offset_t va, vm_page_t *pages, int count)
 			if ((*pdpe & PG_V) == 0)
 				goto fail;
 		}
-		if ((*pdpe & PG_PS) != 0)
+		if ((*pdpe & PG_PS) != 0) {
+			if ((*pdpe & PG_RW) == 0 && (prot & VM_PROT_WRITE))
+				goto fail;
 			pa = (*pdpe & PG_PS_FRAME) | (va & PDPMASK);
-		else {
+		} else {
 			if (pde == NULL) {
 				pde = pmap_pdpe_to_pde(pdpe, va);
 				if ((*pde & PG_V) == 0)
 					goto fail;
 			}
 			if ((*pde & PG_PS) != 0) {
+				if ((*pde & PG_RW) == 0 &&
+				    (prot & VM_PROT_WRITE))
+					goto fail;
 				pa = (*pde & PG_PS_FRAME) | (va & PDRMASK);
 			} else {
 				pte = pmap_pde_to_pte(pde, va);
-				if ((*pte & PG_V) == 0)
+				if ((*pte & PG_V) == 0 ||
+				    ((*pte & PG_RW) == 0 &&
+				    (prot & VM_PROT_WRITE)))
 					goto fail;
 				pa = (*pte & PG_FRAME);
 			}
