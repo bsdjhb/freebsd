@@ -1118,7 +1118,7 @@ pscmp(struct pageset *ps, struct vmspace *vm, vm_offset_t start, int npages,
 		return (1);
 
 #ifdef VM_TIMESTAMP
-	CTR4(KTR_CXGBE, "pscmp: vm %p vs %p timestamp %u vs %u", ps->vm, vm
+	CTR4(KTR_CXGBE, "pscmp: vm %p vs %p timestamp %u vs %u", ps->vm, vm,
 	    ps->vm_timestamp, vm->vm_map.timestamp);
 	return (ps->vm == vm && ps->vm_timestamp == vm->vm_map.timestamp);
 #elif defined(VM_MAP_COMPARE)
