@@ -183,6 +183,8 @@ free_pageset(struct tom_data *td, struct pageset *ps)
 		vm_page_unhold_pages(ps->pages, ps->npages);
 		ddp_held_pages -= ps->npages;
 	}
+	if (ps->vm)
+		vmspace_free(ps->vm);
 	free(ps, M_CXGBE);
 }
 
@@ -1105,17 +1107,19 @@ t4_uninit_ddp(struct adapter *sc __unused, struct tom_data *td)
 	}
 }
 
-#define VM_MAP_COMPARE
+#define VM_TIMESTAMP
 
 static int
-pscmp(struct pageset *ps, vm_map_t map, vm_offset_t start, int npages,
+pscmp(struct pageset *ps, struct vmspace *vm, vm_offset_t start, int npages,
     int pgoff, int len)
 {
 
 	if (ps->npages != npages || ps->offset != pgoff || ps->len != len)
 		return (1);
 
-#ifdef VM_MAP_COMPARE
+#ifdef VM_TIMESTAMP
+	return (ps->vm == vm && ps->vm_timestamp == ps->vm->vm_map.timestamp);
+#elif defined(VM_MAP_COMPARE)
 	return (vm_map_compare(map, start, ptoa(npages), VM_PROT_WRITE,
 	    ps->pages, npages));
 #elif defined(PMAP_COMPARE)
@@ -1135,6 +1139,7 @@ pscmp(struct pageset *ps, vm_map_t map, vm_offset_t start, int npages,
 static int
 hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 {
+	struct vmspace *vm;
 	vm_map_t map;
 	vm_offset_t start, end, pgoff;
 	struct pageset *ps;
@@ -1147,7 +1152,8 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	 * permitting a process to exit or exec, so p_vmspace should
 	 * be stable here.
 	 */
-	map = &job->userproc->p_vmspace->vm_map;
+	vm = job->userproc->p_vmspace;
+	map = &vm->vm_map;
 	start = (uintptr_t)job->uaiocb.aio_buf;
 	pgoff = start & PAGE_MASK;
 	end = round_page(start + job->uaiocb.aio_nbytes);
@@ -1179,7 +1185,7 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 		 */
 		DDP_UNLOCK(toep);
 #endif
-		if (pscmp(ps, map, start, n, pgoff,
+		if (pscmp(ps, vm, start, n, pgoff,
 		    job->uaiocb.aio_nbytes) == 0) {
 #ifdef VM_MAP_COMPARE
 			DDP_LOCK(toep);
@@ -1215,6 +1221,7 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	ps = malloc(sizeof(*ps) + n * sizeof(vm_page_t), M_CXGBE, M_WAITOK |
 	    M_ZERO);
 	ps->pages = (vm_page_t *)(ps + 1);
+	ps->vm_timestamp = map->timestamp;
 	ps->npages = vm_fault_quick_hold_pages(map, start, end - start,
 	    VM_PROT_WRITE, ps->pages, n);
 
@@ -1230,6 +1237,8 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	ddp_held_pages += ps->npages;
 	ps->offset = pgoff;
 	ps->len = job->uaiocb.aio_nbytes;
+	atomic_add_int(&vm->vm_refcnt, 1);
+	ps->vm = vm;
 
 	CTR5(KTR_CXGBE, "%s: tid %d, new pageset %p for job %p, npages %d",
 	    __func__, toep->tid, ps, job, ps->npages);

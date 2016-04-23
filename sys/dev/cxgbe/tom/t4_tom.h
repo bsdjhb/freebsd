@@ -93,6 +93,8 @@ struct pageset {
 	uint32_t tag;	/* includes color, page pod addr, and DDP page size */
 	int offset;		/* offset in first page */
 	int len;
+	struct vmspace *vm;
+	u_int vm_timestamp;
 };
 
 TAILQ_HEAD(pagesetq, pageset);
