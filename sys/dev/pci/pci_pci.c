@@ -1594,10 +1594,12 @@ int
 pcib_child_present(device_t dev, device_t child)
 {
 	struct pcib_softc *sc = device_get_softc(dev);
+	int retval;
 
-	if (sc->flags & PCIB_HOTPLUG)
-		return (pcib_hotplug_present(sc));
-	return (bus_generic_child_present(dev, child));
+	retval = bus_child_present(dev);
+	if (retval != 0 && sc->flags & PCIB_HOTPLUG)
+		retval = pcib_hotplug_present(sc);
+	return (retval);
 }
 
 int
