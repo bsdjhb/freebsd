@@ -1536,6 +1536,15 @@ pcib_attach_common(device_t dev)
     pci_enable_busmaster(dev);
 }
 
+static int
+pcib_present(struct pcib_softc *sc)
+{
+
+	if (sc->flags & PCIB_HOTPLUG)
+		return (pcib_hotplug_present(sc) != 0);
+	return (1);
+}
+
 int
 pcib_attach_child(device_t dev)
 {
@@ -1545,6 +1554,11 @@ pcib_attach_child(device_t dev)
 	if (sc->bus.sec == 0) {
 		/* no secondary bus; we should have fixed this */
 		return(0);
+	}
+
+	if (!pcib_present(sc)) {
+		/* An empty HotPlug slot, so don't add a PCI bus yet. */
+		return (0);
 	}
 
 	sc->child = device_add_child(dev, "pci", -1);
