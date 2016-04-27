@@ -2919,6 +2919,7 @@ vm_map_compare(vm_map_t map, vm_offset_t addr, vm_size_t len, vm_prot_t prot,
 	pind = OFF_TO_IDX(entry->offset);
 	pind += atop(addr - entry->start);
 	VM_OBJECT_RLOCK(entry->object.vm_object);
+	m = vm_page_lookup(entry->object.vm_object, pind);
 	for (i = 0; i < count; i++) {
 		/* Move to the next map entry if necessary. */
 		if (addr > entry->end) {
@@ -2929,9 +2930,10 @@ vm_map_compare(vm_map_t map, vm_offset_t addr, vm_size_t len, vm_prot_t prot,
 				goto fail;
 			pind = OFF_TO_IDX(entry->offset);
 			VM_OBJECT_RLOCK(entry->object.vm_object);
-		}
+			m = vm_page_lookup(entry->object.vm_object, pind);
+		} else if (i != 0)
+			m = vm_page_next(m);
 
-		m = vm_page_lookup(entry->object.vm_object, pind);
 		if (m != pages[i] ||
 		    (prot & VM_PROT_WRITE && m->dirty != VM_PAGE_BITS_ALL)) {
 			VM_OBJECT_RUNLOCK(entry->object.vm_object);
@@ -2940,6 +2942,7 @@ vm_map_compare(vm_map_t map, vm_offset_t addr, vm_size_t len, vm_prot_t prot,
 
 		addr += atop(1);
 	}
+	VM_OBJECT_RUNLOCK(entry->object.vm_object);
 	vm_map_unlock_read(map);
 	return (TRUE);
 fail:
