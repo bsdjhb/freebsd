@@ -1160,7 +1160,7 @@ g_mirror_sync_collision(struct g_mirror_softc *sc, struct bio *bp)
 	struct g_mirror_disk *disk;
 	struct bio *sbp;
 	off_t rstart, rend, sstart, send;
-	int i;
+	u_int i;
 
 	if (sc->sc_sync.ds_ndisks == 0)
 		return (0);
@@ -1905,7 +1905,7 @@ g_mirror_worker(void *arg)
 				g_mirror_sync_request(bp);	/* WRITE */
 			else {
 				KASSERT(0,
-				    ("Invalid request cflags=0x%hhx to=%s.",
+				    ("Invalid request cflags=0x%hx to=%s.",
 				    bp->bio_cflags, bp->bio_to->name));
 			}
 		} else {

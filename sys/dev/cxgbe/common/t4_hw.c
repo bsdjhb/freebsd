@@ -381,7 +381,7 @@ int t4_wr_mbox_meat_timeout(struct adapter *adap, int mbox, const void *cmd,
 			/*
 			 * Retrieve the command reply and release the mailbox.
 			 */
-			get_mbox_rpl(adap, cmd_rpl, size/8, data_reg);
+			get_mbox_rpl(adap, cmd_rpl, MBOX_LEN/8, data_reg);
 			t4_write_reg(adap, ctl_reg, V_MBOWNER(X_MBOWNER_NONE));
 
 			CH_DUMP_MBOX(adap, mbox, data_reg);
@@ -607,8 +607,8 @@ int t4_mem_read(struct adapter *adap, int mtype, u32 addr, u32 len,
 	 * need to round down the start and round up the end.  We'll start
 	 * copying out of the first line at (addr - start) a word at a time.
 	 */
-	start = addr & ~(64-1);
-	end = (addr + len + 64-1) & ~(64-1);
+	start = rounddown2(addr, 64);
+	end = roundup2(addr + len, 64);
 	offset = (addr - start)/sizeof(__be32);
 
 	for (pos = start; pos < end; pos += 64, offset = 0) {

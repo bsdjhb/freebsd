@@ -5222,6 +5222,18 @@ bus_free_resource(device_t dev, int type, struct resource *r)
 	return (bus_release_resource(dev, type, rman_get_rid(r), r));
 }
 
+device_t
+device_lookup_by_name(const char *name)
+{
+	device_t dev;
+
+	TAILQ_FOREACH(dev, &bus_data_devices, devlink) {
+		if (dev->nameunit != NULL && strcmp(dev->nameunit, name) == 0)
+			return (dev);
+	}
+	return (NULL);
+}
+
 /*
  * /dev/devctl2 implementation.  The existing /dev/devctl device has
  * implicit semantics on open, so it could not be reused for this.
@@ -5242,12 +5254,10 @@ find_device(struct devreq *req, device_t *devp)
 	 * Second, try to find an attached device whose name matches
 	 * 'name'.
 	 */
-	TAILQ_FOREACH(dev, &bus_data_devices, devlink) {
-		if (dev->nameunit != NULL &&
-		    strcmp(dev->nameunit, req->dr_name) == 0) {
-			*devp = dev;
-			return (0);
-		}
+	dev = device_lookup_by_name(req->dr_name);
+	if (dev != NULL) {
+		*devp = dev;
+		return (0);
 	}
 
 	/* Finally, give device enumerators a chance. */
@@ -5290,6 +5300,8 @@ devctl2_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int fflag,
 	case DEV_SUSPEND:
 	case DEV_RESUME:
 	case DEV_SET_DRIVER:
+	case DEV_RESCAN:
+	case DEV_DELETE:
 		error = priv_check(td, PRIV_DRIVER);
 		if (error == 0)
 			error = find_device(req, &dev);
@@ -5451,6 +5463,31 @@ devctl2_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int fflag,
 			break;
 		dev->flags |= DF_FIXEDCLASS;
 		error = device_probe_and_attach(dev);
+		break;
+	}
+	case DEV_RESCAN:
+		if (!device_is_attached(dev)) {
+			error = ENXIO;
+			break;
+		}
+		error = BUS_RESCAN(dev);
+		break;
+	case DEV_DELETE: {
+		device_t parent;
+
+		parent = device_get_parent(dev);
+		if (parent == NULL) {
+			error = EINVAL;
+			break;
+		}
+		if (!(req->dr_flags & DEVF_FORCE_DELETE)) {
+			if (bus_child_present(dev) != 0) {
+				error = EBUSY;
+				break;
+			}
+		}
+		
+		error = device_delete_child(parent, dev);
 		break;
 	}
 	}

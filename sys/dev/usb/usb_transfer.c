@@ -246,7 +246,7 @@ usbd_transfer_setup_sub_malloc(struct usb_setup_params *parm,
 		 * Compute number of DMA chunks, rounded up
 		 * to nearest one:
 		 */
-		n_dma_pc = ((count + n_obj - 1) / n_obj);
+		n_dma_pc = howmany(count, n_obj);
 		n_dma_pg = 1;
 	}
 
@@ -925,7 +925,7 @@ usbd_transfer_setup(struct usb_device *udev,
 		DPRINTFN(6, "setup array has zero length!\n");
 		return (USB_ERR_INVAL);
 	}
-	if (ifaces == 0) {
+	if (ifaces == NULL) {
 		DPRINTFN(6, "ifaces array is NULL!\n");
 		return (USB_ERR_INVAL);
 	}

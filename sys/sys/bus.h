@@ -118,12 +118,17 @@ struct devreq {
 #define	DEV_SUSPEND	_IOW('D', 5, struct devreq)
 #define	DEV_RESUME	_IOW('D', 6, struct devreq)
 #define	DEV_SET_DRIVER	_IOW('D', 7, struct devreq)
+#define	DEV_RESCAN	_IOW('D', 9, struct devreq)
+#define	DEV_DELETE	_IOW('D', 10, struct devreq)
 
 /* Flags for DEV_DETACH and DEV_DISABLE. */
 #define	DEVF_FORCE_DETACH	0x0000001
 
 /* Flags for DEV_SET_DRIVER. */
 #define	DEVF_SET_DRIVER_DETACH	0x0000001	/* Detach existing driver. */
+
+/* Flags for DEV_DELETE. */
+#define	DEVF_FORCE_DELETE	0x0000001
 
 #ifdef _KERNEL
 
@@ -539,6 +544,7 @@ int	device_is_attached(device_t dev);	/* did attach succeed? */
 int	device_is_enabled(device_t dev);
 int	device_is_suspended(device_t dev);
 int	device_is_quiet(device_t dev);
+device_t device_lookup_by_name(const char *name);
 int	device_print_prettyname(device_t dev);
 int	device_printf(device_t dev, const char *, ...) __printflike(2, 3);
 int	device_probe(device_t dev);
