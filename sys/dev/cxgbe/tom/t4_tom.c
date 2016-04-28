@@ -1127,6 +1127,10 @@ t4_tom_mod_load(void)
 	int rc;
 	struct protosw *tcp_protosw, *tcp6_protosw;
 
+	rc = t4_ddp_mod_load();
+	if (rc != 0)
+		return (rc);
+
 	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
 	if (tcp_protosw == NULL)
 		return (ENOPROTOOPT);
@@ -1181,6 +1185,8 @@ t4_tom_mod_unload(void)
 		EVENTHANDLER_DEREGISTER(ifaddr_event, ifaddr_evhandler);
 		taskqueue_cancel_timeout(taskqueue_thread, &clip_task, NULL);
 	}
+
+	t4_ddp_mod_unload();
 
 	return (0);
 }

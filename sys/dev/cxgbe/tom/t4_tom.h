@@ -337,6 +337,8 @@ void t4_uninit_ddp(struct adapter *, struct tom_data *);
 int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,
     struct mbuf **, struct mbuf **, int *);
 int t4_aio_queue_ddp(struct socket *, struct kaiocb *);
+int t4_ddp_mod_load(void);
+void t4_ddp_mod_unload(void);
 void ddp_assert_empty(struct toepcb *);
 void ddp_init_toep(struct toepcb *);
 void ddp_uninit_toep(struct toepcb *);

@@ -113,6 +113,10 @@ static void t4_aio_cancel_queued(struct kaiocb *job);
 /* XXX: must match A_ULP_RX_TDDP_PSZ */
 static int t4_ddp_pgsz[] = {4096, 4096 << 2, 4096 << 4, 4096 << 6};
 
+static TAILQ_HEAD(, pageset) ddp_orphan_pagesets;
+static struct mtx ddp_orphan_pagesets_lock;
+static struct task ddp_orphan_task;
+
 #define MAX_DDP_BUFFER_SIZE		(M_TCB_RX_DDP_BUF0_LEN)
 static int
 alloc_ppods(struct tom_data *td, int n, u_int *ppod_addr)
@@ -183,9 +187,28 @@ free_pageset(struct tom_data *td, struct pageset *ps)
 		vm_page_unhold_pages(ps->pages, ps->npages);
 		ddp_held_pages -= ps->npages;
 	}
-	if (ps->vm)
-		vmspace_free(ps->vm);
-	free(ps, M_CXGBE);
+	mtx_lock(&ddp_orphan_pagesets_lock);
+	TAILQ_INSERT_TAIL(&ddp_orphan_pagesets, ps, link);
+	taskqueue_enqueue(taskqueue_thread, &ddp_orphan_task);
+	mtx_unlock(&ddp_orphan_pagesets_lock);
+}
+
+static void
+ddp_free_orphan_pagesets(void *context, int pending)
+{
+	struct pageset *ps;
+
+	mtx_lock(&ddp_orphan_pagesets_lock);
+	while (!TAILQ_EMPTY(&ddp_orphan_pagesets)) {
+		ps = TAILQ_FIRST(&ddp_orphan_pagesets);
+		TAILQ_REMOVE(&ddp_orphan_pagesets, ps, link);
+		mtx_unlock(&ddp_orphan_pagesets_lock);
+		if (ps->vm)
+			vmspace_free(ps->vm);
+		free(ps, M_CXGBE);
+		mtx_lock(&ddp_orphan_pagesets_lock);
+	}
+	mtx_unlock(&ddp_orphan_pagesets_lock);
 }
 
 static void
@@ -1836,6 +1859,25 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 #endif
 	DDP_UNLOCK(toep);
 	return (0);
+}
+
+int
+t4_ddp_mod_load(void)
+{
+
+	TAILQ_INIT(&ddp_orphan_pagesets);
+	mtx_init(&ddp_orphan_pagesets_lock, "ddp orphans", NULL, MTX_DEF);
+	TASK_INIT(&ddp_orphan_task, 0, ddp_free_orphan_pagesets, NULL);
+	return (0);
+}
+
+void
+t4_ddp_mod_unload(void)
+{
+
+	taskqueue_drain(taskqueue_thread, &ddp_orphan_task);
+	MPASS(TAILQ_EMPTY(&ddp_orphan_pagesets));
+	mtx_destroy(&ddp_orphan_pagesets_lock);
 }
 
 MODULE_DEPEND(t4_tom, aio, 1, 1, 1);
