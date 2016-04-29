@@ -100,10 +100,6 @@ t4iov_probe(device_t dev)
 	uint16_t d; 
 	size_t i;
 
-	/*
-	 * TODO: Need to fail probing if there is not an active port
-	 * for this function.
-	 */
 	d = pci_get_device(dev);
 	for (i = 0; i < nitems(t4iov_pciids); i++) {
 		if (d == t4iov_pciids[i].device) {
@@ -120,10 +116,6 @@ t5iov_probe(device_t dev)
 	uint16_t d; 
 	size_t i;
 
-	/*
-	 * TODO: Need to fail probing if there is not an active port
-	 * for this function.
-	 */
 	d = pci_get_device(dev);
 	for (i = 0; i < nitems(t5iov_pciids); i++) {
 		if (d == t5iov_pciids[i].device) {
