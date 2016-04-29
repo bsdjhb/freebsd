@@ -1164,12 +1164,18 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	end = round_page(start + job->uaiocb.aio_nbytes);
 	start = trunc_page(start);
 
-	if (end - start > MAX_DDP_BUFFER_SIZE)
+	if (end - start > MAX_DDP_BUFFER_SIZE) {
 		/*
-		 * TODO: What we should do is DDP in chunks.
-		 * Alternatively we could return a short read.
+		 * Truncate the request to a short read.
+		 * Alternatively, we could DDP in chunks to the larger
+		 * buffer, but that would be quite a bit more work.
+		 *
+		 * When truncating, round the request down to avoid
+		 * crossing a cache line on the final transaction.
 		 */
-		panic("large aio buffer not yet implemented");
+		end = rounddown2(start + MAX_DDP_BUFFER_SIZE, CACHE_LINE_SIZE);
+		job->uaiocb.aio_nbytes = end - (start + pgoff);
+	}
 
 	n = atop(end - start);
 
