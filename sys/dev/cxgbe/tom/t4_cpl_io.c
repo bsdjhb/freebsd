@@ -1512,7 +1512,6 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		tp->rcv_adv += credits;
 	}
 
-	/* XXX: Make this a ddp callout? */
 	if (toep->ddp_waiting_count > 0 && sbavail(sb) != 0) {
 		CTR2(KTR_CXGBE, "%s: tid %u queueing AIO task", __func__,
 		    tid);

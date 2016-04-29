@@ -1136,7 +1136,6 @@ t4_tom_mod_load(void)
 		return (ENOPROTOOPT);
 	bcopy(tcp_protosw, &ddp_protosw, sizeof(ddp_protosw));
 	bcopy(tcp_protosw->pr_usrreqs, &ddp_usrreqs, sizeof(ddp_usrreqs));
-//	ddp_usrreqs.pru_soreceive = t4_soreceive_ddp;
 	ddp_usrreqs.pru_aio_queue = t4_aio_queue_ddp;
 	ddp_protosw.pr_usrreqs = &ddp_usrreqs;
 
@@ -1145,7 +1144,6 @@ t4_tom_mod_load(void)
 		return (ENOPROTOOPT);
 	bcopy(tcp6_protosw, &ddp6_protosw, sizeof(ddp6_protosw));
 	bcopy(tcp6_protosw->pr_usrreqs, &ddp6_usrreqs, sizeof(ddp6_usrreqs));
-//	ddp6_usrreqs.pru_soreceive = t4_soreceive_ddp;
 	ddp6_usrreqs.pru_aio_queue = t4_aio_queue_ddp;
 	ddp6_protosw.pr_usrreqs = &ddp6_usrreqs;
 
