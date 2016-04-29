@@ -1029,7 +1029,8 @@ wire_pageset(struct pageset *ps)
 }
 
 /*
- * Prepare a pagset for DDP.  This wires the pageset and sets up page pods.
+ * Prepare a pageset for DDP.  This wires the pageset and sets up page
+ * pods.
  */
 static int
 prep_pageset(struct adapter *sc, struct toepcb *toep, struct pageset *ps)
