@@ -1757,6 +1757,4 @@ t4_ddp_mod_unload(void)
 	MPASS(TAILQ_EMPTY(&ddp_orphan_pagesets));
 	mtx_destroy(&ddp_orphan_pagesets_lock);
 }
-
-MODULE_DEPEND(t4_tom, aio, 1, 1, 1);
 #endif
