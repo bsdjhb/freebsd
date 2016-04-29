@@ -1840,6 +1840,90 @@ pmap_extract(pmap_t pmap, vm_offset_t va)
 }
 
 /*
+ * Return true if the 'count' pages beginning at VA 'va' are all mapped
+ * and match the pages in 'pages' (same physical address).  It might be
+ * more appropriate to do this in the vm_map layer?
+ */
+int
+pmap_compare(pmap_t pmap, vm_offset_t va, vm_prot_t prot, vm_page_t *pages,
+    int count)
+{
+	pml4_entry_t *pml4e;
+	pdp_entry_t *pdpe;
+	pd_entry_t *pde;
+	pt_entry_t *pte, PG_RW, PG_V;
+	vm_paddr_t pa;
+
+	va = trunc_page(va);
+	PG_RW = pmap_rw_bit(pmap);
+	PG_V = pmap_valid_bit(pmap);
+	PMAP_LOCK(pmap);
+	pml4e = NULL;
+	pdpe = NULL;
+	pde = NULL;
+	while (count > 0) {
+		if (pml4e == NULL) {
+			pml4e = pmap_pml4e(pmap, va);
+			if ((*pml4e & PG_V) == 0)
+				goto fail;
+		}
+		if (pdpe == NULL) {
+			pdpe = pmap_pml4e_to_pdpe(pml4e, va);
+			if ((*pdpe & PG_V) == 0)
+				goto fail;
+		}
+		if ((*pdpe & PG_PS) != 0) {
+			if ((*pdpe & PG_RW) == 0 && (prot & VM_PROT_WRITE))
+				goto fail;
+			pa = (*pdpe & PG_PS_FRAME) | (va & PDPMASK);
+		} else {
+			if (pde == NULL) {
+				pde = pmap_pdpe_to_pde(pdpe, va);
+				if ((*pde & PG_V) == 0)
+					goto fail;
+			}
+			if ((*pde & PG_PS) != 0) {
+				if ((*pde & PG_RW) == 0 &&
+				    (prot & VM_PROT_WRITE))
+					goto fail;
+				pa = (*pde & PG_PS_FRAME) | (va & PDRMASK);
+			} else {
+				pte = pmap_pde_to_pte(pde, va);
+				if ((*pte & PG_V) == 0 ||
+				    ((*pte & PG_RW) == 0 &&
+				    (prot & VM_PROT_WRITE)))
+					goto fail;
+				pa = (*pte & PG_FRAME);
+			}
+		}
+		if (pa != pages[0]->phys_addr)
+			return (0);
+		pages++;
+		count--;
+		va += PAGE_SIZE;
+
+		/*
+		 * Invalidate cached table entries when rolling over to
+		 * the next page at each level.
+		 */
+		if (pmap_pte_index(va) == 0) {
+			pde = NULL;
+			if (pmap_pde_index(va) == 0) {
+				pdpe = NULL;
+				if (pmap_pdpe_index(va) == 0)
+					pml4e = NULL;
+			}
+		}
+	}
+	PMAP_UNLOCK(pmap);
+	return (1);
+fail:
+	PMAP_UNLOCK(pmap);
+	return (0);
+}
+
+
+/*
  *	Routine:	pmap_extract_and_hold
  *	Function:
  *		Atomically extract and hold the physical page
