@@ -1181,6 +1181,7 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 		    __func__, toep->tid, (unsigned long)job->uaiocb.aio_nbytes,
 		    (unsigned long)(end - (start + pgoff)));
 		job->uaiocb.aio_nbytes = end - (start + pgoff);
+		end = round_page(end);
 	}
 
 	n = atop(end - start);
