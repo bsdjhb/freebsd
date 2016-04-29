@@ -552,7 +552,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	 * sequence number of the next byte to receive.  The length of
 	 * the data received for this message must be computed by
 	 * comparing the new and old values of rcv_nxt.
-	 * 
+	 *
 	 * For RX_DATA_DDP, len might be non-zero, but it is only the
 	 * length of the most recent DMA.  It does not include the
 	 * total length of the data received since the previous update
@@ -662,7 +662,7 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 	struct ddp_buffer *db;
 	struct kaiocb *job;
 	long copied;
-	
+
 	if (cpl->status != CPL_ERR_NONE)
 		panic("XXX: tcp_rpl failed: %d", cpl->status);
 
@@ -1351,7 +1351,7 @@ restart:
 	 */
 	if (toep->ddp_queueing != NULL)
 		return;
-	   
+
 	/* Take the next job to prep it for DDP. */
 	toep->ddp_waiting_count--;
 	TAILQ_REMOVE(&toep->ddp_aiojobq, job, list);

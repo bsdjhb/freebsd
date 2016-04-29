@@ -385,7 +385,7 @@ t4_rcvd(struct toedev *tod, struct tcpcb *tp)
 	t4_rcvd_locked(tod, tp);
 	SOCKBUF_UNLOCK(sb);
 }
-	
+
 /*
  * Close a connection by sending a CPL_CLOSE_CON_REQ message.
  */
