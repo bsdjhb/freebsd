@@ -1754,10 +1754,6 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 {
 	struct tcpcb *tp = so_sototcpcb(so);
 	struct toepcb *toep = tp->t_toe;
-#if 0
-	struct adapter *sc = td_adapter(toep->td);
-	struct sockbuf *sb = &so->so_rcv;
-#endif
 
 
 	/* Ignore writes. */
@@ -1782,44 +1778,12 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 	toep->ddp_waiting_count++;
 	toep->ddp_flags |= DDP_OK;
 
-#if 1
 	/*
 	 * Try to handle this request synchronously.  If this has
 	 * to block because the task is running, it will just bail
 	 * and let the task handle it instead.
 	 */
 	aio_ddp_requeue(toep);
-#else
-	if (sbavail(sb) > 0 || (toep->ddp_flags & DDP_ON &&
-	    (toep->ddp_flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) !=
-	    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
-		/*
-		 * If there is pending data or DDP is already active and
-		 * there is an available slot, queue the task.
-		 *
-		 * XXX: We could possibly do some of this work inline
-		 * instead of queueing the task?
-		 */
-		ddp_queue_toep(toep);
-	else if ((toep->ddp_flags & (DDP_ON | DDP_SC_REQ)) == 0) {
-		/*
-		 * Wait for the card to ACK that DDP is enabled before
-		 * queueing any buffers.  Currently this waits for an
-		 * indicate to arrive.  It is not clear if it is possible
-		 * to force an ACK of the enable request sooner if there
-		 * is no data pending.  (Would be nice to not always
-		 * require a copy of the indicated data.)
-		 *
-		 * XXX: Might want to limit the indicate size to the
-		 * first queued request. (TODO)
-		 *
-		 * XXX: Could use a TCB_SET_FIELD_RPL message to know
-		 * that DDP was enabled.
-		 */
-		if (ddp_aio_enable)
-			enable_ddp(sc, toep);
-	}
-#endif
 	DDP_UNLOCK(toep);
 	return (0);
 }
