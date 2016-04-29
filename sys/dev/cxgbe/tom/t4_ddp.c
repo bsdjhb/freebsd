@@ -42,7 +42,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/domain.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
-#include <sys/sysctl.h>		/* XXX */
 #include <sys/taskqueue.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
@@ -74,33 +73,6 @@ VNET_DECLARE(int, tcp_autorcvbuf_inc);
 #define V_tcp_autorcvbuf_inc VNET(tcp_autorcvbuf_inc)
 VNET_DECLARE(int, tcp_autorcvbuf_max);
 #define V_tcp_autorcvbuf_max VNET(tcp_autorcvbuf_max)
-
-/* XXX: For debugging. */
-#ifdef DEV_NETMAP
-SYSCTL_DECL(_hw_cxgbe);
-#else
-SYSCTL_NODE(_hw, OID_AUTO, cxgbe, CTLFLAG_RD, 0, "cxgbe parameters");
-#endif
-SYSCTL_NODE(_hw_cxgbe, OID_AUTO, ddp, CTLFLAG_RD, NULL, "DDP stats");
-
-static int ddp_aio_enable = 0;
-SYSCTL_INT(_hw_cxgbe_ddp, OID_AUTO, aio_enable, CTLFLAG_RW, &ddp_aio_enable,
-    0, "Use DDP for aio_read()");
-static unsigned long ddp_aio_placed = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_placed, CTLFLAG_RW, &ddp_aio_placed,
-    0, "AIO requests completed via DDP");
-static unsigned long ddp_aio_copied = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_copied, CTLFLAG_RW, &ddp_aio_copied,
-    0, "AIO requests completed via copies");
-static unsigned long ddp_aio_mixed = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, aio_mixed, CTLFLAG_RW, &ddp_aio_mixed,
-    0, "AIO requests completed via copies and DDP");
-static unsigned long ddp_held_pages = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, held_pages, CTLFLAG_RW, &ddp_held_pages,
-    0, "Pages held for DDP");
-static unsigned long ddp_wired_pages = 0;
-SYSCTL_ULONG(_hw_cxgbe_ddp, OID_AUTO, wired_pages, CTLFLAG_RW, &ddp_wired_pages,
-    0, "Pages wired for DDP");
 
 static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, int error);
@@ -180,13 +152,10 @@ free_pageset(struct tom_data *td, struct pageset *ps)
 			p = ps->pages[i];
 			vm_page_lock(p);
 			vm_page_unwire(p, PQ_INACTIVE);
-			ddp_wired_pages--;
 			vm_page_unlock(p);
 		}
-	} else {
+	} else
 		vm_page_unhold_pages(ps->pages, ps->npages);
-		ddp_held_pages -= ps->npages;
-	}
 	mtx_lock(&ddp_orphan_pagesets_lock);
 	TAILQ_INSERT_TAIL(&ddp_orphan_pagesets, ps, link);
 	taskqueue_enqueue(taskqueue_thread, &ddp_orphan_task);
@@ -396,12 +365,6 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 			    __func__, job, copied, placed);
 			/* XXX: This always completes if there is some data. */
 			aio_complete(job, copied + placed, 0);
-			if (copied != 0 && placed != 0)
-				ddp_aio_mixed++;
-			else if (copied != 0)
-				ddp_aio_copied++;
-			else
-				ddp_aio_placed++;
 		} else if (aio_set_cancel_function(job, t4_aio_cancel_queued)) {
 			TAILQ_INSERT_HEAD(&toep->ddp_aiojobq, job, list);
 			toep->ddp_waiting_count++;
@@ -651,10 +614,6 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 		    __func__, job, copied, len);
 #endif
 		aio_complete(job, copied + len, 0);
-		if (copied != 0)
-			ddp_aio_mixed++;
-		else
-			ddp_aio_placed++;
 		t4_rcvd(&toep->td->tod, tp);
 	}
 
@@ -745,7 +704,6 @@ handle_ddp_tcb_rpl(struct toepcb *toep, const struct cpl_set_tcb_rpl *cpl)
 			CTR3(KTR_CXGBE, "%s: completing %p (copied %ld)",
 			    __func__, job, copied);
 			aio_complete(job, copied, 0);
-			ddp_aio_copied++;
 			t4_rcvd(&toep->td->tod, intotcpcb(inp));
 		}
 
@@ -802,12 +760,6 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 			    __func__, toep->tid, db_idx, placed);
 			aio_complete(job, copied + placed, 0);
 		}
-		if (copied != 0 && placed != 0)
-			ddp_aio_mixed++;
-		else if (copied != 0)
-			ddp_aio_copied++;
-		else if (placed != 0)
-			ddp_aio_placed++;
 		len -= placed;
 		complete_ddp_buffer(toep, db, db_idx);
 	}
@@ -1070,9 +1022,7 @@ wire_pageset(struct pageset *ps)
 		p = ps->pages[i];
 		vm_page_lock(p);
 		vm_page_wire(p);
-		ddp_wired_pages++;
 		vm_page_unhold(p);
-		ddp_held_pages--;
 		vm_page_unlock(p);
 	}
 	ps->flags |= PS_WIRED;
@@ -1232,7 +1182,6 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	KASSERT(ps->npages == n, ("hold_aio: page count mismatch: %d vs %d",
 	    ps->npages, n));
 
-	ddp_held_pages += ps->npages;
 	ps->offset = pgoff;
 	ps->len = job->uaiocb.aio_nbytes;
 	atomic_add_int(&vm->vm_refcnt, 1);
@@ -1398,7 +1347,7 @@ restart:
 		 * XXX: Might want to limit the indicate size to the size
 		 * of the first queued request.
 		 */
-		if ((toep->ddp_flags & DDP_SC_REQ) == 0 && ddp_aio_enable)
+		if ((toep->ddp_flags & DDP_SC_REQ) == 0)
 			enable_ddp(sc, toep);
 		return;
 	}
@@ -1532,8 +1481,7 @@ sbcopy:
 		}
 		t4_rcvd_locked(&toep->td->tod, intotcpcb(inp));
 		INP_WUNLOCK(inp);
-		if (resid == 0 || !ddp_aio_enable ||
-		    toep->ddp_flags & DDP_DEAD) {
+		if (resid == 0 || toep->ddp_flags & DDP_DEAD) {
 			/*
 			 * We filled the entire buffer with socket
 			 * data, DDP is not being used, or the socket
@@ -1543,7 +1491,6 @@ sbcopy:
 			SOCKBUF_UNLOCK(sb);
 			recycle_pageset(toep, ps);
 			aio_complete(job, copied, 0);
-			ddp_aio_copied++;
 			toep->ddp_queueing = NULL;
 			goto restart;
 		}
