@@ -1130,8 +1130,6 @@ t4_uninit_ddp(struct adapter *sc __unused, struct tom_data *td)
 	}
 }
 
-#define VM_TIMESTAMP
-
 static int
 pscmp(struct pageset *ps, struct vmspace *vm, vm_offset_t start, int npages,
     int pgoff, int len)
@@ -1140,23 +1138,7 @@ pscmp(struct pageset *ps, struct vmspace *vm, vm_offset_t start, int npages,
 	if (ps->npages != npages || ps->offset != pgoff || ps->len != len)
 		return (1);
 
-#ifdef VM_TIMESTAMP
 	return (ps->vm != vm || ps->vm_timestamp != vm->vm_map.timestamp);
-#elif defined(VM_MAP_COMPARE)
-	return (!vm_map_compare(map, start, ptoa(npages), VM_PROT_WRITE,
-	    ps->pages, npages));
-#elif defined(PMAP_COMPARE)
-	return (!pmap_compare(map->pmap, start, VM_PROT_WRITE, ps->pages,
-	    ps->npages));
-#else
-	for (int i = 0; i < npages; i++) {
-		if (ps->pages[i]->phys_addr != pmap_extract(map->pmap, start))
-			return (1);
-		start += PAGE_SIZE;
-	}
-
-	return (0);
-#endif
 }
 
 static int
@@ -1195,32 +1177,13 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 	 * Try to reuse a cached pageset.
 	 */
 	TAILQ_FOREACH(ps, &toep->ddp_cached_pagesets, link) {
-#ifdef VM_MAP_COMPARE
-		/*
-		 * Drop the DDP lock around vm_map_compare().  'ps'
-		 * will not be removed out from under us as the
-		 * connection can't be closed due to the reference
-		 * from the AIO job whose buffer is being held.
-		 * Another DDP connection might complete and append
-		 * its buffer to the queue while the lock is dropped,
-		 * but that is safe since the 'link' is read after the
-		 * lock is reacquired.
-		 */
-		DDP_UNLOCK(toep);
-#endif
 		if (pscmp(ps, vm, start, n, pgoff,
 		    job->uaiocb.aio_nbytes) == 0) {
-#ifdef VM_MAP_COMPARE
-			DDP_LOCK(toep);
-#endif
 			TAILQ_REMOVE(&toep->ddp_cached_pagesets, ps, link);
 			toep->ddp_cached_count--;
 			*pps = ps;
 			return (0);
 		}
-#ifdef VM_MAP_COMPARE
-		DDP_LOCK(toep);
-#endif
 	}
 
 	/*
