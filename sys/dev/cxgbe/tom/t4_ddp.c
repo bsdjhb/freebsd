@@ -1173,7 +1173,13 @@ hold_aio(struct toepcb *toep, struct kaiocb *job, struct pageset **pps)
 		 * When truncating, round the request down to avoid
 		 * crossing a cache line on the final transaction.
 		 */
+		CTR4(KTR_CXGBE, "%s: tid %d, end %lu -> %lu", __func__,
+		    toep->tid, (unsigned long)end, (unsigned long)
+		    (rounddown2(start + MAX_DDP_BUFFER_SIZE, CACHE_LINE_SIZE)));
 		end = rounddown2(start + MAX_DDP_BUFFER_SIZE, CACHE_LINE_SIZE);
+		CTR4(KTR_CXGBE, "%s: tid %d, truncating size from %lu to %lu",
+		    __func__, toep->tid, (unsigned long)job->uaiocb.aio_nbytes,
+		    (unsigned long)(end - (start + pgoff)));
 		job->uaiocb.aio_nbytes = end - (start + pgoff);
 	}
 
