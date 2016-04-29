@@ -167,7 +167,7 @@ t4iov_attach_child(device_t dev)
 	 * for this functions associated port to determine if the port
 	 * is present.
 	 */
-	error = t4_read_port_unit(sc->sc_main, pci_get_function(dev), &unit);
+	error = T4_READ_PORT_UNIT(sc->sc_main, pci_get_function(dev), &unit);
 	if (error)
 		return (0);
 
