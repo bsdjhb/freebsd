@@ -158,7 +158,7 @@ static void
 read_aio(int s, const char *data, size_t len, int size)
 {
 	struct aiocb *req;
-	int nread;
+	ssize_t nread;
 
 	while (len > 0) {
 		nread = aio_waitcomplete(&req, NULL);
