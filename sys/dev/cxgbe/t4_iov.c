@@ -45,6 +45,7 @@ __FBSDID("$FreeBSD$");
 
 struct t4iov_softc {
 	device_t sc_dev;
+	device_t sc_main;
 	bool sc_attached;
 };
 
@@ -137,14 +138,13 @@ static int
 t4iov_attach(device_t dev)
 {
 	struct t4iov_softc *sc;
-	device_t main;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	main = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
+	sc->sc_main = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
 	    pci_get_slot(dev), 4);
-	if (T4_IS_MAIN_READY(main) == 0)
+	if (T4_IS_MAIN_READY(sc->sc_main) == 0)
 		return (t4iov_attach_child(dev));
 	return (0);
 }
@@ -155,11 +155,21 @@ t4iov_attach_child(device_t dev)
 	struct t4iov_softc *sc;
 #ifdef PCI_IOV
 	nvlist_t *pf_schema, *vf_schema;
-	int error;
 #endif
+	int error, unit;
 
 	sc = device_get_softc(dev);
 	MPASS(!sc->sc_attached);
+
+	/*
+	 * PF0-3 are associated with a specific port on the NIC (PF0
+	 * with port 0, etc.).  Ask the PF4 driver for the unit number
+	 * for this functions associated port to determine if the port
+	 * is present.
+	 */
+	error = t4_read_port_unit(sc->sc_main, pci_get_function(dev), &unit);
+	if (error)
+		return (0);
 
 #ifdef PCI_IOV
 	pf_schema = pci_iov_schema_alloc_node();
@@ -184,7 +194,8 @@ t4iov_detach_child(device_t dev)
 #endif
 
 	sc = device_get_softc(dev);
-	MPASS(sc->sc_attached);
+	if (!sc->sc_attached)
+		return (0);
 
 #ifdef PCI_IOV
 	error = pci_iov_detach(dev);

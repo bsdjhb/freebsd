@@ -54,3 +54,12 @@ METHOD int attach_child {
 METHOD int detach_child {
 	device_t	dev;
 };
+
+# Called by a driver to query the PF4 driver for the unit number to use
+# for a given port.  If the port is not enabled on the adapter, this
+# will fail.
+METHOD int read_port_unit {
+	device_t	dev;
+	int		port;
+	int		*unit;
+};
