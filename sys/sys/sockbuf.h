@@ -126,7 +126,6 @@ struct	sockbuf {
 #define	SOCKBUF_LOCK(_sb)		mtx_lock(SOCKBUF_MTX(_sb))
 #define	SOCKBUF_OWNED(_sb)		mtx_owned(SOCKBUF_MTX(_sb))
 #define	SOCKBUF_UNLOCK(_sb)		mtx_unlock(SOCKBUF_MTX(_sb))
-#define	SOCKBUF_TRYLOCK(_sb)		mtx_trylock(SOCKBUF_MTX(_sb))
 #define	SOCKBUF_LOCK_ASSERT(_sb)	mtx_assert(SOCKBUF_MTX(_sb), MA_OWNED)
 #define	SOCKBUF_UNLOCK_ASSERT(_sb)	mtx_assert(SOCKBUF_MTX(_sb), MA_NOTOWNED)
 
