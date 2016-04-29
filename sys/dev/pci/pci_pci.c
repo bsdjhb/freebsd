@@ -35,6 +35,8 @@ __FBSDID("$FreeBSD$");
  * PCI:PCI bridge support.
  */
 
+#include "opt_pci.h"
+
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/kernel.h>
@@ -68,9 +70,11 @@ static int		pcib_try_enable_ari(device_t pcib, device_t dev);
 static int		pcib_ari_enabled(device_t pcib);
 static void		pcib_ari_decode_rid(device_t pcib, uint16_t rid,
 			    int *bus, int *slot, int *func);
+#ifdef PCI_HP
 static void		pcib_pcie_ab_timeout(void *arg);
 static void		pcib_pcie_cc_timeout(void *arg);
 static void		pcib_pcie_dll_timeout(void *arg);
+#endif
 
 static device_method_t pcib_methods[] = {
     /* Device interface */
@@ -844,6 +848,7 @@ pcib_set_mem_decode(struct pcib_softc *sc)
 }
 #endif
 
+#ifdef PCI_HP
 /*
  * PCI-express HotPlug support.
  */
@@ -1297,6 +1302,7 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 
 	pcib_pcie_hotplug_update(sc, val, mask, false);
 }
+#endif
 
 /*
  * Get current bridge configuration.
@@ -1476,15 +1482,19 @@ pcib_attach_common(device_t dev)
       pci_read_config(dev, PCIR_PROGIF, 1) == PCIP_BRIDGE_PCI_SUBTRACTIVE)
 	sc->flags |= PCIB_SUBTRACTIVE;
 
+#ifdef PCI_HP
     pcib_probe_hotplug(sc);
+#endif
 #ifdef NEW_PCIB
 #ifdef PCI_RES_BUS
     pcib_setup_secbus(dev, &sc->bus, 1);
 #endif
     pcib_probe_windows(sc);
 #endif
+#ifdef PCI_HP
     if (sc->flags & PCIB_HOTPLUG)
 	    pcib_setup_hotplug(sc);
+#endif
     if (bootverbose) {
 	device_printf(dev, "  domain            %d\n", sc->domain);
 	device_printf(dev, "  secondary bus     %d\n", sc->bus.sec);
@@ -1536,6 +1546,7 @@ pcib_attach_common(device_t dev)
     pci_enable_busmaster(dev);
 }
 
+#ifdef PCI_HP
 static int
 pcib_present(struct pcib_softc *sc)
 {
@@ -1544,6 +1555,7 @@ pcib_present(struct pcib_softc *sc)
 		return (pcib_hotplug_present(sc) != 0);
 	return (1);
 }
+#endif
 
 int
 pcib_attach_child(device_t dev)
@@ -1556,10 +1568,12 @@ pcib_attach_child(device_t dev)
 		return(0);
 	}
 
+#ifdef PCI_HP
 	if (!pcib_present(sc)) {
 		/* An empty HotPlug slot, so don't add a PCI bus yet. */
 		return (0);
 	}
+#endif
 
 	sc->child = device_add_child(dev, "pci", -1);
 	return (bus_generic_attach(dev));
@@ -1607,6 +1621,7 @@ pcib_bridge_init(device_t dev)
 int
 pcib_child_present(device_t dev, device_t child)
 {
+#ifdef PCI_HP
 	struct pcib_softc *sc = device_get_softc(dev);
 	int retval;
 
@@ -1614,6 +1629,9 @@ pcib_child_present(device_t dev, device_t child)
 	if (retval != 0 && sc->flags & PCIB_HOTPLUG)
 		retval = pcib_hotplug_present(sc);
 	return (retval);
+#else
+	return (bus_child_present(dev));
+#endif
 }
 
 int
@@ -2397,6 +2415,7 @@ pcib_ari_decode_rid(device_t pcib, uint16_t rid, int *bus, int *slot,
 static uint32_t
 pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 {
+#ifdef PCI_HP
 	struct pcib_softc *sc;
 
 	sc = device_get_softc(dev);
@@ -2410,6 +2429,7 @@ pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 			return (0xffffffff);
 		}
 	}
+#endif
 	pcib_xlate_ari(dev, b, &s, &f);
 	return(PCIB_READ_CONFIG(device_get_parent(device_get_parent(dev)), b, s,
 	    f, reg, width));
@@ -2418,11 +2438,13 @@ pcib_read_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, int width)
 static void
 pcib_write_config(device_t dev, u_int b, u_int s, u_int f, u_int reg, uint32_t val, int width)
 {
+#ifdef PCI_HP
 	struct pcib_softc *sc;
 
 	sc = device_get_softc(dev);
 	if (!pcib_present(sc))
 		return;
+#endif
 	pcib_xlate_ari(dev, b, &s, &f);
 	PCIB_WRITE_CONFIG(device_get_parent(device_get_parent(dev)), b, s, f,
 	    reg, val, width);
