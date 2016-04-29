@@ -1110,7 +1110,7 @@ t4_read_port_unit(device_t dev, int port, int *unit)
 	sc = device_get_softc(dev);
 	if (port < 0 || port >= MAX_NPORTS)
 		return (EINVAL);
-	pi = sc->port[i];
+	pi = sc->port[port];
 	if (pi == NULL || pi->dev == NULL)
 		return (ENXIO);
 	*unit = device_get_unit(pi->dev);
