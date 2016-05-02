@@ -1196,10 +1196,9 @@ pcib_pcie_dll_timeout(void *arg)
 	if (!(sta & PCIEM_LINK_STA_DL_ACTIVE)) {
 		device_printf(dev,
 		    "Timed out waiting for Data Link Layer Active\n");
+		sc->flags |= PCIB_DETACHING;
 		pcib_pcie_hotplug_update(sc, 0, 0, true);
-	}
-
-	if (sta != sc->pcie_link_sta) {
+	} else if (sta != sc->pcie_link_sta) {
 		device_printf(dev,
 		    "Missed HotPlug interrupt waiting for DLL Active\n");
 		pcib_pcie_intr(sc);
