@@ -888,6 +888,7 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		new = (ctl & ~mask) | val;
 		if (new != ctl)
 			pcie_write_config(dev, PCIER_SLOT_CTL, new, 2);
+		return;
 	}
 
 	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
