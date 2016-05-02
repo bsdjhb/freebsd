@@ -1221,7 +1221,6 @@ pcib_alloc_pcie_irq(struct pcib_softc *sc)
 	 */
 	count = pci_msix_count(dev);
 	if (count == 1) {
-		count = 1;
 		error = pci_alloc_msix(dev, &count);
 		if (error == 0)
 			rid = 1;
