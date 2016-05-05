@@ -35,6 +35,7 @@
 #include <sys/_cpuset.h>
 
 #include <sys/bitset.h>
+#include <sys/queue.h>
 
 #define	_NCPUBITS	_BITSET_BITS
 #define	_NCPUWORDS	__bitset_words(CPU_SETSIZE)
