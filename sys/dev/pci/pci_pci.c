@@ -916,8 +916,8 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 
 	dev = sc->dev;
 
-	/* XXX */
-	device_printf(dev, "Command Completed\n");
+	if (bootverbose)
+		device_printf(dev, "Command Completed\n");
 	if (!(sc->flags & PCIB_HOTPLUG_CMD_PENDING))
 		return;
 	if (sc->pcie_pending_link_ctl_mask != 0) {
@@ -1112,19 +1112,19 @@ pcib_pcie_intr(void *arg)
 		device_printf(dev, "MRL Sensor Changed to %s\n",
 		    sc->pcie_slot_sta & PCIEM_SLOT_STA_MRLSS ? "open" :
 		    "closed");
-	/* XXX */
-	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC)
+	if (bootverbose && sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC)
 		device_printf(dev, "Present Detect Changed to %s\n",
 		    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDS ? "card present" :
 		    "empty");
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_CC)
 		pcib_pcie_hotplug_command_completed(sc);
-	/* XXX */
 	if (sc->pcie_slot_sta & PCIEM_SLOT_STA_DLLSC) {
 		sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
-		device_printf(dev, "Data Link Layer State Changed to %s\n",
-		    sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE ? "active" :
-		    "inactive");
+		if (bootverbose)
+			device_printf(dev,
+			    "Data Link Layer State Changed to %s\n",
+			    sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE ?
+			    "active" : "inactive");
 	}
 
 	pcib_pcie_hotplug_update(sc, 0, 0, true);
