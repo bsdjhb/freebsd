@@ -1050,16 +1050,21 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask,
 	/*
 	 * Start a timer to see if the Data Link Layer times out.
 	 * Note that we only start the timer if Presence Detect
-	 * changed on this interrupt.
+	 * changed on this interrupt.  Stop any scheduled timer if
+	 * the Data Link Layer is active.
 	 */
-	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE && card_inserted &&
-	    !(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE) &&
-	    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC) {
-		if (cold)
-			device_printf(sc->dev, "Data Link Layer inactive\n");
-		else
-			callout_reset(&sc->pcie_dll_timer, hz,
-			    pcib_pcie_dll_timeout, sc);
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE) {
+		if (card_inserted &&
+		    !(sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE) &&
+		    sc->pcie_slot_sta & PCIEM_SLOT_STA_PDC) {
+			if (cold)
+				device_printf(sc->dev,
+				    "Data Link Layer inactive\n");
+			else
+				callout_reset(&sc->pcie_dll_timer, hz,
+				    pcib_pcie_dll_timeout, sc);
+		} else if (sc->pcie_link_sta & PCIEM_LINK_STA_DL_ACTIVE)
+			callout_stop(&sc->pcie_dll_timer);
 	}
 
 	pcib_pcie_hotplug_command(sc, val, mask);
