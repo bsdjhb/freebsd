@@ -38,9 +38,9 @@
  */
 #define	_BITSET_BITS		(sizeof(long) * 8)
 
-#define	_howmany(x, y)	(((x) + ((y) - 1)) / (y))
+#define	_HOWMANY(x, y)	(((x) + ((y) - 1)) / (y))
 
-#define	__bitset_words(_s)	(_howmany(_s, _BITSET_BITS))
+#define	__bitset_words(_s)	(_HOWMANY(_s, _BITSET_BITS))
 
 #define	BITSET_DEFINE(t, _s)						\
 struct t {								\
