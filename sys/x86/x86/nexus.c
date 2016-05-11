@@ -457,9 +457,7 @@ nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 		return (error);
 	}
 
-	rman_set_bustag(r, map->r_tag);
-	rman_set_bushandle(r, map->r_handle);
-	rman_set_virtual(r, map->r_vaddr);
+	rman_set_mapping(r,&map);
 	return (0);
 }
 
@@ -477,10 +475,7 @@ nexus_deactivate_resource(device_t bus, device_t child, int type, int rid,
 	if (rman_get_flags(r) & RF_UNMAPPED)
 		return (0);
 
-	map.r_tag = rman_get_bustag(r);
-	map.r_handle = rman_get_bushandle(r);
-	map.r_size = rman_get_size(r);
-	map.r_vaddr = rman_get_virtual(r);
+	rman_get_mapping(r, &map);
 	nexus_unmap_resource(bus, child, type, r, &map);
 	return (0);
 }
