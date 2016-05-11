@@ -63,6 +63,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/stdarg.h>
 
 #include <vm/uma.h>
+#include <vm/vm.h>
 
 SYSCTL_NODE(_hw, OID_AUTO, bus, CTLFLAG_RW, NULL, NULL);
 SYSCTL_ROOT_NODE(OID_AUTO, dev, CTLFLAG_RW, NULL, NULL);

@@ -904,7 +904,7 @@ rman_set_mapping(struct resource *r, struct resource_map *map)
 	    ("rman_set_mapping: size mismatch"));
 	rman_set_bustag(r, map->r_bustag);
 	rman_set_bushandle(r, map->r_bushandle);
-	rman_set_virtual(r, map->r_virtual);
+	rman_set_virtual(r, map->r_vaddr);
 }
 
 void

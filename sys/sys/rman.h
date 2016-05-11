@@ -106,6 +106,7 @@ struct resource {
 };
 
 struct resource_i;
+struct resource_map;
 
 TAILQ_HEAD(resource_head, resource_i);
 

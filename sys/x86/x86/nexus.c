@@ -442,7 +442,6 @@ nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 {
 	struct resource_map map;
 	int error;
-	void *vaddr;
 
 	error = rman_activate_resource(r);
 	if (error != 0)
@@ -489,7 +488,6 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 #ifdef PC98
 	int error;
 #endif
-	void *vaddr;
 
 	/* Resources must be active to be mapped. */
 	if (!(rman_get_flags(r) & RF_ACTIVE))
@@ -515,25 +513,25 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	case SYS_RES_IOPORT:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_IO,
-		    start, size, &map->r_handle);
+		    start, size, &map->r_bushandle);
 		if (error)
 			return (error);
 #else
-		map->r_handle = start;
+		map->r_bushandle = start;
 #endif
-		map->r_tag = X86_BUS_SPACE_IO;
+		map->r_bustag = X86_BUS_SPACE_IO;
 		map->r_size = size;
 		map->r_vaddr = NULL;
 		break;
 	case SYS_RES_MEMORY:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_MEM,
-		    start, size, &map->r_handle);
+		    start, size, &map->r_bushandle);
 		if (error)
 			return (error);
 #endif
 		map->r_vaddr = pmap_mapdev_attr(start, size, args.memattr);
-		map->r_tag = X86_BUS_SPACE_MEM;
+		map->r_bustag = X86_BUS_SPACE_MEM;
 		map->r_size = size;
 
 		/*
@@ -542,9 +540,9 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 		 * the virtual address.
 		 */
 #ifdef PC98
-		map->r_handle->bsh_base = (bus_addr_t)vaddr;
+		map->r_bushandle->bsh_base = (bus_addr_t)map->r_vaddr;
 #else
-		map->r_handle = (bus_space_handle_t)vaddr;
+		map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
 #endif
 		break;
 	}
