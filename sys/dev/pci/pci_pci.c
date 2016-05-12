@@ -891,20 +891,23 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 		return;
 	}
 
-	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
-		sc->pcie_pending_link_ctl_val &= ~mask;
-		sc->pcie_pending_link_ctl_val |= val;
-		sc->pcie_pending_link_ctl_mask |= mask;
-	} else {
-		ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
-		new = (ctl & ~mask) | val;
-		if (new != ctl) {
-			pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
-			sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
-			if (!cold)
-				callout_reset(&sc->pcie_cc_timer, hz,
-				    pcib_pcie_cc_timeout, sc);
-		}
+	sc->pcie_pending_link_ctl_val &= ~mask;
+	sc->pcie_pending_link_ctl_val |= val;
+	sc->pcie_pending_link_ctl_mask |= mask;
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING)
+		return;
+
+	ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
+	new = (ctl & ~sc->pcie_pending_link_ctl_mask) |
+	    sc->pcie_pending_link_ctl_val;
+	sc->pcie_pending_link_ctl_mask = 0;
+	sc->pcie_pending_link_ctl_val = 0;
+	if (new != ctl) {
+		pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
+		if (!cold)
+			callout_reset(&sc->pcie_cc_timer, hz,
+			    pcib_pcie_cc_timeout, sc);
 	}
 }
 
@@ -912,7 +915,6 @@ static void
 pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 {
 	device_t dev;
-	uint16_t ctl, new;
 
 	dev = sc->dev;
 
@@ -920,23 +922,8 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 		device_printf(dev, "Command Completed\n");
 	if (!(sc->flags & PCIB_HOTPLUG_CMD_PENDING))
 		return;
-	if (sc->pcie_pending_link_ctl_mask != 0) {
-		ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
-		new = ctl & ~sc->pcie_pending_link_ctl_mask;
-		new |= sc->pcie_pending_link_ctl_val;
-		if (new != ctl) {
-			pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
-			if (!cold)
-				callout_reset(&sc->pcie_cc_timer, hz,
-				    pcib_pcie_cc_timeout, sc);
-		} else
-			sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
-		sc->pcie_pending_link_ctl_mask = 0;
-		sc->pcie_pending_link_ctl_val = 0;
-	} else {
-		callout_stop(&sc->pcie_cc_timer);
-		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
-	}
+	callout_stop(&sc->pcie_cc_timer);
+	sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
 }
 
 /*
@@ -1040,11 +1027,10 @@ pcib_pcie_hotplug_update(struct pcib_softc *sc, uint16_t val, uint16_t mask,
 	 * Interlock.
 	 */
 	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_EIP) {
+		mask |= PCIEM_SLOT_CTL_EIC;
 		if (card_inserted !=
-		    !(sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS)) {
-			mask |= PCIEM_SLOT_CTL_EIC;
+		    !(sc->pcie_slot_sta & PCIEM_SLOT_STA_EIS))
 			val |= PCIEM_SLOT_CTL_EIC;
-		}
 	}
 
 	/*
