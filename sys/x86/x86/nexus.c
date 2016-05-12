@@ -561,8 +561,8 @@ nexus_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
 		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
 #ifdef PC98
 	if (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT) {
-		i386_bus_space_handle_free(map->r_tag, map->r_handle,
-		    map->r_handle->bsh_sz);
+		i386_bus_space_handle_free(map->r_bustag, map->r_bushandle,
+		    map->r_bushandle->bsh_sz);
 	}
 #endif
 	return (0);
