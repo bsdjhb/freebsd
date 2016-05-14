@@ -436,6 +436,19 @@ err:
 }
 
 static void
+cbb_pci_detach(device_t dev)
+{
+	int error;
+
+	error = cbb_detach(dev);
+#if defined(NEW_PCIB) && defined(PCI_RES_BUS)
+	if (error == 0)
+		pcib_free_secbus(brdev, &sc->bus);
+#endif
+	return (error);
+}
+
+static void
 cbb_chipinit(struct cbb_softc *sc)
 {
 	uint32_t mux, sysctrl, reg;
@@ -917,7 +930,7 @@ static device_method_t cbb_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,			cbb_pci_probe),
 	DEVMETHOD(device_attach,		cbb_pci_attach),
-	DEVMETHOD(device_detach,		cbb_detach),
+	DEVMETHOD(device_detach,		cbb_pci_detach),
 	DEVMETHOD(device_shutdown,		cbb_pci_shutdown),
 	DEVMETHOD(device_suspend,		cbb_pci_suspend),
 	DEVMETHOD(device_resume,		cbb_pci_resume),
