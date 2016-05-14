@@ -447,16 +447,16 @@ nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 	if (error != 0)
 		return (error);
 
-	if (rman_get_flags(r) & RF_UNMAPPED)
-		return (0);
+	if (!(rman_get_flags(r) & RF_UNMAPPED) &&
+	    (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT)) {
+		error = nexus_map_resource(bus, child, type, r, NULL, &map);
+		if (error) {
+			rman_deactivate_resource(r);
+			return (error);
+		}
 
-	error = nexus_map_resource(bus, child, type, r, NULL, &map);
-	if (error) {
-		rman_deactivate_resource(r);
-		return (error);
+		rman_set_mapping(r,&map);
 	}
-
-	rman_set_mapping(r,&map);
 	return (0);
 }
 
@@ -471,11 +471,11 @@ nexus_deactivate_resource(device_t bus, device_t child, int type, int rid,
 	if (error)
 		return (error);
 
-	if (rman_get_flags(r) & RF_UNMAPPED)
-		return (0);
-
-	rman_get_mapping(r, &map);
-	nexus_unmap_resource(bus, child, type, r, &map);
+	if (!(rman_get_flags(r) & RF_UNMAPPED) &&
+	    (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT)) {
+		rman_get_mapping(r, &map);
+		nexus_unmap_resource(bus, child, type, r, &map);
+	}
 	return (0);
 }
 
@@ -492,6 +492,15 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	/* Resources must be active to be mapped. */
 	if (!(rman_get_flags(r) & RF_ACTIVE))
 		return (ENXIO);
+
+	/* Mappings are only supported on I/O and memory resources. */
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		break;
+	default:
+		return (EINVAL);
+	}
 
 	resource_init_map_request(&args);
 	if (argsp != NULL)
@@ -546,8 +555,6 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 		map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
 #endif
 		break;
-	default:
-		bzero(map, sizeof(*map));
 	}
 	return (0);
 }
@@ -560,14 +567,19 @@ nexus_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
 	/*
 	 * If this is a memory resource, unmap it.
 	 */
-	if (type == SYS_RES_MEMORY)
+	switch (type) {
+	case SYS_RES_MEMORY:
 		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
+		/* FALLTHROUGH */
+	case SYS_RES_IOPORT:
 #ifdef PC98
-	if (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT) {
 		i386_bus_space_handle_free(map->r_bustag, map->r_bushandle,
 		    map->r_bushandle->bsh_sz);
-	}
 #endif
+		break;
+	default:
+		return (EINVAL);
+	}
 	return (0);
 }
 
