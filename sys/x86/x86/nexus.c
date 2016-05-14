@@ -484,7 +484,7 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
     struct resource_map_request *argsp, struct resource_map *map)
 {
 	struct resource_map_request args;
-	rman_res_t start, size;
+	rman_res_t end, length, start;
 #ifdef PC98
 	int error;
 #endif
@@ -497,13 +497,14 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	if (argsp != NULL)
 		bcopy(argsp, &args, imin(argsp->size, args.size));
 	start = rman_get_start(r) + args.offset;
-	if (args.size == 0)
-		size = rman_get_size(r);
+	if (args.length == 0)
+		length = rman_get_size(r);
 	else
-		size = args.size;
+		length = args.length;
+	end = start + length - 1;
 	if (start > rman_get_end(r) || start < rman_get_start(r))
 		return (EINVAL);
-	if (start + size > rman_get_end(r) || start + size < start)
+	if (end > rman_get_end(r) || end < start)
 		return (EINVAL);
 
 	/*
@@ -513,26 +514,26 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	case SYS_RES_IOPORT:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_IO,
-		    start, size, &map->r_bushandle);
+		    start, length, &map->r_bushandle);
 		if (error)
 			return (error);
 #else
 		map->r_bushandle = start;
 #endif
 		map->r_bustag = X86_BUS_SPACE_IO;
-		map->r_size = size;
+		map->r_size = length;
 		map->r_vaddr = NULL;
 		break;
 	case SYS_RES_MEMORY:
 #ifdef PC98
 		error = i386_bus_space_handle_alloc(X86_BUS_SPACE_MEM,
-		    start, size, &map->r_bushandle);
+		    start, length, &map->r_bushandle);
 		if (error)
 			return (error);
 #endif
-		map->r_vaddr = pmap_mapdev_attr(start, size, args.memattr);
+		map->r_vaddr = pmap_mapdev_attr(start, length, args.memattr);
 		map->r_bustag = X86_BUS_SPACE_MEM;
-		map->r_size = size;
+		map->r_size = length;
 
 		/*
 		 * PC-98 stores the virtual address as a member of the
@@ -545,6 +546,8 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 		map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
 #endif
 		break;
+	default:
+		bzero(map, sizeof(*map));
 	}
 	return (0);
 }
