@@ -894,7 +894,7 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 	new = (ctl & ~mask) | val;
 	if (new == ctl)
 		return;
-	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+	pcie_write_config(dev, PCIER_SLOT_CTL, new, 2);
 	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)) {
 		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
 		if (!cold)
