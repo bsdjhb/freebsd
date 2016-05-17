@@ -1359,8 +1359,34 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 static int
 pcib_detach_hotplug(struct pcib_softc *sc)
 {
+	uint16_t mask, val;
 	int error;
 
+	/* Disable the card in the slot and force it to detach. */
+	if (sc->flags & PCIB_DETACH_PENDING) {
+		sc->flags &= ~PCIB_DETACH_PENDING;
+		callout_stop(&sc->pcie_ab_timer);
+	}
+	sc->flags |= PCIB_DETACHING;
+
+	/* XXX: Add wakeup after rebasing to merge in pending fixes. */
+	while (sc->flags & PCIB_HOTPLUG_CMD_PENDING)
+		tsleep(sc, 0, "hpcmd", 0);
+
+	/* Disable HotPlug events. */
+	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
+	    PCIEM_SLOT_CTL_CCIE | PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_MRLSCE |
+	    PCIEM_SLOT_CTL_PFDE | PCIEM_SLOT_CTL_ABPE;
+	val = 0;
+
+	/* Turn the attention indicator off. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_AIP) {
+		mask |= PCIEM_SLOT_CTL_AIC;
+		val |= PCIEM_SLOT_CTL_AI_OFF;
+	}
+
+	pcib_pcie_hotplug_update(sc, val, mask, false);
+	
 	error = pcib_release_pcie_irq(sc);
 	if (error)
 		return (error);
