@@ -873,8 +873,11 @@ pcib_probe_hotplug(struct pcib_softc *sc)
 
 /*
  * Send a HotPlug command to the slot control register.  If this slot
- * uses command completion interrupts, these updates will be buffered
- * while a previous command is completing.
+ * uses command completion interrupts and a previous command is still
+ * in progress, then the command is dropped.  Once the previous
+ * command completes or times out, pcib_pcie_hotplug_update() will be
+ * invoked to post a new command based on the slot's state at that
+ * time.
  */
 static void
 pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
@@ -883,27 +886,16 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 	uint16_t ctl, new;
 
 	dev = sc->dev;
-	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS) {
-		ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
-		new = (ctl & ~mask) | val;
-		if (new != ctl)
-			pcie_write_config(dev, PCIER_SLOT_CTL, new, 2);
-		return;
-	}
 
-	sc->pcie_pending_link_ctl_val &= ~mask;
-	sc->pcie_pending_link_ctl_val |= val;
-	sc->pcie_pending_link_ctl_mask |= mask;
 	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING)
 		return;
 
 	ctl = pcie_read_config(dev, PCIER_SLOT_CTL, 2);
-	new = (ctl & ~sc->pcie_pending_link_ctl_mask) |
-	    sc->pcie_pending_link_ctl_val;
-	sc->pcie_pending_link_ctl_mask = 0;
-	sc->pcie_pending_link_ctl_val = 0;
-	if (new != ctl) {
-		pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+	new = (ctl & ~mask) | val;
+	if (new == ctl)
+		return;
+	pcie_write_config(dev, PCIER_SLOT_CTL, ctl, 2);
+	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)) {
 		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
 		if (!cold)
 			callout_reset(&sc->pcie_cc_timer, hz,
