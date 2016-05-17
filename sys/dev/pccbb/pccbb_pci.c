@@ -435,12 +435,15 @@ err:
 	return (ENOMEM);
 }
 
-static void
-cbb_pci_detach(device_t dev)
+static int
+cbb_pci_detach(device_t brdev)
 {
+#if defined(NEW_PCIB) && defined(PCI_RES_BUS)
+	struct cbb_softc *sc = device_get_softc(brdev);
+#endif
 	int error;
 
-	error = cbb_detach(dev);
+	error = cbb_detach(brdev);
 #if defined(NEW_PCIB) && defined(PCI_RES_BUS)
 	if (error == 0)
 		pcib_free_secbus(brdev, &sc->bus);
