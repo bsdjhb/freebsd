@@ -1355,6 +1355,9 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	}
 
 	pcib_pcie_hotplug_update(sc, val, mask, false);
+
+	/* Clear any events previously pending. */
+	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
 }
 
 static int
