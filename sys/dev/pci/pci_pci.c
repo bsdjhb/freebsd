@@ -971,6 +971,7 @@ pcib_pcie_hotplug_command_completed(struct pcib_softc *sc)
 		return;
 	callout_stop(&sc->pcie_cc_timer);
 	sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
+	wakeup(sc);
 }
 
 /*
@@ -1369,9 +1370,11 @@ pcib_detach_hotplug(struct pcib_softc *sc)
 	}
 	sc->flags |= PCIB_DETACHING;
 
-	/* XXX: Add wakeup after rebasing to merge in pending fixes. */
-	while (sc->flags & PCIB_HOTPLUG_CMD_PENDING)
-		tsleep(sc, 0, "hpcmd", 0);
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+		callout_stop(&sc->pcie_cc_timer);
+		tsleep(sc, 0, "hpcmd", hz);
+		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
+	}
 
 	/* Disable HotPlug events. */
 	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
