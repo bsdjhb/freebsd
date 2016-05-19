@@ -950,7 +950,8 @@ pcib_pcie_hotplug_command(struct pcib_softc *sc, uint16_t val, uint16_t mask)
 	if (new == ctl)
 		return;
 	pcie_write_config(dev, PCIER_SLOT_CTL, new, 2);
-	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS)) {
+	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS) &&
+	    (ctl & new) & PCIEM_SLOT_CTL_CCIE) {
 		sc->flags |= PCIB_HOTPLUG_CMD_PENDING;
 		if (!cold)
 			callout_reset(&sc->pcie_cc_timer, hz,
@@ -1208,16 +1209,22 @@ pcib_pcie_cc_timeout(void *arg)
 {
 	struct pcib_softc *sc;
 	device_t dev;
+	uint16_t sta;
 
 	sc = arg;
 	dev = sc->dev;
 	mtx_assert(&Giant, MA_OWNED);
-	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+	sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+	if (!(sta & PCIEM_SLOT_STA_CC)) {
 		device_printf(dev,
 		    "Hotplug Command Timed Out - forcing detach\n");
 		sc->flags &= ~(PCIB_HOTPLUG_CMD_PENDING | PCIB_DETACH_PENDING);
 		sc->flags |= PCIB_DETACHING;
 		pcib_pcie_hotplug_update(sc, 0, 0, true);
+	} else {
+		device_printf(dev,
+	    "Missed HotPlug interrupt waiting for Command Completion\n");
+		pcib_pcie_intr(sc);
 	}
 }
 
@@ -1332,6 +1339,9 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
 	sc->pcie_slot_sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
 
+	/* Clear any events previously pending. */
+	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
+
 	/* Enable HotPlug events. */
 	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
 	    PCIEM_SLOT_CTL_CCIE | PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_MRLSCE |
@@ -1355,9 +1365,6 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 	}
 
 	pcib_pcie_hotplug_update(sc, val, mask, false);
-
-	/* Clear any events previously pending. */
-	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
 }
 
 static int
