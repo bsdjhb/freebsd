@@ -266,7 +266,11 @@ net_getparams(int sock)
 	 * use RARP and RPC/bootparam (the Sun way) to get them.
 	 */
 	if (try_bootp)
+#if defined(__i386__) || defined(__amd64__)
+		bootp(sock, BOOTP_PXE);
+#else
 		bootp(sock, BOOTP_NONE);
+#endif
 	if (myip.s_addr != 0)
 		goto exit;
 #ifdef	NETIF_DEBUG
