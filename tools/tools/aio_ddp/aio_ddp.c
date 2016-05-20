@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2014-2015 Chelsio Communications, Inc.
+ * Copyright (c) 2014-2016 Chelsio Communications, Inc.
  * All rights reserved.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
@@ -55,7 +55,7 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "Usage: aio_ddp [-AFNw] [-b burst] [-c count] "
+	fprintf(stderr, "Usage: aio_ddp [-ABFNw] [-b burst] [-c count] "
 	    "[-s size] [-S size] <host> [port]\n");
 	exit(1);
 }
@@ -165,7 +165,7 @@ read_aio(int s, const char *data, size_t len, int size)
 		if (nread < 0)
 			err(1, "aio_waitcomplete");
 		if ((size_t)nread > len)
-			errx(1, "long aio read: %u vs %zu", nread, len);
+			errx(1, "long aio read: %zd vs %zu", nread, len);
 		if (memcmp(__DEVOLATILE(void *, req->aio_buf), data, nread) !=
 		    0)
 			errx(1, "aio data mismatch");
@@ -216,6 +216,24 @@ read_plain(int s, const char *data, size_t len)
 	printf("Received data matched\n");
 }
 
+static ssize_t
+write_aio(int s, char *data, size_t len)
+{
+	const struct aiocb *reqs[1];
+	struct aiocb req;
+
+	memset(&req, 0, sizeof(req));
+	req.aio_nbytes = len;
+	req.aio_buf = data;
+	req.aio_fildes = s;
+	if (aio_write(&req) == -1)
+		err(1, "aio_write");
+	reqs[0] = &req;
+	if (aio_suspend(reqs, 1, NULL) == -1)
+		err(1, "aio_suspend");
+	return (aio_return(&req));
+}
+
 static char *
 build_burst(int len)
 {
@@ -256,7 +274,7 @@ main(int ac, char **av)
 	char *line;
 	size_t linecap;
 	ssize_t linelen, nwritten;
-	bool aio, aio_active, force_fin, nonblock, wait;
+	bool aio, aio_active, aio_tx, force_fin, nonblock, wait;
 	int ch, burst, count, rcv_size, s, size;
 
 	burst = 0;
@@ -267,11 +285,15 @@ main(int ac, char **av)
 	wait = false;
 	aio = false;
 	aio_active = false;
+	aio_tx = false;
 	nonblock = false;
-	while ((ch = getopt(ac, av, "Ab:c:FNS:s:w")) != -1)
+	while ((ch = getopt(ac, av, "ABb:c:FNS:s:w")) != -1)
 		switch (ch) {
 		case 'A':
 			aio = true;
+			break;
+		case 'B':
+			aio_tx = true;
 			break;
 		case 'b':
 			burst = atoi(optarg);
@@ -332,7 +354,10 @@ main(int ac, char **av)
 			if (linelen == 0)
 				errx(1, "zero-length line");
 		}
-		nwritten = write(s, line, linelen);
+		if (aio_tx)
+			nwritten = write_aio(s, line, linelen);
+		else
+			nwritten = write(s, line, linelen);
 		if (nwritten < 0)
 			err(1, "socket write");
 		if (nwritten != linelen)
