@@ -451,7 +451,7 @@ nexus_activate_resource(device_t bus, device_t child, int type, int rid,
 			return (error);
 		}
 
-		rman_set_mapping(r,&map);
+		rman_set_mapping(r, &map);
 	}
 	return (0);
 }
@@ -480,7 +480,8 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
     struct resource_map_request *argsp, struct resource_map *map)
 {
 	struct resource_map_request args;
-	rman_res_t end, length, start;
+	rman_res_t length, start;
+	int error;
 
 	/* Resources must be active to be mapped. */
 	if (!(rman_get_flags(r) & RF_ACTIVE))
@@ -496,18 +497,9 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	}
 
 	resource_init_map_request(&args);
-	if (argsp != NULL)
-		bcopy(argsp, &args, imin(argsp->size, args.size));
-	start = rman_get_start(r) + args.offset;
-	if (args.length == 0)
-		length = rman_get_size(r);
-	else
-		length = args.length;
-	end = start + length - 1;
-	if (start > rman_get_end(r) || start < rman_get_start(r))
-		return (EINVAL);
-	if (end > rman_get_end(r) || end < start)
-		return (EINVAL);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
 
 	/*
 	 * If this is a memory resource, map it into the kernel.
