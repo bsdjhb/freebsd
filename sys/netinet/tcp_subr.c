@@ -937,14 +937,16 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 	} else if (!M_WRITABLE(m)) {
 		struct mbuf *n;
 
-		/*
-		 * Can't reuse 'm', allocate a new mbuf.
-		 *
-		 * XXX MTR: Needs to set FIB explicitly?
-		 */
+		/* Can't reuse 'm', allocate a new mbuf. */
 		n = m_gethdr(M_NOWAIT, MT_DATA);
 		if (n == NULL) {
 			m_freem(m);
+			return;
+		}
+
+		if (!m_dup_pkthdr(n, m, M_NOWAIT)) {
+			m_freem(m);
+			m_freem(n);
 			return;
 		}
 
