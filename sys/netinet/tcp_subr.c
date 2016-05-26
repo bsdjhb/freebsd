@@ -973,9 +973,6 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 		th = nth;
 		m_freem(m);
 		m = n;
-
-		/* XXX */
-		printf("%s: not overwriting read-only mbuf\n", __func__);
 	} else {
 		/*
 		 *  reuse the mbuf. 
