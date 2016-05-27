@@ -794,6 +794,23 @@ icmp_reflect(struct mbuf *m)
 		goto done;	/* Ip_output() will check for broadcast */
 	}
 
+	if (!M_WRITABLE(m)) {
+		struct mbuf *n;
+
+		n = m_dup(m, M_NOWAIT);
+		if (n == NULL) {
+			m_freem(m);
+			/* XXX: No stat for this case. */
+			goto done;
+		}
+		m_freem(m);
+		m = n;
+		ip = mtod(m, struct ip *);
+
+		/* XXX */
+		printf("%s: cloned a read-only mbuf\n", __func__);
+	}
+
 	t = ip->ip_dst;
 	ip->ip_dst = ip->ip_src;
 
