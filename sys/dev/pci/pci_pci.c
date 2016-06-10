@@ -984,8 +984,11 @@ static bool
 pcib_hotplug_inserted(struct pcib_softc *sc)
 {
 
-	/* Pretend the card isn't present if a detach is forced. */
-	if (sc->flags & PCIB_DETACHING)
+	/*
+	 * Pretend the card isn't present if a detach is forced or
+	 * during suspend.
+	 */
+	if (sc->flags & (PCIB_DETACHING | PCIB_SUSPENDING))
 		return (false);
 
 	/* Card must be present in the slot. */
@@ -1368,6 +1371,89 @@ pcib_setup_hotplug(struct pcib_softc *sc)
 }
 
 static int
+pcib_suspend_hotplug(struct pcib_softc *sc)
+{
+	device_t dev;
+	int error;
+	uint16_t mask, val;
+
+	dev = sc->dev;
+	error = bus_generic_detach(dev);
+	if (error)
+		return (error);
+
+	sc->flags |= PCIB_SUSPENDING;
+	if (sc->flags & PCIB_DETACH_PENDING) {
+		sc->flags &= ~PCIB_DETACH_PENDING;
+		callout_stop(&sc->pcie_ab_timer);
+	}
+	if (sc->flags & PCIB_HOTPLUG_CMD_PENDING) {
+		callout_stop(&sc->pcie_cc_timer);
+		sc->flags &= ~PCIB_HOTPLUG_CMD_PENDING;
+	}
+	callout_stop(&sc->pcie_dll_timer);
+	taskqueue_cancel(taskqueue_thread, &sc->pcie_hp_task, NULL);
+
+	/* Disable HotPlug events. */
+	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
+	    PCIEM_SLOT_CTL_CCIE | PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_MRLSCE |
+	    PCIEM_SLOT_CTL_PFDE | PCIEM_SLOT_CTL_ABPE;
+	val = 0;
+
+	/* Turn the attention indicator off. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_AIP) {
+		mask |= PCIEM_SLOT_CTL_AIC;
+		val |= PCIEM_SLOT_CTL_AI_OFF;
+	}
+
+	pcib_pcie_hotplug_update(sc, val, mask, false);
+	if (sc->child != NULL && device_delete_child(dev, sc->child) == 0)
+		sc->child = NULL;
+	return (0);
+}
+
+static int
+pcib_resume_hotplug(struct pcib_softc *sc)
+{
+	device_t dev;
+	uint16_t mask, val;
+
+	dev = sc->dev;
+	sc->flags &= ~PCIB_SUSPENDING;
+
+	sc->pcie_link_sta = pcie_read_config(dev, PCIER_LINK_STA, 2);
+	sc->pcie_slot_sta = pcie_read_config(dev, PCIER_SLOT_STA, 2);
+
+	/* Clear any events previously pending. */
+	pcie_write_config(dev, PCIER_SLOT_STA, sc->pcie_slot_sta, 2);
+
+	/* Enable HotPlug events. */
+	mask = PCIEM_SLOT_CTL_DLLSCE | PCIEM_SLOT_CTL_HPIE |
+	    PCIEM_SLOT_CTL_CCIE | PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_MRLSCE |
+	    PCIEM_SLOT_CTL_PFDE | PCIEM_SLOT_CTL_ABPE;
+	val = PCIEM_SLOT_CTL_PDCE | PCIEM_SLOT_CTL_HPIE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_APB)
+		val |= PCIEM_SLOT_CTL_ABPE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_PCP)
+		val |= PCIEM_SLOT_CTL_PFDE;
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_MRLSP)
+		val |= PCIEM_SLOT_CTL_MRLSCE;
+	if (!(sc->pcie_slot_cap & PCIEM_SLOT_CAP_NCCS))
+		val |= PCIEM_SLOT_CTL_CCIE;
+	if (sc->pcie_link_cap & PCIEM_LINK_CAP_DL_ACTIVE)
+		val |= PCIEM_SLOT_CTL_DLLSCE;
+
+	/* Turn the attention indicator off. */
+	if (sc->pcie_slot_cap & PCIEM_SLOT_CAP_AIP) {
+		mask |= PCIEM_SLOT_CTL_AIC;
+		val |= PCIEM_SLOT_CTL_AI_OFF;
+	}
+
+	pcib_pcie_hotplug_update(sc, val, mask, true);
+	return (0);
+}
+
+static int
 pcib_detach_hotplug(struct pcib_softc *sc)
 {
 	uint16_t mask, val;
@@ -1730,17 +1816,31 @@ pcib_detach(device_t dev)
 int
 pcib_suspend(device_t dev)
 {
+	struct pcib_softc *sc;
+	int error;
 
-	pcib_cfg_save(device_get_softc(dev));
-	return (bus_generic_suspend(dev));
+	sc = device_get_softc(dev);
+	pcib_cfg_save(sc);
+	if (sc->flags & PCIB_HOTPLUG)
+		error = pcib_suspend_hotplug(sc);
+	else
+		error = bus_generic_suspend(dev);
+	return (error);
 }
 
 int
 pcib_resume(device_t dev)
 {
+	struct pcib_softc *sc;
+	int error;
 
-	pcib_cfg_restore(device_get_softc(dev));
-	return (bus_generic_resume(dev));
+	sc = device_get_softc(dev);
+	pcib_cfg_restore(sc);
+	if (sc->flags & PCIB_HOTPLUG)
+		error = pcib_resume_hotplug(sc);
+	else
+		error = bus_generic_resume(dev);
+	return (error);
 }
 
 void
