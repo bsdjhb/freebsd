@@ -50,8 +50,9 @@ main(int ac, char **av)
 		usage(av);
 	printf("  command :  dir  grp num len\tname\n");
 	for (i = 1; i < ac; i++) {
+		errno = 0;
 		cmd = strtoul(av[i], &cp, 0);
-		if (*cp != '\0') {
+		if (*cp != '\0' || errno != 0) {
 			fprintf(stderr, "Invalid integer: %s\n", av[i]);
 			usage(av);
 		}
