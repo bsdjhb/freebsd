@@ -26,6 +26,7 @@
 
 #include <sys/ioccom.h>
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,7 +49,7 @@ main(int ac, char **av)
 
 	if (ac < 2)
 		usage(av);
-	printf("  command :  dir  grp num len\tname\n");
+	printf("  command :  dir  group num  len name\n");
 	for (i = 1; i < ac; i++) {
 		errno = 0;
 		cmd = strtoul(av[i], &cp, 0);
@@ -77,13 +78,13 @@ main(int ac, char **av)
 		printf(" ");
 		group = IOCGROUP(cmd);
 		if (isprint(group))
-			printf("'%c'", group);
+			printf(" '%c' ", group);
 		else
-			printf("%3u", group);
-		printf(" %3lu %lu", cmd & 0xff, IOCPARM_LEN(cmd));
+			printf(" 0x%02x", group);
+		printf(" %3lu %4lu", cmd & 0xff, IOCPARM_LEN(cmd));
 		name = sysdecode_ioctlname(cmd);
 		if (name != NULL)
-			printf("\t%s", name);
+			printf(" %s", name);
 		printf("\n");
 	}
 	return (0);
