@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sysdecode.h>
 
 static void
 usage(char **av)
@@ -45,7 +46,7 @@ main(int ac, char **av)
 
 	if (ac < 2)
 		usage(av);
-	printf("  command :  dir  grp num len\n");
+	printf("  command :  dir  grp num len\tname\n");
 	for (i = 1; i < ac; i++) {
 		cmd = strtoll(av[i], &cp, 0);
 		if (*cp != '\0') {
@@ -70,8 +71,12 @@ main(int ac, char **av)
 			printf("%01x ???", (cmd & IOC_DIRMASK) >> 29);
 			break;
 		}
-		printf(" '%c' %3d %d\n", IOCGROUP(cmd), cmd & 0xff,
+		printf(" '%c' %3d %d", IOCGROUP(cmd), cmd & 0xff,
 		    IOCPARM_LEN(cmd));
+		cp = sysdecode_ioctlname(cmd);
+		if (cp != NULL)
+			printf("\t%s", cp);
+		printf("\n");
 	}
 	return (0);
 }
