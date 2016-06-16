@@ -771,8 +771,14 @@ static inline int t4vf_query_params(struct adapter *adapter,
 				    unsigned int nparams, const u32 *params,
 				    u32 *vals)
 {
-	return (t4_query_params(adapter, adapter->mbox, 0, 0, nparams, params,
-	    vals));
+	return t4_query_params(adapter, 0, 0, 0, nparams, params, vals);
+}
+
+static inline int t4vf_set_params(struct adapter *adapter,
+				  unsigned int nparams, const u32 *params,
+				  const u32 *vals)
+{
+	return t4_set_params(adapter, 0, 0, 0, nparams, params, vals);
 }
 
 static inline int t4vf_wr_mbox(struct adapter *adap, const void *cmd,

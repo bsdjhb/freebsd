@@ -229,7 +229,7 @@ set_params__post_init(struct adapter *sc)
 	/* ask for encapsulated CPLs */
 	param = FW_PARAM_PFVF(CPLFW4MSG_ENCAP);
 	val = 1;
-	(void)t4_set_params(sc, sc->mbox, sc->pf, 0, 1, &param, &val);
+	(void)t4vf_set_params(sc, 1, &param, &val);
 
 	return (0);
 }
@@ -432,7 +432,6 @@ t4vf_attach(device_t dev)
 	int rc = 0, i, j, n10g, n1g, rqidx, tqidx;
 	struct intrs_and_queues iaq;
 	struct sge *s;
-	uint32_t val;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -466,12 +465,10 @@ t4vf_attach(device_t dev)
 		goto done;
 
 	/*
-	 * Note the PF is the parent of this VF.  The mbox is only
-	 * used for logging mbox messages, so set it to the VF ID.
+	 * Leave the 'pf' and 'mbox' values as zero.  This ensures
+	 * that various firmware messages do not set the fields which
+	 * is the correct thing to do for a VF.
 	 */
-	val = t4_read_reg(sc, VF_PL_REG(A_PL_VF_WHOAMI));
-	sc->pf = G_SOURCEPF(val);
-	sc->mbox = G_VFID(val);
 
 	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
 
@@ -578,7 +575,7 @@ t4vf_attach(device_t dev)
 		 * Allocate the "main" VI and initialize parameters
 		 * like mac addr.
 		 */
-		rc = -t4_port_init(sc, sc->mbox, sc->pf, 0, i);
+		rc = -t4_port_init(sc, 0, 0, 0, i);
 		if (rc != 0) {
 			device_printf(dev, "unable to initialize port %d: %d\n",
 			    i, rc);

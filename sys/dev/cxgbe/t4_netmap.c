@@ -104,10 +104,8 @@ alloc_nm_rxq_hwq(struct vi_info *vi, struct sge_nm_rxq *nm_rxq, int cong)
 
 	bzero(&c, sizeof(c));
 	c.op_to_vfn = htobe32(V_FW_CMD_OP(FW_IQ_CMD) | F_FW_CMD_REQUEST |
-	    F_FW_CMD_WRITE | F_FW_CMD_EXEC);
-	if (!(sc->flags & IS_VF))
-		c.op_to_vfn |= htobe32(V_FW_IQ_CMD_PFN(sc->pf) |
-		    V_FW_IQ_CMD_VFN(0));
+	    F_FW_CMD_WRITE | F_FW_CMD_EXEC | V_FW_IQ_CMD_PFN(sc->pf) |
+	    V_FW_IQ_CMD_VFN(0));
 	c.alloc_to_len16 = htobe32(F_FW_IQ_CMD_ALLOC | F_FW_IQ_CMD_IQSTART |
 	    FW_LEN16(c));
 	if (vi->flags & INTR_RXQ) {
@@ -244,10 +242,8 @@ alloc_nm_txq_hwq(struct vi_info *vi, struct sge_nm_txq *nm_txq)
 
 	bzero(&c, sizeof(c));
 	c.op_to_vfn = htobe32(V_FW_CMD_OP(FW_EQ_ETH_CMD) | F_FW_CMD_REQUEST |
-	    F_FW_CMD_WRITE | F_FW_CMD_EXEC);
-	if (!(sc->flags & IS_VF))
-		c.op_to_vfn |= htobe32(V_FW_EQ_ETH_CMD_PFN(sc->pf) |
-		    V_FW_EQ_ETH_CMD_VFN(0));
+	    F_FW_CMD_WRITE | F_FW_CMD_EXEC | V_FW_EQ_ETH_CMD_PFN(sc->pf) |
+	    V_FW_EQ_ETH_CMD_VFN(0));
 	c.alloc_to_len16 = htobe32(F_FW_EQ_ETH_CMD_ALLOC |
 	    F_FW_EQ_ETH_CMD_EQSTART | FW_LEN16(c));
 	c.autoequiqe_to_viid = htobe32(F_FW_EQ_ETH_CMD_AUTOEQUIQE |
