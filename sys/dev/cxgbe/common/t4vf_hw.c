@@ -43,7 +43,7 @@ __FBSDID("$FreeBSD$");
  * returning a value other than all 1's).  Return an error if it doesn't
  * become ready ...
  */
-int __devinit t4vf_wait_dev_ready(struct adapter *adapter)
+int t4vf_wait_dev_ready(struct adapter *adapter)
 {
 	const u32 whoami = VF_PL_REG(A_PL_VF_WHOAMI);
 	const u32 notready1 = 0xffffffff;
@@ -141,7 +141,7 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	 * that we'll go ahead and do it once here so other code in
 	 * the driver can just use it.
 	 */
-	whoami = t4_read_reg(adapter, T4VF_PL_BASE_ADDR + A_PL_VF_WHOAMI);
+	whoami = t4_read_reg(adapter, VF_PL_REG(A_PL_VF_WHOAMI));
 	pf = G_SOURCEPF(whoami);
 
 	s_hps = (S_HOSTPAGESIZEPF0 +
@@ -347,7 +347,7 @@ int t4vf_get_vfres(struct adapter *adapter)
 
 /**
  */
-int __devinit t4vf_prep_adapter(struct adapter *adapter)
+int t4vf_prep_adapter(struct adapter *adapter)
 {
 	int err;
 

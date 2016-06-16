@@ -455,7 +455,7 @@ t4vf_attach(device_t dev)
 	TAILQ_INIT(&sc->sfl);
 	callout_init_mtx(&sc->sfl_callout, &sc->sfl_lock, 0);
 
-	mtx_init(&sc->regwin_lock, "register and memory window", 0, MTX_DEF);
+	mtx_init(&sc->reg_lock, "indirect register access", 0, MTX_DEF);
 
 	rc = t4_map_bars_0_and_4(sc);
 	if (rc != 0)
@@ -578,7 +578,7 @@ t4vf_attach(device_t dev)
 		 * Allocate the "main" VI and initialize parameters
 		 * like mac addr.
 		 */
-		rc = -t4_port_init(pi, sc->mbox, sc->pf, 0);
+		rc = -t4_port_init(sc, sc->mbox, sc->pf, 0, i);
 		if (rc != 0) {
 			device_printf(dev, "unable to initialize port %d: %d\n",
 			    i, rc);
