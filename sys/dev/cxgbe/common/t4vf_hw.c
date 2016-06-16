@@ -101,13 +101,13 @@ int t4vf_get_sge_params(struct adapter *adapter)
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONTROL));
 	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_HOST_PAGE_SIZE));
-	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_0_AND_1));
 	params[2] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_2_AND_3));
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_0_AND_1));
 	params[3] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_4_AND_5));
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_2_AND_3));
 	params[4] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		     V_FW_PARAMS_PARAM_XYZ(A_SGE_TIMER_VALUE_4_AND_5));
+	params[5] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONM_CTRL));
 	params[6] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_INGRESS_RX_THRESHOLD));
@@ -120,18 +120,18 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	sp->counter_val[1] = G_THRESHOLD_1(vals[6]);
 	sp->counter_val[2] = G_THRESHOLD_2(vals[6]);
 	sp->counter_val[3] = G_THRESHOLD_3(vals[6]);
-	sp->timer_val[0] = core_ticks_to_us(adapter, G_TIMERVALUE0(vals[1]));
-	sp->timer_val[1] = core_ticks_to_us(adapter, G_TIMERVALUE1(vals[1]));
-	sp->timer_val[2] = core_ticks_to_us(adapter, G_TIMERVALUE2(vals[2]));
-	sp->timer_val[3] = core_ticks_to_us(adapter, G_TIMERVALUE3(vals[2]));
-	sp->timer_val[4] = core_ticks_to_us(adapter, G_TIMERVALUE4(vals[3]));
-	sp->timer_val[5] = core_ticks_to_us(adapter, G_TIMERVALUE5(vals[3]));
+	sp->timer_val[0] = core_ticks_to_us(adapter, G_TIMERVALUE0(vals[2]));
+	sp->timer_val[1] = core_ticks_to_us(adapter, G_TIMERVALUE1(vals[2]));
+	sp->timer_val[2] = core_ticks_to_us(adapter, G_TIMERVALUE2(vals[3]));
+	sp->timer_val[3] = core_ticks_to_us(adapter, G_TIMERVALUE3(vals[3]));
+	sp->timer_val[4] = core_ticks_to_us(adapter, G_TIMERVALUE4(vals[4]));
+	sp->timer_val[5] = core_ticks_to_us(adapter, G_TIMERVALUE5(vals[4]));
 
-	sp->fl_starve_threshold = G_EGRTHRESHOLD(vals[4]) * 2 + 1;
+	sp->fl_starve_threshold = G_EGRTHRESHOLD(vals[5]) * 2 + 1;
 	if (is_t4(adapter))
 		sp->fl_starve_threshold2 = sp->fl_starve_threshold;
 	else
-		sp->fl_starve_threshold2 = G_EGRTHRESHOLDPACKING(vals[4]) * 2 +
+		sp->fl_starve_threshold2 = G_EGRTHRESHOLDPACKING(vals[5]) * 2 +
 		    1;
 
 	/*
