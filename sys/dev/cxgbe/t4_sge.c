@@ -227,6 +227,8 @@ static inline u_int txpkts0_len16(u_int);
 static inline u_int txpkts1_len16(void);
 static u_int write_txpkt_wr(struct sge_txq *, struct fw_eth_tx_pkt_wr *,
     struct mbuf *, u_int);
+static u_int write_txpkt_vm_wr(struct sge_txq *, struct fw_eth_tx_pkt_vm_wr *,
+    struct mbuf *, u_int);
 static int try_txpkts(struct mbuf *, struct mbuf *, struct txpkts *, u_int);
 static int add_to_txpkts(struct mbuf *, struct txpkts *, u_int);
 static u_int write_txpkts_wr(struct sge_txq *, struct fw_eth_tx_pkts_wr *,
@@ -2438,7 +2440,12 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			next_cidx = 0;
 
 		wr = (void *)&eq->desc[eq->pidx];
-		if (remaining > 1 &&
+		if (sc->flags & IS_VF) {
+			total++;
+			remaining--;
+			ETHER_BPF_MTAP(ifp, m0);
+			n = write_txpkt_vm_wr(txq, (void *)wr, m0, available);
+		} else if (remaining > 1 &&
 		    try_txpkts(m0, r->items[next_cidx], &txp, available) == 0) {
 
 			/* pkts at cidx, next_cidx should both be in txp. */
@@ -3982,6 +3989,121 @@ imm_payload(u_int ndesc)
 	    sizeof(struct cpl_tx_pkt_core);
 
 	return (n);
+}
+
+/*
+ * Write a VM txpkt WR for this packet to the hardware descriptors, update the
+ * software descriptor, and advance the pidx.  It is guaranteed that enough
+ * descriptors are available.
+ *
+ * The return value is the # of hardware descriptors used.
+ */
+static u_int
+write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
+    struct mbuf *m0, u_int available)
+{
+	struct sge_eq *eq = &txq->eq;
+	struct tx_sdesc *txsd;
+	struct cpl_tx_pkt_core *cpl;
+	uint32_t ctrl;	/* used in many unrelated places */
+	uint64_t ctrl1;
+	int len16, ndesc, pktlen, nsegs;
+	caddr_t dst;
+
+	TXQ_LOCK_ASSERT_OWNED(txq);
+	M_ASSERTPKTHDR(m0);
+	MPASS(available > 0 && available < eq->sidx);
+
+	len16 = mbuf_len16(m0);
+	nsegs = mbuf_nsegs(m0);
+	pktlen = m0->m_pkthdr.len;
+	ctrl = sizeof(struct cpl_tx_pkt_core);
+	if (needs_tso(m0))
+		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
+	ndesc = howmany(len16, EQ_ESIZE / 16);
+	MPASS(ndesc <= available);
+
+	/* Firmware work request header */
+	MPASS(wr == (void *)&eq->desc[eq->pidx]);
+	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_VM_WR) |
+	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
+
+	ctrl = V_FW_WR_LEN16(len16);
+	wr->equiq_to_len16 = htobe32(ctrl);
+	wr->r3[0] = 0;
+	wr->r3[1] = 0;
+	
+	/*
+	 * Copy over ethmacdst, ethmacsrc, ethtype, and vlantci.
+	 * vlantci is ignored unless the ethtype is 0x8100, so it's
+	 * simpler to always copy it rather than making it
+	 * conditional.  Also, it seems that we do not have to set
+	 * vlantci or fake ethtype when doing VLAN tag insertion.
+	 */
+	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
+
+	if (needs_tso(m0)) {
+		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
+
+		KASSERT(m0->m_pkthdr.l2hlen > 0 && m0->m_pkthdr.l3hlen > 0 &&
+		    m0->m_pkthdr.l4hlen > 0,
+		    ("%s: mbuf %p needs TSO but missing header lengths",
+			__func__, m0));
+
+		ctrl = V_LSO_OPCODE(CPL_TX_PKT_LSO) | F_LSO_FIRST_SLICE |
+		    F_LSO_LAST_SLICE | V_LSO_IPHDR_LEN(m0->m_pkthdr.l3hlen >> 2)
+		    | V_LSO_TCPHDR_LEN(m0->m_pkthdr.l4hlen >> 2);
+		if (m0->m_pkthdr.l2hlen == sizeof(struct ether_vlan_header))
+			ctrl |= V_LSO_ETHHDR_LEN(1);
+		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
+			ctrl |= F_LSO_IPV6;
+
+		lso->lso_ctrl = htobe32(ctrl);
+		lso->ipid_ofst = htobe16(0);
+		lso->mss = htobe16(m0->m_pkthdr.tso_segsz);
+		lso->seqno_offset = htobe32(0);
+		lso->len = htobe32(pktlen);
+
+		cpl = (void *)(lso + 1);
+
+		txq->tso_wrs++;
+	} else
+		cpl = (void *)(wr + 1);
+
+	/* Checksum offload */
+	ctrl1 = 0;
+	if (needs_l3_csum(m0) == 0)
+		ctrl1 |= F_TXPKT_IPCSUM_DIS;
+	if (needs_l4_csum(m0) == 0)
+		ctrl1 |= F_TXPKT_L4CSUM_DIS;
+	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
+	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
+		txq->txcsum++;	/* some hardware assistance provided */
+
+	/* VLAN tag insertion */
+	if (needs_vlan_insertion(m0)) {
+		ctrl1 |= F_TXPKT_VLAN_VLD | V_TXPKT_VLAN(m0->m_pkthdr.ether_vtag);
+		txq->vlan_insertion++;
+	}
+
+	/* CPL header */
+	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->pack = 0;
+	cpl->len = htobe16(pktlen);
+	cpl->ctrl1 = htobe64(ctrl1);
+
+	/* SGL */
+	dst = (void *)(cpl + 1);
+	write_gl_to_txd(txq, m0, &dst, eq->sidx - ndesc < eq->pidx);
+	txq->sgl_wrs++;
+
+	txq->txpkt_wrs++;
+
+	txsd = &txq->sdesc[eq->pidx];
+	txsd->m = m0;
+	txsd->desc_used = ndesc;
+
+	return (ndesc);
 }
 
 /*
