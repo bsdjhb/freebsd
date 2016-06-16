@@ -135,11 +135,8 @@ int t4vf_get_sge_params(struct adapter *adapter)
 		    1;
 
 	/*
-	 * We need the Queues/Page for our VF.  This is based on the
-	 * PF from which we're instantiated and is indexed in the
-	 * register we just read.  This is an annoying enough effort
-	 * that we'll go ahead and do it once here so other code in
-	 * the driver can just use it.
+	 * We need the Queues/Page and Host Page Size for our VF.
+	 * This is based on the PF from which we're instantiated.
 	 */
 	whoami = t4_read_reg(adapter, VF_PL_REG(A_PL_VF_WHOAMI));
 	pf = G_SOURCEPF(whoami);
