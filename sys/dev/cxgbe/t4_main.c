@@ -4439,10 +4439,16 @@ read_vf_stat(struct adapter *sc, unsigned int viid, int reg)
 	u32 stats[2];
 
 	mtx_assert(&sc->reg_lock, MA_OWNED);
-	t4_write_reg(sc, A_PL_INDIR_CMD, V_PL_AUTOINC(1) |
-	    V_PL_VFID(G_FW_VIID_VIN(viid)) | V_PL_ADDR(VF_MPS_REG(reg)));
-	stats[0] = t4_read_reg(sc, A_PL_INDIR_DATA);
-	stats[1] = t4_read_reg(sc, A_PL_INDIR_DATA);
+	if (sc->flags & IS_VF) {
+		stats[0] = t4_read_reg(sc, VF_MPS_REG(reg));
+		stats[1] = t4_read_reg(sc, VF_MPS_REG(reg + 4));
+	} else {
+		t4_write_reg(sc, A_PL_INDIR_CMD, V_PL_AUTOINC(1) |
+		    V_PL_VFID(G_FW_VIID_VIN(viid)) |
+		    V_PL_ADDR(VF_MPS_REG(reg)));
+		stats[0] = t4_read_reg(sc, A_PL_INDIR_DATA);
+		stats[1] = t4_read_reg(sc, A_PL_INDIR_DATA);
+	}
 	return (((uint64_t)stats[1]) << 32 | stats[0]);
 }
 
