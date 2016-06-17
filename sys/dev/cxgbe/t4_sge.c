@@ -223,6 +223,7 @@ static void add_fl_to_sfl(struct adapter *, struct sge_fl *);
 
 static inline void get_pkt_gl(struct mbuf *, struct sglist *);
 static inline u_int txpkt_len16(u_int, u_int);
+static inline u_int txpkt_vm_len16(u_int, u_int);
 static inline u_int txpkts0_len16(u_int);
 static inline u_int txpkts1_len16(void);
 static u_int write_txpkt_wr(struct sge_txq *, struct fw_eth_tx_pkt_wr *,
@@ -3952,6 +3953,27 @@ txpkt_len16(u_int nsegs, u_int tso)
 }
 
 /*
+ * len16 for a txpkt_vm WR with a GL.  Includes the firmware work
+ * request header.
+ */
+static inline u_int
+txpkt_vm_len16(u_int nsegs, u_int tso)
+{
+	u_int n;
+
+	MPASS(nsegs > 0);
+
+	nsegs--; /* first segment is part of ulptx_sgl */
+	n = sizeof(struct fw_eth_tx_pkt_vm_wr) +
+	    sizeof(struct cpl_tx_pkt_core) +
+	    sizeof(struct ulptx_sgl) + 8 * ((3 * nsegs) / 2 + (nsegs & 1));
+	if (tso)
+		n += sizeof(struct cpl_tx_pkt_lso_core);
+
+	return (howmany(n, 16));
+}
+
+/*
  * len16 for a txpkts type 0 WR with a GL.  Does not include the firmware work
  * request header.
  */
@@ -4018,8 +4040,8 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	M_ASSERTPKTHDR(m0);
 	MPASS(available > 0 && available < eq->sidx);
 
-	len16 = mbuf_len16(m0);
 	nsegs = mbuf_nsegs(m0);
+	len16 = txpkt_vm_len16(nsegs, needs_tso(m0));
 	pktlen = m0->m_pkthdr.len;
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
