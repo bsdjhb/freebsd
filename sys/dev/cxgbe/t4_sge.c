@@ -3593,9 +3593,13 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	TASK_INIT(&txq->tx_reclaim_task, 0, tx_reclaim, eq);
 	txq->ifp = vi->ifp;
 	txq->gl = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
-	txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
-	    V_TXPKT_INTF(pi->tx_chan) | V_TXPKT_VF_VLD(1) |
-	    V_TXPKT_VF(vi->viid));
+	if (sc->flags & IS_VF)
+		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT_XT) |
+		    V_TXPKT_INTF(pi->tx_chan));
+	else
+		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
+		    V_TXPKT_INTF(pi->tx_chan) | V_TXPKT_VF_VLD(1) |
+		    V_TXPKT_VF(vi->viid));
 	txq->tc_idx = -1;
 	txq->sdesc = malloc(eq->sidx * sizeof(struct tx_sdesc), M_CXGBE,
 	    M_ZERO | M_WAITOK);
@@ -4042,6 +4046,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	 */
 	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
 
+	ctrl1 = 0;
 	if (needs_tso(m0)) {
 		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
 
@@ -4064,6 +4069,14 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		lso->seqno_offset = htobe32(0);
 		lso->len = htobe32(pktlen);
 
+		ctrl1 |= V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
+		    ETHER_HDR_LEN);
+		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP6);
+		else
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP);
+		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
+
 		cpl = (void *)(lso + 1);
 
 		txq->tso_wrs++;
@@ -4071,7 +4084,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		cpl = (void *)(wr + 1);
 
 	/* Checksum offload */
-	ctrl1 = 0;
 	if (needs_l3_csum(m0) == 0)
 		ctrl1 |= F_TXPKT_IPCSUM_DIS;
 	if (needs_l4_csum(m0) == 0)
