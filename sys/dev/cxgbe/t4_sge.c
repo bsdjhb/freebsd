@@ -4068,7 +4068,9 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	 */
 	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
 
-	ctrl1 = 0;
+	/* XXX: T6 */
+	ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen - ETHER_HDR_LEN);
+	ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
 	if (needs_tso(m0)) {
 		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
 
@@ -4091,25 +4093,33 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		lso->seqno_offset = htobe32(0);
 		lso->len = htobe32(pktlen);
 
-		ctrl1 |= V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
-		    ETHER_HDR_LEN);
 		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
 			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP6);
 		else
 			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP);
-		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
 
 		cpl = (void *)(lso + 1);
 
 		txq->tso_wrs++;
-	} else
-		cpl = (void *)(wr + 1);
+	} else {
+		/* Checksum offload */
+		if (m0->m_pkthdr.csum_flags & CSUM_TCP)
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP);
+		else if (m0->m_pkthdr.csum_flags & CSUM_UDP)
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_UDPIP);
+		else if (m0->m_pkthdr.csum_flags & CSUM_TCP_IPV6)
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP6);
+		else if (m0->m_pkthdr.csum_flags & CSUM_UDP_IPV6)
+			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_UDPIP6);
+		else
+			ctrl1 |= F_TXPKT_L4CSUM_DIS;
 
-	/* Checksum offload */
-	if (needs_l3_csum(m0) == 0)
-		ctrl1 |= F_TXPKT_IPCSUM_DIS;
-	if (needs_l4_csum(m0) == 0)
-		ctrl1 |= F_TXPKT_L4CSUM_DIS;
+		if (!(m0->m_pkthdr.csum_flags & CSUM_IP))
+			ctrl1 |= F_TXPKT_IPCSUM_DIS;
+
+		cpl = (void *)(wr + 1);
+	}
+
 	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
 	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
 		txq->txcsum++;	/* some hardware assistance provided */
