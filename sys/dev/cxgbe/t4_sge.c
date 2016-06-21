@@ -2151,7 +2151,7 @@ count_mbuf_nsegs(struct mbuf *m)
  * b) it may get defragged up if the gather list is too long for the hardware.
  */
 int
-parse_pkt(struct mbuf **mp)
+parse_pkt(struct adapter *sc, struct mbuf **mp)
 {
 	struct mbuf *m0 = *mp, *m;
 	int rc, nsegs, defragged = 0, offset;
@@ -2200,7 +2200,8 @@ restart:
 	set_mbuf_nsegs(m0, nsegs);
 	set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
-	if (!needs_tso(m0))
+	if (!needs_tso(m0) ||
+	    (sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0))))
 		return (0);
 
 	m = m0;
@@ -2245,8 +2246,10 @@ restart:
 	}
 
 #if defined(INET) || defined(INET6)
-	tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
-	m0->m_pkthdr.l4hlen = tcp->th_off * 4;
+	if (needs_tso(m0)) {
+		tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
+		m0->m_pkthdr.l4hlen = tcp->th_off * 4;
+	}
 #endif
 	MPASS(m0 == *mp);
 	return (0);
