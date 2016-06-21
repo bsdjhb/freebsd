@@ -4130,6 +4130,8 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		txq->vlan_insertion++;
 	}
 
+	CTR2(KTR_CXGBE, "%s: ctrl1 = %#lx", __func__, ctrl1);
+
 	/* CPL header */
 	cpl->ctrl0 = txq->cpl_ctrl0;
 	cpl->pack = 0;
