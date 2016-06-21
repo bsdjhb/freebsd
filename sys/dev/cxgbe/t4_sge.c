@@ -4116,6 +4116,10 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	}
 
 	if (csum_type >= 0) {
+		KASSERT(m0->m_pkthdr.l2hlen > 0 && m0->m_pkthdr.l3hlen > 0,
+	    ("%s: mbuf %p needs checksum offload but missing header lengths",
+			__func__, m0));
+
 		/* XXX: T6 */
 		ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
 		    ETHER_HDR_LEN);
