@@ -585,7 +585,12 @@ retry:
 	uio.uio_td = td;
 	flags = MSG_NBIO;
 
-	/* TODO: Charge ru_msg* to job. */
+	/*
+	 * For resource usage accounting, don't compare ru_msg* in this
+	 * thread before/after to avoid counting multiple calls to
+	 * sosend/soreceive.  Instead, count a completed request as a
+	 * single message.
+	 */
 
 	if (sb == &so->so_rcv) {
 		uio.uio_rw = UIO_READ;
@@ -635,9 +640,13 @@ retry:
 			
 			if (!aio_set_cancel_function(job, soo_aio_cancel)) {
 				SOCKBUF_UNLOCK(sb);
-				if (done != 0)
+				if (done != 0) {
+					if (sb == &so->so_rcv)
+						job->msgrcv = 1;
+					else
+						job->msgsnd = 1;
 					aio_complete(job, done, 0);
-				else
+				} else
 					aio_cancel(job);
 				SOCKBUF_LOCK(sb);
 			} else {
@@ -652,8 +661,13 @@ retry:
 		error = 0;
 	if (error)
 		aio_complete(job, -1, error);
-	else
+	else {
+		if (sb == &so->so_rcv)
+			job->msgrcv = 1;
+		else
+			job->msgsnd = 1;
 		aio_complete(job, done, 0);
+	}
 	SOCKBUF_LOCK(sb);
 }
 
@@ -747,9 +761,13 @@ soo_aio_cancel(struct kaiocb *job)
 	SOCKBUF_UNLOCK(sb);
 
 	done = job->aio_done;
-	if (done != 0)
+	if (done != 0) {
+		if (sb == &so->so_rcv)
+			job->msgrcv = 1;
+		else
+			job->msgsnd = 1;
 		aio_complete(job, done, 0);
-	else
+	} else
 		aio_cancel(job);
 }
 
