@@ -563,6 +563,7 @@ soaio_process_job(struct socket *so, struct sockbuf *sb, struct kaiocb *job)
 	struct uio uio;
 	struct iovec iov;
 	size_t cnt, done;
+	long ru_before;
 	int error, flags;
 
 	SOCKBUF_UNLOCK(sb);
@@ -586,27 +587,32 @@ retry:
 	flags = MSG_NBIO;
 
 	/*
-	 * For resource usage accounting, don't compare ru_msg* in this
-	 * thread before/after to avoid counting multiple calls to
-	 * sosend/soreceive.  Instead, count a completed request as a
-	 * single message.
+	 * For resource usage accounting, only count a completed request
+	 * as a single message to avoid counting multiple calls to
+	 * sosend/soreceive on a blocking socket.
 	 */
 
 	if (sb == &so->so_rcv) {
 		uio.uio_rw = UIO_READ;
+		ru_before = td->td_ru.ru_msgrcv;
 #ifdef MAC
 		error = mac_socket_check_receive(fp->f_cred, so);
 		if (error == 0)
 
 #endif
 			error = soreceive(so, NULL, &uio, NULL, NULL, &flags);
+		if (td->td_ru.ru_msgrcv != ru_before)
+			job->msgrcv = 1;
 	} else {
 		uio.uio_rw = UIO_WRITE;
+		ru_before = td->td_ru.ru_msgsnd;
 #ifdef MAC
 		error = mac_socket_check_send(fp->f_cred, so);
 		if (error == 0)
 #endif
 			error = sosend(so, NULL, &uio, NULL, NULL, flags, td);
+		if (td->td_ru.ru_msgsnd != ru_before)
+			job->msgsnd = 1;
 		if (error == EPIPE && (so->so_options & SO_NOSIGPIPE) == 0) {
 			PROC_LOCK(job->userproc);
 			kern_psignal(job->userproc, SIGPIPE);
@@ -640,13 +646,9 @@ retry:
 			
 			if (!aio_set_cancel_function(job, soo_aio_cancel)) {
 				SOCKBUF_UNLOCK(sb);
-				if (done != 0) {
-					if (sb == &so->so_rcv)
-						job->msgrcv = 1;
-					else
-						job->msgsnd = 1;
+				if (done != 0)
 					aio_complete(job, done, 0);
-				} else
+				else
 					aio_cancel(job);
 				SOCKBUF_LOCK(sb);
 			} else {
@@ -661,13 +663,8 @@ retry:
 		error = 0;
 	if (error)
 		aio_complete(job, -1, error);
-	else {
-		if (sb == &so->so_rcv)
-			job->msgrcv = 1;
-		else
-			job->msgsnd = 1;
+	else
 		aio_complete(job, done, 0);
-	}
 	SOCKBUF_LOCK(sb);
 }
 
@@ -761,13 +758,9 @@ soo_aio_cancel(struct kaiocb *job)
 	SOCKBUF_UNLOCK(sb);
 
 	done = job->aio_done;
-	if (done != 0) {
-		if (sb == &so->so_rcv)
-			job->msgrcv = 1;
-		else
-			job->msgsnd = 1;
+	if (done != 0)
 		aio_complete(job, done, 0);
-	} else
+	else
 		aio_cancel(job);
 }
 
