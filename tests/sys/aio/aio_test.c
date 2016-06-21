@@ -40,6 +40,7 @@
 
 #include <sys/param.h>
 #include <sys/module.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/mdioctl.h>
