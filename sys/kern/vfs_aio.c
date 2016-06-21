@@ -743,11 +743,11 @@ aio_process_rw(struct kaiocb *job)
 	struct uio auio;
 	struct iovec aiov;
 	ssize_t cnt;
+	long msgsnd_st, msgsnd_end;
+	long msgrcv_st, msgrcv_end;
+	long oublock_st, oublock_end;
+	long inblock_st, inblock_end;
 	int error;
-	int msgsnd_st, msgsnd_end;
-	int msgrcv_st, msgrcv_end;
-	int oublock_st, oublock_end;
-	int inblock_st, inblock_end;
 
 	KASSERT(job->uaiocb.aio_lio_opcode == LIO_READ ||
 	    job->uaiocb.aio_lio_opcode == LIO_WRITE,
