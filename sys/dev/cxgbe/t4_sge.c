@@ -4033,7 +4033,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;	/* used in many unrelated places */
 	uint64_t ctrl1;
-	int len16, ndesc, pktlen, nsegs;
+	int csum_type, len16, ndesc, pktlen, nsegs;
 	caddr_t dst;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
@@ -4068,9 +4068,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	 */
 	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
 
-	/* XXX: T6 */
-	ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen - ETHER_HDR_LEN);
-	ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
+	csum_type = -1;
 	if (needs_tso(m0)) {
 		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
 
@@ -4094,39 +4092,46 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		lso->len = htobe32(pktlen);
 
 		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP6);
+			csum_type = TX_CSUM_TCPIP6;
 		else
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP);
+			csum_type = TX_CSUM_TCPIP;
 
 		cpl = (void *)(lso + 1);
 
 		txq->tso_wrs++;
 	} else {
 		/* Checksum offload */
-		if (m0->m_pkthdr.csum_flags & CSUM_TCP)
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP);
-		else if (m0->m_pkthdr.csum_flags & CSUM_UDP)
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_UDPIP);
-		else if (m0->m_pkthdr.csum_flags & CSUM_TCP_IPV6)
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_TCPIP6);
-		else if (m0->m_pkthdr.csum_flags & CSUM_UDP_IPV6)
-			ctrl1 |= V_TXPKT_CSUM_TYPE(TX_CSUM_UDPIP6);
-		else
-			ctrl1 |= F_TXPKT_L4CSUM_DIS;
-
-		if (!(m0->m_pkthdr.csum_flags & CSUM_IP))
-			ctrl1 |= F_TXPKT_IPCSUM_DIS;
+		if (m0->m_pkthdr.csum_flags & CSUM_IP_TCP)
+			csum_type = TX_CSUM_TCPIP;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP_UDP)
+			csum_type = TX_CSUM_UDPIP;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_TCP)
+			csum_type = TX_CSUM_TCPIP6;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
+			csum_type = TX_CSUM_UDPIP6;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP)
+			csum_type = TX_CSUM_IP;
 
 		cpl = (void *)(wr + 1);
 	}
 
-	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
-	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
+	if (csum_type >= 0) {
+		/* XXX: T6 */
+		ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
+		    ETHER_HDR_LEN);
+		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
+		ctrl1 |= V_TXPKT_CSUM_TYPE(csum_type);
 		txq->txcsum++;	/* some hardware assistance provided */
+	} else
+		ctrl1 = F_TXPKT_L4CSUM_DIS;
+
+	/* IP checksums are handled via L4 checksums. */
+	ctrl1 |= F_TXPKT_IPCSUM_DIS;
 
 	/* VLAN tag insertion */
 	if (needs_vlan_insertion(m0)) {
-		ctrl1 |= F_TXPKT_VLAN_VLD | V_TXPKT_VLAN(m0->m_pkthdr.ether_vtag);
+		ctrl1 |= F_TXPKT_VLAN_VLD |
+		    V_TXPKT_VLAN(m0->m_pkthdr.ether_vtag);
 		txq->vlan_insertion++;
 	}
 
