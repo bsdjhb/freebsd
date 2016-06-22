@@ -4116,6 +4116,8 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			csum_type = TX_CSUM_TCPIP6;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
 			csum_type = TX_CSUM_UDPIP6;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP)
+			csum_type = TX_CSUM_IP;
 
 		cpl = (void *)(wr + 1);
 	}
@@ -4136,8 +4138,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	} else
 		ctrl1 = F_TXPKT_L4CSUM_DIS;
 
-	if (needs_l3_csum(m0) == 0)
-		ctrl1 |= F_TXPKT_IPCSUM_DIS;
 	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
 	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
 		txq->txcsum++;	/* some hardware assistance provided */
