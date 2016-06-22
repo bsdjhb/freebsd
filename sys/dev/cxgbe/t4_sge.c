@@ -4108,7 +4108,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 
 		txq->tso_wrs++;
 	} else {
-		/* Checksum offload */
 		if (m0->m_pkthdr.csum_flags & CSUM_IP_TCP)
 			csum_type = TX_CSUM_TCPIP;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP_UDP)
@@ -4117,28 +4116,31 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			csum_type = TX_CSUM_TCPIP6;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
 			csum_type = TX_CSUM_UDPIP6;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP)
-			csum_type = TX_CSUM_IP;
 
 		cpl = (void *)(wr + 1);
 	}
 
+	/* Checksum offload */
+	ctrl1 = 0;
+	if (needs_l3_csum(m0) == 0)
+		ctrl1 |= F_TXPKT_IPCSUM_DIS;
 	if (csum_type >= 0) {
 		KASSERT(m0->m_pkthdr.l2hlen > 0 && m0->m_pkthdr.l3hlen > 0,
 	    ("%s: mbuf %p needs checksum offload but missing header lengths",
 			__func__, m0));
 
 		/* XXX: T6 */
-		ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
-		    ETHER_HDR_LEN);
+		ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen - ETHER_HDR_LEN);
 		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
 		ctrl1 |= V_TXPKT_CSUM_TYPE(csum_type);
-		txq->txcsum++;	/* some hardware assistance provided */
 	} else
 		ctrl1 = F_TXPKT_L4CSUM_DIS;
 
-	/* IP checksums are handled via L4 checksums. */
-	ctrl1 |= F_TXPKT_IPCSUM_DIS;
+	if (needs_l3_csum(m0) == 0)
+		ctrl1 |= F_TXPKT_IPCSUM_DIS;
+	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
+	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
+		txq->txcsum++;	/* some hardware assistance provided */
 
 	/* VLAN tag insertion */
 	if (needs_vlan_insertion(m0)) {
