@@ -2200,8 +2200,8 @@ restart:
 	set_mbuf_nsegs(m0, nsegs);
 	set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
-	if (!needs_tso(m0) ||
-	    (sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
+	if (!needs_tso(m0) &&
+	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
 		CTR2(KTR_CXGBE, "%s: no lengths (csum flags %#lx)", __func__,
 		    m0->m_pkthdr.csum_flags);
 		return (0);
