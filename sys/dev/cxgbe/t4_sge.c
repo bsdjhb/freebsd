@@ -4132,11 +4132,12 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			__func__, m0));
 
 		/* XXX: T6 */
-		ctrl1 = V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen - ETHER_HDR_LEN);
+		ctrl1 |= V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
+		    ETHER_HDR_LEN);
 		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
 		ctrl1 |= V_TXPKT_CSUM_TYPE(csum_type);
 	} else
-		ctrl1 = F_TXPKT_L4CSUM_DIS;
+		ctrl1 |= F_TXPKT_L4CSUM_DIS;
 
 	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
 	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
