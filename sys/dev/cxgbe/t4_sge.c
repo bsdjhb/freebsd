@@ -53,6 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
+#include <machine/in_cksum.h>
 #include <machine/md_var.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -4116,8 +4117,23 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			csum_type = TX_CSUM_TCPIP6;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
 			csum_type = TX_CSUM_UDPIP6;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP)
-			csum_type = TX_CSUM_IP;
+		else if (m0->m_pkthdr.csum_flags & CSUM_IP) {
+			/*
+			 * XXX: The firmware appears to stomp on the
+			 * fragment/flags field of the IP header when
+			 * using TX_CSUM_IP.  Fall back to doing
+			 * software checksums.
+			 */
+			u_short *sump;
+			struct mbuf *m;
+			int offset;
+
+			sump = m_advance(&m, &offset, m0->m_pkthdr.l2hlen +
+			    offsetof(struct ip, ip_sum));
+			*sump = in_cksum_skip(m0, m0->m_pkthdr.l3hlen,
+			    m0->m_pkthdr.l2hlen);
+			m0->m_pkthdr.csum_flags &= ~CSUM_IP;
+		}
 
 		cpl = (void *)(wr + 1);
 	}
