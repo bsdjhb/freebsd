@@ -149,7 +149,12 @@ struct pic msi_pic = {
 	.pic_reprogram_pin = NULL,
 };
 
-static int msix_disable_migration = -1;
+/*
+ * Xen hypervisors prior to 4.6.0 do not properly handle updates to
+ * enabled MSI-X table entries.  Allow migration of MSI-X interrupts
+ * to be disabled via a tunable.
+ */
+static int msix_disable_migration = 0;
 SYSCTL_INT(_machdep, OID_AUTO, disable_msix_migration, CTLFLAG_RDTUN,
     &msix_disable_migration, 0,
     "Disable migration of MSI-X interrupts between CPUs");
@@ -305,18 +310,6 @@ msi_init(void)
 		/* FALLTHROUGH */
 	default:
 		return;
-	}
-
-	/*
-	 * Xen hypervisors prior to 4.6.0 do not properly handle
-	 * updates to enabled MSI-X table entries.  Allow migration of
-	 * MSI-X interrupts to be disabled via a tunable.
-	 */
-	if (msix_disable_migration == -1) {
-		if (vm_guest == VM_GUEST_XEN)
-			msix_disable_migration = 1;
-		else
-			msix_disable_migration = 0;
 	}
 
 	msi_enabled = 1;
