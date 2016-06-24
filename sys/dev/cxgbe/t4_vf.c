@@ -714,12 +714,7 @@ t4vf_attach(device_t dev)
 	    "MSI-X" : "MSI", sc->intr_count > 1 ? "s" : "", sc->sge.neq,
 	    sc->sge.niq);
 
-#ifdef probablynot
-	t4_set_desc(sc);
-#endif
-
 done:
-
 	if (rc != 0)
 		t4_detach_common(dev);
 	else
