@@ -4055,6 +4055,13 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
 		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
+	else if (pktlen <= imm_payload(2) && available >= 2) {
+		/* Immediate data.  Recalculate len16 and set nsegs to 0. */
+		ctrl += pktlen;
+		len16 = howmany(sizeof(struct fw_eth_tx_pkt_vm_wr) +
+		    sizeof(struct cpl_tx_pkt_core) + pktlen, 16);
+		nsegs = 0;
+	}
 	ndesc = howmany(len16, EQ_ESIZE / 16);
 	MPASS(ndesc <= available);
 
@@ -4178,8 +4185,24 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 
 	/* SGL */
 	dst = (void *)(cpl + 1);
-	write_gl_to_txd(txq, m0, &dst, eq->sidx - ndesc < eq->pidx);
-	txq->sgl_wrs++;
+	if (nsegs > 0) {
+
+		write_gl_to_txd(txq, m0, &dst, eq->sidx - ndesc < eq->pidx);
+		txq->sgl_wrs++;
+	} else {
+		struct mbuf *m;
+
+		for (m = m0; m != NULL; m = m->m_next) {
+			copy_to_txd(eq, mtod(m, caddr_t), &dst, m->m_len);
+#ifdef INVARIANTS
+			pktlen -= m->m_len;
+#endif
+		}
+#ifdef INVARIANTS
+		KASSERT(pktlen == 0, ("%s: %d bytes left.", __func__, pktlen));
+#endif
+		txq->imm_wrs++;
+	}
 
 	txq->txpkt_wrs++;
 
