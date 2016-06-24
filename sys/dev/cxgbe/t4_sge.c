@@ -4132,8 +4132,8 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			offset = 0;
 			sump = m_advance(&m, &offset, m0->m_pkthdr.l2hlen +
 			    offsetof(struct ip, ip_sum));
-			*sump = in_cksum_skip(m0, m0->m_pkthdr.l3hlen,
-			    m0->m_pkthdr.l2hlen);
+			*sump = in_cksum_skip(m0, m0->m_pkthdr.l2hlen +
+			    m0->m_pkthdr.l3hlen, m0->m_pkthdr.l2hlen);
 			m0->m_pkthdr.csum_flags &= ~CSUM_IP;
 		}
 
