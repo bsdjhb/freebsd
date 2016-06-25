@@ -1673,6 +1673,102 @@ ATF_TC_BODY(ptrace__ptrace_vfork_follow, tc)
 	ATF_REQUIRE(errno == ECHILD);
 }
 
+/*
+ * Verify that no more events are reported after PT_KILL except for the
+ * process exit when stopped due to a breakpoint trap.
+ */
+ATF_TC_WITHOUT_HEAD(ptrace__PT_KILL_breakpoint);
+ATF_TC_BODY(ptrace__PT_KILL_breakpoint, tc)
+{
+	pid_t fpid, wpid;
+	int status;
+
+	ATF_REQUIRE((fpid = fork()) != -1);
+	if (fpid == 0) {
+		trace_me();
+		__builtin_debugtrap();
+		exit(1);
+	}
+
+	/* The first wait() should report the stop from SIGSTOP. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGSTOP);
+
+	/* Continue the child ignoring the SIGSTOP. */
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	/* The second wait() should report hitting the breakpoint. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGTRAP);
+
+	/* Kill the child process. */
+	ATF_REQUIRE(ptrace(PT_KILL, fpid, 0, 0) == 0);
+
+	/* The last wait() should report the SIGKILL. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSIGNALED(status));
+	ATF_REQUIRE(WTERMSIG(status) == SIGKILL);
+
+	wpid = wait(&status);
+	ATF_REQUIRE(wpid == -1);
+	ATF_REQUIRE(errno == ECHILD);
+}
+
+/*
+ * Verify that no more events are reported after PT_KILL except for the
+ * process exit when stopped inside of a system call.
+ */
+ATF_TC_WITHOUT_HEAD(ptrace__PT_KILL_system_call);
+ATF_TC_BODY(ptrace__PT_KILL_system_call, tc)
+{
+	struct ptrace_lwpinfo pl;
+	pid_t fpid, wpid;
+	int status;
+
+	ATF_REQUIRE((fpid = fork()) != -1);
+	if (fpid == 0) {
+		trace_me();
+		getpid();
+		exit(1);
+	}
+
+	/* The first wait() should report the stop from SIGSTOP. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGSTOP);
+
+	/* Continue the child ignoring the SIGSTOP and tracing system calls. */
+	ATF_REQUIRE(ptrace(PT_SYSCALL, fpid, (caddr_t)1, 0) == 0);
+
+	/* The second wait() should report a system call entry for getpid(). */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGTRAP);
+
+	ATF_REQUIRE(ptrace(PT_LWPINFO, wpid, (caddr_t)&pl, sizeof(pl)) != -1);
+	ATF_REQUIRE(pl.pl_flags & PL_FLAG_SCE);
+
+	/* Kill the child process. */
+	ATF_REQUIRE(ptrace(PT_KILL, fpid, 0, 0) == 0);
+
+	/* The last wait() should report the SIGKILL. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSIGNALED(status));
+	ATF_REQUIRE(WTERMSIG(status) == SIGKILL);
+
+	wpid = wait(&status);
+	ATF_REQUIRE(wpid == -1);
+	ATF_REQUIRE(errno == ECHILD);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -1700,6 +1796,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, ptrace__event_mask);
 	ATF_TP_ADD_TC(tp, ptrace__ptrace_vfork);
 	ATF_TP_ADD_TC(tp, ptrace__ptrace_vfork_follow);
+	ATF_TP_ADD_TC(tp, ptrace__PT_KILL_breakpoint);
+	ATF_TP_ADD_TC(tp, ptrace__PT_KILL_system_call);
 
 	return (atf_no_error());
 }
