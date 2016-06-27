@@ -129,10 +129,10 @@ The request was not queued because of system resource limitations.
 The asynchronous notification method in
 .Fa iocb->aio_sigevent.sigev_notify
 is invalid or not supported.
-.It Bq Er ENOSYS
-The
-.Fn aio_write
-system call is not supported.
+.It Bq Er EOPNOTSUPP
+The descriptor associated with
+.Fa iocb->aio_fildes
+is unsafe and asynchronous I/O operations on unsafe descriptors are disabled.
 .El
 .Pp
 The following conditions may be synchronously detected when the
