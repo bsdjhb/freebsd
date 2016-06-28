@@ -65,6 +65,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/procdesc.h>
 #include <sys/posix4.h>
 #include <sys/pioctl.h>
+#include <sys/ptrace.h>
 #include <sys/racct.h>
 #include <sys/resourcevar.h>
 #include <sys/sdt.h>
@@ -1954,7 +1955,8 @@ trapsignal(struct thread *td, ksiginfo_t *ksi)
 	PROC_LOCK(p);
 	ps = p->p_sigacts;
 	mtx_lock(&ps->ps_mtx);
-	if ((p->p_flag & P_TRACED) == 0 && SIGISMEMBER(ps->ps_sigcatch, sig) &&
+	if ((p->p_ptevents & PTRACE_SIG) == 0 &&
+	    SIGISMEMBER(ps->ps_sigcatch, sig) &&
 	    !SIGISMEMBER(td->td_sigmask, sig)) {
 #ifdef KTRACE
 		if (KTRPOINT(curthread, KTR_PSIG))
@@ -2188,9 +2190,10 @@ tdsendsignal(struct proc *p, struct thread *td, int sig, ksiginfo_t *ksi)
 	    !((prop & SA_CONT) && (p->p_flag & P_STOPPED_SIG)))
 		return (ret);
 	/*
-	 * SIGKILL: Remove procfs STOPEVENTs.
+	 * SIGKILL: Remove procfs STOPEVENTs and ptrace events.
 	 */
 	if (sig == SIGKILL) {
+		p->p_ptevents = 0;
 		/* from procfs_ioctl.c: PIOCBIC */
 		p->p_stops = 0;
 		/* from procfs_ioctl.c: PIOCCONT */
@@ -2659,7 +2662,8 @@ issignal(struct thread *td)
 	mtx_assert(&ps->ps_mtx, MA_OWNED);
 	PROC_LOCK_ASSERT(p, MA_OWNED);
 	for (;;) {
-		int traced = (p->p_flag & P_TRACED) || (p->p_stops & S_SIG);
+		int traced = (p->p_ptevents & PTRACE_SIG) ||
+		    (p->p_stops & S_SIG);
 
 		sigpending = td->td_sigqueue.sq_signals;
 		SIGSETOR(sigpending, p->p_sigqueue.sq_signals);
@@ -2679,14 +2683,15 @@ issignal(struct thread *td)
 
 		/*
 		 * We should see pending but ignored signals
-		 * only if P_TRACED was on when they were posted.
+		 * only if PTRACE_SIG was on when they were posted.
 		 */
 		if (SIGISMEMBER(ps->ps_sigignore, sig) && (traced == 0)) {
 			sigqueue_delete(&td->td_sigqueue, sig);
 			sigqueue_delete(&p->p_sigqueue, sig);
 			continue;
 		}
-		if (p->p_flag & P_TRACED && (p->p_flag & P_PPTRACE) == 0) {
+		if (p->p_ptevents & PTRACE_SIG &&
+		    (p->p_flag & P_PPTRACE) == 0) {
 			/*
 			 * If traced, always stop.
 			 * Remove old signal from queue before the stop.
@@ -2741,7 +2746,7 @@ issignal(struct thread *td)
 			 * to the top to rescan signals.  This ensures
 			 * that p_sig* and p_sigact are consistent.
 			 */
-			if ((p->p_flag & P_TRACED) == 0)
+			if ((p->p_ptevents & PTRACE_SIG) == 0)
 				continue;
 		}
 
