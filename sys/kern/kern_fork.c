@@ -1063,7 +1063,7 @@ fork_return(struct thread *td, struct trapframe *frame)
 	if (td->td_dbgflags & TDB_STOPATFORK) {
 		sx_xlock(&proctree_lock);
 		PROC_LOCK(p);
-		if (p->p_ptevents & PTRACE_FORK) {
+		if (p->p_pptr->p_ptevents & PTRACE_FORK) {
 			/*
 			 * If debugger still wants auto-attach for the
 			 * parent's children, do it now.
