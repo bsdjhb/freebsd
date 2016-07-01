@@ -989,9 +989,15 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 			error = EINVAL;
 			break;
 		}
+		tmp = *(int *)addr;
+		if ((tmp & ~(PTRACE_EXEC | PTRACE_SIG | PTRACE_SCE |
+		    PTRACE_SCX | PTRACE_FORK | PTRACE_LWP)) != 0) {
+			error = EINVAL;
+			break;
+		}
 		CTR3(KTR_PTRACE, "PT_SET_EVENT_MASK: pid %d mask %#x -> %#x",
-		    p->p_pid, p->p_ptevents, *(int *)addr);
-		p->p_ptevents = *(int *)addr;
+		    p->p_pid, p->p_ptevents, tmp);
+		p->p_ptevents = tmp;
 		break;
 		
 	case PT_STEP:
