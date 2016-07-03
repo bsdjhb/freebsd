@@ -123,11 +123,16 @@ The
 argument is not a valid message queue descriptor.
 .It Bq Er EBUSY
 Process is already registered for notification by the message queue.
+.It Bq Er EINVAL
+The asynchronous notification method in
+.Fa notification->sigev_notify
+is invalid or not supported.
 .El
 .Sh SEE ALSO
 .Xr mq_open 2 ,
 .Xr mq_send 2 ,
 .Xr mq_timedsend 2 ,
+.Xr sigevent 3 ,
 .Xr siginfo 3
 .Sh STANDARDS
 The

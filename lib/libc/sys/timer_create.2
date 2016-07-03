@@ -144,6 +144,8 @@ The calling process has already created all of the timers it is allowed by
 this implementation.
 .It Bq Er EINVAL
 The specified clock ID is not supported.
+.It Bq Er EINVAL
+The specified asynchronous notification method is not supported.
 .It Bq Er EFAULT
 Any arguments point outside the allocated address space or there is a
 memory protection fault.
@@ -152,6 +154,7 @@ memory protection fault.
 .Xr clock_getres 2 ,
 .Xr timer_delete 2 ,
 .Xr timer_getoverrun 2 ,
+.Xr sigevent 3 ,
 .Xr siginfo 3
 .Sh STANDARDS
 The
