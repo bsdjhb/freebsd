@@ -990,8 +990,8 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 			break;
 		}
 		tmp = *(int *)addr;
-		if ((tmp & ~(PTRACE_EXEC | PTRACE_SIG | PTRACE_SCE |
-		    PTRACE_SCX | PTRACE_FORK | PTRACE_LWP)) != 0) {
+		if ((tmp & ~(PTRACE_EXEC | PTRACE_SCE | PTRACE_SCX |
+		    PTRACE_FORK | PTRACE_LWP)) != 0) {
 			error = EINVAL;
 			break;
 		}

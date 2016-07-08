@@ -84,14 +84,13 @@
 
 /* Events used with PT_GET_EVENT_MASK and PT_SET_EVENT_MASK */
 #define	PTRACE_EXEC	0x0001
-#define	PTRACE_SIG	0x0002
 #define	PTRACE_SCE	0x0004
 #define	PTRACE_SCX	0x0008
 #define	PTRACE_SYSCALL	(PTRACE_SCE | PTRACE_SCX)
 #define	PTRACE_FORK	0x0010
 #define	PTRACE_LWP	0x0020
 
-#define	PTRACE_DEFAULT	(PTRACE_EXEC | PTRACE_SIG)
+#define	PTRACE_DEFAULT	(PTRACE_EXEC)
 
 struct ptrace_io_desc {
 	int	piod_op;	/* I/O operation */
