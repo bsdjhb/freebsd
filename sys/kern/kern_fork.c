@@ -1070,7 +1070,7 @@ fork_return(struct thread *td, struct trapframe *frame)
 			 */
 			dbg = p->p_pptr->p_pptr;
 			p->p_flag |= P_TRACED;
-			p->p_ptevents = p->p_pptr->p_ptevents;
+			p->p_ptevents = PTRACE_DEFAULT;
 			p->p_oppid = p->p_pptr->p_pid;
 			CTR2(KTR_PTRACE,
 		    "fork_return: attaching to new child pid %d: oppid %d",
