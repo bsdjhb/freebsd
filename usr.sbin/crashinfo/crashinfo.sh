@@ -169,9 +169,8 @@ umask 077
 # Simulate uname
 ostype=$(gdb_command $KERNEL 'printf "%s", ostype')
 osrelease=$(gdb_command $KERNEL 'printf "%s", osrelease')
-version=$(echo -e printf '"%s", version' | ${GDB} -x /dev/stdin -batch $KERNEL | \
-    tr '\t\n' '  ')
-machine=$(echo -e printf '"%s", machine' | ${GDB} -x /dev/stdin -batch $KERNEL)
+version=$(gdb_command $KERNEL 'printf "%s", version' | tr '\t\n' '  ')
+machine=$(gdb_command $KERNEL 'printf "%s", machine')
 
 exec > $FILE 2>&1
 
@@ -190,7 +189,11 @@ file=`mktemp /tmp/crashinfo.XXXXXX`
 if [ $? -eq 0 ]; then
 	echo "bt" >> $file
 	echo "quit" >> $file
-	${KGDB} $KERNEL $VMCORE < $file
+	if [ -x /usr/local/bin/kgdb ]; then
+		/usr/local/bin/kgdb $KERNEL $VMCORE < $file
+	else
+		kgdb $KERNEL $VMCORE < $file
+	fi
 	rm -f $file
 	echo
 fi
