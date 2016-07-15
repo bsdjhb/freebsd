@@ -656,9 +656,11 @@ sys_ptrace(struct thread *td, struct ptrace_args *uap)
 		error = COPYOUT(&r.dbreg, uap->addr, sizeof r.dbreg);
 		break;
 	case PT_GET_EVENT_MASK:
+		/* NB: The size in uap->data is validated in kern_ptrace(). */
 		error = copyout(&r.ptevents, uap->addr, uap->data);
 		break;
 	case PT_LWPINFO:
+		/* NB: The size in uap->data is validated in kern_ptrace(). */
 		error = copyout(&r.pl, uap->addr, uap->data);
 		break;
 	}
