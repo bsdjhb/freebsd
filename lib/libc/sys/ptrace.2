@@ -152,10 +152,10 @@ This event flag controls tracing of LWP
 .Pq kernel thread
 creation and destruction.
 When this event is enabled, 
-New LWPs will stop to report an event with
+new LWPs will stop and report an event with
 .Dv PL_FLAG_BORN
 set before executing their first instruction,
-and exiting LWPs will stop to report an event with
+and exiting LWPs will stop and report an event with
 .Dv PL_FLAG_EXITED
 set before completing their termination.
 .Pp
