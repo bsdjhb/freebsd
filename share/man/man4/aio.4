@@ -46,8 +46,10 @@ system call.
 .Pp
 Asynchronous I/O operations on some file descriptor types may block an
 AIO daemon indefinitely resulting in process and/or system hangs.
-Operations on these file descriptor types are disabled by default, but
-can be enabled by setting
+Operations on these file descriptor types are considered
+.Dq unsafe
+and disabled by default.
+They can be enabled by setting
 the
 .Va vfs.aio.enable_unsafe
 sysctl node to a non-zero value.

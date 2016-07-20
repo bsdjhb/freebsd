@@ -108,9 +108,9 @@ The asynchronous notification method in
 .Fa iocb->aio_sigevent.sigev_notify
 is invalid or not supported.
 .It Bq Er EOPNOTSUPP
-The descriptor associated with
+Asynchronous file synchronization operations on the file descriptor
 .Fa iocb->aio_fildes
-is unsafe and asynchronous I/O operations on unsafe descriptors are disabled.
+are unsafe and unsafe asynchronous I/O operations are disabled.
 .It Bq Er EINVAL
 A value of the
 .Fa op
