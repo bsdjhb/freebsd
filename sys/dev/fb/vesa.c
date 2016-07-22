@@ -1953,7 +1953,6 @@ vesa_unload(void)
 	}
 
 	vesa_bios_uninit();
-	mtx_destroy(&vesa_lock);
 
 	return (error);
 }
