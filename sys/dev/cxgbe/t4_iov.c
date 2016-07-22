@@ -156,7 +156,7 @@ t4iov_attach_child(device_t dev)
 	/*
 	 * PF0-3 are associated with a specific port on the NIC (PF0
 	 * with port 0, etc.).  Ask the PF4 driver for the unit number
-	 * for this functions associated port to determine if the port
+	 * for this function's associated port to determine if the port
 	 * is present.
 	 */
 	error = T4_READ_PORT_UNIT(sc->sc_main, pci_get_function(dev), &unit);
