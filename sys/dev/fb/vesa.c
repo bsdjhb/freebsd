@@ -134,7 +134,6 @@ static vi_fill_rect_t		vesa_fill_rect;
 static vi_bitblt_t		vesa_bitblt;
 static vi_diag_t		vesa_diag;
 static int			vesa_bios_info(int level);
-static int			vesa_late_load(int flags);
 
 static video_switch_t vesavidsw = {
 	vesa_probe,
@@ -1142,7 +1141,7 @@ vesa_configure(int flags)
 	 * initialization for now and try again later.
 	 */
 	if (adp == NULL) {
-		vga_sub_configure = vesa_late_load;
+		vga_sub_configure = vesa_configure;
 		return (ENODEV);
 	}
 
@@ -1910,17 +1909,6 @@ vesa_bios_info(int level)
 static int
 vesa_load(void)
 {
-
-	return (vesa_late_load(0));
-}
-
-/*
- * To be called from the vga_sub_configure hook in case the VGA adapter is
- * not found when VESA is loaded.
- */
-static int
-vesa_late_load(int flags)
-{
 	int error;
 
 	if (vesa_init_done)
@@ -1930,7 +1918,7 @@ vesa_late_load(int flags)
 
 	/* locate a VGA adapter */
 	vesa_adp = NULL;
-	error = vesa_configure(flags);
+	error = vesa_configure(0);
 
 	if (error == 0)
 		vesa_bios_info(bootverbose);
