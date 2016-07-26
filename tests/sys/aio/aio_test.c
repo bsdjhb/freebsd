@@ -924,6 +924,30 @@ ATF_TC_BODY(aio_socket_short_write_cancel, tc)
 	close(s[0]);
 }
 
+/*
+ * This test just performs a basic test of aio_fsync().
+ */
+ATF_TC_WITHOUT_HEAD(aio_fsync_test);
+ATF_TC_BODY(aio_fsync_test, tc)
+{
+	struct aiocb iocb, *iocbp;
+	char pathname[PATH_MAX];
+
+	strcpy(pathname, PATH_TEMPLATE);
+	fd = mkstemp(pathname);
+	ATF_REQUIRE_MSG(fd != -1, "mkstemp failed: %s", strerror(errno));
+	unlink(pathname);
+
+	memset(&iocb, 0, sizeof(iocb));
+	iocb.aio_fildes = fd;
+	ATF_REQUIRE(aio_fsync(O_SYNC, &iocb) == 0);
+
+	ATF_REQUIRE(aio_waitcomplete(&iocbp, NULL) == 0);
+	ATF_REQUIRE(iocbp == &iocb);
+
+	close(fd);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -937,6 +961,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, aio_socket_two_reads);
 	ATF_TP_ADD_TC(tp, aio_socket_blocking_short_write);
 	ATF_TP_ADD_TC(tp, aio_socket_short_write_cancel);
+	ATF_TP_ADD_TC(tp, aio_fsync_test);
 
 	return (atf_no_error());
 }
