@@ -1657,10 +1657,10 @@ aio_cancel_sync(struct kaiocb *job)
 	struct kaioinfo *ki;
 
 	ki = job->userproc->p_aioinfo;
-	mtx_lock(&aio_job_mtx);
+	AIO_LOCK(ki);
 	if (!aio_cancel_cleared(job))
 		TAILQ_REMOVE(&ki->kaio_syncqueue, job, list);
-	mtx_unlock(&aio_job_mtx);
+	AIO_UNLOCK(ki);
 	aio_cancel(job);
 }
 
@@ -1720,11 +1720,18 @@ queueit:
 			}
 		}
 		if (job->pending != 0) {
-			if (!aio_set_cancel_function(job, aio_cancel_sync)) {
+			/*
+			 * AIO_LOCK() is used internally to protect
+			 * the cancellation state machine.  This
+			 * inlines aio_set_cancel_function to avoid
+			 * recursing on the lock.
+			 */
+			if (job->jobflags & KAIOCB_CANCELLED) {
 				AIO_UNLOCK(ki);
 				aio_cancel(job);
 				return (0);
 			}
+			job->cancel_fn = aio_cancel_sync;
 			TAILQ_INSERT_TAIL(&ki->kaio_syncqueue, job, list);
 			AIO_UNLOCK(ki);
 			return (0);
