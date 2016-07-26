@@ -966,10 +966,10 @@ ATF_TC_BODY(aio_fsync_test, tc)
 		buffers[i].buffer = malloc(sb.st_blksize);
 		aio_fill_buffer(buffers[i].buffer, sb.st_blksize, random());
 		buffers[i].iocb.aio_fildes = fd;
-		buffers[i].iocb.buf = buffers[i].buffer;
-		buffers[i].iocb.nbytes = sb.st_blksize;
-		buffers[i].iocb.offset = sb.st_blksize * i;
-		ATF_REQUIRE(aio_write(&iocb) == 0);
+		buffers[i].iocb.aio_buf = buffers[i].buffer;
+		buffers[i].iocb.aio_nbytes = sb.st_blksize;
+		buffers[i].iocb.aio_offset = sb.st_blksize * i;
+		ATF_REQUIRE(aio_write(&buffers[i].iocb) == 0);
 	}
 
 	/* Queue the aio_fsync request. */
