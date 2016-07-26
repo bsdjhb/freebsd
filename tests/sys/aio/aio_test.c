@@ -932,6 +932,10 @@ ATF_TC_BODY(aio_fsync_test, tc)
 {
 	struct aiocb iocb, *iocbp;
 	char pathname[PATH_MAX];
+	int fd;
+
+	ATF_REQUIRE_KERNEL_MODULE("aio");
+	ATF_REQUIRE_UNSAFE_AIO();
 
 	strcpy(pathname, PATH_TEMPLATE);
 	fd = mkstemp(pathname);
