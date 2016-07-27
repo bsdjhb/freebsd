@@ -919,7 +919,7 @@ notification_done:
 			if (--sjob->pending > 0)
 				continue;
 			TAILQ_REMOVE(&ki->kaio_syncqueue, sjob, list);
-			if (!aio_clear_cancel_function(sjob))
+			if (!aio_clear_cancel_function_locked(sjob))
 				continue;
 			TAILQ_INSERT_TAIL(&ki->kaio_syncready, sjob, list);
 			schedule_fsync = true;
@@ -967,21 +967,41 @@ aio_cancel_cleared(struct kaiocb *job)
 	return ((job->jobflags & KAIOCB_CLEARED) != 0);
 }
 
+static bool
+aio_clear_cancel_function_locked(struct kaiocb *job)
+{
+
+	AIO_LOCK_ASSERT(job->userproc->p_aioinfo);
+	MPASS(job->cancel_fn != NULL);
+	if (job->jobflags & KAIOCB_CANCELLING) {
+		job->jobflags |= KAIOCB_CLEARED;
+		return (false);
+	}
+	job->cancel_fn = NULL;
+	return (true);
+}
+
 bool
 aio_clear_cancel_function(struct kaiocb *job)
 {
 	struct kaioinfo *ki;
+	bool ret;
 
 	ki = job->userproc->p_aioinfo;
 	AIO_LOCK(ki);
-	MPASS(job->cancel_fn != NULL);
-	if (job->jobflags & KAIOCB_CANCELLING) {
-		job->jobflags |= KAIOCB_CLEARED;
-		AIO_UNLOCK(ki);
-		return (false);
-	}
-	job->cancel_fn = NULL;
+	ret = aio_clear_cancel_function_locked(job);
 	AIO_UNLOCK(ki);
+	return (ret);
+}
+
+static bool
+aio_set_cancel_function_locked(struct kaiocb *job, aio_cancel_fn_t *func)
+{
+
+	AIO_LOCK_ASSERT(job->userproc->p_aioinfo);
+	if (job->jobflags & KAIOCB_CANCELLED)
+		return (false);
+	job->cancel_fn = func;
 	return (true);
 }
 
@@ -989,16 +1009,13 @@ bool
 aio_set_cancel_function(struct kaiocb *job, aio_cancel_fn_t *func)
 {
 	struct kaioinfo *ki;
+	bool ret;
 
 	ki = job->userproc->p_aioinfo;
 	AIO_LOCK(ki);
-	if (job->jobflags & KAIOCB_CANCELLED) {
-		AIO_UNLOCK(ki);
-		return (false);
-	}
-	job->cancel_fn = func;
+	ret = aio_set_cancel_function_locked(job, func);
 	AIO_UNLOCK(ki);
-	return (true);
+	return (ret);
 }
 
 void
@@ -1718,18 +1735,12 @@ queueit:
 			}
 		}
 		if (job->pending != 0) {
-			/*
-			 * AIO_LOCK() is used internally to protect
-			 * the cancellation state machine.  This
-			 * inlines aio_set_cancel_function to avoid
-			 * recursing on the lock.
-			 */
-			if (job->jobflags & KAIOCB_CANCELLED) {
+			if (!aio_set_cancel_function_locked(job,
+				aio_cancel_sync)) {
 				AIO_UNLOCK(ki);
 				aio_cancel(job);
 				return (0);
 			}
-			job->cancel_fn = aio_cancel_sync;
 			TAILQ_INSERT_TAIL(&ki->kaio_syncqueue, job, list);
 			AIO_UNLOCK(ki);
 			return (0);
