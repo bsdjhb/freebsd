@@ -971,7 +971,7 @@ static bool
 aio_clear_cancel_function_locked(struct kaiocb *job)
 {
 
-	AIO_LOCK_ASSERT(job->userproc->p_aioinfo);
+	AIO_LOCK_ASSERT(job->userproc->p_aioinfo, MA_OWNED);
 	MPASS(job->cancel_fn != NULL);
 	if (job->jobflags & KAIOCB_CANCELLING) {
 		job->jobflags |= KAIOCB_CLEARED;
@@ -998,7 +998,7 @@ static bool
 aio_set_cancel_function_locked(struct kaiocb *job, aio_cancel_fn_t *func)
 {
 
-	AIO_LOCK_ASSERT(job->userproc->p_aioinfo);
+	AIO_LOCK_ASSERT(job->userproc->p_aioinfo, MA_OWNED);
 	if (job->jobflags & KAIOCB_CANCELLED)
 		return (false);
 	job->cancel_fn = func;
