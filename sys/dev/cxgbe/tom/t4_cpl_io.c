@@ -74,6 +74,23 @@
 #include "tom/t4_tom_l2t.h"
 #include "tom/t4_tom.h"
 
+#define VERBOSE_TRACES
+
+/* XXX: For debugging. */
+#ifdef DEV_NETMAP
+SYSCTL_DECL(_hw_cxgbe);
+#else
+SYSCTL_NODE(_hw, OID_AUTO, cxgbe, CTLFLAG_RD, 0, "cxgbe parameters");
+#endif
+SYSCTL_NODE(_hw_cxgbe, OID_AUTO, aiotx, CTLFLAG_RD, NULL, "TOE AIO tx stats");
+
+static unsigned long toe_aiotx_completed = 0;
+SYSCTL_ULONG(_hw_cxgbe_aiotx, OID_AUTO, completed, CTLFLAG_RW,
+    &toe_aiotx_completed, 0, "AIO requests completed via aiotx");
+static unsigned long aiotx_held_pages = 0;
+SYSCTL_ULONG(_hw_cxgbe_aiotx, OID_AUTO, held_pages, CTLFLAG_RW,
+    &aiotx_held_pages, 0, "Pages held for aiotx");
+
 static void	t4_aiotx_cancel(struct kaiocb *job);
 static void	t4_aiotx_queue_toep(struct socket *so, struct toepcb *toep);
 
@@ -583,8 +600,18 @@ write_tx_sgl(void *dst, struct mbuf *start, struct mbuf *stop, int nsegs, int n)
 	i = -1;
 	for (m = start; m != stop; m = m->m_next) {
 		if (m->m_flags & M_EXTPG)
+		{
 			rc = sglist_append_mbuf_epg(&sg, m,
 			    mtod(m, vm_offset_t), m->m_len);
+#ifdef VERBOSE_TRACES
+			CTR1(KTR_CXGBE, "%s: appending aiotx pages to sglist",
+			    __func__);
+			for (int i = 0; i < sg.sg_nseg; i++)
+				CTR3(KTR_CXGBE, " seg[%d]: paddr %#lx len %#lx",
+				    i, sg.sg_segs[i].ss_paddr,
+				    sg.sg_segs[i].ss_len);
+#endif
+		}
 		else
 			rc = sglist_append(&sg, mtod(m, void *), m->m_len);
 		if (__predict_false(rc != 0))
@@ -772,11 +799,24 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 			int newsize = min(sb->sb_hiwat + V_tcp_autosndbuf_inc,
 			    V_tcp_autosndbuf_max);
 
+#ifdef VERBOSE_TRACES
+			CTR4(KTR_CXGBE, "%s: tid %d adj sb %d -> %d",
+			    __func__, toep->tid, sb->sb_hiwat, newsize);
+#endif
 			if (!sbreserve_locked(so, SO_SND, newsize, NULL))
 				sb->sb_flags &= ~SB_AUTOSIZE;
 			else
 				sowwakeup = 1;	/* room available */
 		}
+#ifdef VERBOSE_TRACES
+		else if (sb->sb_flags & SB_AUTOSIZE &&
+		    V_tcp_do_autosndbuf &&
+		    sb->sb_hiwat < V_tcp_autosndbuf_max)
+			CTR5(KTR_CXGBE,
+			    "%s: tid %d used %d hiwat %d hiwat * 7 / 8 %d",
+			    __func__, toep->tid, sbused(sb), sb->sb_hiwat,
+			    sb->sb_hiwat * 7 / 8);
+#endif
 		if (sowwakeup) {
 			if (!TAILQ_EMPTY(&toep->aiotx_jobq))
 				t4_aiotx_queue_toep(so, toep);
@@ -2061,6 +2101,7 @@ aiotx_free_job(struct kaiocb *job)
 	else {
 		job->msgsnd = 1;
 		aio_complete(job, status, 0);
+		toe_aiotx_completed++;
 	}
 }
 
@@ -2081,6 +2122,7 @@ aiotx_free_pgs(struct mbuf *m)
 		pg = PHYS_TO_VM_PAGE(m->m_epg_pa[i]);
 		vm_page_unwire(pg, PQ_ACTIVE);
 	}
+	aiotx_held_pages -= m->m_epg_npgs;
 
 	aiotx_free_job(job);
 }
@@ -2129,6 +2171,7 @@ alloc_aiotx_mbuf(struct kaiocb *job, int len)
 		m = mb_alloc_ext_pgs(M_WAITOK, aiotx_free_pgs, M_RDONLY);
 		m->m_epg_1st_off = pgoff;
 		m->m_epg_npgs = npages;
+		aiotx_held_pages += npages;
 		if (npages == 1) {
 			KASSERT(mlen + pgoff <= PAGE_SIZE,
 			    ("%s: single page is too large (off %d len %d)",
