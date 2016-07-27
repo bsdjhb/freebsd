@@ -311,6 +311,7 @@ static void	aio_proc_rundown_exec(void *arg, struct proc *p,
 static int	aio_qphysio(struct proc *p, struct kaiocb *job);
 static void	aio_daemon(void *param);
 static void	aio_bio_done_notify(struct proc *userp, struct kaiocb *job);
+static bool	aio_clear_cancel_function_locked(struct kaiocb *job);
 static int	aio_kick(struct proc *userp);
 static void	aio_kick_nowait(struct proc *userp);
 static void	aio_kick_helper(void *context, int pending);
