@@ -4060,8 +4060,8 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	M_ASSERTPKTHDR(m0);
 	MPASS(available > 0 && available < eq->sidx);
 
-	nsegs = mbuf_nsegs(m0);
 	len16 = mbuf_len16(m0);
+	nsegs = mbuf_nsegs(m0);
 	pktlen = m0->m_pkthdr.len;
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
@@ -4139,8 +4139,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		    V_TXPKT_VLAN(m0->m_pkthdr.ether_vtag);
 		txq->vlan_insertion++;
 	}
-
-	CTR2(KTR_CXGBE, "%s: ctrl1 = %#lx", __func__, ctrl1);
 
 	/* CPL header */
 	cpl->ctrl0 = txq->cpl_ctrl0;
