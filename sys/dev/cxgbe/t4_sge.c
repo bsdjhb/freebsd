@@ -4041,6 +4041,17 @@ imm_payload(u_int ndesc)
 	return (n);
 }
 
+static inline u_int
+imm_payload_vm(u_int ndesc)
+{
+	u_int n;
+
+	n = ndesc * EQ_ESIZE - sizeof(struct fw_eth_tx_pkt_vm_wr) -
+	    sizeof(struct cpl_tx_pkt_core);
+
+	return (n);
+}
+
 /*
  * Write a VM txpkt WR for this packet to the hardware descriptors, update the
  * software descriptor, and advance the pidx.  It is guaranteed that enough
@@ -4074,7 +4085,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
 		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
-	else if (pktlen <= imm_payload(2) && available >= 2) {
+	else if (pktlen <= imm_payload_vm(2) && available >= 2) {
 		/* Immediate data.  Recalculate len16 and set nsegs to 0. */
 		ctrl += pktlen;
 		len16 = howmany(sizeof(struct fw_eth_tx_pkt_vm_wr) +
