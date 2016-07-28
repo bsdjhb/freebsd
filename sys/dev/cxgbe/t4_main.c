@@ -4272,7 +4272,7 @@ vi_full_uninit(struct vi_info *vi)
 		/* Need to quiesce queues.  */
 
 		/* XXX: Only for the first VI? */
-		if (IS_MAIN_VI(vi))
+		if (IS_MAIN_VI(vi) && !(sc->flags & IS_VF))
 			quiesce_wrq(sc, &sc->sge.ctrlq[pi->port_id]);
 
 		for_each_txq(vi, i, txq) {
