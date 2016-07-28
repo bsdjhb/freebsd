@@ -754,6 +754,28 @@ get_regs(struct adapter *sc, struct t4_regdump *regs, uint8_t *buf)
 	t4_get_regs(sc, buf, regs->len);
 }
 
+static int
+get_sge_context(struct adapter *sc, struct t4_sge_context *cntxt)
+{
+	int rc;
+
+	if (cntxt->cid > M_CTXTQID)
+		return (EINVAL);
+
+	if (cntxt->mem_id != CTXT_EGRESS && cntxt->mem_id != CTXT_INGRESS &&
+	    cntxt->mem_id != CTXT_FLM && cntxt->mem_id != CTXT_CNM)
+		return (EINVAL);
+
+	rc = begin_synchronized_op(sc, NULL, SLEEP_OK | INTR_OK, "t4ctxt");
+	if (rc)
+		return (rc);
+
+	rc = -t4_sge_ctxt_rd(sc, sc->mbox, cntxt->cid, cntxt->mem_id,
+	    &cntxt->data[0]);
+	end_synchronized_op(sc, 0);
+	return (rc);
+}
+
 static void
 t4_clr_vi_stats(struct adapter *sc)
 {
@@ -824,11 +846,9 @@ t4vf_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 		free(buf, M_CXGBE);
 		break;
 	}
-#ifdef notsure
 	case CHELSIO_T4_GET_SGE_CONTEXT:
 		rc = get_sge_context(sc, (struct t4_sge_context *)data);
 		break;
-#endif
 	case CHELSIO_T4_CLEAR_STATS: {
 		int i, v;
 		u_int port_id = *(uint32_t *)data;
