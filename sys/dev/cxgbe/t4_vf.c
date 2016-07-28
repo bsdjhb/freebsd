@@ -33,8 +33,10 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
+#include <sys/priv.h>
 #include <dev/pci/pcivar.h>
 #if defined(__i386__) || defined(__amd64__)
 #include <vm/vm.h>
@@ -43,6 +45,8 @@ __FBSDID("$FreeBSD$");
 
 #include "common/common.h"
 #include "common/t4_regs.h"
+#include "t4_ioctl.h"
+#include "t4_mp_ring.h"
 
 /*
  * Some notes:
@@ -107,6 +111,14 @@ struct {
 	{0x580f,  "Chelsio Amsterdam VF"},
 	{0x5813,  "Chelsio T580-CHR VF"},
 #endif
+};
+
+static d_ioctl_t t4vf_ioctl;
+
+static struct cdevsw t4vf_cdevsw = {
+       .d_version = D_VERSION,
+       .d_ioctl = t4vf_ioctl,
+       .d_name = "t4vf",
 };
 
 static int
@@ -430,6 +442,7 @@ t4vf_attach(device_t dev)
 {
 	struct adapter *sc;
 	int rc = 0, i, j, n10g, n1g, rqidx, tqidx;
+	struct make_dev_args mda;
 	struct intrs_and_queues iaq;
 	struct sge *s;
 
@@ -472,6 +485,17 @@ t4vf_attach(device_t dev)
 	 */
 
 	memset(sc->chan_map, 0xff, sizeof(sc->chan_map));
+
+	make_dev_args_init(&mda);
+	mda.mda_devsw = &t4vf_cdevsw;
+	mda.mda_uid = UID_ROOT;
+	mda.mda_gid = GID_WHEEL;
+	mda.mda_mode = 0600;
+	mda.mda_si_drv1 = sc;
+	rc = make_dev_s(&mda, &sc->cdev, "%s", device_get_nameunit(dev));
+	if (rc != 0)
+		device_printf(dev, "failed to create nexus char device: %d.\n",
+		    rc);
 
 #if defined(__i386__)
 	if ((cpu_feature & CPUID_CX8) == 0) {
@@ -717,6 +741,157 @@ done:
 		t4_detach_common(dev);
 	else
 		t4_sysctls(sc);
+
+	return (rc);
+}
+
+static void
+get_regs(struct adapter *sc, struct t4_regdump *regs, uint8_t *buf)
+{
+
+	/* 0x3f is used as the revision for VFs. */
+	regs->version = chip_id(sc) | (0x3f << 10);
+	t4_get_regs(sc, buf, regs->len);
+}
+
+static void
+t4_clr_vi_stats(struct adapter *sc)
+{
+	int reg;
+
+	for (reg = A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L;
+	     reg <= A_MPS_VF_STAT_RX_VF_ERR_FRAMES_H; reg += 4)
+		t4_write_reg(sc, VF_MPS_REG(reg), 0);
+}
+
+static int
+t4vf_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
+    struct thread *td)
+{
+	int rc;
+	struct adapter *sc = dev->si_drv1;
+
+	rc = priv_check(td, PRIV_DRIVER);
+	if (rc != 0)
+		return (rc);
+
+	switch (cmd) {
+	case CHELSIO_T4_GETREG: {
+		struct t4_reg *edata = (struct t4_reg *)data;
+
+		if ((edata->addr & 0x3) != 0 || edata->addr >= sc->mmio_len)
+			return (EFAULT);
+
+		if (edata->size == 4)
+			edata->val = t4_read_reg(sc, edata->addr);
+		else if (edata->size == 8)
+			edata->val = t4_read_reg64(sc, edata->addr);
+		else
+			return (EINVAL);
+
+		break;
+	}
+	case CHELSIO_T4_SETREG: {
+		struct t4_reg *edata = (struct t4_reg *)data;
+
+		if ((edata->addr & 0x3) != 0 || edata->addr >= sc->mmio_len)
+			return (EFAULT);
+
+		if (edata->size == 4) {
+			if (edata->val & 0xffffffff00000000)
+				return (EINVAL);
+			t4_write_reg(sc, edata->addr, (uint32_t) edata->val);
+		} else if (edata->size == 8)
+			t4_write_reg64(sc, edata->addr, edata->val);
+		else
+			return (EINVAL);
+		break;
+	}
+	case CHELSIO_T4_REGDUMP: {
+		struct t4_regdump *regs = (struct t4_regdump *)data;
+		int reglen = t4_get_regs_len(sc);
+		uint8_t *buf;
+
+		if (regs->len < reglen) {
+			regs->len = reglen; /* hint to the caller */
+			return (ENOBUFS);
+		}
+
+		regs->len = reglen;
+		buf = malloc(reglen, M_CXGBE, M_WAITOK | M_ZERO);
+		get_regs(sc, regs, buf);
+		rc = copyout(buf, regs->data, reglen);
+		free(buf, M_CXGBE);
+		break;
+	}
+#ifdef notsure
+	case CHELSIO_T4_GET_SGE_CONTEXT:
+		rc = get_sge_context(sc, (struct t4_sge_context *)data);
+		break;
+#endif
+	case CHELSIO_T4_CLEAR_STATS: {
+		int i, v;
+		u_int port_id = *(uint32_t *)data;
+		struct port_info *pi;
+		struct vi_info *vi;
+
+		if (port_id >= sc->params.nports)
+			return (EINVAL);
+		pi = sc->port[port_id];
+
+		/* MAC stats */
+		pi->tx_parse_error = 0;
+		t4_clr_vi_stats(sc);
+
+		/*
+		 * Since this command accepts a port, clear stats for
+		 * all VIs on this port.
+		 */
+		for_each_vi(pi, v, vi) {
+			if (vi->flags & VI_INIT_DONE) {
+				struct sge_rxq *rxq;
+				struct sge_txq *txq;
+
+				if (vi->flags & VI_NETMAP)
+					continue;
+
+				for_each_rxq(vi, i, rxq) {
+#if defined(INET) || defined(INET6)
+					rxq->lro.lro_queued = 0;
+					rxq->lro.lro_flushed = 0;
+#endif
+					rxq->rxcsum = 0;
+					rxq->vlan_extraction = 0;
+				}
+
+				for_each_txq(vi, i, txq) {
+					txq->txcsum = 0;
+					txq->tso_wrs = 0;
+					txq->vlan_insertion = 0;
+					txq->imm_wrs = 0;
+					txq->sgl_wrs = 0;
+					txq->txpkt_wrs = 0;
+					txq->txpkts0_wrs = 0;
+					txq->txpkts1_wrs = 0;
+					txq->txpkts0_pkts = 0;
+					txq->txpkts1_pkts = 0;
+					mp_ring_reset_stats(txq->r);
+				}
+			}
+		}
+		break;
+	}
+#ifdef notsure
+	case CHELSIO_T4_SCHED_CLASS:
+		rc = set_sched_class(sc, (struct t4_sched_params *)data);
+		break;
+	case CHELSIO_T4_SCHED_QUEUE:
+		rc = set_sched_queue(sc, (struct t4_sched_queue *)data);
+		break;
+#endif
+	default:
+		rc = ENOTTY;
+	}
 
 	return (rc);
 }
