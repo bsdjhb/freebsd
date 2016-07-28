@@ -852,9 +852,6 @@ t4vf_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 				struct sge_rxq *rxq;
 				struct sge_txq *txq;
 
-				if (vi->flags & VI_NETMAP)
-					continue;
-
 				for_each_rxq(vi, i, rxq) {
 #if defined(INET) || defined(INET6)
 					rxq->lro.lro_queued = 0;
