@@ -2203,8 +2203,12 @@ restart:
 	set_mbuf_nsegs(m0, nsegs);
 	set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
+#ifdef VF_TX_PKT
+	if (!needs_tso(m0)) {
+#else
 	if (!needs_tso(m0) &&
 	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
+#endif
 		CTR2(KTR_CXGBE, "%s: no lengths (csum flags %#lx)", __func__,
 		    m0->m_pkthdr.csum_flags);
 		return (0);
@@ -2254,7 +2258,11 @@ restart:
 	}
 
 #if defined(INET) || defined(INET6)
+#ifndef VF_TX_PKT
 	if (needs_tso(m0)) {
+#else
+	{
+#endif
 		tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
 		m0->m_pkthdr.l4hlen = tcp->th_off * 4;
 	}
