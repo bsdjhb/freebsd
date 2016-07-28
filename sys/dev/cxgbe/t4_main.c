@@ -518,8 +518,6 @@ static int get_sge_context(struct adapter *, struct t4_sge_context *);
 static int load_fw(struct adapter *, struct t4_data *);
 static int read_card_mem(struct adapter *, int, struct t4_mem_range *);
 static int read_i2c(struct adapter *, struct t4_i2c_data *);
-static int set_sched_class(struct adapter *, struct t4_sched_params *);
-static int set_sched_queue(struct adapter *, struct t4_sched_queue *);
 #ifdef TCP_OFFLOAD
 static int toe_capability(struct vi_info *, int);
 #endif
@@ -8585,8 +8583,8 @@ set_sched_class_params(struct adapter *sc, struct t4_sched_class_params *p,
 	return (rc);
 }
 
-static int
-set_sched_class(struct adapter *sc, struct t4_sched_params *p)
+int
+t4_set_sched_class(struct adapter *sc, struct t4_sched_params *p)
 {
 
 	if (p->type != SCHED_CLASS_TYPE_PACKET)
@@ -8601,8 +8599,8 @@ set_sched_class(struct adapter *sc, struct t4_sched_params *p)
 	return (EINVAL);
 }
 
-static int
-set_sched_queue(struct adapter *sc, struct t4_sched_queue *p)
+int
+t4_set_sched_queue(struct adapter *sc, struct t4_sched_queue *p)
 {
 	struct port_info *pi = NULL;
 	struct vi_info *vi;
@@ -8940,10 +8938,10 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 		break;
 	}
 	case CHELSIO_T4_SCHED_CLASS:
-		rc = set_sched_class(sc, (struct t4_sched_params *)data);
+		rc = t4_set_sched_class(sc, (struct t4_sched_params *)data);
 		break;
 	case CHELSIO_T4_SCHED_QUEUE:
-		rc = set_sched_queue(sc, (struct t4_sched_queue *)data);
+		rc = t4_set_sched_queue(sc, (struct t4_sched_queue *)data);
 		break;
 	case CHELSIO_T4_GET_TRACER:
 		rc = t4_get_tracer(sc, (struct t4_tracer *)data);
