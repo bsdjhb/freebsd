@@ -2201,7 +2201,10 @@ restart:
 		goto restart;
 	}
 	set_mbuf_nsegs(m0, nsegs);
-	set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
+	if (sc->flags & IS_VF)
+		set_mbuf_len16(m0, txpkt_vm_len16(nsegs, needs_tso(m0)));
+	else
+		set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
 #ifdef VF_TX_PKT
 	if (!needs_tso(m0)) {
@@ -4080,7 +4083,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	MPASS(available > 0 && available < eq->sidx);
 
 	nsegs = mbuf_nsegs(m0);
-	len16 = txpkt_vm_len16(nsegs, needs_tso(m0));
+	len16 = mbuf_len16(m0);
 	pktlen = m0->m_pkthdr.len;
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
