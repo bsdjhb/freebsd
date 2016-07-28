@@ -25,8 +25,6 @@
  * SUCH DAMAGE.
  */
 
-#define VF_TX_PKT
-
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -2206,12 +2204,7 @@ restart:
 	else
 		set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
-#ifdef VF_TX_PKT
 	if (!needs_tso(m0)) {
-#else
-	if (!needs_tso(m0) &&
-	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
-#endif
 		CTR2(KTR_CXGBE, "%s: no lengths (csum flags %#lx)", __func__,
 		    m0->m_pkthdr.csum_flags);
 		return (0);
@@ -2261,14 +2254,8 @@ restart:
 	}
 
 #if defined(INET) || defined(INET6)
-#ifndef VF_TX_PKT
-	if (needs_tso(m0)) {
-#else
-	{
-#endif
-		tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
-		m0->m_pkthdr.l4hlen = tcp->th_off * 4;
-	}
+	tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
+	m0->m_pkthdr.l4hlen = tcp->th_off * 4;
 #endif
 	MPASS(m0 == *mp);
 	return (0);
@@ -3617,13 +3604,8 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	txq->ifp = vi->ifp;
 	txq->gl = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	if (sc->flags & IS_VF)
-#ifdef VF_TX_PKT
 		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
 		    V_TXPKT_INTF(pi->tx_chan));
-#else
-		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT_XT) |
-		    V_TXPKT_INTF(pi->tx_chan));
-#endif
 	else
 		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
 		    V_TXPKT_INTF(pi->tx_chan) | V_TXPKT_VF_VLD(1) |
@@ -4071,11 +4053,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;	/* used in many unrelated places */
 	uint64_t ctrl1;
-#ifdef VF_TX_PKT
 	int len16, ndesc, pktlen, nsegs;
-#else
-	int csum_type, len16, ndesc, pktlen, nsegs;
-#endif
 	caddr_t dst;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
@@ -4117,9 +4095,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	 */
 	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
 
-#ifndef VF_TX_PKT
-	csum_type = -1;
-#endif
 	if (needs_tso(m0)) {
 		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
 
@@ -4142,71 +4117,18 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		lso->seqno_offset = htobe32(0);
 		lso->len = htobe32(pktlen);
 
-#ifndef VF_TX_PKT
-		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
-			csum_type = TX_CSUM_TCPIP6;
-		else
-			csum_type = TX_CSUM_TCPIP;
-#endif
-
 		cpl = (void *)(lso + 1);
 
 		txq->tso_wrs++;
-	} else {
-#ifndef VF_TX_PKT
-		if (m0->m_pkthdr.csum_flags & CSUM_IP_TCP)
-			csum_type = TX_CSUM_TCPIP;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP_UDP)
-			csum_type = TX_CSUM_UDPIP;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_TCP)
-			csum_type = TX_CSUM_TCPIP6;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
-			csum_type = TX_CSUM_UDPIP6;
-		else if (m0->m_pkthdr.csum_flags & CSUM_IP) {
-			/*
-			 * XXX: The firmware appears to stomp on the
-			 * fragment/flags field of the IP header when
-			 * using TX_CSUM_IP.  Fall back to doing
-			 * software checksums.
-			 */
-			u_short *sump;
-			struct mbuf *m;
-			int offset;
-
-			m = m0;
-			offset = 0;
-			sump = m_advance(&m, &offset, m0->m_pkthdr.l2hlen +
-			    offsetof(struct ip, ip_sum));
-			*sump = in_cksum_skip(m0, m0->m_pkthdr.l2hlen +
-			    m0->m_pkthdr.l3hlen, m0->m_pkthdr.l2hlen);
-			m0->m_pkthdr.csum_flags &= ~CSUM_IP;
-		}
-#endif
-
+	} else
 		cpl = (void *)(wr + 1);
-	}
 
 	/* Checksum offload */
 	ctrl1 = 0;
 	if (needs_l3_csum(m0) == 0)
 		ctrl1 |= F_TXPKT_IPCSUM_DIS;
-#ifdef VF_TX_PKT
 	if (needs_l4_csum(m0) == 0)
 		ctrl1 |= F_TXPKT_L4CSUM_DIS;
-#else
-	if (csum_type >= 0) {
-		KASSERT(m0->m_pkthdr.l2hlen > 0 && m0->m_pkthdr.l3hlen > 0,
-	    ("%s: mbuf %p needs checksum offload but missing header lengths",
-			__func__, m0));
-
-		/* XXX: T6 */
-		ctrl1 |= V_TXPKT_ETHHDR_LEN(m0->m_pkthdr.l2hlen -
-		    ETHER_HDR_LEN);
-		ctrl1 |= V_TXPKT_IPHDR_LEN(m0->m_pkthdr.l3hlen);
-		ctrl1 |= V_TXPKT_CSUM_TYPE(csum_type);
-	} else
-		ctrl1 |= F_TXPKT_L4CSUM_DIS;
-#endif
 	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
 	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
 		txq->txcsum++;	/* some hardware assistance provided */
