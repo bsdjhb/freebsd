@@ -4229,6 +4229,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	dst = (void *)(cpl + 1);
 #ifdef VF_IMM_PAYLOAD
 	if (nsegs > 0) {
+#endif
 
 		/*
 		 * A packet using TSO will use up an entire descriptor
