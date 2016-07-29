@@ -25,7 +25,6 @@
  * SUCH DAMAGE.
  */
 
-//#define VF_TX_PKT
 //#define VF_IMM_PAYLOAD
 
 #include <sys/cdefs.h>
@@ -2207,14 +2206,9 @@ restart:
 	else
 		set_mbuf_len16(m0, txpkt_len16(nsegs, needs_tso(m0)));
 
-#ifdef VF_TX_PKT
-	if (!needs_tso(m0)) {
-#else
 	if (!needs_tso(m0) &&
-	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
-#endif
+	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0))))
 		return (0);
-	}
 
 	m = m0;
 	eh = mtod(m, struct ether_header *);
@@ -2258,11 +2252,7 @@ restart:
 	}
 
 #if defined(INET) || defined(INET6)
-#ifndef VF_TX_PKT
 	if (needs_tso(m0)) {
-#else
-	{
-#endif
 		tcp = m_advance(&m, &offset, m0->m_pkthdr.l3hlen);
 		m0->m_pkthdr.l4hlen = tcp->th_off * 4;
 	}
@@ -3614,13 +3604,8 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	txq->ifp = vi->ifp;
 	txq->gl = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	if (sc->flags & IS_VF)
-#ifdef VF_TX_PKT
-		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
-		    V_TXPKT_INTF(pi->tx_chan));
-#else
 		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT_XT) |
 		    V_TXPKT_INTF(pi->tx_chan));
-#endif
 	else
 		txq->cpl_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
 		    V_TXPKT_INTF(pi->tx_chan) | V_TXPKT_VF_VLD(1) |
@@ -4070,11 +4055,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;	/* used in many unrelated places */
 	uint64_t ctrl1;
-#ifdef VF_TX_PKT
-	int len16, ndesc, pktlen, nsegs;
-#else
 	int csum_type, len16, ndesc, pktlen, nsegs;
-#endif
 	caddr_t dst;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
@@ -4118,9 +4099,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	 */
 	m_copydata(m0, 0, sizeof(struct ether_header) + 2, wr->ethmacdst);
 
-#ifndef VF_TX_PKT
 	csum_type = -1;
-#endif
 	if (needs_tso(m0)) {
 		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
 
@@ -4143,18 +4122,15 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		lso->seqno_offset = htobe32(0);
 		lso->len = htobe32(pktlen);
 
-#ifndef VF_TX_PKT
 		if (m0->m_pkthdr.l3hlen == sizeof(struct ip6_hdr))
 			csum_type = TX_CSUM_TCPIP6;
 		else
 			csum_type = TX_CSUM_TCPIP;
-#endif
 
 		cpl = (void *)(lso + 1);
 
 		txq->tso_wrs++;
 	} else {
-#ifndef VF_TX_PKT
 		if (m0->m_pkthdr.csum_flags & CSUM_IP_TCP)
 			csum_type = TX_CSUM_TCPIP;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP_UDP)
@@ -4182,7 +4158,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			    m0->m_pkthdr.l3hlen, m0->m_pkthdr.l2hlen);
 			m0->m_pkthdr.csum_flags &= ~CSUM_IP;
 		}
-#endif
 
 		cpl = (void *)(wr + 1);
 	}
@@ -4191,10 +4166,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	ctrl1 = 0;
 	if (needs_l3_csum(m0) == 0)
 		ctrl1 |= F_TXPKT_IPCSUM_DIS;
-#ifdef VF_TX_PKT
-	if (needs_l4_csum(m0) == 0)
-		ctrl1 |= F_TXPKT_L4CSUM_DIS;
-#else
 	if (csum_type >= 0) {
 		KASSERT(m0->m_pkthdr.l2hlen > 0 && m0->m_pkthdr.l3hlen > 0,
 	    ("%s: mbuf %p needs checksum offload but missing header lengths",
@@ -4207,7 +4178,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 		ctrl1 |= V_TXPKT_CSUM_TYPE(csum_type);
 	} else
 		ctrl1 |= F_TXPKT_L4CSUM_DIS;
-#endif
 	if (m0->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TCP | CSUM_UDP |
 	    CSUM_UDP_IPV6 | CSUM_TCP_IPV6 | CSUM_TSO))
 		txq->txcsum++;	/* some hardware assistance provided */
