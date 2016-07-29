@@ -2212,13 +2212,9 @@ restart:
 	if (!needs_tso(m0) &&
 	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0)))) {
 #endif
-		CTR2(KTR_CXGBE, "%s: no lengths (csum flags %#lx)", __func__,
-		    m0->m_pkthdr.csum_flags);
 		return (0);
 	}
 
-	CTR2(KTR_CXGBE, "%s: setting lengths (csum flags %#lx)", __func__,
-	    m0->m_pkthdr.csum_flags);
 	m = m0;
 	eh = mtod(m, struct ether_header *);
 	eh_type = ntohs(eh->ether_type);
