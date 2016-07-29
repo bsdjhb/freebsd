@@ -25,7 +25,7 @@
  * SUCH DAMAGE.
  */
 
-#define VF_TX_PKT
+//#define VF_TX_PKT
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
