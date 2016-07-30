@@ -600,7 +600,7 @@ t4vf_attach(device_t dev)
 		 * Allocate the "main" VI and initialize parameters
 		 * like mac addr.
 		 */
-		rc = -t4_port_init(sc, 0, 0, 0, i);
+		rc = -t4_port_init(sc, sc->mbox, sc->pf, 0, i);
 		if (rc != 0) {
 			device_printf(dev, "unable to initialize port %d: %d\n",
 			    i, rc);
@@ -622,25 +622,11 @@ t4vf_attach(device_t dev)
 
 		if (is_10G_port(pi) || is_40G_port(pi)) {
 			n10g++;
-			for_each_vi(pi, j, vi) {
-				vi->tmr_idx = t4_tmr_idx_10g;
-				vi->pktc_idx = t4_pktc_idx_10g;
-			}
 		} else {
 			n1g++;
-			for_each_vi(pi, j, vi) {
-				vi->tmr_idx = t4_tmr_idx_1g;
-				vi->pktc_idx = t4_pktc_idx_1g;
-			}
 		}
 
 		pi->linkdnrc = -1;
-
-		for_each_vi(pi, j, vi) {
-			vi->qsize_rxq = t4_qsize_rxq;
-			vi->qsize_txq = t4_qsize_txq;
-			vi->pi = pi;
-		}
 
 		pi->dev = device_add_child(dev, is_t4(sc) ? "cxgbev" : "cxlv",
 		    -1);
@@ -700,22 +686,29 @@ t4vf_attach(device_t dev)
 			continue;
 
 		for_each_vi(pi, j, vi) {
+			vi->pi = pi;
+			vi->qsize_rxq = t4_qsize_rxq;
+			vi->qsize_txq = t4_qsize_txq;
+
 			vi->first_rxq = rqidx;
 			vi->first_txq = tqidx;
 			if (is_10G_port(pi) || is_40G_port(pi)) {
+				vi->tmr_idx = t4_tmr_idx_10g;
+				vi->pktc_idx = t4_pktc_idx_10g;
 				vi->flags |= iaq.intr_flags_10g & INTR_RXQ;
 				vi->nrxq = j == 0 ? iaq.nrxq10g : 1;
 				vi->ntxq = j == 0 ? iaq.ntxq10g : 1;
 			} else {
+				vi->tmr_idx = t4_tmr_idx_1g;
+				vi->pktc_idx = t4_pktc_idx_1g;
 				vi->flags |= iaq.intr_flags_1g & INTR_RXQ;
 				vi->nrxq = j == 0 ? iaq.nrxq1g : 1;
 				vi->ntxq = j == 0 ? iaq.ntxq1g : 1;
 			}
-
-			vi->rsrv_noflowq = 0;
-
 			rqidx += vi->nrxq;
 			tqidx += vi->ntxq;
+
+			vi->rsrv_noflowq = 0;
 		}
 	}
 
