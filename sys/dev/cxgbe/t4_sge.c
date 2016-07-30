@@ -25,8 +25,6 @@
  * SUCH DAMAGE.
  */
 
-//#define VF_IMM_PAYLOAD
-
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -4026,19 +4024,6 @@ imm_payload(u_int ndesc)
 	return (n);
 }
 
-#ifdef VF_IMM_PAYLOAD
-static inline u_int
-imm_payload_vm(u_int ndesc)
-{
-	u_int n;
-
-	n = ndesc * EQ_ESIZE - sizeof(struct fw_eth_tx_pkt_vm_wr) -
-	    sizeof(struct cpl_tx_pkt_core);
-
-	return (n);
-}
-#endif
-
 /*
  * Write a VM txpkt WR for this packet to the hardware descriptors, update the
  * software descriptor, and advance the pidx.  It is guaranteed that enough
@@ -4068,15 +4053,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
 		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
-#ifdef VF_IMM_PAYLOAD
-	else if (pktlen <= imm_payload_vm(2) && available >= 2) {
-		/* Immediate data.  Recalculate len16 and set nsegs to 0. */
-		ctrl += pktlen;
-		len16 = howmany(sizeof(struct fw_eth_tx_pkt_vm_wr) +
-		    sizeof(struct cpl_tx_pkt_core) + pktlen, 16);
-		nsegs = 0;
-	}
-#endif
 	ndesc = howmany(len16, EQ_ESIZE / 16);
 	MPASS(ndesc <= available);
 
@@ -4197,9 +4173,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 
 	/* SGL */
 	dst = (void *)(cpl + 1);
-#ifdef VF_IMM_PAYLOAD
-	if (nsegs > 0) {
-#endif
 
 		/*
 		 * A packet using TSO will use up an entire descriptor
@@ -4215,22 +4188,6 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			write_gl_to_txd(txq, m0, &dst,
 			    eq->sidx - ndesc < eq->pidx);
 		txq->sgl_wrs++;
-#ifdef VF_IMM_PAYLOAD
-	} else {
-		struct mbuf *m;
-
-		for (m = m0; m != NULL; m = m->m_next) {
-			copy_to_txd(eq, mtod(m, caddr_t), &dst, m->m_len);
-#ifdef INVARIANTS
-			pktlen -= m->m_len;
-#endif
-		}
-#ifdef INVARIANTS
-		KASSERT(pktlen == 0, ("%s: %d bytes left.", __func__, pktlen));
-#endif
-		txq->imm_wrs++;
-	}
-#endif
 
 	txq->txpkt_wrs++;
 
