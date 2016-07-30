@@ -617,6 +617,9 @@ t4vf_attach(device_t dev)
 		mtx_init(&pi->pi_lock, pi->lockname, 0, MTX_DEF);
 		sc->chan_map[pi->tx_chan] = i;
 
+		pi->tc = malloc(sizeof(struct tx_sched_class) *
+		    sc->chip_params->nsched_cls, M_CXGBE, M_ZERO | M_WAITOK);
+
 		if (is_10G_port(pi) || is_40G_port(pi)) {
 			n10g++;
 			for_each_vi(pi, j, vi) {
