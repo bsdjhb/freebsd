@@ -4174,20 +4174,19 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 	/* SGL */
 	dst = (void *)(cpl + 1);
 
-		/*
-		 * A packet using TSO will use up an entire descriptor
-		 * for the firmware work request header, LSO CPL, and
-		 * TX_PKT_XT CPL.  If this descriptor is the last
-		 * descriptor in the ring, wrap around to the front of
-		 * the ring explicitly for the start of the sgl.
-		 */
-		if (dst == (void *)&eq->desc[eq->sidx]) {
-			dst = (void *)&eq->desc[0];
-			write_gl_to_txd(txq, m0, &dst, 0);
-		} else
-			write_gl_to_txd(txq, m0, &dst,
-			    eq->sidx - ndesc < eq->pidx);
-		txq->sgl_wrs++;
+	/*
+	 * A packet using TSO will use up an entire descriptor for the
+	 * firmware work request header, LSO CPL, and TX_PKT_XT CPL.
+	 * If this descriptor is the last descriptor in the ring, wrap
+	 * around to the front of the ring explicitly for the start of
+	 * the sgl.
+	 */
+	if (dst == (void *)&eq->desc[eq->sidx]) {
+		dst = (void *)&eq->desc[0];
+		write_gl_to_txd(txq, m0, &dst, 0);
+	} else
+		write_gl_to_txd(txq, m0, &dst, eq->sidx - ndesc < eq->pidx);
+	txq->sgl_wrs++;
 
 	txq->txpkt_wrs++;
 
