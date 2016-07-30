@@ -240,6 +240,32 @@ cappwdgrp_setup(cap_channel_t **cappwdp, cap_channel_t **capgrpp)
 }
 #endif	/* HAVE_LIBCASPER */
 
+static void
+print_mask_prefix(FILE *fp, uintmax_t val)
+{
+
+	fprintf(fp, "%#jx<", val);	
+}
+
+static void
+print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
+{
+
+	fprintf(fp, ">");
+	if (invalid)
+		fprintf(fp, "<invalid>%ju", rem);
+}
+
+static void
+print_value_unmatched(FILE *fp, uintmax_t val)
+{
+
+	if (decimal)
+		fprintf(fp, "<invalid=%jd>", val);
+	else
+		fprintf(fp, "<invalid=%#jx>", val);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -319,6 +345,9 @@ main(int argc, char *argv[])
 
 	strerror_init();
 	localtime_init();
+	sysdecode_set_mask_prefix(print_mask_prefix);
+	sysdecode_set_mask_suffix(print_mask_suffix);
+	sysdecode_set_value_unmatched(print_value_unmatched);
 #ifdef HAVE_LIBCASPER
 	if (resolv != 0) {
 		if (cappwdgrp_setup(&cappwd, &capgrp) < 0) {

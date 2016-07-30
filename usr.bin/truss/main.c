@@ -73,6 +73,21 @@ strsig(int sig)
 	return (NULL);
 }
 
+static void
+print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
+{
+
+	if (invalid || rem != 0)
+		fprintf(fp, "%s0x%jx", invalid ? "" : "|", rem);
+}
+
+static void
+print_value_unmatched(FILE *fp, uintmax_t val)
+{
+
+	fprintf(fp, "%jd", val);
+}
+
 int
 main(int ac, char **av)
 {
@@ -144,6 +159,9 @@ main(int ac, char **av)
 	if ((pid == 0 && ac == 0) ||
 	    (pid != 0 && ac != 0))
 		usage();
+
+	sysdecode_set_mask_suffix(print_mask_suffix);
+	sysdecode_set_value_unmatched(print_value_unmatched);
 
 	if (fname != NULL) { /* Use output file */
 		/*
