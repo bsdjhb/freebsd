@@ -571,11 +571,6 @@ t4vf_attach(device_t dev)
 #endif
 
 	/*
-	 * XXX: This is a big cut and paste for now.  Once it is working
-	 * I will go back and refactor this.
-	 */
-
-	/*
 	 * First pass over all the ports - allocate VIs and initialize some
 	 * basic parameters like mac address, port type, etc.  We also figure
 	 * out whether a port is 10G or 1G and use that information when
