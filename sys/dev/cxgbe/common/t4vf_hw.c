@@ -95,7 +95,7 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	u32 params[7], vals[7];
 	u32 whoami;
 	unsigned int pf, s_hps;
-	int v;
+	int i, v;
 
 	params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
 		     V_FW_PARAMS_PARAM_XYZ(A_SGE_CONTROL));
@@ -145,16 +145,15 @@ int t4vf_get_sge_params(struct adapter *adapter)
 	    (S_HOSTPAGESIZEPF1 - S_HOSTPAGESIZEPF0) * pf);
 	sp->page_shift = ((vals[1] >> s_hps) & M_HOSTPAGESIZEPF0) + 10;
 
-	params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE0));
-	params[1] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
-		     V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE1));
-	v = t4vf_query_params(adapter, 2, params, vals);
-	if (v != FW_SUCCESS)
-		return v;
+	for (i = 0; i < SGE_FLBUF_SIZES; i++) {
+		params[0] = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_REG) |
+		    V_FW_PARAMS_PARAM_XYZ(A_SGE_FL_BUFFER_SIZE0 + (4 * i)));
+		v = t4vf_query_params(adapter, 1, params, vals);
+		if (v != FW_SUCCESS)
+			return v;
 
-	sp->sge_fl_buffer_size[0] = vals[0];
-	sp->sge_fl_buffer_size[1] = vals[1];
+		sp->sge_fl_buffer_size[i] = vals[0];
+	}
 
 	/*
 	 * T4 uses a single control field to specify both the PCIe Padding and
