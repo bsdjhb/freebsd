@@ -579,7 +579,6 @@ t4vf_attach(device_t dev)
 	n10g = n1g = 0;
 	for_each_port(sc, i) {
 		struct port_info *pi;
-		struct vi_info *vi;
 
 		pi = malloc(sizeof(*pi), M_CXGBE, M_ZERO | M_WAITOK);
 		sc->port[i] = pi;
