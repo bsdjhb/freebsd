@@ -99,7 +99,7 @@ static nvlist_t	*pci_iov_get_vf_subsystem_schema(void);
 
 int
 pci_iov_attach_method(device_t bus, device_t dev, nvlist_t *pf_schema,
-    nvlist_t *vf_schema)
+    nvlist_t *vf_schema, const char *name)
 {
 	device_t pcib;
 	struct pci_devinfo *dinfo;
@@ -149,7 +149,7 @@ pci_iov_attach_method(device_t bus, device_t dev, nvlist_t *pf_schema,
 	iov->iov_schema = schema;
 
 	iov->iov_cdev = make_dev(&iov_cdevsw, device_get_unit(dev),
-	    UID_ROOT, GID_WHEEL, 0600, "iov/%s", device_get_nameunit(dev));
+	    UID_ROOT, GID_WHEEL, 0600, "iov/%s", name);
 
 	if (iov->iov_cdev == NULL) {
 		error = ENOMEM;
