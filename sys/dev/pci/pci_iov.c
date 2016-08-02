@@ -98,6 +98,20 @@ static nvlist_t	*pci_iov_get_pf_subsystem_schema(void);
 static nvlist_t	*pci_iov_get_vf_subsystem_schema(void);
 
 int
+pci_iov_attach_name(device_t dev, struct nvlist *pf_schema,
+    struct nvlist *vf_schema, const char *fmt, ...)
+{
+	char buf[NAME_MAX + 1];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	return (PCI_IOV_ATTACH(device_get_parent(dev), dev, pf_schema,
+	    vf_schema, name));
+}
+
+int
 pci_iov_attach_method(device_t bus, device_t dev, nvlist_t *pf_schema,
     nvlist_t *vf_schema, const char *name)
 {
