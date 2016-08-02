@@ -64,8 +64,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <signal.h>
-
-#include "sysdecode.h"
+#include <sysdecode.h>
 
 /*
  * This is taken from the xlat tables originally in truss which were
@@ -293,22 +292,6 @@ sysdecode_semget_flags(FILE *fp, int flag)
 	print_mask(fp, semgetflags, flag);
 }
 
-/*
- * Only used by SYS_open. Unless O_CREAT is set in flags, the
- * mode argument is unused (and often bogus and misleading).
- *
- * XXX: I think this belongs in kdump.c not in libsysdecode.
- */
-void
-sysdecode_open_flagsandmode(FILE *fp, int flags, int mode)
-{
-	sysdecode_open_flags(fp, flags);
-	if ((flags & O_CREAT) == O_CREAT) {
-		fputc(',', fp);
-		sysdecode_filemode(fp, mode);
-	}
-}
-
 static struct name_table idtypes[] = {
 	X(P_PID) X(P_PPID) X(P_PGID) X(P_SID) X(P_CID) X(P_UID) X(P_GID)
 	X(P_ALL) X(P_LWPID) X(P_TASKID) X(P_PROJID) X(P_POOLID) X(P_JAILID)
@@ -518,7 +501,7 @@ sysdecode_nfssvc_flags(FILE *fp, int flags)
 }
 
 void
-sysdecode_getpriority_which(FILE *fp, int which)
+sysdecode_prio_which(FILE *fp, int which)
 {
 
 	print_value(fp, prio, which);
