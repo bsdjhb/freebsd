@@ -706,6 +706,14 @@ syscallname(u_int code, u_int sv_flags)
 	}
 }
 
+static void
+print_signal(int signo)
+{
+
+	if (!sysdecode_signal(stdout, signo))
+		printf("SIG %d", signo);
+}
+
 void
 ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 {
@@ -893,7 +901,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_kill:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_signal(stdout, *ip);
+				print_signal(*ip);
 				ip++;
 				narg--;
 				break;
@@ -1233,7 +1241,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_sigaction:
 				putchar('(');
-				sysdecode_signal(stdout, *ip);
+				print_signal(*ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1264,7 +1272,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_thr_kill:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_signal(stdout, *ip);
+				print_signal(*ip);
 				ip++;
 				narg--;
 				break;
@@ -1522,7 +1530,7 @@ void
 ktrpsig(struct ktr_psig *psig)
 {
 
-	sysdecode_signal(stdout, psig->signo);
+	print_signal(psig->signo);
 	if (psig->action == SIG_DFL) {
 		printf("SIG_DFL code=");
 		sysdecode_sigcode(stdout, psig->signo, psig->code);

@@ -247,14 +247,15 @@ sysdecode_atfd(FILE *fp, int fd, int base)
 		print_integer(fp, fd, base);
 }
 
-void
+bool
 sysdecode_signal(FILE *fp, int sig)
 {
 
-	if (sig > 0 && sig < NSIG)
+	if (sig > 0 && sig < NSIG) {
 		fprintf(fp, "SIG%s", sys_signame[sig]);
-	else
-		fprintf(fp, "SIG %d", sig);
+		return (true);
+	}
+	return (false);
 }
 
 static struct name_table semctlops[] = {
