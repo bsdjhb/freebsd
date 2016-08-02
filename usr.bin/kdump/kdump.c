@@ -709,8 +709,12 @@ syscallname(u_int code, u_int sv_flags)
 static void
 print_signal(int signo)
 {
+	const char *signame;
 
-	if (!sysdecode_signal(stdout, signo))
+	signame = sysdecode_signal(signo);
+	if (signame != NULL)
+		printf("%s", signame);
+	else
 		printf("SIG %d", signo);
 }
 

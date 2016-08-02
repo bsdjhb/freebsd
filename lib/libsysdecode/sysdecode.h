@@ -119,7 +119,7 @@ void	sysdecode_sigchld_code(FILE *_fp, int _si_code);
 void	sysdecode_sigcode(FILE *_fp, int _sig, int _code);
 void	sysdecode_sigfpe_code(FILE *_fp, int _si_code);
 void	sysdecode_sigill_code(FILE *_fp, int _si_code);
-bool	sysdecode_signal(FILE *_fp, int _sig);
+const char *sysdecode_signal(int _sig);
 void	sysdecode_sigprocmask_how(FILE *_fp, int _how);
 void	sysdecode_sigsegv_code(FILE *_fp, int _si_code);
 void	sysdecode_sigtrap_code(FILE *_fp, int _si_code);

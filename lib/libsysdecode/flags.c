@@ -247,15 +247,26 @@ sysdecode_atfd(FILE *fp, int fd, int base)
 		print_integer(fp, fd, base);
 }
 
-bool
-sysdecode_signal(FILE *fp, int sig)
+const char *
+sysdecode_signal(int sig)
 {
+	static const char sigbuf[64];
 
 	if (sig > 0 && sig < NSIG) {
-		fprintf(fp, "SIG%s", sys_signame[sig]);
-		return (true);
+		snprintf(sigbuf, sizeof(sigbuf), "SIG%s", sys_signame[sig]);
+		return (sigbuf);
 	}
-	return (false);
+	switch (sig) {
+	case SIGTHR:
+		return ("SIGTHR");
+	case SIGLIBRT:
+		return ("SIGLIBRT");
+	}
+	if (sig >= SIGRTMIN && sig <= SIGRTMAX) {
+		snprintf(sigbuf, sizeof(sigbuf), "SIGRT%d", sig - SIGRTMIN);
+		return (sigbuf);
+	}
+	return (NULL);
 }
 
 static struct name_table semctlops[] = {
