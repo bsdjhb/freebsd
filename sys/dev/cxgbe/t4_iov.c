@@ -104,6 +104,7 @@ t4iov_probe(device_t dev)
 	for (i = 0; i < nitems(t4iov_pciids); i++) {
 		if (d == t4iov_pciids[i].device) {
 			device_set_desc(dev, t4iov_pciids[i].desc);
+			device_quiet(dev);
 			return (BUS_PROBE_DEFAULT);
 		}
 	}
@@ -120,6 +121,7 @@ t5iov_probe(device_t dev)
 	for (i = 0; i < nitems(t5iov_pciids); i++) {
 		if (d == t5iov_pciids[i].device) {
 			device_set_desc(dev, t5iov_pciids[i].desc);
+			device_quiet(dev);
 			return (BUS_PROBE_DEFAULT);
 		}
 	}
