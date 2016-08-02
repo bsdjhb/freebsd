@@ -437,6 +437,7 @@ cpu_idle_wakeup(int cpu)
 		return (0);
 	if (*state == STATE_MWAIT)
 		*state = STATE_RUNNING;
+	CTR1(KTR_PROC, "cpu_idle_wakeup: wokeup CPU %d", cpu);
 	return (1);
 }
 
