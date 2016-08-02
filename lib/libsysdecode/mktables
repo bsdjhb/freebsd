@@ -49,16 +49,22 @@ include_dir=$1
 #
 gen_table()
 {
-	local name grep file
+	local name grep file excl filter
 	name=$1
 	grep=$2
 	file=$3
+	excl=$4
 
+	if [ -z "$excl" ]; then
+		filter="cat"
+	else
+		filter="egrep -v"
+	fi
 	cat <<_EOF_
 TABLE_START(${name})
 _EOF_
 	egrep "^#[[:space:]]*define[[:space:]]+"${grep}"[[:space:]]*" \
-		$include_dir/$file | \
+		$include_dir/$file | ${filter} ${excl} | \
 	awk '{ for (i = 1; i <= NF; i++) \
 		if ($i ~ /define/) \
 			break; \
@@ -85,7 +91,7 @@ gen_table "flockops"        "LOCK_[A-Z]+[[:space:]]+0x[0-9]+"              "sys/
 gen_table "getfsstatflags"  "MNT_[A-Z]+[[:space:]]+[1-9][0-9]*"            "sys/mount.h"
 gen_table "kldsymcmd"       "KLDSYM_[A-Z]+[[:space:]]+[0-9]+"              "sys/linker.h"
 gen_table "kldunloadfflags" "LINKER_UNLOAD_[A-Z]+[[:space:]]+[0-9]+"       "sys/linker.h"
-gen_table "lio_listimodes"  "LIO_(NO)?WAIT[[:space:]]+[0-9]+"              "aio.h"
+gen_table "lio_listiomodes" "LIO_(NO)?WAIT[[:space:]]+[0-9]+"              "aio.h"
 gen_table "madvisebehav"    "_?MADV_[A-Z]+[[:space:]]+[0-9]+"              "sys/mman.h"
 gen_table "minheritflags"   "INHERIT_[A-Z]+[[:space:]]+[0-9]+"             "sys/mman.h"
 gen_table "mlockallflags"   "MCL_[A-Z]+[[:space:]]+0x[0-9]+"               "sys/mman.h"
@@ -122,12 +128,11 @@ gen_table "umtxop"          "UMTX_OP_[[:alnum:]_]+[[:space:]]+[0-9]+"      "sys/
 gen_table "vmprot"          "VM_PROT_[A-Z]+[[:space:]]+\(\(vm_prot_t\)\)"  "vm/vm.h"
 gen_table "vmresult"        "KERN_[A-Z]+[[:space:]]+[0-9]+"                "vm/vm_param.h"
 gen_table "wait6opt"        "W[A-Z]+[[:space:]]+[0-9]+"                    "sys/wait.h"
-gen_table "whence"          "SEEK_[A-Z]+[[:space:]]+[0-9]+"                "sys/unistd.h"
-# XXX: This regex captures the record locking flags (F_*LCK* and F_CANCEL)
-gen_table "fcntlcmd"        "F_[A-Z0-9_]+[[:space:]]+[0-9]+[[:space:]]+"   "sys/fcntl.h"
+gen_table "seekwhence"      "SEEK_[A-Z]+[[:space:]]+[0-9]+"                "sys/unistd.h"
+gen_table "fcntlcmd"        "F_[A-Z0-9_]+[[:space:]]+[0-9]+[[:space:]]+"   "sys/fcntl.h"	"F_CANCEL|F_..LCK"
 gen_table "mmapflags"       "MAP_[A-Z_]+[[:space:]]+0x[0-9A-Fa-f]+"        "sys/mman.h"
 gen_table "rtpriofuncs"     "RTP_[A-Z]+[[:space:]]+[0-9]+"                 "sys/rtprio.h"
-gen_table "msgflags"        "MSG_[A-Z]+[[:space:]]+0x[0-9]+"               "sys/socket.h"
+gen_table "msgflags"        "MSG_[A-Z]+[[:space:]]+0x[0-9]+"               "sys/socket.h"	"MSG_SOCALLBCK"
 gen_table "sigcode"         "SI_[A-Z]+[[:space:]]+0(x[0-9abcdef]+)?"       "sys/signal.h"
 gen_table "umtxcvwaitflags" "CVWAIT_[A-Z_]+[[:space:]]+0x[0-9]+"           "sys/umtx.h"
 gen_table "umtxrwlockflags" "URWLOCK_PREFER_READER[[:space:]]+0x[0-9]+"    "sys/umtx.h"
