@@ -1162,7 +1162,8 @@ ipi_cpu(int cpu, u_int ipi)
 	if (ipi == IPI_STOP_HARD)
 		CPU_SET_ATOMIC(cpu, &ipi_stop_nmi_pending);
 
-	CTR3(KTR_SMP, "%s: cpu: %d ipi: %x", __func__, cpu, ipi);
+	if (ipi == IPI_AST || ipi == IPI_PREEMPT)
+		CTR3(KTR_SMP, "%s: cpu: %d ipi: %x", __func__, cpu, ipi);
 	ipi_send_cpu(cpu, ipi);
 }
 
