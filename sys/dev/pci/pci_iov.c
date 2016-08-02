@@ -108,7 +108,7 @@ pci_iov_attach_name(device_t dev, struct nvlist *pf_schema,
 	vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
 	return (PCI_IOV_ATTACH(device_get_parent(dev), dev, pf_schema,
-	    vf_schema, name));
+	    vf_schema, buf));
 }
 
 int
