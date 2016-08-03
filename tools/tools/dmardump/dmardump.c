@@ -148,16 +148,20 @@ handle_drhd(int segment, uint64_t base_addr)
 	struct dmar_root_entry *root_table;
 	char *regs;
 	uint64_t rtaddr;
-	uint32_t ver;
+	uint32_t gsts, ver;
 	bool extended;
 	int bus;
 
 	regs = acpi_map_physical(base_addr, 4096);
 
 	ver = read_4(regs, DMAR_VER_REG);
-	printf("drhd @ %#jx (version %d.%d) PCI segment %d:\n",
+	sts = read_4(regs, DMAR_GSTS_REG);
+	printf("drhd @ %#jx (version %d.%d) PCI segment %d%s:\n",
 	    (uintmax_t)base_addr, DMAR_MAJOR_VER(ver), DMAR_MINOR_VER(ver),
-	    segment);
+	    segment, gsts & DMAR_GSTS_TES ? "" : " (disabled)");
+	if ((gsts & (DMAR_GSTS_TES | DMAR_GSTS_RTPS)) !=
+	    (DMAR_GSTS_TES | DMAR_GSTS_RTPS))
+		return;
 	rtaddr = read_8(regs, DMAR_RTADDR_REG);
 	extended = (rtaddr & (1ul << 11)) != 0;
 	printf("    %sroot table @ 0x%#jx\n", extended ? "extended " : "",
