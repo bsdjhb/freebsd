@@ -155,7 +155,7 @@ handle_drhd(int segment, uint64_t base_addr)
 	regs = acpi_map_physical(base_addr, 4096);
 
 	ver = read_4(regs, DMAR_VER_REG);
-	sts = read_4(regs, DMAR_GSTS_REG);
+	gsts = read_4(regs, DMAR_GSTS_REG);
 	printf("drhd @ %#jx (version %d.%d) PCI segment %d%s:\n",
 	    (uintmax_t)base_addr, DMAR_MAJOR_VER(ver), DMAR_MINOR_VER(ver),
 	    segment, gsts & DMAR_GSTS_TES ? "" : " (disabled)");
