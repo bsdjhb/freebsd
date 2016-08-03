@@ -43,7 +43,6 @@ __FBSDID("$FreeBSD$");
 
 #define _WANT_KERNEL_ERRNO
 #include <sys/param.h>
-#include <sys/acl.h>
 #include <sys/capsicum.h>
 #include <sys/errno.h>
 #include <sys/time.h>
