@@ -250,7 +250,7 @@ sysdecode_atfd(FILE *fp, int fd, int base)
 const char *
 sysdecode_signal(int sig)
 {
-	static const char sigbuf[64];
+	static char sigbuf[64];
 
 	if (sig > 0 && sig < NSIG) {
 		snprintf(sigbuf, sizeof(sigbuf), "SIG%s", sys_signame[sig]);
@@ -310,8 +310,9 @@ static struct name_table idtypes[] = {
 	X(P_CTID) X(P_CPUID) X(P_PSETID) XEND
 };
 
+/* XXX: idtype is really an idtype_t */
 void
-sysdecode_idtype(FILE *fp, idtype_t idtype)
+sysdecode_idtype(FILE *fp, int idtype)
 {
 
 	print_value(fp, idtypes, idtype);
@@ -357,8 +358,9 @@ sysdecode_accessmode(FILE *fp, int mode)
 	print_mask(fp, accessmode, mode);
 }
 
+/* XXX: 'type' is really an acl_type_t. */
 void
-sysdecode_acltype(FILE *fp, acl_type_t type)
+sysdecode_acltype(FILE *fp, int type)
 {
 
 	print_value(fp, acltype, type);

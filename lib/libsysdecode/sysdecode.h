@@ -70,7 +70,7 @@ void	sysdecode_set_value_unmatched(void (*_func)(FILE *_fp, uintmax_t _val));
 /* Value decoders. */
 int	sysdecode_abi_to_freebsd_errno(enum sysdecode_abi _abi, int _error);
 void	sysdecode_accessmode(FILE *_fp, int _mode);
-void	sysdecode_acltype(FILE *_fp, acl_type_t _type);
+void	sysdecode_acltype(FILE *_fp, int _type);
 void	sysdecode_atfd(FILE *_fp, int _fd, int _base);
 void	sysdecode_capfcntlrights(FILE *_fp, uint32_t _rights);
 void	sysdecode_capname(FILE *_fp, cap_rights_t *_rightsp);
@@ -83,7 +83,7 @@ void	sysdecode_filemode(FILE *_fp, int _mode);
 void	sysdecode_flock_op(FILE *_fp, int _operation);
 int	sysdecode_freebsd_to_abi_errno(enum sysdecode_abi _abi, int _error);
 void	sysdecode_getfsstat_flags(FILE *_fp, int _flags);
-void	sysdecode_idtype(FILE *_fp, idtype_t _idtype);
+void	sysdecode_idtype(FILE *_fp, int _idtype);
 const char *sysdecode_ioctlname(unsigned long _val);
 void	sysdecode_ipproto(FILE *_fp, int _protocol);
 void	sysdecode_kldsym_cmd(FILE *_fp, int _command);
