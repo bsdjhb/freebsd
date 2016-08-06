@@ -385,12 +385,54 @@ sysdecode_fadvice(FILE *fp, int advice)
 	print_value(fp, fadvisebehav, advice);
 }
 
+static bool
+sysdecode_open_flags_common(FILE *fp, uintmax_t *val)
+{
+	bool printed;
+	int mode;
+
+	mode = *val & O_ACCMODE;
+	*val &= ~O_ACCMODE;
+	switch (mode) {
+	case O_RDONLY:
+		if (*val & O_EXEC) {
+			*val &= ~O_EXEC;
+			fputs("O_EXEC", fp);
+		} else
+			fputs("O_RDONLY", fp);
+		printed = true;
+		mode = 0;
+		break;
+	case O_WRONLY:
+		fputs("O_WRONLY", fp);
+		printed = true;
+		mode = 0;
+		break;
+	case O_RDWR:
+		fputs("O_RDWR", fp);
+		printed = true;
+		mode = 0;
+		break;
+	default:
+		printed = false;
+	}
+	print_mask_part(fp, fileflags, val, &printed);
+	*val |= mode;
+	return (printed);
+}
+
 void
 sysdecode_open_flags(FILE *fp, int flags)
 {
+	uintmax_t val;
+	bool printed;
 
-	/* XXX: Need to handle O_ACCMODE specially. */
-	print_mask(fp, fileflags, (unsigned)flags);
+	val = (unsigned)flags;
+	if (print_mask_prefix != NULL)
+		print_mask_prefix(fp, val);
+	printed = sysdecode_open_flags_common(fp, &val);
+	if (print_mask_suffix != NULL)
+		print_mask_suffix(fp, val, !printed);
 }
 
 void
@@ -404,11 +446,11 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags)
 	 * flags passed to open(2).  However, a few open-only flag
 	 * bits have been repurposed for fcntl-only flags.
 	 */
-	printed = false;
+	val = (unsigned)flags;
 	if (print_mask_prefix != NULL)
-		print_mask_prefix(fp, flags);
-	val = (unsigned)flags & ~(O_NOFOLLOW | FRDAHEAD);
-	print_mask_part(fp, fileflags, &val, &printed);
+		print_mask_prefix(fp, val);
+	val &= ~(O_NOFOLLOW | FRDAHEAD);
+	printed = sysdecode_open_flags_common(fp, &val);
 	if (flags & O_NOFOLLOW) {
 		fprintf(fp, "%sFPOIXSHM", printed ? "|" : "");
 		printed = true;
