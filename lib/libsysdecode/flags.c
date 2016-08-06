@@ -301,7 +301,7 @@ void
 sysdecode_semget_flags(FILE *fp, int flag)
 {
 
-	print_mask(fp, semgetflags, flag);
+	print_mask(fp, semgetflags, (unsigned)flag);
 }
 
 static struct name_table idtypes[] = {
@@ -337,7 +337,7 @@ void
 sysdecode_vmprot(FILE *fp, int type)
 {
 
-	print_mask(fp, vmprot, type);
+	print_mask(fp, vmprot, (unsigned)type);
 }
 
 void
@@ -355,7 +355,7 @@ void
 sysdecode_accessmode(FILE *fp, int mode)
 {
 
-	print_mask(fp, accessmode, mode);
+	print_mask(fp, accessmode, (unsigned)mode);
 }
 
 /* XXX: 'type' is really an acl_type_t. */
@@ -392,7 +392,7 @@ sysdecode_open_flags(FILE *fp, int flags)
 {
 
 	/* XXX: Need to handle O_ACCMODE specially. */
-	print_mask(fp, fileflags, flags);
+	print_mask(fp, fileflags, (unsigned)flags);
 }
 
 void
@@ -409,7 +409,7 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags)
 
 	if (print_mask_prefix != NULL)
 		print_mask_prefix(fp, flags);
-	val = flags & ~(O_NOFOLLOW | FRDAHEAD);
+	val = (unsigned)flags & ~(O_NOFOLLOW | FRDAHEAD);
 	printed = print_mask_part(fp, fileflags, &val);
 	if (flags & O_NOFOLLOW) {
 		fprintf(fp, "%sFPOIXSHM", printed ? "|" : "");
@@ -427,14 +427,14 @@ void
 sysdecode_flock_op(FILE *fp, int operation)
 {
 
-	print_mask(fp, flockops, operation);
+	print_mask(fp, flockops, (unsigned)operation);
 }
 
 void
 sysdecode_getfsstat_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, getfsstatflags, flags);
+	print_mask(fp, getfsstatflags, (unsigned)flags);
 }
 
 void
@@ -476,35 +476,35 @@ void
 sysdecode_mlockall_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, mlockallflags, flags);
+	print_mask(fp, mlockallflags, (unsigned)flags);
 }
 
 void
 sysdecode_mmap_prot(FILE *fp, int prot)
 {
 
-	print_mask(fp, mmapprot, prot);
+	print_mask(fp, mmapprot, (unsigned)prot);
 }
 
 void
 sysdecode_filemode(FILE *fp, int mode)
 {
 
-	print_mask(fp, filemode, mode);
+	print_mask(fp, filemode, (unsigned)mode);
 }
 
 void
 sysdecode_mount_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, mountflags, flags);
+	print_mask(fp, mountflags, (unsigned)flags);
 }
 
 void
 sysdecode_msync_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, msyncflags, flags);
+	print_mask(fp, msyncflags, (unsigned)flags);
 }
 
 void
@@ -551,14 +551,14 @@ void
 sysdecode_reboot_howto(FILE *fp, int howto)
 {
 
-	print_mask(fp, rebootopt, howto);
+	print_mask(fp, rebootopt, (unsigned)howto);
 }
 
 void
 sysdecode_rfork_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, rforkflags, flags);
+	print_mask(fp, rforkflags, (unsigned)flags);
 }
 
 void
@@ -579,14 +579,14 @@ void
 sysdecode_sendfile_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, sendfileflags, flags);
+	print_mask(fp, sendfileflags, (unsigned)flags);
 }
 
 void
 sysdecode_shmat_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, shmatflags, flags);
+	print_mask(fp, shmatflags, (unsigned)flags);
 }
 
 void
@@ -685,7 +685,7 @@ void
 sysdecode_thr_create_flags(FILE *fp, int flags)
 {
 
-	print_mask(fp, thrcreateflags, flags);
+	print_mask(fp, thrcreateflags, (unsigned)flags);
 }
 
 void
@@ -706,7 +706,7 @@ void
 sysdecode_wait6_options(FILE *fp, int options)
 {
 
-	print_mask(fp, wait6opt, options);
+	print_mask(fp, wait6opt, (unsigned)options);
 }
 
 void
@@ -759,7 +759,7 @@ sysdecode_mmap_flags(FILE *fp, int flags)
 	if (print_mask_prefix != NULL)
 		print_mask_prefix(fp, flags);
 	align = flags & MAP_ALIGNMENT_MASK;
-	val = flags & ~MAP_ALIGNMENT_MASK;
+	val = (unsigned)flags & ~MAP_ALIGNMENT_MASK;
 	printed = print_mask_part(fp, mmapflags, &val);
 #ifdef MAP_32BIT
 	if (val & MAP_32BIT) {
