@@ -169,7 +169,7 @@ print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp)
 	}
 
 	*valp = rem;
-	return (!or);
+	return (or);
 }
 
 /*
@@ -420,7 +420,7 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags)
 		printed = true;
 	}
 	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, printed);
+		print_mask_suffix(fp, val, !printed);
 }
 
 void
@@ -778,7 +778,7 @@ sysdecode_mmap_flags(FILE *fp, int flags)
 		printed = true;
 	}
 	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, printed);
+		print_mask_suffix(fp, val, !printed);
 }
 
 void
