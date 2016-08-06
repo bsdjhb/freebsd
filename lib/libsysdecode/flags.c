@@ -490,7 +490,7 @@ void
 sysdecode_filemode(FILE *fp, int mode)
 {
 
-	print_mask(fp, filemode, (unsigned)mode);
+	print_mask_0(fp, filemode, (unsigned)mode);
 }
 
 void
@@ -726,6 +726,20 @@ sysdecode_fcntl_cmd(FILE *fp, int cmd)
 static struct name_table fcntl_fd_arg[] = {
 	X(FD_CLOEXEC) X(0) XEND
 };
+
+bool
+sysdecode_fcntl_arg_p(int cmd)
+{
+
+	switch (cmd) {
+	case F_GETFD:
+	case F_GETFL:
+	case F_GETOWN:
+		return (false);
+	default:
+		return (true);
+	}
+}
 
 void
 sysdecode_fcntl_arg(FILE *fp, int cmd, int arg, int base)

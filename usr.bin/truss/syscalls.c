@@ -1380,24 +1380,15 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		fputc('}', fp);
 		break;
 	}
-	case Sigprocmask: {
+	case Sigprocmask:
 		sysdecode_sigprocmask_how(fp, args[sc->offset]);
 		break;
-	}
-	case Fcntlflag: {
+	case Fcntlflag:
 		/* XXX: Output depends on the value of the previous argument. */
-		switch (args[sc->offset - 1]) {
-		case F_GETFD:
-		case F_GETFL:
-		case F_GETOWN:
-			break;
-		default:
+		if (sysdecode_fcntl_arg_p(args[sc->offset - 1]))
 			sysdecode_fcntl_arg(fp, args[sc->offset - 1],
 			    args[sc->offset], 16);
-			break;
-		}
 		break;
-	}
 	case Open:
 		sysdecode_open_flags(fp, args[sc->offset]);
 		break;

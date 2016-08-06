@@ -982,9 +982,11 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				putchar(',');
 				sysdecode_fcntl_cmd(stdout, ip[0]);
-				putchar(',');
-				sysdecode_fcntl_arg(stdout, ip[0], ip[1],
-				    decimal ? 10 : 16);
+				if (sysdecode_fcntl_arg_p(ip[0])) {
+					putchar(',');
+					sysdecode_fcntl_arg(stdout, ip[0], ip[1],
+					    decimal ? 10 : 16);
+				}
 				ip += 2;
 				narg -= 2;
 				break;
@@ -1535,11 +1537,11 @@ ktrpsig(struct ktr_psig *psig)
 
 	print_signal(psig->signo);
 	if (psig->action == SIG_DFL) {
-		printf("SIG_DFL code=");
+		printf(" SIG_DFL code=");
 		sysdecode_sigcode(stdout, psig->signo, psig->code);
 		putchar('\n');
 	} else {
-		printf("caught handler=0x%lx mask=0x%x code=",
+		printf(" caught handler=0x%lx mask=0x%x code=",
 		    (u_long)psig->action, psig->mask.__bits[0]);
 		sysdecode_sigcode(stdout, psig->signo, psig->code);
 		putchar('\n');

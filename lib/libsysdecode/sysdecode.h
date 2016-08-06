@@ -77,6 +77,7 @@ void	sysdecode_capname(FILE *_fp, cap_rights_t *_rightsp);
 void	sysdecode_extattrnamespace(FILE *_fp, int _namespace);
 void	sysdecode_fadvice(FILE *_fp, int _advice);
 void	sysdecode_fcntl_arg(FILE *_fp, int _cmd, int _arg, int _base);
+bool	sysdecode_fcntl_arg_p(int _cmd);
 void	sysdecode_fcntl_cmd(FILE *_fp, int _cmd);
 void	sysdecode_fcntl_fileflags(FILE *_fp, int _flags);
 void	sysdecode_filemode(FILE *_fp, int _mode);
