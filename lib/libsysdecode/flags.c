@@ -202,18 +202,18 @@ print_mask_0(FILE *fp, struct name_table *table, uintmax_t val)
 }
 
 static void
-print_integer(FILE *fp, uintmax_t val, int base)
+print_integer(FILE *fp, int val, int base)
 {
 
 	switch (base) {
 	case 8:
-		fprintf(fp, "0%jo", val);
+		fprintf(fp, "0%o", val);
 		break;
 	case 10:
-		fprintf(fp, "%ju", val);
+		fprintf(fp, "%d", val);
 		break;
 	case 16:
-		fprintf(fp, "0x%jx", val);
+		fprintf(fp, "0x%x", val);
 		break;
 	default:
 		abort2("bad base", 0, NULL);
