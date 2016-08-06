@@ -143,16 +143,14 @@ lookup_value(struct name_table *table, uintmax_t val)
  * Used when the value maps to a bitmask of #definition values in the
  * table.  This is a helper routine which outputs a symbolic mask of
  * matched masks.  Multiple masks are separated by a pipe ('|').
- * This function returns true if it outputs anything.  The value is
- * modified on return to only hold unmatched bits.
+ * The value is modified on return to only hold unmatched bits.
  */
-static bool
-print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp)
+static void
+print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp,
+    bool *printed)
 {
 	uintmax_t rem;
-	bool or;
 
-	or = false;
 	rem = *valp;
 	for (; table->str != NULL; table++) {
 		if ((table->val & rem) == table->val) {
@@ -162,14 +160,13 @@ print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp)
 			 */
 			if (table->val == 0 && *valp != 0)
 				continue;
-			fprintf(fp, "%s%s", or ? "|" : "", table->str);
-			or = true;
+			fprintf(fp, "%s%s", *printed ? "|" : "", table->str);
+			*printed = true;
 			rem &= ~table->val;
 		}
 	}
 
 	*valp = rem;
-	return (or);
 }
 
 /*
@@ -181,9 +178,10 @@ print_mask(FILE *fp, struct name_table *table, uintmax_t val)
 {
 	bool printed;
 
+	printed = false;
 	if (print_mask_prefix != NULL)
 		print_mask_prefix(fp, val);
-	printed = print_mask_part(fp, table, &val);
+	print_mask_part(fp, table, &val, &printed);
 	if (print_mask_suffix != NULL)
 		print_mask_suffix(fp, val, !printed);
 }
@@ -406,11 +404,11 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags)
 	 * flags passed to open(2).  However, a few open-only flag
 	 * bits have been repurposed for fcntl-only flags.
 	 */
-
+	printed = false;
 	if (print_mask_prefix != NULL)
 		print_mask_prefix(fp, flags);
 	val = (unsigned)flags & ~(O_NOFOLLOW | FRDAHEAD);
-	printed = print_mask_part(fp, fileflags, &val);
+	print_mask_part(fp, fileflags, &val, &printed);
 	if (flags & O_NOFOLLOW) {
 		fprintf(fp, "%sFPOIXSHM", printed ? "|" : "");
 		printed = true;
@@ -770,11 +768,12 @@ sysdecode_mmap_flags(FILE *fp, int flags)
 	 * MAP_32BIT is also problematic since it isn't defined for
 	 * all platforms.
 	 */
+	printed = false;
 	if (print_mask_prefix != NULL)
 		print_mask_prefix(fp, flags);
 	align = flags & MAP_ALIGNMENT_MASK;
 	val = (unsigned)flags & ~MAP_ALIGNMENT_MASK;
-	printed = print_mask_part(fp, mmapflags, &val);
+	print_mask_part(fp, mmapflags, &val, &printed);
 #ifdef MAP_32BIT
 	if (val & MAP_32BIT) {
 		fprintf(fp, "%sMAP_32BIT", printed ? "|" : "");
