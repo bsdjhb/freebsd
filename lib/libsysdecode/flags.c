@@ -825,6 +825,7 @@ sysdecode_mmap_flags(FILE *fp, int flags)
 	if (val & MAP_32BIT) {
 		fprintf(fp, "%sMAP_32BIT", printed ? "|" : "");
 		printed = true;
+		val &= ~MAP_32BIT;
 	}
 #endif
 	if (align != 0) {
