@@ -782,7 +782,7 @@ sysdecode_fcntl_arg_p(int cmd)
 }
 
 void
-sysdecode_fcntl_arg(FILE *fp, int cmd, int arg, int base)
+sysdecode_fcntl_arg(FILE *fp, int cmd, uintptr_t arg, int base)
 {
 
 	switch (cmd) {
@@ -791,6 +791,11 @@ sysdecode_fcntl_arg(FILE *fp, int cmd, int arg, int base)
 		break;
 	case F_SETFL:
 		sysdecode_fcntl_fileflags(fp, arg);
+		break;
+	case F_GETLK:
+	case F_SETLK:
+	case F_SETLKW:
+		fprintf(fp, "%p", (void *)arg);
 		break;
 	default:
 		print_integer(fp, arg, base);
