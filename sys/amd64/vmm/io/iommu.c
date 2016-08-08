@@ -227,7 +227,7 @@ iommu_create_domain(vm_paddr_t maxaddr)
 	static volatile int iommu_initted;
 
 	if (iommu_initted < 2) {
-		if (atomic_cmpset_int(&iommu_initted, 0, 1) == 0) {
+		if (atomic_cmpset_int(&iommu_initted, 0, 1)) {
 			iommu_init();
 			atomic_store_rel_int(&iommu_initted, 2);
 		} else
