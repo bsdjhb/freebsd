@@ -139,6 +139,7 @@ dump_context_table(int segment, int bus, uint64_t base_addr)
 		printf(" SLPT %#jx", (uintmax_t)(ctx[idx].ctx1 &
 		    DMAR_CTX1_ASR_MASK));
 		printf(" domain %d", (int)((ctx[idx].ctx2 >> 8) & 0xffff));
+		printf("\n");
 	}
 }
 
