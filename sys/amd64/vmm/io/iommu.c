@@ -38,6 +38,7 @@ __FBSDID("$FreeBSD$");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
 
+#include <machine/cpu.h>
 #include <machine/md_var.h>
 
 #include "vmm_util.h"
