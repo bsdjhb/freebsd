@@ -170,10 +170,10 @@ handle_drhd(int segment, uint64_t base_addr)
 	    (DMAR_GSTS_TES | DMAR_GSTS_RTPS))
 		return;
 	rtaddr = read_8(regs, DMAR_RTADDR_REG);
-	extended = (rtaddr & (1ul << 11)) != 0;
+	extended = (rtaddr & DMAR_RTADDR_RTT) != 0;
 	printf("    %sroot table @ 0x%#jx\n", extended ? "extended " : "",
-	    rtaddr & ~PAGE_MASK);
-	root_table = acpi_map_physical(rtaddr & ~PAGE_MASK, 4096);
+	    rtaddr & DMAR_RTADDR_RTA_MASK);
+	root_table = acpi_map_physical(rtaddr & DMAR_RTADDR_RTA_MASK, 4096);
 	for (bus = 0; bus < 255; bus++) {
 		if (extended) {
 #ifdef notyet

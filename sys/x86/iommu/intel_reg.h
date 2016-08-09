@@ -214,6 +214,8 @@ typedef struct dmar_irte {
 
 /* Root-Entry Table Address register */
 #define	DMAR_RTADDR_REG	0x20
+#define	DMAR_RTADDR_RTT	(1 << 11)	/* Root Table Type */
+#define	DMAR_RTADDR_RTA_MASK	0xfffffffffffff000
 
 /* Context Command register */
 #define	DMAR_CCMD_REG	0x28
