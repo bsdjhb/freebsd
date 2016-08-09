@@ -100,13 +100,19 @@ dump_context_table(int segment, int bus, uint64_t base_addr)
 {
 	struct dmar_ctx_entry *ctx;
 	struct pci_conf *conf;
+	bool printed;
 	int idx;
 
-	printf("\tPCI bus %d:\n", bus);
+	printed = false;
 	ctx = acpi_map_physical(base_addr, DMAR_PAGE_SIZE);
 	for (idx = 0; idx < DMAR_CTX_CNT; idx++) {
 		if (!(ctx[idx].ctx1 & DMAR_CTX1_P))
 			continue;
+		if (!printed) {
+			printf("\tPCI bus %d:\n", bus);
+			printed = true;
+		}
+
 		/* Check for ARI device first. */
 		conf = pci_find_conf(segment, bus, 0, idx);
 		if (conf == NULL)
