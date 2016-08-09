@@ -153,6 +153,13 @@ t5vf_probe(device_t dev)
 	return (ENXIO);
 }
 
+#define FW_PARAM_DEV(param) \
+	(V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) | \
+	 V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DEV_##param))
+#define FW_PARAM_PFVF(param) \
+	(V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_PFVF) | \
+	 V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_PFVF_##param))
+
 static int
 get_params__pre_init(struct adapter *sc)
 {
@@ -245,6 +252,9 @@ set_params__post_init(struct adapter *sc)
 
 	return (0);
 }
+
+#undef FW_PARAM_PFVF
+#undef FW_PARAM_DEV
 
 static int
 cfg_itype_and_nqueues(struct adapter *sc, int n10g, int n1g,
