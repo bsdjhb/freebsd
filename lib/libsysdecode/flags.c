@@ -554,6 +554,17 @@ sysdecode_nfssvc_flags(FILE *fp, int flags)
 	print_value(fp, nfssvc, flags);
 }
 
+static struct name_table pipe2flags[] = {
+	X(O_CLOEXEC) X(O_NONBLOCK) XEND
+};
+
+void
+sysdecode_pipe2_flags(FILE *fp, int flags)
+{
+
+	print_mask_0(fp, pipe2flags, (unsigned)flags);
+}
+
 void
 sysdecode_prio_which(FILE *fp, int which)
 {

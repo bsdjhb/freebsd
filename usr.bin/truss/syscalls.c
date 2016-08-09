@@ -250,7 +250,7 @@ static struct syscall decoded_syscalls[] = {
 	{ .name = "pipe", .ret_type = 1, .nargs = 1,
 	  .args = { { PipeFds | OUT, 0 } } },
 	{ .name = "pipe2", .ret_type = 1, .nargs = 2,
-	  .args = { { Ptr, 0 }, { Open, 1 } } },
+	  .args = { { Ptr, 0 }, { Pipe2, 1 } } },
 	{ .name = "poll", .ret_type = 1, .nargs = 3,
 	  .args = { { Pollfd, 0 }, { Int, 1 }, { Int, 2 } } },
 	{ .name = "posix_openpt", .ret_type = 1, .nargs = 1,
@@ -1725,6 +1725,9 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 			fprintf(fp, "0x%lx", args[sc->offset]);
 		break;
 	}
+	case Pipe2:
+		sysdecode_pipe2_flags(fp, args[sc->offset]);
+		break;
 
 	case CloudABIAdvice:
 		fputs(xlookup(cloudabi_advice, args[sc->offset]), fp);

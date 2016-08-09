@@ -100,6 +100,7 @@ void	sysdecode_msg_flags(FILE *_fp, int _flags);
 void	sysdecode_msync_flags(FILE *_fp, int _flags);
 void	sysdecode_nfssvc_flags(FILE *_fp, int _flags);
 void	sysdecode_open_flags(FILE *_fp, int _flags);
+void	sysdecode_pipe2_flags(FILE *_fp, int _flags);
 void	sysdecode_prio_which(FILE *_fp, int _which);
 void	sysdecode_procctl_cmd(FILE *_fp, int _cmd);
 void	sysdecode_ptrace_request(FILE *_fp, int _request);
