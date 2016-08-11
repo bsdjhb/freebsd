@@ -459,10 +459,7 @@ t4vf_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 	pci_enable_busmaster(dev);
-#if 0
-	/* XXX: Not sure?  The Linux driver doesn't do this on the PF or VF. */
 	pci_set_max_read_req(dev, 4096);
-#endif
 	sc->params.pci.mps = pci_get_max_payload(dev);
 
 	sc->flags |= IS_VF;
