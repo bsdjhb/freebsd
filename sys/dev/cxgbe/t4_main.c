@@ -4483,18 +4483,12 @@ t4_clr_vi_stats(struct adapter *sc, unsigned int viid)
 {
 	int reg;
 
-	if (sc->flags & IS_VF) {
-		for (reg = A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L;
-		     reg <= A_MPS_VF_STAT_RX_VF_ERR_FRAMES_H; reg += 4)
-			t4_write_reg(sc, VF_MPS_REG(reg), 0);
-	} else {
-		t4_write_reg(sc, A_PL_INDIR_CMD, V_PL_AUTOINC(1) |
-		    V_PL_VFID(G_FW_VIID_VIN(viid)) |
-		    V_PL_ADDR(VF_MPS_REG(A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L)));
-		for (reg = A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L;
-		     reg <= A_MPS_VF_STAT_RX_VF_ERR_FRAMES_H; reg += 4)
-			t4_write_reg(sc, A_PL_INDIR_DATA, 0);
-	}
+	t4_write_reg(sc, A_PL_INDIR_CMD, V_PL_AUTOINC(1) |
+	    V_PL_VFID(G_FW_VIID_VIN(viid)) |
+	    V_PL_ADDR(VF_MPS_REG(A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L)));
+	for (reg = A_MPS_VF_STAT_TX_VF_BCAST_BYTES_L;
+	     reg <= A_MPS_VF_STAT_RX_VF_ERR_FRAMES_H; reg += 4)
+		t4_write_reg(sc, A_PL_INDIR_DATA, 0);
 }
 
 static void
