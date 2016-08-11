@@ -670,10 +670,6 @@ t4vf_attach(device_t dev)
 	sc->irq = malloc(sc->intr_count * sizeof(struct irq), M_CXGBE,
 	    M_ZERO | M_WAITOK);
 
-#ifdef notsure
-	t4_init_l2t(sc, M_WAITOK);
-#endif
-
 	/*
 	 * Second pass over the ports.  This time we know the number of rx and
 	 * tx queues that each port should get.
