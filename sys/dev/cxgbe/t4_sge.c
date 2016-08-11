@@ -2784,8 +2784,7 @@ alloc_iq_fl(struct vi_info *vi, struct sge_iq *iq, struct sge_fl *fl,
 		FL_UNLOCK(fl);
 	}
 
-	/* XXX: This fails on VFs, should we always skip? */
-	if (is_t5(sc) && cong >= 0) {
+	if (is_t5(sc) && !(sc->flags & IS_VF) && cong >= 0) {
 		uint32_t param, val;
 
 		param = V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DMAQ) |
