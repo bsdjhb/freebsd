@@ -121,7 +121,7 @@ ENTRY(bcopy_sse2_aligned)
 	movq	%rdi,%r8
 	subq	%rsi,%r8
 	cmpq	%rcx,%r8		/* overlapping? */
-	jb	__backwards
+	jb	10f
 
 	/*
 	 * If the string is too short, use a simple copy.
@@ -247,7 +247,7 @@ ENTRY(bcopy_sse2_aligned)
 	movsb
 	ret
 
-__backwards:
+10:
 	addq	%rcx,%rdi		/* copy backwards. */
 	addq	%rcx,%rsi
 
@@ -412,7 +412,7 @@ ENTRY(bcopy_sse2_unaligned)
 	movq	%rdi,%r8
 	subq	%rsi,%r8
 	cmpq	%rcx,%r8		/* overlapping? */
-	jb	__backwards
+	jb	10f
 
 	/*
 	 * If the length is not an even multiple of an SSE reg, use a
@@ -465,7 +465,7 @@ ENTRY(bcopy_sse2_unaligned)
 
 6:	ret
 
-__backwards:
+10:
 	addq	%rcx,%rdi		/* copy backwards. */
 	addq	%rcx,%rsi
 
@@ -558,7 +558,7 @@ ENTRY(bcopy_avx_256)
 	movq	%rdi,%r8
 	subq	%rsi,%r8
 	cmpq	%rcx,%r8		/* overlapping? */
-	jb	__backwards
+	jb	10f
 
 	/*
 	 * If the length is not an even multiple of an AVX reg, use a
@@ -619,7 +619,7 @@ ENTRY(bcopy_avx_256)
 
 7:	ret
 
-__backwards:
+10:
 	addq	%rcx,%rdi		/* copy backwards. */
 	addq	%rcx,%rsi
 
@@ -719,13 +719,13 @@ ENTRY(bcopy_erms)
 	movq	%rdi,%r8
 	subq	%rsi,%r8
 	cmpq	%rcx,%r8		/* overlapping? */
-	jb	__backwards
+	jb	1f
 
 	rep
 	movsb
 	ret
 
-__backwards:
+1:
 	leaq	-1(%rcx,%rsi),%rsi	/* copy backwards. */
 	leaq	-1(%rcx,%rdi),%rdi
 	std
