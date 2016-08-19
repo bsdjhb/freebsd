@@ -81,4 +81,13 @@ FBSDprivate_1.0 {
 	memcpy_erms;
 	memmove_erms;
 	bcopy_erms;
+	memset_sse2_aligned;
+	memset_sse2_unaligned;
+	memset_ssse3_aligned;
+	memset_ssse3_unaligned;
+	memset_avx_128;
+	memset_avx2_128;
+	memset_avx_256;
+	memset_avx2_256;
+	memset_erms;
 };
