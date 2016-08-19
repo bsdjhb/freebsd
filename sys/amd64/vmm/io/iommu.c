@@ -182,8 +182,13 @@ iommu_init(void)
 	 */
 	maxaddr = vmm_mem_maxaddr();
 	host_domain = IOMMU_CREATE_DOMAIN(maxaddr);
-	if (host_domain == NULL)
-		panic("iommu_init: unable to create a host domain");
+	if (host_domain == NULL) {
+		printf("iommu_init: unable to create a host domain");
+		IOMMU_CLEANUP();
+		ops = NULL;
+		iommu_avail = 0;
+		return;
+	}
 
 	/*
 	 * Create 1:1 mappings from '0' to 'maxaddr' for devices assigned to
