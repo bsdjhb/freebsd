@@ -476,7 +476,7 @@ ENTRY(bcopy_sse2_unaligned)
 	shrq	$4,%rdx
 	andq	$0xf,%rcx
 	jnz	5f
-	
+
 1:	test	$3,%rdx			/* Need non-64-byte chunk? */
 	jnz	3f
 2:	movups	-0x10(%rsi),%xmm0	/* 64 bytes at a time */
@@ -630,7 +630,7 @@ ENTRY(bcopy_avx_256)
 	shrq	$4,%rdx
 	andq	$0xf,%rcx
 	jnz	6f
-	
+
 1:	test	$7,%rdx			/* Need non-128-byte chunk? */
 	jnz	3f
 2:	vmovups	-0x20(%rsi),%ymm0	/* 128 bytes at a time */
