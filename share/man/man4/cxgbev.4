@@ -252,6 +252,10 @@ Virtual Functions cannot modify the setting and track changes made to
 the associated port's setting by the Physical Function driver.
 .Pp
 XXX: Talk about congestion control.
+.Pp
+The VF driver currently depends on the PF driver.
+As a result, loading the VF driver will also load the PF driver as a
+dependency.
 .Sh SUPPORT
 For general information and support,
 go to the Chelsio support website at:
