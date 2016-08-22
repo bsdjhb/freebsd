@@ -2228,7 +2228,7 @@ restart:
 	{
 		struct ip6_hdr *ip6 = l3hdr;
 
-		MPASS(ip6->ip6_nxt == IPPROTO_TCP);
+		MPASS(!needs_tso(m0) || ip6->ip6_nxt == IPPROTO_TCP);
 
 		m0->m_pkthdr.l3hlen = sizeof(*ip6);
 		break;
