@@ -16,9 +16,6 @@ SRCS+=	pci_if.h pci_iov_if.h
 SRCS+=	t4_vf.c
 SRCS+=	t4vf_hw.c
 
-# Provide the timestamp of a packet in its header mbuf.
-#CFLAGS+= -DT4_PKT_TIMESTAMP
-
 CFLAGS+= -I${CXGBE}
 
 .include <bsd.kmod.mk>
