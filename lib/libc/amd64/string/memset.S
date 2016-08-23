@@ -394,54 +394,6 @@ ENTRY(memset_avx_128)
 	jmp	1b
 END(memset_avx_128)
 
-ENTRY(memset_avx2_128)
-	movq	%rsi,%rax
-	movq	%rdx,%rcx
-	movq	%rdi,%r11
-	cld				/* set fill direction forward */
-
-	/*
-	 * If the string is too short for an SSE move use a simple set.
-	 */
-	shrq	$4,%rdx
-	jz	2f
-	andq	$0xf,%rcx
-
-	movq	%rax,%xmm1		/* copy char to all bytes in word */
-	vbroadcastb %xmm1,%ymm1
-
-	test	$3,%rdx			/* Need non-64-byte chunk? */
-	jnz	3f
-1:	vmovups	%xmm1,(%rdi)		/* 64 bytes at a time */
-	vmovups	%xmm1,0x10(%rdi)
-	vmovups	%xmm1,0x20(%rdi)
-	vmovups	%xmm1,0x30(%rdi)
-	addq	$0x40,%rdi
-	subq	$4,%rdx
-	jnz	1b
-
-2:	rep				/* set remainder by bytes */
-	stosb
-	movq	%r11,%rax
-
-	ret
-
-3:	test	$2,%rdx			/* 32-byte chunk? */
-	jz	4f
-	vmovups	%xmm1,(%rdi)		/* 32 bytes at a time */
-	vmovups	%xmm1,0x10(%rdi)
-	addq	$0x20,%rdi
-	subq	$2,%rdx
-	jz	2b
-	test	$1,%rdx			/* 16-byte chunk? */
-	jz	1b
-4:	vmovups	%xmm1,(%rdi)		/* 16 bytes at a time */
-	addq	$0x10,%rdi
-	subq	$1,%rdx
-	jz	2b
-	jmp	1b
-END(memset_avx2_128)
-
 ENTRY(memset_avx_256)
 	movq	%rsi,%rax
 	movq	%rdx,%rcx
@@ -503,7 +455,8 @@ ENTRY(memset_avx2_256)
 	andq	$0xf,%rcx
 
 	movq	%rax,%xmm1		/* copy char to all bytes in word */
-	vbroadcastb %xmm1,%ymm1
+	vpxor	%ymm0,%ymm0,%ymm0
+	vpshufb	%ymm0,%ymm1,%ymm1
 
 	test	$3,%rdx			/* Need non-64-byte chunk? */
 	jnz	3f
