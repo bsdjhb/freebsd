@@ -255,6 +255,7 @@ parse_variants(const char *arg)
 	next:
 		cp = strtok(NULL, ",");
 	}
+	free(str);
 }
 
 int
