@@ -12,9 +12,9 @@
 
 #define	SSE2		0x0001
 #define	SSE42		0x0002
-#define	AVX_128		0x0004
-#define	AVX_256		0x0008
-#define	ERMS		0x0010
+#define	AVX		0x0004
+#define	AVX2		0x0010
+#define	ERMS		0x0020
 
 static struct name_table {
 	const char *name;
@@ -22,9 +22,8 @@ static struct name_table {
 } variant_table[] = {
 	{ "sse2", SSE2 },
 	{ "sse4.2", SSE42 },
-	{ "avx_128", AVX_128 },
-	{ "avx_256", AVX_256 },
-	{ "avx", AVX_128 | AVX_256 },
+	{ "avx", AVX },
+	{ "avx2", AVX2 },
 	{ "erms", ERMS },
 };
 
@@ -32,9 +31,10 @@ static int variants;
 
 extern size_t strlen_sse2(const char *s);
 extern size_t strlen_sse42(const char *s);
-extern size_t strlen_avx_128(const char *s);
-extern size_t strlen_avx_256(const char *s);
+extern size_t strlen_avx(const char *s);
+extern size_t strlen_avx2(const char *s);
 extern size_t strlen_erms(const char *s);
+extern size_t strlen_mi(const char *s);
 
 static void
 set_variants(void)
@@ -47,8 +47,13 @@ set_variants(void)
 		variants |= SSE42;
 	if ((regs[2] & (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) ==
 	    (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) {
-		variants |= AVX_128 | AVX_256;
+		variants |= AVX;
 		do_cpuid(0, regs);
+		if (regs[0] >= 7) {
+			cpuid_count(7, 0, regs);
+			if (regs[1] & CPUID_STDEXT_AVX2)
+				variants |= AVX2;
+		}
 	}
 }
 
@@ -68,15 +73,15 @@ set_variants(void)
 } while (0)
 
 #define	TRIALS(suffix, args) do {					\
-	TRIAL("builtin", suffix, (void)strlen args);			\
+	TRIAL("builtin", suffix, (void)strlen_mi args);			\
 	if (variants & SSE2)						\
 		TRIAL("sse2", suffix, strlen_sse2 args);		\
 	if (variants & SSE42)						\
 		TRIAL("sse42", suffix, strlen_sse42 args);		\
-	if (variants & AVX_128)						\
-		TRIAL("avx_128", suffix, strlen_avx_128 args);		\
-	if (variants & AVX_256)						\
-		TRIAL("avx_256", suffix, strlen_avx_256 args);		\
+	if (variants & AVX)						\
+		TRIAL("avx", suffix, strlen_avx args);			\
+	if (variants & AVX2)						\
+		TRIAL("avx2", suffix, strlen_avx2 args);		\
 	if (variants & ERMS)						\
 		TRIAL("erms", suffix, strlen_erms args);		\
 } while (0)
@@ -162,12 +167,12 @@ run_test(size_t offset, size_t len)
 		} else if (todo & SSE42) {
 			test = strlen_sse42(data + offset);
 			variant = SSE42;
-		} else if (todo & AVX_128) {
-			test = strlen_avx_128(data + offset);
-			variant = AVX_128;
-		} else if (todo & AVX_256) {
-			test = strlen_avx_256(data + offset);
-			variant = AVX_256;
+		} else if (todo & AVX) {
+			test = strlen_avx(data + offset);
+			variant = AVX;
+		} else if (todo & AVX2) {
+			test = strlen_avx2(data + offset);
+			variant = AVX2;
 		} else if (todo & ERMS) {
 			test = strlen_erms(data + offset);
 			variant = ERMS;
@@ -178,8 +183,8 @@ run_test(size_t offset, size_t len)
 			printf("strlen%s failed: si %zu len %zu: %zu vs %zu\n",
 			    variant == SSE2 ? "sse2" :
 			    variant == SSE42 ? "sse42" :
-			    variant == AVX_128 ? "avx_128" :
-			    variant == AVX_256 ? "avx_256" :
+			    variant == AVX ? "avx" :
+			    variant == AVX2 ? "avx2" :
 			    variant == ERMS ? "erms" : "???",
 			    offset, len, test, control);
 			abort();

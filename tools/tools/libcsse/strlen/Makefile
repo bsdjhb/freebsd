@@ -1,10 +1,12 @@
 .PATH: ${.CURDIR}/../../../../lib/libc/amd64/string
+.PATH: ${.CURDIR}/../../../../lib/libc/string
 
 PROG=	strlen
 MAN=
 
-SRCS=	main.c strlen.S
+SRCS=	main.c strlen.S strlen_mi.c
 
-CFLAGS+= -fno-builtin-strlen
+strlen_mi.c: strlen.c
+	sed -e 's/strlen/strlen_mi/' ${.ALLSRC} > ${.TARGET}
 
 .include <bsd.prog.mk>

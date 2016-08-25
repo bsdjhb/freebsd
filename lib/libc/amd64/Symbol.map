@@ -91,7 +91,7 @@ FBSDprivate_1.0 {
 	memset_erms;
 	strlen_sse2;
 	strlen_sse42;
-	strlen_avx_128;
-	strlen_avx_256;
+	strlen_avx;
+	strlen_avx2;
 	strlen_erms;
 };

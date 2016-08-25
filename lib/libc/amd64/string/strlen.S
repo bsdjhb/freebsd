@@ -101,7 +101,7 @@ ENTRY(strlen_sse42)
 	ret
 END(strlen_sse42)
 
-ENTRY(strlen_avx_128)
+ENTRY(strlen_avx)
 	vpxor	%xmm0,%xmm0,%xmm0
 	test	$0xf,%rdi		/* Is string aligned? */
 	jnz	3f
@@ -134,9 +134,9 @@ ENTRY(strlen_avx_128)
 	jz	2b
 	bsf	%edx,%eax
 	ret
-END(strlen_avx_128)
+END(strlen_avx)
 
-ENTRY(strlen_avx_256)
+ENTRY(strlen_avx2)
 	vpxor	%ymm0,%ymm0,%ymm0
 	test	$0x1f,%rdi		/* Is string aligned? */
 	jnz	3f
@@ -169,7 +169,7 @@ ENTRY(strlen_avx_256)
 	jz	2b
 	bsf	%edx,%eax
 	ret
-END(strlen_avx_256)
+END(strlen_avx2)
 
 ENTRY(strlen_erms)
 	xor	%ecx,%ecx
