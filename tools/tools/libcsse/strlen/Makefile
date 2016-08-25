@@ -9,4 +9,6 @@ SRCS=	main.c strlen.S strlen_mi.c
 strlen_mi.c: strlen.c
 	sed -e 's/strlen/strlen_mi/' ${.ALLSRC} > ${.TARGET}
 
+CLEANFILES+= strlen_mi.c
+
 .include <bsd.prog.mk>
