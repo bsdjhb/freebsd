@@ -297,6 +297,7 @@ iommu_remove_device(void *dom, uint16_t rid)
 {
 
 	IOMMU_REMOVE_DEVICE(dom, rid);
+	IOMMU_ADD_DEVICE(host_domain, rid);
 }
 
 void
