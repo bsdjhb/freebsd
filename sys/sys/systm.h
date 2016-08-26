@@ -391,6 +391,8 @@ int	pause_sbt(const char *wmesg, sbintime_t sbt, sbintime_t pr,
 	    int flags);
 #define	pause(wmesg, timo)						\
 	pause_sbt((wmesg), tick_sbt * (timo), 0, C_HARDCLOCK)
+#define	pause_ms(wmesg, msecs)						\
+	pause_sbt((wmesg), SBT_1MS * (msecs), 0, C_HARDCLOCK)
 #define	tsleep(chan, pri, wmesg, timo)					\
 	_sleep((chan), NULL, (pri), (wmesg), tick_sbt * (timo),		\
 	    0, C_HARDCLOCK)
