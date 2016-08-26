@@ -6052,4 +6052,5 @@ pcie_flr(device_t dev, u_int max_delay, bool force)
 	if (pci_read_config(dev, cap + PCIER_DEVICE_STA, 2) &
 	    PCIEM_STA_TRANSACTION_PND)
 		pci_printf(dev, "Transactions pending after FLR!\n");
+	return (true);
 }
