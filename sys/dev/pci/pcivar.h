@@ -631,4 +631,12 @@ void *	vga_pci_map_bios(device_t dev, size_t *size);
 void	vga_pci_unmap_bios(device_t dev, void *bios);
 int	vga_pci_repost(device_t dev);
 
+/**
+ * Global eventhandlers invoked when PCI devices are added or removed
+ * from the system.
+ */
+typedef void (*pci_event_fn)(void *arg, device_t dev);
+EVENTHANDLER_DECLARE(pci_device_added, pci_event_fn);
+EVENTHANDLER_DECLARE(pci_device_deleted, pci_event_fn);
+
 #endif /* _PCIVAR_H_ */
