@@ -636,7 +636,7 @@ int	vga_pci_repost(device_t dev);
  * from the system.
  */
 typedef void (*pci_event_fn)(void *arg, device_t dev);
-EVENTHANDLER_DECLARE(pci_device_added, pci_event_fn);
-EVENTHANDLER_DECLARE(pci_device_deleted, pci_event_fn);
+EVENTHANDLER_DECLARE(pci_add_device, pci_event_fn);
+EVENTHANDLER_DECLARE(pci_delete_device, pci_event_fn);
 
 #endif /* _PCIVAR_H_ */
