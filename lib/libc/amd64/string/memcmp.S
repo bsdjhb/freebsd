@@ -41,4 +41,57 @@ L6:	xorl	%eax,%eax		/* Perform unsigned comparison	*/
 	ret
 END(memcmp)
 
+	.set memcmp_stock, memcmp
+	.global memcmp_stock
+	
+ENTRY(memcmp_sse2_unaligned)
+	cld
+	cmpq	$10,%rdx
+	jb	3f
+	jmp	2f
+
+1:	cmpq	$10,%rdx
+	jb	3f
+	addq	$0x10,%rsi
+	addq	$0x10,%rdi
+	subq	$0x10,%rdx
+2:	movups	(%rsi),%xmm0
+	pcmpeqb	(%rdi),%xmm0
+	pmovmskb %xmm0,%rcx
+	jecxz	1b
+	bsf	%ecx,%edx
+	leaq	(%rsi,%rdx,1),%rsi
+	leaq	(%rdi,%rdx,1),%rdi
+	jmp	4f
+3:
+	mov	%edx,%ecx
+	repe
+	cmpsb
+	jne	4f
+
+	xorl	%eax,%eax
+	ret
+
+4:	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
+	subl	%edx,%eax
+	ret
+END(memcmp_sse2_unaligned)
+
+ENTRY(memcmp_erms)
+	cld
+	movq	%rdx,%rcx
+	repe
+	cmpsb
+	jne	1f
+
+	xorl	%eax,%eax
+	ret
+
+1:	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
+	subl	%edx,%eax
+	ret
+END(memcmp_erms)
+
 	.section .note.GNU-stack,"",%progbits
