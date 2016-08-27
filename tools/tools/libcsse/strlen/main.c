@@ -189,6 +189,7 @@ run_test(size_t offset, size_t len)
 			    offset, len, test, control);
 			abort();
 		}
+		todo &= ~variant;
 	}
 }
 
