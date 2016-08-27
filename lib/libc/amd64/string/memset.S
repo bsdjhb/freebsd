@@ -154,7 +154,7 @@ ENTRY(memset_sse2_aligned)
 	jmp	1b
 END(memset_sse2_aligned)
 
-ENTRY(memset_sse2_aligned2)
+ENTRY(memset_sse2_unaligned)
 	movq	%rsi,%rax
 	movq	%rdx,%rcx
 	movq	%rdi,%r11
@@ -162,81 +162,7 @@ ENTRY(memset_sse2_aligned2)
 
 	/*
 	 * If the string is too short for an SSE move use a simple set.
-	*/
-	cmpq	$0x10,%rcx
-	jb	3f
-
-	/*
-	 * If the destination is not aligned, do a short set to align it.
 	 */
-	test	$0xf,%rdi
-	jnz	6f
-
-1:	shrq	$4,%rdx
-	andq	$0xf,%rcx
-
-	movb	%al,%ah			/* copy char to all bytes in word */
-	movq	%rax,%xmm1
-	pshuflw $0,%xmm1,%xmm1
-	pshufd	$0,%xmm1,%xmm1
-
-	test	$3,%rdx			/* Need non-64-byte chunk? */
-	jnz	4f
-2:	movaps	%xmm1,(%rdi)		/* 64 bytes at a time */
-	movaps	%xmm1,0x10(%rdi)
-	movaps	%xmm1,0x20(%rdi)
-	movaps	%xmm1,0x30(%rdi)
-	addq	$0x40,%rdi
-	subq	$4,%rdx
-	jnz	2b
-
-3:	rep				/* set remainder by bytes */
-	stosb
-	movq	%r11,%rax
-
-	ret
-
-4:	test	$2,%rdx			/* 32-byte chunk? */
-	jz	5f
-	movaps	%xmm1,(%rdi)		/* 32 bytes at a time */
-	movaps	%xmm1,0x10(%rdi)
-	addq	$0x20,%rdi
-	subq	$2,%rdx
-	jz	3b
-	test	$1,%rdx			/* 16-byte chunk? */
-	jz	2b
-5:	movaps	%xmm1,(%rdi)		/* 16 bytes at a time */
-	addq	$0x10,%rdi
-	subq	$1,%rdx
-	jz	3b
-	jmp	2b
-
-6:	mov	%rdi,%r9
-	neg	%r9
-	addq	$0x10,%r9
-	andq	$0xf,%r9
-	movq	%r9,%rcx
-	rep
-	stosb
-	sub	%r9,%rdx
-	mov	%rdx,%rcx
-
-	/*
-	 * If the remaining length is long enough, use an SSE
-	 * block-copy, otherwise use a simple movsb loop for the
-	 * remainder.
-	 */
-	cmpq	$0x10,%rdx
-	jae	1b
-	jmp	3b
-END(memset_sse2_aligned2)
-
-ENTRY(memset_sse2_unaligned)
-	movq	%rsi,%rax
-	movq	%rdx,%rcx
-	movq	%rdi,%r11
-	cld				/* set fill direction forward */
-
 	shrq	$4,%rdx
 	jz	2f
 	andq	$0xf,%rcx
