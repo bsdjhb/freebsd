@@ -46,11 +46,11 @@ END(memcmp)
 	
 ENTRY(memcmp_sse2_unaligned)
 	cld
-	cmpq	$10,%rdx
+	cmpq	$0x10,%rdx
 	jb	3f
 	jmp	2f
 
-1:	cmpq	$10,%rdx
+1:	cmpq	$0x10,%rdx
 	jb	3f
 	addq	$0x10,%rsi
 	addq	$0x10,%rdi
