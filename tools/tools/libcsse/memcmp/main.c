@@ -10,20 +10,20 @@
 #include <string.h>
 #include <unistd.h>
 
-#define	SSE2_ALIGNED	0x0001
+//#define	SSE2_ALIGNED	0x0001
 #define	SSE2_UNALIGNED	0x0002
-#define	AVX_256		0x0004
+//#define	AVX_256		0x0004
 #define	ERMS		0x0008
 
 static struct name_table {
 	const char *name;
 	int value;
 } variant_table[] = {
-	{ "sse2_aligned", SSE2_ALIGNED },
+//	{ "sse2_aligned", SSE2_ALIGNED },
 	{ "sse2_unaligned", SSE2_UNALIGNED },
-	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED },
-	{ "avx_256", AVX_256 },
-	{ "avx", AVX_256 },
+//	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED },
+//	{ "avx_256", AVX_256 },
+//	{ "avx", AVX_256 },
 	{ "erms", ERMS },
 };
 
@@ -38,13 +38,17 @@ extern int memcmp_stock(void *dst, const void *src, size_t len);
 static void
 set_variants(void)
 {
+#if 0
 	u_int regs[4];
+#endif
 
-	variants = SSE2_ALIGNED | SSE2_UNALIGNED | ERMS;
+	variants = /* SSE2_ALIGNED |*/ SSE2_UNALIGNED | ERMS;
+#if 0
 	do_cpuid(1, regs);
 	if ((regs[2] & (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) ==
 	    (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX))
 		variants |= AVX_256;
+#endif
 }
 
 #define	TRIAL(fname, suffix, TEST) do {					\
@@ -81,7 +85,7 @@ set_variants(void)
 static void
 benchmarks(void)
 {
-	char *p1, *p2;
+	unsigned char *p1, *p2;
 	uint64_t *samples;
 	size_t size;
 	int trials;
@@ -114,7 +118,7 @@ handler(int sig)
 }
 
 static void
-run_test(char *p1, char *p2, size_t len, size_t same)
+run_test(unsigned char *p1, unsigned char *p2, size_t len, size_t same)
 {
 	int i, todo, variant;
 	int control, test;
@@ -166,7 +170,7 @@ run_test(char *p1, char *p2, size_t len, size_t same)
 
 		/* Verify results are identical. */
 		if (test != control) {
-			printf("memcmp%s: failed: same %zu len %zu: %u vs %u",
+			printf("memcmp_%s: failed: same %zu len %zu: %u vs %u\n",
 #if 0
 			    variant == SSE2_ALIGNED ? "sse2_aligned" :
 #endif
@@ -185,7 +189,7 @@ run_test(char *p1, char *p2, size_t len, size_t same)
 static void
 tests(void)
 {
-	char *p1, *p2;
+	unsigned char *p1, *p2;
 	int si, di, len, cap, same;
 
 	p1 = malloc(getpagesize());

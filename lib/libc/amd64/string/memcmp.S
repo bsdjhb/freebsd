@@ -38,7 +38,6 @@ L6:	xorl	%eax,%eax		/* Perform unsigned comparison	*/
 	xorl	%edx,%edx
 	movb	-1(%rsi),%dl
 	subl    %edx,%eax
-	andl	$0xff,%eax
 	ret
 END(memcmp)
 
@@ -76,7 +75,6 @@ ENTRY(memcmp_sse2_unaligned)
 4:	movzbl	-1(%rdi),%eax
 	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
-	andl	$0xff,%eax
 	ret
 END(memcmp_sse2_unaligned)
 
@@ -93,7 +91,6 @@ ENTRY(memcmp_erms)
 1:	movzbl	-1(%rdi),%eax
 	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
-	andl	$0xff,%eax
 	ret
 END(memcmp_erms)
 
