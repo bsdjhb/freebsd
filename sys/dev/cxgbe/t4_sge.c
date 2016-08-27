@@ -4114,6 +4114,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			csum_type = TX_CSUM_TCPIP6;
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP6_UDP)
 			csum_type = TX_CSUM_UDPIP6;
+#if defined(INET)
 		else if (m0->m_pkthdr.csum_flags & CSUM_IP) {
 			/*
 			 * XXX: The firmware appears to stomp on the
@@ -4133,6 +4134,7 @@ write_txpkt_vm_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_vm_wr *wr,
 			    m0->m_pkthdr.l3hlen, m0->m_pkthdr.l2hlen);
 			m0->m_pkthdr.csum_flags &= ~CSUM_IP;
 		}
+#endif
 
 		cpl = (void *)(wr + 1);
 	}
