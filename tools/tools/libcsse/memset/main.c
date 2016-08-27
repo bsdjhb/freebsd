@@ -18,14 +18,16 @@
 #define	AVX_256		0x0020
 #define	AVX2_256	0x0040
 #define	ERMS		0x0080
+#define	SSE2_ALIGNED2	0x0100
 
 static struct name_table {
 	const char *name;
 	int value;
 } variant_table[] = {
 	{ "sse2_aligned", SSE2_ALIGNED },
+	{ "sse2_aligned2", SSE2_ALIGNED2 },
 	{ "sse2_unaligned", SSE2_UNALIGNED },
-	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED },
+	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED | SSE2_ALIGNED2 },
 	{ "ssse3_aligned", SSSE3_ALIGNED },
 	{ "ssse3_unaligned", SSSE3_UNALIGNED },
 	{ "ssse3", SSSE3_ALIGNED | SSSE3_UNALIGNED },
@@ -40,6 +42,7 @@ static struct name_table {
 static int variants;
 
 extern void *memset_sse2_aligned(void *dst, int c, size_t length);
+extern void *memset_sse2_aligned2(void *dst, int c, size_t length);
 extern void *memset_sse2_unaligned(void *dst, int c, size_t length);
 extern void *memset_ssse3_aligned(void *dst, int c, size_t length);
 extern void *memset_ssse3_unaligned(void *dst, int c, size_t length);
@@ -54,6 +57,7 @@ set_variants(void)
 	u_int regs[4];
 
 	variants = SSE2_ALIGNED | SSE2_UNALIGNED | ERMS;
+	variants |= SSE2_ALIGNED2;
 	do_cpuid(1, regs);
 	if (regs[2] & CPUID2_SSSE3)
 		variants |= SSSE3_ALIGNED | SSSE3_UNALIGNED;
@@ -89,6 +93,9 @@ set_variants(void)
 	if (variants & SSE2_ALIGNED)					\
 		TRIAL("sse2_aligned", suffix,				\
 		    memset_sse2_aligned args);				\
+	if (variants & SSE2_ALIGNED2)					\
+		TRIAL("sse2_aligned2", suffix,				\
+		    memset_sse2_aligned2 args);				\
 	if (variants & SSE2_UNALIGNED)					\
 		TRIAL("sse2_unaligned", suffix,				\
 		    memset_sse2_unaligned args);			\
@@ -166,6 +173,9 @@ run_test(void *dst, size_t len)
 		if (todo & SSE2_ALIGNED) {
 			memset_sse2_aligned(dst, 0xa5, len);
 			variant = SSE2_ALIGNED;
+		} else if (todo & SSE2_ALIGNED2) {
+			memset_sse2_aligned2(dst, 0xa5, len);
+			variant = SSE2_ALIGNED2;
 		} else if (todo & SSE2_UNALIGNED) {
 			memset_sse2_unaligned(dst, 0xa5, len);
 			variant = SSE2_UNALIGNED;
@@ -195,6 +205,7 @@ run_test(void *dst, size_t len)
 		/* Verify results are identical. */
 		if (memcmp(control, test, getpagesize()) != 0) {
 			printf("%s: ", variant == SSE2_ALIGNED ? "sse2_aligned" :
+			    variant == SSE2_ALIGNED2 ? "sse2_aligned2" :
 			    variant == SSE2_UNALIGNED ? "sse2_unaligned" :
 			    variant == SSSE3_ALIGNED ? "ssse3_aligned" :
 			    variant == SSSE3_UNALIGNED ? "ssse3_unaligned" :
