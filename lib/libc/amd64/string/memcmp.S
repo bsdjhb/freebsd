@@ -47,8 +47,8 @@ END(memcmp)
 ENTRY(memcmp_sse2_unaligned)
 	cld
 1:	cmpq	$0x10,%rdx
-	jb	4f
-2:	subq	$0x10,%rdx
+	jb	3f
+	subq	$0x10,%rdx
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	pcmpeqb	(%rdi),%xmm0
@@ -60,15 +60,15 @@ ENTRY(memcmp_sse2_unaligned)
 	leaq	-0xf(%rsi,%rdx),%rsi
 	leaq	-0xf(%rdi,%rdx),%rdi
 
-3:	movzbl	-1(%rdi),%eax
+2:	movzbl	-1(%rdi),%eax
 	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
 	ret
-4:
-	mov	%edx,%ecx
+
+3:	mov	%edx,%ecx
 	repe
 	cmpsb
-	jne	3b
+	jne	2b
 
 	xorl	%eax,%eax
 	ret
