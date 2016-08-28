@@ -50,10 +50,10 @@ ENTRY(memcmp_sse2_unaligned)
 	jb	4f
 	jmp	2f
 
-1:	cmpq	$0x10,%rdx
-	jb	4f
-	addq	$0x10,%rsi
+1:	addq	$0x10,%rsi
 	addq	$0x10,%rdi
+	cmpq	$0x10,%rdx
+	jb	4f
 2:	subq	$0x10,%rdx
 	movups	(%rsi),%xmm0
 	pcmpeqb	(%rdi),%xmm0
