@@ -54,14 +54,15 @@ ENTRY(memcmp_sse2_unaligned)
 	jb	3f
 	addq	$0x10,%rsi
 	addq	$0x10,%rdi
-	subq	$0x10,%rdx
-2:	movups	(%rsi),%xmm0
+2:	subq	$0x10,%rdx
+	movups	(%rsi),%xmm0
 	pcmpeqb	(%rdi),%xmm0
-	pmovmskb %xmm0,%rcx
-	jecxz	1b
-	bsf	%ecx,%edx
-	leaq	(%rsi,%rdx,1),%rsi
-	leaq	(%rdi,%rdx,1),%rdi
+	pmovmskb %xmm0,%rax
+	xor	$0xffff,%eax
+	jz	1b
+	bsf	%eax,%edx
+	leaq	1(%rsi,%rdx),%rsi
+	leaq	1(%rdi,%rdx),%rdi
 	jmp	4f
 3:
 	mov	%edx,%ecx
