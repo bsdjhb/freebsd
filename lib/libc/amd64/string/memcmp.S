@@ -43,7 +43,7 @@ END(memcmp)
 
 	.set memcmp_stock, memcmp
 	.global memcmp_stock
-	
+
 ENTRY(memcmp_sse2_unaligned)
 	cld
 1:	subq	$0x10,%rdx
