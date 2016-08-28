@@ -50,8 +50,9 @@ ENTRY(memcmp_sse2_unaligned)
 	js	3f
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
-	pcmpeqb	(%rdi),%xmm0
+	movups	(%rdi),%xmm1
 	addq	$0x10,%rdi
+	pcmpeqb	%xmm1,%xmm0
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	1b
