@@ -98,14 +98,18 @@ benchmarks(void)
 	p2 = calloc(size, 1);
 
 	TRIALS("_page", (p2, p1, size));
-#if 0
-	TRIALS("_overlap", (p1 + 16, p1, size - 16));
 	TRIALS("_short", (p2, p1, 15));
 	TRIALS("_short2", (p2, p1, 32));
 	TRIALS("_short3", (p2, p1, 48));
 	TRIALS("_offset", (p2 + 4, p1, 128));
 	TRIALS("_offset2", (p2 + 7, p1 + 7, 97));
-#endif
+	p1[size - 6] = 1;
+	TRIALS("_dpage", (p2, p1, size));
+	TRIALS("_dshort", (p2 + size - 16, p1 + size - 16, 15));
+	TRIALS("_dshort2", (p2 + size - 32, p2 + size - 32, 32));
+	TRIALS("_dshort3", (p2 + size - 48, p2 + size - 48, 48));
+	TRIALS("_doffset", (p2 + size - 132, p2 + size - 128, 128));
+	TRIALS("_doffset2", (p2 + size - 131, p2 + size - 131, 131));
 }
 
 static sig_atomic_t info;
