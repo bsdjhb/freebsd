@@ -5941,7 +5941,6 @@ int
 pcie_max_completion_timeout(device_t dev)
 {
 	struct pci_devinfo *dinfo = device_get_ivars(dev);
-	uint16_t 
 	int cap;
 
 	cap = dinfo->cfg.pcie.pcie_location;
@@ -5953,7 +5952,7 @@ pcie_max_completion_timeout(device_t dev)
 	 * 50 microseconds to 50 milliseconds.  Functions that do not
 	 * support programmable timeouts also use this range.
 	 */
-	if (dinfo->cfg.pcie_flags & PCIEM_FLAGS_VERSION < 2 ||
+	if ((dinfo->cfg.pcie.pcie_flags & PCIEM_FLAGS_VERSION) < 2 ||
 	    (pci_read_config(dev, cap + PCIER_DEVICE_CAP2, 4) &
 	    PCIEM_CAP2_COMP_TIMO_RANGES) == 0)
 		return (50 * 000);
@@ -6019,13 +6018,13 @@ pcie_flr(device_t dev, u_int max_delay, bool force)
 	 * which will re-enable busmastering.
 	 */
 	cmd = pci_read_config(dev, PCIR_COMMAND, 2);
-	pci_write_config(dev, PCIR_COMMAND, cmd & ~(PCIM_CMD_BUSMASTEREN));
+	pci_write_config(dev, PCIR_COMMAND, cmd & ~(PCIM_CMD_BUSMASTEREN), 2);
 	if (!pcie_wait_for_pending_transactions(dev, max_delay)) {
 		if (!force) {
 			pci_write_config(dev, PCIR_COMMAND, cmd, 2);
 			return (false);
 		}
-		pci_printf(dev,
+		pci_printf(&dinfo->cfg,
 		    "Resetting with transactions pending after %d ms\n",
 		    max_delay);
 
@@ -6051,6 +6050,6 @@ pcie_flr(device_t dev, u_int max_delay, bool force)
 
 	if (pci_read_config(dev, cap + PCIER_DEVICE_STA, 2) &
 	    PCIEM_STA_TRANSACTION_PND)
-		pci_printf(dev, "Transactions pending after FLR!\n");
+		pci_printf(&dinfo->cfg, "Transactions pending after FLR!\n");
 	return (true);
 }
