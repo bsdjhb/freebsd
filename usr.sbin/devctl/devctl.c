@@ -71,7 +71,7 @@ DEVCTL_TABLE(top, set);
 static void
 usage(void)
 {
-	fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+	fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
 	    "usage: devctl attach device",
 	    "       devctl detach [-f] device",
 	    "       devctl disable [-f] device",

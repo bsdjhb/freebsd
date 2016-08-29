@@ -128,7 +128,7 @@ devctl_clear_driver(const char *device, bool force)
 {
 
 	return (devctl_simple_request(DEV_CLEAR_DRIVER, device, force ?
-	    DEVF_CLEAR_DRIVER_DETACH));
+	    DEVF_CLEAR_DRIVER_DETACH : 0));
 }
 
 int
