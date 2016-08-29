@@ -289,7 +289,7 @@ clear_driver(int ac, char **av)
 	ac -= optind;
 	av += optind;
 
-	if (ac != 2)
+	if (ac != 1)
 		clear_driver_usage();
 	if (devctl_clear_driver(av[0], force) < 0)
 		err(1, "Failed to clear %s driver", av[0]);
