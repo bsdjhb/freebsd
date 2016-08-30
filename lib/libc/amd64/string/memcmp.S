@@ -196,7 +196,7 @@ END(memcmp_sse42)
 
 ENTRY(memcmp_sse42_2)
 1:	subq	$0x10,%rdx
-	js	3f
+	js	2f
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	movups	(%rdi),%xmm1
@@ -211,16 +211,16 @@ ENTRY(memcmp_sse42_2)
 	subl	%edx,%eax
 	ret
 
-3:	add	$0x10,%edx
-	jnz	5f
-4:	xor	%eax,%eax
+2:	add	$0x10,%edx
+	jnz	4f
+3:	xor	%eax,%eax
 	ret
-5:	mov	%edx,%eax
+4:	mov	%edx,%eax
 	movups	(%rsi),%xmm0
 	mov	%eax,%edx
 	movups	(%rdi),%xmm1
 	pcmpestri $18,%xmm0,%xmm1
-	jnc	4b
+	jnc	3b
 	movzbl	(%rdi,%rcx),%eax
 	movzbl	(%rsi,%rcx),%edx
 	subl	%edx,%eax
