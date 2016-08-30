@@ -97,5 +97,7 @@ FBSDprivate_1.0 {
 	memcmp_sse2_aligned;
 	memcmp_sse2_unaligned;
 	memcmp_sse42;
+	memcmp_sse42_2;
+	memcmp_avx2;
 	memcmp_erms;
 };

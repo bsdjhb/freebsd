@@ -14,7 +14,7 @@
 #define	SSE2_UNALIGNED	0x0002
 #define	SSE42		0x0004
 #define	SSE42_2		0x0008
-//#define	AVX_256		0x0004
+#define	AVX2		0x0010
 #define	ERMS		0x0020
 
 static struct name_table {
@@ -25,8 +25,7 @@ static struct name_table {
 	{ "sse2_unaligned", SSE2_UNALIGNED },
 	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED },
 	{ "sse42", SSE42 | SSE42_2 },
-//	{ "avx_256", AVX_256 },
-//	{ "avx", AVX_256 },
+	{ "avx2", AVX2 },
 	{ "erms", ERMS },
 };
 
@@ -36,7 +35,7 @@ extern int memcmp_sse2_aligned(void *dst, const void *src, size_t len);
 extern int memcmp_sse2_unaligned(void *dst, const void *src, size_t len);
 extern int memcmp_sse42(void *dst, const void *src, size_t len);
 extern int memcmp_sse42_2(void *dst, const void *src, size_t len);
-//extern int memcmp_avx_256(void *dst, const void *src, size_t len);
+extern int memcmp_avx2(void *dst, const void *src, size_t len);
 extern int memcmp_erms(void *dst, const void *src, size_t len);
 extern int memcmp_stock(void *dst, const void *src, size_t len);
 
@@ -49,11 +48,15 @@ set_variants(void)
 	do_cpuid(1, regs);
 	if (regs[2] & CPUID2_SSE42)
 		variants |= SSE42 | SSE42_2;
-#if 0
 	if ((regs[2] & (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) ==
-	    (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX))
-		variants |= AVX_256;
-#endif
+	    (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) {
+		do_cpuid(0, regs);
+		if (regs[0] >= 7) {
+			cpuid_count(7, 0, regs);
+			if (regs[1] & CPUID_STDEXT_AVX2)
+				variants |= AVX2;
+		}
+	}
 }
 
 #define	TRIAL(fname, suffix, TEST) do {					\
@@ -71,10 +74,6 @@ set_variants(void)
 	fclose(fp);							\
 } while (0)
 
-#define	TEMP \
-	if (variants & AVX_256)						\
-		TRIAL("avx_256", suffix, memcmp_avx_256 args);		\
-
 #define	TRIALS(suffix, args) do {					\
 	TRIAL("builtin", suffix, memcmp_stock args);			\
 	if (variants & SSE2_ALIGNED)					\
@@ -87,6 +86,8 @@ set_variants(void)
 		TRIAL("sse42", suffix, memcmp_sse42 args);		\
 	if (variants & SSE42_2)						\
 		TRIAL("sse42_2", suffix, memcmp_sse42_2 args);		\
+	if (variants & AVX2)						\
+		TRIAL("avx2", suffix, memcmp_avx2 args);		\
 	if (variants & ERMS)						\
 		TRIAL("erms", suffix, memcmp_erms args);		\
 } while (0)
@@ -173,11 +174,9 @@ run_test(unsigned char *p1, unsigned char *p2, size_t len, size_t same)
 		} else if (todo & SSE42_2) {
 			test = memcmp_sse42_2(p1, p2, len);
 			variant = SSE42_2;
-#if 0
-		} else if (todo & AVX_256) {
-			test = memcmp_avx_256(p1, p2, len);
-			variant = AVX_256;
-#endif
+		} else if (todo & AVX2) {
+			test = memcmp_avx2(p1, p2, len);
+			variant = AVX2;
 		} else if (todo & ERMS) {
 			test = memcmp_erms(p1, p2, len);
 			variant = ERMS;
@@ -190,9 +189,7 @@ run_test(unsigned char *p1, unsigned char *p2, size_t len, size_t same)
 			    variant == SSE2_UNALIGNED ? "sse2_unaligned" :
 			    variant == SSE42 ? "sse42" :
 			    variant == SSE42_2 ? "sse42_2" :
-#if 0
-			    variant == AVX_256 ? "avx_256" :
-#endif
+			    variant == AVX2 ? "avx2" :
 			    variant == ERMS ? "erms" : "???",
 			    same, len, test, control);
 			abort();

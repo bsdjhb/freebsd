@@ -227,6 +227,39 @@ ENTRY(memcmp_sse42_2)
 	ret
 END(memcmp_sse42_2)
 
+ENTRY(memcmp_avx2)
+1:	subq	$0x20,%rdx
+	js	2f
+	vmovups	(%rsi),%ymm0
+	addq	$0x20,%rsi
+	vmovups	(%rdi),%ymm1
+	addq	$0x20,%rdi
+	vpcmpeqb %ymm0,%ymm1,%ymm0
+	vpmovmskb %ymm0,%rax
+	not	%eax
+	jz	1b
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
+
+2:	add	$0x20,%edx
+	jnz	4f
+3:	xor	%eax,%eax
+	ret
+4:	mov	%edx,%eax
+	vmovups	(%rsi),%ymm0
+	mov	%eax,%edx
+	vmovups	(%rdi),%ymm1
+	vpcmpestri $18,%xmm0,%xmm1
+	jnc	3b
+	movzbl	(%rdi,%rcx),%eax
+	movzbl	(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
+END(memcmp_avx2)
+
 ENTRY(memcmp_erms)
 	cld
 	movq	%rdx,%rcx
