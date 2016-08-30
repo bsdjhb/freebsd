@@ -159,6 +159,41 @@ ENTRY(memcmp_sse2_unaligned)
 	ret
 END(memcmp_sse2_unaligned)
 
+ENTRY(memcmp_sse42)
+	mov	$0x10,%eax
+	mov	%edx,%r8d
+	mov	%eax,%edx
+1:	subq	$0x10,%r8
+	js	3f
+	movups	(%rsi),%xmm0
+	addq	$0x10,%rsi
+	movups	(%rdi),%xmm1
+	addq	$0x10,%rdi
+	pcmpestri $18,%xmm0,%xmm1
+	jnc	1b
+	leaq	-0x10(%rsi,%rcx),%rsi
+	leaq	-0x10(%rdi,%rcx),%rdi
+
+2:	movzbl	(%rdi),%eax
+	movzbl	(%rsi),%edx
+	subl	%edx,%eax
+	ret
+
+3:	addq	$0x10,%r8
+	jnz	5f
+4:	xor	%eax,%eax
+	ret
+5:	mov	%r8d,%eax
+	movups	(%rsi),%xmm0
+	mov	%eax,%edx
+	movups	(%rdi),%xmm1
+	pcmpestri $18,%xmm0,%xmm1
+	jnc	4b
+	addq	%rcx,%rsi
+	addq	%rcx,%rdi
+	jmp	2b
+END(memcmp_sse42)
+
 ENTRY(memcmp_erms)
 	cld
 	movq	%rdx,%rcx

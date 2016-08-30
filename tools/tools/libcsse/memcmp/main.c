@@ -12,6 +12,7 @@
 
 #define	SSE2_ALIGNED	0x0001
 #define	SSE2_UNALIGNED	0x0002
+#define	SSE42		0x0004
 //#define	AVX_256		0x0004
 #define	ERMS		0x0008
 
@@ -22,6 +23,7 @@ static struct name_table {
 	{ "sse2_aligned", SSE2_ALIGNED },
 	{ "sse2_unaligned", SSE2_UNALIGNED },
 	{ "sse2", SSE2_ALIGNED | SSE2_UNALIGNED },
+	{ "sse42", SSE42 },
 //	{ "avx_256", AVX_256 },
 //	{ "avx", AVX_256 },
 	{ "erms", ERMS },
@@ -31,6 +33,7 @@ static int variants;
 
 extern int memcmp_sse2_aligned(void *dst, const void *src, size_t len);
 extern int memcmp_sse2_unaligned(void *dst, const void *src, size_t len);
+extern int memcmp_sse42(void *dst, const void *src, size_t len);
 //extern int memcmp_avx_256(void *dst, const void *src, size_t len);
 extern int memcmp_erms(void *dst, const void *src, size_t len);
 extern int memcmp_stock(void *dst, const void *src, size_t len);
@@ -38,13 +41,13 @@ extern int memcmp_stock(void *dst, const void *src, size_t len);
 static void
 set_variants(void)
 {
-#if 0
 	u_int regs[4];
-#endif
 
 	variants = SSE2_ALIGNED | SSE2_UNALIGNED | ERMS;
-#if 0
 	do_cpuid(1, regs);
+	if (regs[2] & CPUID2_SSE42)
+		variants |= SSE42;
+#if 0
 	if ((regs[2] & (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX)) ==
 	    (CPUID2_XSAVE | CPUID2_OSXSAVE | CPUID2_AVX))
 		variants |= AVX_256;
@@ -78,6 +81,8 @@ set_variants(void)
 	if (variants & SSE2_UNALIGNED)					\
 		TRIAL("sse2_unaligned", suffix,				\
 		    memcmp_sse2_unaligned args);			\
+	if (variants & SSE42)						\
+		TRIAL("sse42", suffix, memcmp_sse42 args);		\
 	if (variants & ERMS)						\
 		TRIAL("erms", suffix, memcmp_erms args);		\
 } while (0)
@@ -158,6 +163,9 @@ run_test(unsigned char *p1, unsigned char *p2, size_t len, size_t same)
 		} else if (todo & SSE2_UNALIGNED) {
 			test = memcmp_sse2_unaligned(p1, p2, len);
 			variant = SSE2_UNALIGNED;
+		} else if (todo & SSE42) {
+			test = memcmp_sse42(p1, p2, len);
+			variant = SSE42;
 #if 0
 		} else if (todo & AVX_256) {
 			test = memcmp_avx_256(p1, p2, len);
@@ -173,6 +181,7 @@ run_test(unsigned char *p1, unsigned char *p2, size_t len, size_t same)
 			printf("memcmp_%s: failed: same %zu len %zu: %u vs %u\n",
 			    variant == SSE2_ALIGNED ? "sse2_aligned" :
 			    variant == SSE2_UNALIGNED ? "sse2_unaligned" :
+			    variant == SSE42 ? "sse42" :
 #if 0
 			    variant == AVX_256 ? "avx_256" :
 #endif
