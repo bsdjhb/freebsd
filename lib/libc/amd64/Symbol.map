@@ -94,6 +94,7 @@ FBSDprivate_1.0 {
 	strlen_avx;
 	strlen_avx2;
 	strlen_erms;
+	memcmp_sse2_aligned;
 	memcmp_sse2_unaligned;
 	memcmp_erms;
 };

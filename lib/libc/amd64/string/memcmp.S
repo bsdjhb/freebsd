@@ -44,6 +44,91 @@ END(memcmp)
 	.set memcmp_stock, memcmp
 	.global memcmp_stock
 
+ENTRY(memcmp_sse2_aligned)
+	cld
+	test	$0xf,%rdi		/* b1 aligned? */
+	jz	4f
+
+	test	$0xf,%rsi		/* b2 aligned? */
+	jz	6f
+
+	/* b1 and b2 are not aligned */
+1:	subq	$0x10,%rdx
+	js	3f
+	movups	(%rsi),%xmm0
+	addq	$0x10,%rsi
+	movups	(%rdi),%xmm1
+	addq	$0x10,%rdi
+	pcmpeqb	%xmm1,%xmm0
+	pmovmskb %xmm0,%rax
+	xor	$0xffff,%eax
+	jz	1b
+	bsf	%eax,%edx
+	leaq	-0xf(%rsi,%rdx),%rsi
+	leaq	-0xf(%rdi,%rdx),%rdi
+
+2:	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
+	subl	%edx,%eax
+	ret
+
+3:	lea	0x10(%edx),%ecx
+	repe
+	cmpsb
+	jne	2b
+
+	xorl	%eax,%eax
+	ret
+
+4:	test	$0xf,%rsi		/* b2 aligned? */
+	jz	7f
+
+	/* b1 (%rdi) aligned, b2 (%rsi) is not aligned */
+5:	subq	$0x10,%rdx
+	js	3b
+	movups	(%rsi),%xmm0
+	addq	$0x10,%rsi
+	pcmpeqb	(%rdi),%xmm0
+	addq	$0x10,%rdi
+	pmovmskb %xmm0,%rax
+	xor	$0xffff,%eax
+	jz	5b
+	bsf	%eax,%edx
+	leaq	-0xf(%rsi,%rdx),%rsi
+	leaq	-0xf(%rdi,%rdx),%rdi
+	jmp	2b
+
+	/* b1 (%rdi) is not aligned, b2 (%rsi) aligned */
+6:	subq	$0x10,%rdx
+	js	3b
+	movups	(%rdi),%xmm0
+	addq	$0x10,%rdi
+	pcmpeqb	(%rsi),%xmm0
+	addq	$0x10,%rsi
+	pmovmskb %xmm0,%rax
+	xor	$0xffff,%eax
+	jz	6b
+	bsf	%eax,%edx
+	leaq	-0xf(%rsi,%rdx),%rsi
+	leaq	-0xf(%rdi,%rdx),%rdi
+	jmp	2b
+
+	/* b1 and b2 are aligned */
+7:	subq	$0x10,%rdx
+	js	3b
+	movaps	(%rsi),%xmm0
+	addq	$0x10,%rsi
+	pcmpeqb	(%rdi),%xmm0
+	addq	$0x10,%rdi
+	pmovmskb %xmm0,%rax
+	xor	$0xffff,%eax
+	jz	7b
+	bsf	%eax,%edx
+	leaq	-0xf(%rsi,%rdx),%rsi
+	leaq	-0xf(%rdi,%rdx),%rdi
+	jmp	2b
+END(memcmp_sse2_aligned)
+
 ENTRY(memcmp_sse2_unaligned)
 	cld
 1:	subq	$0x10,%rdx
@@ -72,7 +157,6 @@ ENTRY(memcmp_sse2_unaligned)
 
 	xorl	%eax,%eax
 	ret
-
 END(memcmp_sse2_unaligned)
 
 ENTRY(memcmp_erms)
