@@ -205,12 +205,9 @@ ENTRY(memcmp_sse42_2)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	1b
-	bsf	%eax,%edx
-	leaq	-0x10(%rsi,%rdx),%rsi
-	leaq	-0x10(%rdi,%rdx),%rdi
-
-2:	movzbl	(%rdi),%eax
-	movzbl	(%rsi),%edx
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
 	subl	%edx,%eax
 	ret
 
@@ -224,9 +221,10 @@ ENTRY(memcmp_sse42_2)
 	movups	(%rdi),%xmm1
 	pcmpestri $18,%xmm0,%xmm1
 	jnc	4b
-	addq	%rcx,%rsi
-	addq	%rcx,%rdi
-	jmp	2b
+	movzbl	(%rdi,%rcx),%eax
+	movzbl	(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 END(memcmp_sse42_2)
 
 ENTRY(memcmp_erms)
