@@ -164,35 +164,11 @@ static int
 get_params__pre_init(struct adapter *sc)
 {
 	int rc;
-	uint32_t param[1], val[1];
+	uint32_t param[3], val[3];
 
-	t4_get_version_info(sc);
-
-	snprintf(sc->fw_version, sizeof(sc->fw_version), "%u.%u.%u.%u",
-	    G_FW_HDR_FW_VER_MAJOR(sc->params.fw_vers),
-	    G_FW_HDR_FW_VER_MINOR(sc->params.fw_vers),
-	    G_FW_HDR_FW_VER_MICRO(sc->params.fw_vers),
-	    G_FW_HDR_FW_VER_BUILD(sc->params.fw_vers));
-
-	snprintf(sc->bs_version, sizeof(sc->bs_version), "%u.%u.%u.%u",
-	    G_FW_HDR_FW_VER_MAJOR(sc->params.bs_vers),
-	    G_FW_HDR_FW_VER_MINOR(sc->params.bs_vers),
-	    G_FW_HDR_FW_VER_MICRO(sc->params.bs_vers),
-	    G_FW_HDR_FW_VER_BUILD(sc->params.bs_vers));
-
-	snprintf(sc->tp_version, sizeof(sc->tp_version), "%u.%u.%u.%u",
-	    G_FW_HDR_FW_VER_MAJOR(sc->params.tp_vers),
-	    G_FW_HDR_FW_VER_MINOR(sc->params.tp_vers),
-	    G_FW_HDR_FW_VER_MICRO(sc->params.tp_vers),
-	    G_FW_HDR_FW_VER_BUILD(sc->params.tp_vers));
-
-	snprintf(sc->er_version, sizeof(sc->er_version), "%u.%u.%u.%u",
-	    G_FW_HDR_FW_VER_MAJOR(sc->params.er_vers),
-	    G_FW_HDR_FW_VER_MINOR(sc->params.er_vers),
-	    G_FW_HDR_FW_VER_MICRO(sc->params.er_vers),
-	    G_FW_HDR_FW_VER_BUILD(sc->params.er_vers));
-
-	param[0] = FW_PARAM_DEV(CCLK);
+	param[0] = FW_PARAM_DEV(FWREV);
+	param[1] = FW_PARAM_DEV(TPREV);
+	param[2] = FW_PARAM_DEV(CCLK);
 	rc = -t4vf_query_params(sc, nitems(param), param, val);
 	if (rc != 0) {
 		device_printf(sc->dev,
@@ -200,7 +176,22 @@ get_params__pre_init(struct adapter *sc)
 		return (rc);
 	}
 
-	sc->params.vpd.cclk = val[0];
+	sc->params.fw_vers = val[0];
+	sc->params.tp_vers = val[1];
+	sc->params.vpd.cclk = val[2];
+
+	snprintf(sc->fw_version, sizeof(sc->fw_version), "%u.%u.%u.%u",
+	    G_FW_HDR_FW_VER_MAJOR(sc->params.fw_vers),
+	    G_FW_HDR_FW_VER_MINOR(sc->params.fw_vers),
+	    G_FW_HDR_FW_VER_MICRO(sc->params.fw_vers),
+	    G_FW_HDR_FW_VER_BUILD(sc->params.fw_vers));
+
+	snprintf(sc->tp_version, sizeof(sc->tp_version), "%u.%u.%u.%u",
+	    G_FW_HDR_FW_VER_MAJOR(sc->params.tp_vers),
+	    G_FW_HDR_FW_VER_MINOR(sc->params.tp_vers),
+	    G_FW_HDR_FW_VER_MICRO(sc->params.tp_vers),
+	    G_FW_HDR_FW_VER_BUILD(sc->params.tp_vers));
+
 	return (0);
 }
 

@@ -4644,6 +4644,12 @@ t4_sysctls(struct adapter *sc)
 	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "debug_flags", CTLFLAG_RW,
 	    &sc->debug_flags, 0, "flags to enable runtime debugging");
 
+	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "tp_version",
+	    CTLFLAG_RD, sc->tp_version, 0, "TP microcode version");
+
+	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "firmware_version",
+	    CTLFLAG_RD, sc->fw_version, 0, "firmware version");
+
 	if (sc->flags & IS_VF)
 		return;
 
@@ -4662,14 +4668,8 @@ t4_sysctls(struct adapter *sc)
 	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "na",
 	    CTLFLAG_RD, sc->params.vpd.na, 0, "network address");
 
-	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "tp_version",
-	    CTLFLAG_RD, sc->tp_version, 0, "TP microcode version");
-
 	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "er_version", CTLFLAG_RD,
 	    sc->er_version, 0, "expansion ROM version");
-
-	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "firmware_version",
-	    CTLFLAG_RD, sc->fw_version, 0, "firmware version");
 
 	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "bs_version", CTLFLAG_RD,
 	    sc->bs_version, 0, "bootstrap firmware version");
