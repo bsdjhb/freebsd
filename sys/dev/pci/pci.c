@@ -5938,7 +5938,7 @@ pcie_wait_for_pending_transactions(device_t dev, u_int max_delay)
  * For non-PCI-express functions this returns 0.
  */
 int
-pcie_max_completion_timeout(device_t dev)
+pcie_get_max_completion_timeout(device_t dev)
 {
 	struct pci_devinfo *dinfo = device_get_ivars(dev);
 	int cap;
@@ -6034,7 +6034,7 @@ pcie_flr(device_t dev, u_int max_delay, bool force)
 		 * during the FLR delay.  Enforce a minimum delay of
 		 * at least 10ms.
 		 */
-		compl_delay = pcie_max_completion_timeout(dev) / 1000;
+		compl_delay = pcie_get_max_completion_timeout(dev) / 1000;
 		if (compl_delay < 10)
 			compl_delay = 10;
 	} else

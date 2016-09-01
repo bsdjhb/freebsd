@@ -364,7 +364,7 @@ ppt_assign_device(struct vm *vm, int bus, int slot, int func)
 
 		pci_save_state(ppt->dev);
 		pcie_flr(ppt->dev,
-		    max(pcie_max_completion_timeout(ppt->dev) / 1000, 10),
+		    max(pcie_get_max_completion_timeout(ppt->dev) / 1000, 10),
 		    true);
 		pci_restore_state(ppt->dev);
 		ppt->vm = vm;
@@ -390,7 +390,7 @@ ppt_unassign_device(struct vm *vm, int bus, int slot, int func)
 
 		pci_save_state(ppt->dev);
 		pcie_flr(ppt->dev,
-		    max(pcie_max_completion_timeout(ppt->dev) / 1000, 10),
+		    max(pcie_get_max_completion_timeout(ppt->dev) / 1000, 10),
 		    true);
 		pci_restore_state(ppt->dev);
 		ppt_unmap_mmio(vm, ppt);
