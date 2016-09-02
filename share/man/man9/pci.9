@@ -451,7 +451,7 @@ If the
 device is not a PCI-express device,
 .Fn pcie_get_max_completion_timeout
 returns zero.
-If completion timeouts are disabled for
+When completion timeouts are disabled for
 .Fa dev ,
 this function returns the maxmimum timeout that would be used if timeouts
 were enabled.
@@ -479,12 +479,12 @@ is set to zero,
 performs a single check;
 otherwise,
 this function may sleep while polling the transactions pending flag.
-If
-.Fa dev
-is not a PCI-express device,
 .Nm pcie_wait_for_pending_transactions
 returns
-.Dv true .
+.Dv true
+if
+.Fa dev
+is not a PCI-express device.
 .Ss Device Configuration
 The
 .Fn pci_enable_busmaster
@@ -721,15 +721,14 @@ The
 .Fn pcie_flr
 function requests a Function Level Reset
 .Pq FLR
-of the
-.Fa dev
-device .
+of
+.Fa dev .
 If
 .Fa dev
 is not a PCI-express device or does not support Function Level Resets via
 the PCI-express device control register,
-this function returns
-.Dv false .
+.Dv false
+is returned.
 Pending transactions are drained by disabling busmastering and calling
 .Fn pcie_wait_for_pending_transactions
 before resetting the device.
@@ -744,8 +743,9 @@ fails with a timeout and
 .Fa force
 is
 .Dv false ,
-this function re-enables busmastering and returns
-.Dv false .
+busmastering is re-enabled and
+.Dv false
+is returned.
 If
 .Fn pcie_wait_for_pending_transactions
 fails with a timeout and
