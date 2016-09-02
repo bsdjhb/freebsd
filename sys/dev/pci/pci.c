@@ -5955,7 +5955,7 @@ pcie_get_max_completion_timeout(device_t dev)
 	if ((dinfo->cfg.pcie.pcie_flags & PCIEM_FLAGS_VERSION) < 2 ||
 	    (pci_read_config(dev, cap + PCIER_DEVICE_CAP2, 4) &
 	    PCIEM_CAP2_COMP_TIMO_RANGES) == 0)
-		return (50 * 000);
+		return (50 * 1000);
 
 	switch (pci_read_config(dev, cap + PCIER_DEVICE_CTL2, 2) &
 	    PCIEM_CTL2_COMP_TIMO_VAL) {
