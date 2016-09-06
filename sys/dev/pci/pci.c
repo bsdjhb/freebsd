@@ -5920,10 +5920,11 @@ pcie_wait_for_pending_transactions(device_t dev, u_int max_delay)
 
 		/* Poll once every 100 milliseconds up to the timeout. */
 		if (max_delay > 100) {
-			pause_ms("pcietp", 100);
+			pause_sbt("pcietp", 100 * SBT_1MS, 0, C_HARDCLOCK);
 			max_delay -= 100;
 		} else {
-			pause_ms("pcietp", max_delay);
+			pause_sbt("pcietp", max_delay * SBT_1MS, 0,
+			    C_HARDCLOCK);
 			max_delay = 0;
 		}
 		sta = pci_read_config(dev, cap + PCIER_DEVICE_STA, 2);
@@ -6046,7 +6047,7 @@ pcie_flr(device_t dev, u_int max_delay, bool force)
 	    PCIEM_CTL_INITIATE_FLR, 2);
 
 	/* Wait for 100ms. */
-	pause_ms("pcieflr", 100 + compl_delay);
+	pause_sbt("pcieflr", (100 + compl_delay) * SBT_1MS, 0, C_HARDCLOCK);
 
 	if (pci_read_config(dev, cap + PCIER_DEVICE_STA, 2) &
 	    PCIEM_STA_TRANSACTION_PND)
