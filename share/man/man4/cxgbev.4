@@ -249,7 +249,13 @@ the settings of the same port on the Physical Function.
 Virtual Functions cannot modify the setting and track changes made to
 the associated port's setting by the Physical Function driver.
 .Pp
-XXX: Talk about congestion control.
+Receive queues on a Virtual Function always drop packets in response to
+congestion
+.Po
+equivalent to setting
+.Va hw.cxgbe.cong_drop
+to 1
+.Pc .
 .Pp
 The VF driver currently depends on the PF driver.
 As a result, loading the VF driver will also load the PF driver as a
