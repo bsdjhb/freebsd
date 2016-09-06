@@ -68,8 +68,7 @@ requirements, see
 Note that ports of T5 VFs are named cxlv and attach to a t5vf parent device
 (in contrast to ports named cxgbev that attach to a t4vf parent for a T4 VF).
 Loader tunables with the hw.cxgbe prefix apply to both T4 and T5 VFs.
-Note that these tunables are shared with the Physical Function driver for T4
-and T5 adapters.
+The Physical Function driver for T4 and T5 adapters shares these tunables.
 The sysctl MIBs are at dev.t5vf and dev.cxlv for T5 cards and at dev.t4vf and
 dev.cxgbev for T4 cards.
 .Pp
@@ -79,8 +78,7 @@ For more information on configuring this device, see
 The
 .Nm
 driver supports Virtual Functions on 40Gb, 10Gb and 1Gb Ethernet adapters
-based on the T5 ASIC
-(ports will be named cxlv):
+based on the T5 ASIC:
 .Pp
 .Bl -bullet -compact
 .It
