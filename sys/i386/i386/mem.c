@@ -75,6 +75,16 @@ MALLOC_DEFINE(M_MEMDESC, "memdesc", "memory range descriptors");
 static struct sx memsxlock;
 SX_SYSINIT(memsxlockinit, &memsxlock, "/dev/mem lock");
 
+static vm_paddr_t
+maxphyaddr(void)
+{
+#ifdef PAE
+	return ((1ULL << cpu_maxphyaddr) - 1);
+#else
+	return (0xffffffff);
+#endif
+}
+
 /* ARGSUSED */
 int
 memrw(struct cdev *dev, struct uio *uio, int flags)
@@ -110,7 +120,7 @@ memrw(struct cdev *dev, struct uio *uio, int flags)
 		if (dev2unit(dev) == CDEV_MINOR_MEM) {
 			pa = uio->uio_offset;
 			pa &= ~PAGE_MASK;
-			if (pa >= (1ULL << cpu_maxphyaddr)) {
+			if (pa > maxphyaddr()) {
 				error = EFAULT;
 				break;
 			}
@@ -166,7 +176,7 @@ memmmap(struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
     int prot __unused, vm_memattr_t *memattr __unused)
 {
 	if (dev2unit(dev) == CDEV_MINOR_MEM) {
-		if (offset >= (1ULL << cpu_maxphyaddr))
+		if (offset > maxphyaddr())
 			return (-1);
 		*paddr = offset;
 	} else if (dev2unit(dev) == CDEV_MINOR_KMEM)
