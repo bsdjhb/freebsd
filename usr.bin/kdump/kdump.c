@@ -238,6 +238,22 @@ cappwdgrp_setup(cap_channel_t **cappwdp, cap_channel_t **capgrpp)
 #endif	/* HAVE_LIBCASPER */
 
 static void
+print_integer_arg(const char *(*decoder)(int), int value)
+{
+	const char *str;
+
+	str = decoder(value);
+	if (str != NULL)
+		puts(str);
+	else {
+		if (decimal)
+			printf("<invalid=%d>", value);
+		else
+			printf("<invalid=%#x>", value);
+	}
+}
+
+static void
 print_mask_prefix(FILE *fp, uintmax_t val)
 {
 
@@ -251,16 +267,6 @@ print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
 	fprintf(fp, ">");
 	if (invalid)
 		fprintf(fp, "<invalid>%ju", rem);
-}
-
-static void
-print_value_unmatched(FILE *fp, uintmax_t val)
-{
-
-	if (decimal)
-		fprintf(fp, "<invalid=%jd>", val);
-	else
-		fprintf(fp, "<invalid=%#jx>", val);
 }
 
 int
@@ -344,7 +350,6 @@ main(int argc, char *argv[])
 	localtime_init();
 	sysdecode_set_mask_prefix(print_mask_prefix);
 	sysdecode_set_mask_suffix(print_mask_suffix);
-	sysdecode_set_value_unmatched(print_value_unmatched);
 #ifdef HAVE_LIBCASPER
 	if (resolv != 0) {
 		if (cappwdgrp_setup(&cappwd, &capgrp) < 0) {
@@ -776,7 +781,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			}
 			case SYS_ptrace:
 				putchar('(');
-				sysdecode_ptrace_request(stdout, *ip);
+				print_integer_arg(sysdecode_ptrace_request, *ip);
 				c = ',';
 				ip++;
 				narg--;
@@ -821,7 +826,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_wait6:
 				putchar('(');
-				sysdecode_idtype(stdout, *ip);
+				print_integer_arg(sysdecode_idtype, *ip);
 				c = ',';
 				ip++;
 				narg--;
@@ -966,7 +971,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_madvice(stdout, *ip);
+				print_integer_arg(sysdecode_madvice, *ip);
 				ip++;
 				narg--;
 				break;
@@ -974,14 +979,14 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_prio_which(stdout, *ip);
+				print_integer_arg(sysdecode_prio_which, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_fcntl:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_fcntl_cmd(stdout, ip[0]);
+				print_integer_arg(sysdecode_fcntl_cmd, ip[0]);
 				if (sysdecode_fcntl_arg_p(ip[0])) {
 					putchar(',');
 					sysdecode_fcntl_arg(stdout, ip[0], ip[1],
@@ -994,7 +999,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				int sockdomain;
 				putchar('(');
 				sockdomain = *ip;
-				sysdecode_socketdomain(stdout, sockdomain);
+				print_integer_arg(sysdecode_socketdomain,
+				    sockdomain);
 				ip++;
 				narg--;
 				putchar(',');
@@ -1004,7 +1010,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				if (sockdomain == PF_INET ||
 				    sockdomain == PF_INET6) {
 					putchar(',');
-					sysdecode_ipproto(stdout, *ip);
+					print_integer_arg(sysdecode_ipproto,
+					    *ip);
 					ip++;
 					narg--;
 				}
@@ -1021,7 +1028,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 					ip++;
 					narg--;
 					putchar(',');
-					sysdecode_sockopt_name(stdout, *ip);
+					print_integer_arg(sysdecode_sockopt_name,
+					    *ip);
 				}
 				ip++;
 				narg--;
@@ -1033,7 +1041,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number64(first, ip, narg, c);
 				putchar(',');
-				sysdecode_whence(stdout, *ip);
+				print_integer_arg(sysdecode_whence, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1042,7 +1050,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number64(first, ip, narg, c);
 				putchar(',');
-				sysdecode_whence(stdout, *ip);
+				print_integer_arg(sysdecode_whence, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1066,13 +1074,13 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_shutdown:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_shutdown_how(stdout, *ip);
+				print_integer_arg(sysdecode_shutdown_how, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_socketpair:
 				putchar('(');
-				sysdecode_socketdomain(stdout, *ip);
+				print_integer_arg(sysdecode_socketdomain, *ip);
 				ip++;
 				narg--;
 				putchar(',');
@@ -1084,7 +1092,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_getrlimit:
 			case SYS_setrlimit:
 				putchar('(');
-				sysdecode_rlimit(stdout, *ip);
+				print_integer_arg(sysdecode_rlimit, *ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1099,14 +1107,15 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_nfssvc:
 				putchar('(');
-				sysdecode_nfssvc_flags(stdout, *ip);
+				print_integer_arg(sysdecode_nfssvc_flags, *ip);
 				ip++;
 				narg--;
 				c = ',';
 				break;
 			case SYS_rtprio:
 				putchar('(');
-				sysdecode_rtprio_function(stdout, *ip);
+				print_integer_arg(sysdecode_rtprio_function,
+				    *ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1115,7 +1124,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_semctl_op(stdout, *ip);
+				print_integer_arg(sysdecode_semctl_op, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1130,7 +1139,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_msgctl:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_shmctl_op(stdout, *ip);
+				print_integer_arg(sysdecode_msgctl_op, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1145,7 +1154,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_shmctl:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_shmctl_op(stdout, *ip);
+				print_integer_arg(sysdecode_shmctl_op, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1162,7 +1171,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_minherit_flags(stdout, *ip);
+				print_integer_arg(sysdecode_minherit_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1175,7 +1184,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_lio_listio:
 				putchar('(');
-				sysdecode_lio_listio_mode(stdout, *ip);
+				print_integer_arg(sysdecode_lio_listio_mode,
+				    *ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1189,14 +1199,16 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_sched_setscheduler:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_scheduler_policy(stdout, *ip);
+				print_integer_arg(sysdecode_scheduler_policy,
+				    *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_sched_get_priority_max:
 			case SYS_sched_get_priority_min:
 				putchar('(');
-				sysdecode_scheduler_policy(stdout, *ip);
+				print_integer_arg(sysdecode_scheduler_policy,
+				    *ip);
 				ip++;
 				narg--;
 				break;
@@ -1215,13 +1227,14 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_kldsym:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_kldsym_cmd(stdout, *ip);
+				print_integer_arg(sysdecode_kldsym_cmd, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_sigprocmask:
 				putchar('(');
-				sysdecode_sigprocmask_how(stdout, *ip);
+				print_integer_arg(sysdecode_sigprocmask_how,
+				    *ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1240,7 +1253,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS___acl_aclcheck_link:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_acltype(stdout, *ip);
+				print_integer_arg(sysdecode_acltype, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1254,7 +1267,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_extattrctl:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_extattrnamespace(stdout, *ip);
+				print_integer_arg(sysdecode_extattrnamespace,
+				    *ip);
 				ip++;
 				narg--;
 				break;
@@ -1284,7 +1298,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_kldunloadf:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_kldunload_flags(stdout, *ip);
+				print_integer_arg(sysdecode_kldunload_flags,
+				    *ip);
 				ip++;
 				narg--;
 				break;
@@ -1310,26 +1325,26 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				(void)putchar(',');
-				sysdecode_fadvice(stdout, (int)*ip);
+				print_integer_arg(sysdecode_fadvice, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_procctl:
 				putchar('(');
-				sysdecode_idtype(stdout, *ip);
+				print_integer_arg(sysdecode_idtype, *ip);
 				c = ',';
 				ip++;
 				narg--;
 				print_number64(first, ip, narg, c);
 				putchar(',');
-				sysdecode_procctl_cmd(stdout, *ip);
+				print_integer_arg(sysdecode_procctl_cmd, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS__umtx_op:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_umtx_op(stdout, *ip);
+				print_integer_arg(sysdecode_umtx_op, *ip);
 				switch (*ip) {
 				case UMTX_OP_CV_WAIT:
 					ip++;
@@ -1534,18 +1549,22 @@ ktrgenio(struct ktr_genio *ktr, int len)
 void
 ktrpsig(struct ktr_psig *psig)
 {
+	const char *str;
 
 	print_signal(psig->signo);
 	if (psig->action == SIG_DFL) {
-		printf(" SIG_DFL code=");
-		sysdecode_sigcode(stdout, psig->signo, psig->code);
-		putchar('\n');
+		printf(" SIG_DFL");
 	} else {
-		printf(" caught handler=0x%lx mask=0x%x code=",
+		printf(" caught handler=0x%lx mask=0x%x",
 		    (u_long)psig->action, psig->mask.__bits[0]);
-		sysdecode_sigcode(stdout, psig->signo, psig->code);
-		putchar('\n');
 	}
+	printf(" code=");
+	str = sysdecode_sigcode(psig->signo, psig->code);
+	if (str != NULL)
+		puts(str);
+	else
+		printf("<invalid=%#x>", psig->code);
+	putchar('\n');
 }
 
 void
@@ -1619,6 +1638,7 @@ ktrsockaddr(struct sockaddr *sa)
 	#include <netsmb/netbios.h>
 	struct sockaddr_nb	*nb;
 */
+	const char *str;
 	char addr[64];
 
 	/*
@@ -1627,7 +1647,11 @@ ktrsockaddr(struct sockaddr *sa)
 	 * sa->sa_len bytes long.
 	 */
 	printf("struct sockaddr { ");
-	sysdecode_sockaddr_family(stdout, sa->sa_family);
+	str = sysdecode_sockaddr_family(sa->sa_family);
+	if (str != NULL)
+		puts(str);
+	else
+		printf("<invalid=%d>", sa->sa_family);
 	printf(", ");
 
 #define check_sockaddr_len(n)					\
@@ -1882,8 +1906,13 @@ ktrfault(struct ktr_fault *ktr)
 void
 ktrfaultend(struct ktr_faultend *ktr)
 {
+	const char *str;
 
-	sysdecode_vmresult(stdout, ktr->result);
+	str = sysdecode_vmresult(ktr->result);
+	if (str != NULL)
+		puts(str);
+	else
+		printf("<invalid=%d>", ktr->result);
 	printf("\n");
 }
 
