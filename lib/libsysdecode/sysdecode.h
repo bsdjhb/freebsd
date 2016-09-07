@@ -84,6 +84,7 @@ const char *sysdecode_kldunload_flags(int _flags);
 const char *sysdecode_lio_listio_mode(int _mode);
 const char *sysdecode_madvice(int _advice);
 const char *sysdecode_minherit_flags(int _inherit);
+const char *sysdecode_msgctl_op(int _cmd);
 void	sysdecode_mlockall_flags(FILE *_fp, int _flags);
 void	sysdecode_mmap_flags(FILE *_fp, int _flags);
 void	sysdecode_mmap_prot(FILE *_fp, int _prot);

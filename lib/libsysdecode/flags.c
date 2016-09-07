@@ -253,6 +253,13 @@ sysdecode_shmctl_op(int cmd)
 	return (lookup_value(shmctlops, cmd));
 }
 
+const char *
+sysdecode_msgctl_op(int cmd)
+{
+
+	return (sysdecode_shmctl_op(cmd));
+}
+
 static struct name_table semgetflags[] = {
 	X(IPC_CREAT) X(IPC_EXCL) X(SEM_R) X(SEM_A) X((SEM_R>>3)) X((SEM_A>>3))
 	X((SEM_R>>6)) X((SEM_A>>6)) XEND
