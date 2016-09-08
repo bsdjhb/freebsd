@@ -70,13 +70,6 @@ print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
 		fprintf(fp, "%s0x%jx", invalid ? "" : "|", rem);
 }
 
-static void
-print_value_unmatched(FILE *fp, uintmax_t val)
-{
-
-	fprintf(fp, "%jd", val);
-}
-
 int
 main(int ac, char **av)
 {
@@ -150,7 +143,6 @@ main(int ac, char **av)
 		usage();
 
 	sysdecode_set_mask_suffix(print_mask_suffix);
-	sysdecode_set_value_unmatched(print_value_unmatched);
 
 	if (fname != NULL) { /* Use output file */
 		/*

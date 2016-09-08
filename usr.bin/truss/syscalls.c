@@ -787,6 +787,18 @@ xlookup_bits(struct xlat *xlat, int val)
 	return (str);
 }
 
+static void
+print_integer_arg(const char *(*decoder)(int), FILE *fp, int value)
+{
+	const char *str;
+
+	str = decoder(value);
+	if (str != NULL)
+		fputs(str, fp);
+	else
+		fprintf(fp, "%d", value);
+}
+
 void
 init_syscalls(void)
 {
@@ -1381,7 +1393,8 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		break;
 	}
 	case Sigprocmask:
-		sysdecode_sigprocmask_how(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_sigprocmask_how, fp,
+		    args[sc->offset]);
 		break;
 	case Fcntlflag:
 		/* XXX: Output depends on the value of the previous argument. */
@@ -1393,7 +1406,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		sysdecode_open_flags(fp, args[sc->offset]);
 		break;
 	case Fcntl:
-		sysdecode_fcntl_cmd(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_fcntl_cmd, fp, args[sc->offset]);
 		break;
 	case Mprot:
 		sysdecode_mmap_prot(fp, args[sc->offset]);
@@ -1402,19 +1415,19 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		sysdecode_mmap_flags(fp, args[sc->offset]);
 		break;
 	case Whence:
-		sysdecode_whence(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_whence, fp, args[sc->offset]);
 		break;
 	case Sockdomain:
-		sysdecode_socketdomain(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_socketdomain, fp, args[sc->offset]);
 		break;
 	case Socktype:
 		sysdecode_sockettypewithflags(fp, args[sc->offset]);
 		break;
 	case Shutdown:
-		sysdecode_shutdown_how(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_shutdown_how, fp, args[sc->offset]);
 		break;
 	case Resource:
-		sysdecode_rlimit(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_rlimit, fp, args[sc->offset]);
 		break;
 	case Pathconf:
 		fputs(xlookup(pathconf_arg, args[sc->offset]), fp);
@@ -1654,13 +1667,13 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		sysdecode_wait6_options(fp, args[sc->offset]);
 		break;
 	case Idtype:
-		sysdecode_idtype(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_idtype, fp, args[sc->offset]);
 		break;
 	case Procctl:
-		sysdecode_procctl_cmd(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_procctl_cmd, fp, args[sc->offset]);
 		break;
 	case Umtxop:
-		sysdecode_umtx_op(fp, args[sc->offset]);
+		print_integer_arg(sysdecode_umtx_op, fp, args[sc->offset]);
 		break;
 	case Atfd:
 		sysdecode_atfd(fp, args[sc->offset], 10);
