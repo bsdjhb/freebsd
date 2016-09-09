@@ -54,7 +54,8 @@ and printing of a message during detach.
 To quiet a device, call
 .Fn device_quiet
 during a device driver probe routine.
-To re-enable probe messages call
+To re-enable probe messages,
+call
 .Fn device_verbose .
 To test to see if a device is quieted, call
 .Fn device_is_quiet .
