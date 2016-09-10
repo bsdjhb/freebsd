@@ -244,7 +244,7 @@ print_integer_arg(const char *(*decoder)(int), int value)
 
 	str = decoder(value);
 	if (str != NULL)
-		puts(str);
+		printf("%s", str);
 	else {
 		if (decimal)
 			printf("<invalid=%d>", value);
@@ -1561,7 +1561,7 @@ ktrpsig(struct ktr_psig *psig)
 	printf(" code=");
 	str = sysdecode_sigcode(psig->signo, psig->code);
 	if (str != NULL)
-		puts(str);
+		printf("%s", str);
 	else
 		printf("<invalid=%#x>", psig->code);
 	putchar('\n');
@@ -1649,7 +1649,7 @@ ktrsockaddr(struct sockaddr *sa)
 	printf("struct sockaddr { ");
 	str = sysdecode_sockaddr_family(sa->sa_family);
 	if (str != NULL)
-		puts(str);
+		printf("%s", str);
 	else
 		printf("<invalid=%d>", sa->sa_family);
 	printf(", ");
@@ -1910,7 +1910,7 @@ ktrfaultend(struct ktr_faultend *ktr)
 
 	str = sysdecode_vmresult(ktr->result);
 	if (str != NULL)
-		puts(str);
+		printf("%s", str);
 	else
 		printf("<invalid=%d>", ktr->result);
 	printf("\n");
