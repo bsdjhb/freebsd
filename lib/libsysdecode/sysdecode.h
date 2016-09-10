@@ -110,6 +110,7 @@ bool	sysdecode_umtx_rwlock_flags(FILE *_fp, u_long _flags, u_long *_rem);
 int	sysdecode_utrace(FILE *_fp, void *_buf, size_t _len);
 bool	sysdecode_vmprot(FILE *_fp, int _type, int *_rem);
 const char *sysdecode_vmresult(int _result);
+bool	sysdecode_wait4_options(FILE *_fp, int _options, int *_rem);
 bool	sysdecode_wait6_options(FILE *_fp, int _options, int *_rem);
 const char *sysdecode_whence(int _whence);
 

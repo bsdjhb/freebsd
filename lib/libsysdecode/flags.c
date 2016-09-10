@@ -735,6 +735,32 @@ sysdecode_vmresult(int result)
 }
 
 bool
+sysdecode_wait4_options(FILE *fp, int options, int *rem)
+{
+	bool printed;
+	int opt6;
+
+	/* A flags value of 0 is normal. */
+	if (options == 0) {
+		fputs("0", fp);
+		if (rem != NULL)
+			*rem = 0;
+		return (true);
+	}
+
+	/*
+	 * These flags are implicit and aren't valid flags for wait4()
+	 * directly (though they don't fail with EINVAL).
+	 */
+	opt6 = options & (WEXITED | WTRAPPED);
+	options &= ~opt6;
+	printed = print_mask_int(fp, wait6opt, options, rem);
+	if (rem != NULL)
+		*rem |= opt6;
+	return (printed);
+}
+
+bool
 sysdecode_wait6_options(FILE *fp, int options, int *rem)
 {
 

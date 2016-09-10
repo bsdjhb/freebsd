@@ -869,20 +869,10 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_wait4:
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
-				/*
-				 * A flags value of zero is valid for
-				 * wait4() but not for wait6(), so
-				 * handle zero special here.
-				 */
-				if (*ip == 0) {
-					print_number(ip, narg, c);
-				} else {
-					putchar(',');
-					print_mask_arg(sysdecode_wait6_options,
-					    *ip);
-					ip++;
-					narg--;
-				}
+				putchar(',');
+				print_mask_arg0(sysdecode_wait4_options, *ip);
+				ip++;
+				narg--;
 				break;
 			case SYS_wait6:
 				putchar('(');
