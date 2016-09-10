@@ -62,14 +62,6 @@ usage(void)
 	exit(1);
 }
 
-static void
-print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
-{
-
-	if (invalid || rem != 0)
-		fprintf(fp, "%s0x%jx", invalid ? "" : "|", rem);
-}
-
 int
 main(int ac, char **av)
 {
@@ -141,8 +133,6 @@ main(int ac, char **av)
 	if ((pid == 0 && ac == 0) ||
 	    (pid != 0 && ac != 0))
 		usage();
-
-	sysdecode_set_mask_suffix(print_mask_suffix);
 
 	if (fname != NULL) { /* Use output file */
 		/*

@@ -799,6 +799,17 @@ print_integer_arg(const char *(*decoder)(int), FILE *fp, int value)
 		fprintf(fp, "%d", value);
 }
 
+static void
+print_mask_arg(bool (*decoder)(FILE *, int, int *), FILE *fp, int value)
+{
+	int rem;
+
+	if (!decoder(fp, value, &rem))
+		fprintf(fp, "0x%x", rem);
+	else if (rem != 0)
+		fprintf(fp, "|0x%x", rem);
+}
+
 void
 init_syscalls(void)
 {
@@ -1403,16 +1414,16 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 			    args[sc->offset], 16);
 		break;
 	case Open:
-		sysdecode_open_flags(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_open_flags, fp, args[sc->offset]);
 		break;
 	case Fcntl:
 		print_integer_arg(sysdecode_fcntl_cmd, fp, args[sc->offset]);
 		break;
 	case Mprot:
-		sysdecode_mmap_prot(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_mmap_prot, fp, args[sc->offset]);
 		break;
 	case Mmapflags:
-		sysdecode_mmap_flags(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_mmap_flags, fp, args[sc->offset]);
 		break;
 	case Whence:
 		print_integer_arg(sysdecode_whence, fp, args[sc->offset]);
@@ -1433,7 +1444,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		fputs(xlookup(pathconf_arg, args[sc->offset]), fp);
 		break;
 	case Rforkflags:
-		sysdecode_rfork_flags(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_rfork_flags, fp, args[sc->offset]);
 		break;
 	case Sockaddr: {
 		char addr[64];
@@ -1664,7 +1675,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		break;
 	}
 	case Waitoptions:
-		sysdecode_wait6_options(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_wait6_options, fp, args[sc->offset]);
 		break;
 	case Idtype:
 		print_integer_arg(sysdecode_idtype, fp, args[sc->offset]);
@@ -1682,7 +1693,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		fputs(xlookup_bits(at_flags, args[sc->offset]), fp);
 		break;
 	case Accessmode:
-		sysdecode_accessmode(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_accessmode, fp, args[sc->offset]);
 		break;
 	case Sysarch:
 		fputs(xlookup(sysarch_ops, args[sc->offset]), fp);
@@ -1739,7 +1750,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		break;
 	}
 	case Pipe2:
-		sysdecode_pipe2_flags(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_pipe2_flags, fp, args[sc->offset]);
 		break;
 
 	case CloudABIAdvice:
