@@ -374,8 +374,8 @@ sysdecode_fadvice(int advice)
 	return (lookup_value(fadvisebehav, advice));
 }
 
-static bool
-sysdecode_open_flags_common(FILE *fp, int flags, int *rem)
+bool
+sysdecode_open_flags(FILE *fp, int flags, int *rem)
 {
 	bool printed;
 	int mode;
@@ -414,13 +414,6 @@ sysdecode_open_flags_common(FILE *fp, int flags, int *rem)
 }
 
 bool
-sysdecode_open_flags(FILE *fp, int flags, int *rem)
-{
-
-	return (sysdecode_open_flags_common(fp, flags, rem));
-}
-
-bool
 sysdecode_fcntl_fileflags(FILE *fp, int flags, int *rem)
 {
 	bool printed;
@@ -432,7 +425,7 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags, int *rem)
 	 * bits have been repurposed for fcntl-only flags.
 	 */
 	oflags = flags & ~(O_NOFOLLOW | FRDAHEAD);
-	printed = sysdecode_open_flags_common(fp, oflags, rem);
+	printed = sysdecode_open_flags(fp, oflags, rem);
 	if (flags & O_NOFOLLOW) {
 		fprintf(fp, "%sFPOIXSHM", printed ? "|" : "");
 		printed = true;
