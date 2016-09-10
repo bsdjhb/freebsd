@@ -407,7 +407,7 @@ sysdecode_open_flags_common(FILE *fp, int flags, int *rem)
 		printed = false;
 	}
 	val = (unsigned)flags;
-	print_mask_part(fp, fileflags, &val, &printed);
+	print_mask_part(fp, openflags, &val, &printed);
 	if (rem != NULL)
 		*rem = val | mode;
 	return (printed);
@@ -505,6 +505,13 @@ sysdecode_mmap_prot(FILE *fp, int prot, int *rem)
 {
 
 	return (print_mask_int(fp, mmapprot, prot, rem));
+}
+
+bool
+sysdecode_fileflags(FILE *fp, fflags_t flags, fflags_t *rem)
+{
+
+	return (print_mask_0(fp, fileflags, flags, rem));
 }
 
 bool

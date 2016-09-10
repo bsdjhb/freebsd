@@ -50,6 +50,7 @@ void	sysdecode_fcntl_arg(FILE *_fp, int _cmd, uintptr_t _arg, int _base);
 bool	sysdecode_fcntl_arg_p(int _cmd);
 const char *sysdecode_fcntl_cmd(int _cmd);
 bool	sysdecode_fcntl_fileflags(FILE *_fp, int _flags, int *_rem);
+bool	sysdecode_fileflags(FILE *_fp, fflags_t _flags, fflags_t *_rem);
 bool	sysdecode_filemode(FILE *_fp, int _mode, int *_rem);
 bool	sysdecode_flock_op(FILE *_fp, int _operation, int *_rem);
 int	sysdecode_freebsd_to_abi_errno(enum sysdecode_abi _abi, int _error);

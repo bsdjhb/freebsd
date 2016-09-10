@@ -284,6 +284,23 @@ print_mask_arg0(bool (*decoder)(FILE *, int, int *), int value)
 }
 
 static void
+decode_fileflags(fflags_t value)
+{
+	bool invalid;
+	fflags_t rem;
+
+	if (value == 0) {
+		printf("0");
+		return;
+	}
+	printf("%#x<", value);
+	invalid = !sysdecode_fileflags(stdout, value, &rem);
+	printf(">");
+	if (invalid)
+		printf("<invalid>%u", rem);
+}
+
+static void
 decode_filemode(int value)
 {
 	bool invalid;
@@ -952,7 +969,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_lchflags:
 				print_number(ip, narg, c);
 				putchar(',');
-				decode_filemode(*ip);
+				decode_fileflags(*ip);
 				ip++;
 				narg--;
 				break;
