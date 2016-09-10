@@ -100,23 +100,6 @@ struct name_table {
 	print_or(fp,#flag,orflag); }               \
 	while (0)
 
-static void (*print_mask_prefix)(FILE *fp, uintmax_t val);
-static void (*print_mask_suffix)(FILE *fp, uintmax_t rem, bool invalid);
-
-void
-sysdecode_set_mask_prefix(void (*func)(FILE *fp, uintmax_t val))
-{
-
-	print_mask_prefix = func;
-}
-
-void
-sysdecode_set_mask_suffix(void (*func)(FILE *fp, uintmax_t rem, bool invalid))
-{
-
-	print_mask_suffix = func;
-}
-
 static const char *
 lookup_value(struct name_table *table, uintmax_t val)
 {
@@ -159,32 +142,63 @@ print_mask_part(FILE *fp, struct name_table *table, uintmax_t *valp,
 
 /*
  * Used when the value maps to a bitmask of #definition values in the
- * table.
+ * table.  The return value is true if something was printed.  If
+ * rem is not NULL, *rem holds any bits not decoded if something was
+ * printed.  If nothing was printed and rem is not NULL, *rem holds
+ * the original value.
  */
-static void
-print_mask(FILE *fp, struct name_table *table, uintmax_t val)
+static bool
+print_mask_int(FILE *fp, struct name_table *table, int ival, int *rem)
 {
+	uintmax_t val;
 	bool printed;
 
 	printed = false;
-	if (print_mask_prefix != NULL)
-		print_mask_prefix(fp, val);
+	val = (unsigned)ival;
 	print_mask_part(fp, table, &val, &printed);
-	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, !printed);
+	if (rem != NULL)
+		*rem = val;
+	return (printed);
 }
 
 /*
  * Used for a mask of optional flags where a value of 0 is valid.
  */
-static void
-print_mask_0(FILE *fp, struct name_table *table, uintmax_t val)
+static bool
+print_mask_0(FILE *fp, struct name_table *table, int val, int *rem)
 {
 
-	if (val == 0)
+	if (val == 0) {
 		fputs("0", fp);
-	else
-		print_mask(fp, table, val);
+		if (rem != NULL)
+			*rem = 0;
+		return (true);
+	}
+	return (print_mask_int(fp, table, val, rem));
+}
+
+/*
+ * Like print_mask_0 but for a unsigned long instead of an int.
+ */
+static bool
+print_mask_0ul(FILE *fp, struct name_table *table, u_long lval, u_long *rem)
+{
+	uintmax_t val;
+	bool printed;
+
+	if (lval == 0) {
+		fputs("0", fp);
+		if (rem != NULL)
+			*rem = 0;
+		return (true);
+	}
+
+	printed = false;
+	val = lval;
+	print_mask_part(fp, table, &val, &printed);
+	if (rem != NULL)
+		*rem = val;
+	return (printed);
 }
 
 static void
@@ -265,11 +279,11 @@ static struct name_table semgetflags[] = {
 	X((SEM_R>>6)) X((SEM_A>>6)) XEND
 };
 
-void
-sysdecode_semget_flags(FILE *fp, int flag)
+bool
+sysdecode_semget_flags(FILE *fp, int flag, int *rem)
 {
 
-	print_mask(fp, semgetflags, (unsigned)flag);
+	return (print_mask_int(fp, semgetflags, flag, rem));
 }
 
 static struct name_table idtypes[] = {
@@ -301,11 +315,11 @@ sysdecode_sockopt_level(FILE *fp, int level, int base)
 	}
 }
 
-void
-sysdecode_vmprot(FILE *fp, int type)
+bool
+sysdecode_vmprot(FILE *fp, int type, int *rem)
 {
 
-	print_mask(fp, vmprot, (unsigned)type);
+	return (print_mask_int(fp, vmprot, type, rem));
 }
 
 void
@@ -324,11 +338,11 @@ sysdecode_sockettypewithflags(FILE *fp, int type)
 		fprintf(fp, "|SOCK_NONBLOCK");
 }
 
-void
-sysdecode_accessmode(FILE *fp, int mode)
+bool
+sysdecode_accessmode(FILE *fp, int mode, int *rem)
 {
 
-	print_mask(fp, accessmode, (unsigned)mode);
+	return (print_mask_int(fp, accessmode, mode, rem));
 }
 
 /* XXX: 'type' is really an acl_type_t. */
@@ -339,11 +353,11 @@ sysdecode_acltype(int type)
 	return (lookup_value(acltype, type));
 }
 
-void
-sysdecode_capfcntlrights(FILE *fp, uint32_t rights)
+bool
+sysdecode_capfcntlrights(FILE *fp, uint32_t rights, uint32_t *rem)
 {
 
-	print_mask(fp, capfcntl, rights);
+	return (print_mask_int(fp, capfcntl, rights, rem));
 }
 
 const char *
@@ -361,17 +375,18 @@ sysdecode_fadvice(int advice)
 }
 
 static bool
-sysdecode_open_flags_common(FILE *fp, uintmax_t *val)
+sysdecode_open_flags_common(FILE *fp, int flags, int *rem)
 {
 	bool printed;
 	int mode;
+	uintmax_t val;
 
-	mode = *val & O_ACCMODE;
-	*val &= ~O_ACCMODE;
+	mode = flags & O_ACCMODE;
+	flags &= ~O_ACCMODE;
 	switch (mode) {
 	case O_RDONLY:
-		if (*val & O_EXEC) {
-			*val &= ~O_EXEC;
+		if (flags & O_EXEC) {
+			flags &= ~O_EXEC;
 			fputs("O_EXEC", fp);
 		} else
 			fputs("O_RDONLY", fp);
@@ -391,41 +406,33 @@ sysdecode_open_flags_common(FILE *fp, uintmax_t *val)
 	default:
 		printed = false;
 	}
-	print_mask_part(fp, fileflags, val, &printed);
-	*val |= mode;
+	val = (unsigned)flags;
+	print_mask_part(fp, fileflags, &val, &printed);
+	if (rem != NULL)
+		*rem = val | mode;
 	return (printed);
 }
 
-void
-sysdecode_open_flags(FILE *fp, int flags)
+bool
+sysdecode_open_flags(FILE *fp, int flags, int *rem)
 {
-	uintmax_t val;
-	bool printed;
 
-	val = (unsigned)flags;
-	if (print_mask_prefix != NULL)
-		print_mask_prefix(fp, val);
-	printed = sysdecode_open_flags_common(fp, &val);
-	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, !printed);
+	return (sysdecode_open_flags_common(fp, flags, rem));
 }
 
-void
-sysdecode_fcntl_fileflags(FILE *fp, int flags)
+bool
+sysdecode_fcntl_fileflags(FILE *fp, int flags, int *rem)
 {
-	uintmax_t val;
 	bool printed;
+	int oflags;
 
 	/*
 	 * The file flags used with F_GETFL/F_SETFL mostly match the
 	 * flags passed to open(2).  However, a few open-only flag
 	 * bits have been repurposed for fcntl-only flags.
 	 */
-	val = (unsigned)flags;
-	if (print_mask_prefix != NULL)
-		print_mask_prefix(fp, val);
-	val &= ~(O_NOFOLLOW | FRDAHEAD);
-	printed = sysdecode_open_flags_common(fp, &val);
+	oflags = flags & ~(O_NOFOLLOW | FRDAHEAD);
+	printed = sysdecode_open_flags_common(fp, oflags, rem);
 	if (flags & O_NOFOLLOW) {
 		fprintf(fp, "%sFPOIXSHM", printed ? "|" : "");
 		printed = true;
@@ -434,22 +441,21 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags)
 		fprintf(fp, "%sFRDAHEAD", printed ? "|" : "");
 		printed = true;
 	}
-	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, !printed);
+	return (printed);
 }
 
-void
-sysdecode_flock_op(FILE *fp, int operation)
+bool
+sysdecode_flock_op(FILE *fp, int operation, int *rem)
 {
 
-	print_mask(fp, flockops, (unsigned)operation);
+	return (print_mask_int(fp, flockops, operation, rem));
 }
 
-void
-sysdecode_getfsstat_flags(FILE *fp, int flags)
+bool
+sysdecode_getfsstat_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, getfsstatflags, (unsigned)flags);
+	return (print_mask_int(fp, getfsstatflags, flags, rem));
 }
 
 const char *
@@ -487,39 +493,39 @@ sysdecode_minherit_flags(int inherit)
 	return (lookup_value(minheritflags, inherit));
 }
 
-void
-sysdecode_mlockall_flags(FILE *fp, int flags)
+bool
+sysdecode_mlockall_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, mlockallflags, (unsigned)flags);
+	return (print_mask_int(fp, mlockallflags, flags, rem));
 }
 
-void
-sysdecode_mmap_prot(FILE *fp, int prot)
+bool
+sysdecode_mmap_prot(FILE *fp, int prot, int *rem)
 {
 
-	print_mask(fp, mmapprot, (unsigned)prot);
+	return (print_mask_int(fp, mmapprot, prot, rem));
 }
 
-void
-sysdecode_filemode(FILE *fp, int mode)
+bool
+sysdecode_filemode(FILE *fp, int mode, int *rem)
 {
 
-	print_mask_0(fp, filemode, (unsigned)mode);
+	return (print_mask_0(fp, filemode, mode, rem));
 }
 
-void
-sysdecode_mount_flags(FILE *fp, int flags)
+bool
+sysdecode_mount_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, mountflags, (unsigned)flags);
+	return (print_mask_int(fp, mountflags, flags, rem));
 }
 
-void
-sysdecode_msync_flags(FILE *fp, int flags)
+bool
+sysdecode_msync_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, msyncflags, (unsigned)flags);
+	return (print_mask_int(fp, msyncflags, flags, rem));
 }
 
 const char *
@@ -533,11 +539,11 @@ static struct name_table pipe2flags[] = {
 	X(O_CLOEXEC) X(O_NONBLOCK) XEND
 };
 
-void
-sysdecode_pipe2_flags(FILE *fp, int flags)
+bool
+sysdecode_pipe2_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask_0(fp, pipe2flags, (unsigned)flags);
+	return (print_mask_0(fp, pipe2flags, flags, rem));
 }
 
 const char *
@@ -573,18 +579,18 @@ sysdecode_quotactl_cmd(FILE *fp, int cmd)
 	return (print_value(fp, quotactlcmds, cmd));
 }
 
-void
-sysdecode_reboot_howto(FILE *fp, int howto)
+bool
+sysdecode_reboot_howto(FILE *fp, int howto, int *rem)
 {
 
-	print_mask(fp, rebootopt, (unsigned)howto);
+	return (print_mask_int(fp, rebootopt, howto, rem));
 }
 
-void
-sysdecode_rfork_flags(FILE *fp, int flags)
+bool
+sysdecode_rfork_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, rforkflags, (unsigned)flags);
+	return (print_mask_int(fp, rforkflags, flags, rem));
 }
 
 const char *
@@ -601,18 +607,18 @@ sysdecode_scheduler_policy(int policy)
 	return (lookup_value(schedpolicy, policy));
 }
 
-void
-sysdecode_sendfile_flags(FILE *fp, int flags)
+bool
+sysdecode_sendfile_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, sendfileflags, (unsigned)flags);
+	return (print_mask_int(fp, sendfileflags, flags, rem));
 }
 
-void
-sysdecode_shmat_flags(FILE *fp, int flags)
+bool
+sysdecode_shmat_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, shmatflags, (unsigned)flags);
+	return (print_mask_int(fp, shmatflags, flags, rem));
 }
 
 const char *
@@ -707,11 +713,11 @@ sysdecode_sockettype(int type)
 	return (lookup_value(socktype, type));
 }
 
-void
-sysdecode_thr_create_flags(FILE *fp, int flags)
+bool
+sysdecode_thr_create_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask(fp, thrcreateflags, (unsigned)flags);
+	return (print_mask_int(fp, thrcreateflags, flags, rem));
 }
 
 const char *
@@ -728,11 +734,11 @@ sysdecode_vmresult(int result)
 	return (lookup_value(vmresult, result));
 }
 
-void
-sysdecode_wait6_options(FILE *fp, int options)
+bool
+sysdecode_wait6_options(FILE *fp, int options, int *rem)
 {
 
-	print_mask(fp, wait6opt, (unsigned)options);
+	return (print_mask_int(fp, wait6opt, options, rem));
 }
 
 const char *
@@ -770,6 +776,7 @@ sysdecode_fcntl_arg_p(int cmd)
 void
 sysdecode_fcntl_arg(FILE *fp, int cmd, uintptr_t arg, int base)
 {
+	int rem;
 
 	switch (cmd) {
 	case F_SETFD:
@@ -777,7 +784,10 @@ sysdecode_fcntl_arg(FILE *fp, int cmd, uintptr_t arg, int base)
 		    print_integer(fp, arg, base);
 		break;
 	case F_SETFL:
-		sysdecode_fcntl_fileflags(fp, arg);
+		if (!sysdecode_fcntl_fileflags(fp, arg, &rem))
+			fprintf(fp, "%#x", rem);
+		else if (rem != 0)
+			fprintf(fp, "|%#x", rem);
 		break;
 	case F_GETLK:
 	case F_SETLK:
@@ -790,21 +800,19 @@ sysdecode_fcntl_arg(FILE *fp, int cmd, uintptr_t arg, int base)
 	}
 }
 
-void
-sysdecode_mmap_flags(FILE *fp, int flags)
+bool
+sysdecode_mmap_flags(FILE *fp, int flags, int *rem)
 {
 	uintmax_t val;
 	bool printed;
 	int align;
 
 	/*
-	 * MAP_ALIGNED can't be handled directly by print_mask().
+	 * MAP_ALIGNED can't be handled directly by print_mask_int().
 	 * MAP_32BIT is also problematic since it isn't defined for
 	 * all platforms.
 	 */
 	printed = false;
-	if (print_mask_prefix != NULL)
-		print_mask_prefix(fp, flags);
 	align = flags & MAP_ALIGNMENT_MASK;
 	val = (unsigned)flags & ~MAP_ALIGNMENT_MASK;
 	print_mask_part(fp, mmapflags, &val, &printed);
@@ -825,8 +833,9 @@ sysdecode_mmap_flags(FILE *fp, int flags)
 			    align >> MAP_ALIGNMENT_SHIFT);
 		printed = true;
 	}
-	if (print_mask_suffix != NULL)
-		print_mask_suffix(fp, val, !printed);
+	if (rem != NULL)
+		*rem = val;
+	return (printed);
 }
 
 const char *
@@ -836,11 +845,11 @@ sysdecode_rtprio_function(int function)
 	return (lookup_value(rtpriofuncs, function));
 }
 
-void
-sysdecode_msg_flags(FILE *fp, int flags)
+bool
+sysdecode_msg_flags(FILE *fp, int flags, int *rem)
 {
 
-	print_mask_0(fp, msgflags, flags);
+	return (print_mask_0(fp, msgflags, flags, rem));
 }
 
 const char *
@@ -870,18 +879,18 @@ sysdecode_sigcode(int sig, int code)
 	}
 }
 
-void
-sysdecode_umtx_cvwait_flags(FILE *fp, u_long flags)
+bool
+sysdecode_umtx_cvwait_flags(FILE *fp, u_long flags, u_long *rem)
 {
 
-	print_mask_0(fp, umtxcvwaitflags, flags);
+	return (print_mask_0ul(fp, umtxcvwaitflags, flags, rem));
 }
 
-void
-sysdecode_umtx_rwlock_flags(FILE *fp, u_long flags)
+bool
+sysdecode_umtx_rwlock_flags(FILE *fp, u_long flags, u_long *rem)
 {
 
-	print_mask_0(fp, umtxrwlockflags, flags);
+	return (print_mask_0ul(fp, umtxrwlockflags, flags, rem));
 }
 
 /* XXX: This should be in <sys/capsicum.h> */
