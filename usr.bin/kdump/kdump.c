@@ -1173,7 +1173,13 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_quotactl:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_quotactl_cmd(stdout, *ip);
+				if (!sysdecode_quotactl_cmd(stdout, *ip)) {
+					if (decimal)
+						printf("<invalid=%d>", (int)*ip);
+					else
+						printf("<invalid=%#x>",
+						    (int)*ip);
+				}
 				ip++;
 				narg--;
 				c = ',';

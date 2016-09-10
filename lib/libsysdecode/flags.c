@@ -567,16 +567,31 @@ sysdecode_ptrace_request(int request)
 	return (lookup_value(ptraceop, request));
 }
 
+static struct name_table quotatypes[] = {
+	X(GRPQUOTA) X(USRQUOTA) XEND
+};
+
 bool
 sysdecode_quotactl_cmd(FILE *fp, int cmd)
 {
+	const char *primary, *type;
 
-	/*
-	 * XXX: This is not correct, this needs to decompose 'cmd'
-	 * into its components and rebuild the corresponding QCMD()
-	 * invocation.
-	 */
-	return (print_value(fp, quotactlcmds, cmd));
+	primary = lookup_value(quotactlcmds, cmd >> SUBCMDSHIFT);
+	type = lookup_value(quotatypes, cmd & SUBCMDMASK);
+	if (primary == NULL && type == NULL)
+		return (false);
+	fprintf(fp, "QCMD(");
+	if (primary != NULL)
+		fprintf(fp, "%s", primary);
+	else
+		fprintf(fp, "%#x", cmd >> SUBCMDSHIFT);
+	fprintf(fp, ",");
+	if (type != NULL)
+		fprintf(fp, "%s", type);
+	else
+		fprintf(fp, "%#x", cmd & SUBCMDMASK);
+	fprintf(fp, ")");
+	return (true);
 }
 
 bool
