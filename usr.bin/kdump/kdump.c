@@ -254,19 +254,80 @@ print_integer_arg(const char *(*decoder)(int), int value)
 }
 
 static void
-print_mask_prefix(FILE *fp, uintmax_t val)
+print_mask_arg(bool (*decoder)(FILE *, int, int *), int value)
 {
+	bool invalid;
+	int rem;
 
-	fprintf(fp, "%#jx<", val);	
+	printf("%#x<", value);
+	invalid = !decoder(stdout, value, &rem);
+	printf(">");
+	if (invalid)
+		printf("<invalid>%u", rem);
 }
 
 static void
-print_mask_suffix(FILE *fp, uintmax_t rem, bool invalid)
+print_mask_arg0(bool (*decoder)(FILE *, int, int *), int value)
 {
+	bool invalid;
+	int rem;
 
-	fprintf(fp, ">");
+	if (value == 0) {
+		printf("0");
+		return;
+	}
+	printf("%#x<", value);
+	invalid = !decoder(stdout, value, &rem);
+	printf(">");
 	if (invalid)
-		fprintf(fp, "<invalid>%ju", rem);
+		printf("<invalid>%u", rem);
+}
+
+static void
+decode_filemode(int value)
+{
+	bool invalid;
+	int rem;
+
+	if (value == 0) {
+		printf("0");
+		return;
+	}
+	printf("%#o<", value);
+	invalid = !sysdecode_filemode(stdout, value, &rem);
+	printf(">");
+	if (invalid)
+		printf("<invalid>%u", rem);
+}
+
+static void
+print_mask_arg32(bool (*decoder)(FILE *, uint32_t, uint32_t *), uint32_t value)
+{
+	bool invalid;
+	uint32_t rem;
+
+	printf("%#x<", value);
+	invalid = !decoder(stdout, value, &rem);
+	printf(">");
+	if (invalid)
+		printf("<invalid>%u", rem);
+}
+
+static void
+print_mask_argul(bool (*decoder)(FILE *, u_long, u_long *), u_long value)
+{
+	bool invalid;
+	u_long rem;
+
+	if (value == 0) {
+		printf("0");
+		return;
+	}
+	printf("%#lx<", value);
+	invalid = !decoder(stdout, value, &rem);
+	printf(">");
+	if (invalid)
+		printf("<invalid>%lu", rem);
 }
 
 int
@@ -348,8 +409,6 @@ main(int argc, char *argv[])
 
 	strerror_init();
 	localtime_init();
-	sysdecode_set_mask_prefix(print_mask_prefix);
-	sysdecode_set_mask_suffix(print_mask_suffix);
 #ifdef HAVE_LIBCASPER
 	if (resolv != 0) {
 		if (cappwdgrp_setup(&cappwd, &capgrp) < 0) {
@@ -791,7 +850,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_faccessat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_accessmode(stdout, *ip);
+				print_mask_arg(sysdecode_accessmode, *ip);
 				ip++;
 				narg--;
 				break;
@@ -799,10 +858,10 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_openat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_open_flags(stdout, ip[0]);
+				print_mask_arg(sysdecode_open_flags, ip[0]);
 				if ((ip[0] & O_CREAT) == O_CREAT) {
 					putchar(',');
-					sysdecode_filemode(stdout, ip[1]);
+					decode_filemode(ip[1]);
 				}
 				ip += 2;
 				narg -= 2;
@@ -819,7 +878,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 					print_number(ip, narg, c);
 				} else {
 					putchar(',');
-					sysdecode_wait6_options(stdout, *ip);
+					print_mask_arg(sysdecode_wait6_options,
+					    *ip);
 					ip++;
 					narg--;
 				}
@@ -833,7 +893,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number64(first, ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_wait6_options(stdout, *ip);
+				print_mask_arg(sysdecode_wait6_options, *ip);
 				ip++;
 				narg--;
 				break;
@@ -843,7 +903,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_fchmodat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_filemode(stdout, *ip);
+				decode_filemode(*ip);
 				ip++;
 				narg--;
 				break;
@@ -851,7 +911,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_mknodat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_filemode(stdout, *ip);
+				decode_filemode(*ip);
 				ip++;
 				narg--;
 				break;
@@ -859,7 +919,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_getfsstat_flags(stdout, *ip);
+				print_mask_arg(sysdecode_getfsstat_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -867,14 +927,14 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mount_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mount_flags, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_unmount:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mount_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mount_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -883,7 +943,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_msg_flags(stdout, *ip);
+				print_mask_arg0(sysdecode_msg_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -893,7 +953,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_msg_flags(stdout, *ip);
+				print_mask_arg0(sysdecode_msg_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -902,7 +962,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_lchflags:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_filemode(stdout, *ip);
+				decode_filemode(*ip);
 				ip++;
 				narg--;
 				break;
@@ -915,13 +975,13 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_reboot:
 				putchar('(');
-				sysdecode_reboot_howto(stdout, *ip);
+				print_mask_arg(sysdecode_reboot_howto, *ip);
 				ip++;
 				narg--;
 				break;
 			case SYS_umask:
 				putchar('(');
-				sysdecode_filemode(stdout, *ip);
+				decode_filemode(*ip);
 				ip++;
 				narg--;
 				break;
@@ -929,7 +989,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_msync_flags(stdout, *ip);
+				print_mask_arg(sysdecode_msync_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -938,11 +998,11 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mmap_prot(stdout, *ip);
+				print_mask_arg(sysdecode_mmap_prot, *ip);
 				putchar(',');
 				ip++;
 				narg--;
-				sysdecode_mmap_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mmap_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -951,11 +1011,11 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mmap_prot(stdout, *ip);
+				print_mask_arg(sysdecode_mmap_prot, *ip);
 				putchar(',');
 				ip++;
 				narg--;
-				sysdecode_mmap_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mmap_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -963,7 +1023,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mmap_prot(stdout, *ip);
+				print_mask_arg(sysdecode_mmap_prot, *ip);
 				ip++;
 				narg--;
 				break;
@@ -989,8 +1049,14 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_integer_arg(sysdecode_fcntl_cmd, ip[0]);
 				if (sysdecode_fcntl_arg_p(ip[0])) {
 					putchar(',');
-					sysdecode_fcntl_arg(stdout, ip[0], ip[1],
-					    decimal ? 10 : 16);
+					if (ip[0] == F_SETFL)
+						print_mask_arg(
+						    sysdecode_fcntl_fileflags,
+							ip[1]);
+					else
+						sysdecode_fcntl_arg(stdout,
+						    ip[0], ip[1],
+						    decimal ? 10 : 16);
 				}
 				ip += 2;
 				narg -= 2;
@@ -1057,7 +1123,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_flock:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_flock_op(stdout, *ip);
+				print_mask_arg(sysdecode_flock_op, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1067,7 +1133,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_mkdirat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_filemode(stdout, *ip);
+				decode_filemode(*ip);
 				ip++;
 				narg--;
 				break;
@@ -1132,7 +1198,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_semget_flags(stdout, *ip);
+				print_mask_arg(sysdecode_semget_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1147,7 +1213,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_shmat_flags(stdout, *ip);
+				print_mask_arg(sysdecode_shmat_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1161,9 +1227,9 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_shm_open:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_open_flags(stdout, ip[0]);
+				print_mask_arg(sysdecode_open_flags, ip[0]);
 				putchar(',');
-				sysdecode_filemode(stdout, ip[1]);
+				decode_filemode(ip[1]);
 				ip += 2;
 				narg -= 2;
 				break;
@@ -1177,7 +1243,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_rfork:
 				putchar('(');
-				sysdecode_rfork_flags(stdout, *ip);
+				print_mask_arg(sysdecode_rfork_flags, *ip);
 				ip++;
 				narg--;
 				c = ',';
@@ -1192,7 +1258,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			case SYS_mlockall:
 				putchar('(');
-				sysdecode_mlockall_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mlockall_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1220,7 +1286,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_sendfile_flags(stdout, *(int *)ip);
+				print_mask_arg(sysdecode_sendfile_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1276,7 +1342,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_mount_flags(stdout, *ip);
+				print_mask_arg(sysdecode_mount_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1284,7 +1350,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_thr_create_flags(stdout, *ip);
+				print_mask_arg(sysdecode_thr_create_flags, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1318,7 +1384,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				arg = *ip;
 				ip++;
 				narg--;
-				sysdecode_capfcntlrights(stdout, arg);
+				print_mask_arg32(sysdecode_capfcntlrights, arg);
 				break;
 			case SYS_posix_fadvise:
 				print_number(ip, narg, c);
@@ -1350,13 +1416,15 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 					ip++;
 					narg--;
 					putchar(',');
-					sysdecode_umtx_cvwait_flags(stdout, *ip);
+					print_mask_argul(
+					    sysdecode_umtx_cvwait_flags, *ip);
 					break;
 				case UMTX_OP_RW_RDLOCK:
 					ip++;
 					narg--;
 					putchar(',');
-					sysdecode_umtx_rwlock_flags(stdout, *ip);
+					print_mask_argul(
+					    sysdecode_umtx_rwlock_flags, *ip);
 					break;
 				}
 				ip++;
@@ -1899,7 +1967,7 @@ ktrfault(struct ktr_fault *ktr)
 {
 
 	printf("0x%jx ", (uintmax_t)ktr->vaddr);
-	sysdecode_vmprot(stdout, ktr->type);
+	print_mask_arg(sysdecode_vmprot, ktr->type);
 	printf("\n");
 }
 
