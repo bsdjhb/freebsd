@@ -1059,13 +1059,11 @@ panicifcpuunsupported(void)
 #endif
 #else /* lint */
 #endif /* lint */
-#endif
 	/*
 	 * Now that we have told the user what they have,
 	 * let them know if that machine type isn't configured.
 	 */
 	switch (cpu_class) {
-#ifdef __i386__
 	case CPUCLASS_286:	/* a 286 should not make it this far, anyway */
 	case CPUCLASS_386:
 #if !defined(I486_CPU)
