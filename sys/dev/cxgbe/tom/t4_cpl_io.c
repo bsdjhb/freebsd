@@ -1518,7 +1518,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	    V_tcp_do_autorcvbuf &&
 	    sb->sb_hiwat < V_tcp_autorcvbuf_max &&
 	    len <= (sbspace(sb) / 8 * 7))
-		CTR(KTR_CXGBE, "%s: not growing rcvbuf len %u sbspace %u",
+		CTR3(KTR_CXGBE, "%s: not growing rcvbuf len %u sbspace %u",
 		    __func__, len, sbspace(sb));
 #endif
 	if (sb->sb_flags & SB_AUTOSIZE &&
@@ -1530,7 +1530,7 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		    V_tcp_autorcvbuf_max);
 
 #ifdef VERBOSE_TRACES
-		CTR(KTR_CXGBE, "%s: growing rcvbuf %u -> %u", __func__,
+		CTR3(KTR_CXGBE, "%s: growing rcvbuf %u -> %u", __func__,
 		    hiwat, newsize);
 #endif
 		if (!sbreserve_locked(sb, newsize, so, NULL))
