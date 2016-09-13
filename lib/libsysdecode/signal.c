@@ -31,26 +31,28 @@ __FBSDID("$FreeBSD$");
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <sysdecode.h>
 
-const char *
-sysdecode_signal(int sig)
+bool
+sysdecode_signal(int sig, char *buf, size_t len)
 {
-	static char sigbuf[64];
 
 	if (sig > 0 && sig < NSIG) {
-		snprintf(sigbuf, sizeof(sigbuf), "SIG%s", sys_signame[sig]);
-		return (sigbuf);
+		snprintf(buf, len, "SIG%s", sys_signame[sig]);
+		return (true);
 	}
 	switch (sig) {
 	case SIGTHR:
-		return ("SIGTHR");
+		strlcpy(buf, "SIGTHR", len);
+		return (true);
 	case SIGLIBRT:
-		return ("SIGLIBRT");
+		strlcpy(buf, "SIGTHR", len);
+		return (true);
 	}
 	if (sig >= SIGRTMIN && sig <= SIGRTMAX) {
-		snprintf(sigbuf, sizeof(sigbuf), "SIGRT%d", sig - SIGRTMIN);
-		return (sigbuf);
+		snprintf(buf, len, "SIGRT%d", sig - SIGRTMIN);
+		return (true);
 	}
-	return (NULL);
+	return (false);
 }

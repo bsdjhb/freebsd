@@ -592,14 +592,14 @@ static void
 report_signal(struct trussinfo *info, siginfo_t *si)
 {
 	struct threadinfo *t;
-	const char *signame;
+	char signame[64];
 
 	t = info->curthread;
 	clock_gettime(CLOCK_REALTIME, &t->after);
 	print_line_prefix(info);
-	signame = sysdecode_signal(si->si_status);
-	fprintf(info->outfile, "SIGNAL %u (%s)\n", si->si_status,
-	    signame == NULL ? "?" : signame);
+	if (!sysdecode_signal(si->si_status, signame, sizeof(signame)))
+		strlcpy(signame, "?", sizeof(signame));
+	fprintf(info->outfile, "SIGNAL %u (%s)\n", si->si_status, signame);
 }
 
 /*

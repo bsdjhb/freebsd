@@ -932,15 +932,11 @@ get_string(pid_t pid, void *addr, int max)
 static const char *
 strsig2(int sig)
 {
-	static char tmp[sizeof(int) * 3 + 1];
-	const char *ret;
+	static char tmp[32];
 
-	ret = sysdecode_signal(sig);
-	if (ret == NULL) {
+	if (!sysdecode_signal(sig, tmp, sizeof(tmp)))
 		snprintf(tmp, sizeof(tmp), "%d", sig);
-		ret = tmp;
-	}
-	return (ret);
+	return (tmp);
 }
 
 static void
@@ -1394,7 +1390,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		for (i = 1; i < sys_nsig; i++) {
 			if (sigismember(&ss, i)) {
 				fprintf(fp, "%s%s", !first ? "|" : "",
-				    sysdecode_signal(i));
+				    strsig2(i));
 				first = 0;
 			}
 		}
