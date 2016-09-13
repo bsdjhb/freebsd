@@ -26,12 +26,10 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <sys/param.h>
+#include <sys/types.h>
 #include <sys/acl.h>
 #include <sys/capsicum.h>
 #include <sys/extattr.h>
-#include <sys/fcntl.h>
-#include <sys/ipc.h>
 #include <sys/linker.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -46,21 +44,19 @@ __FBSDID("$FreeBSD$");
 #include <sys/stat.h>
 #include <sys/thr.h>
 #include <sys/umtx.h>
-#include <sys/unistd.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
 #include <nfsserver/nfs.h>
 #include <ufs/ufs/quota.h>
-#include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <aio.h>
+#include <fcntl.h>
 #include <sched.h>
-#include <signal.h>
-#include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 #include <sysdecode.h>
+#include <unistd.h>
 
 /*
  * This is taken from the xlat tables originally in truss which were
@@ -532,7 +528,7 @@ const char *
 sysdecode_nfssvc_flags(int flags)
 {
 
-	return (lookup_value(nfssvc, flags));
+	return (lookup_value(nfssvcflags, flags));
 }
 
 static struct name_table pipe2flags[] = {
