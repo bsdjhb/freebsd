@@ -243,6 +243,8 @@ printcpuinfo(void)
 #ifdef __i386__
 	cpu_class = cpus[cpu].cpu_class;
 	strncpy(cpu_model, cpus[cpu].cpu_name, sizeof (cpu_model));
+#else
+	strncpy(cpu_model, "Hammer", sizeof (cpu_model));
 #endif
 
 	/* Check for extended CPUID information and a processor name. */
