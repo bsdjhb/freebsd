@@ -6244,82 +6244,67 @@ tweak_tunables(void)
 	t4_intr_types &= INTR_MSIX | INTR_MSI | INTR_INTX;
 }
 
-static struct sx mlu;	/* mod load unload */
-SX_SYSINIT(cxgbe_mlu, &mlu, "cxgbe mod load/unload");
-
 static int
 mod_event(module_t mod, int cmd, void *arg)
 {
 	int rc = 0;
-	static int loaded = 0;
 
 	switch (cmd) {
 	case MOD_LOAD:
-		sx_xlock(&mlu);
-		if (loaded++ == 0) {
-			t4_sge_modload();
-			t4_register_cpl_handler(CPL_SET_TCB_RPL, set_tcb_rpl);
-			t4_register_cpl_handler(CPL_L2T_WRITE_RPL, l2t_write_rpl);
-			t4_register_cpl_handler(CPL_TRACE_PKT, t4_trace_pkt);
-			t4_register_cpl_handler(CPL_T5_TRACE_PKT, t5_trace_pkt);
-			sx_init(&t4_list_lock, "T4/T5 adapters");
-			SLIST_INIT(&t4_list);
+		t4_sge_modload();
+		t4_register_cpl_handler(CPL_SET_TCB_RPL, set_tcb_rpl);
+		t4_register_cpl_handler(CPL_L2T_WRITE_RPL, l2t_write_rpl);
+		t4_register_cpl_handler(CPL_TRACE_PKT, t4_trace_pkt);
+		t4_register_cpl_handler(CPL_T5_TRACE_PKT, t5_trace_pkt);
+		sx_init(&t4_list_lock, "T4/T5 adapters");
+		SLIST_INIT(&t4_list);
 #ifdef TCP_OFFLOAD
-			sx_init(&t4_uld_list_lock, "T4/T5 ULDs");
-			SLIST_INIT(&t4_uld_list);
+		sx_init(&t4_uld_list_lock, "T4/T5 ULDs");
+		SLIST_INIT(&t4_uld_list);
 #endif
-			t4_tracer_modload();
-			tweak_tunables();
-		}
-		sx_xunlock(&mlu);
+		t4_tracer_modload();
+		tweak_tunables();
 		break;
 
 	case MOD_UNLOAD:
-		sx_xlock(&mlu);
-		if (--loaded == 0) {
-			int tries;
+		int tries;
 
-			sx_slock(&t4_list_lock);
-			if (!SLIST_EMPTY(&t4_list)) {
-				rc = EBUSY;
-				sx_sunlock(&t4_list_lock);
-				goto done_unload;
-			}
-#ifdef TCP_OFFLOAD
-			sx_slock(&t4_uld_list_lock);
-			if (!SLIST_EMPTY(&t4_uld_list)) {
-				rc = EBUSY;
-				sx_sunlock(&t4_uld_list_lock);
-				sx_sunlock(&t4_list_lock);
-				goto done_unload;
-			}
-#endif
-			tries = 0;
-			while (tries++ < 5 && t4_sge_extfree_refs() != 0) {
-				uprintf("%ju clusters with custom free routine "
-				    "still is use.\n", t4_sge_extfree_refs());
-				pause("t4unload", 2 * hz);
-			}
-#ifdef TCP_OFFLOAD
-			sx_sunlock(&t4_uld_list_lock);
-#endif
+		sx_slock(&t4_list_lock);
+		if (!SLIST_EMPTY(&t4_list)) {
+			rc = EBUSY;
 			sx_sunlock(&t4_list_lock);
-
-			if (t4_sge_extfree_refs() == 0) {
-				t4_tracer_modunload();
-#ifdef TCP_OFFLOAD
-				sx_destroy(&t4_uld_list_lock);
-#endif
-				sx_destroy(&t4_list_lock);
-				t4_sge_modunload();
-				loaded = 0;
-			} else {
-				rc = EBUSY;
-				loaded++;	/* undo earlier decrement */
-			}
+			break;
 		}
-done_unload:
-		sx_xunlock(&mlu);
+#ifdef TCP_OFFLOAD
+		sx_slock(&t4_uld_list_lock);
+		if (!SLIST_EMPTY(&t4_uld_list)) {
+			rc = EBUSY;
+			sx_sunlock(&t4_uld_list_lock);
+			sx_sunlock(&t4_list_lock);
+			break;
+		}
+#endif
+		tries = 0;
+		while (tries++ < 5 && t4_sge_extfree_refs() != 0) {
+			uprintf("%ju clusters with custom free routine "
+			    "still is use.\n", t4_sge_extfree_refs());
+			pause("t4unload", 2 * hz);
+		}
+#ifdef TCP_OFFLOAD
+		sx_sunlock(&t4_uld_list_lock);
+#endif
+		sx_sunlock(&t4_list_lock);
+
+		if (t4_sge_extfree_refs() == 0) {
+			t4_tracer_modunload();
+#ifdef TCP_OFFLOAD
+			sx_destroy(&t4_uld_list_lock);
+#endif
+			sx_destroy(&t4_list_lock);
+			t4_sge_modunload();
+		} else {
+			rc = EBUSY;
+		}
 		break;
 	}
 
