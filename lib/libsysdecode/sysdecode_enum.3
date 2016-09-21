@@ -1,0 +1,351 @@
+.\"
+.\" Copyright (c) 2016 John Baldwin <jhb@FreeBSD.org>
+.\" All rights reserved.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" $FreeBSD$
+.\"
+.Dd September 12, 2016
+.Dt sysdecode_enum 3
+.Os
+.Sh NAME
+.Nm sysdecode_enum ,
+.Nm sysdecode_acltype ,
+.Nm sysdecode_extattrnamespace ,
+.Nm sysdecode_fadvice ,
+.Nm sysdecode_fcntl_cmd ,
+.Nm sysdecode_idtype ,
+.Nm sysdecode_ipproto ,
+.Nm sysdecode_kldsym_cmd ,
+.Nm sysdecode_kldunload_flags ,
+.Nm sysdecode_lio_listio_mode ,
+.Nm sysdecode_madvice ,
+.Nm sysdecode_minherit_flags ,
+.Nm sysdecode_msgctl_op ,
+.Nm sysdecode_nfssvc_flags ,
+.Nm sysdecode_prio_which ,
+.Nm sysdecode_procctl_cmd ,
+.Nm sysdecode_ptrace_request ,
+.Nm sysdecode_rlimit ,
+.Nm sysdecode_rtprio_function ,
+.Nm sysdecode_scheduler_policy ,
+.Nm sysdecode_semctl_op ,
+.Nm sysdecode_shmctl_op ,
+.Nm sysdecode_shutdown_how ,
+.Nm sysdecode_sigbus_code ,
+.Nm sysdecode_sigchld_code ,
+.Nm sysdecode_sigfpe_code ,
+.Nm sysdecode_sigill_code ,
+.Nm sysdecode_sigprocmask_how ,
+.Nm sysdecode_sigsegv_code ,
+.Nm sysdecode_sigtrap_code ,
+.Nm sysdecode_sockaddr_family ,
+.Nm sysdecode_socketdomain ,
+.Nm sysdecode_sockettype ,
+.Nm sysdecode_umtx_op ,
+.Nm sysdecode_vmresult ,
+.Nm sysdecode_whence
+.Nd lookup name of various enumerated values
+.Sh LIBRARY
+.Lb libsysdecode
+.Sh SYNOPSIS
+.In sys/types.h
+.In stdbool.h
+.In sysdecode.h
+.Ft const char *
+.Fn sysdecode_acltype "int type"
+.Ft const char *
+.Fn sysdecode_extattrnamespace "int namespace"
+.Ft const char *
+.Fn sysdecode_fadvice "int advice"
+.Ft const char *
+.Fn sysdecode_fcntl_cmd "int cmd"
+.Ft const char *
+.Fn sysdecode_idtype "int idtype"
+.Ft const char *
+.Fn sysdecode_ipproto "int protocol"
+.Ft const char *
+.Fn sysdecode_kldsym_cmd "int command"
+.Ft const char *
+.Fn sysdecode_kldunload_flags "int flags"
+.Ft const char *
+.Fn sysdecode_lio_listio_mode "int mode"
+.Ft const char *
+.Fn sysdecode_madvice "int advice"
+.Ft const char *
+.Fn sysdecode_minherit_flags "int inherit"
+.Ft const char *
+.Fn sysdecode_msgctl_op "int cmd"
+.Ft const char *
+.Fn sysdecode_nfssvc_flags "int flags"
+.Ft const char *
+.Fn sysdecode_prio_which "int which"
+.Ft const char *
+.Fn sysdecode_procctl_cmd "int cmd"
+.Ft const char *
+.Fn sysdecode_ptrace_request "int request"
+.Ft const char *
+.Fn sysdecode_rlimit "int resource"
+.Ft const char *
+.Fn sysdecode_rtprio_function "int function"
+.Ft const char *
+.Fn sysdecode_scheduler_policy "int policy"
+.Ft const char *
+.Fn sysdecode_semctl_op "int cmd"
+.Ft const char *
+.Fn sysdecode_shmctl_op "int cmd"
+.Ft const char *
+.Fn sysdecode_shutdown_how "int how"
+.Ft const char *
+.Fn sysdecode_sigbus_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sigchld_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sigfpe_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sigill_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sigprocmask_how "int how"
+.Ft const char *
+.Fn sysdecode_sigsegv_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sigtrap_code "int si_code"
+.Ft const char *
+.Fn sysdecode_sockaddr_family "int sa_family"
+.Ft const char *
+.Fn sysdecode_socketdomain "int domain"
+.Ft const char *
+.Fn sysdecode_sockettype "int type"
+.Ft const char *
+.Fn sysdecode_umtx_op "int op"
+.Ft const char *
+.Fn sysdecode_vmresult "int result"
+.Ft const char *
+.Fn sysdecode_whence "int whence"
+.Sh DESCRIPTION
+The
+.Nm
+functions return a text description of an integer value.
+The text description matches the name of a C macro with the same value as the
+sole function argument.
+.Dv NULL
+is returned if there is no matching C macro name.
+Most of the values decoded by these functions are passed as arguments to
+system calls,
+though some of these values are used internally in the kernel.
+.Pp
+Each function decodes the values described below:
+.Bl -tag -width ".Fn sysdecode_extattrnamespace"
+.It Fn sysdecode_acltype
+The
+.Xr acl 3
+type stored in
+.Vt acl_type_t
+variables.
+.It Fn sysdecode_extattrnamespace
+The
+.Fa attrnamespace
+argument to various extended attribute system calls described in
+.Xr extattr 2 .
+.It Fn sysdecode_fadvice
+The
+.Fa advice
+argument to
+.Xr posix_fadvise 2 .
+.It Fn sysdecode_fcntl_cmd
+The
+.Fa cmd
+argument to
+.Xr fcntl 2 .
+.It Fn sysdecode_idtype
+The
+.Fa idtype
+argument to
+.Xr procctl 2
+and
+.Xr waitid 2 .
+.It Fn sysdecode_ipproto
+IP protocols.
+.It Fn sysdecode_kldsym_cmd
+The
+.Fa command
+argument to
+.Xr kldsym 2 .
+.It Fn sysdecode_kldunload_flags
+The
+.Fa flags
+argument to
+.Xr kldunloadf 2 .
+.It Fn sysdecode_lio_listio_mode
+The
+.Fa mode
+argument to
+.Xr lio_listio 2 .
+.It Fn sysdecode_madvice
+The
+.Fa advice
+argument to
+.Xr madvise 2 .
+.It Fn sysdecode_minherit_flags
+The
+.Fa inherit
+argument to
+.Xr minherit 2 .
+.It Fn sysdecode_msgctl_op
+The
+.Fa cmd
+argument to
+.Xr msgctl 2 .
+.It Fn sysdecode_nfssvc_flags
+The
+.Fa flags
+argument to
+.Xr nfssvc 2 .
+.It Fn sysdecode_prio_which
+The
+.Fa which
+argument to
+.Xr getpriority 2 .
+.It Fn sysdecode_procctl_cmd
+The
+.Fa cmd
+argument to
+.Xr procctl 2 .
+.It Fn sysdecode_ptrace_request
+The
+.Fa request
+argument to
+.Xr ptrace 2 .
+.It Fn sysdecode_rlimit
+The
+.Fa resource
+argument to
+.Xr getrlimit 2 .
+.It Fn sysdecode_rtprio_function
+The
+.Fa function
+argument to
+.Xr rtprio 2 .
+.It Fn sysdecode_scheduler_policy
+The
+.Fa policy
+argument to
+.Xr sched_setscheduler 2 .
+.It Fn sysdecode_semctl_op
+The
+.Fa cmd
+argument to
+.Xr semctl 2 .
+.It Fn sysdecode_shmctl_op
+The
+.Fa cmd
+argument to
+.Xr shmctl 2 .
+.It Fn sysdecode_shutdown_how
+The
+.Fa how
+argument to
+.Xr shutdown 2 .
+.It Fn sysdecode_sigbus_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGBUS
+signal.
+.It Fn sysdecode_sigchld_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGCHLD
+signal.
+.It Fn sysdecode_sigfpe_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGFPE
+signal.
+.It Fn sysdecode_sigill_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGILL
+signal.
+.It Fn sysdecode_sigprocmask_how
+The
+.Fa how
+argument to
+.Xr sigprocmask 2 .
+.It Fn sysdecode_sigsegv_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGSEGV
+signal.
+.It Fn sysdecode_sigtrap_code
+The
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with a
+.Dv SIGBTRAP
+signal.
+.It Fn sysdecode_sockaddr_family
+A socket address family.
+.It Fn sysdecode_socketdomain
+A socket domain.
+.It Fn sysdecode_sockettype
+A socket type without any additional flags such as
+.Dv SOCK_CLOEXEC .
+.It Fn sysdecode_umtx_op
+The
+.Fa op
+argument to
+.Xr _umtx_op 2 .
+.It Fn sysdecode_vmresult
+The return value of a function in the virtual memory subsystem of the kernel
+indicating the status of the associated request.
+.It Fn sysdecode_whence
+The
+.Fa whence
+argument passed to
+.Xr lseek 2 .
+.El
+.Sh RETURN VALUES
+The
+.Nm
+functions return the name of a matching C macro or
+.Dv NULL
+if no matching C macro was found.
+.Sh SEE ALSO
+.Xr sysdecode 3 ,
+.Xr sysdecode_mask 3
