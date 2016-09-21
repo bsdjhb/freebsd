@@ -11,6 +11,7 @@ SUBDIR+=	if_cc
 SUBDIR+=	if_cxgbev
 SUBDIR+=	if_cxlv
 SUBDIR+=	if_ccv
+SUBDIR+=	t4_common
 SUBDIR+=	t4_firmware
 SUBDIR+=	t5_firmware
 SUBDIR+=	${_tom}
