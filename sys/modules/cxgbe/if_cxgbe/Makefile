@@ -18,8 +18,6 @@ SRCS+=	t4_if.h
 SRCS+=	t4_iov.c
 SRCS+=	t4_l2t.c
 SRCS+=	t4_pf.c
-SRCS+=	t4_netmap.c
-SRCS+=	t4_tracer.c
 
 # Provide the timestamp of a packet in its header mbuf.
 #CFLAGS+= -DT4_PKT_TIMESTAMP
