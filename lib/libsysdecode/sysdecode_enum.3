@@ -41,7 +41,7 @@
 .Nm sysdecode_lio_listio_mode ,
 .Nm sysdecode_madvice ,
 .Nm sysdecode_minherit_flags ,
-.Nm sysdecode_msgctl_op ,
+.Nm sysdecode_msgctl_cmd ,
 .Nm sysdecode_nfssvc_flags ,
 .Nm sysdecode_prio_which ,
 .Nm sysdecode_procctl_cmd ,
@@ -49,8 +49,8 @@
 .Nm sysdecode_rlimit ,
 .Nm sysdecode_rtprio_function ,
 .Nm sysdecode_scheduler_policy ,
-.Nm sysdecode_semctl_op ,
-.Nm sysdecode_shmctl_op ,
+.Nm sysdecode_semctl_cmd ,
+.Nm sysdecode_shmctl_cmd ,
 .Nm sysdecode_shutdown_how ,
 .Nm sysdecode_sigbus_code ,
 .Nm sysdecode_sigchld_code ,
@@ -85,7 +85,7 @@
 .Ft const char *
 .Fn sysdecode_ipproto "int protocol"
 .Ft const char *
-.Fn sysdecode_kldsym_cmd "int command"
+.Fn sysdecode_kldsym_cmd "int cmd"
 .Ft const char *
 .Fn sysdecode_kldunload_flags "int flags"
 .Ft const char *
@@ -95,7 +95,7 @@
 .Ft const char *
 .Fn sysdecode_minherit_flags "int inherit"
 .Ft const char *
-.Fn sysdecode_msgctl_op "int cmd"
+.Fn sysdecode_msgctl_cmd "int cmd"
 .Ft const char *
 .Fn sysdecode_nfssvc_flags "int flags"
 .Ft const char *
@@ -111,9 +111,9 @@
 .Ft const char *
 .Fn sysdecode_scheduler_policy "int policy"
 .Ft const char *
-.Fn sysdecode_semctl_op "int cmd"
+.Fn sysdecode_semctl_cmd "int cmd"
 .Ft const char *
-.Fn sysdecode_shmctl_op "int cmd"
+.Fn sysdecode_shmctl_cmd "int cmd"
 .Ft const char *
 .Fn sysdecode_shutdown_how "int how"
 .Ft const char *
@@ -188,7 +188,7 @@ and
 IP protocols.
 .It Fn sysdecode_kldsym_cmd
 The
-.Fa command
+.Fa cmd
 argument to
 .Xr kldsym 2 .
 .It Fn sysdecode_kldunload_flags
@@ -206,12 +206,12 @@ The
 .Fa advice
 argument to
 .Xr madvise 2 .
-.It Fn sysdecode_minherit_flags
+.It Fn sysdecode_minherit_inherit
 The
 .Fa inherit
 argument to
 .Xr minherit 2 .
-.It Fn sysdecode_msgctl_op
+.It Fn sysdecode_msgctl_cmd
 The
 .Fa cmd
 argument to
@@ -251,12 +251,12 @@ The
 .Fa policy
 argument to
 .Xr sched_setscheduler 2 .
-.It Fn sysdecode_semctl_op
+.It Fn sysdecode_semctl_cmd
 The
 .Fa cmd
 argument to
 .Xr semctl 2 .
-.It Fn sysdecode_shmctl_op
+.It Fn sysdecode_shmctl_cmd
 The
 .Fa cmd
 argument to

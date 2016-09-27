@@ -246,7 +246,7 @@ static struct name_table semctlops[] = {
 };
 
 const char *
-sysdecode_semctl_op(int cmd)
+sysdecode_semctl_cmd(int cmd)
 {
 
 	return (lookup_value(semctlops, cmd));
@@ -257,17 +257,17 @@ static struct name_table shmctlops[] = {
 };
 
 const char *
-sysdecode_shmctl_op(int cmd)
+sysdecode_shmctl_cmd(int cmd)
 {
 
 	return (lookup_value(shmctlops, cmd));
 }
 
 const char *
-sysdecode_msgctl_op(int cmd)
+sysdecode_msgctl_cmd(int cmd)
 {
 
-	return (sysdecode_shmctl_op(cmd));
+	return (sysdecode_shmctl_cmd(cmd));
 }
 
 static struct name_table semgetflags[] = {
@@ -335,7 +335,7 @@ sysdecode_sockettypewithflags(FILE *fp, int type)
 }
 
 bool
-sysdecode_accessmode(FILE *fp, int mode, int *rem)
+sysdecode_access_mode(FILE *fp, int mode, int *rem)
 {
 
 	return (print_mask_int(fp, accessmode, mode, rem));
@@ -350,7 +350,7 @@ sysdecode_acltype(int type)
 }
 
 bool
-sysdecode_capfcntlrights(FILE *fp, uint32_t rights, uint32_t *rem)
+sysdecode_cap_fcntlrights(FILE *fp, uint32_t rights, uint32_t *rem)
 {
 
 	return (print_mask_int(fp, capfcntl, rights, rem));
@@ -434,7 +434,7 @@ sysdecode_fcntl_fileflags(FILE *fp, int flags, int *rem)
 }
 
 bool
-sysdecode_flock_op(FILE *fp, int operation, int *rem)
+sysdecode_flock_operation(FILE *fp, int operation, int *rem)
 {
 
 	return (print_mask_int(fp, flockops, operation, rem));
@@ -448,10 +448,10 @@ sysdecode_getfsstat_flags(FILE *fp, int flags, int *rem)
 }
 
 const char *
-sysdecode_kldsym_cmd(int command)
+sysdecode_kldsym_cmd(int cmd)
 {
 
-	return (lookup_value(kldsymcmd, command));
+	return (lookup_value(kldsymcmd, cmd));
 }
 
 const char *
@@ -476,7 +476,7 @@ sysdecode_madvice(int advice)
 }
 
 const char *
-sysdecode_minherit_flags(int inherit)
+sysdecode_minherit_inherit(int inherit)
 {
 
 	return (lookup_value(minheritflags, inherit));

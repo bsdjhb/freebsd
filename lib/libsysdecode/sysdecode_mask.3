@@ -35,7 +35,7 @@
 .Nm sysdecode_fcntl_fileflags ,
 .Nm sysdecode_fileflags ,
 .Nm sysdecode_filemode ,
-.Nm sysdecode_flock_op ,
+.Nm sysdecode_flock_operation ,
 .Nm sysdecode_getfsstat_flags ,
 .Nm sysdecode_mlockall_flags ,
 .Nm sysdecode_mmap_flags ,
@@ -64,9 +64,9 @@
 .In stdbool.h
 .In sysdecode.h
 .Ft bool
-.Fn sysdecode_accessmode "FILE *fp" "int mode" "int *rem"
+.Fn sysdecode_access_mode "FILE *fp" "int mode" "int *rem"
 .Ft bool
-.Fn sysdecode_capfcntlrights "FILE *fp" "uint32_t rights" "uint32_t *rem"
+.Fn sysdecode_cap_fcntlrights "FILE *fp" "uint32_t rights" "uint32_t *rem"
 .Ft bool
 .Fn sysdecode_fcntl_fileflags "FILE *fp" "int flags" "int *rem"
 .Ft bool
@@ -74,7 +74,7 @@
 .Ft bool
 .Fn sysdecode_filemode "FILE *fp" "int mode" "int *rem"
 .Ft bool
-.Fn sysdecode_flock_op "FILE *fp" "int operation" "int *rem"
+.Fn sysdecode_flock_operation "FILE *fp" "int operation" "int *rem"
 .Ft bool
 .Fn sysdecode_mlockall_flags "FILE *fp" "int flags" "int *rem"
 .Ft bool
@@ -144,12 +144,12 @@ if no bit fields were decoded.
 .Pp
 Each function decodes the values described below:
 .Bl -tag -width ".Fn sysdecode_umtx_cvwait_flags"
-.It Fn sysdecode_accessmode
+.It Fn sysdecode_access_mode
 The
 .Fa mode
 argument to
 .Xr access 2 .
-.It Fn sysdecode_capfcntlrights
+.It Fn sysdecode_cap_fcntlrights
 The
 .Fa fcntlrights
 argument to
@@ -171,13 +171,13 @@ or passed in the
 argument to
 .Xr chflags 2 .
 .It Fn sysdecode_filemode
-The file mode passesd in the
+The file mode passed in the
 .Fa mode
 argument to
 .Xr chmod 2
 and
-.Xr open 2.
-.It Fn sysdecode_flock_op
+.Xr open 2 .
+.It Fn sysdecode_flock_operation
 The
 .Fa operation
 argument to
