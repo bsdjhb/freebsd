@@ -122,7 +122,7 @@ SLIST_HEAD(, uld_info) t4_uld_list;
  */
 
 /*
- * Number of queues for tx and rx, 10G and 1G, NIC and offload.
+ * Number of queues for tx and rx, 10G and 1G.
  */
 #define NTXQ_10G 16
 int t4_ntxq10g = -1;
@@ -139,50 +139,6 @@ TUNABLE_INT("hw.cxgbe.ntxq1g", &t4_ntxq1g);
 #define NRXQ_1G 2
 int t4_nrxq1g = -1;
 TUNABLE_INT("hw.cxgbe.nrxq1g", &t4_nrxq1g);
-
-#define NTXQ_VI 1
-int t4_ntxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.ntxq_vi", &t4_ntxq_vi);
-
-#define NRXQ_VI 1
-int t4_nrxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.nrxq_vi", &t4_nrxq_vi);
-
-#ifdef TCP_OFFLOAD
-#define NOFLDTXQ_10G 8
-int t4_nofldtxq10g = -1;
-TUNABLE_INT("hw.cxgbe.nofldtxq10g", &t4_nofldtxq10g);
-
-#define NOFLDRXQ_10G 2
-int t4_nofldrxq10g = -1;
-TUNABLE_INT("hw.cxgbe.nofldrxq10g", &t4_nofldrxq10g);
-
-#define NOFLDTXQ_1G 2
-int t4_nofldtxq1g = -1;
-TUNABLE_INT("hw.cxgbe.nofldtxq1g", &t4_nofldtxq1g);
-
-#define NOFLDRXQ_1G 1
-int t4_nofldrxq1g = -1;
-TUNABLE_INT("hw.cxgbe.nofldrxq1g", &t4_nofldrxq1g);
-
-#define NOFLDTXQ_VI 1
-int t4_nofldtxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.nofldtxq_vi", &t4_nofldtxq_vi);
-
-#define NOFLDRXQ_VI 1
-int t4_nofldrxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.nofldrxq_vi", &t4_nofldrxq_vi);
-#endif
-
-#ifdef DEV_NETMAP
-#define NNMTXQ_VI 2
-int t4_nnmtxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.nnmtxq_vi", &t4_nnmtxq_vi);
-
-#define NNMRXQ_VI 2
-int t4_nnmrxq_vi = -1;
-TUNABLE_INT("hw.cxgbe.nnmrxq_vi", &t4_nnmrxq_vi);
-#endif
 
 /*
  * Holdoff parameters for 10G and 1G ports.
@@ -3749,9 +3705,6 @@ tweak_tunables(void)
 #endif
 	}
 
-	if (t4_ntxq_vi < 1)
-		t4_ntxq_vi = min(nc, NTXQ_VI);
-
 	if (t4_nrxq10g < 1) {
 #ifdef RSS
 		t4_nrxq10g = rss_getnumbuckets();
@@ -3768,60 +3721,6 @@ tweak_tunables(void)
 		t4_nrxq1g = min(nc, NRXQ_1G);
 #endif
 	}
-
-	if (t4_nrxq_vi < 1)
-		t4_nrxq_vi = min(nc, NRXQ_VI);
-
-#ifdef TCP_OFFLOAD
-	if (t4_nofldtxq10g < 1)
-		t4_nofldtxq10g = min(nc, NOFLDTXQ_10G);
-
-	if (t4_nofldtxq1g < 1)
-		t4_nofldtxq1g = min(nc, NOFLDTXQ_1G);
-
-	if (t4_nofldtxq_vi < 1)
-		t4_nofldtxq_vi = min(nc, NOFLDTXQ_VI);
-
-	if (t4_nofldrxq10g < 1)
-		t4_nofldrxq10g = min(nc, NOFLDRXQ_10G);
-
-	if (t4_nofldrxq1g < 1)
-		t4_nofldrxq1g = min(nc, NOFLDRXQ_1G);
-
-	if (t4_nofldrxq_vi < 1)
-		t4_nofldrxq_vi = min(nc, NOFLDRXQ_VI);
-
-	if (t4_toecaps_allowed == -1)
-		t4_toecaps_allowed = FW_CAPS_CONFIG_TOE;
-
-	if (t4_rdmacaps_allowed == -1) {
-		t4_rdmacaps_allowed = FW_CAPS_CONFIG_RDMA_RDDP |
-		    FW_CAPS_CONFIG_RDMA_RDMAC;
-	}
-
-	if (t4_iscsicaps_allowed == -1) {
-		t4_iscsicaps_allowed = FW_CAPS_CONFIG_ISCSI_INITIATOR_PDU |
-		    FW_CAPS_CONFIG_ISCSI_TARGET_PDU |
-		    FW_CAPS_CONFIG_ISCSI_T10DIF;
-	}
-#else
-	if (t4_toecaps_allowed == -1)
-		t4_toecaps_allowed = 0;
-
-	if (t4_rdmacaps_allowed == -1)
-		t4_rdmacaps_allowed = 0;
-
-	if (t4_iscsicaps_allowed == -1)
-		t4_iscsicaps_allowed = 0;
-#endif
-
-#ifdef DEV_NETMAP
-	if (t4_nnmtxq_vi < 1)
-		t4_nnmtxq_vi = min(nc, NNMTXQ_VI);
-
-	if (t4_nnmrxq_vi < 1)
-		t4_nnmrxq_vi = min(nc, NNMRXQ_VI);
-#endif
 
 	if (t4_tmr_idx_10g < 0 || t4_tmr_idx_10g >= SGE_NTIMERS)
 		t4_tmr_idx_10g = TMR_IDX_10G;
