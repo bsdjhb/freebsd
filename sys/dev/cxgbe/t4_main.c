@@ -327,9 +327,6 @@ t4_detach_common(device_t dev)
 		bus_release_resource(dev, SYS_RES_MEMORY, sc->msix_rid,
 		    sc->msix_res);
 
-	if (sc->l2t)
-		t4_free_l2t(sc->l2t);
-
 #ifdef TCP_OFFLOAD
 	free(sc->sge.ofld_rxq, M_CXGBE);
 	free(sc->sge.ofld_txq, M_CXGBE);
@@ -369,8 +366,6 @@ t4_detach_common(device_t dev)
 		if (rw_initialized(&mw->mw_lock))
 			rw_destroy(&mw->mw_lock);
 	}
-
-	bzero(sc, sizeof(*sc));
 
 	return (0);
 }

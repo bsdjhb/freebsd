@@ -1085,7 +1085,14 @@ t4_detach(device_t dev)
 		return (rc);
 	}
 
-	return (t4_detach_common(dev));
+	rc = t4_detach_common(dev);
+	if (rc)
+		return (rc);
+
+	if (sc->l2t)
+		t4_free_l2t(sc->l2t);
+
+	return (0);
 }
 
 static int
