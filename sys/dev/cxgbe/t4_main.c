@@ -141,49 +141,46 @@ int t4_nrxq1g = -1;
 TUNABLE_INT("hw.cxgbe.nrxq1g", &t4_nrxq1g);
 
 #define NTXQ_VI 1
-static int t4_ntxq_vi = -1;
+int t4_ntxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.ntxq_vi", &t4_ntxq_vi);
 
 #define NRXQ_VI 1
-static int t4_nrxq_vi = -1;
+int t4_nrxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.nrxq_vi", &t4_nrxq_vi);
-
-static int t4_rsrv_noflowq = 0;
-TUNABLE_INT("hw.cxgbe.rsrv_noflowq", &t4_rsrv_noflowq);
 
 #ifdef TCP_OFFLOAD
 #define NOFLDTXQ_10G 8
-static int t4_nofldtxq10g = -1;
+int t4_nofldtxq10g = -1;
 TUNABLE_INT("hw.cxgbe.nofldtxq10g", &t4_nofldtxq10g);
 
 #define NOFLDRXQ_10G 2
-static int t4_nofldrxq10g = -1;
+int t4_nofldrxq10g = -1;
 TUNABLE_INT("hw.cxgbe.nofldrxq10g", &t4_nofldrxq10g);
 
 #define NOFLDTXQ_1G 2
-static int t4_nofldtxq1g = -1;
+int t4_nofldtxq1g = -1;
 TUNABLE_INT("hw.cxgbe.nofldtxq1g", &t4_nofldtxq1g);
 
 #define NOFLDRXQ_1G 1
-static int t4_nofldrxq1g = -1;
+int t4_nofldrxq1g = -1;
 TUNABLE_INT("hw.cxgbe.nofldrxq1g", &t4_nofldrxq1g);
 
 #define NOFLDTXQ_VI 1
-static int t4_nofldtxq_vi = -1;
+int t4_nofldtxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.nofldtxq_vi", &t4_nofldtxq_vi);
 
 #define NOFLDRXQ_VI 1
-static int t4_nofldrxq_vi = -1;
+int t4_nofldrxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.nofldrxq_vi", &t4_nofldrxq_vi);
 #endif
 
 #ifdef DEV_NETMAP
 #define NNMTXQ_VI 2
-static int t4_nnmtxq_vi = -1;
+int t4_nnmtxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.nnmtxq_vi", &t4_nnmtxq_vi);
 
 #define NNMRXQ_VI 2
-static int t4_nnmrxq_vi = -1;
+int t4_nnmrxq_vi = -1;
 TUNABLE_INT("hw.cxgbe.nnmrxq_vi", &t4_nnmrxq_vi);
 #endif
 

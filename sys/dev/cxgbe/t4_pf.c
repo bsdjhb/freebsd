@@ -202,6 +202,10 @@ static driver_t vcc_driver = {
  * Tunables specific to the PF drivers.
  */
 
+/* Reserve transmit queue 0 for non-flowid packets. */
+static int t4_rsrv_noflowq = 0;
+TUNABLE_INT("hw.cxgbe.rsrv_noflowq", &t4_rsrv_noflowq);
+
 /*
  * Configuration file.
  */
