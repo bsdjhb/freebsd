@@ -3748,7 +3748,7 @@ tweak_tunables(void)
 static int
 mod_event(module_t mod, int cmd, void *arg)
 {
-	int rc = 0;
+	int rc = 0, tries;
 
 	switch (cmd) {
 	case MOD_LOAD:
@@ -3768,8 +3768,6 @@ mod_event(module_t mod, int cmd, void *arg)
 		break;
 
 	case MOD_UNLOAD:
-		int tries;
-
 		sx_slock(&t4_list_lock);
 		if (!SLIST_EMPTY(&t4_list)) {
 			rc = EBUSY;
