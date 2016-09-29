@@ -5515,22 +5515,6 @@ t4_filter_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 }
 
 static int
-set_tcb_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
-{
-
-	MPASS(iq->set_tcb_rpl != NULL);
-	return (iq->set_tcb_rpl(iq, rss, m));
-}
-
-static int
-l2t_write_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
-{
-
-	MPASS(iq->l2t_write_rpl != NULL);
-	return (iq->l2t_write_rpl(iq, rss, m));
-}
-
-static int
 get_sge_context(struct adapter *sc, struct t4_sge_context *cntxt)
 {
 	int rc;
