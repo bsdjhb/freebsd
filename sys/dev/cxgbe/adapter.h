@@ -123,6 +123,25 @@ t4_bus_space_write_8(bus_space_tag_t tag, bus_space_handle_t bsh,
 }
 #endif
 
+#define	A_PL_INDIR_CMD	0x1f8
+
+#define	S_PL_AUTOINC	31
+#define	M_PL_AUTOINC	0x1U
+#define	V_PL_AUTOINC(x)	((x) << S_PL_AUTOINC)
+#define	G_PL_AUTOINC(x)	(((x) >> S_PL_AUTOINC) & M_PL_AUTOINC)
+
+#define	S_PL_VFID	20
+#define	M_PL_VFID	0xffU
+#define	V_PL_VFID(x)	((x) << S_PL_VFID)
+#define	G_PL_VFID(x)	(((x) >> S_PL_VFID) & M_PL_VFID)
+
+#define	S_PL_ADDR	0
+#define	M_PL_ADDR	0xfffffU
+#define	V_PL_ADDR(x)	((x) << S_PL_ADDR)
+#define	G_PL_ADDR(x)	(((x) >> S_PL_ADDR) & M_PL_ADDR)
+
+#define	A_PL_INDIR_DATA	0x1fc
+
 struct adapter;
 typedef struct adapter adapter_t;
 
@@ -1141,7 +1160,6 @@ void t4_iterate(void (*)(struct adapter *, void *), void *);
 void t4_init_devnames(struct adapter *);
 void t4_add_adapter(struct adapter *);
 int t4_detach_common(device_t);
-int t4_filter_rpl(struct sge_iq *, const struct rss_header *, struct mbuf *);
 int t4_map_bars_0_and_4(struct adapter *);
 int t4_map_bar_2(struct adapter *);
 int t4_set_sched_class(struct adapter *, struct t4_sched_params *);

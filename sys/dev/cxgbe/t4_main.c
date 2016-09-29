@@ -2289,25 +2289,6 @@ t4_free_irq(struct adapter *sc, struct irq *irq)
 	return (0);
 }
 
-#define	A_PL_INDIR_CMD	0x1f8
-
-#define	S_PL_AUTOINC	31
-#define	M_PL_AUTOINC	0x1U
-#define	V_PL_AUTOINC(x)	((x) << S_PL_AUTOINC)
-#define	G_PL_AUTOINC(x)	(((x) >> S_PL_AUTOINC) & M_PL_AUTOINC)
-
-#define	S_PL_VFID	20
-#define	M_PL_VFID	0xffU
-#define	V_PL_VFID(x)	((x) << S_PL_VFID)
-#define	G_PL_VFID(x)	(((x) >> S_PL_VFID) & M_PL_VFID)
-
-#define	S_PL_ADDR	0
-#define	M_PL_ADDR	0xfffffU
-#define	V_PL_ADDR(x)	((x) << S_PL_ADDR)
-#define	G_PL_ADDR(x)	(((x) >> S_PL_ADDR) & M_PL_ADDR)
-
-#define	A_PL_INDIR_DATA	0x1fc
-
 static uint64_t
 read_vf_stat(struct adapter *sc, unsigned int viid, int reg)
 {
