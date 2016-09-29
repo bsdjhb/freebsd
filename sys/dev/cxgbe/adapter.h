@@ -1165,7 +1165,7 @@ int t4_map_bar_2(struct adapter *);
 int t4_set_sched_class(struct adapter *, struct t4_sched_params *);
 int t4_set_sched_queue(struct adapter *, struct t4_sched_queue *);
 int t4_setup_intr_handlers(struct adapter *);
-void t4_sysctls(struct adapter *);
+void t4_sysctls_common(struct adapter *);
 int begin_synchronized_op(struct adapter *, struct vi_info *, int, char *);
 void doom_vi(struct adapter *, struct vi_info *);
 void end_synchronized_op(struct adapter *, int);
@@ -1179,6 +1179,7 @@ int vi_full_init(struct vi_info *);
 int vi_full_uninit(struct vi_info *);
 void vi_sysctls(struct vi_info *);
 void vi_tick(void *);
+int sysctl_bitfield(SYSCTL_HANDLER_ARGS);
 
 #ifdef DEV_NETMAP
 /* t4_netmap.c */
