@@ -218,6 +218,9 @@ TUNABLE_INT("hw.cxgbe.qsize_rxq", &t4_qsize_rxq);
 int t4_intr_types = INTR_MSIX | INTR_MSI | INTR_INTX;
 TUNABLE_INT("hw.cxgbe.interrupt_types", &t4_intr_types);
 
+static int t5_write_combine = 0;
+TUNABLE_INT("hw.cxl.write_combine", &t5_write_combine);
+
 static void build_medialist(struct port_info *, struct ifmedia *);
 static int cxgbe_init_synchronized(struct vi_info *);
 static int cxgbe_uninit_synchronized(struct vi_info *);
