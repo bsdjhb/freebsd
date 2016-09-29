@@ -818,6 +818,11 @@ struct adapter {
 	int sge_gts_reg;
 	int sge_kdoorbell_reg;
 
+	/* Firmware event queue */
+	cpl_handler_t set_tcb_rpl;
+	cpl_handler_t l2t_write_rpl;
+	int fwq_intr_idx;
+
 	bus_dma_tag_t dmat;	/* Parent DMA tag */
 
 	struct sge sge;

@@ -690,6 +690,7 @@ t4vf_attach(device_t dev)
 
 	sc->intr_type = iaq.intr_type;
 	sc->intr_count = iaq.nirq;
+	sc->fwq_intr_idx = 0;
 
 	s = &sc->sge;
 	s->nrxq = n10g * iaq.nrxq10g + n1g * iaq.nrxq1g;

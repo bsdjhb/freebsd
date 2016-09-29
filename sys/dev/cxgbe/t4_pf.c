@@ -625,6 +625,8 @@ t4_attach(device_t dev)
 
 	sc->sge_gts_reg = MYPF_REG(A_SGE_PF_GTS);
 	sc->sge_kdoorbell_reg = MYPF_REG(A_SGE_PF_KDOORBELL);
+	sc->set_tcb_rpl = t4_filter_rpl;
+	sc->l2t_write_rpl = do_l2t_write_rpl;
 	sc->traceq = -1;
 	mtx_init(&sc->ifp_lock, sc->ifp_lockname, 0, MTX_DEF);
 	snprintf(sc->ifp_lockname, sizeof(sc->ifp_lockname), "%s tracer",
@@ -833,6 +835,7 @@ t4_attach(device_t dev)
 
 	sc->intr_type = iaq.intr_type;
 	sc->intr_count = iaq.nirq;
+	sc->fwq_intr_idx = sc->intr_count > 1 ? 1 : 0;
 
 	s = &sc->sge;
 	s->nrxq = n10g * iaq.nrxq10g + n1g * iaq.nrxq1g;
