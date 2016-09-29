@@ -1009,7 +1009,7 @@ done:
 	}
 
 	if (rc != 0)
-		t4_detach_common(dev);
+		t4_detach(dev);
 	else
 		t4_sysctls(sc);
 
