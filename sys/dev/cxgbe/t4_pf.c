@@ -199,7 +199,14 @@ static driver_t vcc_driver = {
 };
 
 /*
- * Tunables specific to the PF drivers.
+ * Tunables specific to the PF drivers.  See tweak_tunables() too.
+ *
+ * Each tunable is set to a default value here if it's known at compile-time.
+ * Otherwise it is set to -1 as an indication to tweak_tunables() that it should
+ * provide a reasonable default when the driver is loaded.
+ *
+ * Tunables applicable to both T4 and T5 are under hw.cxgbe.  Those specific to
+ * T5 are under hw.cxl.
  */
 
 /*
