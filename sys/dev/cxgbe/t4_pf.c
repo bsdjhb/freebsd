@@ -5889,6 +5889,74 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 	return (rc);
 }
 
+/*
+ * Come up with reasonable defaults for some of the tunables, provided they're
+ * not set by the user (in which case we'll use the values as is).
+ */
+static void
+tweak_tunables(void *dummy)
+{
+	int nc = mp_ncpus;	/* our snapshot of the number of CPUs */
+
+	if (t4_ntxq_vi < 1)
+		t4_ntxq_vi = min(nc, NTXQ_VI);
+
+	if (t4_nrxq_vi < 1)
+		t4_nrxq_vi = min(nc, NRXQ_VI);
+
+#ifdef TCP_OFFLOAD
+	if (t4_nofldtxq10g < 1)
+		t4_nofldtxq10g = min(nc, NOFLDTXQ_10G);
+
+	if (t4_nofldtxq1g < 1)
+		t4_nofldtxq1g = min(nc, NOFLDTXQ_1G);
+
+	if (t4_nofldtxq_vi < 1)
+		t4_nofldtxq_vi = min(nc, NOFLDTXQ_VI);
+
+	if (t4_nofldrxq10g < 1)
+		t4_nofldrxq10g = min(nc, NOFLDRXQ_10G);
+
+	if (t4_nofldrxq1g < 1)
+		t4_nofldrxq1g = min(nc, NOFLDRXQ_1G);
+
+	if (t4_nofldrxq_vi < 1)
+		t4_nofldrxq_vi = min(nc, NOFLDRXQ_VI);
+
+	if (t4_toecaps_allowed == -1)
+		t4_toecaps_allowed = FW_CAPS_CONFIG_TOE;
+
+	if (t4_rdmacaps_allowed == -1) {
+		t4_rdmacaps_allowed = FW_CAPS_CONFIG_RDMA_RDDP |
+		    FW_CAPS_CONFIG_RDMA_RDMAC;
+	}
+
+	if (t4_iscsicaps_allowed == -1) {
+		t4_iscsicaps_allowed = FW_CAPS_CONFIG_ISCSI_INITIATOR_PDU |
+		    FW_CAPS_CONFIG_ISCSI_TARGET_PDU |
+		    FW_CAPS_CONFIG_ISCSI_T10DIF;
+	}
+#else
+	if (t4_toecaps_allowed == -1)
+		t4_toecaps_allowed = 0;
+
+	if (t4_rdmacaps_allowed == -1)
+		t4_rdmacaps_allowed = 0;
+
+	if (t4_iscsicaps_allowed == -1)
+		t4_iscsicaps_allowed = 0;
+#endif
+
+#ifdef DEV_NETMAP
+	if (t4_nnmtxq_vi < 1)
+		t4_nnmtxq_vi = min(nc, NNMTXQ_VI);
+
+	if (t4_nnmrxq_vi < 1)
+		t4_nnmrxq_vi = min(nc, NNMRXQ_VI);
+#endif
+}
+SYSINIT(t4nex_tunables, SI_SUB_CPU, SI_ORDER_ANY, tweak_tunables, NULL);
+
 #ifdef DDB
 static void
 t4_dump_tcb(struct adapter *sc, int tid)
@@ -6061,74 +6129,6 @@ DB_FUNC(tcb, db_show_t4tcb, db_t4_table, CS_OWN, NULL)
 	t4_dump_tcb(device_get_softc(dev), tid);
 }
 #endif
-
-/*
- * Come up with reasonable defaults for some of the tunables, provided they're
- * not set by the user (in which case we'll use the values as is).
- */
-static void
-tweak_tunables(void *dummy)
-{
-	int nc = mp_ncpus;	/* our snapshot of the number of CPUs */
-
-	if (t4_ntxq_vi < 1)
-		t4_ntxq_vi = min(nc, NTXQ_VI);
-
-	if (t4_nrxq_vi < 1)
-		t4_nrxq_vi = min(nc, NRXQ_VI);
-
-#ifdef TCP_OFFLOAD
-	if (t4_nofldtxq10g < 1)
-		t4_nofldtxq10g = min(nc, NOFLDTXQ_10G);
-
-	if (t4_nofldtxq1g < 1)
-		t4_nofldtxq1g = min(nc, NOFLDTXQ_1G);
-
-	if (t4_nofldtxq_vi < 1)
-		t4_nofldtxq_vi = min(nc, NOFLDTXQ_VI);
-
-	if (t4_nofldrxq10g < 1)
-		t4_nofldrxq10g = min(nc, NOFLDRXQ_10G);
-
-	if (t4_nofldrxq1g < 1)
-		t4_nofldrxq1g = min(nc, NOFLDRXQ_1G);
-
-	if (t4_nofldrxq_vi < 1)
-		t4_nofldrxq_vi = min(nc, NOFLDRXQ_VI);
-
-	if (t4_toecaps_allowed == -1)
-		t4_toecaps_allowed = FW_CAPS_CONFIG_TOE;
-
-	if (t4_rdmacaps_allowed == -1) {
-		t4_rdmacaps_allowed = FW_CAPS_CONFIG_RDMA_RDDP |
-		    FW_CAPS_CONFIG_RDMA_RDMAC;
-	}
-
-	if (t4_iscsicaps_allowed == -1) {
-		t4_iscsicaps_allowed = FW_CAPS_CONFIG_ISCSI_INITIATOR_PDU |
-		    FW_CAPS_CONFIG_ISCSI_TARGET_PDU |
-		    FW_CAPS_CONFIG_ISCSI_T10DIF;
-	}
-#else
-	if (t4_toecaps_allowed == -1)
-		t4_toecaps_allowed = 0;
-
-	if (t4_rdmacaps_allowed == -1)
-		t4_rdmacaps_allowed = 0;
-
-	if (t4_iscsicaps_allowed == -1)
-		t4_iscsicaps_allowed = 0;
-#endif
-
-#ifdef DEV_NETMAP
-	if (t4_nnmtxq_vi < 1)
-		t4_nnmtxq_vi = min(nc, NNMTXQ_VI);
-
-	if (t4_nnmrxq_vi < 1)
-		t4_nnmrxq_vi = min(nc, NNMRXQ_VI);
-#endif
-}
-SYSINIT(t4nex_tunables, SI_SUB_CPU, SI_ORDER_ANY, tweak_tunables, NULL);
 
 static devclass_t t4_devclass, t5_devclass, t6_devclass;
 static devclass_t cxgbe_devclass, cxl_devclass, cc_devclass;
