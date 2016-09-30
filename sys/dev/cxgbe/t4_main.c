@@ -3791,3 +3791,4 @@ static moduledata_t t4_common_mod = {
 };
 
 DECLARE_MODULE(t4_common, t4_common_mod, SI_SUB_DRIVERS, SI_ORDER_ANY);
+MODULE_VERSION(t4_common, 1);
