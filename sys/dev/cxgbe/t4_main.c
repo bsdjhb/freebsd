@@ -327,21 +327,11 @@ t4_detach_common(device_t dev)
 		bus_release_resource(dev, SYS_RES_MEMORY, sc->msix_rid,
 		    sc->msix_res);
 
-#ifdef TCP_OFFLOAD
-	free(sc->sge.ofld_rxq, M_CXGBE);
-	free(sc->sge.ofld_txq, M_CXGBE);
-#endif
-#ifdef DEV_NETMAP
-	free(sc->sge.nm_rxq, M_CXGBE);
-	free(sc->sge.nm_txq, M_CXGBE);
-#endif
 	free(sc->irq, M_CXGBE);
 	free(sc->sge.rxq, M_CXGBE);
 	free(sc->sge.txq, M_CXGBE);
-	free(sc->sge.ctrlq, M_CXGBE);
 	free(sc->sge.iqmap, M_CXGBE);
 	free(sc->sge.eqmap, M_CXGBE);
-	free(sc->tids.ftid_tab, M_CXGBE);
 	t4_destroy_dma_tag(sc);
 	if (mtx_initialized(&sc->sc_lock)) {
 		sx_xlock(&t4_list_lock);
@@ -351,21 +341,10 @@ t4_detach_common(device_t dev)
 	}
 
 	callout_drain(&sc->sfl_callout);
-	if (mtx_initialized(&sc->tids.ftid_lock))
-		mtx_destroy(&sc->tids.ftid_lock);
 	if (mtx_initialized(&sc->sfl_lock))
 		mtx_destroy(&sc->sfl_lock);
-	if (mtx_initialized(&sc->ifp_lock))
-		mtx_destroy(&sc->ifp_lock);
 	if (mtx_initialized(&sc->reg_lock))
 		mtx_destroy(&sc->reg_lock);
-
-	for (i = 0; i < NUM_MEMWIN; i++) {
-		struct memwin *mw = &sc->memwin[i];
-
-		if (rw_initialized(&mw->mw_lock))
-			rw_destroy(&mw->mw_lock);
-	}
 
 	return (0);
 }

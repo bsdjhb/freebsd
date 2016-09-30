@@ -1092,6 +1092,29 @@ t4_detach(device_t dev)
 	if (sc->l2t)
 		t4_free_l2t(sc->l2t);
 
+#ifdef TCP_OFFLOAD
+	free(sc->sge.ofld_rxq, M_CXGBE);
+	free(sc->sge.ofld_txq, M_CXGBE);
+#endif
+#ifdef DEV_NETMAP
+	free(sc->sge.nm_rxq, M_CXGBE);
+	free(sc->sge.nm_txq, M_CXGBE);
+#endif
+	free(sc->sge.ctrlq, M_CXGBE);
+	free(sc->tids.ftid_tab, M_CXGBE);
+
+	if (mtx_initialized(&sc->tids.ftid_lock))
+		mtx_destroy(&sc->tids.ftid_lock);
+	if (mtx_initialized(&sc->ifp_lock))
+		mtx_destroy(&sc->ifp_lock);
+
+	for (i = 0; i < NUM_MEMWIN; i++) {
+		struct memwin *mw = &sc->memwin[i];
+
+		if (rw_initialized(&mw->mw_lock))
+			rw_destroy(&mw->mw_lock);
+	}
+
 	return (0);
 }
 
