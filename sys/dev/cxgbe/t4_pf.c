@@ -1081,7 +1081,7 @@ static int
 t4_detach(device_t dev)
 {
 	struct adapter *sc;
-	int rc;
+	int i, rc;
 
 	sc = device_get_softc(dev);
 
