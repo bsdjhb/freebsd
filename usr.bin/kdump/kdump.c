@@ -866,7 +866,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_faccessat:
 				print_number(ip, narg, c);
 				putchar(',');
-				print_mask_arg(sysdecode_accessmode, *ip);
+				print_mask_arg(sysdecode_access_mode, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1129,7 +1129,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_flock:
 				print_number(ip, narg, c);
 				putchar(',');
-				print_mask_arg(sysdecode_flock_op, *ip);
+				print_mask_arg(sysdecode_flock_operation, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1202,7 +1202,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				print_integer_arg(sysdecode_semctl_op, *ip);
+				print_integer_arg(sysdecode_semctl_cmd, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1217,7 +1217,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_msgctl:
 				print_number(ip, narg, c);
 				putchar(',');
-				print_integer_arg(sysdecode_msgctl_op, *ip);
+				print_integer_arg(sysdecode_msgctl_cmd, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1232,7 +1232,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_shmctl:
 				print_number(ip, narg, c);
 				putchar(',');
-				print_integer_arg(sysdecode_shmctl_op, *ip);
+				print_integer_arg(sysdecode_shmctl_cmd, *ip);
 				ip++;
 				narg--;
 				break;
@@ -1249,7 +1249,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				print_number(ip, narg, c);
 				print_number(ip, narg, c);
 				putchar(',');
-				print_integer_arg(sysdecode_minherit_flags, *ip);
+				print_integer_arg(sysdecode_minherit_inherit,
+				    *ip);
 				ip++;
 				narg--;
 				break;
@@ -1396,7 +1397,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				arg = *ip;
 				ip++;
 				narg--;
-				print_mask_arg32(sysdecode_capfcntlrights, arg);
+				print_mask_arg32(sysdecode_cap_fcntlrights, arg);
 				break;
 			case SYS_posix_fadvise:
 				print_number(ip, narg, c);

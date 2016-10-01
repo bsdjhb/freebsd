@@ -1689,7 +1689,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		fputs(xlookup_bits(at_flags, args[sc->offset]), fp);
 		break;
 	case Accessmode:
-		print_mask_arg(sysdecode_accessmode, fp, args[sc->offset]);
+		print_mask_arg(sysdecode_access_mode, fp, args[sc->offset]);
 		break;
 	case Sysarch:
 		fputs(xlookup(sysarch_ops, args[sc->offset]), fp);
