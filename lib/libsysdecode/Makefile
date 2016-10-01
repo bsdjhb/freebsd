@@ -55,41 +55,6 @@ MLINKS+=sysdecode_enum.3 sysdecode_acltype.3 \
 	sysdecode_enum.3 sysdecode_sockettype.3 \
 	sysdecode_enum.3 sysdecode_umtx_op.3 \
 	sysdecode_enum.3 sysdecode_vmresult.3 \
-	sysdecode_enum.3 sysdecode_whence
-	sysdecode_enum.3 sysdecode_acltype.3 \
-	sysdecode_enum.3 sysdecode_extattrnamespace.3 \
-	sysdecode_enum.3 sysdecode_fadvice.3 \
-	sysdecode_enum.3 sysdecode_fcntl_cmd.3 \
-	sysdecode_enum.3 sysdecode_idtype.3 \
-	sysdecode_enum.3 sysdecode_ipproto.3 \
-	sysdecode_enum.3 sysdecode_kldsym_cmd.3 \
-	sysdecode_enum.3 sysdecode_kldunload_flags.3 \
-	sysdecode_enum.3 sysdecode_lio_listio_mode.3 \
-	sysdecode_enum.3 sysdecode_madvice.3 \
-	sysdecode_enum.3 sysdecode_minherit_flags.3 \
-	sysdecode_enum.3 sysdecode_msgctl_cmd.3 \
-	sysdecode_enum.3 sysdecode_nfssvc_flags.3 \
-	sysdecode_enum.3 sysdecode_prio_which.3 \
-	sysdecode_enum.3 sysdecode_procctl_cmd.3 \
-	sysdecode_enum.3 sysdecode_ptrace_request.3 \
-	sysdecode_enum.3 sysdecode_rlimit.3 \
-	sysdecode_enum.3 sysdecode_rtprio_function.3 \
-	sysdecode_enum.3 sysdecode_scheduler_policy.3 \
-	sysdecode_enum.3 sysdecode_semctl_cmd.3 \
-	sysdecode_enum.3 sysdecode_shmctl_cmd.3 \
-	sysdecode_enum.3 sysdecode_shutdown_how.3 \
-	sysdecode_enum.3 sysdecode_sigbus_code.3 \
-	sysdecode_enum.3 sysdecode_sigchld_code.3 \
-	sysdecode_enum.3 sysdecode_sigfpe_code.3 \
-	sysdecode_enum.3 sysdecode_sigill_code.3 \
-	sysdecode_enum.3 sysdecode_sigprocmask_how.3 \
-	sysdecode_enum.3 sysdecode_sigsegv_code.3 \
-	sysdecode_enum.3 sysdecode_sigtrap_code.3 \
-	sysdecode_enum.3 sysdecode_sockaddr_family.3 \
-	sysdecode_enum.3 sysdecode_socketdomain.3 \
-	sysdecode_enum.3 sysdecode_sockettype.3 \
-	sysdecode_enum.3 sysdecode_umtx_op.3 \
-	sysdecode_enum.3 sysdecode_vmresult.3 \
 	sysdecode_enum.3 sysdecode_whence.3
 MLINKS+=sysdecode_mask.3 sysdecode_accessmode.3 \
 	sysdecode_mask.3 sysdecode_capfcntlrights.3 \
