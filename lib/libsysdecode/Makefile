@@ -13,6 +13,7 @@ CFLAGS+= -I${.CURDIR}/../../sys
 CFLAGS+= -I${.CURDIR}/../../libexec/rtld-elf
 
 MAN=	sysdecode.3 \
+	sysdecode_atfd.3 \
 	sysdecode_abi_to_freebsd_errno.3 \
 	sysdecode_enum.3 \
 	sysdecode_ioctlname.3 \
