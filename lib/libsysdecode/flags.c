@@ -230,14 +230,13 @@ print_value(FILE *fp, struct name_table *table, uintmax_t val)
 	return (false);
 }
 
-void
-sysdecode_atfd(FILE *fp, int fd, int base)
+const char *
+sysdecode_atfd(int fd)
 {
 
 	if (fd == AT_FDCWD)
-		fprintf(fp, "AT_FDCWD");
-	else
-		print_integer(fp, fd, base);
+		return ("AT_FDCWD");
+	return (NULL);
 }
 
 static struct name_table semctlops[] = {

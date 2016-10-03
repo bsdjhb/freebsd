@@ -1683,7 +1683,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		print_integer_arg(sysdecode_umtx_op, fp, args[sc->offset]);
 		break;
 	case Atfd:
-		sysdecode_atfd(fp, args[sc->offset], 10);
+		print_integer_arg(sysdecode_atfd, fp, args[sc->offset]);
 		break;
 	case Atflags:
 		fputs(xlookup_bits(at_flags, args[sc->offset]), fp);

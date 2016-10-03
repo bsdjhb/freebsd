@@ -41,7 +41,7 @@ enum sysdecode_abi {
 int	sysdecode_abi_to_freebsd_errno(enum sysdecode_abi _abi, int _error);
 bool	sysdecode_access_mode(FILE *_fp, int _mode, int *_rem);
 const char *sysdecode_acltype(int _type);
-void	sysdecode_atfd(FILE *_fp, int _fd, int _base);
+const char *sysdecode_atfd(int _fd);
 bool	sysdecode_cap_fcntlrights(FILE *_fp, uint32_t _rights, uint32_t *_rem);
 void	sysdecode_capname(FILE *_fp, cap_rights_t *_rightsp);
 const char *sysdecode_extattrnamespace(int _namespace);

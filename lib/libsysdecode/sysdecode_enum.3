@@ -31,6 +31,7 @@
 .Sh NAME
 .Nm sysdecode_enum ,
 .Nm sysdecode_acltype ,
+.Nm sysdecode_atfd ,
 .Nm sysdecode_extattrnamespace ,
 .Nm sysdecode_fadvice ,
 .Nm sysdecode_fcntl_cmd ,
@@ -74,6 +75,8 @@
 .In sysdecode.h
 .Ft const char *
 .Fn sysdecode_acltype "int type"
+.Ft const char *
+.Fn sysdecode_atfd "int fd"
 .Ft const char *
 .Fn sysdecode_extattrnamespace "int namespace"
 .Ft const char *
@@ -162,6 +165,12 @@ The
 type stored in
 .Vt acl_type_t
 variables.
+.It Fn sysdecode_atfd
+The directory file descriptor argument to
+.Xr openat 2
+and other
+.Dq *at
+system calls.
 .It Fn sysdecode_extattrnamespace
 The
 .Fa attrnamespace

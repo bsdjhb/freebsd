@@ -238,6 +238,22 @@ cappwdgrp_setup(cap_channel_t **cappwdp, cap_channel_t **capgrpp)
 #endif	/* HAVE_LIBCASPER */
 
 static void
+print_atfd(int fd)
+{
+	const char *str;
+
+	str = sysdecode_atfd(fd);
+	if (str != NULL)
+		printf("%s", str);
+	else {
+		if (decimal)
+			printf("%d", fd);
+		else
+			printf("%#x", fd);
+	}
+}
+
+static void
 print_integer_arg(const char *(*decoder)(int), int value)
 {
 	const char *str;
@@ -838,7 +854,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_unlinkat:
 			case SYS_utimensat:
 				putchar('(');
-				sysdecode_atfd(stdout, *ip, decimal ? 10 : 16);
+				print_atfd(*ip);
 				c = ',';
 				ip++;
 				narg--;
@@ -1387,7 +1403,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_symlinkat:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_atfd(stdout, *ip, decimal ? 10 : 16);
+				print_atfd(*ip);
 				ip++;
 				narg--;
 				break;
