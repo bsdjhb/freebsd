@@ -53,6 +53,7 @@ MLINKS+=sysdecode_enum.3 sysdecode_acltype.3 \
 	sysdecode_enum.3 sysdecode_sockaddr_family.3 \
 	sysdecode_enum.3 sysdecode_socketdomain.3 \
 	sysdecode_enum.3 sysdecode_sockettype.3 \
+	sysdecode_enum.3 sysdecode_sockopt_level.3 \
 	sysdecode_enum.3 sysdecode_umtx_op.3 \
 	sysdecode_enum.3 sysdecode_vmresult.3 \
 	sysdecode_enum.3 sysdecode_whence.3

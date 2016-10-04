@@ -101,7 +101,7 @@ const char *sysdecode_sockaddr_family(int _sa_family);
 const char *sysdecode_socketdomain(int _domain);
 const char *sysdecode_sockettype(int _type);
 void	sysdecode_sockettypewithflags(FILE *_fp, int _type);
-void	sysdecode_sockopt_level(FILE *_fp, int _level, int _base);
+const char *sysdecode_sockopt_level(int _level);
 const char *sysdecode_sockopt_name(int _optname);
 const char *sysdecode_syscallname(enum sysdecode_abi _abi, unsigned int _code);
 bool	sysdecode_thr_create_flags(FILE *_fp, int _flags, int *_rem);

@@ -26,6 +26,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#define L2CAP_SOCKET_CHECKED
+
 #include <sys/types.h>
 #include <sys/acl.h>
 #include <sys/capsicum.h>
@@ -57,6 +59,10 @@ __FBSDID("$FreeBSD$");
 #include <strings.h>
 #include <sysdecode.h>
 #include <unistd.h>
+#include <sys/bitstring.h>
+#include <netgraph/bluetooth/include/ng_hci.h>
+#include <netgraph/bluetooth/include/ng_l2cap.h>
+#include <netgraph/bluetooth/include/ng_btsocket.h>
 
 /*
  * This is taken from the xlat tables originally in truss which were
@@ -296,18 +302,34 @@ sysdecode_idtype(int idtype)
 }
 
 /*
- * [g|s]etsockopt's level argument can either be SOL_SOCKET or a value
- * referring to a line in /etc/protocols . It might be appropriate
- * to use getprotoent(3) here.
+ * [g|s]etsockopt's level argument can either be SOL_SOCKET or a
+ * protocol-specific value.
  */
-void
-sysdecode_sockopt_level(FILE *fp, int level, int base)
+const char *
+sysdecode_sockopt_level(int level)
 {
-	if (level == SOL_SOCKET) {
-		fprintf(fp, "SOL_SOCKET");
-	} else {
-		print_integer(fp, level, base);
-	}
+	const char *str;
+
+	if (level == SOL_SOCKET)
+		return ("SOL_SOCKET");
+
+	/* SOL_* constants for Bluetooth sockets. */
+	str = lookup_value(ngbtsolevel, level);
+	if (str != NULL)
+		return (str);
+
+	/*
+	 * IP and Infiniband sockets use IP protocols as levels.  Not all
+	 * protocols are valid but it is simpler to just allow all of them.
+	 *
+	 * XXX: IPPROTO_IP == 0, but UNIX domain sockets use a level of 0
+	 * for private options.
+	 */
+	str = sysdecode_ipproto(level);
+	if (str != NULL)
+		return (str);
+
+	return (NULL);
 }
 
 bool

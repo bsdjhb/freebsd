@@ -238,22 +238,6 @@ cappwdgrp_setup(cap_channel_t **cappwdp, cap_channel_t **capgrpp)
 #endif	/* HAVE_LIBCASPER */
 
 static void
-print_atfd(int fd)
-{
-	const char *str;
-
-	str = sysdecode_atfd(fd);
-	if (str != NULL)
-		printf("%s", str);
-	else {
-		if (decimal)
-			printf("%d", fd);
-		else
-			printf("%#x", fd);
-	}
-}
-
-static void
 print_integer_arg(const char *(*decoder)(int), int value)
 {
 	const char *str;
@@ -266,6 +250,23 @@ print_integer_arg(const char *(*decoder)(int), int value)
 			printf("<invalid=%d>", value);
 		else
 			printf("<invalid=%#x>", value);
+	}
+}
+
+/* Like print_integer_arg but unknown values are treated as valid. */
+static void
+print_integer_arg_valid(const char *(*decoder)(int), int value)
+{
+	const char *str;
+
+	str = decoder(value);
+	if (str != NULL)
+		printf("%s", str);
+	else {
+		if (decimal)
+			printf("%d", value);
+		else
+			printf("%#x", value);
 	}
 }
 
@@ -854,7 +855,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_unlinkat:
 			case SYS_utimensat:
 				putchar('(');
-				print_atfd(*ip);
+				print_integer_arg_valid(sysdecode_atfd, *ip);
 				c = ',';
 				ip++;
 				narg--;
@@ -1110,8 +1111,8 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_getsockopt:
 				print_number(ip, narg, c);
 				putchar(',');
-				sysdecode_sockopt_level(stdout, *ip,
-				    decimal ? 10 : 16);
+				print_integer_arg_valid(sysdecode_sockopt_level,
+				    *ip);
 				if (*ip == SOL_SOCKET) {
 					ip++;
 					narg--;
@@ -1403,7 +1404,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 			case SYS_symlinkat:
 				print_number(ip, narg, c);
 				putchar(',');
-				print_atfd(*ip);
+				print_integer_arg_valid(sysdecode_atfd, *ip);
 				ip++;
 				narg--;
 				break;

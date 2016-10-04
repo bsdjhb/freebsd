@@ -63,6 +63,7 @@
 .Nm sysdecode_sockaddr_family ,
 .Nm sysdecode_socketdomain ,
 .Nm sysdecode_sockettype ,
+.Nm sysdecode_sockopt_level ,
 .Nm sysdecode_umtx_op ,
 .Nm sysdecode_vmresult ,
 .Nm sysdecode_whence
@@ -139,6 +140,8 @@
 .Fn sysdecode_socketdomain "int domain"
 .Ft const char *
 .Fn sysdecode_sockettype "int type"
+.Ft const char *
+.Fn sysdecode_sockopt_level "int level"
 .Ft const char *
 .Fn sysdecode_umtx_op "int op"
 .Ft const char *
@@ -335,6 +338,11 @@ A socket domain.
 .It Fn sysdecode_sockettype
 A socket type without any additional flags such as
 .Dv SOCK_CLOEXEC .
+.It Fn sysdecode_sockopt_level
+The
+.Fa level
+argument to
+.Xr getsockopt 2 .
 .It Fn sysdecode_umtx_op
 The
 .Fa op
