@@ -102,7 +102,7 @@ const char *sysdecode_socketdomain(int _domain);
 const char *sysdecode_sockettype(int _type);
 void	sysdecode_sockettypewithflags(FILE *_fp, int _type);
 const char *sysdecode_sockopt_level(int _level);
-const char *sysdecode_sockopt_name(int _optname);
+const char *sysdecode_sockopt_name(int _level, int _optname);
 const char *sysdecode_syscallname(enum sysdecode_abi _abi, unsigned int _code);
 bool	sysdecode_thr_create_flags(FILE *_fp, int _flags, int *_rem);
 bool	sysdecode_umtx_cvwait_flags(FILE *_fp, u_long _flags, u_long *_rem);

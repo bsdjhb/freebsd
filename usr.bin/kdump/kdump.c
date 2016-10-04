@@ -1108,21 +1108,23 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				break;
 			}
 			case SYS_setsockopt:
-			case SYS_getsockopt:
+			case SYS_getsockopt: {
+				const char *str;
+
 				print_number(ip, narg, c);
 				putchar(',');
 				print_integer_arg_valid(sysdecode_sockopt_level,
 				    *ip);
-				if (*ip == SOL_SOCKET) {
+				str = sysdecode_sockopt_name(ip[0], ip[1]);
+				if (str != NULL) {
+					printf(",%s", str);
 					ip++;
 					narg--;
-					putchar(',');
-					print_integer_arg(sysdecode_sockopt_name,
-					    *ip);
 				}
 				ip++;
 				narg--;
 				break;
+			}
 #ifdef SYS_freebsd6_lseek
 			case SYS_freebsd6_lseek:
 				print_number(ip, narg, c);
