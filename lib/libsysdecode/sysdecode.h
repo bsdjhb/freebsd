@@ -43,7 +43,7 @@ bool	sysdecode_access_mode(FILE *_fp, int _mode, int *_rem);
 const char *sysdecode_acltype(int _type);
 const char *sysdecode_atfd(int _fd);
 bool	sysdecode_cap_fcntlrights(FILE *_fp, uint32_t _rights, uint32_t *_rem);
-void	sysdecode_capname(FILE *_fp, cap_rights_t *_rightsp);
+void	sysdecode_cap_rights(FILE *_fp, cap_rights_t *_rightsp);
 const char *sysdecode_extattrnamespace(int _namespace);
 const char *sysdecode_fadvice(int _advice);
 void	sysdecode_fcntl_arg(FILE *_fp, int _cmd, uintptr_t _arg, int _base);

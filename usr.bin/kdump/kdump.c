@@ -1706,7 +1706,7 @@ ktrcaprights(cap_rights_t *rightsp)
 {
 
 	printf("cap_rights_t ");
-	sysdecode_capname(stdout, rightsp);
+	sysdecode_cap_rights(stdout, rightsp);
 	printf("\n");
 }
 
@@ -1965,16 +1965,16 @@ ktrcapfail(struct ktr_cap_fail *ktr)
 	case CAPFAIL_NOTCAPABLE:
 		/* operation on fd with insufficient capabilities */
 		printf("operation requires ");
-		sysdecode_capname(stdout, &ktr->cap_needed);
+		sysdecode_cap_rights(stdout, &ktr->cap_needed);
 		printf(", descriptor holds ");
-		sysdecode_capname(stdout, &ktr->cap_held);
+		sysdecode_cap_rights(stdout, &ktr->cap_held);
 		break;
 	case CAPFAIL_INCREASE:
 		/* requested more capabilities than fd already has */
 		printf("attempt to increase capabilities from ");
-		sysdecode_capname(stdout, &ktr->cap_held);
+		sysdecode_cap_rights(stdout, &ktr->cap_held);
 		printf(" to ");
-		sysdecode_capname(stdout, &ktr->cap_needed);
+		sysdecode_cap_rights(stdout, &ktr->cap_needed);
 		break;
 	case CAPFAIL_SYSCALL:
 		/* called restricted syscall */
@@ -1986,9 +1986,9 @@ ktrcapfail(struct ktr_cap_fail *ktr)
 		break;
 	default:
 		printf("unknown capability failure: ");
-		sysdecode_capname(stdout, &ktr->cap_needed);
+		sysdecode_cap_rights(stdout, &ktr->cap_needed);
 		printf(" ");
-		sysdecode_capname(stdout, &ktr->cap_held);
+		sysdecode_cap_rights(stdout, &ktr->cap_held);
 		break;
 	}
 	printf("\n");
