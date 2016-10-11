@@ -78,6 +78,7 @@ MLINKS+=sysdecode_mask.3 sysdecode_accessmode.3 \
 	sysdecode_mask.3 sysdecode_semget_flags.3 \
 	sysdecode_mask.3 sysdecode_sendfile_flags.3 \
 	sysdecode_mask.3 sysdecode_shmat_flags.3 \
+	sysdecode_mask.3 sysdecode_socket_type.3 \
 	sysdecode_mask.3 sysdecode_thr_create_flags.3 \
 	sysdecode_mask.3 sysdecode_umtx_cvwait_flags.3 \
 	sysdecode_mask.3 sysdecode_umtx_rwlock_flags.3 \

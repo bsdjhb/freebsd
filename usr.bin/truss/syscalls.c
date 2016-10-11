@@ -1428,7 +1428,7 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		print_integer_arg(sysdecode_socketdomain, fp, args[sc->offset]);
 		break;
 	case Socktype:
-		sysdecode_sockettypewithflags(fp, args[sc->offset]);
+		print_mask_arg(sysdecode_socket_type, fp, args[sc->offset]);
 		break;
 	case Shutdown:
 		print_integer_arg(sysdecode_shutdown_how, fp, args[sc->offset]);

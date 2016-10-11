@@ -50,6 +50,7 @@
 .Nm sysdecode_semget_flags ,
 .Nm sysdecode_sendfile_flags ,
 .Nm sysdecode_shmat_flags ,
+.Nm sysdecode_socket_type ,
 .Nm sysdecode_thr_create_flags ,
 .Nm sysdecode_umtx_cvwait_flags ,
 .Nm sysdecode_umtx_rwlock_flags ,
@@ -101,6 +102,8 @@
 .Fn sysdecode_sendfile_flags "FILE *fp" "int flags" "int *rem"
 .Ft bool
 .Fn sysdecode_shmat_flags "FILE *fp" "int flags" "int *rem"
+.Ft bool
+.Fn sysdecode_socket_type "FILE *fp" "int type" "int *rem"
 .Ft bool
 .Fn sysdecode_thr_create_flags "FILE *fp" "int flags" "int *rem"
 .Ft bool
@@ -254,6 +257,11 @@ The
 .Fa flag
 argument to
 .Xr shmat 2 .
+.It Fn sysdecode_socket_type
+The
+.Fa type
+argument to
+.Xr socket 2 .
 .It Fn sysdecode_thr_create_flags
 The
 .Fa flags

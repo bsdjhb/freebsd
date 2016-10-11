@@ -341,20 +341,29 @@ sysdecode_vmprot(FILE *fp, int type, int *rem)
 	return (print_mask_int(fp, vmprot, type, rem));
 }
 
-void
-sysdecode_sockettypewithflags(FILE *fp, int type)
+static struct name_table sockflags[] = {
+	X(SOCK_CLOEXEC) X(SOCK_NONBLOCK) XEND
+};
+
+bool
+sysdecode_socket_type(FILE *fp, int type, int *rem)
 {
 	const char *str;
+	uintmax_t val;
+	bool printed;
 
-	str = sysdecode_sockettype(type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK));
-	if (str != NULL)
+	str = lookup_value(socktype, type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK));
+	if (str != NULL) {
 		fputs(str, fp);
-	else
-		fprintf(fp, "%d", type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK));
-	if (type & SOCK_CLOEXEC)
-		fprintf(fp, "|SOCK_CLOEXEC");
-	if (type & SOCK_NONBLOCK)
-		fprintf(fp, "|SOCK_NONBLOCK");
+		*rem = 0;
+		printed = true;
+	} else {
+		*rem = type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK);
+		printed = false;
+	}
+	val = type & (SOCK_CLOEXEC | SOCK_NONBLOCK);
+	print_mask_part(fp, sockflags, &val, &printed);
+	return (printed);
 }
 
 bool
@@ -746,13 +755,6 @@ sysdecode_sockopt_name(int level, int optname)
 	if (level == IPPROTO_UDP)
 		return (lookup_value(sockoptudp, optname));
 	return (NULL);
-}
-
-const char *
-sysdecode_sockettype(int type)
-{
-
-	return (lookup_value(socktype, type));
 }
 
 bool

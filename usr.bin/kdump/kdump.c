@@ -1093,7 +1093,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				ip++;
 				narg--;
 				putchar(',');
-				sysdecode_sockettypewithflags(stdout, *ip);
+				print_mask_arg(sysdecode_socket_type, *ip);
 				ip++;
 				narg--;
 				if (sockdomain == PF_INET ||
@@ -1175,7 +1175,7 @@ ktrsyscall(struct ktr_syscall *ktr, u_int sv_flags)
 				ip++;
 				narg--;
 				putchar(',');
-				sysdecode_sockettypewithflags(stdout, *ip);
+				print_mask_arg(sysdecode_socket_type, *ip);
 				ip++;
 				narg--;
 				c = ',';
