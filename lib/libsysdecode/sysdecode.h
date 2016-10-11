@@ -90,7 +90,7 @@ const char *sysdecode_shmctl_cmd(int _cmd);
 const char *sysdecode_shutdown_how(int _how);
 const char *sysdecode_sigbus_code(int _si_code);
 const char *sysdecode_sigchld_code(int _si_code);
-const char *sysdecode_sigcode(int _sig, int _code);
+const char *sysdecode_sigcode(int _sig, int _si_code);
 const char *sysdecode_sigfpe_code(int _si_code);
 const char *sysdecode_sigill_code(int _si_code);
 bool	sysdecode_signal(int _sig, char *_buf, size_t _len);

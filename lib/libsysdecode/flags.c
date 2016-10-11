@@ -923,27 +923,27 @@ sysdecode_msg_flags(FILE *fp, int flags, int *rem)
 }
 
 const char *
-sysdecode_sigcode(int sig, int code)
+sysdecode_sigcode(int sig, int si_code)
 {
 	const char *str;
 
-	str = lookup_value(sigcode, code);
+	str = lookup_value(sigcode, si_code);
 	if (str != NULL)
 		return (str);
 	
 	switch (sig) {
 	case SIGILL:
-		return (sysdecode_sigill_code(code));
+		return (sysdecode_sigill_code(si_code));
 	case SIGBUS:
-		return (sysdecode_sigbus_code(code));
+		return (sysdecode_sigbus_code(si_code));
 	case SIGSEGV:
-		return (sysdecode_sigsegv_code(code));
+		return (sysdecode_sigsegv_code(si_code));
 	case SIGFPE:
-		return (sysdecode_sigfpe_code(code));
+		return (sysdecode_sigfpe_code(si_code));
 	case SIGTRAP:
-		return (sysdecode_sigtrap_code(code));
+		return (sysdecode_sigtrap_code(si_code));
 	case SIGCHLD:
-		return (sysdecode_sigchld_code(code));
+		return (sysdecode_sigchld_code(si_code));
 	default:
 		return (NULL);
 	}

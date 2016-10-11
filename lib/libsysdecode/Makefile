@@ -20,6 +20,7 @@ MAN=	sysdecode.3 \
 	sysdecode_ioctlname.3 \
 	sysdecode_mask.3 \
 	sysdecode_quotactl_cmd.3 \
+	sysdecode_sigcode.3 \
 	sysdecode_sockopt_name.3 \
 	sysdecode_syscallnames.3 \
 	sysdecode_utrace.3
