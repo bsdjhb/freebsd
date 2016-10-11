@@ -933,10 +933,14 @@ static const char *
 strsig2(int sig)
 {
 	static char tmp[32];
+	const char *signame;
 
-	if (!sysdecode_signal(sig, tmp, sizeof(tmp)))
+	signame = sysdecode_signal(sig);
+	if (signame == NULL) {
 		snprintf(tmp, sizeof(tmp), "%d", sig);
-	return (tmp);
+		signame = tmp;
+	}
+	return (signame);
 }
 
 static void

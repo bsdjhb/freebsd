@@ -93,7 +93,7 @@ const char *sysdecode_sigchld_code(int _si_code);
 const char *sysdecode_sigcode(int _sig, int _si_code);
 const char *sysdecode_sigfpe_code(int _si_code);
 const char *sysdecode_sigill_code(int _si_code);
-bool	sysdecode_signal(int _sig, char *_buf, size_t _len);
+const char *sysdecode_signal(int _sig);
 const char *sysdecode_sigprocmask_how(int _how);
 const char *sysdecode_sigsegv_code(int _si_code);
 const char *sysdecode_sigtrap_code(int _si_code);

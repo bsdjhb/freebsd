@@ -52,6 +52,7 @@ MLINKS+=sysdecode_enum.3 sysdecode_acltype.3 \
 	sysdecode_enum.3 sysdecode_sigchld_code.3 \
 	sysdecode_enum.3 sysdecode_sigfpe_code.3 \
 	sysdecode_enum.3 sysdecode_sigill_code.3 \
+	sysdecode_enum.3 sysdecode_signal.3 \
 	sysdecode_enum.3 sysdecode_sigprocmask_how.3 \
 	sysdecode_enum.3 sysdecode_sigsegv_code.3 \
 	sysdecode_enum.3 sysdecode_sigtrap_code.3 \
