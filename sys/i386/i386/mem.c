@@ -75,16 +75,6 @@ MALLOC_DEFINE(M_MEMDESC, "memdesc", "memory range descriptors");
 static struct sx memsxlock;
 SX_SYSINIT(memsxlockinit, &memsxlock, "/dev/mem lock");
 
-static vm_paddr_t
-maxphyaddr(void)
-{
-#ifdef PAE
-	return ((1ULL << cpu_maxphyaddr) - 1);
-#else
-	return (0xffffffff);
-#endif
-}
-
 /* ARGSUSED */
 int
 memrw(struct cdev *dev, struct uio *uio, int flags)
@@ -118,12 +108,14 @@ memrw(struct cdev *dev, struct uio *uio, int flags)
 			continue;
 		}
 		if (dev2unit(dev) == CDEV_MINOR_MEM) {
-			pa = uio->uio_offset;
-			pa &= ~PAGE_MASK;
-			if (pa > maxphyaddr()) {
+			if (uio->uio_offset > cpu_getmaxphyaddr()) {
 				error = EFAULT;
 				break;
 			}
+			pa = trunc_page(uio->uio_offset);
+			printf("%s: offset %jx  pa %jx  max %jx\n", __func__,
+			    (uintmax_t)uio->uio_offset,
+			    (uintmax_t)pa, (uintmax_t)cpu_getmaxphyaddr());
 		} else {
 			/*
 			 * Extract the physical page since the mapping may
@@ -176,7 +168,7 @@ memmmap(struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
     int prot __unused, vm_memattr_t *memattr __unused)
 {
 	if (dev2unit(dev) == CDEV_MINOR_MEM) {
-		if (offset > maxphyaddr())
+		if (offset > cpu_getmaxphyaddr())
 			return (-1);
 		*paddr = offset;
 	} else if (dev2unit(dev) == CDEV_MINOR_KMEM)
