@@ -145,18 +145,36 @@ if any bit fields in the value were decoded and
 .Dv false
 if no bit fields were decoded.
 .Pp
-Each function decodes the values described below:
+Most of these functions decode an argument passed to a system call:
+.Bl -column "Fn sysdecode_flock_operation" "Xr cap_fcntls_limit 2"
+.It Sy Function Ta Sy System Call Ta Sy Argument
+.It Fn sysdecode_access_mode Ta Xr access 2 Ta Fa mode
+.It Fn sysdecode_cap_fcntlrights Ta Xr cap_fcntls_limit 2 Ta Fa fcntlrights
+.It Fn sysdecode_fileflags Ta Xr chflags 2 Ta Fa flags
+.It Fn sysdecode_filemode Ta Xr chmod 2 , Xr open 2 Ta mode
+.It Fn sysdecode_flock_operation Ta Xr flock 2 Ta Fa operation
+.It Fn sysdecode_getfsstat_flags Ta Xr getfsstatflags 2 Ta Fa flags
+.It Fn sysdecode_mlockall_flags Ta Xr mlockall 2 Ta Fa flags
+.It Fn sysdecode_mmap_flags Ta Xr mmap 2 Ta Fa flags
+.It Fn sysdecode_mmap_prot Ta Xr mmap 2 Ta Fa prot
+.It Fn sysdecode_mount_flags Ta Xr mount 2 Ta Fa flags
+.It Fn sysdecode_msg_flags Ta Xr recv 2 , Xr send 2 Ta Fa flags
+.It Fn sysdecode_msync_flags Ta Xr msync 2 Ta Fa flags
+.It Fn sysdecode_open_flags Ta Xr open 2 Ta Fa flags
+.It Fn sysdecode_pipe2_flags Ta Xr pipe2 Ta Fa flags
+.It Fn sysdecode_reboot_howto Ta Xr reboot 2 Ta Fa howto
+.It Fn sysdecode_rfork_flags Ta Xr rfork 2 Ta Fa flags
+.It Fn sysdecode_semget_flags Ta Xr semget 2 Ta Fa flags
+.It Fn sysdecode_sendfile_flags Ta Xr sendfile 2 Ta Fa flags
+.It Fn sysdecode_shmat_flags Ta Xr shmat 2 Ta Fa flags
+.It Fn sysdecode_socket_type Ta Xr socket 2 Ta Fa type
+.It Fn sysdecode_thr_create_flags Ta Xr thr_create 2 Ta Fa flags
+.It Fn sysdecode_wait4_options Ta Xr wait4 2 Ta Fa options
+.It Fn sysdecode_wait6_options Ta Xr wait6 2 Ta Fa options
+.El
+.Pp
+Other functions decode the values described below:
 .Bl -tag -width ".Fn sysdecode_umtx_cvwait_flags"
-.It Fn sysdecode_access_mode
-The
-.Fa mode
-argument to
-.Xr access 2 .
-.It Fn sysdecode_cap_fcntlrights
-The
-.Fa fcntlrights
-argument to
-.Xr cap_fcntls_limit 2 .
 .It Fn sysdecode_fcntl_fileflags
 The file flags used with the
 .Dv F_GETFL
@@ -164,109 +182,6 @@ and
 .Dv F_SETFL
 .Xr fcntl 2
 commands.
-.It Fn sysdecode_fileflags
-The file flags stored in the
-.Fa st_flags
-member of
-.Vt struct stat
-or passed in the
-.Fa flags
-argument to
-.Xr chflags 2 .
-.It Fn sysdecode_filemode
-The file mode passed in the
-.Fa mode
-argument to
-.Xr chmod 2
-and
-.Xr open 2 .
-.It Fn sysdecode_flock_operation
-The
-.Fa operation
-argument to
-.Xr flock 2 .
-.It Fn sysdecode_getfsstat_flags
-The
-.Fa flags
-argument to
-.Xr getfsstatflags 2 .
-.It Fn sysdecode_mlockall_flags
-The
-.Fa flags
-argument to
-.Xr mlockall 2 .
-.It Fn sysdecode_mmap_flags
-The
-.Fa flags
-argument to
-.Xr mmap 2 .
-.It Fn sysdecode_mmap_prot
-The
-.Fa prot
-argument to
-.Xr mmap 2 .
-.It Fn sysdecode_mount_flags
-The
-.Fa flags
-argument to
-.Xr mount 2 .
-.It Fn sysdecode_msg_flags
-The
-.Fa flags
-argument to
-.Xr recv 2
-and
-.Xr send 2 .
-.It Fn sysdecode_msync_flags
-The
-.Fa flags
-argument to
-.Xr msync 2 .
-.It Fn sysdecode_open_flags
-The
-.Fa flags
-argument to
-.Xr open 2 .
-.It Fn sysdecode_pipe2_flags
-The
-.Fa flags
-argument to
-.Xr pipe2 .
-.It Fn sysdecode_reboot_howto
-The
-.Fa howto
-argument to
-.Xr reboot 2 .
-.It Fn sysdecode_rfork_flags
-The
-.Fa flags
-argument to
-.Xr rfork 2 .
-.It Fn sysdecode_semget_flags
-The
-.Fa flag
-argument to
-.Xr semget 2 .
-.It Fn sysdecode_sendfile_flags
-The
-.Fa flags
-argument to
-.Xr sendfile 2 .
-.It Fn sysdecode_shmat_flags
-The
-.Fa flag
-argument to
-.Xr shmat 2 .
-.It Fn sysdecode_socket_type
-The
-.Fa type
-argument to
-.Xr socket 2 .
-.It Fn sysdecode_thr_create_flags
-The
-.Fa flags
-argument to
-.Xr thr_create 2 .
 .It Fn sysdecode_umtx_cvwait_flags
 The
 .Fa val
@@ -287,16 +202,6 @@ operations.
 The memory protection flags stored in
 .Vt vm_prot_t
 variables.
-.It Fn sysdecode_wait4_options
-The
-.Fa options
-argument to
-.Xr wait4 2 .
-.It Fn sysdecode_wait6_options
-The
-.Fa options
-argument to
-.Xr wait6 2 .
 .El
 .Sh RETURN VALUES
 The

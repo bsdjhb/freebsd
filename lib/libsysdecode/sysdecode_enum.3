@@ -159,208 +159,69 @@ The text description matches the name of a C macro with the same value as the
 sole function argument.
 .Dv NULL
 is returned if there is no matching C macro name.
-Most of the values decoded by these functions are passed as arguments to
-system calls,
-though some of these values are used internally in the kernel.
 .Pp
-Each function decodes the values described below:
-.Bl -tag -width ".Fn sysdecode_extattrnamespace"
-.It Fn sysdecode_acltype
-The
-.Xr acl 3
-type stored in
-.Vt acl_type_t
-variables.
-.It Fn sysdecode_atfd
-The directory file descriptor argument to
-.Xr openat 2
-and other
-.Dq *at
-system calls.
-.It Fn sysdecode_extattrnamespace
-The
-.Fa attrnamespace
-argument to various extended attribute system calls described in
-.Xr extattr 2 .
-.It Fn sysdecode_fadvice
-The
-.Fa advice
-argument to
-.Xr posix_fadvise 2 .
-.It Fn sysdecode_fcntl_cmd
-The
-.Fa cmd
-argument to
-.Xr fcntl 2 .
-.It Fn sysdecode_idtype
-The
-.Fa idtype
-argument to
-.Xr procctl 2
-and
-.Xr waitid 2 .
+Most of these functions decode an argument passed to a system call:
+.Bl -column "Fn sysdecode_extattrnamespace" "Xr sched_setscheduler 2"
+.It Sy Function Ta Sy System Call Ta Sy Argument
+.It Fn sysdecode_acltype Ta Xr acl_get_file 3 Ta Fa type
+.It Fn sysdecode_atfd Ta Xr openat 2 Ta Fa fd
+.It Fn sysdecode_extattrnamespace Ta Xr extattr_get_fd 2 Ta Fa attrnamespace
+.It Fn sysdecode_fadvice Ta Xr posix_fadvise 2 Ta Fa advice
+.It Fn sysdecode_fcntl_cmd Ta Xr fcntl 2 Ta Fa cmd
+.It Fn sysdecode_idtype Ta
+.Xr procctl 2 ,
+.Xr waitid 2
+.Ta Fa idtype
+.It Fn sysdecode_kldsym_cmd Ta Xr kldsym 2 Ta Fa cmd
+.It Fn sysdecode_kldunload_flags Ta Xr kldunloadf 2 Ta Fa flags
+.It Fn sysdecode_lio_listio_mode Ta Xr lio_listio 2 Ta Fa mode
+.It Fn sysdecode_madvice Ta Xr madvise 2 Ta Fa advice
+.It Fn sysdecode_minherit_inherit Ta Xr minherit 2 Ta Fa inherit
+.It Fn sysdecode_msgctl_cmd Ta Xr msgctl 2 Ta Fa cmd
+.It Fn sysdecode_nfssvc_flags Ta Xr nfssvc 2 Ta Fa flags
+.It Fn sysdecode_prio_which Ta Xr getpriority 2 Ta Fa which
+.It Fn sysdecode_procctl_cmd Ta Xr procctl 2 Ta Fa cmd
+.It Fn sysdecode_ptrace_request Ta Xr ptrace 2 Ta Fa request
+.It Fn sysdecode_rlimit Ta Xr getrlimit 2 Ta Fa resource
+.It Fn sysdecode_rtprio_function Ta Xr rtprio 2 Ta Fa function
+.It Fn sysdecode_scheduler_policy Ta Xr sched_setscheduler 2 Ta Fa policy
+.It Fn sysdecode_semctl_cmd Ta Xr semctl 2 Ta Fa cmd
+.It Fn sysdecode_shmctl_cmd Ta Xr shmctl 2 Ta Fa cmd
+.It Fn sysdecode_shutdown_how Ta Xr shutdown 2 Ta Fa how
+.It Fn sysdecode_sigprocmask_how Ta Xr sigprocmask 2 Ta Fa how
+.It Fn sysdecode_sockopt_level Ta Xr getsockopt 2 Ta Fa level
+.It Fn sysdecode_umtx_op Ta Xr _umtx_op 2 Ta Fa op
+.It Fn sysdecode_whence Ta Xr lseek 2 Ta Fa whence
+.El
+.Pp
+These functions decode signal-specific signal codes stored in the
+.Fa si_code
+field of the
+.Vt siginfo_t
+object associated with an instance of signal:
+.Bl -column "Fn sysdecode_sigchld_code"
+.It Sy Function Ta Sy Signal
+.It Fn sysdecode_sigbus_code Ta Dv SIGBUS
+.It Fn sysdecode_sigchld_code Ta Dv SIGCHLD
+.It Fn sysdecode_sigfpe_code Ta Dv SIGFPE
+.It Fn sysdecode_sigill_code Ta Dv SIGILL
+.It Fn sysdecode_sigsegv_code Ta Dv SIGSEGV
+.It Fn sysdecode_sigtrap_code Ta Dv SIGBTRAP
+.El
+.Pp
+Other functions decode the values described below:
+.Bl -tag -width "Fn sysdecode_sockaddr_family"
 .It Fn sysdecode_ipproto
 An IP protocol.
-.It Fn sysdecode_kldsym_cmd
-The
-.Fa cmd
-argument to
-.Xr kldsym 2 .
-.It Fn sysdecode_kldunload_flags
-The
-.Fa flags
-argument to
-.Xr kldunloadf 2 .
-.It Fn sysdecode_lio_listio_mode
-The
-.Fa mode
-argument to
-.Xr lio_listio 2 .
-.It Fn sysdecode_madvice
-The
-.Fa advice
-argument to
-.Xr madvise 2 .
-.It Fn sysdecode_minherit_inherit
-The
-.Fa inherit
-argument to
-.Xr minherit 2 .
-.It Fn sysdecode_msgctl_cmd
-The
-.Fa cmd
-argument to
-.Xr msgctl 2 .
-.It Fn sysdecode_nfssvc_flags
-The
-.Fa flags
-argument to
-.Xr nfssvc 2 .
-.It Fn sysdecode_prio_which
-The
-.Fa which
-argument to
-.Xr getpriority 2 .
-.It Fn sysdecode_procctl_cmd
-The
-.Fa cmd
-argument to
-.Xr procctl 2 .
-.It Fn sysdecode_ptrace_request
-The
-.Fa request
-argument to
-.Xr ptrace 2 .
-.It Fn sysdecode_rlimit
-The
-.Fa resource
-argument to
-.Xr getrlimit 2 .
-.It Fn sysdecode_rtprio_function
-The
-.Fa function
-argument to
-.Xr rtprio 2 .
-.It Fn sysdecode_scheduler_policy
-The
-.Fa policy
-argument to
-.Xr sched_setscheduler 2 .
-.It Fn sysdecode_semctl_cmd
-The
-.Fa cmd
-argument to
-.Xr semctl 2 .
-.It Fn sysdecode_shmctl_cmd
-The
-.Fa cmd
-argument to
-.Xr shmctl 2 .
-.It Fn sysdecode_shutdown_how
-The
-.Fa how
-argument to
-.Xr shutdown 2 .
-.It Fn sysdecode_sigbus_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGBUS
-signal.
-.It Fn sysdecode_sigchld_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGCHLD
-signal.
-.It Fn sysdecode_sigfpe_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGFPE
-signal.
-.It Fn sysdecode_sigill_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGILL
-signal.
 .It Fn sysdecode_signal
 A process signal.
-.It Fn sysdecode_sigprocmask_how
-The
-.Fa how
-argument to
-.Xr sigprocmask 2 .
-.It Fn sysdecode_sigsegv_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGSEGV
-signal.
-.It Fn sysdecode_sigtrap_code
-The
-.Fa si_code
-field of the
-.Vt siginfo_t
-object associated with a
-.Dv SIGBTRAP
-signal.
 .It Fn sysdecode_sockaddr_family
 A socket address family.
 .It Fn sysdecode_socketdomain
 A socket domain.
-.It Fn sysdecode_sockettype
-A socket type without any additional flags such as
-.Dv SOCK_CLOEXEC .
-.It Fn sysdecode_sockopt_level
-The
-.Fa level
-argument to
-.Xr getsockopt 2 .
-.It Fn sysdecode_umtx_op
-The
-.Fa op
-argument to
-.Xr _umtx_op 2 .
 .It Fn sysdecode_vmresult
 The return value of a function in the virtual memory subsystem of the kernel
 indicating the status of the associated request.
-.It Fn sysdecode_whence
-The
-.Fa whence
-argument passed to
-.Xr lseek 2 .
 .El
 .Sh RETURN VALUES
 The
@@ -370,4 +231,5 @@ functions return the name of a matching C macro or
 if no matching C macro was found.
 .Sh SEE ALSO
 .Xr sysdecode 3 ,
-.Xr sysdecode_mask 3
+.Xr sysdecode_mask 3 ,
+.Xr sysdecode_sigcode 3
