@@ -605,15 +605,10 @@ sysdecode_quotactl_cmd(FILE *fp, int cmd)
 	const char *primary, *type;
 
 	primary = lookup_value(quotactlcmds, cmd >> SUBCMDSHIFT);
-	type = lookup_value(quotatypes, cmd & SUBCMDMASK);
-	if (primary == NULL && type == NULL)
+	if (primary == NULL)
 		return (false);
-	fprintf(fp, "QCMD(");
-	if (primary != NULL)
-		fprintf(fp, "%s", primary);
-	else
-		fprintf(fp, "%#x", cmd >> SUBCMDSHIFT);
-	fprintf(fp, ",");
+	fprintf(fp, "QCMD(%s,", primary);
+	type = lookup_value(quotatypes, cmd & SUBCMDMASK);
 	if (type != NULL)
 		fprintf(fp, "%s", type);
 	else
