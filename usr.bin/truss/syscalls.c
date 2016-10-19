@@ -84,6 +84,15 @@ __FBSDID("$FreeBSD$");
 #define	QUAD_SLOTS	2
 #endif
 
+/* One of these is stored for each ABI. */
+struct syscall_table {
+	struct syscall **syscalls;
+	u_int count;
+};
+
+static struct syscall_table *abi_tables;
+static u_int abi_count;
+
 /*
  * This should probably be in its own file, sorted alphabetically.
  */
@@ -819,21 +828,60 @@ init_syscalls(void)
 	for (sc = decoded_syscalls; sc->name != NULL; sc++)
 		STAILQ_INSERT_HEAD(&syscalls, sc, entries);
 }
+
+static struct syscall_table *
+lookup_syscall_table(enum sysdecode_abi abi)
+{
+	u_int new_count;
+
+	if (abi_tables != NULL && (u_int)abi < abi_count)
+		return (&abi_tables[abi]);
+	new_count = (u_int)abi + 1;
+	abi_tables = reallocf(abi_tables, new_count * sizeof(abi_tables[0]));
+	memset(abi_tables + abi_count, 0, (new_count - abi_count) *
+	    sizeof(abi_tables[0]));
+	abi_count = new_count;
+	return (&abi_tables[abi]);
+}
+
+static void
+grow_syscall_table(struct syscall_table *st, u_int number)
+{
+	u_int new_count;
+
+	new_count = number + 1;
+	if (st->count >= new_count)
+		return;
+	st->syscalls = reallocf(st->syscalls, new_count *
+	    sizeof(st->syscalls[0]));
+	memset(st->syscalls + st->count, 0, (new_count - st->count) *
+	    sizeof(st->syscalls[0]));
+}
+
 /*
  * If/when the list gets big, it might be desirable to do it
  * as a hash table or binary search.
  */
 struct syscall *
-get_syscall(const char *name, int nargs)
+get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 {
+	struct syscall_table *st;
 	struct syscall *sc;
-	int i;
+	const char *name;
+	u_int i;
 
-	if (name == NULL)
-		return (NULL);
+	st = lookup_syscall_table(t->proc->abi->abi);
+	grow_syscall_table(st, number);
+	sc = st->syscalls[number];
+	if (sc != NULL)
+		return (sc);
+
+	name = sysdecode_syscallname(t->proc->abi->abi, number);
 	STAILQ_FOREACH(sc, &syscalls, entries)
-		if (strcmp(name, sc->name) == 0)
+		if (strcmp(name, sc->name) == 0) {
+			st->syscalls[number] = sc;
 			return (sc);
+		}
 
 	/* It is unknown.  Add it into the list. */
 #if DEBUG
@@ -842,7 +890,15 @@ get_syscall(const char *name, int nargs)
 #endif
 
 	sc = calloc(1, sizeof(struct syscall));
-	sc->name = strdup(name);
+	if (name != NULL)
+		sc->name = name;
+	else {
+		char *new_name;
+
+		asprintf(&new_name, "%s/#%d", t->proc->abi->type, number);
+		sc->name = new_name;
+		sc->unknown = true;
+	}
 	sc->ret_type = 1;
 	sc->nargs = nargs;
 	for (i = 0; i < nargs; i++) {
@@ -1866,7 +1922,7 @@ print_syscall(struct trussinfo *trussinfo)
 
 	t = trussinfo->curthread;
 
-	name = t->cs.name;
+	name = t->cs.sc->name;
 	nargs = t->cs.nargs;
 	s_args = t->cs.s_args;
 

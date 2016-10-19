@@ -64,10 +64,9 @@ struct procabi {
  */
 struct current_syscall {
 	struct syscall *sc;
-	const char *name;
-	int number;
-	unsigned long args[10];
+	unsigned int number;
 	unsigned int nargs;
+	unsigned long args[10];
 	char *s_args[10];	/* the printable arguments */
 };
 
