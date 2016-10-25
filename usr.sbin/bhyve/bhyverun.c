@@ -70,6 +70,7 @@ __FBSDID("$FreeBSD$");
 #include "inout.h"
 #include "dbgport.h"
 #include "fwctl.h"
+#include "gdb.h"
 #include "ioapic.h"
 #include "mem.h"
 #include "mevent.h"
@@ -789,7 +790,7 @@ do_open(const char *vmname)
 int
 main(int argc, char *argv[])
 {
-	int c, error, gdb_port, err, bvmcons;
+	int c, error, dbg_port, gdb_port, err, bvmcons;
 	int max_vcpus, mptgen, memflags;
 	int rtc_localtime;
 	struct vmctx *ctx;
@@ -799,6 +800,7 @@ main(int argc, char *argv[])
 
 	bvmcons = 0;
 	progname = basename(argv[0]);
+	dbg_port = 0;
 	gdb_port = 0;
 	guest_ncpus = 1;
 	memsize = 256 * MB;
@@ -806,7 +808,7 @@ main(int argc, char *argv[])
 	rtc_localtime = 1;
 	memflags = 0;
 
-	optstr = "abehuwxACHIPSWYp:g:c:s:m:l:U:";
+	optstr = "abehuwxACHIPSWYp:g:G:c:s:m:l:U:";
 	while ((c = getopt(argc, argv, optstr)) != -1) {
 		switch (c) {
 		case 'a':
@@ -831,6 +833,9 @@ main(int argc, char *argv[])
 			memflags |= VM_MEM_F_INCORE;
 			break;
 		case 'g':
+			dbg_port = atoi(optarg);
+			break;
+		case 'G':
 			gdb_port = atoi(optarg);
 			break;
 		case 'l':
@@ -945,8 +950,11 @@ main(int argc, char *argv[])
 	if (init_pci(ctx) != 0)
 		exit(1);
 
+	if (dbg_port != 0)
+		init_dbgport(dbg_port);
+
 	if (gdb_port != 0)
-		init_dbgport(gdb_port);
+		init_gdb(gdb_port, false);
 
 	if (bvmcons)
 		init_bvmcons();

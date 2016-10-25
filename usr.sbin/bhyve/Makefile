@@ -24,6 +24,7 @@ SRCS=	\
 	consport.c		\
 	dbgport.c		\
 	fwctl.c			\
+	gdb.c			\
 	inout.c			\
 	ioapic.c		\
 	mem.c			\
