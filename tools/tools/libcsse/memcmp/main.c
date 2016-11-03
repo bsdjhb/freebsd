@@ -214,7 +214,7 @@ tests(void)
 			cap = getpagesize() - si;
 			if (getpagesize() - di < cap)
 				cap = getpagesize() - di;
-			for (len = 1; len < cap; len++) {
+			for (len = 0; len < cap; len++) {
 				for (same = 0; same < len; same++) {
 					run_test(p1 + si, p2 + di, len, same);
 					if (info) {

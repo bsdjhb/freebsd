@@ -222,7 +222,7 @@ tests(void)
 
 	for (si = 0; si < 256; si++) {
 		cap = getpagesize() - si;
-		for (len = 1; len < cap; len++) {
+		for (len = 0; len < cap; len++) {
 			if (!run_test(data + si, len)) {
 				printf("memset failed: si %d len %d\n", si, len);
 				abort();
