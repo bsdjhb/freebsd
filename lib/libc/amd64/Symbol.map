@@ -69,6 +69,9 @@ FBSDprivate_1.0 {
 	_vfork;
 
 	/* SSE/AVX string operation variants */
+	memcpy_plain;
+	memmove_plain;
+	bcopy_plain;
 	memcpy_sse2_aligned;
 	memmove_sse2_aligned;
 	bcopy_sse2_aligned;
@@ -81,6 +84,7 @@ FBSDprivate_1.0 {
 	memcpy_erms;
 	memmove_erms;
 	bcopy_erms;
+	memset_plain;
 	memset_sse2_aligned;
 	memset_sse2_unaligned;
 	memset_ssse3_aligned;

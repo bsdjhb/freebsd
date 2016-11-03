@@ -11,7 +11,7 @@ __FBSDID("$FreeBSD$");
 	RCSID("$NetBSD: memset.S,v 1.3 2004/02/26 20:50:06 drochner Exp $")
 #endif
 
-ENTRY(memset)
+ENTRY(memset_plain)
 	movq	%rsi,%rax
 	andq	$0xff,%rax
 	movq	%rdx,%rcx
@@ -58,7 +58,7 @@ L1:	rep
 	movq	%r11,%rax
 
 	ret
-END(memset)
+END(memset_plain)
 
 /*
  * SSE2 variants.  Unaligned always uses movups.  Aligned uses movaps if
@@ -504,4 +504,10 @@ ENTRY(memset_erms)
 	ret
 END(memset_erms)
 
+#ifndef memset_default
+#define memset_default memset_plain
+#endif
+	.global CNAME(memset)
+	.equ CNAME(memset),CNAME(memset_default)
+	
 	.section .note.GNU-stack,"",%progbits

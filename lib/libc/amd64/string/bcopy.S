@@ -42,12 +42,12 @@ __FBSDID("$FreeBSD$");
 	 */
 
 #ifdef MEMCOPY
-ENTRY(memcpy)
+ENTRY(memcpy_plain)
 #else
 #ifdef MEMMOVE
-ENTRY(memmove)
+ENTRY(memmove_plain)
 #else
-ENTRY(bcopy)
+ENTRY(bcopy_plain)
 #endif
 #endif
 #if defined(MEMCOPY) || defined(MEMMOVE)
@@ -87,12 +87,12 @@ ENTRY(bcopy)
 	cld
 	ret
 #ifdef MEMCOPY
-END(memcpy)
+END(memcpy_plain)
 #else
 #ifdef MEMMOVE
-END(memmove)
+END(memmove_plain)
 #else
-END(bcopy)
+END(bcopy_plain)
 #endif
 #endif
 
@@ -742,4 +742,27 @@ END(memmove_erms)
 END(bcopy_erms)
 #endif
 #endif
+
+#ifdef MEMCOPY
+#ifndef memcpy_default
+#define memcpy_default memcpy_plain
+#endif
+	.global CNAME(memcpy)
+	.equ CNAME(memcpy),CNAME(memcpy_default)
+#else
+#ifdef MEMMOVE
+#ifndef memmove_default
+#define memmove_default memmove_plain
+#endif
+	.global CNAME(memmove)
+	.equ CNAME(memmove),CNAME(memmove_default)
+#else
+#ifndef bcopy_default
+#define bcopy_default bcopy_plain
+#endif
+	.global CNAME(bcopy)
+	.equ CNAME(bcopy),CNAME(bcopy_default)
+#endif
+#endif
+	
 	.section .note.GNU-stack,"",%progbits
