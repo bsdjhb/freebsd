@@ -192,7 +192,7 @@ tests(void)
 			cap = getpagesize() - si;
 			if (getpagesize() - di < cap)
 				cap = getpagesize() - di;
-			for (len = 1; len < cap; len++) {
+			for (len = 0; len < cap; len++) {
 				if (!run_test(data.p1 + si, data.p2 + di, len)) {
 					printf("normal failed: si %d di %d"
 					    " len %d\n", si, di, len);
@@ -213,7 +213,7 @@ tests(void)
 			cap = getpagesize() - si;
 			if (getpagesize() - di < cap)
 				cap = getpagesize() - di;
-			for (len = 1; len < cap; len++) {
+			for (len = 0; len < cap; len++) {
 				if (!run_test(data.p1 + si, data.p1 + di, len)) {
 					printf("overlap failed: si %d di %d"
 					    " len %d\n", si, di, len);

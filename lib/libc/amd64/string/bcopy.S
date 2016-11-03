@@ -415,15 +415,15 @@ ENTRY(bcopy_sse2_unaligned)
 	jb	.Lbackwards_sse2_unaligned
 
 	/*
-	 * If the length is not an even multiple of an SSE reg, use a
-	 * simple copy for the header.
+	 * Store count of SSE registers in %rdx and remaining byte count
+	 * in %rcx.  If the string is too short, skip the SSE copy.
 	 */
-	shrq	$4,%rdx
 	andq	$0xf,%rcx
-	jnz	5f
+	shrq	$4,%rdx
+	jz	3f
 
 1:	test	$3,%rdx			/* Need non-64-byte chunk? */
-	jnz	3f
+	jnz	4f
 2:	movups	(%rsi),%xmm0		/* 64 bytes at a time */
 	movups	0x10(%rsi),%xmm1
 	movups	0x20(%rsi),%xmm2
@@ -436,10 +436,13 @@ ENTRY(bcopy_sse2_unaligned)
 	addq	$0x40,%rdi
 	subq	$4,%rdx
 	jnz	2b
+
+3:	rep
+	movsb
 	ret
 
-3:	test	$2,%rdx			/* 32-byte chunk? */
-	jz 	4f
+4:	test	$2,%rdx			/* 32-byte chunk? */
+	jz 	5f
 	movups	(%rsi),%xmm0		/* 32 bytes at a time */
 	movups	0x10(%rsi),%xmm1
 	movups	%xmm0,(%rdi)
@@ -447,38 +450,31 @@ ENTRY(bcopy_sse2_unaligned)
 	addq	$0x20,%rsi
 	addq	$0x20,%rdi
 	subq	$2,%rdx
-	jz	6f
+	jz	3b
 	test	$1,%rdx			/* 16-byte chunk? */
 	jz	2b
-4:	movups	(%rsi),%xmm0		/* 16 bytes at a time */
+5:	movups	(%rsi),%xmm0		/* 16 bytes at a time */
 	movups	%xmm0,(%rdi)
 	addq	$0x10,%rsi
 	addq	$0x10,%rdi
 	subq	$1,%rdx
-	jz	6f
+	jz	3b
 	jmp	2b
-
-5:	rep
-	movsb
-	test	%rdx,%rdx
-	jnz	1b
-
-6:	ret
 
 .Lbackwards_sse2_unaligned:
 	addq	%rcx,%rdi		/* copy backwards. */
 	addq	%rcx,%rsi
 
 	/*
-	 * If the length is not an even multiple of an SSE reg, use a
-	 * simple copy for the header.
+	 * Store count of SSE registers in %rdx and remaining byte count
+	 * in %rcx.  If the string is too short, skip the SSE copy.
 	 */
-	shrq	$4,%rdx
 	andq	$0xf,%rcx
-	jnz	5f
+	shrq	$4,%rdx
+	jz	3f
 
 1:	test	$3,%rdx			/* Need non-64-byte chunk? */
-	jnz	3f
+	jnz	4f
 2:	movups	-0x10(%rsi),%xmm0	/* 64 bytes at a time */
 	movups	-0x20(%rsi),%xmm1
 	movups	-0x30(%rsi),%xmm2
@@ -491,10 +487,17 @@ ENTRY(bcopy_sse2_unaligned)
 	subq	$0x40,%rdi
 	subq	$4,%rdx
 	jnz	2b
+
+3:	decq	%rdi
+	std
+	decq	%rsi
+	rep
+	movsb
+	cld
 	ret
 
-3:	test	$2,%rdx			/* 32-byte chunk? */
-	jz 	4f
+4:	test	$2,%rdx			/* 32-byte chunk? */
+	jz 	5f
 	movups	-0x10(%rsi),%xmm0	/* 32 bytes at a time */
 	movups	-0x20(%rsi),%xmm1
 	movups	%xmm0,-0x10(%rdi)
@@ -502,29 +505,16 @@ ENTRY(bcopy_sse2_unaligned)
 	subq	$0x20,%rsi
 	subq	$0x20,%rdi
 	subq	$2,%rdx
-	jz	6f
+	jz	3b
 	test	$1,%rdx			/* 16-byte chunk? */
 	jz	2b
-4:	movups	-0x10(%rsi),%xmm0	/* 16 bytes at a time */
+5:	movups	-0x10(%rsi),%xmm0	/* 16 bytes at a time */
 	movups	%xmm0,-0x10(%rdi)
 	subq	$0x10,%rsi
 	subq	$0x10,%rdi
 	subq	$1,%rdx
-	jz	6f
+	jz	3b
 	jmp	2b
-
-5:	decq	%rdi
-	std
-	decq	%rsi
-	rep
-	movsb
-	incq	%rdi
-	cld
-	incq	%rsi
-	test	%rdx,%rdx
-	jnz	1b
-
-6:	ret
 #ifdef MEMCOPY
 END(memcpy_sse2_unaligned)
 #else
@@ -561,15 +551,15 @@ ENTRY(bcopy_avx_256)
 	jb	.Lbackwards_avx_256
 
 	/*
-	 * If the length is not an even multiple of an AVX reg, use a
-	 * simple copy for the header.
+	 * Store count of SSE registers in %rdx and remaining byte count
+	 * in %rcx.  If the string is too short, skip the SSE copy.
 	 */
-	shrq	$4,%rdx
 	andq	$0xf,%rcx
-	jnz	6f
+	shrq	$4,%rdx
+	jz	3f
 
 1:	test	$7,%rdx			/* Need non-128-byte chunk? */
-	jnz	3f
+	jnz	4f
 2:	vmovups	(%rsi),%ymm0		/* 128 bytes at a time */
 	vmovups	0x20(%rsi),%ymm1
 	vmovups	0x40(%rsi),%ymm2
@@ -582,10 +572,13 @@ ENTRY(bcopy_avx_256)
 	addq	$0x80,%rdi
 	subq	$8,%rdx
 	jnz	2b
+
+3:	rep
+	movsb
 	ret
 
-3:	test	$4,%rdx			/* 64-byte chunk? */
-	jz 	4f
+4:	test	$4,%rdx			/* 64-byte chunk? */
+	jz 	5f
 	vmovups	(%rsi),%ymm0		/* 64 bytes at a time */
 	vmovups	0x20(%rsi),%ymm1
 	vmovups	%ymm0,(%rdi)
@@ -593,46 +586,39 @@ ENTRY(bcopy_avx_256)
 	addq	$0x40,%rsi
 	addq	$0x40,%rdi
 	subq	$4,%rdx
-	jz	7f
-4:	test	$2,%rdx			/* 32-byte chunk? */
-	jz 	5f
+	jz	3b
+5:	test	$2,%rdx			/* 32-byte chunk? */
+	jz 	6f
 	vmovups	(%rsi),%ymm0		/* 32 bytes at a time */
 	vmovups	%ymm0,(%rdi)
 	addq	$0x20,%rsi
 	addq	$0x20,%rdi
 	subq	$2,%rdx
-	jz	7f
-5:	test	$1,%rdx			/* 16-byte chunk? */
+	jz	3b
+6:	test	$1,%rdx			/* 16-byte chunk? */
 	jz	2b
 	vmovups	(%rsi),%xmm0		/* 16 bytes at a time */
 	vmovups	%xmm0,(%rdi)
 	addq	$0x10,%rsi
 	addq	$0x10,%rdi
 	subq	$1,%rdx
-	jz	7f
+	jz	3b
 	jmp	2b
-
-6:	rep
-	movsb
-	test	%rdx,%rdx
-	jnz	1b
-
-7:	ret
 
 .Lbackwards_avx_256:
 	addq	%rcx,%rdi		/* copy backwards. */
 	addq	%rcx,%rsi
 
 	/*
-	 * If the length is not an even multiple of an AVX reg, use a
-	 * simple copy for the header.
+	 * Store count of SSE registers in %rdx and remaining byte count
+	 * in %rcx.  If the string is too short, skip the SSE copy.
 	 */
-	shrq	$4,%rdx
 	andq	$0xf,%rcx
-	jnz	6f
+	shrq	$4,%rdx
+	jz	3f
 
 1:	test	$7,%rdx			/* Need non-128-byte chunk? */
-	jnz	3f
+	jnz	4f
 2:	vmovups	-0x20(%rsi),%ymm0	/* 128 bytes at a time */
 	vmovups	-0x40(%rsi),%ymm1
 	vmovups	-0x60(%rsi),%ymm2
@@ -641,14 +627,21 @@ ENTRY(bcopy_avx_256)
 	vmovups	%ymm1,-0x40(%rdi)
 	vmovups	%ymm2,-0x60(%rdi)
 	vmovups	%ymm3,-0x80(%rdi)
-	subq	$0x40,%rsi
-	subq	$0x40,%rdi
-	subq	$4,%rdx
+	subq	$0x80,%rsi
+	subq	$0x80,%rdi
+	subq	$8,%rdx
 	jnz	2b
+
+3:	decq	%rdi
+	std
+	decq	%rsi
+	rep
+	movsb
+	cld
 	ret
 
-3:	test	$4,%rdx			/* 64-byte chunk? */
-	jz 	4f
+4:	test	$4,%rdx			/* 64-byte chunk? */
+	jz 	5f
 	vmovups	-0x20(%rsi),%ymm0	/* 64 bytes at a time */
 	vmovups	-0x40(%rsi),%ymm1
 	vmovups	%ymm0,-0x20(%rdi)
@@ -656,37 +649,24 @@ ENTRY(bcopy_avx_256)
 	subq	$0x40,%rsi
 	subq	$0x40,%rdi
 	subq	$4,%rdx
-	jz	7f
-4:	test	$2,%rdx			/* 32-byte chunk? */
-	jz 	5f
+	jz	3b
+5:	test	$2,%rdx			/* 32-byte chunk? */
+	jz 	6f
 	vmovups	-0x20(%rsi),%ymm0	/* 32 bytes at a time */
 	vmovups	%ymm0,-0x20(%rdi)
 	subq	$0x20,%rsi
 	subq	$0x20,%rdi
 	subq	$2,%rdx
-	jz	7f
-5:	test	$1,%rdx			/* 16-byte chunk? */
+	jz	3b
+6:	test	$1,%rdx			/* 16-byte chunk? */
 	jz	2b
 	vmovups	-0x10(%rsi),%xmm0	/* 16 bytes at a time */
 	vmovups	%xmm0,-0x10(%rdi)
 	subq	$0x10,%rsi
 	subq	$0x10,%rdi
 	subq	$1,%rdx
-	jz	7f
+	jz	3b
 	jmp	2b
-
-6:	decq	%rdi
-	std
-	decq	%rsi
-	rep
-	movsb
-	incq	%rdi
-	cld
-	incq	%rsi
-	test	%rdx,%rdx
-	jnz	1b
-
-7:	ret
 #ifdef MEMCOPY
 END(memcpy_avx_256)
 #else
