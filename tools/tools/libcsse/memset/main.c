@@ -1,4 +1,5 @@
 #include <sys/param.h>
+#include <sys/mman.h>
 #include <sys/signal.h>
 #include <machine/cpufunc.h>
 #include <machine/specialreg.h>
@@ -139,6 +140,28 @@ handler(int sig)
 	info = 1;
 }
 
+/*
+ * Allocates a page with PROT_NONE pages before and after to catch any
+ * attempts to access memory outside of the page.
+ */
+static void *
+alloc_guardedpage(void)
+{
+	char *p;
+
+	p = mmap(NULL, 3 * getpagesize(), PROT_READ | PROT_WRITE, MAP_ANON, -1,
+	    0);
+	if (p == MAP_FAILED)
+		err(1, "mmap(MAP_ANON)");
+	if ((uintptr_t)p % getpagesize() != 0)
+		errx(1, "guarded page is not page aligned");
+	if (mprotect(p, getpagesize(), PROT_NONE) == -1)
+		err(1, "mprotect(PROT_NONE)");
+	if (mprotect(p + getpagesize() * 2, getpagesize(), PROT_NONE) == -1)
+		err(1, "mprotect(PROT_NONE)");
+	return (p + getpagesize());
+}
+
 char *control, *test, *data;
 
 static bool
@@ -216,7 +239,7 @@ tests(void)
 
 	control = malloc(getpagesize());
 	test = malloc(getpagesize());
-	data = malloc(getpagesize());
+	data = alloc_guardedpage();
 
 	signal(SIGINFO, handler);
 
