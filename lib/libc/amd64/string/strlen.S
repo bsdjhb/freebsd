@@ -183,4 +183,9 @@ ENTRY(strlen_erms)
 	ret
 END(strlen_erms)
 
+#ifdef strlen_default
+	.global CNAME(strlen)
+	.equ CNAME(strlen),CNAME(strlen_default)
+#endif
+
 	.section .note.GNU-stack,"",%progbits

@@ -3,6 +3,6 @@
 SHLIB_NAME=	sse_preload.so
 MAN=
 
-SRCS=	bcopy.S memcpy.S memmove.S memset.S
+SRCS=	bcopy.S memcpy.S memmove.S memset.S strlen.S
 
 .include <bsd.lib.mk>
