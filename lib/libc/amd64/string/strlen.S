@@ -44,9 +44,9 @@ ENTRY(strlen_sse2)
 	ret
 
 	/*
-	 * If %rsi is not aligned, check for null characters in the
-	 * 16-byte region containing %rsi, but ignore any null
-	 * characters found before %rsi.
+	 * If %rdi is not aligned, check for null characters in the
+	 * 16-byte region containing %rdi, but ignore any null
+	 * characters found before %rdi.
 	 */
 3:	mov	%rdi,%rcx		/* Compute bytes to ignore */
 	mov	$0x10,%eax		
@@ -57,7 +57,7 @@ ENTRY(strlen_sse2)
 	pcmpeqb	(%rdi),%xmm1
 	pmovmskb %xmm1,%rdx
 	addq	$0x10,%rdi
-	shr	%cl,%edx		/* Ignore bytes before original %rsi */
+	shr	%cl,%edx		/* Ignore bytes before original %rdi */
 	jz	2b
 	bsf	%edx,%eax
 	ret
@@ -82,9 +82,9 @@ ENTRY(strlen_sse42)
 	ret
 
 	/*
-	 * If %rsi is not aligned, check for null characters in the
-	 * 16-byte region containing %rsi, but ignore any null
-	 * characters found before %rsi.
+	 * If %rdi is not aligned, check for null characters in the
+	 * 16-byte region containing %rdi, but ignore any null
+	 * characters found before %rdi.
 	 */
 3:	mov	%rdi,%r8		/* Compute bytes to ignore */
 	mov	%rax,%r9		/* %r9 is initial %eax if no null */
@@ -95,7 +95,7 @@ ENTRY(strlen_sse42)
 	mov	%r8,%rcx
 	movd	%xmm0,%r11
 	addq	$0x10,%rdi
-	shr	%cl,%r11d		/* Ignore bytes before original %rsi */
+	shr	%cl,%r11d		/* Ignore bytes before original %rdi */
 	jz	2b
 	bsf	%r11d,%eax
 	ret
@@ -118,9 +118,9 @@ ENTRY(strlen_avx)
 	ret
 
 	/*
-	 * If %rsi is not aligned, check for null characters in the
-	 * 16-byte region containing %rsi, but ignore any null
-	 * characters found before %rsi.
+	 * If %rdi is not aligned, check for null characters in the
+	 * 16-byte region containing %rdi, but ignore any null
+	 * characters found before %rdi.
 	 */
 3:	mov	%rdi,%rcx		/* Compute bytes to ignore */
 	mov	$0x10,%eax		
@@ -130,7 +130,7 @@ ENTRY(strlen_avx)
 	vpcmpeqb (%rdi),%xmm0,%xmm1
 	vpmovmskb %xmm1,%rdx
 	addq	$0x10,%rdi
-	shr	%cl,%edx		/* Ignore bytes before original %rsi */
+	shr	%cl,%edx		/* Ignore bytes before original %rdi */
 	jz	2b
 	bsf	%edx,%eax
 	ret
@@ -153,9 +153,9 @@ ENTRY(strlen_avx2)
 	ret
 
 	/*
-	 * If %rsi is not aligned, check for null characters in the
-	 * 16-byte region containing %rsi, but ignore any null
-	 * characters found before %rsi.
+	 * If %rdi is not aligned, check for null characters in the
+	 * 32-byte region containing %rdi, but ignore any null
+	 * characters found before %rdi.
 	 */
 3:	mov	%rdi,%rcx		/* Compute bytes to ignore */
 	mov	$0x20,%eax		
@@ -165,7 +165,7 @@ ENTRY(strlen_avx2)
 	vpcmpeqb (%rdi),%ymm0,%ymm1
 	vpmovmskb %xmm1,%rdx
 	addq	$0x20,%rdi
-	shr	%cl,%edx		/* Ignore bytes before original %rsi */
+	shr	%cl,%edx		/* Ignore bytes before original %rdi */
 	jz	2b
 	bsf	%edx,%eax
 	ret
