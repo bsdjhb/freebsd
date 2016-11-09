@@ -203,7 +203,7 @@ run_test(size_t offset, size_t len)
 		
 		/* Verify results are identical. */
 		if (test != control) {
-			printf("strlen%s failed: si %zu len %zu: %zu vs %zu\n",
+			printf("strlen_%s failed: si %zu len %zu: %zu vs %zu\n",
 			    variant == SSE2 ? "sse2" :
 			    variant == SSE42 ? "sse42" :
 			    variant == AVX ? "avx" :
