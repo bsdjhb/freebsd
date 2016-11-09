@@ -146,7 +146,7 @@ ENTRY(strlen_avx2)
 1:	addq	$0x20,%rdi
 	addq	$0x20,%rax
 2:	vpcmpeqb (%rdi),%ymm0,%ymm1
-	vpmovmskb %xmm1,%rcx
+	vpmovmskb %ymm1,%rcx
 	jecxz	1b
 	bsf	%ecx,%edx
 	addq	%rdx,%rax
@@ -163,7 +163,7 @@ ENTRY(strlen_avx2)
 	subq	%rcx,%rdi
 	subq	%rcx,%rax
 	vpcmpeqb (%rdi),%ymm0,%ymm1
-	vpmovmskb %xmm1,%rdx
+	vpmovmskb %ymm1,%rdx
 	addq	$0x20,%rdi
 	shr	%cl,%edx		/* Ignore bytes before original %rdi */
 	jz	2b
