@@ -164,34 +164,50 @@ ENTRY(memcmp_sse42)
 	mov	%edx,%r8d
 	mov	%eax,%edx
 1:	subq	$0x10,%r8
-	js	3f
+	js	2f
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	movups	(%rdi),%xmm1
 	addq	$0x10,%rdi
 	pcmpestri $18,%xmm0,%xmm1
 	jnc	1b
-	leaq	-0x10(%rsi,%rcx),%rsi
-	leaq	-0x10(%rdi,%rcx),%rdi
-
-2:	movzbl	(%rdi),%eax
-	movzbl	(%rsi),%edx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
 	subl	%edx,%eax
 	ret
 
-3:	addq	$0x10,%r8
-	jnz	5f
-4:	xor	%eax,%eax
+2:	addq	$0x10,%r8
+	jnz	4f
+3:	xor	%eax,%eax
 	ret
-5:	mov	%r8d,%eax
+
+4:	leaq	0xf(%rsi),%r9
+	leaq	0xf(%rdi),%r10
+	xor	%rsi,%r9
+	xor	%rdi,%r10
+	or	%r9,%r10
+	test	$4096,%r10
+	jnz	5f
+
+	mov	%r8d,%eax
 	movups	(%rsi),%xmm0
 	mov	%eax,%edx
 	movups	(%rdi),%xmm1
 	pcmpestri $18,%xmm0,%xmm1
-	jnc	4b
-	addq	%rcx,%rsi
-	addq	%rcx,%rdi
-	jmp	2b
+	jnc	3b
+	movzbl	(%rdi,%rcx),%eax
+	movzbl	(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
+
+5:	mov	%r8d,%ecx
+	repe
+	cmpsb
+	je	3b
+	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
+	subl	%edx,%eax
+	ret
 END(memcmp_sse42)
 
 ENTRY(memcmp_sse42_2)
