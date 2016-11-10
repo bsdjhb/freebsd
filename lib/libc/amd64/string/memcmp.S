@@ -54,7 +54,7 @@ ENTRY(memcmp_sse2_aligned)
 
 	/* b1 and b2 are not aligned */
 1:	subq	$0x10,%rdx
-	js	3f
+	js	2f
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	movups	(%rdi),%xmm1
@@ -63,21 +63,22 @@ ENTRY(memcmp_sse2_aligned)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	1b
-	bsf	%eax,%edx
-	leaq	-0xf(%rsi,%rdx),%rsi
-	leaq	-0xf(%rdi,%rdx),%rdi
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 
-2:	movzbl	-1(%rdi),%eax
+2:	lea	0x10(%edx),%ecx
+	repe
+	cmpsb
+	je	3f
+	movzbl	-1(%rdi),%eax
 	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
 	ret
 
-3:	lea	0x10(%edx),%ecx
-	repe
-	cmpsb
-	jne	2b
-
-	xorl	%eax,%eax
+3:	xorl	%eax,%eax
 	ret
 
 4:	test	$0xf,%rsi		/* b2 aligned? */
@@ -85,7 +86,7 @@ ENTRY(memcmp_sse2_aligned)
 
 	/* b1 (%rdi) aligned, b2 (%rsi) is not aligned */
 5:	subq	$0x10,%rdx
-	js	3b
+	js	2b
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	pcmpeqb	(%rdi),%xmm0
@@ -93,14 +94,15 @@ ENTRY(memcmp_sse2_aligned)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	5b
-	bsf	%eax,%edx
-	leaq	-0xf(%rsi,%rdx),%rsi
-	leaq	-0xf(%rdi,%rdx),%rdi
-	jmp	2b
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 
 	/* b1 (%rdi) is not aligned, b2 (%rsi) aligned */
 6:	subq	$0x10,%rdx
-	js	3b
+	js	2b
 	movups	(%rdi),%xmm0
 	addq	$0x10,%rdi
 	pcmpeqb	(%rsi),%xmm0
@@ -108,14 +110,15 @@ ENTRY(memcmp_sse2_aligned)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	6b
-	bsf	%eax,%edx
-	leaq	-0xf(%rsi,%rdx),%rsi
-	leaq	-0xf(%rdi,%rdx),%rdi
-	jmp	2b
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 
 	/* b1 and b2 are aligned */
 7:	subq	$0x10,%rdx
-	js	3b
+	js	2b
 	movaps	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	pcmpeqb	(%rdi),%xmm0
@@ -123,10 +126,11 @@ ENTRY(memcmp_sse2_aligned)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	7b
-	bsf	%eax,%edx
-	leaq	-0xf(%rsi,%rdx),%rsi
-	leaq	-0xf(%rdi,%rdx),%rdi
-	jmp	2b
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 END(memcmp_sse2_aligned)
 
 ENTRY(memcmp_sse2_unaligned)
