@@ -132,7 +132,7 @@ END(memcmp_sse2_aligned)
 ENTRY(memcmp_sse2_unaligned)
 	cld
 1:	subq	$0x10,%rdx
-	js	3f
+	js	2f
 	movups	(%rsi),%xmm0
 	addq	$0x10,%rsi
 	movups	(%rdi),%xmm1
@@ -141,21 +141,22 @@ ENTRY(memcmp_sse2_unaligned)
 	pmovmskb %xmm0,%rax
 	xor	$0xffff,%eax
 	jz	1b
-	bsf	%eax,%edx
-	leaq	-0xf(%rsi,%rdx),%rsi
-	leaq	-0xf(%rdi,%rdx),%rdi
+	bsf	%eax,%ecx
+	movzbl	-0x10(%rdi,%rcx),%eax
+	movzbl	-0x10(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
 
-2:	movzbl	-1(%rdi),%eax
+2:	lea	0x10(%edx),%ecx
+	repe
+	cmpsb
+	je	3f
+	movzbl	-1(%rdi),%eax
 	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
 	ret
 
-3:	lea	0x10(%edx),%ecx
-	repe
-	cmpsb
-	jne	2b
-
-	xorl	%eax,%eax
+3:	xorl	%eax,%eax
 	ret
 END(memcmp_sse2_unaligned)
 
