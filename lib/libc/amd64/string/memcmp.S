@@ -186,6 +186,13 @@ ENTRY(memcmp_sse42)
 3:	xor	%eax,%eax
 	ret
 
+	/*
+	 * Compare the last N bytes of the input buffers.  If both %rsi
+	 * and %rdi are at least 16 bytes away from a page boundary, read
+	 * a full SSE register (which extends beyond the buffer bounds)
+	 * and use pcmpestri.  Otherwise, use rep cmpsb to avoid crossing
+	 * the page boundary unnecessarily.
+	 */
 4:	leaq	0xf(%rsi),%r9
 	leaq	0xf(%rdi),%r10
 	xor	%rsi,%r9
