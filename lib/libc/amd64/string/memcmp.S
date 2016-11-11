@@ -326,8 +326,8 @@ ENTRY(memcmp_avx2)
 	not	%eax
 	jz	1b
 	bsf	%eax,%ecx
-	movzbl	-0x10(%rdi,%rcx),%eax
-	movzbl	-0x10(%rsi,%rcx),%edx
+	movzbl	-0x20(%rdi,%rcx),%eax
+	movzbl	-0x20(%rsi,%rcx),%edx
 	subl	%edx,%eax
 	ret
 
