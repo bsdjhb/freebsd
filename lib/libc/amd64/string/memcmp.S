@@ -150,7 +150,7 @@ ENTRY(memcmp_sse2_unaligned)
 	subl	%edx,%eax
 	ret
 
-2:	addq	$0x10,%rdx
+2:	add	$0x10,%edx
 	jnz	4f
 3:	xor	%eax,%eax
 	ret
@@ -277,7 +277,23 @@ ENTRY(memcmp_sse42_2)
 	jnz	4f
 3:	xor	%eax,%eax
 	ret
-4:	mov	%edx,%eax
+
+	/*
+	 * Compare the last N bytes of the input buffers.  If both %rsi
+	 * and %rdi are at least 16 bytes away from a page boundary, read
+	 * a full SSE register (which extends beyond the buffer bounds)
+	 * and use pcmpestri.  Otherwise, use rep cmpsb to avoid crossing
+	 * the page boundary unnecessarily.
+	 */
+4:	leaq	0xf(%rsi),%r9
+	leaq	0xf(%rdi),%r10
+	xor	%rsi,%r9
+	xor	%rdi,%r10
+	or	%r9,%r10
+	test	$4096,%r10
+	jnz	5f
+
+	mov	%edx,%eax
 	movups	(%rsi),%xmm0
 	mov	%eax,%edx
 	movups	(%rdi),%xmm1
@@ -285,6 +301,15 @@ ENTRY(memcmp_sse42_2)
 	jnc	3b
 	movzbl	(%rdi,%rcx),%eax
 	movzbl	(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
+
+5:	mov	%edx,%ecx
+	repe
+	cmpsb
+	je	3b
+	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
 	ret
 END(memcmp_sse42_2)
@@ -310,14 +335,46 @@ ENTRY(memcmp_avx2)
 	jnz	4f
 3:	xor	%eax,%eax
 	ret
-4:	mov	%edx,%eax
+
+	/*
+	 * Compare the last N bytes of the input buffers.  If both %rsi
+	 * and %rdi are at least 32 bytes away from a page boundary, read
+	 * a full AVX register (which extends beyond the buffer bounds)
+	 * and use vpcmpeqb.  Otherwise, use rep cmpsb to avoid crossing
+	 * the page boundary unnecessarily.
+	 */
+4:	leaq	0x1f(%rsi),%r9
+	leaq	0x1f(%rdi),%r10
+	xor	%rsi,%r9
+	xor	%rdi,%r10
+	or	%r9,%r10
+	test	$4096,%r10
+	jnz	5f
+
+	mov	%edx,%ecx
 	vmovups	(%rsi),%ymm0
-	mov	%eax,%edx
+	mov	$1,%edx
 	vmovups	(%rdi),%ymm1
-	vpcmpestri $18,%xmm0,%xmm1
-	jnc	3b
+	shl	%cl,%edx
+	vpcmpeqb %ymm1,%ymm0
+	dec	%edx
+	vpmovmskb %ymm0,%rax
+	not	%eax
+	and	%edx,%eax
+	jz	3b
+	bsf	%eax,%ecx
 	movzbl	(%rdi,%rcx),%eax
 	movzbl	(%rsi,%rcx),%edx
+	subl	%edx,%eax
+	ret
+
+5:	mov	%edx,%ecx
+	cld
+	repe
+	cmpsb
+	je	3b
+	movzbl	-1(%rdi),%eax
+	movzbl	-1(%rsi),%edx
 	subl	%edx,%eax
 	ret
 END(memcmp_avx2)
