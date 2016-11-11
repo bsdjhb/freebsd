@@ -1256,8 +1256,6 @@ sched_add(struct thread *td, int flags)
 	KASSERT(td->td_flags & TDF_INMEM,
 	    ("sched_add: thread swapped out"));
 
-	CTR2(KTR_PROC, "sched_add: thread %d (%s)", td->td_tid,
-	    sched_tdname(td));
 	KTR_STATE2(KTR_SCHED, "thread", sched_tdname(td), "runq add",
 	    "prio:%d", td->td_priority, KTR_ATTR_LINKED,
 	    sched_tdname(curthread));
