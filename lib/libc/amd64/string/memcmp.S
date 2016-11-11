@@ -356,7 +356,7 @@ ENTRY(memcmp_avx2)
 	mov	$1,%edx
 	vmovups	(%rdi),%ymm1
 	shl	%cl,%edx
-	vpcmpeqb %ymm1,%ymm0
+	vpcmpeqb %ymm0,%ymm1,%ymm0
 	dec	%edx
 	vpmovmskb %ymm0,%rax
 	not	%eax
