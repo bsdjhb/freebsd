@@ -323,7 +323,7 @@ ENTRY(memcmp_avx2)
 	addq	$0x20,%rdi
 	vpcmpeqb %ymm0,%ymm1,%ymm0
 	vpmovmskb %ymm0,%rax
-	not	%eax
+	xor	$0xffffffff,%eax
 	jz	1b
 	bsf	%eax,%ecx
 	movzbl	-0x20(%rdi,%rcx),%eax
@@ -359,7 +359,7 @@ ENTRY(memcmp_avx2)
 	vpcmpeqb %ymm0,%ymm1,%ymm0
 	dec	%edx
 	vpmovmskb %ymm0,%rax
-	not	%eax
+	xor	$0xffffffff,%eax
 	and	%edx,%eax
 	jz	3b
 	bsf	%eax,%ecx
