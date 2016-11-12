@@ -725,20 +725,41 @@ END(bcopy_erms)
 
 #ifdef MEMCOPY
 #ifndef memcpy_default
-#define memcpy_default memcpy_plain
+/* No way to check for ERMS. */
+#ifdef __AVX__
+#define	memcpy_default memcpy_avx_256
+#elif defined(__SSE4_2__)
+#define	memcpy_default memcpy_sse2_unaligned
+#else
+#define	memcpy_default memcpy_sse2_aligned
+#endif
 #endif
 	.global CNAME(memcpy)
 	.equ CNAME(memcpy),CNAME(memcpy_default)
 #else
 #ifdef MEMMOVE
 #ifndef memmove_default
-#define memmove_default memmove_plain
+/* No way to check for ERMS. */
+#ifdef __AVX__
+#define	memmove_default memmove_avx_256
+#elif defined(__SSE4_2__)
+#define	memmove_default memmove_sse2_unaligned
+#else
+#define	memmove_default memmove_sse2_aligned
+#endif
 #endif
 	.global CNAME(memmove)
 	.equ CNAME(memmove),CNAME(memmove_default)
 #else
 #ifndef bcopy_default
-#define bcopy_default bcopy_plain
+/* No way to check for ERMS. */
+#ifdef __AVX__
+#define	bcopy_default bcopy_avx_256
+#elif defined(__SSE4_2__)
+#define	bcopy_default bcopy_sse2_unaligned
+#else
+#define	bcopy_default bcopy_sse2_aligned
+#endif
 #endif
 	.global CNAME(bcopy)
 	.equ CNAME(bcopy),CNAME(bcopy_default)

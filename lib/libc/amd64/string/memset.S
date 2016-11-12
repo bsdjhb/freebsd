@@ -505,7 +505,20 @@ ENTRY(memset_erms)
 END(memset_erms)
 
 #ifndef memset_default
-#define memset_default memset_plain
+/* No way to check for ERMS. */
+#ifdef __AVX2__
+#define	memset_default memset_avx2_256
+#elif defined(__AVX__)
+#define	memset_default memset_avx_256
+#elif defined(__SSE4_2__) && defined(__SSSE3__)
+#define	memset_default memset_ssse3_unaligned
+#elif defined(__SSE4_2__)
+#define	memset_default memset_sse2_unaligned
+#elif defined(__SSSE3__)
+#define	memset_default memset_ssse3_aligned
+#else
+#define memset_default memset_sse2_aligned
+#endif
 #endif
 	.global CNAME(memset)
 	.equ CNAME(memset),CNAME(memset_default)
