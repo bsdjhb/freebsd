@@ -420,11 +420,13 @@ initclocks(dummy)
 		FOREACH_THREAD_IN_PROC(p, td) {
 			thread_lock(td);
 			if (TD_ON_LOCK(td)) {
-				MPASS(td->td_blktick == 0);
+				MPASS(td->td_blktick == 0 ||
+				    td->td_blktick == ticks);
 				td->td_blktick = ticks;
 			}
 			if (TD_ON_SLEEPQ(td)) {
-				MPASS(td->td_slptick == 0);
+				MPASS(td->td_slptick == 0 ||
+				    td->td_slptick == ticks);
 				td->td_slptick = ticks;
 			}
 			thread_unlock(td);
