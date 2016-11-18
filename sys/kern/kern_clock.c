@@ -400,23 +400,6 @@ initclocks(dummy)
 	register int i;
 
 	/*
-	 * Set divisors to 1 (normal case) and let the machine-specific
-	 * code do its bit.
-	 */
-	mtx_init(&time_lock, "time lock", NULL, MTX_DEF);
-	cpu_initclocks();
-
-	/*
-	 * Compute profhz/stathz, and fix profhz if needed.
-	 */
-	i = stathz ? stathz : hz;
-	if (profhz == 0)
-		profhz = i;
-	psratio = profhz / i;
-#ifdef SW_WATCHDOG
-	EVENTHANDLER_REGISTER(watchdog_list, watchdog_config, NULL, 0);
-#endif
-	/*
 	 * Arrange for ticks to wrap 10 minutes after boot to help catch
 	 * sign problems sooner.
 	 */
@@ -449,6 +432,24 @@ initclocks(dummy)
 		PROC_UNLOCK(p);
 	}
 	sx_sunlock(&allproc_lock);
+#endif
+
+	/*
+	 * Set divisors to 1 (normal case) and let the machine-specific
+	 * code do its bit.
+	 */
+	mtx_init(&time_lock, "time lock", NULL, MTX_DEF);
+	cpu_initclocks();
+
+	/*
+	 * Compute profhz/stathz, and fix profhz if needed.
+	 */
+	i = stathz ? stathz : hz;
+	if (profhz == 0)
+		profhz = i;
+	psratio = profhz / i;
+#ifdef SW_WATCHDOG
+	EVENTHANDLER_REGISTER(watchdog_list, watchdog_config, NULL, 0);
 #endif
 }
 
