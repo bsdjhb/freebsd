@@ -2766,7 +2766,6 @@ static void g_journal_switcher(void *arg);
 static void
 g_journal_init(struct g_class *mp)
 {
-	int error;
 
 	/* Pick a conservative value if provided value sucks. */
 	if (g_journal_cache_divisor <= 0 ||
@@ -3025,7 +3024,7 @@ g_journal_stop_switcher(void)
 }
 
 /*
- * TODO: Kill switcher thread should on last geom destruction?
+ * TODO: Kill switcher thread on last geom destruction?
  */
 static void
 g_journal_switcher(void *arg)
