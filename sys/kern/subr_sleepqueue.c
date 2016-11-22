@@ -386,8 +386,6 @@ sleepq_set_timeout_sbt(void *wchan, sbintime_t sbt, sbintime_t pr,
 	MPASS(TD_ON_SLEEPQ(td));
 	MPASS(td->td_sleepqueue == NULL);
 	MPASS(wchan != NULL);
-	if (cold)
-		panic("timed sleep before timers are working");
 	KASSERT(td->td_sleeptimo == 0, ("td %d %p td_sleeptimo %jx",
 	    td->td_tid, td, (uintmax_t)td->td_sleeptimo));
 	thread_lock(td);
