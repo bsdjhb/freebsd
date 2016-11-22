@@ -665,6 +665,7 @@ cpu_initclocks_bsp(void)
 	statperiod = SBT_1S / stathz;
 	profperiod = SBT_1S / profhz;
 	ET_LOCK();
+	printf("CALLOUT: time when starting: %ld\n", sbinuptime());
 	configtimer(1);
 	ET_UNLOCK();
 }

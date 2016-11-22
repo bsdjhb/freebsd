@@ -416,6 +416,31 @@ start_softclock(void *dummy)
 }
 SYSINIT(start_softclock, SI_SUB_SOFTINTR, SI_ORDER_FIRST, start_softclock, NULL);
 
+static void
+test_callout(void *arg)
+{
+
+	printf("CALLOUT: %s fired at %ld\n", (const char *)arg, sbinuptime());
+}
+
+static void
+test_callouts(void *dummy)
+{
+	static struct callout c1, c2, c4, c10;
+
+	printf("CALLOUT: uptime at test start: %ld\n", sbinuptime());
+
+	callout_init(&c1, 1);
+	callout_init(&c2, 1);
+	callout_init(&c4, 1);
+	callout_init(&c10, 1);
+	callout_rest(&c1, hz, test_callout, "1 second");
+	callout_rest(&c2, 2 * hz, test_callout, "2 second");
+	callout_rest(&c4, 4 * hz, test_callout, "4 second");
+	callout_rest(&c10, 10 * hz, test_callout, "10 second");
+}
+SYSINIT(test_callouts, SI_SUB_SOFTINTR, SI_ORDER_SECOND, test_callouts, NULL);
+
 #define	CC_HASH_SHIFT	8
 
 static inline u_int
