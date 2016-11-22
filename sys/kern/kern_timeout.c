@@ -434,10 +434,10 @@ test_callouts(void *dummy)
 	callout_init(&c2, 1);
 	callout_init(&c4, 1);
 	callout_init(&c10, 1);
-	callout_rest(&c1, hz, test_callout, "1 second");
-	callout_rest(&c2, 2 * hz, test_callout, "2 second");
-	callout_rest(&c4, 4 * hz, test_callout, "4 second");
-	callout_rest(&c10, 10 * hz, test_callout, "10 second");
+	callout_reset(&c1, hz, test_callout, "1 second");
+	callout_reset(&c2, 2 * hz, test_callout, "2 second");
+	callout_reset(&c4, 4 * hz, test_callout, "4 second");
+	callout_reset(&c10, 10 * hz, test_callout, "10 second");
 }
 SYSINIT(test_callouts, SI_SUB_SOFTINTR, SI_ORDER_SECOND, test_callouts, NULL);
 
