@@ -420,7 +420,7 @@ static void
 test_callout(void *arg)
 {
 
-	printf("CALLOUT: %s fired at %ld\n", (const char *)arg, sbinuptime());
+	printf("CALLOUT: %s fired at %lx\n", (const char *)arg, sbinuptime());
 }
 
 static void
@@ -428,7 +428,7 @@ test_callouts(void *dummy)
 {
 	static struct callout c1, c2, c4, c10;
 
-	printf("CALLOUT: uptime at test start: %ld\n", sbinuptime());
+	printf("CALLOUT: uptime at test start: %lx\n", sbinuptime());
 
 	callout_init(&c1, 1);
 	callout_init(&c2, 1);
