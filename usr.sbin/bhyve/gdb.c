@@ -4,9 +4,10 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <machine/vmm.h>
 #include <netinet/in.h>
 #include <assert.h>
 #include <err.h>
@@ -16,6 +17,7 @@ __FBSDID("$FreeBSD$");
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <vmmapi.h>
 
 #include "mevent.h"
 
@@ -37,6 +39,62 @@ struct io_buffer {
 
 static struct io_buffer cur_comm, cur_resp;
 static uint8_t cur_csum;
+static int cur_vcpu;
+static struct vmctx *ctx;
+
+const int gdb_regset[] = {
+	VM_REG_GUEST_RAX,
+	VM_REG_GUEST_RBX,
+	VM_REG_GUEST_RCX,
+	VM_REG_GUEST_RDX,
+	VM_REG_GUEST_RSI,
+	VM_REG_GUEST_RDI,
+	VM_REG_GUEST_RBP,
+	VM_REG_GUEST_RSP,
+	VM_REG_GUEST_R8,
+	VM_REG_GUEST_R9,
+	VM_REG_GUEST_R10,
+	VM_REG_GUEST_R11,
+	VM_REG_GUEST_R12,
+	VM_REG_GUEST_R13,
+	VM_REG_GUEST_R14,
+	VM_REG_GUEST_R15,
+	VM_REG_GUEST_RIP,
+	VM_REG_GUEST_RFLAGS,
+	VM_REG_GUEST_CS,
+	VM_REG_GUEST_SS,
+	VM_REG_GUEST_DS,
+	VM_REG_GUEST_ES,
+	VM_REG_GUEST_FS,
+	VM_REG_GUEST_GS
+};
+
+const int gdb_regsize[] = {
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	8,
+	4,
+	4,
+	4,
+	4,
+	4,
+	4
+};
 
 static void
 io_buffer_reset(struct io_buffer *io)
@@ -46,6 +104,7 @@ io_buffer_reset(struct io_buffer *io)
 	io->len = 0;
 }
 
+/* Available room for adding data. */
 static size_t
 io_buffer_avail(struct io_buffer *io)
 {
@@ -123,6 +182,10 @@ static void
 close_connection(void)
 {
 
+	/*
+	 * XXX: This triggers a warning because mevent does the close
+	 * before the EV_DELETE.
+	 */
 	mevent_delete(write_event);
 	mevent_delete_close(read_event);
 	write_event = NULL;
@@ -195,13 +258,11 @@ send_data(const uint8_t *data, size_t len)
 }
 
 static void
-send_byte(uint8_t v)
+format_byte(uint8_t v, uint8_t *buf)
 {
-	uint8_t buf[2];
 
 	buf[0] = hex_digit(v >> 4);
 	buf[1] = hex_digit(v & 0xf);
-	send_data(buf, 2);
 }
 
 static void
@@ -215,9 +276,11 @@ start_packet(void)
 static void
 finish_packet(void)
 {
+	uint8_t buf[3];
 
-	send_data("#", 1);
-	send_byte(cur_csum);
+	buf[0] = '#';
+	format_byte(cur_csum, buf + 1);
+	send_data(buf, sizeof(buf));
 }
 
 static void
@@ -233,10 +296,35 @@ append_packet_data(const uint8_t *data, size_t len)
 }
 
 static void
+append_unsigned(uintmax_t value, size_t len)
+{
+	char buf[len * 2];
+	int i;
+
+	for (i = 0; i < len; i++) {
+		format_byte(value, buf + (len - i - 1) * 2);
+		value >>= 8;
+	}
+	append_packet_data(buf, sizeof(buf));
+}
+
+static void
 send_empty_response(void)
 {
 
 	start_packet();
+	finish_packet();
+}
+
+static void
+send_error(int error)
+{
+	uint8_t buf[3];
+
+	buf[0] = 'E';
+	format_byte(error, buf + 1);
+	start_packet();
+	append_packet_data(buf, sizeof(buf));
 	finish_packet();
 }
 
@@ -252,7 +340,20 @@ handle_command(const uint8_t *data, size_t len)
 	}
 
 	switch (*data) {
-	case 'g':
+	case 'g': {
+		uint64_t regvals[nitems(gdb_regset)];
+		int i;
+
+		if (vm_get_register_set(ctx, cur_vcpu, nitems(gdb_regset),
+		    gdb_regset, regvals) == -1) {
+			send_error(errno);
+			break;
+		}
+		for (i = 0; i < nitems(regvals); i++)
+			append_unsigned(regvals[i], gdb_regsize[i]);
+		finish_packet();
+		break;
+	}
 	case 'G':
 	case 'm':
 	case 'M':
@@ -283,7 +384,7 @@ check_command(int fd)
 	size_t avail, plen;
 
 	for (;;) {
-		avail = io_buffer_avail(&cur_comm);
+		avail = cur_comm.len;
 		if (avail == 0)
 			return;
 		head = io_buffer_head(&cur_comm);
@@ -429,11 +530,12 @@ new_connection(int fd, enum ev_type event, void *arg)
 }
 
 void
-init_gdb(int sport, bool wait)
+init_gdb(struct vmctx *_ctx, int sport, bool wait)
 {
 	struct sockaddr_in sin;
 	int flags, s;
 
+	ctx = _ctx;
 	s = socket(PF_INET, SOCK_STREAM, 0);
 	if (s < 0)
 		err(1, "gdb socket create");

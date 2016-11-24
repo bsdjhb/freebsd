@@ -954,7 +954,7 @@ main(int argc, char *argv[])
 		init_dbgport(dbg_port);
 
 	if (gdb_port != 0)
-		init_gdb(gdb_port, false);
+		init_gdb(ctx, gdb_port, false);
 
 	if (bvmcons)
 		init_bvmcons();
