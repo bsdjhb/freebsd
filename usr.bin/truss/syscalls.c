@@ -860,6 +860,7 @@ get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 {
 	struct syscall *sc;
 	const char *name;
+	char *new_name;
 	u_int i;
 
 	sc = find_syscall(t->proc->abi, number);
@@ -867,11 +868,18 @@ get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 		return (sc);
 
 	name = sysdecode_syscallname(t->proc->abi->abi, number);
-	STAILQ_FOREACH(sc, &syscalls, entries)
+	if (name == NULL) {
+		asprintf(&new_name, "#%d", number);
+		name = new_name;
+	} else
+		new_name = NULL;
+	STAILQ_FOREACH(sc, &syscalls, entries) {
 		if (strcmp(name, sc->name) == 0) {
 			add_syscall(t->proc->abi, number, sc);
+			free(new_name);
 			return (sc);
 		}
+	}
 
 	/* It is unknown.  Add it into the list. */
 #if DEBUG
@@ -880,15 +888,9 @@ get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 #endif
 
 	sc = calloc(1, sizeof(struct syscall));
-	if (name != NULL)
-		sc->name = name;
-	else {
-		char *new_name;
-
-		asprintf(&new_name, "%s/#%d", t->proc->abi->type, number);
-		sc->name = new_name;
+	sc->name = name;
+	if (new_name != NULL)
 		sc->unknown = true;
-	}
 	sc->ret_type = 1;
 	sc->nargs = nargs;
 	for (i = 0; i < nargs; i++) {
