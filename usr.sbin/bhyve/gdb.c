@@ -452,6 +452,7 @@ handle_command(const uint8_t *data, size_t len)
 			send_error(errno);
 			break;
 		}
+		start_packet();
 		for (i = 0; i < nitems(regvals); i++)
 			append_unsigned(regvals[i], gdb_regsize[i]);
 		finish_packet();
