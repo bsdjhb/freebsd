@@ -96,6 +96,28 @@ const int gdb_regsize[] = {
 	4
 };
 
+#if 1
+#include <stdarg.h>
+#include <stdio.h>
+
+static void __printflike(1, 2)
+debug(const char *fmt, ...) 
+{
+	static FILE *logfile;
+	va_list ap;
+
+	if (logfile == NULL) {
+		logfile = fopen("/tmp/bhyve_gdb.log", "w");
+		setlinebuf(logfile);
+	}
+	va_start(ap, fmt);
+	vfprintf(logfile, fmt, ap);
+	va_end(ap);
+}
+#else
+#define debug(...)
+#endif
+
 static void
 io_buffer_reset(struct io_buffer *io)
 {
@@ -281,6 +303,7 @@ finish_packet(void)
 	buf[0] = '#';
 	format_byte(cur_csum, buf + 1);
 	send_data(buf, sizeof(buf));
+	debug("-> %.*s\n", (int)cur_resp.len, io_buffer_head(&cur_resp));
 }
 
 static void
@@ -329,6 +352,36 @@ send_error(int error)
 }
 
 static void
+send_ok(void)
+{
+
+	start_packet();
+	append_packet_data("OK", strlen("OK"));
+	finish_packet();
+}
+
+static int
+parse_threadid(const uint8_t *data, size_t len)
+{
+	int value;
+
+	if (len == 1 && *data == '0')
+		return (0);
+	if (len == 2 && memcmp(data, "-1", 2) == 0)
+		return (-1);
+	if (len == 0 || len % 2 != 0)
+		return (-2);
+	value = 0;
+	while (len > 0) {
+		value <<= 8;
+		value |= parse_byte(data);
+		data += 2;
+		len -= 2;
+	}
+	return (value);
+}
+
+static void
 handle_command(const uint8_t *data, size_t len)
 {
 
@@ -352,6 +405,27 @@ handle_command(const uint8_t *data, size_t len)
 		for (i = 0; i < nitems(regvals); i++)
 			append_unsigned(regvals[i], gdb_regsize[i]);
 		finish_packet();
+		break;
+	}
+	case 'H': {
+		int tid;
+
+		if (data[1] != 'g') {
+			send_error(EINVAL);
+			break;
+		}
+		tid = parse_tid(data + 2, len - 2);
+		if (tid == -2) {
+			send_error(EINVAL);
+			break;
+		}
+
+		/* XXX: TODO: validate thread ID */
+		if (tid == 0 || tid == -1)
+			cur_vcpu = 0;
+		else
+			cur_vcpu = tid - 1;
+		send_ok();
 		break;
 	}
 	case 'G':
@@ -390,21 +464,27 @@ check_command(int fd)
 		head = io_buffer_head(&cur_comm);
 		switch (*head) {
 		case 0x03:
+			debug("<- Ctrl-C\n");
 			/* TODO: Handle Ctrl-C */
 			io_buffer_consume(&cur_comm, 1);
 			break;
 		case '+':
 			/* ACK of previous response. */
+			debug("<- +\n");
 			if (response_pending())
 				io_buffer_reset(&cur_resp);
 			io_buffer_consume(&cur_comm, 1);
 			break;
 		case '-':
 			/* NACK of previous response. */
+			debug("<- -\n");
 			if (response_pending()) {
+				cur_resp.len += cur_resp.start;
 				cur_resp.start = 0;
 				if (cur_resp.data[0] == '+')
-					cur_resp.start++;
+					io_buffer_advance(&cur_resp, 1);
+				debug("-> %.*s\n", (int)cur_resp.len,
+				    io_buffer_head(&cur_resp));
 			}
 			io_buffer_consume(&cur_comm, 1);
 			send_pending_data(fd);
@@ -425,12 +505,14 @@ check_command(int fd)
 			plen = (hash - head + 1) + 2;
 			if (avail < plen)
 				return;
+			debug("<- %.*s\n", (int)plen, head);
 
 			/* Verify checksum. */
 			for (sum = 0, p = head + 1; p < hash; p++)
 				sum += *p;
 			if (sum != parse_byte(hash + 1)) {
 				io_buffer_consume(&cur_comm, plen);
+				debug("-> -\n");
 				send_data("-", 1);
 				send_pending_data(fd);
 				break;
@@ -443,6 +525,7 @@ check_command(int fd)
 			break;
 		default:
 			/* XXX: Possibly drop connection instead. */
+			debug("-> %02x\n", *head);
 			io_buffer_consume(&cur_comm, 1);
 			break;
 		}
