@@ -21,6 +21,12 @@ __FBSDID("$FreeBSD$");
 
 #include "mevent.h"
 
+/*
+ * GDB_SIGNAL_* numbers are part of the GDB remote protocol.  Most stops
+ * use SIGTRAP.
+ */
+#define	GDB_SIGNAL_TRAP		5
+
 static struct mevent *read_event, *write_event;
 
 /*
@@ -225,7 +231,7 @@ hex_digit(uint8_t nibble)
 	if (nibble <= 9)
 		return (nibble + '0');
 	else
-		return (nibble + 'a');
+		return (nibble + 'a' - 10);
 }
 
 static uint8_t
@@ -270,6 +276,16 @@ send_pending_data(int fd)
 	}
 }
 
+/* Append a single character to the output buffer. */
+static void
+send_char(uint8_t data)
+{
+	io_buffer_grow(&cur_resp, 1);
+	*io_buffer_tail(&cur_resp) = data;
+	cur_resp.len++;
+}
+
+/* Append an array of bytes to the output buffer. */
 static void
 send_data(const uint8_t *data, size_t len)
 {
@@ -287,25 +303,52 @@ format_byte(uint8_t v, uint8_t *buf)
 	buf[1] = hex_digit(v & 0xf);
 }
 
+/*
+ * Append a single byte (formatted as two hex characters) to the
+ * output buffer.
+ */
+static void
+send_byte(uint8_t v)
+{
+	uint8_t buf[2];
+
+	format_byte(v, buf);
+	send_data(buf, sizeof(buf));
+}
+
 static void
 start_packet(void)
 {
 
-	send_data("$", 1);
+	send_char('$');
 	cur_csum = 0;
 }
 
 static void
 finish_packet(void)
 {
-	uint8_t buf[3];
 
-	buf[0] = '#';
-	format_byte(cur_csum, buf + 1);
-	send_data(buf, sizeof(buf));
+	send_char('#');
+	send_byte(cur_csum);
 	debug("-> %.*s\n", (int)cur_resp.len, io_buffer_head(&cur_resp));
 }
 
+/*
+ * Append a single character (for the packet payload) and update the
+ * checksum.
+ */
+static void
+append_char(uint8_t v)
+{
+
+	send_char(v);
+	cur_csum += v;
+}
+
+/*
+ * Append an array of bytes (for the packet payload) and update the
+ * checksum.
+ */
 static void
 append_packet_data(const uint8_t *data, size_t len)
 {
@@ -316,6 +359,15 @@ append_packet_data(const uint8_t *data, size_t len)
 		data++;
 		len--;
 	}
+}
+
+static void
+append_byte(uint8_t v)
+{
+	uint8_t buf[2];
+
+	format_byte(v, buf);
+	append_packet_data(buf, sizeof(buf));
 }
 
 static void
@@ -342,12 +394,10 @@ send_empty_response(void)
 static void
 send_error(int error)
 {
-	uint8_t buf[3];
 
-	buf[0] = 'E';
-	format_byte(error, buf + 1);
 	start_packet();
-	append_packet_data(buf, sizeof(buf));
+	append_char('E');
+	append_byte(error);
 	finish_packet();
 }
 
@@ -414,7 +464,7 @@ handle_command(const uint8_t *data, size_t len)
 			send_error(EINVAL);
 			break;
 		}
-		tid = parse_tid(data + 2, len - 2);
+		tid = parse_threadid(data + 2, len - 2);
 		if (tid == -2) {
 			send_error(EINVAL);
 			break;
@@ -428,13 +478,19 @@ handle_command(const uint8_t *data, size_t len)
 		send_ok();
 		break;
 	}
+	case '?':
+		/* For now, just report that we are always stopped. */
+		start_packet();
+		append_char('S');
+		append_byte(GDB_SIGNAL_TRAP);
+		finish_packet();
+		break;
 	case 'G':
 	case 'm':
 	case 'M':
 	case 'v':
 		/* Handle 'vCont' */
 		/* 'vCtrlC' */
-	case '?': /* TODO */
 	case 'D': /* TODO */
 	case 'p': /* TODO */
 	case 'P': /* TODO */
@@ -513,11 +569,11 @@ check_command(int fd)
 			if (sum != parse_byte(hash + 1)) {
 				io_buffer_consume(&cur_comm, plen);
 				debug("-> -\n");
-				send_data("-", 1);
+				send_char('-');
 				send_pending_data(fd);
 				break;
 			}
-			send_data("+", 1);
+			send_char('+');
 
 			handle_command(head + 1, hash - (head + 1));
 			io_buffer_consume(&cur_comm, plen);
