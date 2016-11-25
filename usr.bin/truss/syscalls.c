@@ -51,6 +51,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <assert.h>
 #include <ctype.h>
 #include <err.h>
 #include <fcntl.h>
@@ -83,15 +84,6 @@ __FBSDID("$FreeBSD$");
 #else
 #define	QUAD_SLOTS	2
 #endif
-
-/* One of these is stored for each ABI. */
-struct syscall_table {
-	struct syscall **syscalls;
-	u_int count;
-};
-
-static struct syscall_table *abi_tables;
-static u_int abi_count;
 
 /*
  * This should probably be in its own file, sorted alphabetically.
@@ -829,33 +821,34 @@ init_syscalls(void)
 		STAILQ_INSERT_HEAD(&syscalls, sc, entries);
 }
 
-static struct syscall_table *
-lookup_syscall_table(enum sysdecode_abi abi)
+static struct syscall *
+find_syscall(struct procabi *abi, u_int number)
 {
-	u_int new_count;
+	struct extra_syscall *es;
 
-	if (abi_tables != NULL && (u_int)abi < abi_count)
-		return (&abi_tables[abi]);
-	new_count = (u_int)abi + 1;
-	abi_tables = reallocf(abi_tables, new_count * sizeof(abi_tables[0]));
-	memset(abi_tables + abi_count, 0, (new_count - abi_count) *
-	    sizeof(abi_tables[0]));
-	abi_count = new_count;
-	return (&abi_tables[abi]);
+	if (number < nitems(abi->syscalls))
+		return (abi->syscalls[number]);
+	STAILQ_FOREACH(es, &abi->extra_syscalls, entries) {
+		if (es->number == number)
+			return (es->sc);
+	}
+	return (NULL);
 }
 
 static void
-grow_syscall_table(struct syscall_table *st, u_int number)
+add_syscall(struct procabi *abi, u_int number, struct syscall *sc)
 {
-	u_int new_count;
+	struct extra_syscall *es;
 
-	new_count = number + 1;
-	if (st->count >= new_count)
-		return;
-	st->syscalls = reallocf(st->syscalls, new_count *
-	    sizeof(st->syscalls[0]));
-	memset(st->syscalls + st->count, 0, (new_count - st->count) *
-	    sizeof(st->syscalls[0]));
+	if (number < nitems(abi->syscalls)) {
+		assert(abi->syscalls[number] == NULL);
+		abi->syscalls[number] = sc;
+	} else {
+		es = malloc(sizeof(*es));
+		es->sc = sc;
+		es->number = number;
+		STAILQ_INSERT_TAIL(&abi->extra_syscalls, es, entries);
+	}
 }
 
 /*
@@ -865,21 +858,18 @@ grow_syscall_table(struct syscall_table *st, u_int number)
 struct syscall *
 get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 {
-	struct syscall_table *st;
 	struct syscall *sc;
 	const char *name;
 	u_int i;
 
-	st = lookup_syscall_table(t->proc->abi->abi);
-	grow_syscall_table(st, number);
-	sc = st->syscalls[number];
+	sc = find_syscall(t->proc->abi, number);
 	if (sc != NULL)
 		return (sc);
 
 	name = sysdecode_syscallname(t->proc->abi->abi, number);
 	STAILQ_FOREACH(sc, &syscalls, entries)
 		if (strcmp(name, sc->name) == 0) {
-			st->syscalls[number] = sc;
+			add_syscall(t->proc->abi, number, sc);
 			return (sc);
 		}
 
@@ -907,6 +897,7 @@ get_syscall(struct threadinfo *t, u_int number, u_int nargs)
 		sc->args[i].type = LongHex;
 	}
 	STAILQ_INSERT_HEAD(&syscalls, sc, entries);
+	add_syscall(t->proc->abi, number, sc);
 
 	return (sc);
 }
