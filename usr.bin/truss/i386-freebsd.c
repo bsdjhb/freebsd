@@ -122,7 +122,9 @@ static struct procabi i386_freebsd_aout = {
 	"FreeBSD a.out",
 	SYSDECODE_ABI_FREEBSD,
 	i386_fetch_args,
-	i386_fetch_retval
+	i386_fetch_retval,
+	STAILQ_HEAD_INITIALIZER(i386_freebsd.extra_syscalls),
+	{ NULL }
 };
 
 PROCABI(i386_freebsd_aout);
