@@ -508,6 +508,23 @@ parse_threadid(const uint8_t *data, size_t len)
 }
 
 static void
+gdb_read_regs(void)
+{
+	uint64_t regvals[nitems(gdb_regset)];
+	int i;
+
+	if (vm_get_register_set(ctx, cur_vcpu, nitems(gdb_regset),
+	    gdb_regset, regvals) == -1) {
+		send_error(errno);
+		return;
+	}
+	start_packet();
+	for (i = 0; i < nitems(regvals); i++)
+		append_unsigned(regvals[i], gdb_regsize[i]);
+	finish_packet();
+}
+
+static void
 gdb_read_mem(const uint8_t *data, size_t len)
 {
 	uint64_t gpa, gva, val;
@@ -596,18 +613,7 @@ handle_command(const uint8_t *data, size_t len)
 
 	switch (*data) {
 	case 'g': {
-		uint64_t regvals[nitems(gdb_regset)];
-		int i;
-
-		if (vm_get_register_set(ctx, cur_vcpu, nitems(gdb_regset),
-		    gdb_regset, regvals) == -1) {
-			send_error(errno);
-			break;
-		}
-		start_packet();
-		for (i = 0; i < nitems(regvals); i++)
-			append_unsigned(regvals[i], gdb_regsize[i]);
-		finish_packet();
+		gdb_read_regs();
 		break;
 	}
 	case 'H': {
