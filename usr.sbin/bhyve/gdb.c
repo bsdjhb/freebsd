@@ -790,7 +790,7 @@ gdb_writable(int fd, enum ev_type event, void *arg)
 static void
 new_connection(int fd, enum ev_type event, void *arg)
 {
-	int s;
+	int optval, s;
 
 	s = accept4(fd, NULL, NULL, SOCK_NONBLOCK);
 	if (s == -1) {
@@ -798,6 +798,14 @@ new_connection(int fd, enum ev_type event, void *arg)
 			err(1, "Failed accepting initial GDB connection");
 
 		/* Silently ignore errors post-startup. */
+		return;
+	}
+
+	optval = 1;
+	if (setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) ==
+	    -1) {
+		warn("Failed to disable SIGPIPE for GDB connection");
+		close(s);
 		return;
 	}
 
