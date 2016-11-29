@@ -184,8 +184,8 @@ guest_vaddr2paddr(int vcpu, uint64_t vaddr, uint64_t *paddr)
 	 * Always use PROT_READ.  We really care if the VA is
 	 * accessible, not if the current vCPU can write.
 	 */
-	if (vm_gla2gpa(ctx, vcpu, &paging, vaddr, PROT_READ, paddr, &fault) ==
-	    -1)
+	if (vm_gla2gpa_nofault(ctx, vcpu, &paging, vaddr, PROT_READ, paddr,
+	    &fault) == -1)
 		return (-1);
 	if (fault)
 		return (0);
