@@ -455,10 +455,21 @@ append_byte(uint8_t v)
 }
 
 static void
-append_unsigned(uintmax_t value, size_t len)
+append_unsigned_native(uintmax_t value, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		append_byte(value);
+		value >>= 8;
+	}
+}
+
+static void
+append_unsigned_be(uintmax_t value, size_t len)
 {
 	char buf[len * 2];
-	int i;
+	size_t i;
 
 	for (i = 0; i < len; i++) {
 		format_byte(value, buf + (len - i - 1) * 2);
@@ -520,7 +531,7 @@ gdb_read_regs(void)
 	}
 	start_packet();
 	for (i = 0; i < nitems(regvals); i++)
-		append_unsigned(regvals[i], gdb_regsize[i]);
+		append_unsigned_native(regvals[i], gdb_regsize[i]);
 	finish_packet();
 }
 
