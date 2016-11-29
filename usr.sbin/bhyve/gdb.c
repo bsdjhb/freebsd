@@ -6,7 +6,9 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <machine/specialreg.h>
 #include <machine/vmm.h>
 #include <netinet/in.h>
 #include <assert.h>
@@ -19,6 +21,7 @@ __FBSDID("$FreeBSD$");
 #include <unistd.h>
 #include <vmmapi.h>
 
+#include "mem.h"
 #include "mevent.h"
 
 /*
@@ -123,6 +126,71 @@ debug(const char *fmt, ...)
 #else
 #define debug(...)
 #endif
+
+static int
+guest_paging_info(int vcpu, struct vm_guest_paging *paging)
+{
+	uint64_t regs[4];
+	const int regset[4] = {
+		VM_REG_GUEST_CR0,
+		VM_REG_GUEST_CR3,
+		VM_REG_GUEST_CR4,
+		VM_REG_GUEST_EFER
+	};
+
+	if (vm_get_register_set(ctx, vcpu, nitems(regset), regset, regs) == -1)
+		return (-1);
+
+	/*
+	 * For the debugger, always pretend to be the kernel (CPL 0),
+	 * and if long-mode is enabled, always parse addreses as if in
+	 * 64-bit mode.
+	 */
+	paging->cr3 = regs[1];
+	paging->cpl = 0;
+	if (regs[3] & EFER_LMA)
+		paging->cpu_mode = CPU_MODE_64BIT;
+	else if (regs[0] & CR0_PE)
+		paging->cpu_mode = CPU_MODE_PROTECTED;
+	else
+		paging->cpu_mode = CPU_MODE_REAL;
+	if (!(regs[0] & CR0_PG))
+		paging->paging_mode = PAGING_MODE_FLAT;
+	else if (!(regs[2] & CR4_PAE))
+		paging->paging_mode = PAGING_MODE_32;
+	else if (regs[3] & EFER_LME)
+		paging->paging_mode = PAGING_MODE_64;
+	else
+		paging->paging_mode = PAGING_MODE_PAE;
+	return (0);
+}
+
+/*
+ * Map a guest virtual address to a physical address (for a given vcpu).
+ * If a guest virtual address is valid, return 1.  If the address is
+ * not valid, return 0.  If an error occurs obtaining the mapping,
+ * return -1.
+ */
+static int
+guest_vaddr2paddr(int vcpu, uint64_t vaddr, uint64_t *paddr)
+{
+	struct vm_guest_paging paging;
+	int fault;
+
+	if (guest_paging_info(vcpu, &paging) == -1)
+		return (-1);
+
+	/*
+	 * Always use PROT_READ.  We really care if the VA is
+	 * accessible, not if the current vCPU can write.
+	 */
+	if (vm_gla2gpa(ctx, vcpu, &paging, vaddr, PROT_READ, paddr, &fault) ==
+	    -1)
+		return (-1);
+	if (fault)
+		return (0);
+	return (1);
+}
 
 static void
 io_buffer_reset(struct io_buffer *io)
@@ -245,6 +313,22 @@ parse_digit(uint8_t v)
 	if (v >= 'A' && v <= 'F')
 		return (v - 'A' + 10);
 	return (0xF);
+}
+
+/* Parses big-endian hexadecimal. */
+static uintmax_t
+parse_integer(const uint8_t *p, size_t len)
+{
+	uintmax_t v;
+
+	v = 0;
+	while (len > 0) {
+		v <<= 4;
+		v |= parse_digit(*p);
+		p++;
+		len--;
+	}
+	return (v);
 }
 
 static uint8_t
@@ -413,22 +497,90 @@ send_ok(void)
 static int
 parse_threadid(const uint8_t *data, size_t len)
 {
-	int value;
 
 	if (len == 1 && *data == '0')
 		return (0);
 	if (len == 2 && memcmp(data, "-1", 2) == 0)
 		return (-1);
-	if (len == 0 || len % 2 != 0)
+	if (len == 0)
 		return (-2);
-	value = 0;
-	while (len > 0) {
-		value <<= 8;
-		value |= parse_byte(data);
-		data += 2;
-		len -= 2;
+	return (parse_integer(data, len));
+}
+
+static void
+gdb_read_mem(const uint8_t *data, size_t len)
+{
+	uint64_t gpa, gva, val;
+	uint8_t *cp;
+	size_t resid, todo, bytes;
+	bool started;
+	int error;
+
+	cp = memchr(data, ',', len);
+	if (cp == NULL) {
+		send_error(EINVAL);
+		return;
 	}
-	return (value);
+	gva = parse_integer(data + 1, cp - data + 1);
+	resid = parse_integer(cp + 1, len - (cp + 1 - data));
+	started = false;
+
+	while (resid > 0) {
+		error = guest_vaddr2paddr(cur_vcpu, gva, &gpa);
+		if (error == -1) {
+			if (started)
+				finish_packet();
+			else
+				send_error(errno);
+			return;
+		}
+		if (error == 0) {
+			if (started)
+				finish_packet();
+			else
+				send_error(EFAULT);
+			return;
+		}
+
+		/*
+		 * Read bytes from current page.  Use aligned reads of words
+		 * when possible.
+		 */
+		todo = getpagesize() - gpa % getpagesize();
+		while (todo > 0) {
+			if (gpa & 1 || todo == 1)
+				bytes = 1;
+			else if (gpa & 2 || todo == 2)
+				bytes = 2;
+			else
+				bytes = 4;
+			error = read_mem(ctx, cur_vcpu, gpa, &val, bytes);
+			if (error == 0) {
+				if (!started) {
+					start_packet();
+					started = true;
+				}
+				gpa += bytes;
+				resid -= bytes;
+				todo -= bytes;
+				while (bytes > 0) {
+					append_byte(val);
+					val >>= 8;
+					bytes--;
+				}
+			} else {
+				if (started)
+					finish_packet();
+				else
+					send_error(EFAULT);
+				return;
+			}
+		}
+		assert(resid == 0 || gpa % getpagesize() == 0);
+	}
+	if (!started)
+		start_packet();
+	finish_packet();
 }
 
 static void
@@ -479,6 +631,9 @@ handle_command(const uint8_t *data, size_t len)
 		send_ok();
 		break;
 	}
+	case 'm':
+		gdb_read_mem(data, len);
+		break;
 	case '?':
 		/* For now, just report that we are always stopped. */
 		start_packet();
@@ -487,7 +642,6 @@ handle_command(const uint8_t *data, size_t len)
 		finish_packet();
 		break;
 	case 'G':
-	case 'm':
 	case 'M':
 	case 'v':
 		/* Handle 'vCont' */
