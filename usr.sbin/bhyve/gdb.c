@@ -21,6 +21,7 @@ __FBSDID("$FreeBSD$");
 #include <unistd.h>
 #include <vmmapi.h>
 
+#include "bhyverun.h"
 #include "mem.h"
 #include "mevent.h"
 
@@ -549,7 +550,7 @@ gdb_read_mem(const uint8_t *data, size_t len)
 		send_error(EINVAL);
 		return;
 	}
-	gva = parse_integer(data + 1, cp - data + 1);
+	gva = parse_integer(data + 1, cp - (data + 1));
 	resid = parse_integer(cp + 1, len - (cp + 1 - data));
 	started = false;
 
@@ -570,38 +571,65 @@ gdb_read_mem(const uint8_t *data, size_t len)
 			return;
 		}
 
-		/*
-		 * Read bytes from current page.  Use aligned reads of words
-		 * when possible.
-		 */
+		/* Read bytes from current page. */
 		todo = getpagesize() - gpa % getpagesize();
-		while (todo > 0) {
-			if (gpa & 1 || todo == 1)
-				bytes = 1;
-			else if (gpa & 2 || todo == 2)
-				bytes = 2;
-			else
-				bytes = 4;
-			error = read_mem(ctx, cur_vcpu, gpa, &val, bytes);
-			if (error == 0) {
-				if (!started) {
-					start_packet();
-					started = true;
-				}
-				gpa += bytes;
-				resid -= bytes;
-				todo -= bytes;
-				while (bytes > 0) {
-					append_byte(val);
-					val >>= 8;
-					bytes--;
-				}
-			} else {
-				if (started)
-					finish_packet();
+		if (todo > resid)
+			todo = resid;
+
+		cp = paddr_guest2host(ctx, gpa, todo);
+		if (cp != NULL) {
+			/*
+			 * If this page is guest RAM, read it a byte
+			 * at a time.
+			 */
+			if (!started) {
+				start_packet();
+				started = true;
+			}
+			while (todo > 0) {
+				append_byte(*cp);
+				cp++;
+				gpa++;
+				gva++;
+				resid--;
+				todo--;
+			}
+		} else {
+			/*
+			 * If this page isn't guest RAM, try to handle
+			 * it via MMIO.  For MMIO requests, use
+			 * aligned reads of words when possible.
+			 */
+			while (todo > 0) {
+				if (gpa & 1 || todo == 1)
+					bytes = 1;
+				else if (gpa & 2 || todo == 2)
+					bytes = 2;
 				else
-					send_error(EFAULT);
-				return;
+					bytes = 4;
+				error = read_mem(ctx, cur_vcpu, gpa, &val,
+				    bytes);
+				if (error == 0) {
+					if (!started) {
+						start_packet();
+						started = true;
+					}
+					gpa += bytes;
+					gva += bytes;
+					resid -= bytes;
+					todo -= bytes;
+					while (bytes > 0) {
+						append_byte(val);
+						val >>= 8;
+						bytes--;
+					}
+				} else {
+					if (started)
+						finish_packet();
+					else
+						send_error(EFAULT);
+					return;
+				}
 			}
 		}
 		assert(resid == 0 || gpa % getpagesize() == 0);
