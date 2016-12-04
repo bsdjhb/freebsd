@@ -686,9 +686,12 @@ gdb_query(const uint8_t *data, size_t len)
 	 * TODO:
 	 * - qSearch
 	 * - qSupported
-	 * - qAttached
 	 */
-	if (command_equals(data, len, "qfThreadInfo")) {
+	if (command_equals(data, len, "qAttached")) {
+		start_packet();
+		append_char('1');
+		finish_packet();
+	} else if (command_equals(data, len, "qfThreadInfo")) {
 		cpuset_t mask;
 		bool first;
 		int vcpu;
@@ -751,6 +754,11 @@ handle_command(const uint8_t *data, size_t len)
 	}
 
 	switch (*data) {
+	case 'D':
+		send_ok();
+
+		/* TODO: Resume any stopped CPUs. */
+		break;
 	case 'g': {
 		gdb_read_regs();
 		break;
@@ -802,7 +810,6 @@ handle_command(const uint8_t *data, size_t len)
 	case 'v':
 		/* Handle 'vCont' */
 		/* 'vCtrlC' */
-	case 'D': /* TODO */
 	case 'p': /* TODO */
 	case 'P': /* TODO */
 	case 'Q': /* TODO */
