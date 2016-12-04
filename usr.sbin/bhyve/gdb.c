@@ -729,7 +729,7 @@ gdb_query(const uint8_t *data, size_t len)
 			return;
 		}
 		tid = parse_threadid(data + 1, len - 1);
-		if (tid == -1 || tid == 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
+		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
 			send_error(EINVAL);
 			return;
 		}
@@ -776,7 +776,6 @@ handle_command(const uint8_t *data, size_t len)
 			break;
 		}
 
-		/* XXX: TODO: validate thread ID */
 		if (CPU_EMPTY(&vcpumask)) {
 			send_error(EINVAL);
 			break;
@@ -795,6 +794,17 @@ handle_command(const uint8_t *data, size_t len)
 	case 'm':
 		gdb_read_mem(data, len);
 		break;
+	case 'T': {
+		int tid;
+
+		tid = parse_threadid(data + 1, len - 1);
+		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
+			send_error(EINVAL);
+			return;
+		}
+		send_ok();
+		break;
+	}
 	case 'q':
 		gdb_query(data, len);
 		break;
@@ -814,7 +824,6 @@ handle_command(const uint8_t *data, size_t len)
 	case 'P': /* TODO */
 	case 'Q': /* TODO */
 	case 't': /* TODO */
-	case 'T': /* TODO */
 	case 'X': /* TODO */
 	case 'z': /* TODO */
 	case 'Z': /* TODO */
