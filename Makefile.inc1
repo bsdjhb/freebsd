@@ -541,7 +541,7 @@ HMAKE+=		PATH=${TMPPATH} METALOG=${METALOG} -DNO_ROOT
 
 CROSSENV+=	CC="${XCC} ${XCFLAGS}" CXX="${XCXX} ${XCXXFLAGS} ${XCFLAGS}" \
 		CPP="${XCPP} ${XCFLAGS}" \
-		AS="${XAS}" AR="${XAR}" LD="${XLD}" LLVM_LINK="${XLLVM_LINK}" \
+		AS="${XAS}" AR="${XAR}" LD="${XLD} ${XLDFLAGS}" LLVM_LINK="${XLLVM_LINK}" \
 		NM=${XNM} OBJCOPY="${XOBJCOPY}" \
 		RANLIB=${XRANLIB} STRINGS=${XSTRINGS} \
 		SIZE="${XSIZE}"
@@ -587,6 +587,17 @@ XCFLAGS+=	-mabi=64
 XCFLAGS+=	-mabi=n32
 .else
 XCFLAGS+=	-mabi=32
+.endif
+.if ${TARGET_ARCH:Mmips64el*} != ""
+XLDFLAGS+=	-m elf64ltsmip_fbsd
+.elif ${TARGET_ARCH:Mmips64*} != ""
+XLDFLAGS+=	-m elf64btsmip_fbsd
+.elif ${TARGET_ARCH:Mmipsn32*} != ""
+XLDFLAGS+=	-m elf32btsmipn32_fbsd
+.elif ${TARGET_ARCH:Mmipsel*} != ""
+XLDFLAGS+=	-m elf32ltsmip_fbsd
+.else
+XLDFLAGS+=	-m elf32btsmip_fbsd
 .endif
 .endif
 .if ${WANT_COMPILER_TYPE} == gcc || \
