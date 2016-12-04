@@ -8,6 +8,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <machine/atomic.h>
 #include <machine/specialreg.h>
 #include <machine/vmm.h>
 #include <netinet/in.h>
@@ -32,6 +33,8 @@ __FBSDID("$FreeBSD$");
 #define	GDB_SIGNAL_TRAP		5
 
 static struct mevent *read_event, *write_event;
+
+static cpuset_t vcpumask;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -480,6 +483,26 @@ append_unsigned_be(uintmax_t value, size_t len)
 }
 
 static void
+append_integer(unsigned int value)
+{
+
+	if (value == 0)
+		append_char('0');
+	else
+		append_unsigned_be(value, fls(value) + 7 / 8);
+}
+
+static void
+append_asciihex(const char *str)
+{
+
+	while (*str != '\0') {
+		append_byte(*str);
+		str++;
+	}
+}
+
+static void
 send_empty_response(void)
 {
 
@@ -517,6 +540,13 @@ parse_threadid(const uint8_t *data, size_t len)
 	if (len == 0)
 		return (-2);
 	return (parse_integer(data, len));
+}
+
+void
+gdb_addcpu(int vcpu)
+{
+
+	CPU_SET_ATOMIC(vcpu, &vcpumask);
 }
 
 static void
@@ -639,6 +669,76 @@ gdb_read_mem(const uint8_t *data, size_t len)
 	finish_packet();
 }
 
+static bool
+command_equals(const uint8_t *data, size_t len, const char *cmd)
+{
+
+	if (strlen(cmd) > len)
+		return (false);
+	return (memcmp(data, cmd, strlen(cmd)) == 0);
+}
+
+static void
+gdb_query(const uint8_t *data, size_t len)
+{
+
+	/*
+	 * TODO:
+	 * - qSearch
+	 * - qSupported
+	 * - qAttached
+	 */
+	if (command_equals(data, len, "qfThreadInfo")) {
+		cpuset_t mask;
+		bool first;
+		int vcpu;
+
+		if (CPU_EMPTY(&vcpumask)) {
+			send_error(EINVAL);
+			return;
+		}
+		mask = vcpumask;
+		start_packet();
+		append_char('m');
+		first = true;
+		while (!CPU_EMPTY(&mask)) {
+			vcpu = CPU_FFS(&mask) - 1;
+			CPU_CLR(vcpu, &mask);
+			if (first)
+				first = false;
+			else
+				append_char(',');
+			append_integer(vcpu + 1);
+		}
+		finish_packet();
+	} else if (command_equals(data, len, "qsThreadInfo")) {
+		start_packet();
+		append_char('l');
+		finish_packet();
+	} else if (command_equals(data, len, "qThreadExtraInfo")) {
+		char buf[16];
+		int tid;
+
+		data += strlen("qThreadExtraInfo");
+		len -= strlen("qThreadExtraInfo");
+		if (*data != ',') {
+			send_error(EINVAL);
+			return;
+		}
+		tid = parse_threadid(data + 1, len - 1);
+		if (tid == -1 || tid == 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
+			send_error(EINVAL);
+			return;
+		}
+
+		snprintf(buf, sizeof(buf), "vCPU %d", tid - 1);
+		start_packet();
+		append_asciihex(buf);
+		finish_packet();
+	} else
+		send_empty_response();
+}
+
 static void
 handle_command(const uint8_t *data, size_t len)
 {
@@ -669,15 +769,26 @@ handle_command(const uint8_t *data, size_t len)
 		}
 
 		/* XXX: TODO: validate thread ID */
-		if (tid == 0 || tid == -1)
-			cur_vcpu = 0;
-		else
+		if (CPU_EMPTY(&vcpumask)) {
+			send_error(EINVAL);
+			break;
+		}
+		if (tid == -1 || tid == 0)
+			cur_vcpu = CPU_FFS(&vcpumask) - 1;
+		else if (CPU_ISSET(tid - 1, &vcpumask))
 			cur_vcpu = tid - 1;
+		else {
+			send_error(EINVAL);
+			break;
+		}
 		send_ok();
 		break;
 	}
 	case 'm':
 		gdb_read_mem(data, len);
+		break;
+	case 'q':
+		gdb_query(data, len);
 		break;
 	case '?':
 		/* For now, just report that we are always stopped. */
@@ -694,7 +805,6 @@ handle_command(const uint8_t *data, size_t len)
 	case 'D': /* TODO */
 	case 'p': /* TODO */
 	case 'P': /* TODO */
-	case 'q': /* TODO */
 	case 'Q': /* TODO */
 	case 't': /* TODO */
 	case 'T': /* TODO */

@@ -280,6 +280,8 @@ fbsdrun_addcpu(struct vmctx *ctx, int fromcpu, int newcpu, uint64_t rip)
 
 	CPU_SET_ATOMIC(newcpu, &cpumask);
 
+	gdb_addcpu(newcpu);
+
 	/*
 	 * Set up the vmexit struct to allow execution to start
 	 * at the given RIP
