@@ -1509,7 +1509,7 @@ DB_SHOW_COMMAND(vmemdump, vmemdump)
 		return;
 	}
 
-	vmem_dump((const vmem_t *)addr, db_printf);
+	vmem_dump((const vmem_t *)(db_addr_t)addr, db_printf);
 }
 
 DB_SHOW_ALL_COMMAND(vmemdump, vmemdumpall)
@@ -1522,7 +1522,7 @@ DB_SHOW_ALL_COMMAND(vmemdump, vmemdumpall)
 
 DB_SHOW_COMMAND(vmem, vmem_summ)
 {
-	const vmem_t *vm = (const void *)addr;
+	const vmem_t *vm = (const void *)(db_addr_t)addr;
 	const bt_t *bt;
 	size_t ft[VMEM_MAXORDER], ut[VMEM_MAXORDER];
 	size_t fs[VMEM_MAXORDER], us[VMEM_MAXORDER];
@@ -1570,7 +1570,7 @@ DB_SHOW_ALL_COMMAND(vmem, vmem_summall)
 	const vmem_t *vm;
 
 	LIST_FOREACH(vm, &vmem_list, vm_alllist)
-		vmem_summ((db_expr_t)vm, TRUE, count, modif);
+		vmem_summ((db_addr_t)vm, TRUE, count, modif);
 }
 #endif /* defined(DDB) */
 

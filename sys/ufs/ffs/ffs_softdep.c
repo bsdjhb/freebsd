@@ -1385,7 +1385,7 @@ softdep_flush(addr)
 
 	td = curthread;
 	td->td_pflags |= TDP_NORUNNINGBUF;
-	mp = (struct mount *)addr;
+	mp = (struct mount *)(db_addr_t)addr;
 	ump = VFSTOUFS(mp);
 	atomic_add_int(&stat_flush_threads, 1);
 	ACQUIRE_LOCK(ump);
@@ -14387,7 +14387,7 @@ DB_SHOW_COMMAND(inodedep, db_show_inodedep)
 		db_printf("Address required\n");
 		return;
 	}
-	inodedep_print((struct inodedep*)addr, 1);
+	inodedep_print((struct inodedep*)(db_addr_t)addr, 1);
 }
 
 DB_SHOW_COMMAND(inodedeps, db_show_inodedeps)
@@ -14401,7 +14401,7 @@ DB_SHOW_COMMAND(inodedeps, db_show_inodedeps)
 		db_printf("Address required\n");
 		return;
 	}
-	ump = (struct ufsmount *)addr;
+	ump = (struct ufsmount *)(db_addr_t)addr;
 	for (cnt = 0; cnt < ump->inodedep_hash_size; cnt++) {
 		inodedephd = &ump->inodedep_hashtbl[cnt];
 		LIST_FOREACH(inodedep, inodedephd, id_hash) {
@@ -14418,7 +14418,7 @@ DB_SHOW_COMMAND(worklist, db_show_worklist)
 		db_printf("Address required\n");
 		return;
 	}
-	wk = (struct worklist *)addr;
+	wk = (struct worklist *)(db_addr_t)addr;
 	printf("worklist: %p type %s state 0x%X\n",
 	    wk, TYPENAME(wk->wk_type), wk->wk_state);
 }
@@ -14433,7 +14433,7 @@ DB_SHOW_COMMAND(workhead, db_show_workhead)
 		db_printf("Address required\n");
 		return;
 	}
-	wkhd = (struct workhead *)addr;
+	wkhd = (struct workhead *)(db_addr_t)addr;
 	wk = LIST_FIRST(wkhd);
 	for (i = 0; i < 100 && wk != NULL; i++, wk = LIST_NEXT(wk, wk_list))
 		db_printf("worklist: %p type %s state 0x%X",
@@ -14455,7 +14455,7 @@ DB_SHOW_COMMAND(mkdirs, db_show_mkdirs)
 		db_printf("Address required\n");
 		return;
 	}
-	mkdirlisthd = (struct mkdirlist *)addr;
+	mkdirlisthd = (struct mkdirlist *)(db_addr_t)addr;
 	LIST_FOREACH(mkdir, mkdirlisthd, md_mkdirs) {
 		diradd = mkdir->md_diradd;
 		db_printf("mkdir: %p state 0x%X dap %p state 0x%X",

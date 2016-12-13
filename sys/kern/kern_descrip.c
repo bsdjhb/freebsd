@@ -3977,7 +3977,7 @@ DB_SHOW_COMMAND(file, db_show_file)
 		db_printf("usage: show file <addr>\n");
 		return;
 	}
-	fp = (struct file *)addr;
+	fp = (struct file *)(db_addr_t)addr;
 	db_print_file(fp, 1);
 }
 

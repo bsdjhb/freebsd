@@ -2253,7 +2253,7 @@ DB_SHOW_COMMAND(tty, db_show_tty)
 		db_printf("usage: show tty <addr>\n");
 		return;
 	}
-	tp = (struct tty *)addr;
+	tp = (struct tty *)(db_addr_t)addr;
 
 	db_printf("%p: %s\n", tp, tty_devname(tp));
 	db_printf("\tmtx: %p\n", tp->t_mtx);

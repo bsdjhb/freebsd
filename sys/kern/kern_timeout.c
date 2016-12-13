@@ -1668,6 +1668,6 @@ DB_SHOW_COMMAND(callout, db_show_callout)
 		return;
 	}
 
-	_show_callout((struct callout *)addr);
+	_show_callout((struct callout *)(db_addr_t)addr);
 }
 #endif /* DDB */

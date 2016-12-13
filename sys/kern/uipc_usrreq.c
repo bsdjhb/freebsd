@@ -2570,7 +2570,7 @@ DB_SHOW_COMMAND(unpcb, db_show_unpcb)
                 db_printf("usage: show unpcb <addr>\n");
                 return;
         }
-        unp = (struct unpcb *)addr;
+        unp = (struct unpcb *)(db_addr_t)addr;
 
 	db_printf("unp_socket: %p   unp_vnode: %p\n", unp->unp_socket,
 	    unp->unp_vnode);

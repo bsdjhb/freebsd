@@ -286,8 +286,8 @@ platform_start(__register_t a0, __register_t a1,  __register_t a2,
 	vm_offset_t kernend;
 	uint64_t platform_counter_freq;
 	int argc = a0;
-	int32_t *argv = (int32_t*)a1;
-	int32_t *envp = (int32_t*)a2;
+	int32_t *argv = (int32_t*)(intptr_t)a1;
+	int32_t *envp = (int32_t*)(intptr_t)a2;
 	unsigned int memsize = a3;
 	uint64_t ememsize = 0;
 	int i;

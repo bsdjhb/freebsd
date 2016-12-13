@@ -5699,7 +5699,7 @@ DB_SHOW_COMMAND(device, db_show_device)
 	if (!have_addr)
 		return;
 
-	dev = (device_t)addr;
+	dev = (device_t)(db_addr_t)addr;
 
 	db_printf("name:    %s\n", device_get_nameunit(dev));
 	db_printf("  driver:  %s\n", DRIVERNAME(dev->driver));
@@ -5715,7 +5715,7 @@ DB_SHOW_ALL_COMMAND(devices, db_show_all_devices)
 	device_t dev;
 
 	TAILQ_FOREACH(dev, &bus_data_devices, devlink) {
-		db_show_device((db_expr_t)dev, true, count, modif);
+		db_show_device((db_addr_t)dev, true, count, modif);
 	}
 }
 #endif

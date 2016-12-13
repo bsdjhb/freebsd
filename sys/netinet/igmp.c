@@ -3603,7 +3603,7 @@ DB_SHOW_COMMAND(igi_list, db_show_igi_list)
 		db_printf("usage: show igi_list <addr>\n");
 		return;
 	}
-	igi_head = (struct _igi_list *)addr;
+	igi_head = (struct _igi_list *)(db_addr_t)addr;
 
 	LIST_FOREACH_SAFE(igi, igi_head, igi_link, tigi) {
 		db_printf("igmp_ifsoftc %p:\n", igi);

@@ -793,7 +793,7 @@ DB_SHOW_COMMAND(radixnode, db_show_radixnode)
 
         if (!have_addr)
                 return;
-	rnode = (struct vm_radix_node *)addr;
+	rnode = (struct vm_radix_node *)(db_addr_t)addr;
 	db_printf("radixnode %p, owner %jx, children count %u, level %u:\n",
 	    (void *)rnode, (uintmax_t)rnode->rn_owner, rnode->rn_count,
 	    rnode->rn_clev);

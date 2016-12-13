@@ -110,7 +110,7 @@ DB_SHOW_COMMAND(ifnet, db_show_ifnet)
 		return;
 	}
 
-	if_show_ifnet((struct ifnet *)addr);
+	if_show_ifnet((struct ifnet *)(db_addr_t)addr);
 }
 
 DB_SHOW_ALL_COMMAND(ifnets, db_show_all_ifnets)

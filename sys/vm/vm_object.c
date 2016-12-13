@@ -2557,7 +2557,7 @@ DB_SHOW_COMMAND(vmochk, vm_object_check)
 DB_SHOW_COMMAND(object, vm_object_print_static)
 {
 	/* XXX convert args. */
-	vm_object_t object = (vm_object_t)addr;
+	vm_object_t object = (vm_object_t)(db_addr_t)addr;
 	boolean_t full = have_addr;
 
 	vm_page_t p;

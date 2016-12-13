@@ -4157,7 +4157,7 @@ DB_SHOW_COMMAND(prison, db_show_prison_command)
 					break;
 		if (pr == NULL)
 			/* Assume address points to a valid prison. */
-			pr = (struct prison *)addr;
+			pr = (struct prison *)(db_addr_t)addr;
 	}
 	db_show_prison(pr);
 }

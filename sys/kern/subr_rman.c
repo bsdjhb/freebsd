@@ -1097,8 +1097,8 @@ DB_SHOW_COMMAND(rman, db_show_rman)
 {
 
 	if (have_addr) {
-		dump_rman_header((struct rman *)addr);
-		dump_rman((struct rman *)addr);
+		dump_rman_header((struct rman *)(db_addr_t)addr);
+		dump_rman((struct rman *)(db_addr_t)addr);
 	}
 }
 

@@ -615,7 +615,7 @@ DB_SHOW_COMMAND(trapframe, ddb_dump_trapframe)
 	if (!have_addr)
 		return;
 
-	dump_trapframe((struct trapframe *)addr);
+	dump_trapframe((struct trapframe *)(db_addr_t)addr);
 }
 
 #endif	/* DDB */

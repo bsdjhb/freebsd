@@ -600,7 +600,7 @@ typedef db_expr_t __db_f(db_expr_t, db_expr_t, db_expr_t, db_expr_t,
 static __inline int
 db_fncall_generic(db_expr_t addr, db_expr_t *rv, int nargs, db_expr_t args[])
 {
-	__db_f *f = (__db_f *)addr;
+	__db_f *f = (__db_f *)(db_addr_t)addr;
 
 	if (nargs > 10) {
 		db_printf("Too many arguments (max 10)\n");

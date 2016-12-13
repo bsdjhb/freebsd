@@ -2823,7 +2823,7 @@ DB_SHOW_COMMAND(inpcb, db_show_inpcb)
 		db_printf("usage: show inpcb <addr>\n");
 		return;
 	}
-	inp = (struct inpcb *)addr;
+	inp = (struct inpcb *)(db_addr_t)addr;
 
 	db_print_inpcb(inp, "inpcb", 0);
 }

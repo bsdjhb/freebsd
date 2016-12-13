@@ -5282,7 +5282,7 @@ end_pages:
 DB_SHOW_COMMAND(buffer, db_show_buffer)
 {
 	/* get args */
-	struct buf *bp = (struct buf *)addr;
+	struct buf *bp = (struct buf *)(db_addr_t)addr;
 #ifdef FULL_BUF_TRACKING
 	uint32_t i, j;
 #endif
@@ -5426,7 +5426,7 @@ DB_SHOW_COMMAND(vnodebufs, db_show_vnodebufs)
 		db_printf("usage: show vnodebufs <addr>\n");
 		return;
 	}
-	vp = (struct vnode *)addr;
+	vp = (struct vnode *)(db_addr_t)addr;
 	db_printf("Clean buffers:\n");
 	TAILQ_FOREACH(bp, &vp->v_bufobj.bo_clean.bv_hd, b_bobufs) {
 		db_show_buffer((uintptr_t)bp, 1, 0, NULL);

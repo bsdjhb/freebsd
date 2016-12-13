@@ -4415,7 +4415,7 @@ DB_SHOW_COMMAND(map, map)
 		db_printf("usage: show map <addr>\n");
 		return;
 	}
-	vm_map_print((vm_map_t)addr);
+	vm_map_print((vm_map_t)(db_addr_t)addr);
 }
 
 DB_SHOW_COMMAND(procvm, procvm)

@@ -170,7 +170,7 @@ DB_SHOW_COMMAND(lock, db_show_lock)
 
 	if (!have_addr)
 		return;
-	lock = (struct lock_object *)addr;
+	lock = (struct lock_object *)(db_addr_t)addr;
 	if (LO_CLASSINDEX(lock) > LOCK_CLASS_MAX) {
 		db_printf("Unknown lock class: %d\n", LO_CLASSINDEX(lock));
 		return;

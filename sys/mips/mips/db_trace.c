@@ -185,7 +185,7 @@ loop:
 	if (!subr) {
 		va = pc - sizeof(int);
 		while (1) {
-			instr = kdbpeek((int *)va);
+			instr = kdbpeek(va);
 
 			if (MIPS_START_OF_FUNCTION(instr))
 				break;
@@ -200,7 +200,7 @@ loop:
 		}
 
 		/* skip over nulls which might separate .o files */
-		while ((instr = kdbpeek((int *)va)) == 0)
+		while ((instr = kdbpeek(va)) == 0)
 			va += sizeof(int);
 		subr = va;
 	}
@@ -213,7 +213,7 @@ loop:
 		/* stop if hit our current position */
 		if (va >= pc)
 			break;
-		instr = kdbpeek((int *)va);
+		instr = kdbpeek(va);
 		i.word = instr;
 		switch (i.JType.op) {
 		case OP_SPECIAL:
@@ -261,34 +261,34 @@ loop:
 			if (mask & (1 << i.IType.rt)) {
 				if (subr == (uintptr_t)MipsKernGenException &&
 				    i.IType.rt == 31)
-					next_ra = kdbpeek((int *)(sp +
-					    (short)i.IType.imm));
+					next_ra = kdbpeek(sp +
+					    (short)i.IType.imm);
 				break;
 			}
 			mask |= (1 << i.IType.rt);
 			switch (i.IType.rt) {
 			case 4:/* a0 */
-				args[0] = kdbpeek((int *)(sp + (short)i.IType.imm));
+				args[0] = kdbpeek(sp + (short)i.IType.imm);
 				valid_args[0] = 1;
 				break;
 
 			case 5:/* a1 */
-				args[1] = kdbpeek((int *)(sp + (short)i.IType.imm));
+				args[1] = kdbpeek(sp + (short)i.IType.imm);
 				valid_args[1] = 1;
 				break;
 
 			case 6:/* a2 */
-				args[2] = kdbpeek((int *)(sp + (short)i.IType.imm));
+				args[2] = kdbpeek(sp + (short)i.IType.imm);
 				valid_args[2] = 1;
 				break;
 
 			case 7:/* a3 */
-				args[3] = kdbpeek((int *)(sp + (short)i.IType.imm));
+				args[3] = kdbpeek(sp + (short)i.IType.imm);
 				valid_args[3] = 1;
 				break;
 
 			case 31:	/* ra */
-				ra = kdbpeek((int *)(sp + (short)i.IType.imm));
+				ra = kdbpeek(sp + (short)i.IType.imm);
 			}
 			break;
 
@@ -302,27 +302,27 @@ loop:
 			mask |= (1 << i.IType.rt);
 			switch (i.IType.rt) {
 			case 4:/* a0 */
-				args[0] = kdbpeekd((int *)(sp + (short)i.IType.imm));
+				args[0] = kdbpeekd(sp + (short)i.IType.imm);
 				valid_args[0] = 1;
 				break;
 
 			case 5:/* a1 */
-				args[1] = kdbpeekd((int *)(sp + (short)i.IType.imm));
+				args[1] = kdbpeekd(sp + (short)i.IType.imm);
 				valid_args[1] = 1;
 				break;
 
 			case 6:/* a2 */
-				args[2] = kdbpeekd((int *)(sp + (short)i.IType.imm));
+				args[2] = kdbpeekd(sp + (short)i.IType.imm);
 				valid_args[2] = 1;
 				break;
 
 			case 7:/* a3 */
-				args[3] = kdbpeekd((int *)(sp + (short)i.IType.imm));
+				args[3] = kdbpeekd(sp + (short)i.IType.imm);
 				valid_args[3] = 1;
 				break;
 
 			case 31:	/* ra */
-				ra = kdbpeekd((int *)(sp + (short)i.IType.imm));
+				ra = kdbpeekd(sp + (short)i.IType.imm);
 			}
 			break;
 
@@ -357,17 +357,17 @@ done:
 	if (trapframe) {
 #define	TF_REG(base, reg)	((base) + CALLFRAME_SIZ + ((reg) * SZREG))
 #if defined(__mips_n64) || defined(__mips_n32)
-		pc = kdbpeekd((int *)TF_REG(sp, PC));
-		ra = kdbpeekd((int *)TF_REG(sp, RA));
-		sp = kdbpeekd((int *)TF_REG(sp, SP));
-		cause = kdbpeekd((int *)TF_REG(sp, CAUSE));
-		badvaddr = kdbpeekd((int *)TF_REG(sp, BADVADDR));
+		pc = kdbpeekd(TF_REG(sp, PC));
+		ra = kdbpeekd(TF_REG(sp, RA));
+		sp = kdbpeekd(TF_REG(sp, SP));
+		cause = kdbpeekd(TF_REG(sp, CAUSE));
+		badvaddr = kdbpeekd(TF_REG(sp, BADVADDR));
 #else
-		pc = kdbpeek((int *)TF_REG(sp, PC));
-		ra = kdbpeek((int *)TF_REG(sp, RA));
-		sp = kdbpeek((int *)TF_REG(sp, SP));
-		cause = kdbpeek((int *)TF_REG(sp, CAUSE));
-		badvaddr = kdbpeek((int *)TF_REG(sp, BADVADDR));
+		pc = kdbpeek(TF_REG(sp, PC));
+		ra = kdbpeek(TF_REG(sp, RA));
+		sp = kdbpeek(TF_REG(sp, SP));
+		cause = kdbpeek(TF_REG(sp, CAUSE));
+		badvaddr = kdbpeek(TF_REG(sp, BADVADDR));
 #endif
 #undef TF_REG
 		db_printf("--- exception, cause %jx badvaddr %jx ---\n",

@@ -1511,18 +1511,20 @@ DB_SHOW_COMMAND(geom, db_show_geom)
 				break;
 		}
 	} else {
-		switch (g_valid_obj((void *)addr)) {
+		switch (g_valid_obj((void *)(db_addr_t)addr)) {
 		case 1:
-			db_show_geom_class((struct g_class *)addr);
+			db_show_geom_class((struct g_class *)(db_addr_t)addr);
 			break;
 		case 2:
-			db_show_geom_geom(0, (struct g_geom *)addr);
+			db_show_geom_geom(0, (struct g_geom *)(db_addr_t)addr);
 			break;
 		case 3:
-			db_show_geom_consumer(0, (struct g_consumer *)addr);
+			db_show_geom_consumer(0,
+			    (struct g_consumer *)(db_addr_t)addr);
 			break;
 		case 4:
-			db_show_geom_provider(0, (struct g_provider *)addr);
+			db_show_geom_provider(0,
+			    (struct g_provider *)(db_addr_t)addr);
 			break;
 		default:
 			db_printf("Not a GEOM object.\n");
@@ -1578,7 +1580,7 @@ DB_SHOW_COMMAND(bio, db_show_bio)
 	struct bio *bp;
 
 	if (have_addr) {
-		bp = (struct bio *)addr;
+		bp = (struct bio *)(db_addr_t)addr;
 		db_printf("BIO %p\n", bp);
 		db_print_bio_cmd(bp);
 		db_print_bio_flags(bp);

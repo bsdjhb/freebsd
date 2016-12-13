@@ -369,8 +369,8 @@ db_symbol_is_ambiguous(c_db_sym_t sym)
 c_db_sym_t
 db_search_symbol(db_addr_t val, db_strategy_t strategy, db_expr_t *offp)
 {
-	unsigned int	diff;
-	size_t		newdiff;
+	db_expr_t	diff;
+	db_expr_t	newdiff;
 	int		i;
 	c_db_sym_t	ret = C_DB_SYM_NULL, sym;
 

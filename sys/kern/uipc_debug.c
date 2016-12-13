@@ -490,7 +490,7 @@ DB_SHOW_COMMAND(socket, db_show_socket)
 		db_printf("usage: show socket <addr>\n");
 		return;
 	}
-	so = (struct socket *)addr;
+	so = (struct socket *)(db_addr_t)addr;
 
 	db_print_socket(so, "socket", 0);
 }
@@ -503,7 +503,7 @@ DB_SHOW_COMMAND(sockbuf, db_show_sockbuf)
 		db_printf("usage: show sockbuf <addr>\n");
 		return;
 	}
-	sb = (struct sockbuf *)addr;
+	sb = (struct sockbuf *)(db_addr_t)addr;
 
 	db_print_sockbuf(sb, "sockbuf", 0);
 }
@@ -516,7 +516,7 @@ DB_SHOW_COMMAND(protosw, db_show_protosw)
 		db_printf("usage: show protosw <addr>\n");
 		return;
 	}
-	pr = (struct protosw *)addr;
+	pr = (struct protosw *)(db_addr_t)addr;
 
 	db_print_protosw(pr, "protosw", 0);
 }
@@ -529,7 +529,7 @@ DB_SHOW_COMMAND(domain, db_show_domain)
 		db_printf("usage: show protosw <addr>\n");
 		return;
 	}
-	d = (struct domain *)addr;
+	d = (struct domain *)(db_addr_t)addr;
 
 	db_print_domain(d, "domain", 0);
 }

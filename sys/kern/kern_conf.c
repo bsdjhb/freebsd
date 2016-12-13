@@ -1523,7 +1523,7 @@ DB_SHOW_COMMAND(cdev, db_show_cdev)
 		return;
 	}
 
-	dev = (struct cdev *)addr;
+	dev = (struct cdev *)(db_addr_t)addr;
 	cdp = cdev2priv(dev);
 	db_printf("dev %s ref %d use %ld thr %ld inuse %u fdpriv %p\n",
 	    dev->si_name, dev->si_refcount, dev->si_usecount,

@@ -2301,7 +2301,7 @@ DB_SHOW_COMMAND(ffs, db_show_ffs)
 	struct ufsmount *ump;
 
 	if (have_addr) {
-		ump = VFSTOUFS((struct mount *)addr);
+		ump = VFSTOUFS((struct mount *)(db_addr_t)addr);
 		db_print_ffs(ump);
 		return;
 	}

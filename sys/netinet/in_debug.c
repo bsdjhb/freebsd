@@ -69,7 +69,7 @@ DB_SHOW_COMMAND(sin, db_show_sin)
 {
 	struct sockaddr_in *sin;
 
-	sin = (struct sockaddr_in *)addr;
+	sin = (struct sockaddr_in *)(db_addr_t)addr;
 	if (sin == NULL) {
 		/* usage: No need to confess if you didn't sin. */
 		db_printf("usage: show sin <struct sockaddr_in *>\n");
@@ -108,7 +108,7 @@ DB_SHOW_COMMAND(in_ifaddr, db_show_in_ifaddr)
 {
 	struct in_ifaddr *ia;
 
-	ia = (struct in_ifaddr *)addr;
+	ia = (struct in_ifaddr *)(db_addr_t)addr;
 	if (ia == NULL) {
 		db_printf("usage: show in_ifaddr <struct in_ifaddr *>\n");
 		return;

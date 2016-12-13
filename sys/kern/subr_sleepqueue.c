@@ -1405,7 +1405,7 @@ DB_SHOW_COMMAND(sleepq, db_show_sleepqueue)
 	 * First, see if there is an active sleep queue for the wait channel
 	 * indicated by the address.
 	 */
-	wchan = (void *)addr;
+	wchan = (void *)(db_addr_t)addr;
 	sc = SC_LOOKUP(wchan);
 	LIST_FOREACH(sq, &sc->sc_queues, sq_hash)
 		if (sq->sq_wchan == wchan)
@@ -1417,11 +1417,12 @@ DB_SHOW_COMMAND(sleepq, db_show_sleepqueue)
 	 */
 	for (i = 0; i < SC_TABLESIZE; i++)
 		LIST_FOREACH(sq, &sleepq_chains[i].sc_queues, sq_hash) {
-			if (sq == (struct sleepqueue *)addr)
+			if (sq == (struct sleepqueue *)(db_addr_t)addr)
 				goto found;
 		}
 
-	db_printf("Unable to locate a sleep queue via %p\n", (void *)addr);
+	db_printf("Unable to locate a sleep queue via %p\n",
+	    (void *)(db_addr_t)addr);
 	return;
 found:
 	db_printf("Wait channel: %p\n", sq->sq_wchan);

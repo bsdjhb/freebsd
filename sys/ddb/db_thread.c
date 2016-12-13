@@ -129,7 +129,7 @@ db_lookup_thread(db_expr_t addr, bool check_pid)
 	 */
 	decaddr = db_hex2dec(addr);
 	if (decaddr == -1)
-		return ((struct thread *)addr);
+		return ((struct thread *)(db_addr_t)addr);
 
 	td = kdb_thr_lookup(decaddr);
 	if (td != NULL)
@@ -144,7 +144,7 @@ db_lookup_thread(db_expr_t addr, bool check_pid)
 				return (FIRST_THREAD_IN_PROC(p));
 		}
 	}
-	return ((struct thread *)addr);
+	return ((struct thread *)(db_addr_t)addr);
 }
 
 /*
@@ -170,5 +170,5 @@ db_lookup_proc(db_expr_t addr)
 				return (p);
 		}
 	}
-	return ((struct proc *)addr);
+	return ((struct proc *)(db_addr_t)addr);
 }
