@@ -280,7 +280,7 @@ fbsdrun_addcpu(struct vmctx *ctx, int fromcpu, int newcpu, uint64_t rip)
 
 	CPU_SET_ATOMIC(newcpu, &cpumask);
 
-	gdb_addcpu(newcpu);
+	gdb_cpu_add(newcpu);
 
 	/*
 	 * Set up the vmexit struct to allow execution to start
@@ -518,6 +518,8 @@ vmexit_mtrap(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
 	assert(vmexit->inst_length == 0);
 
 	stats.vmexit_mtrap++;
+
+	gdb_cpu_mtrap(*pvcpu);
 
 	return (VMEXIT_CONTINUE);
 }

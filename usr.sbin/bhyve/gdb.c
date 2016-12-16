@@ -543,10 +543,20 @@ parse_threadid(const uint8_t *data, size_t len)
 }
 
 void
-gdb_addcpu(int vcpu)
+gdb_cpu_add(int vcpu)
 {
 
 	CPU_SET_ATOMIC(vcpu, &vcpumask);
+}
+
+void
+gdb_cpu_suspend(int vcpu)
+{
+}
+
+void
+gdb_cpu_mtrap(int vcpu)
+{
 }
 
 static void
