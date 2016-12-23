@@ -39,9 +39,15 @@ LIB32CPUFLAGS=	-march=mips64 -mabi=32
 LIB32CPUFLAGS=	-march=${TARGET_CPUTYPE} -mabi=32
 .endif
 LIB32WMAKEENV=	MACHINE=mips MACHINE_ARCH=mips
+.if ${TARGET_ARCH:Mmips64el*} != ""
+LIB32WMAKEFLAGS=	\
+		LD="${XLD} -m elf32ltsmip_fbsd" \
+		OBJCOPY="${XOBJCOPY}"
+.else
 LIB32WMAKEFLAGS=	\
 		LD="${XLD} -m elf32btsmip_fbsd" \
 		OBJCOPY="${XOBJCOPY}"
+.endif
 .endif
 
 
