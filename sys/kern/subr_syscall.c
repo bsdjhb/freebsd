@@ -55,7 +55,7 @@ static inline int
 syscallenter(struct thread *td, struct syscall_args *sa)
 {
 	struct proc *p;
-	int error, traced;
+	int error, traced, sig;
 
 	PCPU_INC(cnt.v_syscall);
 	p = td->td_proc;
@@ -87,8 +87,12 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 			PROC_LOCK(p);
 			td->td_dbg_sc_code = sa->code;
 			td->td_dbg_sc_narg = sa->narg;
-			if (p->p_ptevents & PTRACE_SCE)
-				ptracestop((td), SIGTRAP);
+			if (p->p_ptevents & PTRACE_SCE) {
+				sig = ptracestop((td), SIGTRAP);
+				if (sig != 0)
+					printf("%s: dropping signal %d from ptracestop\n",
+					    __func__, sig);
+			}
 			PROC_UNLOCK(p);
 		}
 		if (td->td_dbgflags & TDB_USERWR) {
@@ -166,7 +170,7 @@ syscallret(struct thread *td, int error, struct syscall_args *sa)
 {
 	struct proc *p, *p2;
 	ksiginfo_t ksi;
-	int traced, error1;
+	int traced, error1, sig;
 
 	KASSERT((td->td_pflags & TDP_FORKING) == 0,
 	    ("fork() did not clear TDP_FORKING upon completion"));
@@ -219,11 +223,15 @@ syscallret(struct thread *td, int error, struct syscall_args *sa)
 		 * executes.  If debugger requested tracing of syscall
 		 * returns, do it now too.
 		 */
+		sig = 0;
 		if (traced &&
 		    ((td->td_dbgflags & (TDB_FORK | TDB_EXEC)) != 0 ||
 		    (p->p_ptevents & PTRACE_SCX) != 0))
-			ptracestop(td, SIGTRAP);
+			sig = ptracestop(td, SIGTRAP);
 		td->td_dbgflags &= ~(TDB_SCX | TDB_EXEC | TDB_FORK);
+		if (sig != 0)
+			printf("%s: dropping signal %d from ptracestop\n",
+			    __func__, sig);
 		PROC_UNLOCK(p);
 	}
 
@@ -258,9 +266,13 @@ again:
 
 		if (td->td_dbgflags & TDB_VFORK) {
 			PROC_LOCK(p);
+			sig = 0;
 			if (p->p_ptevents & PTRACE_VFORK)
-				ptracestop(td, SIGTRAP);
+				sig = ptracestop(td, SIGTRAP);
 			td->td_dbgflags &= ~TDB_VFORK;
+			if (sig != 0)
+				printf("%s: dropping signal %d from ptracestop\n",
+				    __func__, sig);
 			PROC_UNLOCK(p);
 		}
 	}

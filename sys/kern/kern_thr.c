@@ -325,6 +325,7 @@ int
 kern_thr_exit(struct thread *td)
 {
 	struct proc *p;
+	int sig;
 
 	p = td->td_proc;
 
@@ -355,8 +356,12 @@ kern_thr_exit(struct thread *td)
 
 	p->p_pendingexits++;
 	td->td_dbgflags |= TDB_EXIT;
-	if (p->p_ptevents & PTRACE_LWP)
-		ptracestop(td, SIGTRAP);
+	if (p->p_ptevents & PTRACE_LWP) {
+		sig = ptracestop(td, SIGTRAP);
+		if (sig != 0)
+			printf("%s: dropping signal %d from ptracestop\n",
+			    __func__, sig);
+	}
 	PROC_UNLOCK(p);
 	tidhash_remove(td);
 	PROC_LOCK(p);

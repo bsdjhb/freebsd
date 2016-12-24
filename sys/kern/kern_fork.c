@@ -1063,6 +1063,7 @@ void
 fork_return(struct thread *td, struct trapframe *frame)
 {
 	struct proc *p, *dbg;
+	int sig;
 
 	p = td->td_proc;
 	if (td->td_dbgflags & TDB_STOPATFORK) {
@@ -1081,8 +1082,10 @@ fork_return(struct thread *td, struct trapframe *frame)
 			proc_reparent(p, dbg);
 			sx_xunlock(&proctree_lock);
 			td->td_dbgflags |= TDB_CHILD | TDB_SCX | TDB_FSTP;
-			ptracestop(td, SIGSTOP);
+			sig = ptracestop(td, SIGSTOP);
 			td->td_dbgflags &= ~(TDB_CHILD | TDB_SCX);
+			if (sig != 0)
+				printf("%s: dropping signal %d from ptracestop\n", __func__, sig);
 		} else {
 			/*
 			 * ... otherwise clear the request.
@@ -1100,10 +1103,14 @@ fork_return(struct thread *td, struct trapframe *frame)
 		PROC_LOCK(p);
 		td->td_dbgflags |= TDB_SCX;
 		_STOPEVENT(p, S_SCX, td->td_dbg_sc_code);
+		sig = 0;
 		if ((p->p_ptevents & PTRACE_SCX) != 0 ||
 		    (td->td_dbgflags & TDB_BORN) != 0)
-			ptracestop(td, SIGTRAP);
+			sig = ptracestop(td, SIGTRAP);
 		td->td_dbgflags &= ~(TDB_SCX | TDB_BORN);
+		if (sig != 0)
+			printf("%s: dropping signal %d from ptracestop\n",
+			    __func__, sig);
 		PROC_UNLOCK(p);
 	}
 
