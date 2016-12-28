@@ -1175,6 +1175,12 @@ t4_attach(device_t dev)
 		goto done;
 	}
 
+	rc = bus_generic_probe(dev);
+	if (rc != 0) {
+		device_printf(dev, "failed to probe child drivers: %d\n", rc);
+		goto done;
+	}
+
 	rc = bus_generic_attach(dev);
 	if (rc != 0) {
 		device_printf(dev,
@@ -1325,6 +1331,8 @@ t4_detach_common(device_t dev)
 			free(pi, M_CXGBE);
 		}
 	}
+
+	device_delete_children(dev);
 
 	if (sc->flags & FULL_INIT_DONE)
 		adapter_full_uninit(sc);
