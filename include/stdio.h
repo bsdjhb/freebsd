@@ -149,9 +149,11 @@ struct __sFILE {
 	struct	__sbuf _pad1;
 #endif
 
+#ifdef STDIO_INTERNALS
 	/* Unix stdio files get aligned to block boundaries on fseek() */
 	int	_blksize;	/* stat.st_blksize (may be != _bf._size) */
 	fpos_t	_offset;	/* (+) current lseek offset */
+#endif
 
 #ifdef STDIO_INTERNALS
 	struct pthread_mutex *_fl_mutex;	/* used for MT-safety */
