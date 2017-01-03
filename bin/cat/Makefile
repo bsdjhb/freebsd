@@ -10,4 +10,6 @@ PROG=	cat
 SUBDIR+=	tests
 .endif
 
+CFLAGS+= -DSTDIO_INTERNALS
+
 .include <bsd.prog.mk>
