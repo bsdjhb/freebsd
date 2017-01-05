@@ -316,6 +316,13 @@ AFLAGS += -EB
 CFLAGS += -EB
 LDFLAGS += -EB
 . endif
+. if ${MACHINE_ARCH:Mmips64*} != ""
+CFLAGS+=	-mabi=64
+. elif ${MACHINE_ARCH:Mmipsn32*} != ""
+CFLAGS+=	-mabi=n32
+. else
+CFLAGS+=	-mabi=32
+. endif
 . if ${MACHINE_ARCH:Mmips*hf}
 CFLAGS += -mhard-float
 . else
