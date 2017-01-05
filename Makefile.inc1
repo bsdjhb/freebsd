@@ -576,11 +576,6 @@ TARGET_ABI=	gnueabi
 .endif
 .endif
 .if ${TARGET} == "mips"
-.if ${TARGET_ARCH:Mmips*el*} != ""
-XCFLAGS+=	-EL
-.else
-XCFLAGS+=	-EB
-.endif
 .if ${TARGET_ARCH:Mmips64*} != ""
 XCFLAGS+=	-mabi=64
 .elif ${TARGET_ARCH:Mmipsn32*} != ""
