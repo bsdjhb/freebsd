@@ -62,15 +62,7 @@ __FBSDID("$FreeBSD$");
  * | SGL entries                   |
  * +-------------------------------+
  *
- * Replies for a hash request consist of:
- *
- * +-------------------------------+
- * | struct cpl_fw6_pld            |
- * +-------------------------------+
- * | hash digest                   |
- * +-------------------------------+
- *
- * Replies for a block cipher request consist of:
+ * Replies consist of:
  *
  * +-------------------------------+
  * | struct cpl_fw6_pld            |
@@ -85,6 +77,9 @@ __FBSDID("$FreeBSD$");
  *
  * For block cipher replies, the updated IV is supplied in data[2] of
  * the CPL_FW6_PLD message.
+ *
+ * For non-HMAC hash replies, the hash digest is supplied immediately
+ * following the CPL_FW6_PLD message.
  */
 
 static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
