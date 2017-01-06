@@ -41,6 +41,52 @@ __FBSDID("$FreeBSD$");
 
 #include "common/common.h"
 
+/*
+ * Requests consist of:
+ *
+ * +-------------------------------+
+ * | struct fw_crypto_lookaside_wr |
+ * +-------------------------------+
+ * | struct ulp_txpkt              |
+ * +-------------------------------+
+ * | struct ulptx_idata            |
+ * +-------------------------------+
+ * | struct cpl_tx_sec_pdu         |
+ * +-------------------------------+
+ * | struct cpl_tls_tx_scmd_fmt    |
+ * +-------------------------------+
+ * | keys                          |
+ * +-------------------------------+
+ * | struct cpl_rx_phys_dsgl       |
+ * +-------------------------------+
+ * | SGL entries                   |
+ * +-------------------------------+
+ *
+ * Replies for a hash request consist of:
+ *
+ * +-------------------------------+
+ * | struct cpl_fw6_pld            |
+ * +-------------------------------+
+ * | hash digest                   |
+ * +-------------------------------+
+ *
+ * Replies for a block cipher request consist of:
+ *
+ * +-------------------------------+
+ * | struct cpl_fw6_pld            |
+ * +-------------------------------+
+ * 
+ * A 32-bit big-endian error status word is supplied in the last 4
+ * bytes of data[0] in the CPL_FW6_PLD message.  bit 0 indicates a
+ * "MAC" error and bit 1 indicates a "PAD" error.
+ *
+ * The 64-bit 'cookie' field from the fw_crypto_lookaside_wr message
+ * in the request is returned in data[1] of the CPL_FW6_PLD message.
+ *
+ * For block cipher replies, the updated IV is supplied in data[2] of
+ * the CPL_FW6_PLD message.
+ */
+
 static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
 
 struct ccr_session {
