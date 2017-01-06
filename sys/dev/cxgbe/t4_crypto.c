@@ -141,8 +141,8 @@ ccr_attach(device_t dev)
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
 
-#ifdef notyet
 	crypto_register(cid, CRYPTO_SHA1, 0, 0);
+#ifdef notyet
 	crypto_register(cid, CRYPTO_SHA1_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_256_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_384_HMAC, 0, 0);
@@ -185,9 +185,27 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 {
 	struct ccr_softc *sc;
 	struct ccr_session *s;
+	struct cryptoini *c, *hash;
 	int i, sess;
 
 	if (sidp == NULL || cri == NULL)
+		return (EINVAL);
+
+	hash = NULL;
+	for (c = cri; c != NULL; c = c->cri_next) {
+		switch (c->cri_alg) {
+		case CRYPTO_SHA1:
+			if (hash)
+				return (EINVAL);
+			hash = c;
+
+			/* Honor cri_mlen? */
+			break;
+		default:
+			return (EINVAL);
+		}
+	}
+	if (hash == NULL)
 		return (EINVAL);
 
 	sc = device_get_softc(dev);
@@ -219,6 +237,9 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	}
 
 	s = &sc->sessions[sess];
+
+	/* Init SHA1 digest H[] array? */
+
 	s->active = true;
 	mtx_unlock(&sc->lock);
 
@@ -254,6 +275,7 @@ static int
 ccr_process(device_t dev, struct cryptop *crp, int hint)
 {
 
+	
 	return (ENXIO);
 }
 
