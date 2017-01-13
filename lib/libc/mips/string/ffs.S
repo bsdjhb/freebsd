@@ -44,6 +44,8 @@ __FBSDID("$FreeBSD$");
 	.abicalls
 #endif
 
+WEAK_ALIAS(__ffssi2,ffs)
+
 /* bit = ffs(value) */
 
 LEAF(ffs)
