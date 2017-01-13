@@ -52,12 +52,60 @@ struct chcr_wr {
 };
 
 /* From chr_algo.h */
+
+/* Crypto key context */
+#define S_KEY_CONTEXT_CTX_LEN           24
+#define M_KEY_CONTEXT_CTX_LEN           0xff
+#define V_KEY_CONTEXT_CTX_LEN(x)        ((x) << S_KEY_CONTEXT_CTX_LEN)
+#define G_KEY_CONTEXT_CTX_LEN(x) \
+	(((x) >> S_KEY_CONTEXT_CTX_LEN) & M_KEY_CONTEXT_CTX_LEN)
+
+#define S_KEY_CONTEXT_DUAL_CK      12
+#define M_KEY_CONTEXT_DUAL_CK      0x1
+#define V_KEY_CONTEXT_DUAL_CK(x)   ((x) << S_KEY_CONTEXT_DUAL_CK)
+#define G_KEY_CONTEXT_DUAL_CK(x)   \
+(((x) >> S_KEY_CONTEXT_DUAL_CK) & M_KEY_CONTEXT_DUAL_CK)
+#define F_KEY_CONTEXT_DUAL_CK      V_KEY_CONTEXT_DUAL_CK(1U)
+
+#define S_KEY_CONTEXT_OPAD_PRESENT      11
+#define M_KEY_CONTEXT_OPAD_PRESENT      0x1
+#define V_KEY_CONTEXT_OPAD_PRESENT(x)   ((x) << S_KEY_CONTEXT_OPAD_PRESENT)
+#define G_KEY_CONTEXT_OPAD_PRESENT(x)   \
+	(((x) >> S_KEY_CONTEXT_OPAD_PRESENT) & \
+	 M_KEY_CONTEXT_OPAD_PRESENT)
+#define F_KEY_CONTEXT_OPAD_PRESENT      V_KEY_CONTEXT_OPAD_PRESENT(1U)
+
+#define S_KEY_CONTEXT_SALT_PRESENT      10
+#define M_KEY_CONTEXT_SALT_PRESENT      0x1
+#define V_KEY_CONTEXT_SALT_PRESENT(x)   ((x) << S_KEY_CONTEXT_SALT_PRESENT)
+#define G_KEY_CONTEXT_SALT_PRESENT(x)   \
+	(((x) >> S_KEY_CONTEXT_SALT_PRESENT) & \
+	 M_KEY_CONTEXT_SALT_PRESENT)
+#define F_KEY_CONTEXT_SALT_PRESENT      V_KEY_CONTEXT_SALT_PRESENT(1U)
+
+#define S_KEY_CONTEXT_CK_SIZE           6
+#define M_KEY_CONTEXT_CK_SIZE           0xf
+#define V_KEY_CONTEXT_CK_SIZE(x)        ((x) << S_KEY_CONTEXT_CK_SIZE)
+#define G_KEY_CONTEXT_CK_SIZE(x)        \
+	(((x) >> S_KEY_CONTEXT_CK_SIZE) & M_KEY_CONTEXT_CK_SIZE)
+
+#define S_KEY_CONTEXT_MK_SIZE           2
+#define M_KEY_CONTEXT_MK_SIZE           0xf
+#define V_KEY_CONTEXT_MK_SIZE(x)        ((x) << S_KEY_CONTEXT_MK_SIZE)
+#define G_KEY_CONTEXT_MK_SIZE(x)        \
+	(((x) >> S_KEY_CONTEXT_MK_SIZE) & M_KEY_CONTEXT_MK_SIZE)
+
+#define S_KEY_CONTEXT_VALID     0
+#define M_KEY_CONTEXT_VALID     0x1
+#define V_KEY_CONTEXT_VALID(x)  ((x) << S_KEY_CONTEXT_VALID)
+#define G_KEY_CONTEXT_VALID(x)  \
+	(((x) >> S_KEY_CONTEXT_VALID) & \
+	 M_KEY_CONTEXT_VALID)
+#define F_KEY_CONTEXT_VALID     V_KEY_CONTEXT_VALID(1U)
+
 #define CHCR_HASH_MAX_DIGEST_SIZE 64
 
 #define DUMMY_BYTES 16
-
-#define IPAD_DATA 0x36363636
-#define OPAD_DATA 0x5c5c5c5c
 
 #define TRANSHDR_SIZE(kctx_len)\
 	(sizeof(struct chcr_wr) +\
@@ -99,6 +147,19 @@ struct chcr_wr {
 #define CHCR_SCMD_HMAC_CTRL_PL2		    5
 #define CHCR_SCMD_HMAC_CTRL_PL3		    6
 #define CHCR_SCMD_HMAC_CTRL_DIV2	    7
+
+/* This are not really mac key size. They are intermediate values
+ * of sha engine and its size
+ */
+#define CHCR_KEYCTX_MAC_KEY_SIZE_128        0
+#define CHCR_KEYCTX_MAC_KEY_SIZE_160        1
+#define CHCR_KEYCTX_MAC_KEY_SIZE_192        2
+#define CHCR_KEYCTX_MAC_KEY_SIZE_256        3
+#define CHCR_KEYCTX_MAC_KEY_SIZE_512        4
+#define CHCR_KEYCTX_CIPHER_KEY_SIZE_128     0
+#define CHCR_KEYCTX_CIPHER_KEY_SIZE_192     1
+#define CHCR_KEYCTX_CIPHER_KEY_SIZE_256     2
+#define CHCR_KEYCTX_NO_KEY                  15
 
 #define CHCR_HASH_MAX_BLOCK_SIZE_64  64
 #define CHCR_HASH_MAX_BLOCK_SIZE_128 128

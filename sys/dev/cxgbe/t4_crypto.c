@@ -90,6 +90,7 @@ struct ccr_session_hmac {
 	struct auth_hash *auth_hash;
 	int hash_len;
 	unsigned int auth_mode;
+	unsigned int mk_size;
 	char digest[CHCR_HASH_MAX_DIGEST_SIZE];
 	char ipad[CHCR_HASH_MAX_BLOCK_SIZE_128];
 	char opad[CHCR_HASH_MAX_BLOCK_SIZE_128];
@@ -119,12 +120,21 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 {
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
-	u_int hash_size_in_response, kctx_len, transhdr_len;
+	struct auth_hash *axf;
+	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len;
+	u_int iopad_size;
 
-	/* Key context must be 128-bit aligned. */
-	kctx_len = sizeof(struct _key_ctx) +
-	    roundup2(s->hmac.auth_hash->hashsize, 16) * 2;
-	hash_size_in_response = s->hmac.auth_hash->hashsize;
+	axf = s->hmac.auth_hash;
+
+	/* PADs must be 128-bit aligned. */
+	iopad_size = roundup2(axf->hashsize, 16);
+
+	/*
+	 * The 'key' part of the context includes the partial hash
+	 * (IPAD) followed by the OPAD.
+	 */
+	kctx_len = iopad_size * 2;
+	hash_size_in_response = axf->hashsize;
 	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
 	wr = alloc_wrqe(transhdr_len, sc->ofld_txq);
 	if (wr == NULL)
@@ -150,8 +160,22 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
 	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
-		V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
-		V_SCMD_AUTH_MODE(s->hmac.auth_mode) /* | TODO */);
+	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
+	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
+	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC));
+	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
+	crwr->sec_cpl.ivgen_hdrlen = htobe32(
+	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
+
+	memcpy(crwr->key_ctx.key, s->hmac.digest, axf->hashsize);
+	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad, axf->hashsize);
+
+	/* XXX: F_KEY_CONTEXT_SALT_PRESENT set, but 'salt' not set. */
+	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
+	crwr->key_ctx.ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
+	    V_KEY_CONTEXT_OPAD_PRESENT(1) | V_KEY_CONTEXT_SALT_PRESENT(1) |
+	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
+	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
 
 	return (ENXIO);
 }
@@ -333,7 +357,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	struct ccr_session *s;
 	struct auth_hash *auth_hash;
 	struct cryptoini *c, *hash;
-	unsigned int auth_mode;
+	unsigned int auth_mode, mk_size;
 	int i, sess;
 
 	if (sidp == NULL || cri == NULL)
@@ -342,6 +366,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	hash = NULL;
 	auth_hash = NULL;
 	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
+	mk_size = 0;
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
 		case CRYPTO_SHA1_HMAC:
@@ -355,18 +380,22 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 			case CRYPTO_SHA1_HMAC:
 				auth_hash = &auth_hash_hmac_sha1;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA1;
+				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_160;
 				break;
 			case CRYPTO_SHA2_256_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_256;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA256;
+				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_256;
 				break;
 			case CRYPTO_SHA2_384_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_384;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_384;
+				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 				break;
 			case CRYPTO_SHA2_512_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_512;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_512;
+				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 				break;
 			}
 			break;
@@ -411,6 +440,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	MPASS(hash != NULL);
 	s->hmac.auth_hash = auth_hash;
 	s->hmac.auth_mode = auth_mode;
+	s->hmac.mk_size = mk_size;
 	if (hash->cri_mlen == 0)
 		s->hmac.hash_len = auth_hash->hashsize;
 	else
