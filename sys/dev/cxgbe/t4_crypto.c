@@ -111,7 +111,7 @@ struct ccr_softc {
 	int nsessions;
 	struct mtx lock;
 	bool detaching;
-	struct sge_ofld_txq *ofld_txq;
+	struct sge_wrq *ofld_txq;
 };
 
 static int
@@ -119,7 +119,7 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 {
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
-	u_int hash_size_in_response, kctx_len, transhdr_len, wr_len;
+	u_int hash_size_in_response, kctx_len, transhdr_len;
 
 	/* Key context must be 128-bit aligned. */
 	kctx_len = sizeof(struct _key_ctx) +
@@ -135,23 +135,25 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	/* XXX: Not sure if crd_inject is IV offset? */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
-	    CPL_TX_SEC_PDU_OPCODE_V(CPL_TX_SEC_PDU) |
-	    CPL_TX_SEC_PDU_RXCHID_V(0) | CPL_TX_SEC_PDU_ACKFOLLOWS_V(0) |
-	    CPL_TX_SEC_PDU_ULPTXLPBK_V(1) | CPL_TX_SEC_PDU_CPLLEN_V(2) |
-	    CPL_TX_SEC_PDU_PLACEHOLDER_V(0) | CPL_TX_SEC_PDU_IVINSRTOFST_V(0));
+	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
+	    V_CPL_TX_SEC_PDU_RXCHID(0) | V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) |
+	    V_CPL_TX_SEC_PDU_ULPTXLPBK(1) | V_CPL_TX_SEC_PDU_CPLLEN(2) |
+	    V_CPL_TX_SEC_PDU_PLACEHOLDER(0) | V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
 
 	/* XXX: Compute size of either immediate data or SG data. */
-	crwr->sec_cpl.pldlen = htobe32(/* XXX */);
+	crwr->sec_cpl.pldlen = htobe32(0 /* TODO */);
 
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
-	    CPL_TX_SEC_PDU_AUTHSTART_V(0) | CPL_TX_SEC_PDU_AUTHSTOP_V(1));
+	    V_CPL_TX_SEC_PDU_AUTHSTART(0) | V_CPL_TX_SEC_PDU_AUTHSTOP(1));
 
 	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
 	crwr->sec_cpl.seqno_numivs = htobe32(
-	    SCMD_SEQ_NO_CTRL_V(0) |
-	    SCMD_PROTO_VERSION_V(CHCR_SCMD_PROTO_VERSION_GENERIC) |
-		SCMD_CIPH_MODE_V(CHCR_SCMD_CIPHER_MODE_NOP) |
-		SCMD_AUTH_MODE_V(s->hmac.auth_mode) /* | TODO */);
+	    V_SCMD_SEQ_NO_CTRL(0) |
+	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+		V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
+		V_SCMD_AUTH_MODE(s->hmac.auth_mode) /* | TODO */);
+
+	return (ENXIO);
 }
 
 static void
@@ -187,7 +189,7 @@ ccr_attach(device_t dev)
 		    "parent device does not have offload queues\n");
 		return (ENXIO);
 	}
-	sc->ofld_txq = &sc->sge.ofld_txq[0];
+	sc->ofld_txq = &sc->adapter->sge.ofld_txq[0];
 	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
@@ -244,6 +246,7 @@ ccr_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
 {
 	uint32_t *u32;
 	uint64_t *u64;
+	u_int i;
 
 	u32 = (uint32_t *)dst;
 	u64 = (uint64_t *)dst;
@@ -273,9 +276,7 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 {
 	union authctx auth_ctx;
 	struct auth_hash *axf;
-	uint32_t *u32;
-	uint64_t *u64;
-	int i;
+	u_int i;
 
 	axf = s->hmac.auth_hash;
 	if (key == NULL) {
@@ -297,7 +298,7 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	if (klen > axf->blocksize) {
 		axf->Init(&auth_ctx);
 		axf->Update(&auth_ctx, key, klen);
-		axf->Final(&auth_ctx, s->hmac.ipad);
+		axf->Final(s->hmac.ipad, &auth_ctx);
 		klen = axf->hashsize;
 	} else
 		memcpy(s->hmac.ipad, key, klen);
@@ -314,12 +315,12 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	 * Hash the raw ipad and opad and store the partial result in
 	 * the same buffer.
 	 */
-	axf->Init(&authctx);
-	axf->Update(&authctx, s->hmac.ipad, axf->blocksize);
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, s->hmac.ipad, axf->blocksize);
 	ccr_copy_partial_hash(s->hmac.ipad, cri_alg, &auth_ctx);
 
-	axf->Init(&authctx);
-	axf->Update(&authctx, s->hmac.opad, axf->blocksize);
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, s->hmac.opad, axf->blocksize);
 	ccr_copy_partial_hash(s->hmac.opad, cri_alg, &auth_ctx);
 
 	memcpy(s->hmac.digest, s->hmac.ipad, axf->hashsize);
@@ -453,6 +454,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	struct ccr_softc *sc;
 	struct ccr_session *s;
 	struct cryptodesc *crd;
+	uint32_t sid;
 	int error;
 
 	if (crp == NULL || crp->crp_callback == NULL)
@@ -462,6 +464,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	if (crd->crd_next != NULL)
 		return (EINVAL);
 
+	sid = CRYPTO_SESID2LID(crp->crp_sid);
 	sc = device_get_softc(dev);
 	mtx_lock(&sc->lock);
 	if (sid >= sc->nsessions || !sc->sessions[sid].active) {
