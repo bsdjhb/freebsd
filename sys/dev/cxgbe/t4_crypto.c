@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2016 Chelsio Communications, Inc.
+ * Copyright (c) 2017 Chelsio Communications, Inc.
  * All rights reserved.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
@@ -36,10 +36,12 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 
 #include <opencrypto/cryptodev.h>
+#include <opencrypto/xform.h>
 
 #include "cryptodev_if.h"
 
 #include "common/common.h"
+#include "t4_crypto.h"
 
 /*
  * Requests consist of:
@@ -84,9 +86,21 @@ __FBSDID("$FreeBSD$");
 
 static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
 
+struct ccr_session_hmac {
+	struct auth_hash *auth_hash;
+	int hash_len;
+	unsigned int auth_mode;
+	char digest[CHCR_HASH_MAX_DIGEST_SIZE];
+	char ipad[CHCR_HASH_MAX_BLOCK_SIZE_128];
+	char opad[CHCR_HASH_MAX_BLOCK_SIZE_128];
+};
+	
 struct ccr_session {
 	bool active;
 	int pending;
+	union {
+		struct ccr_session_hmac hmac;
+	};
 };
 
 struct ccr_softc {
@@ -97,7 +111,48 @@ struct ccr_softc {
 	int nsessions;
 	struct mtx lock;
 	bool detaching;
+	struct sge_ofld_txq *ofld_txq;
 };
+
+static int
+ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
+{
+	struct chcr_wr *crwr;
+	struct wrqe *wr;
+	u_int hash_size_in_response, kctx_len, transhdr_len, wr_len;
+
+	/* Key context must be 128-bit aligned. */
+	kctx_len = sizeof(struct _key_ctx) +
+	    roundup2(s->hmac.auth_hash->hashsize, 16) * 2;
+	hash_size_in_response = s->hmac.auth_hash->hashsize;
+	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
+	wr = alloc_wrqe(transhdr_len, sc->ofld_txq);
+	if (wr == NULL)
+		return (ENOMEM);
+	memset(wr, 0, transhdr_len);
+	crwr = wrtod(wr);
+
+	/* XXX: Hardcodes SGE loopback channel of 0. */
+	/* XXX: Not sure if crd_inject is IV offset? */
+	crwr->sec_cpl.op_ivinsrtofst = htobe32(
+	    CPL_TX_SEC_PDU_OPCODE_V(CPL_TX_SEC_PDU) |
+	    CPL_TX_SEC_PDU_RXCHID_V(0) | CPL_TX_SEC_PDU_ACKFOLLOWS_V(0) |
+	    CPL_TX_SEC_PDU_ULPTXLPBK_V(1) | CPL_TX_SEC_PDU_CPLLEN_V(2) |
+	    CPL_TX_SEC_PDU_PLACEHOLDER_V(0) | CPL_TX_SEC_PDU_IVINSRTOFST_V(0));
+
+	/* XXX: Compute size of either immediate data or SG data. */
+	crwr->sec_cpl.pldlen = htobe32(/* XXX */);
+
+	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
+	    CPL_TX_SEC_PDU_AUTHSTART_V(0) | CPL_TX_SEC_PDU_AUTHSTOP_V(1));
+
+	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	crwr->sec_cpl.seqno_numivs = htobe32(
+	    SCMD_SEQ_NO_CTRL_V(0) |
+	    SCMD_PROTO_VERSION_V(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+		SCMD_CIPH_MODE_V(CHCR_SCMD_CIPHER_MODE_NOP) |
+		SCMD_AUTH_MODE_V(s->hmac.auth_mode) /* | TODO */);
+}
 
 static void
 ccr_identify(driver_t *driver, device_t parent)
@@ -125,13 +180,14 @@ ccr_attach(device_t dev)
 	int32_t cid;
 
 	sc = device_get_softc(dev);
+	sc->dev = dev;
 	sc->adapter = device_get_softc(device_get_parent(dev));
 	if (sc->adapter->sge.nofldrxq == 0) {
 		device_printf(dev,
 		    "parent device does not have offload queues\n");
 		return (ENXIO);
 	}
-	sc->dev = dev;
+	sc->ofld_txq = &sc->sge.ofld_txq[0];
 	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
@@ -141,12 +197,15 @@ ccr_attach(device_t dev)
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
 
-	crypto_register(cid, CRYPTO_SHA1, 0, 0);
 #ifdef notyet
+	/* Not even swcrypto handles this, so maybe not worth doing? */
+	crypto_register(cid, CRYPTO_SHA1, 0, 0);
+#endif
 	crypto_register(cid, CRYPTO_SHA1_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_256_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_384_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_512_HMAC, 0, 0);
+#ifdef notyet
 	crypto_register(cid, CRYPTO_AES_CBC, 0, 0);
 	crypto_register(cid, CRYPTO_AES_ICM, 0, 0);
 	crypto_register(cid, CRYPTO_AES_NIST_GMAC, 0, 0);
@@ -180,26 +239,135 @@ ccr_detach(device_t dev)
 	return (0);
 }
 
+static void
+ccr_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
+{
+	uint32_t *u32;
+	uint64_t *u64;
+
+	u32 = (uint32_t *)dst;
+	u64 = (uint64_t *)dst;
+	switch (cri_alg) {
+	case CRYPTO_SHA1_HMAC:
+		for (i = 0; i < SHA1_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha1ctx.h.b32[i]);
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		for (i = 0; i < SHA2_256_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha256ctx.state[i]);
+		break;
+	case CRYPTO_SHA2_384_HMAC:
+		for (i = 0; i < SHA2_384_HASH_LEN / 8; i++)
+			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
+		break;
+	case CRYPTO_SHA2_512_HMAC:
+		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
+			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
+		break;
+	}
+}
+
+static void
+ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
+    int klen)
+{
+	union authctx auth_ctx;
+	struct auth_hash *axf;
+	uint32_t *u32;
+	uint64_t *u64;
+	int i;
+
+	axf = s->hmac.auth_hash;
+	if (key == NULL) {
+		/*
+		 * XXX: Not sure this is correct.  If HMAC always
+		 * requires a key we should instead error if we get
+		 * a request to process an op without an explicit
+		 * key.
+		 */
+		axf->Init(&auth_ctx);
+		ccr_copy_partial_hash(s->hmac.digest, cri_alg, &auth_ctx);
+		return;
+	}
+
+	/*
+	 * If the key is larger than the block size, use the digest of
+	 * the key as the key instead.
+	 */
+	if (klen > axf->blocksize) {
+		axf->Init(&auth_ctx);
+		axf->Update(&auth_ctx, key, klen);
+		axf->Final(&auth_ctx, s->hmac.ipad);
+		klen = axf->hashsize;
+	} else
+		memcpy(s->hmac.ipad, key, klen);
+
+	memset(s->hmac.ipad + klen, 0, axf->blocksize);
+	memcpy(s->hmac.opad, s->hmac.ipad, axf->blocksize);
+
+	for (i = 0; i < axf->blocksize; i++) {
+		s->hmac.ipad[i] ^= HMAC_IPAD_VAL;
+		s->hmac.opad[i] ^= HMAC_OPAD_VAL;
+	}
+
+	/*
+	 * Hash the raw ipad and opad and store the partial result in
+	 * the same buffer.
+	 */
+	axf->Init(&authctx);
+	axf->Update(&authctx, s->hmac.ipad, axf->blocksize);
+	ccr_copy_partial_hash(s->hmac.ipad, cri_alg, &auth_ctx);
+
+	axf->Init(&authctx);
+	axf->Update(&authctx, s->hmac.opad, axf->blocksize);
+	ccr_copy_partial_hash(s->hmac.opad, cri_alg, &auth_ctx);
+
+	memcpy(s->hmac.digest, s->hmac.ipad, axf->hashsize);
+}
+
 static int
 ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 {
 	struct ccr_softc *sc;
 	struct ccr_session *s;
+	struct auth_hash *auth_hash;
 	struct cryptoini *c, *hash;
+	unsigned int auth_mode;
 	int i, sess;
 
 	if (sidp == NULL || cri == NULL)
 		return (EINVAL);
 
 	hash = NULL;
+	auth_hash = NULL;
+	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
-		case CRYPTO_SHA1:
+		case CRYPTO_SHA1_HMAC:
+		case CRYPTO_SHA2_256_HMAC:
+		case CRYPTO_SHA2_384_HMAC:
+		case CRYPTO_SHA2_512_HMAC:
 			if (hash)
 				return (EINVAL);
 			hash = c;
-
-			/* Honor cri_mlen? */
+			switch (c->cri_alg) {
+			case CRYPTO_SHA1_HMAC:
+				auth_hash = &auth_hash_hmac_sha1;
+				auth_mode = CHCR_SCMD_AUTH_MODE_SHA1;
+				break;
+			case CRYPTO_SHA2_256_HMAC:
+				auth_hash = &auth_hash_hmac_sha2_256;
+				auth_mode = CHCR_SCMD_AUTH_MODE_SHA256;
+				break;
+			case CRYPTO_SHA2_384_HMAC:
+				auth_hash = &auth_hash_hmac_sha2_384;
+				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_384;
+				break;
+			case CRYPTO_SHA2_512_HMAC:
+				auth_hash = &auth_hash_hmac_sha2_512;
+				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_512;
+				break;
+			}
 			break;
 		default:
 			return (EINVAL);
@@ -238,7 +406,15 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 
 	s = &sc->sessions[sess];
 
-	/* Init SHA1 digest H[] array? */
+	/* XXX: Assumes hash-only for now. */
+	MPASS(hash != NULL);
+	s->hmac.auth_hash = auth_hash;
+	s->hmac.auth_mode = auth_mode;
+	if (hash->cri_mlen == 0)
+		s->hmac.hash_len = auth_hash->hashsize;
+	else
+		s->hmac.hash_len = hash->cri_mlen;
+	ccr_init_hmac_digest(s, hash->cri_alg, hash->cri_key, hash->cri_klen);
 
 	s->active = true;
 	mtx_unlock(&sc->lock);
@@ -274,9 +450,33 @@ ccr_freesession(device_t dev, uint64_t tid)
 static int
 ccr_process(device_t dev, struct cryptop *crp, int hint)
 {
+	struct ccr_softc *sc;
+	struct ccr_session *s;
+	struct cryptodesc *crd;
+	int error;
 
+	if (crp == NULL || crp->crp_callback == NULL)
+		return (EINVAL);
+
+	crd = crp->crp_desc;
+	if (crd->crd_next != NULL)
+		return (EINVAL);
+
+	sc = device_get_softc(dev);
+	mtx_lock(&sc->lock);
+	if (sid >= sc->nsessions || !sc->sessions[sid].active) {
+		mtx_unlock(&sc->lock);
+		return (EINVAL);
+	}
+
+	s = &sc->sessions[sid];
+	if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
+		ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
+		    crd->crd_klen);
+	error = ccr_hmac(sc, s, crp);
+	mtx_unlock(&sc->lock);
 	
-	return (ENXIO);
+	return (error);
 }
 
 static device_method_t ccr_methods[] = {
@@ -302,3 +502,4 @@ static devclass_t ccr_devclass;
 
 DRIVER_MODULE(ccr, t6nex, ccr_driver, ccr_devclass, NULL, NULL);
 MODULE_VERSION(ccr, 1);
+MODULE_DEPEND(ccr, crypto, 1, 1, 1);
