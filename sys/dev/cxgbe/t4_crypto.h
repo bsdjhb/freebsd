@@ -116,6 +116,11 @@ struct chcr_wr {
 #define HASH_TRANSHDR_SIZE(kctx_len)\
 	(TRANSHDR_SIZE(kctx_len) + DUMMY_BYTES)
 
+struct phys_sge_pairs {
+	__be16 len[8];
+	__be64 addr[8];
+};
+
 /* From chr_crypto.h */
 #define CHCR_SCMD_PROTO_VERSION_GENERIC 4
 

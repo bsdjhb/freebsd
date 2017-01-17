@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/module.h>
+#include <sys/sglist.h>
 
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform.h>
@@ -84,6 +85,12 @@ __FBSDID("$FreeBSD$");
  * following the CPL_FW6_PLD message.
  */
 
+/*
+ * The documentation for CPL_RX_PHYS_DSGL claims a maximum of 32
+ * SG entries.
+ */
+#define	MAX_RX_PHYS_DSGL_SGE	32
+
 static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
 
 struct ccr_session_hmac {
@@ -113,7 +120,129 @@ struct ccr_softc {
 	struct mtx lock;
 	bool detaching;
 	struct sge_wrq *ofld_txq;
+	struct sge_ofld_rxq *ofld_rxq;
+	struct sglist *sg;
 };
+
+static int
+ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
+{
+	int error;
+
+	sglist_reset(sg);
+	if (crp->crp_flags & CRYPTO_F_IMBUF)
+		error = sglist_append_mbuf(sg, (struct mbuf *)crp->crp_buf);
+	else if (crp->crp_flags & CRYPTO_F_IOV)
+		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
+	else
+		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
+	if (error == 0) {
+		for (unsigned i = 0; i < sg->sg_nseg; i++) {
+			if (sg->sg_segs[i].ss_len >= 65536) {
+				/* XXX */
+				printf("CCR: segment too big %#zx\n",
+				    sg->sg_segs[i].ss_len);
+				error = EFBIG;
+				break;
+			}
+		}
+	}
+	return (error);
+}
+
+static inline int
+ccr_phys_dsgl_len(int nsegs)
+{
+	int len;
+
+	len = (nsegs / 8) * sizeof(struct phys_sge_pairs);
+	if ((nsegs % 8) != 0) {
+		len += sizeof(uint16_t) * 8;
+		len += roundup2(nsegs % 8, 2) * sizeof(uint64_t);
+	}
+	return (len);
+}
+
+static int
+ccr_count_sglist_segments(struct sglist *sg, struct cryptodesc *crd)
+{
+	int len, nsegs, skip;
+	size_t seglen;
+	u_int i;
+
+	skip = crd->crd_skip;
+	len = crd->crd_len;
+	MPASS(len != 0);
+	nsegs = 0;
+	for (i = 0; i < sg->sg_nseg; i++) {
+		seglen = sg->sg_segs[i].ss_len;
+		if (skip >= seglen) {
+			skip -= seglen;
+			continue;
+		}
+		if (skip > 0) {
+			seglen -= skip;
+			skip = 0;
+		}
+		nsegs++;
+		if (seglen >= len)
+			return (nsegs);
+		len -= seglen;
+	}
+	panic("crd_len + crd_skip too long");
+}
+
+static void
+ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
+    int sgl_nsegs)
+{
+	struct sglist *sg;
+	struct cpl_rx_phys_dsgl *cpl;
+	struct phys_sge_pairs *sgl;
+	int len, skip;
+	size_t seglen;
+	u_int i, j;
+
+	sg = sc->sg;
+	cpl = dst;
+	cpl->op_to_tid = htobe32(V_CPL_RX_PHYS_DSGL_OPCODE(CPL_RX_PHYS_DSGL) |
+	    V_CPL_RX_PHYS_DSGL_ISRDMA(0));
+	cpl->pcirlxorder_to_noofsgentr = htobe32(
+	    V_CPL_RX_PHYS_DSGL_PCIRLXORDER(0) |
+	    V_CPL_RX_PHYS_DSGL_PCINOSNOOP(0) |
+	    V_CPL_RX_PHYS_DSGL_PCITPHNTENB(0) | V_CPL_RX_PHYS_DSGL_DCAID(0) |
+	    V_CPL_RX_PHYS_DSGL_NOOFSGENTR(sgl_nsegs));
+	cpl->rss_hdr_int.opcode = CPL_RX_PHYS_ADDR;
+	cpl->rss_hdr_int.qid = htobe16(sc->ofld_rxq->iq.abs_id);
+	cpl->rss_hdr_int.hash_val = 0;
+	sgl = (struct phys_sge_pairs *)(cpl + 1);
+	skip = crd->crd_skip;
+	len = crd->crd_len;
+	j = 0;
+	for (i = 0; i < sg->sg_nseg; i++) {
+		seglen = sg->sg_segs[i].ss_len;
+		if (skip >= seglen) {
+			skip -= seglen;
+			continue;
+		}
+		sgl->addr[j] = sg->sg_segs[i].ss_paddr + skip;
+		if (skip > 0) {
+			seglen -= skip;
+			skip = 0;
+		}
+		if (seglen >= len) {
+			sgl->len[j] = len;
+			break;
+		}
+		sgl->len[j] = seglen;
+		len -= seglen;
+		j++;
+		if (j == 8) {
+			sgl++;
+			j = 0;
+		}
+	}
+}
 
 static int
 ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
@@ -121,10 +250,15 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct auth_hash *axf;
+	struct cryptodesc *crd;
 	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len;
 	u_int iopad_size;
+	int sgl_nsegs, sgl_len;
 
 	axf = s->hmac.auth_hash;
+	crd = crp->crp_desc;
+	sgl_nsegs = ccr_count_sglist_segments(sc->sg, crd);
+	sgl_len = ccr_phys_dsgl_len(sgl_nsegs);
 
 	/* PADs must be 128-bit aligned. */
 	iopad_size = roundup2(axf->hashsize, 16);
@@ -135,7 +269,7 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	 */
 	kctx_len = iopad_size * 2;
 	hash_size_in_response = axf->hashsize;
-	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, sgl_len);
 	wr = alloc_wrqe(transhdr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
@@ -150,8 +284,7 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_CPL_TX_SEC_PDU_ULPTXLPBK(1) | V_CPL_TX_SEC_PDU_CPLLEN(2) |
 	    V_CPL_TX_SEC_PDU_PLACEHOLDER(0) | V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
 
-	/* XXX: Compute size of either immediate data or SG data. */
-	crwr->sec_cpl.pldlen = htobe32(0 /* TODO */);
+	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
 
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_AUTHSTART(0) | V_CPL_TX_SEC_PDU_AUTHSTOP(1));
@@ -176,6 +309,8 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_KEY_CONTEXT_OPAD_PRESENT(1) | V_KEY_CONTEXT_SALT_PRESENT(1) |
 	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
 	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
+
+	ccr_write_phys_dsgl(sc, (char *)crwr + kctx_len, crd, sgl_nsegs);
 
 	return (ENXIO);
 }
@@ -214,6 +349,7 @@ ccr_attach(device_t dev)
 		return (ENXIO);
 	}
 	sc->ofld_txq = &sc->adapter->sge.ofld_txq[0];
+	sc->ofld_rxq = &sc->adapter->sge.ofld_rxq[0];
 	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
@@ -222,6 +358,7 @@ ccr_attach(device_t dev)
 	sc->cid = cid;
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
+	sc->sg = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
 
 #ifdef notyet
 	/* Not even swcrypto handles this, so maybe not worth doing? */
@@ -262,6 +399,7 @@ ccr_detach(device_t dev)
 	crypto_unregister_all(sc->cid);
 	free(sc->sessions, M_CCR);
 	mtx_destroy(&sc->lock);
+	sglist_free(sc->sg);
 	return (0);
 }
 
@@ -502,13 +640,19 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		return (EINVAL);
 	}
 
+	error = ccr_populage_sglist(sc->sg, crp);
+	if (error) {
+		mtx_unlock(&sc->lock);
+		return (error);
+	}
+
 	s = &sc->sessions[sid];
 	if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
 		ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
 		    crd->crd_klen);
 	error = ccr_hmac(sc, s, crp);
 	mtx_unlock(&sc->lock);
-	
+
 	return (error);
 }
 
