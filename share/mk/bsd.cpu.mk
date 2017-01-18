@@ -378,6 +378,7 @@ ACFLAGS += -mno-float
 
 .if !defined(NO_CPU_CFLAGS)
 CFLAGS += ${_CPUCFLAGS}
+ACFLAGS += ${_CPUCFLAGS}
 .endif
 
 #
