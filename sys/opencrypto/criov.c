@@ -155,7 +155,7 @@ cuio_apply(struct uio *uio, int off, int len, int (*f)(void *, void *, u_int),
 }
 
 void
-crypto_copyback(int flags, caddr_t buf, int off, int size, caddr_t in)
+crypto_copyback(int flags, caddr_t buf, int off, int size, c_caddr_t in)
 {
 
 	if ((flags & CRYPTO_F_IMBUF) != 0)
