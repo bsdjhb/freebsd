@@ -115,6 +115,7 @@ struct ccr_softc {
 	struct adapter *adapter;
 	device_t dev;
 	uint32_t cid;
+	int tx_channel_id;
 	struct ccr_session *sessions;
 	int nsessions;
 	struct mtx lock;
@@ -244,14 +245,58 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 	}
 }
 
+static void
+ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
+    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size,
+    struct cryptop *crp)
+{
+	u_int cctx_size;
+
+	cctx_size = sizeof(struct _key_ctx) + kctx_len;
+	crwr->wreq.op_to_cctx_size = htobe32(
+	    V_FW_CRYPTO_LOOKASIDE_WR_OPCODE(FW_CRYPTO_LOOKASIDE_WR) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_COMPL(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_IMM_LEN(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_CCTX_LOC(1) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_CCTX_SIZE(cctx_size >> 4));
+	crwr->wreq.len16_pkd = htobe32(
+	    V_FW_CRYPTO_LOOKASIDE_WR_LEN16(wr_len / 16));
+	crwr->wreq.session_id = htobe32(sid);
+	crwr->wreq.rx_chid_to_rx_q_id = htobe32(
+	    V_FW_CRYPTO_LOOKASIDE_WR_RX_CHID(sc->tx_channel_id) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_LCB(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_PHASH(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_IV(IV_NOP) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_FQIDX(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_TX_CH(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_RX_Q_ID(sc->ofld_rxq->iq.abs_id));
+	crwr->wreq.key_addr = 0;
+	crwr->wreq.pld_size_hash_size = htobe32(
+	    V_FW_CRYPTO_LOOKASIDE_WR_PLD_SIZE(sgl_len) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_HASH_SIZE(hash_size));
+	crwr->wreq.cookie = htobe64((uintptr_t)crp);
+
+	crwr->ulptx.cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
+	    V_ULP_TXPKT_DATAMODIFY(0) |
+	    V_ULP_TXPKT_CHANNELID(sc->tx_channel_id) | V_ULP_TXPKT_DEST(0) |
+	    V_ULP_TXPKT_FID(0) | V_ULP_TXPKT_RO(1));
+	crwr->ulptx.len = htobe32(
+	    (wr_len - sizeof(struct fw_crypto_lookaside_wr) / 16));
+
+	crwr->sc_imm.cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM) |
+	    V_ULP_TX_SC_MORE(0));
+	crwr->sc_imm.len = htobe32(wr_len - offsetof(struct chcr_wr, sec_cpl));
+}
+
 static int
-ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
+ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
+    struct cryptop *crp)
 {
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct auth_hash *axf;
 	struct cryptodesc *crd;
-	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len;
+	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len, wr_len;
 	u_int iopad_size;
 	int sgl_nsegs, sgl_len;
 
@@ -270,19 +315,24 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	kctx_len = iopad_size * 2;
 	hash_size_in_response = axf->hashsize;
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, sgl_len);
-	wr = alloc_wrqe(transhdr_len, sc->ofld_txq);
+	wr_len = roundup2(transhdr_len, 16);
+	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
 	memset(wr, 0, transhdr_len);
 	crwr = wrtod(wr);
 
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len,
+	    hash_size_in_response, crp);
+
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	/* XXX: Not sure if crd_inject is IV offset? */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
-	    V_CPL_TX_SEC_PDU_RXCHID(0) | V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) |
-	    V_CPL_TX_SEC_PDU_ULPTXLPBK(1) | V_CPL_TX_SEC_PDU_CPLLEN(2) |
-	    V_CPL_TX_SEC_PDU_PLACEHOLDER(0) | V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
+	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
+	    V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) | V_CPL_TX_SEC_PDU_ULPTXLPBK(1) |
+	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
+	    V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
 
 	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
 
@@ -310,9 +360,12 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
 	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
 
-	ccr_write_phys_dsgl(sc, (char *)crwr + kctx_len, crd, sgl_nsegs);
+	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
 
-	return (ENXIO);
+	/* XXX: TODO backpressure */
+	t4_wrq_tx(sc->adapter, wr);
+
+	return (0);
 }
 
 static void
@@ -356,6 +409,9 @@ ccr_attach(device_t dev)
 		return (ENXIO);
 	}
 	sc->cid = cid;
+
+	/* XXX: TODO? */
+	sc->tx_channel_id = 0;
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
 	sc->sg = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
@@ -650,7 +706,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
 		ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
 		    crd->crd_klen);
-	error = ccr_hmac(sc, s, crp);
+	error = ccr_hmac(sc, sid, s, crp);
 	mtx_unlock(&sc->lock);
 
 	return (error);

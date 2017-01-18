@@ -166,6 +166,10 @@ struct phys_sge_pairs {
 #define CHCR_KEYCTX_CIPHER_KEY_SIZE_256     2
 #define CHCR_KEYCTX_NO_KEY                  15
 
+#define IV_NOP                  0
+#define IV_IMMEDIATE            1
+#define IV_DSGL			2
+
 #define CHCR_HASH_MAX_BLOCK_SIZE_64  64
 #define CHCR_HASH_MAX_BLOCK_SIZE_128 128
 
