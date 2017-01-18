@@ -47,7 +47,7 @@ FBSDprivate_1.0 {
 	__modsi3;
 	__udivsi3;
 	__divsi3;
-	__ffsi2;
+	__ffssi2;
 	__makecontext;
 	__longjmp;
 	signalcontext;
