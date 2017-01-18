@@ -368,6 +368,20 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	return (0);
 }
 
+static int
+ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
+    const struct cpl_fw6_pld *cpl, int error)
+{
+	struct cryptodesc *crd;
+
+	crd = crp->crp_desc;
+	if (error == 0)
+		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
+		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+
+	return (error);
+}
+
 static void
 ccr_identify(driver_t *driver, device_t parent)
 {
@@ -409,6 +423,7 @@ ccr_attach(device_t dev)
 		return (ENXIO);
 	}
 	sc->cid = cid;
+	sc->adapter->ccr_softc = sc;
 
 	/* XXX: TODO? */
 	sc->tx_channel_id = 0;
@@ -456,6 +471,7 @@ ccr_detach(device_t dev)
 	free(sc->sessions, M_CCR);
 	mtx_destroy(&sc->lock);
 	sglist_free(sc->sg);
+	sc->adapter->ccr_softc = NULL;
 	return (0);
 }
 
@@ -707,9 +723,59 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
 		    crd->crd_klen);
 	error = ccr_hmac(sc, sid, s, crp);
+	if (error == 0)
+		s->pending++;
 	mtx_unlock(&sc->lock);
 
 	return (error);
+}
+
+static int
+do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
+    struct mbuf *m)
+{
+	struct ccr_softc *sc = iq->adapter->ccr_softc;
+	struct ccr_session *s;
+	const struct cpl_fw6_pld *cpl = (const void *)(rss + 1);
+	struct cryptop *crp;
+	uint32_t sid, status;
+	int error;
+
+	crp = (struct cryptop *)be64toh(cpl->data[1]);
+	sid = CRYPTO_SESID2LID(crp->crp_sid);
+	status = be64toh(cpl->data[0]);
+	if (CHK_MAC_ERR_BIT(status) || CHK_PAD_ERR_BIT(status))
+		error = EBADMSG;
+	else
+		error = 0;
+
+	mtx_lock(&sc->lock);
+	MPASS(sid < sc->nsessions);
+	s = &sc->sessions[sid];
+	s->pending--;
+
+	error = ccr_hmac_done(sc, s, crp, cpl, error);
+
+	mtx_unlock(&sc->lock);
+	crp->crp_etype = error;
+	crypto_done(crp);
+	return (0);
+}
+
+static int
+ccr_modevent(module_t mod, int cmd, void *arg)
+{
+
+	switch (cmd) {
+	case MOD_LOAD:
+		t4_register_cpl_handler(CPL_FW6_PLD, do_cpl6_fw_pld);
+		return (0);
+	case MOD_UNLOAD:
+		t4_register_cpl_handler(CPL_FW6_PLD, NULL);
+		return (0);
+	default:
+		return (EOPNOTSUPP);
+	}
 }
 
 static device_method_t ccr_methods[] = {
@@ -733,6 +799,6 @@ static driver_t ccr_driver = {
 
 static devclass_t ccr_devclass;
 
-DRIVER_MODULE(ccr, t6nex, ccr_driver, ccr_devclass, NULL, NULL);
+DRIVER_MODULE(ccr, t6nex, ccr_driver, ccr_devclass, ccr_modevent, NULL);
 MODULE_VERSION(ccr, 1);
 MODULE_DEPEND(ccr, crypto, 1, 1, 1);
