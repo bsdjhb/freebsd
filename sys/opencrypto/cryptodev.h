@@ -503,7 +503,7 @@ extern	int crypto_devallowsoft;	/* only use hardware crypto */
  */
 struct uio;
 extern	void cuio_copydata(struct uio* uio, int off, int len, caddr_t cp);
-extern	void cuio_copyback(struct uio* uio, int off, int len, caddr_t cp);
+extern	void cuio_copyback(struct uio* uio, int off, int len, c_caddr_t cp);
 extern	int cuio_getptr(struct uio *uio, int loc, int *off);
 extern	int cuio_apply(struct uio *uio, int off, int len,
 	    int (*f)(void *, void *, u_int), void *arg);
@@ -514,7 +514,7 @@ extern	int crypto_mbuftoiov(struct mbuf *mbuf, struct iovec **iovptr,
 	    int *cnt, int *allocated);
 
 extern	void crypto_copyback(int flags, caddr_t buf, int off, int size,
-	    caddr_t in);
+	    c_caddr_t in);
 extern	void crypto_copydata(int flags, caddr_t buf, int off, int size,
 	    caddr_t out);
 extern	int crypto_apply(int flags, caddr_t buf, int off, int len,
