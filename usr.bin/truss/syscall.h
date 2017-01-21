@@ -46,6 +46,7 @@ enum Argtype { None = 1, Hex, Octal, Int, UInt, LongHex, Name, Ptr, Stat, Ioctl,
 	LinuxSockArgs, Umtxop, Atfd, Atflags, Timespec2, Accessmode, Long,
 	Sysarch, ExecArgs, ExecEnv, PipeFds, QuadHex, Utrace, IntArray, Pipe2,
 	CapFcntlRights, Fadvice, FileFlags, Flockop, Getfsstatmode, Kldsymcmd,
+	Kldunloadflags,
 
 	CloudABIAdvice, CloudABIClockID, ClouduABIFDSFlags,
 	CloudABIFDStat, CloudABIFileStat, CloudABIFileType,

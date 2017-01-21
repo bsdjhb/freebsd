@@ -197,6 +197,8 @@ static struct syscall decoded_syscalls[] = {
 	  .args = { { Int, 0 }, { Kldsymcmd, 1 }, { Ptr, 2 } } },
 	{ .name = "kldunload", .ret_type = 1, .nargs = 1,
 	  .args = { { Int, 0 } } },
+	{ .name = "kldunloadf", .ret_type = 1, .nargs = 2,
+	  .args = { { Int, 0 }, { Kldunloadflags, 1 } } },
 	{ .name = "kse_release", .ret_type = 0, .nargs = 1,
 	  .args = { { Timespec, 0 } } },
 	{ .name = "lchflags", .ret_type = 1, .nargs = 2,
@@ -1897,6 +1899,10 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 		break;
 	case Kldsymcmd:
 		print_integer_arg(sysdecode_kldsym_cmd, fp, args[sc->offset]);
+		break;
+	case Kldunloadflags:
+		print_integer_arg(sysdecode_kldunload_flags, fp,
+		    args[sc->offset]);
 		break;
 
 	case CloudABIAdvice:
