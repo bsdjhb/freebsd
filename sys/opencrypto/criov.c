@@ -79,7 +79,7 @@ cuio_copydata(struct uio* uio, int off, int len, caddr_t cp)
 }
 
 void
-cuio_copyback(struct uio* uio, int off, int len, caddr_t cp)
+cuio_copyback(struct uio* uio, int off, int len, c_caddr_t cp)
 {
 	struct iovec *iov = uio->uio_iov;
 	int iol = uio->uio_iovcnt;
