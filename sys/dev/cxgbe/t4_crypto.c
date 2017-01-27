@@ -802,3 +802,4 @@ static devclass_t ccr_devclass;
 DRIVER_MODULE(ccr, t6nex, ccr_driver, ccr_devclass, ccr_modevent, NULL);
 MODULE_VERSION(ccr, 1);
 MODULE_DEPEND(ccr, crypto, 1, 1, 1);
+MODULE_DEPEND(ccr, t6nex, 1, 1, 1);
