@@ -362,6 +362,9 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
 
+	device_printf(sc->dev, "submitting HMAC request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -746,6 +749,9 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	struct cryptop *crp;
 	uint32_t sid, status;
 	int error;
+
+	device_printf(sc->dev, "CPL6_FW_PLD:\n");
+	hexdump(cpl, sizeof(*cpl), NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
 
 	crp = (struct cryptop *)be64toh(cpl->data[1]);
 	sid = CRYPTO_SESID2LID(crp->crp_sid);
