@@ -319,8 +319,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
-	memset(wr, 0, transhdr_len);
 	crwr = wrtod(wr);
+	memset(crwr, 0, transhdr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len,
 	    hash_size_in_response, crp);
@@ -407,6 +407,12 @@ ccr_attach(device_t dev)
 	struct ccr_softc *sc;
 	int32_t cid;
 
+	/*
+	 * TODO: Crypto requests will panic if the parent device isn't
+	 * initialized so that the offload queues are up and running.
+	 * Need to figure out how to handle that correctly, maybe just
+	 * reject requests if the adapter isn't fully initialized?
+	 */
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 	sc->adapter = device_get_softc(device_get_parent(dev));
