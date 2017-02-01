@@ -745,10 +745,15 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 {
 	struct ccr_softc *sc = iq->adapter->ccr_softc;
 	struct ccr_session *s;
-	const struct cpl_fw6_pld *cpl = (const void *)(rss + 1);
+	const struct cpl_fw6_pld *cpl;
 	struct cryptop *crp;
 	uint32_t sid, status;
 	int error;
+
+	if (m != NULL)
+		cpl = mtod(m, const void *);
+	else
+		cpl = (const void *)(rss + 1);
 
 	device_printf(sc->dev, "CPL6_FW_PLD:\n");
 	hexdump(cpl, sizeof(*cpl), NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
