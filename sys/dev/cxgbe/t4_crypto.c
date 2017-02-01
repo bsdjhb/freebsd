@@ -281,7 +281,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    V_ULP_TXPKT_CHANNELID(sc->tx_channel_id) | V_ULP_TXPKT_DEST(0) |
 	    V_ULP_TXPKT_FID(0) | V_ULP_TXPKT_RO(1));
 	crwr->ulptx.len = htobe32(
-	    (wr_len - sizeof(struct fw_crypto_lookaside_wr) / 16));
+	    ((wr_len - sizeof(struct fw_crypto_lookaside_wr)) / 16));
 
 	crwr->sc_imm.cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM) |
 	    V_ULP_TX_SC_MORE(0));
