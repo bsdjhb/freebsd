@@ -264,8 +264,8 @@ cpu_thread_swapin(struct thread *td)
 #ifdef KSTACK_LARGE_PAGE
 	/* Just one entry for one large kernel page. */
 	pte = pmap_pte(kernel_pmap, td->td_kstack);
-	td->td_md.md_upte[0] = *pte & ~TLBLO_SWBITS_MASK;
-	td->td_md.md_upte[1] = 1;
+	td->td_md.md_upte[0] = PTE_G;   /* Guard Page */
+	td->td_md.md_upte[1] = *pte & ~TLBLO_SWBITS_MASK;
 
 #else
 
@@ -297,8 +297,8 @@ cpu_thread_alloc(struct thread *td)
 #ifdef KSTACK_LARGE_PAGE
 	/* Just one entry for one large kernel page. */
 	pte = pmap_pte(kernel_pmap, td->td_kstack);
-	td->td_md.md_upte[0] = *pte & ~TLBLO_SWBITS_MASK;
-	td->td_md.md_upte[1] = 1;
+	td->td_md.md_upte[0] = PTE_G;   /* Guard Page */
+	td->td_md.md_upte[1] = *pte & ~TLBLO_SWBITS_MASK;
 
 #else
 
@@ -551,7 +551,7 @@ vm_kstack_valloc(int pages)
 	 */
 	if (vmem_xalloc(kernel_arena,
 	    (pages + KSTACK_GUARD_PAGES) * PAGE_SIZE,
-	    KSTACK_PAGE_SIZE * 2, 0, 0, VMEM_ADDR_MIN, VMEM_ADDR_MAX,
+	    KSTACK_PAGE_SIZE, 0, 0, VMEM_ADDR_MIN, VMEM_ADDR_MAX,
 	    M_BESTFIT | M_NOWAIT, &ks)) {
 		return (0);
 	}
