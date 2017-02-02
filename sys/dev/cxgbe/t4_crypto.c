@@ -102,12 +102,21 @@ struct ccr_session_hmac {
 	char ipad[CHCR_HASH_MAX_BLOCK_SIZE_128];
 	char opad[CHCR_HASH_MAX_BLOCK_SIZE_128];
 };
-	
+
+struct ccr_session_blkcipher {
+	unsigned int cipher_mode;
+	unsigned int key_len;
+	__be32 key_ctx_hdr; 
+	char key[CHCR_AES_MAX_KEY_LEN];
+};
+
 struct ccr_session {
 	bool active;
 	int pending;
+	enum { HMAC, BLKCIPHER } mode;
 	union {
 		struct ccr_session_hmac hmac;
+		struct ccr_session_aes blkcipher;
 	};
 };
 
@@ -247,11 +256,16 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
-    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size,
+    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size, bool has_iv,
     struct cryptop *crp)
 {
 	u_int cctx_size;
-
+	int iv_loc;
+	
+	if (has_iv)
+		iv_loc = IV_DSGL;
+	else
+		iv_loc = IV_NOP;
 	cctx_size = sizeof(struct _key_ctx) + kctx_len;
 	crwr->wreq.op_to_cctx_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_OPCODE(FW_CRYPTO_LOOKASIDE_WR) |
@@ -266,7 +280,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    V_FW_CRYPTO_LOOKASIDE_WR_RX_CHID(sc->tx_channel_id) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_LCB(0) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_PHASH(0) |
-	    V_FW_CRYPTO_LOOKASIDE_WR_IV(IV_NOP) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_IV(iv_loc) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_FQIDX(0) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_TX_CH(0) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_RX_Q_ID(sc->ofld_rxq->iq.abs_id));
@@ -323,10 +337,9 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memset(crwr, 0, transhdr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len,
-	    hash_size_in_response, crp);
+	    hash_size_in_response, false, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
-	/* XXX: Not sure if crd_inject is IV offset? */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
 	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
@@ -386,6 +399,101 @@ ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 
 	return (error);
 }
+
+static int
+ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
+    struct cryptop *crp)
+{
+	struct chcr_wr *crwr;
+	struct wrqe *wr;
+	struct cryptodesc *crd;
+	u_int kctx_flits, kctx_len, transhdr_len, wr_len;
+	int sgl_nsegs, sgl_len;
+
+	crd = crp->crp_desc;
+	sgl_nsegs = ccr_count_sglist_segments(sc->sg, crd);
+	sgl_len = ccr_phys_dsgl_len(sgl_nsegs);
+
+	/* The 'key' must be 128-bit aligned. */
+	kctx_len = roundup2(s->blkcipher.key_len, 16);
+
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, sgl_len);
+	wr_len = roundup2(transhdr_len, 16);
+	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	if (wr == NULL)
+		return (ENOMEM);
+	crwr = wrtod(wr);
+	memset(crwr, 0, transhdr_len);
+
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len, 0, true,
+	    crp);
+
+#ifdef notyet
+	/* XXX: Hardcodes SGE loopback channel of 0. */
+	crwr->sec_cpl.op_ivinsrtofst = htobe32(
+	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
+	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
+	    V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) | V_CPL_TX_SEC_PDU_ULPTXLPBK(1) |
+	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
+	    V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
+
+	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
+
+	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
+	    V_CPL_TX_SEC_PDU_AUTHSTART(0) | V_CPL_TX_SEC_PDU_AUTHSTOP(1));
+
+	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	crwr->sec_cpl.seqno_numivs = htobe32(
+	    V_SCMD_SEQ_NO_CTRL(0) |
+	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
+	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
+	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC));
+	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
+	crwr->sec_cpl.ivgen_hdrlen = htobe32(
+	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
+
+	memcpy(crwr->key_ctx.key, s->hmac.digest, axf->hashsize);
+	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad, axf->hashsize);
+
+	/* XXX: F_KEY_CONTEXT_SALT_PRESENT set, but 'salt' not set. */
+	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
+	crwr->key_ctx.ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
+	    V_KEY_CONTEXT_OPAD_PRESENT(1) | V_KEY_CONTEXT_SALT_PRESENT(1) |
+	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
+	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
+#endif
+
+	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
+
+#if 0
+	device_printf(sc->dev, "submitting HMAC request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+#endif
+
+	/* XXX: TODO backpressure */
+	t4_wrq_tx(sc->adapter, wr);
+
+	return (0);
+}
+
+static int
+ccr_blkcipher_done(struct ccr_softc *sc, struct ccr_session *s,
+    struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
+{
+	struct cryptodesc *crd;
+
+	crd = crp->crp_desc;
+	if (error == 0)
+		panic("todo");
+#if 0
+		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
+		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+#endif
+
+	return (error);
+}
+
 
 static void
 ccr_identify(driver_t *driver, device_t parent)
@@ -450,13 +558,13 @@ ccr_attach(device_t dev)
 	crypto_register(cid, CRYPTO_SHA2_256_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_384_HMAC, 0, 0);
 	crypto_register(cid, CRYPTO_SHA2_512_HMAC, 0, 0);
-#ifdef notyet
 	crypto_register(cid, CRYPTO_AES_CBC, 0, 0);
 	crypto_register(cid, CRYPTO_AES_ICM, 0, 0);
+#ifdef notyet
 	crypto_register(cid, CRYPTO_AES_NIST_GMAC, 0, 0);
 	crypto_register(cid, CRYPTO_AES_NIST_GCM_16, 0, 0);
-	crypto_register(cid, CRYPTO_AES_XTS, 0, 0);
 #endif
+	crypto_register(cid, CRYPTO_AES_XTS, 0, 0);
 	return (0);
 }
 
@@ -572,14 +680,61 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 }
 
 static int
+ccr_aes_check_keylen(int alg, int klen)
+{
+
+	switch (klen) {
+	case 128:
+	case 256:
+		break;
+	case 192:
+		if (alg == CRYPTO_AES_XTS)
+			return (EINVAL);
+		break;
+	default:
+		return (EINVAL);
+	}
+	return (0);
+}
+
+static void
+ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
+{
+	unsigned int ck_size, kctx_flits, kctx_len;
+
+	switch (klen) {
+	case 128:
+		ck_size = CHCR_KEYCTX_CIPHER_KEY_SIZE_128;
+		break;
+	case 192:
+		ck_size = CHCR_KEYCTX_CIPHER_KEY_SIZE_192;
+		break;
+	case 256:
+		ck_size = CHCR_KEYCTX_CIPHER_KEY_SIZE_256;
+		break;
+	default:
+		panic("should not get here");
+	}
+
+	s->blkcipher.key_len = klen / 8;
+	memcpy(s->blkcipher.key, key, s->blkcipher.key_len);
+
+	kctx_len = roundup2(s->blkcipher.key_len, 16);
+	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
+	s->blkcipher.key_ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
+	    V_KEY_CONTEXT_SALT_PRESENT(1) | V_KEY_CONTEXT_CK_SIZE(ck_size) |
+	    V_KEY_CONTEXT_MK_SIZE(CHCR_KEYCTX_NO_KEY) | V_KEY_CONTEXT_VALID(1));
+}
+
+static int
 ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 {
 	struct ccr_softc *sc;
 	struct ccr_session *s;
 	struct auth_hash *auth_hash;
-	struct cryptoini *c, *hash;
-	unsigned int auth_mode, mk_size;
-	int i, sess;
+	struct cryptoini *c, *hash, *cipher;
+	unsigned int auth_mode, cipher_mode, mk_size;
+	int error, i, sess;
 
 	if (sidp == NULL || cri == NULL)
 		return (EINVAL);
@@ -587,6 +742,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	hash = NULL;
 	auth_hash = NULL;
 	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
+	cipher_mode = CHCR_SCMD_CIPHER_MODE_NOP;
 	mk_size = 0;
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
@@ -620,11 +776,39 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 				break;
 			}
 			break;
+		case CRYPTO_AES_CBC:
+		case CRYPTO_AES_ICM:
+		case CRYPTO_AES_XTS:
+			if (cipher)
+				return (EINVAL);
+			ciper = c;
+			switch (c->cri_alg) {
+			case CRYPTO_AES_CBC:
+				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CBC;
+				break;
+			case CRYPTO_AES_ICM:
+				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CTR;
+				break;
+			case CRYPTO_AES_XTS:
+				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_XTS;
+				break;
+			}
+			if (c->cri_key != NULL) {
+				error = ccr_aes_check_keylen(c->cri_alg,
+				    c->cri_klen);
+				if (error)
+					return (error);
+			}
+			break;
 		default:
 			return (EINVAL);
 		}
 	}
-	if (hash == NULL)
+	if (hash == NULL && cipher == NULL)
+		return (EINVAL);
+
+	/* AEAD not yet supported. */
+	if (hash != NULL && cipher != NULL)
 		return (EINVAL);
 
 	sc = device_get_softc(dev);
@@ -657,16 +841,24 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 
 	s = &sc->sessions[sess];
 
-	/* XXX: Assumes hash-only for now. */
-	MPASS(hash != NULL);
-	s->hmac.auth_hash = auth_hash;
-	s->hmac.auth_mode = auth_mode;
-	s->hmac.mk_size = mk_size;
-	if (hash->cri_mlen == 0)
-		s->hmac.hash_len = auth_hash->hashsize;
-	else
-		s->hmac.hash_len = hash->cri_mlen;
-	ccr_init_hmac_digest(s, hash->cri_alg, hash->cri_key, hash->cri_klen);
+	if (hash != NULL) {
+		s->mode = HMAC;
+		s->hmac.auth_hash = auth_hash;
+		s->hmac.auth_mode = auth_mode;
+		s->hmac.mk_size = mk_size;
+		if (hash->cri_mlen == 0)
+			s->hmac.hash_len = auth_hash->hashsize;
+		else
+			s->hmac.hash_len = hash->cri_mlen;
+		ccr_init_hmac_digest(s, hash->cri_alg, hash->cri_key,
+		    hash->cri_klen);
+	} else {
+		MPASS(cipher != NULL);
+		s->mode = BLKCIPHER;
+		s->blkcipher.cipher_mode = cipher_mode;
+		if (cipher->cri_key != NULL)
+			ccr_aes_setkey(s, cipher->cri_key, cipher->cri_klen);
+	}
 
 	s->active = true;
 	mtx_unlock(&sc->lock);
@@ -730,10 +922,24 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	}
 
 	s = &sc->sessions[sid];
-	if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
-		ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
-		    crd->crd_klen);
-	error = ccr_hmac(sc, sid, s, crp);
+	switch (s->mode) {
+	case HMAC:
+		if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
+			ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
+			    crd->crd_klen);
+		error = ccr_hmac(sc, sid, s, crp);
+		break;
+	case BLKCIPHER:
+		if (crd->crd_flags & CRD_F_KEY_EXPLICIT) {
+			error = ccr_aes_check_keylen(crd->crd_alg, crd->crd_key,
+			    crd->crd_klen);
+			if (error)
+				break;
+			ccr_aes_setkey(s, crd->crd_key, crd->crd_klen);
+		}
+		error = ccr_blkcipher(sc, sid, s, crp);
+		break;
+	}
 	if (error == 0)
 		s->pending++;
 	mtx_unlock(&sc->lock);
@@ -775,7 +981,14 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	s = &sc->sessions[sid];
 	s->pending--;
 
-	error = ccr_hmac_done(sc, s, crp, cpl, error);
+	switch (s->mode) {
+	case HMAC:
+		error = ccr_hmac_done(sc, s, crp, cpl, error);
+		break;
+	case BLKCIPHER:
+		error = ccr_blkcipher_done(sc, s, crp, cpl, error);
+		break;
+	}
 
 	mtx_unlock(&sc->lock);
 	crp->crp_etype = error;
