@@ -112,7 +112,8 @@ struct ccr_session_blkcipher {
 	unsigned int key_len;
 	unsigned int iv_len;
 	__be32 key_ctx_hdr; 
-	char key[CHCR_AES_MAX_KEY_LEN];
+	char enckey[CHCR_AES_MAX_KEY_LEN];
+	char deckey[CHCR_AES_MAX_KEY_LEN];
 };
 
 struct ccr_session {
@@ -413,10 +414,13 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct cryptodesc *crd;
-	u_int kctx_flits, kctx_len, transhdr_len, wr_len;
+	u_int kctx_flits, kctx_len, key_half, op_type, transhdr_len, wr_len;
 	int sgl_nsegs, sgl_len;
 
 	crd = crp->crp_desc;
+
+	if ((crd->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
+		return (EINVAL);
 
 	/*
 	 * XXX: Not sure about how exactly to handle this yet.
@@ -425,6 +429,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (EINVAL);
 
 	if (crd->crd_flags & CRD_F_ENCRYPT) {
+		op_type = CHCR_ENCRYPT_OP;
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
 		else
@@ -432,6 +437,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
 		    s->blkcipher.iv_len, iv);
 	} else {
+		op_type = CHCR_DECRYPT_OP;
+
 		/*
 		 * XXX: Should we copy an explicit IV out into the WR
 		 * for decrypt?
@@ -457,46 +464,71 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len, 0, true,
 	    crp);
 
-#ifdef notyet
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
 	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
 	    V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) | V_CPL_TX_SEC_PDU_ULPTXLPBK(1) |
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
-	    V_CPL_TX_SEC_PDU_IVINSRTOFST(0));
+	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
 
 	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
 
+	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
+	    V_CPL_TX_SEC_PDU_CIPHERSTART(s->blkcipher.iv_len) |
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(0));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
-	    V_CPL_TX_SEC_PDU_AUTHSTART(0) | V_CPL_TX_SEC_PDU_AUTHSTOP(1));
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(0));
 
 	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	/* XXX: NumIvs set to 0? */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
 	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
-	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
-	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
-	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC));
+	    V_SCMD_ENC_DEC_CTRL(op_type) |
+	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
+	    V_SCMD_AUTH_MODE(CHCR_SCMD_AUTH_MODE_NOP) |
+	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NOP) |
+	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
+	    V_SCMD_NUM_IVS(0));
+	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
 	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
-	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
+	    V_SCMD_IV_GEN_CTRL(0) |
+	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
+	    V_SCMD_AADIVDROP(1) | V_SCMD_HDR_LEN(sgl_len));
 
-	memcpy(crwr->key_ctx.key, s->hmac.digest, axf->hashsize);
-	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad, axf->hashsize);
-
-	/* XXX: F_KEY_CONTEXT_SALT_PRESENT set, but 'salt' not set. */
-	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
-	crwr->key_ctx.ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
-	    V_KEY_CONTEXT_OPAD_PRESENT(1) | V_KEY_CONTEXT_SALT_PRESENT(1) |
-	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
-	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
-#endif
-
+	crwr->key_ctx.ctx_hdr = s->blkcipher.key_ctx_hdr;
+	switch (crd->crd_alg) {
+	case CRYPTO_AES_CBC:
+		if (crd->crd_flags & CRD_F_ENCRYPT)
+			memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
+			    s->blkcipher.key_len);
+		else
+			memcpy(crwr->key_ctx.key, s->blkcipher.deckey,
+			    s->blkcipher.key_len);
+		break;
+	case CRYPTO_AES_ICM:
+		memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
+		    s->blkcipher.key_len);
+		break;
+	case CRYPTO_AES_XTS:
+		key_half = s->blkcipher.key_len / 2;
+		memcpy(crwr->key_ctx.key, s->blkcipher.enckey + key_half,
+		    key_half);
+		if (crd->crd_flags & CRD_F_ENCRYPT)
+			memcpy(crwr->key_ctx.key + key_half,
+			    s->blkcipher.enckey, keyhalf);
+		else
+			memcpy(crwr->key_ctx.key + key_half,
+			    s->blkcipher.deckey, keyhalf);
+		break;
+	}
+		    
 	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
 
-#if 0
-	device_printf(sc->dev, "submitting HMAC request:\n");
+#if 1
+	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
 #endif
 
@@ -714,10 +746,14 @@ ccr_aes_check_keylen(int alg, int klen)
 
 	switch (klen) {
 	case 128:
-	case 256:
-		break;
 	case 192:
 		if (alg == CRYPTO_AES_XTS)
+			return (EINVAL);
+		break;
+	case 256:
+		break;
+	case 512:
+		if (alg != CRYPTO_AES_XTS)
 			return (EINVAL);
 		break;
 	default:
@@ -726,12 +762,50 @@ ccr_aes_check_keylen(int alg, int klen)
 	return (0);
 }
 
+/*
+ * Borrowed from cesa_prep_aes_key().  We should perhaps have a public
+ * function to generate this instead.
+ */
 static void
-ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
+ccr_aes_getdeckey(void *dec_key, const void *enc_key, unsigned int kbits)
 {
-	unsigned int ck_size, kctx_flits, kctx_len;
+	uint32_t ek[4 * (RIJNDAEL_MAXNR + 1)];
+	uint32_t *dkey;
+	int i;
 
-	switch (klen) {
+	rijndaelKeySetupEnc(ek, enc_key, kbits);
+	dkey = dec_key;
+
+	switch (kbits) {
+	case 128:
+		for (i = 0; i < 4; i++)
+			*dkey++ = htobe32(ek[4 * 10 + i]);
+		break;
+	case 192:
+		for (i = 0; i < 4; i++)
+			*dkey++ = htobe32(ek[4 * 12 + i]);
+		for (i = 0; i < 2; i++)
+			*dkey++ = htobe32(ek[4 * 11 + 2 + i]);
+		break;
+	case 256:
+		for (i = 0; i < 4; i++)
+			*dkey++ = htobe32(ek[4 * 14 + i]);
+		for (i = 0; i < 4; i++)
+			*dkey++ = htobe32(ek[4 * 13 + i]);
+		break;
+	}
+}
+
+static void
+ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
+{
+	unsigned int ck_size, kctx_flits, kctx_len, kbits;
+
+	if (alg == CRYPTO_AES_XTS)
+		kbits = klen / 2;
+	else
+		kbits = klen;
+	switch (kbits) {
 	case 128:
 		ck_size = CHCR_KEYCTX_CIPHER_KEY_SIZE_128;
 		break;
@@ -746,11 +820,14 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	}
 
 	s->blkcipher.key_len = klen / 8;
-	memcpy(s->blkcipher.key, key, s->blkcipher.key_len);
+	memcpy(s->blkcipher.enckey, key, s->blkcipher.key_len);
+	if (algo != CRYPTO_AES_ICM)
+		ccr_aes_getdeckey(s->blkcipher.deckey, key, kbits);
 
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
 	s->blkcipher.key_ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
+	    V_KEY_CONTEXT_DUAL_CK(alg == CRYPTO_AES_XTS) |
 	    V_KEY_CONTEXT_SALT_PRESENT(1) | V_KEY_CONTEXT_CK_SIZE(ck_size) |
 	    V_KEY_CONTEXT_MK_SIZE(CHCR_KEYCTX_NO_KEY) | V_KEY_CONTEXT_VALID(1));
 }
