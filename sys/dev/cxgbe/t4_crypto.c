@@ -122,7 +122,7 @@ struct ccr_session {
 	enum { HMAC, BLKCIPHER } mode;
 	union {
 		struct ccr_session_hmac hmac;
-		struct ccr_session_aes blkcipher;
+		struct ccr_session_blkcipher blkcipher;
 	};
 };
 
@@ -414,7 +414,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct cryptodesc *crd;
-	u_int kctx_flits, kctx_len, key_half, op_type, transhdr_len, wr_len;
+	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
 	int sgl_nsegs, sgl_len;
 
 	crd = crp->crp_desc;
@@ -518,10 +518,10 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		    key_half);
 		if (crd->crd_flags & CRD_F_ENCRYPT)
 			memcpy(crwr->key_ctx.key + key_half,
-			    s->blkcipher.enckey, keyhalf);
+			    s->blkcipher.enckey, key_half);
 		else
 			memcpy(crwr->key_ctx.key + key_half,
-			    s->blkcipher.deckey, keyhalf);
+			    s->blkcipher.deckey, key_half);
 		break;
 	}
 		    
@@ -816,7 +816,7 @@ ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 
 	s->blkcipher.key_len = klen / 8;
 	memcpy(s->blkcipher.enckey, key, s->blkcipher.key_len);
-	if (algo != CRYPTO_AES_ICM)
+	if (alg != CRYPTO_AES_ICM)
 		ccr_aes_getdeckey(s->blkcipher.deckey, key, kbits);
 
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
@@ -883,7 +883,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 		case CRYPTO_AES_XTS:
 			if (cipher)
 				return (EINVAL);
-			ciper = c;
+			cipher = c;
 			switch (c->cri_alg) {
 			case CRYPTO_AES_CBC:
 				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CBC;
@@ -963,7 +963,8 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 		s->blkcipher.cipher_mode = cipher_mode;
 		s->blkcipher.iv_len = iv_len;
 		if (cipher->cri_key != NULL)
-			ccr_aes_setkey(s, cipher->cri_key, cipher->cri_klen);
+			ccr_aes_setkey(s, cipher->cri_alg, cipher->cri_key,
+			    cipher->cri_klen);
 	}
 
 	s->active = true;
@@ -1037,11 +1038,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		break;
 	case BLKCIPHER:
 		if (crd->crd_flags & CRD_F_KEY_EXPLICIT) {
-			error = ccr_aes_check_keylen(crd->crd_alg, crd->crd_key,
+			error = ccr_aes_check_keylen(crd->crd_alg,
 			    crd->crd_klen);
 			if (error)
 				break;
-			ccr_aes_setkey(s, crd->crd_key, crd->crd_klen);
+			ccr_aes_setkey(s, crd->crd_alg, crd->crd_key,
+			    crd->crd_klen);
 		}
 		error = ccr_blkcipher(sc, sid, s, crp);
 		break;
