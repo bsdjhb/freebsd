@@ -58,12 +58,16 @@ __FBSDID("$FreeBSD$");
  * +-------------------------------+
  * | struct cpl_tls_tx_scmd_fmt    |
  * +-------------------------------+
- * | keys                          |
+ * | key context                   |
  * +-------------------------------+
  * | struct cpl_rx_phys_dsgl       |
  * +-------------------------------+
  * | SGL entries                   |
  * +-------------------------------+
+ *
+ * Note that the key context must be padded to ensure 16-byte alignment.
+ * For HMAC requests, the key consists of the partial hash of the IPAD
+ * followed by the partial hash of the OPAD.
  *
  * Replies consist of:
  *
@@ -106,6 +110,7 @@ struct ccr_session_hmac {
 struct ccr_session_blkcipher {
 	unsigned int cipher_mode;
 	unsigned int key_len;
+	unsigned int iv_len;
 	__be32 key_ctx_hdr; 
 	char key[CHCR_AES_MAX_KEY_LEN];
 };
@@ -404,6 +409,7 @@ static int
 ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
     struct cryptop *crp)
 {
+	char iv[CHCR_MAX_CRYPTO_IV_LEN];
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct cryptodesc *crd;
@@ -411,6 +417,29 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	int sgl_nsegs, sgl_len;
 
 	crd = crp->crp_desc;
+
+	/*
+	 * XXX: Not sure about how exactly to handle this yet.
+	 */
+	if (crd->crd_flags & CRD_F_IV_PRESENT)
+		return (EINVAL);
+
+	if (crd->crd_flags & CRD_F_ENCRYPT) {
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
+		else
+			arc4rand(iv, s->blkcipher.iv_len, 0);
+		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
+		    s->blkcipher.iv_len, iv);
+	} else {
+		/*
+		 * XXX: Should we copy an explicit IV out into the WR
+		 * for decrypt?
+		 */
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+			return (EINVAL);
+	}
+	
 	sgl_nsegs = ccr_count_sglist_segments(sc->sg, crd);
 	sgl_len = ccr_phys_dsgl_len(sgl_nsegs);
 
@@ -733,7 +762,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	struct ccr_session *s;
 	struct auth_hash *auth_hash;
 	struct cryptoini *c, *hash, *cipher;
-	unsigned int auth_mode, cipher_mode, mk_size;
+	unsigned int auth_mode, cipher_mode, iv_len, mk_size;
 	int error, i, sess;
 
 	if (sidp == NULL || cri == NULL)
@@ -743,6 +772,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	auth_hash = NULL;
 	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
 	cipher_mode = CHCR_SCMD_CIPHER_MODE_NOP;
+	iv_len = 0;
 	mk_size = 0;
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
@@ -785,12 +815,15 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 			switch (c->cri_alg) {
 			case CRYPTO_AES_CBC:
 				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CBC;
+				iv_len = AES_BLOCK_LEN;
 				break;
 			case CRYPTO_AES_ICM:
 				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CTR;
+				iv_len = AES_BLOCK_LEN;
 				break;
 			case CRYPTO_AES_XTS:
 				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_XTS;
+				iv_len = AES_XTS_IV_LEN;
 				break;
 			}
 			if (c->cri_key != NULL) {
@@ -856,6 +889,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 		MPASS(cipher != NULL);
 		s->mode = BLKCIPHER;
 		s->blkcipher.cipher_mode = cipher_mode;
+		s->blkcipher.iv_len = iv_len;
 		if (cipher->cri_key != NULL)
 			ccr_aes_setkey(s, cipher->cri_key, cipher->cri_klen);
 	}
