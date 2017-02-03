@@ -542,16 +542,11 @@ static int
 ccr_blkcipher_done(struct ccr_softc *sc, struct ccr_session *s,
     struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
 {
-	struct cryptodesc *crd;
 
-	crd = crp->crp_desc;
-	if (error == 0)
-		panic("todo");
-#if 0
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
-		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
-#endif
-
+	/*
+	 * The updated IV to permit chained requests is at
+	 * cpl->data[2], but OCF doesn't permit chained requests.
+	 */
 	return (error);
 }
 
