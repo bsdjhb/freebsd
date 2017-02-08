@@ -840,6 +840,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	if (sidp == NULL || cri == NULL)
 		return (EINVAL);
 
+	cipher = NULL;
 	hash = NULL;
 	auth_hash = NULL;
 	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
