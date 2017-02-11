@@ -206,7 +206,8 @@ ocf_hmac(struct alg *alg, char *buffer, size_t size, char *key,
 	sop.mac = alg->alg;
 	fd = crget();
 	if (ioctl(fd, CIOCGSESSION2, &sop) < 0) {
-		warn("cryptodev %s HMAC not supported", alg->name);
+		warn("cryptodev %s HMAC not supported for device %s",
+		    alg->name, crfind(crid));
 		close(fd);
 		return (false);
 	}
