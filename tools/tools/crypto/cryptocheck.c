@@ -334,7 +334,7 @@ main(int ac, char **av)
 	}
 
 	if (alg == NULL)
-		err(1, "Algorithm required");
+		errx(1, "Algorithm required");
 	if (nsizes == 0) {
 		sizes[0] = 8;
 		nsizes++;
