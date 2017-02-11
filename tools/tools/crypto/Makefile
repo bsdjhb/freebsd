@@ -31,6 +31,10 @@ BINDIR=	/usr/local/bin
 
 all:	${ALL}
 
+# program to test symmetric crypto functions
+cryptocheck: cryptocheck.c
+	${CC} -o cryptocheck cryptocheck.c -lcrypto -lutil
+
 # program to test asymmetric crypto functions
 cryptokeytest: cryptokeytest.c
 	${CC} -o cryptokeytest cryptokeytest.c -lcrypto
