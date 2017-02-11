@@ -39,9 +39,10 @@
  * operation once in software via OpenSSL and a second time via
  * OpenCrypto and compares the results.
  *
- * cryptocheck [-z] [-a algorithm] [-d dev] [size ...]
+ * cryptocheck [-vz] [-a algorithm] [-d dev] [size ...]
  *
  * Options:
+ *	-v	Verbose.
  *	-z	Run all algorithms on a variety of buffer sizes.
  *
  * Supported algorithms:
@@ -93,6 +94,7 @@ struct alg {
 	  .evp_md = EVP_sha512 },
 };
 
+static bool verbose;
 static int crid;
 
 static void
@@ -140,6 +142,18 @@ crlookup(const char *devname)
 	if (ioctl(devcrypto(), CIOCFINDDEV, &find) == -1)
 		err(1, "ioctl(CIOCFINDDEV)");
 	return (find.crid);
+}
+
+const char *
+crfind(int crid)
+{
+	static struct crypt_find_op find;
+
+	bzero(&find, sizeof(find));
+	find.crid = crid;
+	if (ioctl(devcrypto(), CRIOFINDDEV, &find) == -1)
+		err(1, "ioctl(CIOCFINDDEV): crid %d", crid);
+	return (find.name);
 }
 
 static int
@@ -254,7 +268,9 @@ run_hmac_test(struct alg *alg, size_t size)
 			    0);
 			printf("test:\n");
 			hexdump(test_digest, sizeof(test_digest), "\t", 0);
-		}
+		} else if (verbose)
+			printf("%s matched (cryptodev device %s)\n",
+			    alg->name, crfind(crid));
 	}
 
 	free(buffer);
@@ -282,7 +298,8 @@ main(int ac, char **av)
 
 	alg = NULL;
 	crid = CRYPTO_FLAG_HARDWARE;
-	while ((ch = getopt(ac, av, "a:d:z")) != -1)
+	verbose = false;
+	while ((ch = getopt(ac, av, "a:d:vz")) != -1)
 		switch (ch) {
 		case 'a':
 			alg = find_alg(optarg);
@@ -291,6 +308,9 @@ main(int ac, char **av)
 			break;
 		case 'd':
 			crid = crlookup(optarg);
+			break;
+		case 'v':
+			verbose = true;
 			break;
 		default:
 			usage();
