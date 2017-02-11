@@ -272,10 +272,10 @@ run_hmac_test(struct alg *alg, size_t size)
 			else
 				printf("%s mismatch:\n", alg->name);
 			printf("control:\n");
-			hexdump(control_digest, sizeof(control_digest), "\t",
+			hexdump(control_digest, sizeof(control_digest), NULL,
 			    0);
 			printf("test (cryptodev device %s):\n", crfind(crid));
-			hexdump(test_digest, sizeof(test_digest), "\t", 0);
+			hexdump(test_digest, sizeof(test_digest), NULL, 0);
 		} else if (verbose)
 			printf("%s matched (cryptodev device %s)\n",
 			    alg->name, crfind(crid));
