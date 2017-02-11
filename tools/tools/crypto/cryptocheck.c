@@ -249,7 +249,7 @@ run_hmac_test(struct alg *alg, size_t size)
 	memset(test_digest, 0x3c, sizeof(test_digest));
 
 	md = alg->evp_md();
-	key_len = EVP_MD_block_size(md);
+	key_len = EVP_MD_size(md);
 	assert(EVP_MD_size(md) <= sizeof(control_digest));
 
 	key = alloc_buffer(key_len);
@@ -274,7 +274,7 @@ run_hmac_test(struct alg *alg, size_t size)
 			printf("control:\n");
 			hexdump(control_digest, sizeof(control_digest), "\t",
 			    0);
-			printf("test:\n");
+			printf("test (cryptodev device %s):\n", crfind(crid));
 			hexdump(test_digest, sizeof(test_digest), "\t", 0);
 		} else if (verbose)
 			printf("%s matched (cryptodev device %s)\n",
