@@ -149,6 +149,11 @@ crfind(int crid)
 {
 	static struct crypt_find_op find;
 
+	if (crid == CRYPTO_FLAG_SOFTWARE)
+		return ("soft");
+	else if (crid == CRYPTO_FLAG_HARDWARE)
+		return ("unknown");
+
 	bzero(&find, sizeof(find));
 	find.crid = crid;
 	if (ioctl(devcrypto(), CRIOFINDDEV, &find) == -1)
@@ -271,7 +276,7 @@ run_hmac_test(struct alg *alg, size_t size)
 			hexdump(test_digest, sizeof(test_digest), "\t", 0);
 		} else if (verbose)
 			printf("%s matched (cryptodev device %s)\n",
-			    alg->name, crfind(crid));
+			    alg->name, crfind(sop.crid));
 	}
 
 	free(buffer);
