@@ -241,16 +241,16 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 			skip -= seglen;
 			continue;
 		}
-		sgl->addr[j] = sg->sg_segs[i].ss_paddr + skip;
+		sgl->addr[j] = htobe64(sg->sg_segs[i].ss_paddr + skip);
 		if (skip > 0) {
 			seglen -= skip;
 			skip = 0;
 		}
 		if (seglen >= len) {
-			sgl->len[j] = len;
+			sgl->len[j] = htobe16(len);
 			break;
 		}
-		sgl->len[j] = seglen;
+		sgl->len[j] = htobe16(seglen);
 		len -= seglen;
 		j++;
 		if (j == 8) {
