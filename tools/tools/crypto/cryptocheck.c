@@ -197,7 +197,7 @@ alloc_buffer(size_t len)
 
 static bool
 ocf_hmac(struct alg *alg, char *buffer, size_t size, char *key,
-    size_t key_len, char *digest)
+    size_t key_len, char *digest, int *cridp)
 {
 	struct session2_op sop;
 	struct crypt_op cop;
@@ -232,6 +232,7 @@ ocf_hmac(struct alg *alg, char *buffer, size_t size, char *key,
 		warn("ioctl(CIOCFSESSION)");
 
 	close(fd);
+	*cridp = sop.crid;
 	return (true);
 }
 
@@ -241,6 +242,7 @@ run_hmac_test(struct alg *alg, size_t size)
 	const EVP_MD *md;
 	char *key, *buffer;
 	u_int key_len, digest_len;
+	int crid;
 	char control_digest[EVP_MAX_MD_SIZE], test_digest[EVP_MAX_MD_SIZE];
 
 	memset(control_digest, 0x3c, sizeof(control_digest));
@@ -261,7 +263,7 @@ run_hmac_test(struct alg *alg, size_t size)
 		    ERR_error_string(ERR_get_error(), NULL));
 
 	/* cryptodev HMAC. */
-	if (ocf_hmac(alg, buffer, size, key, key_len, test_digest)) {
+	if (ocf_hmac(alg, buffer, size, key, key_len, test_digest, &crid)) {
 		if (memcmp(control_digest, test_digest,
 		    sizeof(control_digest)) != 0) {
 			if (memcmp(control_digest, test_digest,
@@ -276,7 +278,7 @@ run_hmac_test(struct alg *alg, size_t size)
 			hexdump(test_digest, sizeof(test_digest), "\t", 0);
 		} else if (verbose)
 			printf("%s matched (cryptodev device %s)\n",
-			    alg->name, crfind(sop.crid));
+			    alg->name, crfind(crid));
 	}
 
 	free(buffer);
