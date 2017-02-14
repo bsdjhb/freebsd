@@ -3527,6 +3527,7 @@ int rdma_bind_addr(struct rdma_cm_id *id, struct sockaddr *addr)
 	struct rdma_id_private *id_priv;
 	struct vnet *vnet = id->route.addr.dev_addr.net;
 	int ret;
+	struct sockaddr  *daddr;
 
 	if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6 &&
 	    addr->sa_family != AF_IB)
@@ -3565,6 +3566,9 @@ int rdma_bind_addr(struct rdma_cm_id *id, struct sockaddr *addr)
 	ret = cma_get_port(id_priv);
 	if (ret)
 		goto err2;
+
+	daddr = cma_dst_addr(id_priv);
+	daddr->sa_family = addr->sa_family;
 
 	return 0;
 err2:
