@@ -194,6 +194,7 @@ struct cma_device {
 	struct list_head	id_list;
 	struct sysctl_ctx_list	sysctl_ctx;
 	enum ib_gid_type	*default_gid_type;
+	u8			*default_roce_tos;
 };
 
 struct rdma_bind_list {
@@ -291,6 +292,25 @@ int cma_set_default_gid_type(struct cma_device *cma_dev,
 	return 0;
 }
 
+int cma_get_default_roce_tos(struct cma_device *cma_dev, unsigned int port)
+{
+	if (!rdma_is_port_valid(cma_dev->device, port))
+		return -EINVAL;
+
+	return cma_dev->default_roce_tos[port - rdma_start_port(cma_dev->device)];
+}
+
+int cma_set_default_roce_tos(struct cma_device *cma_dev, unsigned int port,
+			     u8 default_roce_tos)
+{
+	if (!rdma_is_port_valid(cma_dev->device, port))
+		return -EINVAL;
+
+	cma_dev->default_roce_tos[port - rdma_start_port(cma_dev->device)] =
+		 default_roce_tos;
+
+	return 0;
+}
 struct ib_device *cma_get_ib_dev(struct cma_device *cma_dev)
 {
 	return cma_dev->device;
@@ -337,6 +357,7 @@ struct rdma_id_private {
 	u32			options;
 	u8			srq;
 	u8			tos;
+	u8			tos_set:1;
 	u8			timeout_set:1;
 	u8			reuseaddr;
 	u8			afonly;
@@ -782,6 +803,7 @@ struct rdma_cm_id *rdma_create_id(struct vnet *net,
 	id_priv->id.event_handler = event_handler;
 	id_priv->id.ps = ps;
 	id_priv->id.qp_type = qp_type;
+	id_priv->tos_set = false;
 	id_priv->timeout_set = false;
 	spin_lock_init(&id_priv->lock);
 	mutex_init(&id_priv->qp_mutex);
@@ -2535,6 +2557,7 @@ void rdma_set_service_type(struct rdma_cm_id *id, int tos)
 
 	id_priv = container_of(id, struct rdma_id_private, id);
 	id_priv->tos = (u8) tos;
+	id_priv->tos_set = true;
 }
 EXPORT_SYMBOL(rdma_set_service_type);
 
@@ -2762,6 +2785,9 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 	struct cma_work *work;
 	int ret;
 	if_t ndev = NULL;
+	u8 default_roce_tos = id_priv->cma_dev->default_roce_tos[id_priv->id.port_num -
+					rdma_start_port(id_priv->cma_dev->device)];
+	u8 tos = id_priv->tos_set ? id_priv->tos : default_roce_tos;
 
 
 	work = kzalloc(sizeof *work, GFP_KERNEL);
@@ -2821,8 +2847,8 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 	route->path_rec->reversible = 1;
 	route->path_rec->pkey = cpu_to_be16(0xffff);
 	route->path_rec->mtu_selector = IB_SA_EQ;
-	route->path_rec->sl = iboe_tos_to_sl(ndev, id_priv->tos);
-	route->path_rec->traffic_class = id_priv->tos;
+	route->path_rec->sl = iboe_tos_to_sl(ndev, tos);
+	route->path_rec->traffic_class = tos;
 	route->path_rec->mtu = iboe_get_mtu(if_getmtu(ndev));
 	route->path_rec->rate_selector = IB_SA_EQ;
 	route->path_rec->rate = iboe_get_rate(ndev);
@@ -4508,6 +4534,25 @@ done:
 	return (error);
 }
 
+static int
+sysctl_cma_default_roce_tos(SYSCTL_HANDLER_ARGS)
+{
+	struct cma_device *cma_dev = arg1;
+	const int port = arg2;
+	int error;
+        u8 tos;
+
+	tos = cma_get_default_roce_tos(cma_dev, port);
+
+	error = sysctl_handle_8(oidp, &tos, sizeof(tos), req);
+	if (error != 0 || req->newptr == NULL)
+		goto done;
+
+        error = -cma_set_default_roce_tos(cma_dev, port, tos);
+done:
+	return (error);
+}
+
 static void cma_add_one(struct ib_device *device)
 {
 	struct cma_device *cma_dev;
@@ -4524,10 +4569,15 @@ static void cma_add_one(struct ib_device *device)
 	cma_dev->default_gid_type = kcalloc(device->phys_port_cnt,
 					    sizeof(*cma_dev->default_gid_type),
 					    GFP_KERNEL);
-	if (!cma_dev->default_gid_type) {
-		kfree(cma_dev);
-		return;
-	}
+	if (!cma_dev->default_gid_type)
+		goto free_cma_dev;
+
+	cma_dev->default_roce_tos = kcalloc(device->phys_port_cnt,
+					    sizeof(*cma_dev->default_roce_tos),
+					    GFP_KERNEL);
+	if (!cma_dev->default_roce_tos)
+		goto free_gid_type;
+
 	for (i = rdma_start_port(device); i <= rdma_end_port(device); i++) {
 		unsigned long supported_gids;
 		unsigned int default_gid_type;
@@ -4546,6 +4596,7 @@ static void cma_add_one(struct ib_device *device)
 		}
 		cma_dev->default_gid_type[i - rdma_start_port(device)] =
 		    default_gid_type;
+		cma_dev->default_roce_tos[i - rdma_start_port(device)] = 0;
 	}
 
 	init_completion(&cma_dev->comp);
@@ -4569,7 +4620,25 @@ static void cma_add_one(struct ib_device *device)
 		    OID_AUTO, buf, CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 		    cma_dev, i, &sysctl_cma_default_roce_mode, "A",
 		    "Default RoCE mode. Valid values: IB/RoCE v1 and RoCE v2");
+
+		snprintf(buf, sizeof(buf), "default_roce_tos_port%d", i);
+
+		(void) SYSCTL_ADD_PROC(&cma_dev->sysctl_ctx,
+		    SYSCTL_CHILDREN(device->ports_parent->parent->oidp),
+		    OID_AUTO, buf, CTLTYPE_U8 | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+		    cma_dev, i, &sysctl_cma_default_roce_tos, "CU",
+		    "Default RoCE TOS. Valid values: 0-255");
 	}
+
+	return;
+
+free_gid_type:
+	kfree(cma_dev->default_gid_type);
+
+free_cma_dev:
+	kfree(cma_dev);
+
+	return;
 }
 
 static int cma_remove_id_dev(struct rdma_id_private *id_priv)
@@ -4639,6 +4708,7 @@ static void cma_remove_one(struct ib_device *device, void *client_data)
 
 	cma_process_remove(cma_dev);
 	sysctl_ctx_free(&cma_dev->sysctl_ctx);
+	kfree(cma_dev->default_roce_tos);
 	kfree(cma_dev->default_gid_type);
 	kfree(cma_dev);
 }
