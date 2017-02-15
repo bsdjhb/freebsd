@@ -356,7 +356,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
 
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
-	    V_CPL_TX_SEC_PDU_AUTHSTART(0) | V_CPL_TX_SEC_PDU_AUTHSTOP(1));
+	    V_CPL_TX_SEC_PDU_AUTHSTART(1) | V_CPL_TX_SEC_PDU_AUTHSTOP(0));
 
 	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
 	crwr->sec_cpl.seqno_numivs = htobe32(
