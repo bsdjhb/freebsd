@@ -64,6 +64,8 @@ __FBSDID("$FreeBSD$");
  * +-------------------------------+  +---- Destination buffer for
  * | PHYS_DSGL entries             |  /     non-hash-only requests
  * +-------------------------------+ -
+ * | 16 dummy bytes                |  ----- Only for hash-only requests
+ * +-------------------------------+
  * | IV                            |  ----- If immediate IV
  * +-------------------------------+
  * | Payload                       |  ----- If immediate Payload
