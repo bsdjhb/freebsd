@@ -669,12 +669,12 @@ ccr_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
 			u32[i] = htobe32(auth_ctx->sha256ctx.state[i]);
 		break;
 	case CRYPTO_SHA2_384_HMAC:
-		for (i = 0; i < SHA2_384_HASH_LEN / 8; i++)
+		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
 			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
 		break;
 	case CRYPTO_SHA2_512_HMAC:
 		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
-			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
+			u64[i] = htobe64(auth_ctx->sha512ctx.state[i]);
 		break;
 	}
 }
@@ -704,6 +704,7 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	 * If the key is larger than the block size, use the digest of
 	 * the key as the key instead.
 	 */
+	klen /= 8;
 	if (klen > axf->blocksize) {
 		axf->Init(&auth_ctx);
 		axf->Update(&auth_ctx, key, klen);
