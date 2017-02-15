@@ -82,11 +82,11 @@ __FBSDID("$FreeBSD$");
  * The 64-bit 'cookie' field from the fw_crypto_lookaside_wr message
  * in the request is returned in data[1] of the CPL_FW6_PLD message.
  *
- * For block cipher replies, the updated IV is supplied in data[2] of
- * the CPL_FW6_PLD message.
+ * For block cipher replies, the updated IV is supplied in data[2] and
+ * data[3] of the CPL_FW6_PLD message.
  *
- * For non-HMAC hash replies, the hash digest is supplied immediately
- * following the CPL_FW6_PLD message.
+ * For hash replies, the hash digest is supplied immediately following
+ * the CPL_FW6_PLD message.
  */
 
 /*
