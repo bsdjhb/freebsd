@@ -59,11 +59,19 @@ __FBSDID("$FreeBSD$");
  * | struct cpl_tls_tx_scmd_fmt    |
  * +-------------------------------+
  * | key context                   |
+ * +-------------------------------+ -
+ * | struct cpl_rx_phys_dsgl       |  \
+ * +-------------------------------+  +---- Destination buffer for
+ * | PHYS_DSGL entries             |  /     non-hash-only requests
+ * +-------------------------------+ -
+ * | IV                            |  ----- If immediate IV
  * +-------------------------------+
- * | struct cpl_rx_phys_dsgl       |
- * +-------------------------------+
- * | SGL entries                   |
- * +-------------------------------+
+ * | Payload                       |  ----- If immediate Payload
+ * +-------------------------------+ -
+ * | struct ulptx_sgl              |  \
+ * +-------------------------------+  +---- If payload via SGL
+ * | SGL entries                   |  /
+ * +-------------------------------+ -
  *
  * Note that the key context must be padded to ensure 16-byte alignment.
  * For HMAC requests, the key consists of the partial hash of the IPAD
@@ -73,6 +81,8 @@ __FBSDID("$FreeBSD$");
  *
  * +-------------------------------+
  * | struct cpl_fw6_pld            |
+ * +-------------------------------+
+ * | hash digest                   |  ----- Only for hash-only requests
  * +-------------------------------+
  * 
  * A 32-bit big-endian error status word is supplied in the last 4
