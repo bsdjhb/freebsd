@@ -152,6 +152,20 @@ struct ccr_softc {
 	struct sglist *sg;
 };
 
+/*
+ * Cryto requests involve two kind of scatter/gather lists.
+ *
+ * Non-hash-only requests require a PHYS_DSGL that describes the
+ * location to store the results of the encryption or decryption
+ * operation.  This SGL uses a different format (PHYS_DSGL) and should
+ * not exclude the crd_skip bytes at the start of the data.
+ *
+ * The input payload may either be supplied inline as immediate
+ * data, or via a standard ULP_TX SGL.  This SGL should always cover
+ * the full crd payload as the crd_skip will only be set if the
+ * IV is already present in which case the crypto engine should
+ * fetch the IV via the SGL.
+ */
 static int
 ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
 {
@@ -178,6 +192,7 @@ ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
 	return (error);
 }
 
+/* These functions deal with PHYS_DSGL for the reply buffer. */
 static inline int
 ccr_phys_dsgl_len(int nsegs)
 {
@@ -192,7 +207,7 @@ ccr_phys_dsgl_len(int nsegs)
 }
 
 static int
-ccr_count_sglist_segments(struct sglist *sg, struct cryptodesc *crd)
+ccr_count_phys_dsgl(struct sglist *sg, struct cryptodesc *crd)
 {
 	int len, nsegs, skip;
 	size_t seglen;
@@ -272,6 +287,49 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 	}
 }
 
+/* These functions deal with the ULPTX_SGL for input payload. */
+static inline int
+ccr_ulptx_sgl_len(int nsegs)
+{
+	u_int n;
+
+	nsegs--; /* first segment is part of ulptx_sgl */
+	n = sizeof(struct ulptx_sgl) + 8 * ((3 * nsegs) / 2 + (nsegs & 1));
+	return (roundup2(n, 16));
+}
+
+static int
+ccr_count_ulptx_sgl(struct sglist *sg, struct cryptodesc *crd)
+{
+
+	KASSERT(sglist_length(sg) == crd->crd_len + crd->crd_skip,
+	    ("crd length mismatch"));
+	return (sg->sg_nseg);
+}
+
+static void
+ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, int nsegs)
+{
+	struct ulptx_sgl *usgl;
+	struct sglist *sg;
+	struct sglist_seg *seg;
+	int i;
+
+	sg = sc->sg;
+	seg = &sg->sg_segs[0];
+	usgl = dst;
+	usgl->cmd_nsge = htobe32(V_ULPTX_CMD(ULP_TX_SC_DSGL) |
+	    V_ULPTX_NSGE(nsegs));
+	usgl->len0 = htobe32(seg->ss_len);
+	usgl->addr0 = htobe32(seg->ss_paddr);
+	seg++;
+	for (i = 0; i < nsegs - 1; i++) {
+		usgl->sge[i / 2].len[i & 1] = htobe32(seg->ss_len);
+		usgl->sge[i / 2].addr[i & 1] = htobe64(seg->ss_paddr);
+		seg++;
+	}
+}
+
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
     u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size, bool has_iv,
@@ -317,7 +375,8 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 
 	crwr->sc_imm.cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM) |
 	    V_ULP_TX_SC_MORE(0));
-	crwr->sc_imm.len = htobe32(wr_len - offsetof(struct chcr_wr, sec_cpl));
+	crwr->sc_imm.len = htobe32(wr_len - offsetof(struct chcr_wr, sec_cpl) -
+	    sgl_len);
 }
 
 static int
@@ -334,8 +393,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	axf = s->hmac.auth_hash;
 	crd = crp->crp_desc;
-	sgl_nsegs = ccr_count_sglist_segments(sc->sg, crd);
-	sgl_len = ccr_phys_dsgl_len(sgl_nsegs);
+	sgl_nsegs = ccr_count_ulptx_sgl(sc->sg, crd);
+	sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 
 	/* PADs must be 128-bit aligned. */
 	iopad_size = roundup2(axf->hashsize, 16);
@@ -346,8 +405,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 */
 	kctx_len = iopad_size * 2;
 	hash_size_in_response = axf->hashsize;
-	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, sgl_len);
-	wr_len = roundup2(transhdr_len, 16);
+	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
+	wr_len = roundup2(transhdr_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
@@ -391,7 +450,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
 	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
 
-	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
+	ccr_write_ulptx_sgl(sc, (char *)(crwr + 1) + kctx_len + DUMMY_BYTES,
+	    sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting HMAC request:\n");
@@ -427,6 +487,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct wrqe *wr;
 	struct cryptodesc *crd;
 	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
+	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
 	crd = crp->crp_desc;
@@ -458,15 +519,17 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 			return (EINVAL);
 	}
-	
-	sgl_nsegs = ccr_count_sglist_segments(sc->sg, crd);
-	sgl_len = ccr_phys_dsgl_len(sgl_nsegs);
+
+	sgl_nsegs = ccr_count_ulptx_sgl(sc->sg, crd);
+	sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+	dsgl_nsegs = ccr_count_phys_dsgl(sc->sg, crd);
+	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/* The 'key' must be 128-bit aligned. */
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 
-	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, sgl_len);
-	wr_len = roundup2(transhdr_len, 16);
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
+	wr_len = roundup2(transhdr_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
@@ -537,7 +600,9 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		break;
 	}
 		    
-	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, sgl_nsegs);
+	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, dsgl_nsegs);
+	ccr_write_ulptx_sgl(sc, (char *)(crwr + 1) + kctx_len + dsgl_len,
+	    sgl_nsegs);
 
 #if 1
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
