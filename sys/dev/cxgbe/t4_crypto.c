@@ -332,16 +332,11 @@ ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, int nsegs)
 
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
-    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size, bool has_iv,
+    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size, u_int iv_loc,
     struct cryptop *crp)
 {
 	u_int cctx_size;
-	int iv_loc;
 	
-	if (has_iv)
-		iv_loc = IV_DSGL;
-	else
-		iv_loc = IV_NOP;
 	cctx_size = sizeof(struct _key_ctx) + kctx_len;
 	crwr->wreq.op_to_cctx_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_OPCODE(FW_CRYPTO_LOOKASIDE_WR) |
@@ -414,7 +409,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memset(crwr, 0, transhdr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len,
-	    hash_size_in_response, false, crp);
+	    hash_size_in_response, IV_NOP, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
@@ -486,7 +481,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
 	struct cryptodesc *crd;
-	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
+	char *dst;
+	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
@@ -495,29 +491,25 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if ((crd->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
 		return (EINVAL);
 
-	/*
-	 * XXX: Not sure about how exactly to handle this yet.
-	 */
-	if (crd->crd_flags & CRD_F_IV_PRESENT)
-		return (EINVAL);
-
+	iv_loc = IV_NOP;
 	if (crd->crd_flags & CRD_F_ENCRYPT) {
 		op_type = CHCR_ENCRYPT_OP;
-		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
-			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
-		else
-			arc4rand(iv, s->blkcipher.iv_len, 0);
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
-		    s->blkcipher.iv_len, iv);
+		if (!(crd->crd_flags & CRD_F_IV_PRESENT)) {
+			if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+				memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
+			else
+				arc4rand(iv, s->blkcipher.iv_len, 0);
+			crypto_copyback(crp->crp_flags, crp->crp_buf,
+			    crd->crd_inject, s->blkcipher.iv_len, iv);
+		}
+		iv_loc = IV_DSGL;
 	} else {
 		op_type = CHCR_DECRYPT_OP;
-
-		/*
-		 * XXX: Should we copy an explicit IV out into the WR
-		 * for decrypt?
-		 */
-		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
-			return (EINVAL);
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT) {
+			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
+			iv_loc = IV_IMMEDIATE;
+		} else
+			iv_loc = IV_DSGL;
 	}
 
 	sgl_nsegs = ccr_count_ulptx_sgl(sc->sg, crd);
@@ -530,13 +522,15 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 	wr_len = roundup2(transhdr_len, 16) + sgl_len;
+	if (iv_loc == IV_IMMEDIATE)
+		wr_len += s->blkcipher.iv_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
-	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len, 0, true,
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len, 0, iv_loc,
 	    crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
@@ -599,10 +593,15 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			    s->blkcipher.deckey, key_half);
 		break;
 	}
-		    
-	ccr_write_phys_dsgl(sc, (char *)(crwr + 1) + kctx_len, crd, dsgl_nsegs);
-	ccr_write_ulptx_sgl(sc, (char *)(crwr + 1) + kctx_len + dsgl_len,
-	    sgl_nsegs);
+
+	dst = (char *)(crwr + 1) + kctx_len;
+	ccr_write_phys_dsgl(sc, dst, crd, dsgl_nsegs);
+	dst += dsgl_len;
+	if (iv_loc == IV_IMMEDIATE) {
+		memcpy(dst, iv, s->blkcipher.iv_len);
+		dst += s->blkcipher.iv_len;
+	}
+	ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
 #if 1
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
@@ -974,7 +973,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 				break;
 			case CRYPTO_AES_XTS:
 				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_XTS;
-				iv_len = AES_XTS_IV_LEN;
+				iv_len = AES_BLOCK_LEN;
 				break;
 			}
 			if (c->cri_key != NULL) {
