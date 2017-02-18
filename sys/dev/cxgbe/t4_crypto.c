@@ -112,6 +112,7 @@ static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
 struct ccr_session_hmac {
 	struct auth_hash *auth_hash;
 	int hash_len;
+	unsigned int partial_digest_len;
 	unsigned int auth_mode;
 	unsigned int mk_size;
 	char digest[CHCR_HASH_MAX_DIGEST_SIZE];
@@ -422,7 +423,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 
 	/* PADs must be 128-bit aligned. */
-	iopad_size = roundup2(axf->hashsize, 16);
+	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
 
 	/*
 	 * The 'key' part of the context includes the partial hash
@@ -465,8 +466,9 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
 
-	memcpy(crwr->key_ctx.key, s->hmac.digest, axf->hashsize);
-	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad, axf->hashsize);
+	memcpy(crwr->key_ctx.key, s->hmac.digest, s->hmac.partial_digest_len);
+	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad
+	    s->hmac.partial_digest_len);
 
 	/* XXX: F_KEY_CONTEXT_SALT_PRESENT set, but 'salt' not set. */
 	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
@@ -846,7 +848,7 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	axf->Update(&auth_ctx, s->hmac.opad, axf->blocksize);
 	ccr_copy_partial_hash(s->hmac.opad, cri_alg, &auth_ctx);
 
-	memcpy(s->hmac.digest, s->hmac.ipad, axf->hashsize);
+	memcpy(s->hmac.digest, s->hmac.ipad, s->hmac.partial_digest_len);
 }
 
 static int
@@ -949,6 +951,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	struct auth_hash *auth_hash;
 	struct cryptoini *c, *hash, *cipher;
 	unsigned int auth_mode, cipher_mode, iv_len, mk_size;
+	unsigned int partial_digest_len;
 	int error, i, sess;
 
 	if (sidp == NULL || cri == NULL)
@@ -961,6 +964,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	cipher_mode = CHCR_SCMD_CIPHER_MODE_NOP;
 	iv_len = 0;
 	mk_size = 0;
+	partial_digest_len = 0;
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
 		case CRYPTO_SHA1_HMAC:
@@ -975,21 +979,25 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 				auth_hash = &auth_hash_hmac_sha1;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA1;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_160;
+				partial_digest_len = SHA1_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_256_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_256;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA256;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_256;
+				partial_digest_len = SHA2_256_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_384_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_384;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_384;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
+				partial_digest_len = SHA2_512_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_512_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_512;
 				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_512;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
+				partial_digest_len = SHA2_512_HASH_LEN;
 				break;
 			}
 			break;
@@ -1066,6 +1074,7 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 		s->hmac.auth_hash = auth_hash;
 		s->hmac.auth_mode = auth_mode;
 		s->hmac.mk_size = mk_size;
+		s->hmac.partial_digest_len = partial_digest_len;
 		if (hash->cri_mlen == 0)
 			s->hmac.hash_len = auth_hash->hashsize;
 		else
