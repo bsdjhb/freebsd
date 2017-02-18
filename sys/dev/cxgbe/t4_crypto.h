@@ -116,6 +116,8 @@ struct chcr_wr {
 #define HASH_TRANSHDR_SIZE(kctx_len)\
 	(TRANSHDR_SIZE(kctx_len) + DUMMY_BYTES)
 
+#define CRYPTO_MAX_IMM_TX_PKT_LEN 256
+
 struct phys_sge_pairs {
 	__be16 len[8];
 	__be64 addr[8];
