@@ -467,7 +467,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
 
 	memcpy(crwr->key_ctx.key, s->hmac.digest, s->hmac.partial_digest_len);
-	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad
+	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad,
 	    s->hmac.partial_digest_len);
 
 	/* XXX: F_KEY_CONTEXT_SALT_PRESENT set, but 'salt' not set. */
