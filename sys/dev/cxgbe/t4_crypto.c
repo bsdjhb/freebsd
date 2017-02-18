@@ -354,8 +354,8 @@ ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
-    u_int wr_len, uint32_t sid, u_int sgl_len, u_int hash_size, u_int iv_loc,
-    struct cryptop *crp)
+    u_int wr_len, uint32_t sid, u_int imm_len, u_int sgl_len, u_int hash_size,
+    u_int iv_loc, struct cryptop *crp)
 {
 	u_int cctx_size;
 	
@@ -363,7 +363,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	crwr->wreq.op_to_cctx_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_OPCODE(FW_CRYPTO_LOOKASIDE_WR) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_COMPL(0) |
-	    V_FW_CRYPTO_LOOKASIDE_WR_IMM_LEN(0) |
+	    V_FW_CRYPTO_LOOKASIDE_WR_IMM_LEN(imm_len) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_CCTX_LOC(1) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_CCTX_SIZE(cctx_size >> 4));
 	crwr->wreq.len16_pkd = htobe32(
@@ -391,7 +391,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    ((wr_len - sizeof(struct fw_crypto_lookaside_wr)) / 16));
 
 	crwr->sc_imm.cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM) |
-	    V_ULP_TX_SC_MORE(0));
+	    V_ULP_TX_SC_MORE(imm_len != 0 ? 0 : 1));
 	crwr->sc_imm.len = htobe32(wr_len - offsetof(struct chcr_wr, sec_cpl) -
 	    sgl_len);
 }
@@ -404,14 +404,22 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct wrqe *wr;
 	struct auth_hash *axf;
 	struct cryptodesc *crd;
+	char *dst;
 	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len, wr_len;
-	u_int iopad_size;
+	u_int imm_len, iopad_size;
 	int sgl_nsegs, sgl_len;
 
 	axf = s->hmac.auth_hash;
 	crd = crp->crp_desc;
-	sgl_nsegs = ccr_count_sgl(sc->sg, crd, true);
-	sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+	if (crd->crd_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+		imm_len = crd->crd_len;
+		sgl_nsegs = 0;
+		sgl_len = 0;
+	} else {
+		imm_len = 0;
+		sgl_nsegs = ccr_count_sgl(sc->sg, crd, true);
+		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+	}
 
 	/* PADs must be 128-bit aligned. */
 	iopad_size = roundup2(axf->hashsize, 16);
@@ -423,14 +431,14 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	kctx_len = iopad_size * 2;
 	hash_size_in_response = axf->hashsize;
 	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
-	wr_len = roundup2(transhdr_len, 16) + sgl_len;
+	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
-	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len,
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
 	    hash_size_in_response, IV_NOP, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
@@ -467,8 +475,12 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_KEY_CONTEXT_CK_SIZE(CHCR_KEYCTX_NO_KEY) |
 	    V_KEY_CONTEXT_MK_SIZE(s->hmac.mk_size) | V_KEY_CONTEXT_VALID(1));
 
-	ccr_write_ulptx_sgl(sc, (char *)(crwr + 1) + kctx_len + DUMMY_BYTES,
-	    crd, sgl_nsegs, true);
+	dst = (char *)(crwr + 1) + kctx_len + DUMMY_BYTES;
+	if (imm_len != 0)
+		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
+		    crd->crd_len, dst);
+	else
+		ccr_write_ulptx_sgl(sc, dst, crd, sgl_nsegs, true);
 
 #if 0
 	device_printf(sc->dev, "submitting HMAC request:\n");
@@ -555,8 +567,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
-	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, sgl_len, 0, iv_loc,
-	    crp);
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, 0, sgl_len, 0,
+	    iv_loc, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
