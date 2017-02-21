@@ -368,7 +368,7 @@ main(int ac, char **av)
 		sizes[0] = 8;
 		nsizes++;
 		if (testall) {
-			while (sizes[nsizes - 1] < 8 * 1024) {
+			while (sizes[nsizes - 1] < 64 * 1024) {
 				assert(nsizes < nitems(sizes));
 				sizes[nsizes] = sizes[nsizes - 1] * 2;
 				nsizes++;
