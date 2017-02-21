@@ -263,8 +263,8 @@ run_hmac_test(struct alg *alg, size_t size)
 	digest_len = sizeof(control_digest);
 	if (HMAC(md, key, key_len, (u_char *)buffer, size,
 	    (u_char *)control_digest, &digest_len) == NULL)
-		errx(1, "OpenSSL %s HMAC failed: %s", alg->name,
-		    ERR_error_string(ERR_get_error(), NULL));
+		errx(1, "OpenSSL %s (%zu) HMAC failed: %s", alg->name,
+		    size, ERR_error_string(ERR_get_error(), NULL));
 
 	/* cryptodev HMAC. */
 	if (ocf_hmac(alg, buffer, size, key, key_len, test_digest, &crid)) {
@@ -272,17 +272,18 @@ run_hmac_test(struct alg *alg, size_t size)
 		    sizeof(control_digest)) != 0) {
 			if (memcmp(control_digest, test_digest,
 			    EVP_MD_size(md)) == 0)
-				printf("%s mismatch in trailer:\n", alg->name);
+				printf("%s (%zu) mismatch in trailer:\n",
+				    alg->name, size);
 			else
-				printf("%s mismatch:\n", alg->name);
+				printf("%s (%zu) mismatch:\n", alg->name, size);
 			printf("control:\n");
 			hexdump(control_digest, sizeof(control_digest), NULL,
 			    0);
 			printf("test (cryptodev device %s):\n", crfind(crid));
 			hexdump(test_digest, sizeof(test_digest), NULL, 0);
 		} else if (verbose)
-			printf("%s matched (cryptodev device %s)\n",
-			    alg->name, crfind(crid));
+			printf("%s (%zu) matched (cryptodev device %s)\n",
+			    alg->name, size, crfind(crid));
 	}
 
 	free(buffer);
