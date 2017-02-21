@@ -46,6 +46,8 @@
  *	-z	Run all algorithms on a variety of buffer sizes.
  *
  * Supported algorithms:
+ *	all		Run all tests
+ *	hmac		Run all hmac tests
  *	sha1		sha1 hmac
  *	sha256		256-bit sha2 hmac
  *	sha384		384-bit sha2 hmac
@@ -78,12 +80,14 @@
 struct alg {
 	const char *name;
 	int alg;
-	enum { T_HMAC } type;
+	enum { T_NONE, T_HMAC } type;
 	union {
 		const EVP_MD *(*evp_md)(void);
 	};
 		
 } algs[] = {
+	{ .name = "all", .alg = 0, .type = T_NONE },
+	{ .name = "hmac", .alg = 0, .type = T_HMAC },
 	{ .name = "sha1", .alg = CRYPTO_SHA1_HMAC, .type = T_HMAC,
 	  .evp_md = EVP_sha1 },
 	{ .name = "sha256", .alg = CRYPTO_SHA2_256_HMAC, .type = T_HMAC,
@@ -293,7 +297,18 @@ run_test(struct alg *alg, size_t size)
 	case T_HMAC:
 		run_hmac_test(alg, size);
 		break;
+	case T_NONE:
+		assert(false);
 	}
+}
+
+static void
+run_test_sizes(struct alg *alg, size_t *sizes, u_int nsizes)
+{
+	u_int i;
+
+	for (i = 0; i < nsizes; i++)
+		run_test(alg, sizes[i]);
 }
 
 int
@@ -302,10 +317,12 @@ main(int ac, char **av)
 	struct alg *alg;
 	size_t sizes[128];
 	u_int i, nsizes;
+	bool testall;
 	int ch;
 
 	alg = NULL;
 	crid = CRYPTO_FLAG_HARDWARE;
+	testall = false;
 	verbose = false;
 	while ((ch = getopt(ac, av, "a:d:vz")) != -1)
 		switch (ch) {
@@ -319,6 +336,9 @@ main(int ac, char **av)
 			break;
 		case 'v':
 			verbose = true;
+			break;
+		case 'z':
+			testall = true;
 			break;
 		default:
 			usage();
@@ -346,9 +366,20 @@ main(int ac, char **av)
 	if (nsizes == 0) {
 		sizes[0] = 8;
 		nsizes++;
+		if (testall) {
+			while (sizes[nsizes - 1] < 8 * 1024) {
+				assert(nsizes < nitems(sizes));
+				sizes[nsizes] = sizes[nsizes - 1] * 2;
+				nsizes++;
+			}
+		}
 	}
 
-	for (i = 0; i < nsizes; i++)
-		run_test(alg, sizes[i]);
+	if (alg->alg == 0) {
+		for (i = 0; i < nitems(algs); i++)
+			if (alg->type == T_NONE || alg->type == algs[i].type)
+				run_test_sizes(&algs[i], sizes, nsizes);
+	} else
+		run_test_sizes(alg, sizes, nsizes);
 	return (0);
 }
