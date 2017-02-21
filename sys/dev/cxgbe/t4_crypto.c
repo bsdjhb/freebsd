@@ -397,6 +397,36 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    sgl_len);
 }
 
+#if 1
+#include <vm/vm.h>
+#include <vm/pmap.h>
+#include <vm/vm_param.h>
+
+static void
+dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
+{
+	const struct ulptx_sgl *usgl;
+	uint64_t addr;
+	uint32_t len;
+	int i;
+
+	usgl = dst;
+	device_printf(sc->dev, "payload:\n");
+	for (i = 0; i < sgl_nsegs; i++) {
+		printf("SGL[%d]:\n", i);
+		if (i == 0) {
+			addr = usgl->addr0;
+			len = usgl->len0;
+		} else {
+			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
+			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
+		}
+		hexdump((void *)PHYS_TO_DMAP(be64toh(addr)), be32toh(len),
+		    NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	}
+}
+#endif
+
 static int
 ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
     struct cryptop *crp)
@@ -487,6 +517,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 #if 0
 	device_printf(sc->dev, "submitting HMAC request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
 #endif
 
 	/* XXX: TODO backpressure */
@@ -502,9 +534,14 @@ ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	struct cryptodesc *crd;
 
 	crd = crp->crp_desc;
-	if (error == 0)
+	if (error == 0) {
+#if 0
+		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
+		    HD_OMIT_CHARS);
+#endif	
 		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
 		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+	}
 
 	return (error);
 }
@@ -645,6 +682,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 #if 1
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	dump_payload(sc, dst, sgl_nsegs);
 #endif
 
 	/* XXX: TODO backpressure */
