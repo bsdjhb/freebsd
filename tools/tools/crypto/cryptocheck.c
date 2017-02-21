@@ -376,9 +376,12 @@ main(int ac, char **av)
 	}
 
 	if (alg->alg == 0) {
-		for (i = 0; i < nitems(algs); i++)
+		for (i = 0; i < nitems(algs); i++) {
+			if (algs[i].alg == 0)
+				continue;
 			if (alg->type == T_NONE || alg->type == algs[i].type)
 				run_test_sizes(&algs[i], sizes, nsizes);
+		}
 	} else
 		run_test_sizes(alg, sizes, nsizes);
 	return (0);
