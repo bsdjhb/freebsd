@@ -538,7 +538,7 @@ ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 #if 0
 		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
 		    HD_OMIT_CHARS);
-#endif	
+#endif
 		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
 		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
 	}
