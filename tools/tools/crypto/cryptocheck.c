@@ -400,6 +400,7 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	buffer_size = size + block_size * 2;
 
 	key = alloc_buffer(key_len);
+	iv = alloc_buffer(iv_len);
 	cleartext = alloc_buffer(size);
 	buffer = malloc(buffer_size);
 	ciphertext = malloc(buffer_size);
@@ -462,6 +463,7 @@ out:
 	free(ciphertext);
 	free(buffer);
 	free(cleartext);
+	free(iv);
 	free(key);
 }
 
