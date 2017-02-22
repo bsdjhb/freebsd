@@ -317,6 +317,7 @@ openssl_cipher(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
 	if (ctx == NULL)
 		errx(1, "OpenSSL %s (%zu) ctx new failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
 	if (EVP_CipherInit_ex(ctx, cipher, NULL, (const u_char *)key,
 	    (const u_char *)iv, enc) != 1)
 		errx(1, "OpenSSL %s (%zu) ctx init failed: %s", alg->name,
