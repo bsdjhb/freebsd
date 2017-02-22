@@ -346,6 +346,7 @@ ocf_cipher(struct alg *alg, const char *key, size_t key_len,
 	struct crypt_op cop;
 	int fd;
 
+	memset(&sop, 0, sizeof(sop));
 	memset(&cop, 0, sizeof(cop));
 	sop.crid = crid;
 	sop.keylen = key_len;
