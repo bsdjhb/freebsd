@@ -427,9 +427,9 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	if (memcmp(ciphertext, buffer, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
 		printf("control:\n");
-		hexdump(ciphertext, buffer_size, NULL, 0);
+		hexdump(ciphertext, size, NULL, 0);
 		printf("test (cryptodev device %s):\n", crfind(crid));
-		hexdump(buffer, buffer_size, NULL, 0);
+		hexdump(buffer, size, NULL, 0);
 		goto out;
 	}
 	
