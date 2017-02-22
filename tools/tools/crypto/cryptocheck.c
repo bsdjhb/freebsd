@@ -306,9 +306,9 @@ run_hmac_test(struct alg *alg, size_t size)
 	free(key);
 }
 
-static size_t
+static void
 openssl_cipher(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
-    const char *iv, const char *input, size_t size, char *output, int enc)
+    const char *iv, const char *input, char *output, size_t size, int enc)
 {
 	EVP_CIPHER_CTX *ctx;
 	int outl, total;
@@ -329,9 +329,11 @@ openssl_cipher(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
 	if (EVP_CipherFinal_ex(ctx, (u_char *)output + outl, &outl) != 1)
 		errx(1, "OpenSSL %s (%zu) cipher final failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
-	EVP_CIPHER_CTX_free(ctx);
 	total += outl;
-	return (total);
+	if (total != size)
+		errx(1, "OpenSSL %s (%zu) cipher size mismatch: %d", alg->name,
+		    size, total);
+	EVP_CIPHER_CTX_free(ctx);
 }
 
 static bool
@@ -381,13 +383,11 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	const EVP_CIPHER *cipher;
 	char *buffer, *cleartext, *ciphertext;
 	char *iv, *key;
-	u_int block_size, iv_len, key_len;
-	size_t buffer_size, out_size;
+	u_int iv_len, key_len;
 	int crid;
 
 	cipher = alg->evp_cipher();
-	block_size = EVP_CIPHER_block_size(cipher);
-	if (size % block_size != 0) {
+	if (size % EVP_CIPHER_block_size(cipher) != 0) {
 		if (verbose)
 			printf(
 			    "%s (%zu): invalid buffer size (block size %d)\n",
@@ -397,30 +397,19 @@ run_blkcipher_test(struct alg *alg, size_t size)
 			    
 	key_len = EVP_CIPHER_key_length(cipher);
 	iv_len = EVP_CIPHER_iv_length(cipher);
-	buffer_size = size + block_size * 2;
 
 	key = alloc_buffer(key_len);
 	iv = alloc_buffer(iv_len);
 	cleartext = alloc_buffer(size);
-	buffer = malloc(buffer_size);
-	ciphertext = malloc(buffer_size);
+	buffer = malloc(size);
+	ciphertext = malloc(size);
 
 	/* OpenSSL cipher. */
-	memset(ciphertext, 0x3c, buffer_size);
-	out_size = openssl_cipher(alg, cipher, key, iv, cleartext, size,
-	    ciphertext, 1);
-	if (out_size > buffer_size)
-		errx(1, "OpenSSL %s (%zu) cipher size too large: %zu vs %zu",
-		    alg->name, size, out_size, buffer_size);
+	openssl_cipher(alg, cipher, key, iv, cleartext, ciphertext, size, 1);
 	if (memcmp(cleartext, ciphertext, size) == 0)
 		errx(1, "OpenSSL %s (%zu): cipher text unchanged", alg->name,
 		    size);
-	memset(buffer, 0x3c, buffer_size);
-	out_size = openssl_cipher(alg, cipher, key, iv, ciphertext, out_size,
-	    buffer, 0);
-	if (out_size != size)
-		errx(1, "OpenSSL %s (%zu) cipher size mismatch: %zu",
-		    alg->name, size, out_size);
+	openssl_cipher(alg, cipher, key, iv, ciphertext, buffer, size, 0);
 	if (memcmp(cleartext, buffer, size) != 0) {
 		printf("OpenSSL %s (%zu): cipher mismatch:", alg->name, size);
 		printf("original:\n");
@@ -431,11 +420,10 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	}
 
 	/* OCF encrypt. */
-	memset(buffer, 0x3c, buffer_size);
 	if (!ocf_cipher(alg, key, key_len, iv, cleartext, buffer, size, 1,
 	    &crid))
 		goto out;
-	if (memcmp(ciphertext, buffer, buffer_size) != 0) {
+	if (memcmp(ciphertext, buffer, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
 		printf("control:\n");
 		hexdump(ciphertext, buffer_size, NULL, 0);
@@ -445,7 +433,6 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	}
 	
 	/* OCF decrypt. */
-	memset(buffer, 0x3c, buffer_size);
 	if (!ocf_cipher(alg, key, key_len, iv, ciphertext, buffer, size, 0,
 	    &crid))
 		goto out;
