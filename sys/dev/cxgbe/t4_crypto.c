@@ -413,7 +413,6 @@ dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 	usgl = dst;
 	device_printf(sc->dev, "payload:\n");
 	for (i = 0; i < sgl_nsegs; i++) {
-		printf("SGL[%d]:\n", i);
 		if (i == 0) {
 			addr = usgl->addr0;
 			len = usgl->len0;
@@ -421,8 +420,11 @@ dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
 			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
 		}
-		hexdump((void *)PHYS_TO_DMAP(be64toh(addr)), be32toh(len),
-		    NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+		addr = be64toh(addr);
+		len = be32toh(len);
+		printf("SGL[%d]: (%#lx:%#x)\n", i, addr, len);
+		hexdump((void *)PHYS_TO_DMAP(addr), len, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
 	}
 }
 #endif
@@ -617,10 +619,10 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
 	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
 
-	crwr->sec_cpl.pldlen = htobe32(crd->crd_len);
+	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + crd->crd_len);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
-	    V_CPL_TX_SEC_PDU_CIPHERSTART(s->blkcipher.iv_len) |
+	    V_CPL_TX_SEC_PDU_CIPHERSTART(s->blkcipher.iv_len + 1) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(0));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(0));
@@ -641,7 +643,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
 	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
-	    V_SCMD_AADIVDROP(1) | V_SCMD_HDR_LEN(sgl_len));
+	    V_SCMD_AADIVDROP(1) | V_SCMD_HDR_LEN(dsgl_len));
 
 	crwr->key_ctx.ctx_hdr = s->blkcipher.key_ctx_hdr;
 	switch (crd->crd_alg) {
