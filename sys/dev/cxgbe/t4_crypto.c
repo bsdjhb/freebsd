@@ -915,6 +915,9 @@ ccr_aes_check_keylen(int alg, int klen)
 /*
  * Borrowed from cesa_prep_aes_key().  We should perhaps have a public
  * function to generate this instead.
+ *
+ * NB: The crypto engine wants the words in the decryption key in reverse
+ * order.
  */
 static void
 ccr_aes_getdeckey(void *dec_key, const void *enc_key, unsigned int kbits)
@@ -925,25 +928,27 @@ ccr_aes_getdeckey(void *dec_key, const void *enc_key, unsigned int kbits)
 
 	rijndaelKeySetupEnc(ek, enc_key, kbits);
 	dkey = dec_key;
+	dkey += (kbits / 8) / 4;
 
 	switch (kbits) {
 	case 128:
 		for (i = 0; i < 4; i++)
-			*dkey++ = htobe32(ek[4 * 10 + i]);
+			*--dkey = htobe32(ek[4 * 10 + i]);
 		break;
 	case 192:
 		for (i = 0; i < 4; i++)
-			*dkey++ = htobe32(ek[4 * 12 + i]);
+			*--dkey = htobe32(ek[4 * 12 + i]);
 		for (i = 0; i < 2; i++)
-			*dkey++ = htobe32(ek[4 * 11 + 2 + i]);
+			*--dkey = htobe32(ek[4 * 11 + 2 + i]);
 		break;
 	case 256:
 		for (i = 0; i < 4; i++)
-			*dkey++ = htobe32(ek[4 * 14 + i]);
+			*--dkey = htobe32(ek[4 * 14 + i]);
 		for (i = 0; i < 4; i++)
-			*dkey++ = htobe32(ek[4 * 13 + i]);
+			*--dkey = htobe32(ek[4 * 13 + i]);
 		break;
 	}
+	MPASS(dkey == dec_key);
 }
 
 static void
