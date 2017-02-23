@@ -569,15 +569,14 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	iv_loc = IV_NOP;
 	if (crd->crd_flags & CRD_F_ENCRYPT) {
 		op_type = CHCR_ENCRYPT_OP;
-		if (crd->crd_flags & CRD_F_IV_PRESENT)
-			iv_loc = IV_DSGL;
-		else {
-			if (crd->crd_flags & CRD_F_IV_EXPLICIT)
-				memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
-			else
-				arc4rand(iv, s->blkcipher.iv_len, 0);
-			iv_loc = IV_IMMEDIATE;
-		}
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
+		else
+			arc4rand(iv, s->blkcipher.iv_len, 0);
+		iv_loc = IV_IMMEDIATE;		
+		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0)
+			crypto_copyback(crp->crp_flags, crp->crp_buf,
+			    crd->crd_inject, s->blkcipher.iv_len, iv);
 	} else {
 		op_type = CHCR_DECRYPT_OP;
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT) {
