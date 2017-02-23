@@ -673,7 +673,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	dst = (char *)(crwr + 1) + kctx_len;
 	ccr_write_phys_dsgl(sc, dst, crd, dsgl_nsegs);
-	dst += dsgl_len;
+	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
 		dst += s->blkcipher.iv_len;
