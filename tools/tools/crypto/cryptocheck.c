@@ -48,6 +48,7 @@
  * Supported algorithms:
  *	all		Run all tests
  *	hmac		Run all hmac tests
+ *	blkcipher	Run all block cipher tests
  *	sha1		sha1 hmac
  *	sha256		256-bit sha2 hmac
  *	sha384		384-bit sha2 hmac
@@ -80,13 +81,11 @@
 struct alg {
 	const char *name;
 	int alg;
-	enum { T_NONE, T_HMAC, T_BLKCIPHER } type;
+	enum { T_HMAC, T_BLKCIPHER } type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
 		
 } algs[] = {
-	{ .name = "all", .alg = 0, .type = T_NONE },
-	{ .name = "hmac", .alg = 0, .type = T_HMAC },
 	{ .name = "sha1", .alg = CRYPTO_SHA1_HMAC, .type = T_HMAC,
 	  .evp_md = EVP_sha1 },
 	{ .name = "sha256", .alg = CRYPTO_SHA2_256_HMAC, .type = T_HMAC,
@@ -95,7 +94,6 @@ struct alg {
 	  .evp_md = EVP_sha384 },
 	{ .name = "sha512", .alg = CRYPTO_SHA2_512_HMAC, .type = T_HMAC,
 	  .evp_md = EVP_sha512 },
-	{ .name = "blkcipher", .alg = 0, .type = T_BLKCIPHER },
 	{ .name = "aes", .alg = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_128_cbc },
 	{ .name = "aes192", .alg = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
@@ -475,8 +473,6 @@ run_test(struct alg *alg, size_t size)
 	case T_BLKCIPHER:
 		run_blkcipher_test(alg, size);
 		break;
-	case T_NONE:
-		assert(false);
 	}
 }
 
@@ -489,25 +485,44 @@ run_test_sizes(struct alg *alg, size_t *sizes, u_int nsizes)
 		run_test(alg, sizes[i]);
 }
 
+static void
+run_hmac_tests(size_t *sizes, u_int nsizes)
+{
+	u_int i;
+
+	for (i = 0; i < nitems(algs); i++)
+		if (algs[i].type == T_HMAC)
+			run_test_sizes(&algs[i], sizes, nsizes);
+}
+
+static void
+run_blkcipher_tests(size_t *sizes, u_int nsizes)
+{
+	u_int i;
+
+	for (i = 0; i < nitems(algs); i++)
+		if (algs[i].type == T_BLKCIPHER)
+			run_test_sizes(&algs[i], sizes, nsizes);
+}
+
 int
 main(int ac, char **av)
 {
+	const char *algname;
 	struct alg *alg;
 	size_t sizes[128];
 	u_int i, nsizes;
 	bool testall;
 	int ch;
 
-	alg = NULL;
+	algname = NULL;
 	crid = CRYPTO_FLAG_HARDWARE;
 	testall = false;
 	verbose = false;
 	while ((ch = getopt(ac, av, "a:d:vz")) != -1)
 		switch (ch) {
 		case 'a':
-			alg = find_alg(optarg);
-			if (alg == NULL)
-				errx(1, "Invalid algorithm %s", optarg);
+			algname = optarg;
 			break;
 		case 'd':
 			crid = crlookup(optarg);
@@ -539,10 +554,10 @@ main(int ac, char **av)
 		av++;
 	}
 
-	if (alg == NULL)
+	if (algname == NULL)
 		errx(1, "Algorithm required");
 	if (nsizes == 0) {
-		sizes[0] = 8;
+		sizes[0] = 16;
 		nsizes++;
 		if (testall) {
 			while (sizes[nsizes - 1] < 32 * 1024) {
@@ -553,14 +568,19 @@ main(int ac, char **av)
 		}
 	}
 
-	if (alg->alg == 0) {
-		for (i = 0; i < nitems(algs); i++) {
-			if (algs[i].alg == 0)
-				continue;
-			if (alg->type == T_NONE || alg->type == algs[i].type)
-				run_test_sizes(&algs[i], sizes, nsizes);
-		}
-	} else
+	if (strcasecmp(algname, "hmac") == 0)
+		run_hmac_tests(sizes, nsizes);
+	else if (strcasecmp(algname, "blkcipher") == 0)
+		run_blkcipher_tests(sizes, nsizes);
+	else if (strcasecmp(algname, "all") == 0) {
+		run_hmac_tests(sizes, nsizes);
+		run_blkcipher_tests(sizes, nsizes);
+	} else {
+		alg = find_alg(algname);
+		if (alg == NULL)
+			errx(1, "Invalid algorithm %s", algname);
 		run_test_sizes(alg, sizes, nsizes);
+	}
+	
 	return (0);
 }
