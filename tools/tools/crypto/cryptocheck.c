@@ -245,8 +245,12 @@ ocf_hmac(struct alg *alg, const char *buffer, size_t size, const char *key,
 	cop.mac = digest;
 	cop.iv = NULL;
 
-	if (ioctl(fd, CIOCCRYPT, &cop) < 0)
-		err(1, "ioctl(CIOCCRYPT)");
+	if (ioctl(fd, CIOCCRYPT, &cop) < 0) {
+		warn("cryptodev %s (%zu) HMAC failed for device %s", alg->name,
+		    size, crfind(crid));
+		close(fd);
+		return (false);
+	}
 
 	if (ioctl(fd, CIOCFSESSION, &sop.ses) < 0)
 		warn("ioctl(CIOCFSESSION)");
@@ -368,8 +372,12 @@ ocf_cipher(struct alg *alg, const char *key, size_t key_len,
 	cop.mac = NULL;
 	cop.iv = (char *)iv;
 
-	if (ioctl(fd, CIOCCRYPT, &cop) < 0)
-		err(1, "ioctl(CIOCCRYPT)");
+	if (ioctl(fd, CIOCCRYPT, &cop) < 0) {
+		warn("cryptodev %s (%zu) block cipher failed for device %s",
+		    alg->name, size, crfind(crid));
+		close(fd);
+		return (false);
+	}
 
 	if (ioctl(fd, CIOCFSESSION, &sop.ses) < 0)
 		warn("ioctl(CIOCFSESSION)");
