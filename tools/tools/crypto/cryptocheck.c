@@ -620,10 +620,11 @@ run_aead_test(struct alg *alg, size_t size)
 	}
 	if (memcmp(control_digest, test_digest, sizeof(control_digest)) != 0) {
 		if (memcmp(control_digest, test_digest, EVP_MD_size(md)) == 0)
-			printf("%s (%zu) hash mismatch in trailer:\n",
+			printf("%s (%zu) enc hash mismatch in trailer:\n",
 			    alg->name, size);
 		else
-			printf("%s (%zu) hash mismatch:\n", alg->name, size);
+			printf("%s (%zu) enc hash mismatch:\n", alg->name,
+			    size);
 		printf("control:\n");
 		hexdump(control_digest, sizeof(control_digest), NULL, 0);
 		printf("test (cryptodev device %s):\n", crfind(crid));
@@ -631,10 +632,24 @@ run_aead_test(struct alg *alg, size_t size)
 		goto out;
 	}
 	
-	/* OCF decrypt. */
+	/* OCF HMAC + decrypt. */
+	memset(test_digest, 0x3c, sizeof(test_digest));
 	if (!ocf_aead(alg, cipher_key, cipher_key_len, iv, auth_key,
 	    auth_key_len, ciphertext, buffer, size, test_digest, 0, &crid))
 		goto out;
+	if (memcmp(control_digest, test_digest, sizeof(control_digest)) != 0) {
+		if (memcmp(control_digest, test_digest, EVP_MD_size(md)) == 0)
+			printf("%s (%zu) dec hash mismatch in trailer:\n",
+			    alg->name, size);
+		else
+			printf("%s (%zu) dec hash mismatch:\n", alg->name,
+			    size);
+		printf("control:\n");
+		hexdump(control_digest, sizeof(control_digest), NULL, 0);
+		printf("test (cryptodev device %s):\n", crfind(crid));
+		hexdump(test_digest, sizeof(test_digest), NULL, 0);
+		goto out;
+	}
 	if (memcmp(cleartext, buffer, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
 		printf("control:\n");
