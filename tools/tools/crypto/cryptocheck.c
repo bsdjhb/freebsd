@@ -255,6 +255,22 @@ alloc_buffer(size_t len)
 	return (buf);
 }
 
+static char *
+generate_iv(size_t len, struct alg *alg)
+{
+	char *iv;
+
+	iv = alloc_buffer(len);
+	if (alg->cipher == CRYPTO_AES_ICM) {
+		/* Clear the low 32 bits of the IV to hold the counter. */
+		iv[len - 4] = 0;
+		iv[len - 3] = 0;
+		iv[len - 2] = 0;
+		iv[len - 1] = 0;
+	}
+	return (iv);
+}
+
 static bool
 ocf_hmac(struct alg *alg, const char *buffer, size_t size, const char *key,
     size_t key_len, char *digest, int *cridp)
@@ -450,7 +466,7 @@ run_blkcipher_test(struct alg *alg, size_t size)
 	iv_len = EVP_CIPHER_iv_length(cipher);
 
 	key = alloc_buffer(key_len);
-	iv = alloc_buffer(iv_len);
+	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
 	buffer = malloc(size);
 	ciphertext = malloc(size);
@@ -588,7 +604,7 @@ run_aead_test(struct alg *alg, size_t size)
 	auth_key_len = EVP_MD_size(md);
 
 	cipher_key = alloc_buffer(cipher_key_len);
-	iv = alloc_buffer(iv_len);
+	iv = generate_iv(iv_len, alg);
 	auth_key = alloc_buffer(auth_key_len);
 	cleartext = alloc_buffer(size);
 	buffer = malloc(size);
