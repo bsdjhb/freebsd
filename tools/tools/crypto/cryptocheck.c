@@ -261,12 +261,28 @@ generate_iv(size_t len, struct alg *alg)
 	char *iv;
 
 	iv = alloc_buffer(len);
-	if (alg->cipher == CRYPTO_AES_ICM) {
+	switch (alg->cipher) {
+	case CRYPTO_AES_ICM:
 		/* Clear the low 32 bits of the IV to hold the counter. */
 		iv[len - 4] = 0;
 		iv[len - 3] = 0;
 		iv[len - 2] = 0;
 		iv[len - 1] = 0;
+		break;
+	case CRYPTO_AES_XTS:
+		/*
+		 * Clear the low 64-bits to only store a 64-bit block
+		 * number.
+		 */
+		iv[len - 8] = 0;
+		iv[len - 7] = 0;
+		iv[len - 6] = 0;
+		iv[len - 5] = 0;
+		iv[len - 4] = 0;
+		iv[len - 3] = 0;
+		iv[len - 2] = 0;
+		iv[len - 1] = 0;
+		break;
 	}
 	return (iv);
 }
@@ -461,7 +477,7 @@ run_blkcipher_test(struct alg *alg, size_t size)
 			    alg->name, size, EVP_CIPHER_block_size(cipher));
 		return;
 	}
-			    
+
 	key_len = EVP_CIPHER_key_length(cipher);
 	iv_len = EVP_CIPHER_iv_length(cipher);
 
