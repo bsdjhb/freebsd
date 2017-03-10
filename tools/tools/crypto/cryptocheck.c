@@ -84,7 +84,7 @@ struct alg {
 	const char *name;
 	int cipher;
 	int mac;
-	enum { T_HMAC, T_BLKCIPHER, T_AEAD } type;
+	enum { T_HMAC, T_BLKCIPHER, T_AUTHENC } type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
 } algs[] = {
@@ -138,28 +138,28 @@ find_alg(const char *name)
 }
 
 static struct alg *
-build_aead(struct alg *cipher, struct alg *hmac)
+build_authenc(struct alg *cipher, struct alg *hmac)
 {
-	static struct alg aead;
+	static struct alg authenc;
 	char *name;
 
 	assert(cipher->type == T_BLKCIPHER);
 	assert(hmac->type == T_HMAC);
-	memset(&aead, 0, sizeof(aead));
+	memset(&authenc, 0, sizeof(authenc));
 	asprintf(&name, "%s+%s", cipher->name, hmac->name);
-	aead.name = name;
-	aead.cipher = cipher->cipher;
-	aead.mac = hmac->mac;
-	aead.type = T_AEAD;
-	aead.evp_cipher = cipher->evp_cipher;
-	aead.evp_md = hmac->evp_md;
-	return (&aead);
+	authenc.name = name;
+	authenc.cipher = cipher->cipher;
+	authenc.mac = hmac->mac;
+	authenc.type = T_AUTHENC;
+	authenc.evp_cipher = cipher->evp_cipher;
+	authenc.evp_md = hmac->evp_md;
+	return (&authenc);
 }
 
 static struct alg *
-build_aead_name(const char *name)
+build_authenc_name(const char *name)
 {
-	struct alg *aead, *cipher, *hmac;
+	struct alg *cipher, *hmac;
 	const char *hmac_name;
 	char *cp, *cipher_name;
 
@@ -173,7 +173,7 @@ build_aead_name(const char *name)
 	hmac = find_alg(hmac_name);
 	if (hmac == NULL)
 		errx(1, "Invalid hash %s", hmac_name);
-	return (build_aead(cipher, hmac));
+	return (build_authenc(cipher, hmac));
 }
 
 static int
@@ -541,7 +541,7 @@ out:
 }
 
 static bool
-ocf_aead(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
+ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
     const char *iv, const char *auth_key, size_t auth_key_len,
     const char *input, char *output, size_t size, char *digest, int enc,
     int *cridp)
@@ -561,7 +561,7 @@ ocf_aead(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 	sop.mac = alg->mac;
 	fd = crget();
 	if (ioctl(fd, CIOCGSESSION2, &sop) < 0) {
-		warn("cryptodev %s AEAD not supported for device %s",
+		warn("cryptodev %s AUTHENC not supported for device %s",
 		    alg->name, crfind(crid));
 		close(fd);
 		return (false);
@@ -569,6 +569,7 @@ ocf_aead(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 
 	cop.ses = sop.ses;
 	cop.op = enc ? COP_ENCRYPT : COP_DECRYPT;
+	cop.flags = enc ? COP_F_CIPHER_FIRST : 0;
 	cop.len = size;
 	cop.src = (char *)input;
 	cop.dst = output;
@@ -576,8 +577,8 @@ ocf_aead(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 	cop.iv = (char *)iv;
 
 	if (ioctl(fd, CIOCCRYPT, &cop) < 0) {
-		warn("cryptodev %s (%zu) AEAD failed for device %s", alg->name,
-		    size, crfind(crid));
+		warn("cryptodev %s (%zu) AUTHENC failed for device %s",
+		    alg->name, size, crfind(crid));
 		close(fd);
 		return (false);
 	}
@@ -591,7 +592,7 @@ ocf_aead(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 }
 
 static void
-run_aead_test(struct alg *alg, size_t size)
+run_authenc_test(struct alg *alg, size_t size)
 {
 	const EVP_CIPHER *cipher;
 	const EVP_MD *md;
@@ -639,7 +640,7 @@ run_aead_test(struct alg *alg, size_t size)
 		    size, ERR_error_string(ERR_get_error(), NULL));
 
 	/* OCF encrypt + HMAC. */
-	if (!ocf_aead(alg, cipher_key, cipher_key_len, iv, auth_key,
+	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
 	    auth_key_len, cleartext, buffer, size, test_digest, 1, &crid))
 		goto out;
 	if (memcmp(ciphertext, buffer, size) != 0) {
@@ -666,7 +667,7 @@ run_aead_test(struct alg *alg, size_t size)
 	
 	/* OCF HMAC + decrypt. */
 	memset(test_digest, 0x3c, sizeof(test_digest));
-	if (!ocf_aead(alg, cipher_key, cipher_key_len, iv, auth_key,
+	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
 	    auth_key_len, ciphertext, buffer, size, test_digest, 0, &crid))
 		goto out;
 	if (memcmp(control_digest, test_digest, sizeof(control_digest)) != 0) {
@@ -715,8 +716,8 @@ run_test(struct alg *alg, size_t size)
 	case T_BLKCIPHER:
 		run_blkcipher_test(alg, size);
 		break;
-	case T_AEAD:
-		run_aead_test(alg, size);
+	case T_AUTHENC:
+		run_authenc_test(alg, size);
 		break;
 	}
 }
@@ -751,9 +752,9 @@ run_blkcipher_tests(size_t *sizes, u_int nsizes)
 }
 
 static void
-run_aead_tests(size_t *sizes, u_int nsizes)
+run_authenc_tests(size_t *sizes, u_int nsizes)
 {
-	struct alg *aead, *cipher, *hmac;
+	struct alg *authenc, *cipher, *hmac;
 	u_int i, j;
 
 	for (i = 0; i < nitems(algs); i++) {
@@ -764,14 +765,11 @@ run_aead_tests(size_t *sizes, u_int nsizes)
 			hmac = &algs[j];
 			if (hmac->type != T_HMAC)
 				continue;
-			aead = build_aead(cipher, hmac);
-			run_test_sizes(aead, sizes, nsizes);
-			free((char *)aead->name);
+			authenc = build_authenc(cipher, hmac);
+			run_test_sizes(authenc, sizes, nsizes);
+			free((char *)authenc->name);
 		}
 	}
-	for (i = 0; i < nitems(algs); i++)
-		if (algs[i].type == T_AEAD)
-			run_test_sizes(&algs[i], sizes, nsizes);
 }
 
 int
@@ -844,14 +842,14 @@ main(int ac, char **av)
 		run_hmac_tests(sizes, nsizes);
 	else if (strcasecmp(algname, "blkcipher") == 0)
 		run_blkcipher_tests(sizes, nsizes);
-	else if (strcasecmp(algname, "aead") == 0)
-		run_aead_tests(sizes, nsizes);
+	else if (strcasecmp(algname, "authenc") == 0)
+		run_authenc_tests(sizes, nsizes);
 	else if (strcasecmp(algname, "all") == 0) {
 		run_hmac_tests(sizes, nsizes);
 		run_blkcipher_tests(sizes, nsizes);
-		run_aead_tests(sizes, nsizes);
+		run_authenc_tests(sizes, nsizes);
 	} else if (strchr(algname, '+') != NULL) {
-		alg = build_aead_name(algname);
+		alg = build_authenc_name(algname);
 		run_test_sizes(alg, sizes, nsizes);
 	} else {
 		alg = find_alg(algname);
