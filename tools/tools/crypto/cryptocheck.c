@@ -54,9 +54,9 @@
  *	sha256		256-bit sha2 hmac
  *	sha384		384-bit sha2 hmac
  *	sha512		512-bit	sha2 hmac
- *	aes		128-bit aes cbc
- *	aes192		192-bit	aes cbc
- *	aes256		256-bit aes cbc
+ *	aes-cbc		128-bit aes cbc
+ *	aes-cbc192	192-bit	aes cbc
+ *	aes-cbc256	256-bit aes cbc
  *	aes-ctr		128-bit aes ctr
  *	aes-ctr192	192-bit aes ctr
  *	aes-ctr256	256-bit aes ctr
@@ -96,11 +96,11 @@ struct alg {
 	  .evp_md = EVP_sha384 },
 	{ .name = "sha512", .mac = CRYPTO_SHA2_512_HMAC, .type = T_HMAC,
 	  .evp_md = EVP_sha512 },
-	{ .name = "aes", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
+	{ .name = "aes-cbc", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_128_cbc },
-	{ .name = "aes192", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
+	{ .name = "aes-cbc192", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_192_cbc },
-	{ .name = "aes256", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
+	{ .name = "aes-cbc256", .cipher = CRYPTO_AES_CBC, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_256_cbc },
 	{ .name = "aes-ctr", .cipher = CRYPTO_AES_ICM, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_128_ctr },
