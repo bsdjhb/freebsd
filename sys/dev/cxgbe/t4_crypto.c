@@ -558,6 +558,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct cryptodesc *crd;
 	char *dst;
 	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
+	u_int imm_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
@@ -588,17 +589,30 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	dsgl_nsegs = ccr_count_sgl(sc->sg, crd, true);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
-	if (iv_loc == IV_DSGL)
-		sgl_nsegs = ccr_count_sgl(sc->sg, crd, false);
-	else
-		sgl_nsegs = dsgl_nsegs;
-	sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+
+	if (crd->crd_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+		imm_len = crd->crd_len;
+		if (iv_loc == IV_DSGL) {
+			crypto_copydata(crp->crp_flags, crp->crp_buf, 0,
+			    s->blkcipher.iv_len, iv);
+			iv_loc = IV_IMMEDIATE;
+		}
+		sgl_nsegs = 0;
+		sgl_len = 0;
+	} else {
+		imm_len = 0;
+		if (iv_loc == IV_DSGL)
+			sgl_nsegs = ccr_count_sgl(sc->sg, crd, false);
+		else
+			sgl_nsegs = dsgl_nsegs;
+		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+	}
 
 	/* The 'key' must be 128-bit aligned. */
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
-	wr_len = roundup2(transhdr_len, 16) + sgl_len;
+	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
@@ -607,7 +621,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
-	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, 0, sgl_len, 0,
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len, 0,
 	    iv_loc, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
@@ -678,12 +692,18 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		memcpy(dst, iv, s->blkcipher.iv_len);
 		dst += s->blkcipher.iv_len;
 	}
-	ccr_write_ulptx_sgl(sc, dst, crd, sgl_nsegs, iv_loc == IV_IMMEDIATE);
+	if (imm_len != 0)
+		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
+		    crd->crd_len, dst);
+	else
+		ccr_write_ulptx_sgl(sc, dst, crd, sgl_nsegs,
+		    iv_loc == IV_IMMEDIATE);
 
 #if 1
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
-	dump_payload(sc, dst, sgl_nsegs);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
 #endif
 
 	/* XXX: TODO backpressure */
