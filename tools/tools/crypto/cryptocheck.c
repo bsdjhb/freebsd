@@ -833,7 +833,7 @@ ocf_gcm(struct alg *alg, const char *key, size_t key_len,
 	caead.tag = tag;
 	caead.iv = (char *)iv;
 
-	if (ioctl(fd, CIOCCRYPT, &caead) < 0) {
+	if (ioctl(fd, CIOCCRYPTAEAD, &caead) < 0) {
 		warn("cryptodev %s (%zu) failed for device %s",
 		    alg->name, size, crfind(crid));
 		close(fd);
@@ -1076,6 +1076,8 @@ main(int ac, char **av)
 	bool testall;
 	int ch;
 
+	/* CIOCCRYPTAEAD doesn't accept zero-sized AAD */
+	aad_len = 16;
 	algname = NULL;
 	crid = CRYPTO_FLAG_HARDWARE;
 	testall = false;
