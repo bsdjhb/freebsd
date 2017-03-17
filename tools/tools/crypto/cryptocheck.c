@@ -105,7 +105,6 @@ struct alg {
 	const char *name;
 	int cipher;
 	int mac;
-	int iv_len;
 	enum { T_HMAC, T_BLKCIPHER, T_AUTHENC, T_GCM } type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
@@ -134,23 +133,14 @@ struct alg {
 	  .evp_cipher = EVP_aes_128_xts },
 	{ .name = "aes-xts256", .cipher = CRYPTO_AES_XTS, .type = T_BLKCIPHER,
 	  .evp_cipher = EVP_aes_256_xts },
-	{ .name = "aes-gcm", .cipher = CRYPTO_AES_NIST_GMAC,
-	  .mac = CRYPTO_AES_128_NIST_GMAC, .iv_len = 12, .type = T_GCM,
+	{ .name = "aes-gcm", .cipher = CRYPTO_AES_NIST_GCM_16,
+	  .mac = CRYPTO_AES_128_NIST_GMAC, .type = T_GCM,
 	  .evp_cipher = EVP_aes_128_gcm },
-	{ .name = "aes-gcm192", .cipher = CRYPTO_AES_NIST_GMAC,
-	  .mac = CRYPTO_AES_192_NIST_GMAC, .iv_len = 12, .type = T_GCM,
+	{ .name = "aes-gcm192", .cipher = CRYPTO_AES_NIST_GCM_16,
+	  .mac = CRYPTO_AES_192_NIST_GMAC, .type = T_GCM,
 	  .evp_cipher = EVP_aes_192_gcm },
-	{ .name = "aes-gcm256", .cipher = CRYPTO_AES_NIST_GMAC,
-	  .mac = CRYPTO_AES_256_NIST_GMAC, .iv_len = 12, .type = T_GCM,
-	  .evp_cipher = EVP_aes_256_gcm },
-	{ .name = "aes-gcm16", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_128_NIST_GMAC, .iv_len = 16, .type = T_GCM,
-	  .evp_cipher = EVP_aes_128_gcm },
-	{ .name = "aes-gcm16192", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_192_NIST_GMAC, .iv_len = 16, .type = T_GCM,
-	  .evp_cipher = EVP_aes_192_gcm },
-	{ .name = "aes-gcm16256", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_256_NIST_GMAC, .iv_len = 16, .type = T_GCM,
+	{ .name = "aes-gcm256", .cipher = CRYPTO_AES_NIST_GCM_16,
+	  .mac = CRYPTO_AES_256_NIST_GMAC, .type = T_GCM,
 	  .evp_cipher = EVP_aes_256_gcm },
 };
 
@@ -757,17 +747,9 @@ openssl_gcm_encrypt(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
 	if (ctx == NULL)
 		errx(1, "OpenSSL %s (%zu) ctx new failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1)
-		errx(1, "OpenSSL %s (%zu) ctx init(1) failed: %s", alg->name,
-		    size, ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, alg->iv_len,
-	    NULL) != 1)
-		errx(1, "OpenSSL %s (%zu) set IV length %d failed: %s",
-		    alg->name, size, alg->iv_len,
-		    ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_EncryptInit_ex(ctx, NULL, NULL, (const u_char *)key,
+	if (EVP_EncryptInit_ex(ctx, cipher, NULL, (const u_char *)key,
 	    (const u_char *)iv) != 1)
-		errx(1, "OpenSSL %s (%zu) ctx init(2) failed: %s", alg->name,
+		errx(1, "OpenSSL %s (%zu) ctx init failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
 	EVP_CIPHER_CTX_set_padding(ctx, 0);
 	if (aad != NULL) {
@@ -797,8 +779,8 @@ openssl_gcm_encrypt(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
 }
 
 static bool
-ocf_gcm(struct alg *alg, const char *key, size_t key_len,
-    const char *iv, const char *aad, size_t aad_len, const char *input,
+ocf_gcm(struct alg *alg, const char *key, size_t key_len, const char *iv,
+    size_t iv_len, const char *aad, size_t aad_len, const char *input,
     char *output, size_t size, char *tag, int enc, int *cridp)
 {
 	struct session2_op sop;
@@ -826,7 +808,7 @@ ocf_gcm(struct alg *alg, const char *key, size_t key_len,
 	caead.op = enc ? COP_ENCRYPT : COP_DECRYPT;
 	caead.len = size;
 	caead.aadlen = aad_len;
-	caead.ivlen = alg->iv_len;
+	caead.ivlen = iv_len;
 	caead.src = (char *)input;
 	caead.dst = output;
 	caead.aad = (char *)aad;
@@ -862,17 +844,9 @@ openssl_gcm_decrypt(struct alg *alg, const EVP_CIPHER *cipher, const char *key,
 	if (ctx == NULL)
 		errx(1, "OpenSSL %s (%zu) ctx new failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_DecryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1)
-		errx(1, "OpenSSL %s (%zu) ctx init(1) failed: %s", alg->name,
-		    size, ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, alg->iv_len,
-	    NULL) != 1)
-		errx(1, "OpenSSL %s (%zu) set IV length %d failed: %s",
-		    alg->name, size, alg->iv_len,
-		    ERR_error_string(ERR_get_error(), NULL));
-	if (EVP_DecryptInit_ex(ctx, NULL, NULL, (const u_char *)key,
+	if (EVP_DecryptInit_ex(ctx, cipher, NULL, (const u_char *)key,
 	    (const u_char *)iv) != 1)
-		errx(1, "OpenSSL %s (%zu) ctx init(2) failed: %s", alg->name,
+		errx(1, "OpenSSL %s (%zu) ctx init failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
 	EVP_CIPHER_CTX_set_padding(ctx, 0);
 	if (aad != NULL) {
@@ -907,7 +881,7 @@ run_gcm_test(struct alg *alg, size_t size)
 	const EVP_CIPHER *cipher;
 	char *aad, *buffer, *cleartext, *ciphertext;
 	char *iv, *key;
-	u_int key_len;
+	u_int iv_len, key_len;
 	int crid;
 	char control_tag[AES_GMAC_HASH_LEN], test_tag[AES_GMAC_HASH_LEN];
 
@@ -924,9 +898,10 @@ run_gcm_test(struct alg *alg, size_t size)
 	memset(test_tag, 0x3c, sizeof(test_tag));
 
 	key_len = EVP_CIPHER_key_length(cipher);
+	iv_len = EVP_CIPHER_iv_length(cipher);
 
 	key = alloc_buffer(key_len);
-	iv = generate_iv(alg->iv_len, alg);
+	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
 	buffer = malloc(size);
 	ciphertext = malloc(size);
@@ -940,8 +915,8 @@ run_gcm_test(struct alg *alg, size_t size)
 	    ciphertext, size, control_tag);
 
 	/* OCF encrypt */
-	if (!ocf_gcm(alg, key, key_len, iv, aad, aad_len, cleartext, buffer,
-	    size, test_tag, 1, &crid))
+	if (!ocf_gcm(alg, key, key_len, iv, iv_len, aad, aad_len, cleartext,
+	    buffer, size, test_tag, 1, &crid))
 		goto out;
 	if (memcmp(ciphertext, buffer, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
@@ -961,8 +936,8 @@ run_gcm_test(struct alg *alg, size_t size)
 	}
 
 	/* OCF decrypt */
-	if (!ocf_gcm(alg, key, key_len, iv, aad, aad_len, ciphertext, buffer,
-	    size, control_tag, 0, &crid))
+	if (!ocf_gcm(alg, key, key_len, iv, iv_len, aad, aad_len, ciphertext,
+	    buffer, size, control_tag, 0, &crid))
 		goto out;
 	if (memcmp(cleartext, buffer, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
