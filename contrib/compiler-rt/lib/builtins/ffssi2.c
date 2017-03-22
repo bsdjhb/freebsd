@@ -25,5 +25,5 @@ __ffssi2(si_int a)
     {
         return 0;
     }
-    return __ctzsi2(a) + 1;
+    return __builtin_ctz(a) + 1;
 }
