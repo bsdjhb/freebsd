@@ -861,23 +861,11 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	struct auth_hash *axf;
 	u_int i;
 
-	axf = s->hmac.auth_hash;
-	if (key == NULL) {
-		/*
-		 * XXX: Not sure this is correct.  If HMAC always
-		 * requires a key we should instead error if we get
-		 * a request to process an op without an explicit
-		 * key.
-		 */
-		axf->Init(&auth_ctx);
-		ccr_copy_partial_hash(s->hmac.digest, cri_alg, &auth_ctx);
-		return;
-	}
-
 	/*
 	 * If the key is larger than the block size, use the digest of
 	 * the key as the key instead.
 	 */
+	axf = s->hmac.auth_hash;
 	klen /= 8;
 	if (klen > axf->blocksize) {
 		axf->Init(&auth_ctx);
@@ -1097,6 +1085,8 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 		}
 	}
 	if (hash == NULL && cipher == NULL)
+		return (EINVAL);
+	if (hash != NULL && hash->cri_key == NULL)
 		return (EINVAL);
 
 	/* AEAD not yet supported. */
