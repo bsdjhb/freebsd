@@ -76,9 +76,6 @@
  *	aes-gcm		128-bit aes gcm
  *	aes-gcm192	192-bit aes gcm
  *	aes-gcm256	256-bit aes gcm
- *	aes-gcm16	128-bit aes gcm with 16-byte IV
- *	aes-gcm16192	192-bit aes gcm with 16-byte IV
- *	aes-gcm16256	256-bit aes gcm with 16-byte IV
  */
 
 #include <sys/param.h>
