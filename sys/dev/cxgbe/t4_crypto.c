@@ -115,7 +115,6 @@ struct ccr_session_hmac {
 	unsigned int partial_digest_len;
 	unsigned int auth_mode;
 	unsigned int mk_size;
-	char digest[CHCR_HASH_MAX_DIGEST_SIZE];
 	char ipad[CHCR_HASH_MAX_BLOCK_SIZE_128];
 	char opad[CHCR_HASH_MAX_BLOCK_SIZE_128];
 };
@@ -498,7 +497,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
 
-	memcpy(crwr->key_ctx.key, s->hmac.digest, s->hmac.partial_digest_len);
+	memcpy(crwr->key_ctx.key, s->hmac.ipad, s->hmac.partial_digest_len);
 	memcpy(crwr->key_ctx.key + iopad_size, s->hmac.opad,
 	    s->hmac.partial_digest_len);
 
@@ -894,8 +893,6 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	axf->Init(&auth_ctx);
 	axf->Update(&auth_ctx, s->hmac.opad, axf->blocksize);
 	ccr_copy_partial_hash(s->hmac.opad, cri_alg, &auth_ctx);
-
-	memcpy(s->hmac.digest, s->hmac.ipad, s->hmac.partial_digest_len);
 }
 
 static int
