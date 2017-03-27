@@ -131,11 +131,9 @@ struct ccr_session_blkcipher {
 struct ccr_session {
 	bool active;
 	int pending;
-	enum { HMAC, BLKCIPHER } mode;
-	union {
-		struct ccr_session_hmac hmac;
-		struct ccr_session_blkcipher blkcipher;
-	};
+	enum { HMAC, BLKCIPHER, AUTHENC } mode;
+	struct ccr_session_hmac hmac;
+	struct ccr_session_blkcipher blkcipher;
 };
 
 struct ccr_softc {
@@ -153,7 +151,7 @@ struct ccr_softc {
 };
 
 /*
- * Cryto requests involve two kind of scatter/gather lists.
+ * Crypto requests involve two kind of scatter/gather lists.
  *
  * Non-hash-only requests require a PHYS_DSGL that describes the
  * location to store the results of the encryption or decryption
@@ -309,22 +307,15 @@ ccr_ulptx_sgl_len(int nsegs)
 }
 
 static void
-ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
-    int nsegs, bool honor_skip)
+ccr_write_ulptx_sgl(struct ccr_softc *sc, int skip, int len, void *dst,
+    int nsegs)
 {
 	struct ulptx_sgl *usgl;
 	struct sglist *sg;
 	struct sglist_seg *seg;
 	size_t seglen;
-	int i, len, skip;
+	int i;
 
-	if (honor_skip) {
-		skip = crd->crd_skip;
-		len = crd->crd_len;
-	} else {
-		skip = 0;
-		len = crd->crd_skip + crd->crd_len;
-	}
 	sg = sc->sg;
 	seg = &sg->sg_segs[0];
 	usgl = dst;
@@ -513,7 +504,8 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
 		    crd->crd_len, dst);
 	else
-		ccr_write_ulptx_sgl(sc, dst, crd, sgl_nsegs, true);
+		ccr_write_ulptx_sgl(sc, crd->crd_skip, crd->crd_len, dst,
+		    sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting HMAC request:\n");
@@ -592,8 +584,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (crd->crd_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
 		imm_len = crd->crd_len;
 		if (iv_loc == IV_DSGL) {
-			crypto_copydata(crp->crp_flags, crp->crp_buf, 0,
-			    s->blkcipher.iv_len, iv);
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crd->crd_inject, s->blkcipher.iv_len, iv);
 			iv_loc = IV_IMMEDIATE;
 		}
 		sgl_nsegs = 0;
@@ -694,11 +686,14 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (imm_len != 0)
 		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
 		    crd->crd_len, dst);
+	else if (iv_loc == IV_IMMEDIATE)
+		ccr_write_ulptx_sgl(sc, crd->crd_skip, crd->crd_len, dst,
+		    sgl_nsegs);
 	else
-		ccr_write_ulptx_sgl(sc, dst, crd, sgl_nsegs,
-		    iv_loc == IV_IMMEDIATE);
+		ccr_write_ulptx_sgl(sc, 0, crd->crd_skip + crd->crd_len, dst,
+		    sgl_nsegs);
 
-#if 1
+#if 0
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
 	if (imm_len == 0)
@@ -723,6 +718,211 @@ ccr_blkcipher_done(struct ccr_softc *sc, struct ccr_session *s,
 	return (error);
 }
 
+static int
+ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
+    struct cryptop *crp, struct cryptodesc *crda, struct cryptodesc *crde)
+{
+	char iv[CHCR_MAX_CRYPTO_IV_LEN];
+	struct chcr_wr *crwr;
+	struct wrqe *wr;
+	char *dst;
+	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
+	u_int imm_len, iopad_size, tot_len;
+	u_int cipher_start, cipher_stop, auth_start, auth_stop;
+	int dsgl_nsegs, dsgl_len;
+	int sgl_nsegs, sgl_len;
+
+	if ((crde->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
+		return (EINVAL);
+
+	/*
+	 * For now, the IV is always stored first with an empty AAD
+	 * region and the hash and cipher regions are applied to the
+	 * payload after the IV (which may also include a copy of the
+	 * IV).  Eventually we should optimize the case of an IPSec
+	 * request and make use of the AAD region for the auth-only
+	 * data before the IV.
+	 */
+	iv_loc = IV_IMMEDIATE;
+	if (crde->crd_flags & CRD_F_ENCRYPT) {
+		op_type = CHCR_ENCRYPT_OP;
+		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
+			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
+		else
+			arc4rand(iv, s->blkcipher.iv_len, 0);
+		if ((crde->crd_flags & CRD_F_IV_PRESENT) == 0)
+			crypto_copyback(crp->crp_flags, crp->crp_buf,
+			    crde->crd_inject, s->blkcipher.iv_len, iv);
+	} else {
+		op_type = CHCR_DECRYPT_OP;
+		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
+			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
+		else
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crde->crd_inject, s->blkcipher.iv_len, iv);
+	}
+
+	dsgl_nsegs = ccr_count_sgl(sc->sg, crde, true);
+	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
+
+	tot_len = max(crda->crd_len + crda->crd_skip,
+	    crde->crd_len + crde->crd_skip);
+	if (tot_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+		imm_len = tot_len;
+		sgl_nsegs = 0;
+		sgl_len = 0;
+	} else {
+		imm_len = 0;
+		sgl_nsegs = sc->sg->sg_nseg;
+		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
+		tot_len = sglist_length(sc->sg);
+	}
+
+	cipher_start = s->blkcipher.iv_len + crde->crd_skip + 1;
+	cipher_stop = tot_len - (crde->crd_skip + crde->crd_len);
+	auth_start = s->blkcipher.iv_len + crda->crd_skip + 1;
+	auth_stop = tot_len - (crda->crd_skip + crda->crd_len);
+
+	/* PADs must be 128-bit aligned. */
+	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
+
+	/*
+	 * The 'key' part of the key context consists of the key followed
+	 * by the IPAD and OPAD.
+	 */
+	kctx_len = roundup2(s->blkcipher.key_len, 16) + iopad_size * 2;
+
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
+	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
+	if (iv_loc == IV_IMMEDIATE)
+		wr_len += s->blkcipher.iv_len;
+	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	if (wr == NULL)
+		return (ENOMEM);
+	crwr = wrtod(wr);
+	memset(crwr, 0, transhdr_len);
+
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len, 0,
+	    iv_loc, crp);
+
+	/* XXX: Hardcodes SGE loopback channel of 0. */
+	crwr->sec_cpl.op_ivinsrtofst = htobe32(
+	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
+	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
+	    V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) | V_CPL_TX_SEC_PDU_ULPTXLPBK(1) |
+	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
+	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
+
+	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + tot_len);
+
+	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
+	    V_CPL_TX_SEC_PDU_CIPHERSTART(cipher_start) |
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(cipher_stop >> 4));
+	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(cipher_stop & 0xf) |
+	    V_CPL_TX_SEC_PDU_AUTHSTART(auth_start) |
+	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop));
+
+	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	/* XXX: NumIvs set to 0? */
+	crwr->sec_cpl.seqno_numivs = htobe32(
+	    V_SCMD_SEQ_NO_CTRL(0) |
+	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_ENC_DEC_CTRL(op_type) |
+	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
+	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
+	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC) |
+	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
+	    V_SCMD_NUM_IVS(0));
+	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
+	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
+	crwr->sec_cpl.ivgen_hdrlen = htobe32(
+	    V_SCMD_IV_GEN_CTRL(0) |
+	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
+	    V_SCMD_AADIVDROP(1) | V_SCMD_HDR_LEN(dsgl_len));
+
+	crwr->key_ctx.ctx_hdr = s->blkcipher.key_ctx_hdr;
+	switch (crde->crd_alg) {
+	case CRYPTO_AES_CBC:
+		if (crde->crd_flags & CRD_F_ENCRYPT)
+			memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
+			    s->blkcipher.key_len);
+		else
+			memcpy(crwr->key_ctx.key, s->blkcipher.deckey,
+			    s->blkcipher.key_len);
+		break;
+	case CRYPTO_AES_ICM:
+		memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
+		    s->blkcipher.key_len);
+		break;
+	case CRYPTO_AES_XTS:
+		key_half = s->blkcipher.key_len / 2;
+		memcpy(crwr->key_ctx.key, s->blkcipher.enckey + key_half,
+		    key_half);
+		if (crde->crd_flags & CRD_F_ENCRYPT)
+			memcpy(crwr->key_ctx.key + key_half,
+			    s->blkcipher.enckey, key_half);
+		else
+			memcpy(crwr->key_ctx.key + key_half,
+			    s->blkcipher.deckey, key_half);
+		break;
+	}
+
+	memcpy(crwr->key_ctx.key + s->blkcipher.key_len, s->hmac.ipad,
+	    s->hmac.partial_digest_len);
+	memcpy(crwr->key_ctx.key + s->blkcipher.key_len + iopad_size,
+	    s->hmac.opad, s->hmac.partial_digest_len);
+
+	dst = (char *)(crwr + 1) + kctx_len;
+	ccr_write_phys_dsgl(sc, dst, crde, dsgl_nsegs);
+	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
+	if (iv_loc == IV_IMMEDIATE) {
+		memcpy(dst, iv, s->blkcipher.iv_len);
+		dst += s->blkcipher.iv_len;
+	}
+	if (imm_len != 0)
+		crypto_copydata(crp->crp_flags, crp->crp_buf, 0, tot_len, dst);
+	else
+		ccr_write_ulptx_sgl(sc, 0, tot_len, dst, sgl_nsegs);
+
+#if 1
+	device_printf(sc->dev, "submitting AUTHENC request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
+#endif
+
+	/* XXX: TODO backpressure */
+	t4_wrq_tx(sc->adapter, wr);
+
+	return (0);
+}
+
+static int
+ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
+    struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
+{
+	struct cryptodesc *crd;
+
+	/*
+	 * If OCF generated chained cipher requests the updated
+	 * IV would need to be extracted.  As it is, just handle
+	 * the hash.
+	 */
+	crd = crp->crp_desc;
+	if (crd->crd_flags & CRD_F_ENCRYPT)
+		crd = crd->crd_next;
+	if (error == 0) {
+#if 1
+		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
+		    HD_OMIT_CHARS);
+#endif
+		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
+		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+	}
+
+	return (error);
+}
 
 static void
 ccr_identify(driver_t *driver, device_t parent)
@@ -959,7 +1159,7 @@ ccr_aes_getdeckey(void *dec_key, const void *enc_key, unsigned int kbits)
 static void
 ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 {
-	unsigned int ck_size, kctx_flits, kctx_len, kbits;
+	unsigned int ck_size, iopad_size, kctx_flits, kctx_len, kbits, mk_size;
 
 	if (alg == CRYPTO_AES_XTS)
 		kbits = klen / 2;
@@ -985,11 +1185,17 @@ ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 		ccr_aes_getdeckey(s->blkcipher.deckey, key, kbits);
 
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
+	mk_size = CHCR_KEYCTX_NO_KEY;
+	if (s->mode == AUTHENC) {
+		mk_size = s->hmac.mk_size;
+		iopad_size = roundup2(s->hmac.partial_digest_len, 16);
+		kctx_len += iopad_size * 2;
+	}
 	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
 	s->blkcipher.key_ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
 	    V_KEY_CONTEXT_DUAL_CK(alg == CRYPTO_AES_XTS) |
 	    V_KEY_CONTEXT_SALT_PRESENT(1) | V_KEY_CONTEXT_CK_SIZE(ck_size) |
-	    V_KEY_CONTEXT_MK_SIZE(CHCR_KEYCTX_NO_KEY) | V_KEY_CONTEXT_VALID(1));
+	    V_KEY_CONTEXT_MK_SIZE(mk_size) | V_KEY_CONTEXT_VALID(1));
 }
 
 static int
@@ -1086,10 +1292,6 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 	if (hash != NULL && hash->cri_key == NULL)
 		return (EINVAL);
 
-	/* AEAD not yet supported. */
-	if (hash != NULL && cipher != NULL)
-		return (EINVAL);
-
 	sc = device_get_softc(dev);
 	mtx_lock(&sc->lock);
 	if (sc->detaching) {
@@ -1120,8 +1322,15 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 
 	s = &sc->sessions[sess];
 
-	if (hash != NULL) {
+	if (hash != NULL && cipher != NULL)
+		s->mode = AUTHENC;
+	else if (hash != NULL)
 		s->mode = HMAC;
+	else {
+		MPASS(cipher != NULL);
+		s->mode = BLKCIPHER;
+	}
+	if (hash != NULL) {
 		s->hmac.auth_hash = auth_hash;
 		s->hmac.auth_mode = auth_mode;
 		s->hmac.mk_size = mk_size;
@@ -1132,9 +1341,8 @@ ccr_newsession(device_t dev, uint32_t *sidp, struct cryptoini *cri)
 			s->hmac.hash_len = hash->cri_mlen;
 		ccr_init_hmac_digest(s, hash->cri_alg, hash->cri_key,
 		    hash->cri_klen);
-	} else {
-		MPASS(cipher != NULL);
-		s->mode = BLKCIPHER;
+	}
+	if (cipher != NULL) {
 		s->blkcipher.cipher_mode = cipher_mode;
 		s->blkcipher.iv_len = iv_len;
 		if (cipher->cri_key != NULL)
@@ -1178,7 +1386,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 {
 	struct ccr_softc *sc;
 	struct ccr_session *s;
-	struct cryptodesc *crd;
+	struct cryptodesc *crd, *crda, *crde;
 	uint32_t sid;
 	int error;
 
@@ -1222,7 +1430,46 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		}
 		error = ccr_blkcipher(sc, sid, s, crp);
 		break;
+	case AUTHENC:
+		error = 0;
+		switch (crd->crd_alg) {
+		case CRYPTO_AES_CBC:
+		case CRYPTO_AES_ICM:
+		case CRYPTO_AES_XTS:
+			/* Only encrypt-then-authenticate supported. */
+			if (!(crd->crd_flags & CRD_F_ENCRYPT)) {
+				error = EINVAL;
+				break;
+			}
+			crde = crd;
+			crda = crd->crd_next;
+			break;
+		default:
+			crda = crd;
+			crde = crd->crd_next;
+			if (crde->crd_flags & CRD_F_ENCRYPT) {
+				error = EINVAL;
+				break;
+			}
+			break;
+		}
+		if (error)
+			break;
+		if (crda->crd_flags & CRD_F_KEY_EXPLICIT)
+			ccr_init_hmac_digest(s, crda->crd_alg, crda->crd_key,
+			    crda->crd_klen);
+		if (crde->crd_flags & CRD_F_KEY_EXPLICIT) {
+			error = ccr_aes_check_keylen(crde->crd_alg,
+			    crde->crd_klen);
+			if (error)
+				break;
+			ccr_aes_setkey(s, crde->crd_alg, crde->crd_key,
+			    crde->crd_klen);
+		}
+		error = ccr_authenc(sc, sid, s, crp, crda, crde);
+		break;
 	}
+
 	if (error == 0)
 		s->pending++;
 	mtx_unlock(&sc->lock);
@@ -1270,6 +1517,9 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 		break;
 	case BLKCIPHER:
 		error = ccr_blkcipher_done(sc, s, crp, cpl, error);
+		break;
+	case AUTHENC:
+		error = ccr_authenc_done(sc, s, crp, cpl, error);
 		break;
 	}
 
