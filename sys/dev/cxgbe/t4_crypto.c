@@ -1400,9 +1400,6 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		return (EINVAL);
 
 	crd = crp->crp_desc;
-	if (crd->crd_next != NULL)
-		return (EINVAL);
-
 	sid = CRYPTO_SESID2LID(crp->crp_sid);
 	sc = device_get_softc(dev);
 	mtx_lock(&sc->lock);
