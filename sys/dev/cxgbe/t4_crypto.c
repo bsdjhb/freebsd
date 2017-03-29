@@ -58,7 +58,13 @@ __FBSDID("$FreeBSD$");
  * +-------------------------------+
  * | struct cpl_tls_tx_scmd_fmt    |
  * +-------------------------------+
- * | key context                   |
+ * | key context header            |
+ * +-------------------------------+
+ * | AES key                       |  ----- For requests with AES
+ * +-------------------------------+ -
+ * | IPAD (16-byte aligned)        |  \
+ * +-------------------------------+  +---- For requests with HMAC
+ * | OPAD (16-byte aligned)        |  /
  * +-------------------------------+ -
  * | struct cpl_rx_phys_dsgl       |  \
  * +-------------------------------+  +---- Destination buffer for
