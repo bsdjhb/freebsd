@@ -1440,12 +1440,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		case CRYPTO_AES_ICM:
 		case CRYPTO_AES_XTS:
 			/* Only encrypt-then-authenticate supported. */
-			if (!(crd->crd_flags & CRD_F_ENCRYPT)) {
+			crde = crd;
+			crda = crd->crd_next;
+			if (!(crde->crd_flags & CRD_F_ENCRYPT)) {
 				error = EINVAL;
 				break;
 			}
-			crde = crd;
-			crda = crd->crd_next;
 			break;
 		default:
 			crda = crd;
