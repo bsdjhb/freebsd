@@ -477,7 +477,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_AUTHSTART(1) | V_CPL_TX_SEC_PDU_AUTHSTOP(0));
 
-	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
 	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
@@ -631,7 +631,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(0));
 
-	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	/* XXX: NumIvs set to 0? */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
@@ -823,7 +823,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_CPL_TX_SEC_PDU_AUTHSTART(auth_start) |
 	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop));
 
-	/* These two flits are actually a CPL_TLX_TX_SCMD_FMT. */
+	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	/* XXX: NumIvs set to 0? */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
