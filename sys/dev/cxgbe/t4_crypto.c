@@ -767,8 +767,9 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	struct auth_hash *axf;
 	char *dst;
 	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
-	u_int hash_size_in_response, imm_len, iopad_size, tot_len;
-	u_int cipher_start, cipher_stop, auth_start, auth_stop;
+	u_int hash_size_in_response, imm_len, iopad_size;
+	u_int cipher_start, cipher_stop, auth_start, auth_stop, auth_insert;
+	u_int input_len, output_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
@@ -813,26 +814,33 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			    crde->crd_inject, s->blkcipher.iv_len, iv);
 	}
 
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, crde->crd_len +
-	    hash_size_in_response);
+	output_len = crde->crd_len;
+	if (op_type == CHCR_ENCRYPT_OP)
+		output_len += hash_size_in_response;
+	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, output_len);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
-	tot_len = max(crda->crd_len + crda->crd_skip,
-	    crde->crd_len + crde->crd_skip);
-	if (tot_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
-		imm_len = tot_len;
+	input_len = crde->crd_skip + crde->crd_len;
+	if (op_type == CHCR_DECRYPT_OP)
+		input_len += hash_size_in_response;
+	if (input_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, 0, tot_len);
+		sgl_nsegs = ccr_count_sgl(sc->sg, 0, input_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
 	cipher_start = s->blkcipher.iv_len + crde->crd_skip + 1;
-	cipher_stop = tot_len - (crde->crd_skip + crde->crd_len);
+	cipher_stop = input_len - (crde->crd_skip + crde->crd_len);
 	auth_start = s->blkcipher.iv_len + crda->crd_skip + 1;
-	auth_stop = tot_len - (crda->crd_skip + crda->crd_len);
+	auth_stop = input_len - (crda->crd_skip + crda->crd_len);
+	auth_insert = input_len - crda->crd_inject;
+	MPASS(op_type == CHCR_DECRYPT_OP ?
+	    auth_insert == hash_size_in_response :
+	    auth_insert == 0);
 
 	/* PADs must be 128-bit aligned. */
 	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
@@ -864,7 +872,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
 	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
 
-	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + tot_len);
+	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + input_len);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTART(cipher_start) |
@@ -872,7 +880,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(cipher_stop & 0xf) |
 	    V_CPL_TX_SEC_PDU_AUTHSTART(auth_start) |
-	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop));
+	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop) |
+	    V_CPL_TX_SEC_PDU_AUTHINSERT(auth_insert));
 
 	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	/* XXX: NumIvs set to 0? */
@@ -926,17 +935,17 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    s->hmac.opad, s->hmac.partial_digest_len);
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, crde->crd_skip, crde->crd_len +
-	    hash_size_in_response, dst, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, crde->crd_skip, output_len, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
 		dst += s->blkcipher.iv_len;
 	}
 	if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, 0, tot_len, dst);
+		crypto_copydata(crp->crp_flags, crp->crp_buf, 0, input_len,
+		    dst);
 	else
-		ccr_write_ulptx_sgl(sc, 0, tot_len, dst, sgl_nsegs);
+		ccr_write_ulptx_sgl(sc, 0, input_len, dst, sgl_nsegs);
 
 #if 1
 	device_printf(sc->dev, "submitting AUTHENC request:\n");
