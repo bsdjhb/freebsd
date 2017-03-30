@@ -196,19 +196,12 @@ ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
 }
 
 static int
-ccr_count_sgl(struct sglist *sg, struct cryptodesc *crd, bool honor_skip)
+ccr_count_sgl(struct sglist *sg, int skip, int len)
 {
 	struct sglist_seg *seg;
 	size_t seglen;
-	int len, nsegs, skip;
+	int nsegs;
 
-	if (honor_skip) {
-		skip = crd->crd_skip;
-		len = crd->crd_len;
-	} else {
-		skip = 0;
-		len = crd->crd_skip + crd->crd_len;
-	}
 	MPASS(len != 0);
 	seg = &sg->sg_segs[0];
 	while (skip >= seg->ss_len) {
@@ -250,13 +243,12 @@ ccr_phys_dsgl_len(int nsegs)
 }
 
 static void
-ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
+ccr_write_phys_dsgl(struct ccr_softc *sc, int skip, int len, void *dst,
     int nsegs)
 {
 	struct sglist *sg;
 	struct cpl_rx_phys_dsgl *cpl;
 	struct phys_sge_pairs *sgl;
-	int len, skip;
 	size_t seglen;
 	u_int i, j;
 
@@ -273,8 +265,6 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, struct cryptodesc *crd,
 	cpl->rss_hdr_int.qid = htobe16(sc->ofld_rxq->iq.abs_id);
 	cpl->rss_hdr_int.hash_val = 0;
 	sgl = (struct phys_sge_pairs *)(cpl + 1);
-	skip = crd->crd_skip;
-	len = crd->crd_len;
 	j = 0;
 	for (i = 0; i < sg->sg_nseg; i++) {
 		seglen = sg->sg_segs[i].ss_len;
@@ -394,6 +384,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 }
 
 #if 1
+#include <sys/uio.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <vm/vm_param.h>
@@ -423,6 +414,34 @@ dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 		    HD_OMIT_COUNT);
 	}
 }
+
+static void
+dump_crp(struct ccr_softc *sc, struct cryptop *crp)
+{
+	struct mbuf *m;
+	struct uio *uio;
+	int i;
+
+	device_printf(sc->dev, "crp buffer ");
+	if (crp->crp_flags & CRYPTO_F_IMBUF) {
+		
+		printf("(mbuf):\n");
+		for (m = (struct mbuf *)crp->crp_buf; m != NULL; m = m->m_next)
+			hexdump(m->m_data, m->m_len, NULL, HD_OMIT_CHARS |
+			    HD_OMIT_COUNT);
+	} else if (crp->crp_flags & CRYPTO_F_IOV) {
+		printf("(uio):\n");
+		uio = (struct uio *)crp->crp_buf;
+		for (i = 0; i < uio->uio_iovcnt; i++)
+			hexdump(uio->uio_iov[i].iov_base,
+			    uio->uio_iov[i].iov_len, NULL, HD_OMIT_CHARS |
+			    HD_OMIT_COUNT);
+	} else {
+		printf(":\n");
+		hexdump(crp->crp_buf, crp->crp_ilen, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
+	}
+}
 #endif
 
 static int
@@ -446,7 +465,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, crd, true);
+		sgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
@@ -584,7 +603,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			iv_loc = IV_DSGL;
 	}
 
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crd, true);
+	dsgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	if (crd->crd_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
@@ -599,7 +618,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	} else {
 		imm_len = 0;
 		if (iv_loc == IV_DSGL)
-			sgl_nsegs = ccr_count_sgl(sc->sg, crd, false);
+			sgl_nsegs = ccr_count_sgl(sc->sg, 0, crd->crd_skip +
+			    crd->crd_len);
 		else
 			sgl_nsegs = dsgl_nsegs;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
@@ -683,7 +703,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, dst, crd, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, crd->crd_skip, crd->crd_len, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
@@ -725,21 +745,46 @@ ccr_blkcipher_done(struct ccr_softc *sc, struct ccr_session *s,
 }
 
 static int
+ccr_hmac_ctrl(struct auth_hash *axf, unsigned int authsize)
+{
+
+	if (authsize == 10)
+		return (CHCR_SCMD_HMAC_CTRL_TRUNC_RFC4366);
+	if (authsize == 12)
+		return (CHCR_SCMD_HMAC_CTRL_IPSEC_96BIT);
+	if (authsize == axf->hashsize / 2)
+		return (CHCR_SCMD_HMAC_CTRL_DIV2);
+	return (CHCR_SCMD_HMAC_CTRL_NO_TRUNC);
+}
+
+static int
 ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
     struct cryptop *crp, struct cryptodesc *crda, struct cryptodesc *crde)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
 	struct chcr_wr *crwr;
 	struct wrqe *wr;
+	struct auth_hash *axf;
 	char *dst;
 	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
-	u_int imm_len, iopad_size, tot_len;
+	u_int hash_size_in_response, imm_len, iopad_size, tot_len;
 	u_int cipher_start, cipher_stop, auth_start, auth_stop;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
 	if ((crde->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
 		return (EINVAL);
+
+	/*
+	 * The hardware insists on appending the hash to the end of the
+	 * ciphertext.  Reject attempts that do not do this.
+	 */
+	if (crda->crd_inject != crde->crd_len + crde->crd_skip ||
+	    crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
+		return (EINVAL);
+
+	axf = s->hmac.auth_hash;
+	hash_size_in_response = s->hmac.hash_len;
 
 	/*
 	 * For now, the IV is always stored first with an empty AAD
@@ -768,7 +813,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			    crde->crd_inject, s->blkcipher.iv_len, iv);
 	}
 
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crde, true);
+	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, crde->crd_len +
+	    hash_size_in_response);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	tot_len = max(crda->crd_len + crda->crd_skip,
@@ -779,9 +825,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = sc->sg->sg_nseg;
+		sgl_nsegs = ccr_count_sgl(sc->sg, 0, tot_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
-		tot_len = sglist_length(sc->sg);
 	}
 
 	cipher_start = s->blkcipher.iv_len + crde->crd_skip + 1;
@@ -835,9 +880,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_SEQ_NO_CTRL(0) |
 	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
 	    V_SCMD_ENC_DEC_CTRL(op_type) |
+	    V_SCMD_CIPH_AUTH_SEQ_CTRL(op_type == CHCR_ENCRYPT_OP ? 1 : 0) |
 	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
 	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
-	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC) |
+	    V_SCMD_HMAC_CTRL(ccr_hmac_ctrl(axf, hash_size_in_response)) |
 	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
@@ -880,7 +926,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    s->hmac.opad, s->hmac.partial_digest_len);
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, dst, crde, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, crde->crd_skip, crde->crd_len +
+	    hash_size_in_response, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
@@ -922,9 +969,8 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 #if 1
 		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
 		    HD_OMIT_CHARS);
+		dump_crp(sc, crp);
 #endif
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
-		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
 	}
 
 	return (error);
@@ -1166,6 +1212,7 @@ static void
 ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 {
 	unsigned int ck_size, iopad_size, kctx_flits, kctx_len, kbits, mk_size;
+	unsigned int opad_present;
 
 	if (alg == CRYPTO_AES_XTS)
 		kbits = klen / 2;
@@ -1191,15 +1238,19 @@ ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 		ccr_aes_getdeckey(s->blkcipher.deckey, key, kbits);
 
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
-	mk_size = CHCR_KEYCTX_NO_KEY;
 	if (s->mode == AUTHENC) {
 		mk_size = s->hmac.mk_size;
+		opad_present = 1;
 		iopad_size = roundup2(s->hmac.partial_digest_len, 16);
 		kctx_len += iopad_size * 2;
+	} else {
+		mk_size = CHCR_KEYCTX_NO_KEY;
+		opad_present = 0;
 	}
 	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
 	s->blkcipher.key_ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
 	    V_KEY_CONTEXT_DUAL_CK(alg == CRYPTO_AES_XTS) |
+	    V_KEY_CONTEXT_OPAD_PRESENT(opad_present) |
 	    V_KEY_CONTEXT_SALT_PRESENT(1) | V_KEY_CONTEXT_CK_SIZE(ck_size) |
 	    V_KEY_CONTEXT_MK_SIZE(mk_size) | V_KEY_CONTEXT_VALID(1));
 }
