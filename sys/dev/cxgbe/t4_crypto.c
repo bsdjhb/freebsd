@@ -955,24 +955,16 @@ static int
 ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
     struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
 {
-	struct cryptodesc *crd;
 
 	/*
-	 * If OCF generated chained cipher requests the updated
-	 * IV would need to be extracted.  As it is, just handle
-	 * the hash.
+	 * The updated IV to permit chained requests is at
+	 * cpl->data[2], but OCF doesn't permit chained requests.
 	 */
-	crd = crp->crp_desc;
-	if (crd->crd_flags & CRD_F_ENCRYPT)
-		crd = crd->crd_next;
-	if (error == 0) {
 #if 1
-		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
-		    HD_OMIT_CHARS);
+	if (error == 0) {
 		dump_crp(sc, crp);
-#endif
 	}
-
+#endif
 	return (error);
 }
 
