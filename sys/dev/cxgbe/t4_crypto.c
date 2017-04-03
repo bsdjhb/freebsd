@@ -90,8 +90,8 @@ __FBSDID("$FreeBSD$");
  * +-------------------------------+
  * | struct cpl_fw6_pld            |
  * +-------------------------------+
- * | hash digest                   |  ----- Only for hash-only requests
- * +-------------------------------+
+ * | hash digest                   |  ----- For HMAC request with
+ * +-------------------------------+        'hash_size' set in work request
  * 
  * A 32-bit big-endian error status word is supplied in the last 4
  * bytes of data[0] in the CPL_FW6_PLD message.  bit 0 indicates a
@@ -103,8 +103,9 @@ __FBSDID("$FreeBSD$");
  * For block cipher replies, the updated IV is supplied in data[2] and
  * data[3] of the CPL_FW6_PLD message.
  *
- * For hash replies, the hash digest is supplied immediately following
- * the CPL_FW6_PLD message.
+ * For hash replies where the work request set 'hash_size' to request
+ * a copy of the hash in the reply, the hash digest is supplied
+ * immediately following the CPL_FW6_PLD message.
  */
 
 /*
@@ -861,8 +862,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
-	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len, 0,
-	    iv_loc, crp);
+	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
+	    hash_size_in_response, iv_loc, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
@@ -964,11 +965,33 @@ static int
 ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
     struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
 {
+	struct cryptodesc *crd;
 
 	/*
 	 * The updated IV to permit chained requests is at
 	 * cpl->data[2], but OCF doesn't permit chained requests.
+	 *
+	 * For a decryption request, the hardware may do a verification
+	 * of the HMAC which will fail if the existing HMAC isn't in the
+	 * buffer.  If that happens, clear the error and copy the HMAC
+	 * from the CPL reply into the buffer.  If the 
+	 *
+	 * For encryption requests, crd should be the cipher request
+	 * which will have CRD_F_ENCRYPT set.  For decryption
+	 * requests, crp_desc will be the HMAC request which should
+	 * not have this flag set.
 	 */
+	crd = crp->crp_desc;
+	if (error == EBADMSG && !CHK_PAD_ERR_BIT(be64toh(cpl->data[0])) &&
+	    !(crd->crd_flags & CRD_F_ENCRYPT)) {
+#if 1
+		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
+		    HD_OMIT_CHARS);
+#endif
+		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
+		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+		error = 0;
+	}
 #if 1
 	if (error == 0) {
 		dump_crp(sc, crp);
