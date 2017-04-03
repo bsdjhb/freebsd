@@ -930,10 +930,9 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		break;
 	}
 
-	memcpy(crwr->key_ctx.key + s->blkcipher.key_len, s->hmac.ipad,
-	    s->hmac.partial_digest_len);
-	memcpy(crwr->key_ctx.key + s->blkcipher.key_len + iopad_size,
-	    s->hmac.opad, s->hmac.partial_digest_len);
+	dst = crwr->key_ctx.key + roundup2(s->blkcipher.key_len, 16);
+	memcpy(dst, s->hmac.ipad, s->hmac.partial_digest_len);
+	memcpy(dst + iopad_size, s->hmac.opad, s->hmac.partial_digest_len);
 
 	dst = (char *)(crwr + 1) + kctx_len;
 	ccr_write_phys_dsgl(sc, crde->crd_skip, output_len, dst, dsgl_nsegs);
