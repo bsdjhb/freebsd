@@ -962,7 +962,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	else
 		ccr_write_ulptx_sgl(sc, 0, input_len, dst, sgl_nsegs);
 
-#if 1
+#if 0
 	device_printf(sc->dev, "submitting AUTHENC request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
 	if (imm_len == 0)
@@ -998,7 +998,7 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 	crd = crp->crp_desc;
 	if (error == EBADMSG && !CHK_PAD_ERR_BIT(be64toh(cpl->data[0])) &&
 	    !(crd->crd_flags & CRD_F_ENCRYPT)) {
-#if 1
+#if 0
 		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
 		    HD_OMIT_CHARS);
 #endif
@@ -1006,7 +1006,7 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
 		error = 0;
 	}
-#if 1
+#if 0
 	if (error == 0) {
 		dump_crp(sc, crp);
 	}
