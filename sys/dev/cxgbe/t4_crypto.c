@@ -1194,16 +1194,16 @@ ccr_aes_getdeckey(void *dec_key, const void *enc_key, unsigned int kbits)
 			*--dkey = htobe32(ek[4 * 10 + i]);
 		break;
 	case 192:
-		for (i = 0; i < 4; i++)
-			*--dkey = htobe32(ek[4 * 12 + i]);
 		for (i = 0; i < 2; i++)
 			*--dkey = htobe32(ek[4 * 11 + 2 + i]);
+		for (i = 0; i < 4; i++)
+			*--dkey = htobe32(ek[4 * 12 + i]);
 		break;
 	case 256:
 		for (i = 0; i < 4; i++)
-			*--dkey = htobe32(ek[4 * 14 + i]);
-		for (i = 0; i < 4; i++)
 			*--dkey = htobe32(ek[4 * 13 + i]);
+		for (i = 0; i < 4; i++)
+			*--dkey = htobe32(ek[4 * 14 + i]);
 		break;
 	}
 	MPASS(dkey == dec_key);
