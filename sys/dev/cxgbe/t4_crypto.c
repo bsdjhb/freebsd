@@ -340,6 +340,18 @@ ccr_write_ulptx_sgl(struct ccr_softc *sc, int skip, int len, void *dst,
 	}
 }
 
+static bool
+ccr_use_imm_data(u_int transhdr_len, u_int input_len)
+{
+
+	if (input_len > CRYPTO_MAX_IMM_TX_PKT_LEN)
+		return (false);
+	if (roundup2(transhdr_len, 16) + roundup2(input_len, 16) >
+	    SGE_MAX_WR_LEN)
+		return (false);
+	return (true);
+}
+
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
     u_int wr_len, uint32_t sid, u_int imm_len, u_int sgl_len, u_int hash_size,
@@ -459,8 +471,20 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	int sgl_nsegs, sgl_len;
 
 	axf = s->hmac.auth_hash;
+
+	/* PADs must be 128-bit aligned. */
+	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
+
+	/*
+	 * The 'key' part of the context includes the aligned IPAD and
+	 * OPAD.
+	 */
+	kctx_len = iopad_size * 2;
+	hash_size_in_response = axf->hashsize;
+	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
+
 	crd = crp->crp_desc;
-	if (crd->crd_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+	if (ccr_use_imm_data(transhdr_len, crd->crd_len)) {
 		imm_len = crd->crd_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -469,17 +493,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
-
-	/* PADs must be 128-bit aligned. */
-	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
-
-	/*
-	 * The 'key' part of the context includes the partial hash
-	 * (IPAD) followed by the OPAD.
-	 */
-	kctx_len = iopad_size * 2;
-	hash_size_in_response = axf->hashsize;
-	transhdr_len = HASH_TRANSHDR_SIZE(kctx_len);
+		    
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
@@ -607,7 +621,12 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	dsgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
-	if (crd->crd_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+	/* The 'key' must be 128-bit aligned. */
+	kctx_len = roundup2(s->blkcipher.key_len, 16);
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
+
+	if (ccr_use_imm_data(transhdr_len, crd->crd_len +
+	    s->blkcipher.iv_len)) {
 		imm_len = crd->crd_len;
 		if (iv_loc == IV_DSGL) {
 			crypto_copydata(crp->crp_flags, crp->crp_buf,
@@ -626,10 +645,6 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
-	/* The 'key' must be 128-bit aligned. */
-	kctx_len = roundup2(s->blkcipher.key_len, 16);
-
-	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
@@ -821,10 +836,20 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, output_len);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
+	/* PADs must be 128-bit aligned. */
+	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
+
+	/*
+	 * The 'key' part of the key context consists of the key followed
+	 * by the IPAD and OPAD.
+	 */
+	kctx_len = roundup2(s->blkcipher.key_len, 16) + iopad_size * 2;
+	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
+
 	input_len = crde->crd_skip + crde->crd_len;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (input_len + s->blkcipher.iv_len <= CRYPTO_MAX_IMM_TX_PKT_LEN) {
+	if (ccr_use_imm_data(transhdr_len, input_len + s->blkcipher.iv_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -843,16 +868,6 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    auth_insert == hash_size_in_response :
 	    auth_insert == 0);
 
-	/* PADs must be 128-bit aligned. */
-	iopad_size = roundup2(s->hmac.partial_digest_len, 16);
-
-	/*
-	 * The 'key' part of the key context consists of the key followed
-	 * by the IPAD and OPAD.
-	 */
-	kctx_len = roundup2(s->blkcipher.key_len, 16) + iopad_size * 2;
-
-	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
