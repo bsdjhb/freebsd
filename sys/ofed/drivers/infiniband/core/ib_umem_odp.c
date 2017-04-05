@@ -37,6 +37,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/hugetlb.h>
 
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_umem.h>
@@ -305,7 +306,8 @@ out_umem:
 }
 EXPORT_SYMBOL(ib_alloc_odp_umem);
 
-int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem)
+int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem,
+		    int access)
 {
 	int ret_val;
 	pid_t our_pid;
@@ -313,6 +315,20 @@ int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem)
 
 	if (!mm)
 		return -EINVAL;
+
+	if (access & IB_ACCESS_HUGETLB) {
+		struct vm_area_struct *vma;
+		struct hstate *h;
+
+		vma = find_vma(mm, ib_umem_start(umem));
+		if (!vma || !is_vm_hugetlb_page(vma))
+			return -EINVAL;
+		h = hstate_vma(vma);
+		umem->page_shift = huge_page_shift(h);
+		umem->hugetlb = 1;
+	} else {
+		umem->hugetlb = 0;
+	}
 
 	/* Prevent creating ODP MRs in child processes */
 	rcu_read_lock();
