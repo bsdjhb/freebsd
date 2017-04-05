@@ -205,10 +205,7 @@ qlnxr_create_srq(struct ib_srq *ibsrq,
 		page_cnt = srq->usrq.pbl_info.num_pbes;
 		pbl_base_addr = srq->usrq.pbl_tbl->pa;
 		phy_prod_pair_addr = hw_srq->phy_prod_pair_addr;
-		// @@@ : if DEFINE_IB_UMEM_PAGE_SHIFT
-		// page_size = BIT(srq->usrq.umem->page_shift);
-		// else
-		page_size = srq->usrq.umem->page_size;
+		page_size = BIT(srq->usrq.umem->page_shift);
 	} else {
 		struct ecore_chain *pbl;
 		ret = qlnxr_alloc_srq_kernel_params(srq, dev, init_attr);
@@ -1323,19 +1320,19 @@ qlnxr_populate_pbls(struct qlnxr_dev *dev, struct ib_umem *umem,
 
 	pbe_cnt = 0;
 
-	shift = ilog2(umem->page_size);
+	shift = umem->page_shift;
 
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
 		pages = sg_dma_len(sg) >> shift;
 		for (pg_cnt = 0; pg_cnt < pages; pg_cnt++) {
 			/* store the page address in pbe */
-			pbe->lo =
+			pbe->lo = 
 			    cpu_to_le32(sg_dma_address(sg) +
-					(umem->page_size * pg_cnt));
+					(pg_cnt << shift));
 			pbe->hi =
 			    cpu_to_le32(upper_32_bits
 					((sg_dma_address(sg) +
-					  umem->page_size * pg_cnt)));
+					  (pg_cnt << shift))));
 
 			QL_DPRINT12(ha,
 				"Populate pbl table:"
@@ -1519,7 +1516,7 @@ qlnxr_reg_user_mr(struct ib_pd *ibpd, u64 start, u64 len,
 	mr->hw_mr.pbl_ptr = mr->info.pbl_table[0].pa;
 	mr->hw_mr.pbl_two_level = mr->info.pbl_info.two_layered;
 	mr->hw_mr.pbl_page_size_log = ilog2(mr->info.pbl_info.pbl_size);
-	mr->hw_mr.page_size_log = ilog2(mr->umem->page_size); /* for the MR pages */
+	mr->hw_mr.page_size_log = mr->umem->page_shift; /* for the MR pages */
 
 	mr->hw_mr.fbo = ib_umem_offset(mr->umem);
 	mr->hw_mr.length = len;

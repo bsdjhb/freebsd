@@ -5107,11 +5107,7 @@ static int bnxt_re_page_size_ok(int page_shift)
 static int bnxt_re_get_page_shift(struct ib_umem *umem,
 				  u64 va, u64 st, u64 cmask)
 {
-	int pgshft;
-
-	pgshft = ilog2(umem->page_size);
-
-	return pgshft;
+	return umem->page_shift;
 }
 
 static int bnxt_re_get_num_pages(struct ib_umem *umem, u64 start, u64 length, int page_shift)
