@@ -1416,7 +1416,7 @@ ccr_init_gmac_hash(struct ccr_session *s, char *key, int klen)
 	uint32_t keysched[4 * (RIJNDAEL_MAXNR + 1)];
 	int rounds;
 
-	rounds = rijndaelKeySetupEnc(keysched, key, klen * 8);
+	rounds = rijndaelKeySetupEnc(keysched, key, klen);
 	rijndaelEncrypt(keysched, rounds, zeroes, s->gmac.ghash_h);
 }
 
