@@ -1207,7 +1207,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	else
 		ccr_write_ulptx_sgl(sc, 0, input_len, dst, sgl_nsegs);
 
-#if 1
+#if 0
 	device_printf(sc->dev, "submitting GCM request:\n");
 	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
 	if (imm_len == 0)
@@ -1231,7 +1231,7 @@ ccr_gcm_done(struct ccr_softc *sc, struct ccr_session *s,
 	 *
 	 * Note that the hardware should always verify the GMAC hash.
 	 */
-#if 1
+#if 0
 	if (error == 0) {
 		dump_crp(sc, crp);
 	}
