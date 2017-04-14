@@ -1149,13 +1149,23 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	crwr->sec_cpl.pldlen = htobe32(iv_len + input_len);
 
+	/*
+	 * NB: cipherstop is explicitly set to 0.  On encrypt it
+	 * should normally be set to 0 anyway (as the encrypt crd ends
+	 * at the end of the input).  However, for decrypt the cipher
+	 * ends before the tag in the AUTHENC case (and authstop is
+	 * set to stop before the tag), but for GCM the cipher still
+	 * runs to the end of the buffer.  Not sure if this is
+	 * intentional or a firmware quirk, but it is required for
+	 * working tag validation with GCM decryption.
+	 */
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
 	    V_CPL_TX_SEC_PDU_AADSTART(aad_start) |
 	    V_CPL_TX_SEC_PDU_AADSTOP(aad_stop) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTART(cipher_start) |
-	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(cipher_stop >> 4));
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(0));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
-	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(cipher_stop & 0xf) |
+	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(0) |
 	    V_CPL_TX_SEC_PDU_AUTHSTART(cipher_start) |
 	    V_CPL_TX_SEC_PDU_AUTHSTOP(cipher_stop) |
 	    V_CPL_TX_SEC_PDU_AUTHINSERT(auth_insert));
