@@ -534,7 +534,6 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
 	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
 	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC));
-	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_LAST_FRAG(0) | V_SCMD_MORE_FRAGS(0) | V_SCMD_MAC_ONLY(1));
 
@@ -695,7 +694,6 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
-	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
 	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
@@ -928,7 +926,6 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
-	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
 	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
@@ -1177,7 +1174,6 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_SCMD_IV_SIZE(iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	/* XXX: Set V_SCMD_IV_GEN_CTRL? */
-	/* XXX: Set V_SCMD_KEY_CTX_INLINE? */
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
 	    V_SCMD_MORE_FRAGS(0) | V_SCMD_LAST_FRAG(0) | V_SCMD_MAC_ONLY(0) |
