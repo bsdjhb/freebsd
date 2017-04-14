@@ -1040,7 +1040,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	char *dst;
 	u_int iv_len, iv_loc, kctx_len, op_type, transhdr_len, wr_len;
 	u_int hash_size_in_response, imm_len;
-	u_int cipher_start, cipher_stop, auth_start, auth_stop, auth_insert;
+	u_int cipher_start, cipher_stop, aad_start, aad_stop, auth_insert;
 	u_int hmac_ctrl, input_len, output_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
@@ -1123,8 +1123,8 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	cipher_start = iv_len + crde->crd_skip + 1;
 	cipher_stop = input_len - (crde->crd_skip + crde->crd_len);
-	auth_start = iv_len + crda->crd_skip + 1;
-	auth_stop = input_len - (crda->crd_skip + crda->crd_len);
+	aad_start = iv_len + crda->crd_skip + 1;
+	aad_stop = aad_start + crda->crd_len - 1;
 	auth_insert = input_len - crda->crd_inject;
 	MPASS(op_type == CHCR_DECRYPT_OP ?
 	    auth_insert == hash_size_in_response :
@@ -1153,12 +1153,14 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.pldlen = htobe32(iv_len + input_len);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
+	    V_CPL_TX_SEC_PDU_AADSTART(aad_start) |
+	    V_CPL_TX_SEC_PDU_AADSTOP(aad_stop) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTART(cipher_start) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(cipher_stop >> 4));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(cipher_stop & 0xf) |
-	    V_CPL_TX_SEC_PDU_AUTHSTART(auth_start) |
-	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop) |
+	    V_CPL_TX_SEC_PDU_AUTHSTART(cipher_start) |
+	    V_CPL_TX_SEC_PDU_AUTHSTOP(cipher_stop) |
 	    V_CPL_TX_SEC_PDU_AUTHINSERT(auth_insert));
 
 	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
