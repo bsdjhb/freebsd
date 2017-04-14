@@ -447,7 +447,6 @@ dump_crp(struct ccr_softc *sc, struct cryptop *crp)
 
 	device_printf(sc->dev, "crp buffer ");
 	if (crp->crp_flags & CRYPTO_F_IMBUF) {
-		
 		printf("(mbuf):\n");
 		for (m = (struct mbuf *)crp->crp_buf; m != NULL; m = m->m_next)
 			hexdump(m->m_data, m->m_len, NULL, HD_OMIT_CHARS |
