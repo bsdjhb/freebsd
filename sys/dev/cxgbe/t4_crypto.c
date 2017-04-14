@@ -1137,7 +1137,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memset(crwr, 0, transhdr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
-	    hash_size_in_response, iv_loc, crp);
+	    0, iv_loc, crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
@@ -1231,10 +1231,6 @@ ccr_gcm_done(struct ccr_softc *sc, struct ccr_session *s,
 	 *
 	 * Note that the hardware should always verify the GMAC hash.
 	 */
-#if 1
-	hexdump(cpl + 1, s->gmac.hash_len, NULL, HD_OMIT_COUNT |
-	    HD_OMIT_CHARS);
-#endif
 #if 1
 	if (error == 0) {
 		dump_crp(sc, crp);
