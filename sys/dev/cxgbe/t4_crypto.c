@@ -890,7 +890,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memset(crwr, 0, transhdr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
-	    hash_size_in_response, iv_loc, crp);
+	    op_type == CHCR_DECRYPT_OP ? hash_size_in_response : 0, iv_loc,
+	    crp);
 
 	/* XXX: Hardcodes SGE loopback channel of 0. */
 	crwr->sec_cpl.op_ivinsrtofst = htobe32(
@@ -1000,7 +1001,7 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 	 * For a decryption request, the hardware may do a verification
 	 * of the HMAC which will fail if the existing HMAC isn't in the
 	 * buffer.  If that happens, clear the error and copy the HMAC
-	 * from the CPL reply into the buffer.  If the 
+	 * from the CPL reply into the buffer.
 	 *
 	 * For encryption requests, crd should be the cipher request
 	 * which will have CRD_F_ENCRYPT set.  For decryption
