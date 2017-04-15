@@ -1322,7 +1322,7 @@ ccr_detach(device_t dev)
 
 	mtx_lock(&sc->lock);
 	for (i = 0; i < sc->nsessions; i++) {
-		if (sc->sessions[i].pending != 0) {
+		if (sc->sessions[i].active || sc->sessions[i].pending != 0) {
 			mtx_unlock(&sc->lock);
 			return (EBUSY);
 		}
