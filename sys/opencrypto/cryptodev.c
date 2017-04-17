@@ -917,7 +917,7 @@ cryptodev_aead(
 		goto bail;
 	}
 
-	if (cop->flags & COP_F_CIPHER_FIRST) {
+	if (caead->flags & COP_F_CIPHER_FIRST) {
 		crde = crp->crp_desc;
 		crda = crde->crd_next;
 	} else {
