@@ -796,7 +796,9 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	char *dst;
 	u_int iv_loc, kctx_len, key_half, op_type, transhdr_len, wr_len;
 	u_int hash_size_in_response, imm_len, iopad_size;
-	u_int cipher_start, cipher_stop, auth_start, auth_stop, auth_insert;
+	u_int aad_start, aad_len, aad_stop;
+	u_int auth_start, auth_stop, auth_insert;
+	u_int cipher_start, cipher_stop;
 	u_int hmac_ctrl, input_len, output_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
@@ -816,12 +818,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	hash_size_in_response = s->hmac.hash_len;
 
 	/*
-	 * For now, the IV is always stored first with an empty AAD
-	 * region and the hash and cipher regions are applied to the
-	 * payload after the IV (which may also include a copy of the
-	 * IV).  Eventually we should optimize the case of an IPSec
-	 * request and make use of the AAD region for the auth-only
-	 * data before the IV.
+	 * For now, the IV is always stored at the start of the buffer
+	 * even though it may be duplicated in the payload.  Eventually
+	 * we should optimize the case of an IPSec request and use the
+	 * copy of the IV in the payload if it exists.
 	 */
 	iv_loc = IV_IMMEDIATE;
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
@@ -871,10 +871,35 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
+	/*
+	 * Any auth-only data before the cipher region is marked as AAD.
+	 * Auth-data that overlaps with the cipher region is placed in
+	 * the auth section.
+	 */
+	if (crda->crd_skip < crde->crd_skip) {
+		aad_start = s->blkcipher.iv_len + crda->crd_skip + 1;
+		if (crda->crd_skip + crda->crd_len > crde->crd_skip)
+			aad_len = (crde->crd_skip - crda->crd_skip);
+		else
+			aad_len = crda->crd_len;
+		aad_stop = aad_start + aad_len - 1;
+	} else {
+		aad_start = 0;
+		aad_len = 0;
+		aad_stop = 0;
+	}
 	cipher_start = s->blkcipher.iv_len + crde->crd_skip + 1;
 	cipher_stop = input_len - (crde->crd_skip + crde->crd_len);
-	auth_start = s->blkcipher.iv_len + crda->crd_skip + 1;
-	auth_stop = input_len - (crda->crd_skip + crda->crd_len);
+	if (aad_len == crda->crd_len) {
+		auth_start = 0;
+		auth_stop = 0;
+	} else {
+		if (aad_len != 0)
+			auth_start = cipher_start;
+		else
+			auth_start = s->blkcipher.iv_len + crda->crd_skip + 1;
+		auth_stop = input_len - (crda->crd_skip + crda->crd_len);
+	}
 	auth_insert = input_len - crda->crd_inject;
 	MPASS(op_type == CHCR_DECRYPT_OP ?
 	    auth_insert == hash_size_in_response :
@@ -904,6 +929,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + input_len);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
+	    V_CPL_TX_SEC_PDU_AADSTART(aad_start) |
+	    V_CPL_TX_SEC_PDU_AADSTOP(aad_stop) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTART(cipher_start) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(cipher_stop >> 4));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
