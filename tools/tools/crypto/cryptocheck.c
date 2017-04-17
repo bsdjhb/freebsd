@@ -577,7 +577,6 @@ ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 	int fd;
 
 	memset(&sop, 0, sizeof(sop));
-	memset(&cop, 0, sizeof(cop));
 	sop.crid = crid;
 	sop.keylen = cipher_key_len;
 	sop.key = (char *)cipher_key;
@@ -596,6 +595,7 @@ ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 	if (aad_len != 0) {
 		struct crypt_aead caead;
 
+		memset(&caead, 0, sizeof(caead));
 		caead.ses = sop.ses;
 		caead.op = enc ? COP_ENCRYPT : COP_DECRYPT;
 		caead.flags = enc ? COP_F_CIPHER_FIRST : 0;
@@ -617,6 +617,7 @@ ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 	} else {
 		struct crypt_op cop;
 
+		memset(&cop, 0, sizeof(cop));
 		cop.ses = sop.ses;
 		cop.op = enc ? COP_ENCRYPT : COP_DECRYPT;
 		cop.flags = enc ? COP_F_CIPHER_FIRST : 0;
