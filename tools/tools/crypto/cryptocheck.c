@@ -569,12 +569,11 @@ out:
 
 static bool
 ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
-    const char *iv, const char *auth_key, size_t auth_key_len,
-    const char *input, char *output, size_t size, char *digest, int enc,
-    int *cridp)
+    const char *iv, const char *auth_key, size_t auth_key_len, const char *aad,
+    size_t aad_len, const char *input, char *output, size_t size, char *digest,
+    int enc, int *cridp)
 {
 	struct session2_op sop;
-	struct crypt_op cop;
 	int fd;
 
 	memset(&sop, 0, sizeof(sop));
@@ -594,20 +593,45 @@ ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
 		return (false);
 	}
 
-	cop.ses = sop.ses;
-	cop.op = enc ? COP_ENCRYPT : COP_DECRYPT;
-	cop.flags = enc ? COP_F_CIPHER_FIRST : 0;
-	cop.len = size;
-	cop.src = (char *)input;
-	cop.dst = output;
-	cop.mac = digest;
-	cop.iv = (char *)iv;
+	if (aad_len != 0) {
+		struct crypt_aead caead;
 
-	if (ioctl(fd, CIOCCRYPT, &cop) < 0) {
-		warn("cryptodev %s (%zu) AUTHENC failed for device %s",
-		    alg->name, size, crfind(crid));
-		close(fd);
-		return (false);
+		caead.ses = sop.ses;
+		caead.op = enc ? COP_ENCRYPT : COP_DECRYPT;
+		caead.flags = enc ? COP_F_CIPHER_FIRST : 0;
+		caead.len = size;
+		caead.aadlen = aad_len;
+		caead.ivlen = iv_len;
+		caead.src = (char *)input;
+		caead.dst = output;
+		caead.aad = (char *)aad;
+		caead.tag = digest;
+		caead.iv = (char *)iv;
+
+		if (ioctl(fd, CIOCCRYPTAEAD, &caead) < 0) {
+			warn("cryptodev %s (%zu) failed for device %s",
+			    alg->name, size, crfind(crid));
+			close(fd);
+			return (false);
+		}
+	} else {
+		struct crypt_op cop;
+
+		cop.ses = sop.ses;
+		cop.op = enc ? COP_ENCRYPT : COP_DECRYPT;
+		cop.flags = enc ? COP_F_CIPHER_FIRST : 0;
+		cop.len = size;
+		cop.src = (char *)input;
+		cop.dst = output;
+		cop.mac = digest;
+		cop.iv = (char *)iv;
+
+		if (ioctl(fd, CIOCCRYPT, &cop) < 0) {
+			warn("cryptodev %s (%zu) AUTHENC failed for device %s",
+			    alg->name, size, crfind(crid));
+			close(fd);
+			return (false);
+		}
 	}
 
 	if (ioctl(fd, CIOCFSESSION, &sop.ses) < 0)
@@ -623,7 +647,7 @@ run_authenc_test(struct alg *alg, size_t size)
 {
 	const EVP_CIPHER *cipher;
 	const EVP_MD *md;
-	char *buffer, *cleartext, *ciphertext;
+	char *aad, *buffer, *cleartext, *ciphertext;
 	char *iv, *auth_key, *cipher_key;
 	u_int iv_len, auth_key_len, cipher_key_len, digest_len;
 	int crid;
@@ -650,32 +674,35 @@ run_authenc_test(struct alg *alg, size_t size)
 	cipher_key = alloc_buffer(cipher_key_len);
 	iv = generate_iv(iv_len, alg);
 	auth_key = alloc_buffer(auth_key_len);
-	cleartext = alloc_buffer(size);
-	buffer = malloc(size);
-	ciphertext = malloc(size);
+	cleartext = alloc_buffer(aad_len + size);
+	buffer = malloc(aad_len + size);
+	ciphertext = malloc(aad_len + size);
 
 	/* OpenSSL encrypt + HMAC. */
-	openssl_cipher(alg, cipher, cipher_key, iv, cleartext, ciphertext, size,
-	    1);
+	if (aad_len != 0)
+		memcpy(ciphertext, cleartext, aad_len);
+	openssl_cipher(alg, cipher, cipher_key, iv, cleartext + aad_len,
+	    ciphertext + aad_len, size, 1);
 	if (memcmp(cleartext, ciphertext, size) == 0)
 		errx(1, "OpenSSL %s (%zu): cipher text unchanged", alg->name,
 		    size);
 	digest_len = sizeof(control_digest);
-	if (HMAC(md, auth_key, auth_key_len, (u_char *)ciphertext, size,
-	    (u_char *)control_digest, &digest_len) == NULL)
+	if (HMAC(md, auth_key, auth_key_len, (u_char *)ciphertext,
+	    aad_len + size, (u_char *)control_digest, &digest_len) == NULL)
 		errx(1, "OpenSSL %s (%zu) HMAC failed: %s", alg->name,
 		    size, ERR_error_string(ERR_get_error(), NULL));
 
 	/* OCF encrypt + HMAC. */
 	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
-	    auth_key_len, cleartext, buffer, size, test_digest, 1, &crid))
+	    auth_key_len, aad_len != 0 ? cleartext : NULL, aad_len,
+	    cleartext + aad_len, buffer + aad_len, size, test_digest, 1, &crid))
 		goto out;
-	if (memcmp(ciphertext, buffer, size) != 0) {
+	if (memcmp(ciphertext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
 		printf("control:\n");
-		hexdump(ciphertext, size, NULL, 0);
+		hexdump(ciphertext + aad_len, size, NULL, 0);
 		printf("test (cryptodev device %s):\n", crfind(crid));
-		hexdump(buffer, size, NULL, 0);
+		hexdump(buffer + aad_len, size, NULL, 0);
 		goto out;
 	}
 	if (memcmp(control_digest, test_digest, sizeof(control_digest)) != 0) {
@@ -695,7 +722,9 @@ run_authenc_test(struct alg *alg, size_t size)
 	/* OCF HMAC + decrypt. */
 	memset(test_digest, 0x3c, sizeof(test_digest));
 	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
-	    auth_key_len, ciphertext, buffer, size, test_digest, 0, &crid))
+	    auth_key_len, aad_len != 0 ? ciphertext : NULL, aad_len,
+	    ciphertext + aad_len, buffer + aad_len, size, test_digest, 0,
+	    &crid))
 		goto out;
 	if (memcmp(control_digest, test_digest, sizeof(control_digest)) != 0) {
 		if (memcmp(control_digest, test_digest, EVP_MD_size(md)) == 0)
@@ -710,7 +739,7 @@ run_authenc_test(struct alg *alg, size_t size)
 		hexdump(test_digest, sizeof(test_digest), NULL, 0);
 		goto out;
 	}
-	if (memcmp(cleartext, buffer, size) != 0) {
+	if (memcmp(cleartext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
 		printf("control:\n");
 		hexdump(cleartext, size, NULL, 0);
@@ -891,6 +920,10 @@ run_gcm_test(struct alg *alg, size_t size)
 		return;
 	}
 
+	/* XXX: CIOCCRYPTAEAD doesn't accept zero-sized AAD */
+	if (aad_len == 0)
+		aad_len = 16;
+
 	memset(control_tag, 0x3c, sizeof(control_tag));
 	memset(test_tag, 0x3c, sizeof(test_tag));
 
@@ -1048,8 +1081,6 @@ main(int ac, char **av)
 	bool testall;
 	int ch;
 
-	/* CIOCCRYPTAEAD doesn't accept zero-sized AAD */
-	aad_len = 16;
 	algname = NULL;
 	crid = CRYPTO_FLAG_HARDWARE;
 	testall = false;
