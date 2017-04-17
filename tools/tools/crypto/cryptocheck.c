@@ -569,9 +569,9 @@ out:
 
 static bool
 ocf_authenc(struct alg *alg, const char *cipher_key, size_t cipher_key_len,
-    const char *iv, const char *auth_key, size_t auth_key_len, const char *aad,
-    size_t aad_len, const char *input, char *output, size_t size, char *digest,
-    int enc, int *cridp)
+    const char *iv, size_t iv_len, const char *auth_key, size_t auth_key_len,
+    const char *aad, size_t aad_len, const char *input, char *output,
+    size_t size, char *digest, int enc, int *cridp)
 {
 	struct session2_op sop;
 	int fd;
@@ -693,7 +693,7 @@ run_authenc_test(struct alg *alg, size_t size)
 		    size, ERR_error_string(ERR_get_error(), NULL));
 
 	/* OCF encrypt + HMAC. */
-	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
+	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, iv_len, auth_key,
 	    auth_key_len, aad_len != 0 ? cleartext : NULL, aad_len,
 	    cleartext + aad_len, buffer + aad_len, size, test_digest, 1, &crid))
 		goto out;
@@ -721,7 +721,7 @@ run_authenc_test(struct alg *alg, size_t size)
 	
 	/* OCF HMAC + decrypt. */
 	memset(test_digest, 0x3c, sizeof(test_digest));
-	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, auth_key,
+	if (!ocf_authenc(alg, cipher_key, cipher_key_len, iv, iv_len, auth_key,
 	    auth_key_len, aad_len != 0 ? ciphertext : NULL, aad_len,
 	    ciphertext + aad_len, buffer + aad_len, size, test_digest, 0,
 	    &crid))
