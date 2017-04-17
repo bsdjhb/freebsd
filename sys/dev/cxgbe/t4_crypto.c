@@ -1083,12 +1083,10 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	hash_size_in_response = s->gmac.hash_len;
 
 	/*
-	 * For now, the IV is always stored first with an empty AAD
-	 * region and the hash and cipher regions are applied to the
-	 * payload after the IV (which may also include a copy of the
-	 * IV).  Eventually we should optimize the case of an IPSec
-	 * request and make use of the AAD region for the auth-only
-	 * data before the IV.
+	 * For now, the IV is always stored at the start of the buffer
+	 * even though it may be duplicated in the payload.  Eventually
+	 * we should optimize the case of an IPSec request and use the
+	 * copy of the IV in the payload if it exists.
 	 */
 	iv_loc = IV_IMMEDIATE;
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
