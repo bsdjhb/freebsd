@@ -897,9 +897,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	/*
 	 * The crd_inject and crd_skip values are offsets in the input
-	 * buffer.  However, some input buffers may include a header that
-	 * needs to be skipped.  'input_skip' and 'input_len' are the
-	 * subset of the input buffer that should be sent in the request.
+	 * buffer.  However, some input buffers may include a header
+	 * that needs to be skipped.  'input_skip' and 'input_len' are
+	 * the subset of the input buffer that should be sent in the
+	 * request.
 	 *
 	 * The request buffer sent to the crypto engine consists of
 	 * the IV followed by the subset of the input buffer described
@@ -1106,7 +1107,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	u_int iv_len, iv_loc, kctx_len, op_type, transhdr_len, wr_len;
 	u_int hash_size_in_response, imm_len;
 	u_int cipher_start, cipher_stop, aad_start, aad_stop, auth_insert;
-	u_int hmac_ctrl, input_len, output_len;
+	u_int hmac_ctrl, input_skip, input_len, output_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
@@ -1171,7 +1172,8 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	kctx_len = roundup2(s->blkcipher.key_len, 16) + GMAC_BLOCK_LEN;
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 
-	input_len = crde->crd_skip + crde->crd_len;
+	input_skip = MIN(crde->crd_skip, crda->crd_skip);
+	input_len = crde->crd_skip + crde->crd_len - input_skip;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
 	if (ccr_use_imm_data(transhdr_len, input_len + iv_len)) {
@@ -1180,15 +1182,31 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, 0, input_len);
+		sgl_nsegs = ccr_count_sgl(sc->sg, input_skip, input_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
-	cipher_start = iv_len + crde->crd_skip + 1;
-	cipher_stop = input_len - (crde->crd_skip + crde->crd_len);
-	aad_start = iv_len + crda->crd_skip + 1;
+	/*
+	 * The crd_inject and crd_skip values are offsets in the input
+	 * buffer.  However, some input buffers may include a header
+	 * that needs to be skipped.  'input_skip' and 'input_len' are
+	 * the subset of the input buffer that should be sent in the
+	 * request.
+	 *
+	 * The request buffer sent to the crypto engine consists of
+	 * the IV followed by the subset of the input buffer described
+	 * by 'input_skip' and 'input_len'.  The
+	 * {aad,auth,cipher}_{start,stop,insert} values are offsets in
+	 * this request buffer.  When computing these values,
+	 * crd_inject and crd_skip need to be adjusted to account for
+	 * the differing layouts by adding the length of the IV and
+	 * subtracting 'input_skip'.
+	 */
+	cipher_start = iv_len + crde->crd_skip - input_skip + 1;
+	cipher_stop = input_len - (crde->crd_skip + crde->crd_len - input_skip);
+	aad_start = iv_len + crda->crd_skip - input_skip + 1;
 	aad_stop = aad_start + crda->crd_len - 1;
-	auth_insert = input_len - crda->crd_inject;
+	auth_insert = input_len - (crda->crd_inject - input_skip);
 	MPASS(op_type == CHCR_DECRYPT_OP ?
 	    auth_insert == hash_size_in_response :
 	    auth_insert == 0);
@@ -1268,10 +1286,10 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		dst += iv_len;
 	}
 	if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, 0, input_len,
-		    dst);
+		crypto_copydata(crp->crp_flags, crp->crp_buf, input_skip,
+		    input_len, dst);
 	else
-		ccr_write_ulptx_sgl(sc, 0, input_len, dst, sgl_nsegs);
+		ccr_write_ulptx_sgl(sc, input_skip, input_len, dst, sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting GCM request:\n");
