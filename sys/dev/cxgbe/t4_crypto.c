@@ -620,7 +620,10 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	crd = crp->crp_desc;
 
-	if ((crd->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
+	if (s->blkcipher.key_len == 0)
+		return (EINVAL);
+	if (crd->crd_alg == CRYPTO_AES_CBC &&
+	    (crd->crd_len % AES_BLOCK_LEN) != 0)
 		return (EINVAL);
 
 	iv_loc = IV_NOP;
@@ -820,7 +823,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
-	if ((crde->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
+	if (s->blkcipher.key_len == 0)
+		return (EINVAL);
+	if (crde->crd_alg == CRYPTO_AES_CBC &&
+	    (crde->crd_len % AES_BLOCK_LEN) != 0)
 		return (EINVAL);
 
 	/*
@@ -1104,7 +1110,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
-	if ((crde->crd_len % AES_BLOCK_LEN) != 0 || s->blkcipher.key_len == 0)
+	if (s->blkcipher.key_len == 0)
 		return (EINVAL);
 
 	/*
