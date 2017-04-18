@@ -454,6 +454,12 @@ dump_crp(struct ccr_softc *sc, struct cryptop *crp, bool layout)
 			printf("  [%d]: alg %d skip %d len %d inject %d\n", i,
 			    crd->crd_alg, crd->crd_skip, crd->crd_len,
 			    crd->crd_inject);
+			if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
+				hexdump(crd->crd_key, crd->crd_klen / 8,
+				    "    key: ", HD_OMIT_COUNT | HD_OMIT_CHARS);
+			if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+				hexdump(crd->crd_iv, 16, "    iv:  ",
+				    HD_OMIT_CHARS | HD_OMIT_COUNT);
 		}
 	}
 	device_printf(sc->dev, "crp buffer ");
