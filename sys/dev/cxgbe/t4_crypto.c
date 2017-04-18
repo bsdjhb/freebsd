@@ -1411,6 +1411,10 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	struct auth_hash *axf;
 	u_int i;
 
+#if 0
+	printf("CCR: HMAC key:\n");
+	hexdump(key, klen / 8, NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
+#endif
 	/*
 	 * If the key is larger than the block size, use the digest of
 	 * the key as the key instead.
@@ -1527,6 +1531,10 @@ ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 	unsigned int ck_size, iopad_size, kctx_flits, kctx_len, kbits, mk_size;
 	unsigned int opad_present;
 
+#if 0
+	printf("CCR: AES key:\n");
+	hexdump(key, klen / 8, NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
+#endif
 	if (alg == CRYPTO_AES_XTS)
 		kbits = klen / 2;
 	else
