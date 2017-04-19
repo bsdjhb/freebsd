@@ -830,8 +830,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (EINVAL);
 
 	/*
-	 * The hardware insists on appending the hash to the end of the
-	 * ciphertext.  Reject requests that do not do this.
+	 * The hardware insists on appending the hash to the end of
+	 * the ciphertext.  Reject requests that do not do this.
+	 * Requests from IPSec and /dev/crypto should all follow this
+	 * requirement.
 	 */
 	if (crda->crd_inject != crde->crd_len + crde->crd_skip ||
 	    crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
@@ -1115,8 +1117,10 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (EINVAL);
 
 	/*
-	 * The hardware insists on appending the hash to the end of the
-	 * ciphertext.  Reject requests that do not do this.
+	 * The hardware insists on appending the hash to the end of
+	 * the ciphertext.  Reject requests that do not do this.
+	 * Requests from IPSec and /dev/crypto should all follow this
+	 * requirement.
 	 */
 	if (crda->crd_inject != crde->crd_len + crde->crd_skip ||
 	    crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
