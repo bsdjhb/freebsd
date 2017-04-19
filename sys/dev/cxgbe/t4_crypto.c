@@ -819,7 +819,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	u_int aad_start, aad_len, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop;
-	u_int hmac_ctrl, input_skip, input_len, output_len;
+	u_int hmac_ctrl, iv_prefix, iv_offset;
+	u_int input_skip, input_len, output_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 
@@ -841,28 +842,38 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	hash_size_in_response = s->hmac.hash_len;
 
 	/*
-	 * For now, the IV is always stored at the start of the buffer
-	 * even though it may be duplicated in the payload.  Eventually
-	 * we should optimize the case of an IPSec request and use the
-	 * copy of the IV in the payload if it exists.
+	 * The IV may either be present in the input buffer, or it
+	 * may be provided in the cipher descriptor.  If the IV is
+	 * present in the input buffer, iv_prefix is set to 0 and
+	 * iv_offset will be set accordingly.  If the IV is provided
+	 * by the descriptor, the IV will be inserted before the
+	 * input buffer in the request buffer at offset 1.
 	 */
-	iv_loc = IV_IMMEDIATE;
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
 		op_type = CHCR_ENCRYPT_OP;
 		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
 		else
 			arc4rand(iv, s->blkcipher.iv_len, 0);
-		if ((crde->crd_flags & CRD_F_IV_PRESENT) == 0)
+		if ((crde->crd_flags & CRD_F_IV_PRESENT) == 0) {
 			crypto_copyback(crp->crp_flags, crp->crp_buf,
 			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			iv_loc = IV_DSGL;
+			iv_prefix = 0;
+		} else {
+			iv_loc = IV_IMMEDIATE;
+			iv_prefix = s->blkcipher.iv_len;
+		}
 	} else {
 		op_type = CHCR_DECRYPT_OP;
-		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
+		if (crde->crd_flags & CRD_F_IV_EXPLICIT) {
 			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
-		else
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			iv_loc = IV_IMMEDIATE;
+			iv_prefix = s->blkcipher.iv_len;
+		} else {
+			iv_loc = IV_DSGL;
+			iv_prefix = 0;
+		}
 	}
 
 	output_len = crde->crd_len;
@@ -885,10 +896,20 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	input_len = crde->crd_skip + crde->crd_len - input_skip;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (ccr_use_imm_data(transhdr_len, input_len + s->blkcipher.iv_len)) {
+
+	/*
+	 * If the IV is in the input buffer, it must be contained in the
+	 * subset of the input buffer sent in the request buffer.
+	 */
+	if (iv_loc == IV_DSGL && (crde->crd_inject < input_skip ||
+	    crde->crd_inject + s->blkcipher.iv_len > input_skip + input_len))
+		return (EINVAL);
+
+	if (ccr_use_imm_data(transhdr_len, iv_prefix + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
+		iv_loc = IV_IMMEDIATE;
 	} else {
 		imm_len = 0;
 		sgl_nsegs = ccr_count_sgl(sc->sg, input_skip, input_len);
@@ -903,21 +924,29 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 * request.
 	 *
 	 * The request buffer sent to the crypto engine consists of
-	 * the IV followed by the subset of the input buffer described
-	 * by 'input_skip' and 'input_len'.  The
-	 * {aad,auth,cipher}_{start,stop,insert} values are offsets in
-	 * this request buffer.  When computing these values,
-	 * crd_inject and crd_skip need to be adjusted to account for
-	 * the differing layouts by adding the length of the IV and
-	 * subtracting 'input_skip'.
+	 * the IV (if the IV is stored as a prefix) followed by the
+	 * subset of the input buffer described by 'input_skip' and
+	 * 'input_len'.  The {aad,auth,cipher}_{start,stop,insert}
+	 * values are offsets in this request buffer.  When computing
+	 * these values, crd_inject and crd_skip need to be adjusted
+	 * to account for the differing layouts by adding the length
+	 * of the IV (if it is stored as a prefix) and subtracting
+	 * 'input_skip'.
 	 *
-	 * Any auth-only data before the cipher region is marked as AAD.
-	 * Auth-data that overlaps with the cipher region is placed in
-	 * the auth section.
+	 * The IV itself is either stored at offset 1 if it is stored
+	 * as a prefix, or at the crd_inject location from the cipher
+	 * descriptor.
+	 *
+	 * Any auth-only data before the cipher region is marked as
+	 * AAD.  Auth-data that overlaps with the cipher region is
+	 * placed in the auth section.
 	 */
+	if (iv_prefix == 0)
+		iv_offset = crde->crd_skip - input_skip + 1;
+	else
+		iv_offset = 1;
 	if (crda->crd_skip < crde->crd_skip) {
-		aad_start = s->blkcipher.iv_len + crda->crd_skip - input_skip +
-		    1;
+		aad_start = iv_prefix + crda->crd_skip - input_skip + 1;
 		if (crda->crd_skip + crda->crd_len > crde->crd_skip)
 			aad_len = (crde->crd_skip - crda->crd_skip);
 		else
@@ -928,7 +957,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		aad_len = 0;
 		aad_stop = 0;
 	}
-	cipher_start = s->blkcipher.iv_len + crde->crd_skip - input_skip + 1;
+	cipher_start = iv_prefix + crde->crd_skip - input_skip + 1;
 	cipher_stop = input_len - (crde->crd_skip + crde->crd_len - input_skip);
 	if (aad_len == crda->crd_len) {
 		auth_start = 0;
@@ -937,8 +966,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		if (aad_len != 0)
 			auth_start = cipher_start;
 		else
-			auth_start = s->blkcipher.iv_len + crda->crd_skip -
-			    input_skip + 1;
+			auth_start = iv_prefix + crda->crd_skip - input_skip +
+			    1;
 		auth_stop = input_len - (crda->crd_skip + crda->crd_len -
 		    input_skip);
 	}
@@ -947,9 +976,8 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    auth_insert == hash_size_in_response :
 	    auth_insert == 0);
 
-	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
-	if (iv_loc == IV_IMMEDIATE)
-		wr_len += s->blkcipher.iv_len;
+	wr_len = roundup2(transhdr_len, 16) + iv_prefix +
+	    roundup2(imm_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
 		return (ENOMEM);
@@ -966,7 +994,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    V_CPL_TX_SEC_PDU_RXCHID(sc->tx_channel_id) |
 	    V_CPL_TX_SEC_PDU_ACKFOLLOWS(0) | V_CPL_TX_SEC_PDU_ULPTXLPBK(1) |
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
-	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
+	    V_CPL_TX_SEC_PDU_IVINSRTOFST(iv_offset));
 
 	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + input_len);
 
@@ -1034,9 +1062,9 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	dst = (char *)(crwr + 1) + kctx_len;
 	ccr_write_phys_dsgl(sc, crde->crd_skip, output_len, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
-	if (iv_loc == IV_IMMEDIATE) {
-		memcpy(dst, iv, s->blkcipher.iv_len);
-		dst += s->blkcipher.iv_len;
+	if (iv_prefix != 0) {
+		memcpy(dst, iv, iv_prefix);
+		dst += iv_prefix;
 	}
 	if (imm_len != 0)
 		crypto_copydata(crp->crp_flags, crp->crp_buf, input_skip,
