@@ -841,10 +841,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	hash_size_in_response = s->hmac.hash_len;
 
 	/*
-	 * For now, the IV is always stored at the start of the buffer
-	 * even though it may be duplicated in the payload.  Eventually
-	 * we should optimize the case of an IPSec request and use the
-	 * copy of the IV in the payload if it exists.
+	 * The IV is always stored at the start of the buffer even
+	 * though it may be duplicated in the payload.  The crypto
+	 * engine doesn't work properly if the IV offset points inside
+	 * of the AAD region, so a second copy is always required.
 	 */
 	iv_loc = IV_IMMEDIATE;
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
@@ -1125,10 +1125,18 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	hash_size_in_response = s->gmac.hash_len;
 
 	/*
-	 * For now, the IV is always stored at the start of the buffer
-	 * even though it may be duplicated in the payload.  Eventually
-	 * we should optimize the case of an IPSec request and use the
-	 * copy of the IV in the payload if it exists.
+	 * The IV is always stored at the start of the buffer even
+	 * though it may be duplicated in the payload.  The crypto
+	 * engine doesn't work properly if the IV offset points inside
+	 * of the AAD region, so a second copy is always required.
+	 *
+	 * The IV for GCM is further complicated in that IPSec
+	 * provides a full 16-byte IV (including the counter), whereas
+	 * the /dev/crypto interface sometimes provides a full 16-byte
+	 * IV (if no IV is provided in the ioctl) and sometimes a
+	 * 12-byte IV (if the IV was explicit).  For now the driver
+	 * always assumes a 12-byte IV and initializes the low 4 byte
+	 * counter to 1.
 	 */
 	iv_loc = IV_IMMEDIATE;
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
