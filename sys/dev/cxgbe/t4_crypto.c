@@ -942,7 +942,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 * placed in the auth section.
 	 */
 	if (iv_prefix == 0)
-		iv_offset = crde->crd_skip - input_skip + 1;
+		iv_offset = crde->crd_inject - input_skip + 1;
 	else
 		iv_offset = 1;
 	if (crda->crd_skip < crde->crd_skip) {
