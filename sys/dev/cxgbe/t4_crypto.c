@@ -94,7 +94,7 @@ __FBSDID("$FreeBSD$");
  * +-------------------------------+
  * | hash digest                   |  ----- For HMAC request with
  * +-------------------------------+        'hash_size' set in work request
- * 
+ *
  * A 32-bit big-endian error status word is supplied in the last 4
  * bytes of data[0] in the CPL_FW6_PLD message.  bit 0 indicates a
  * "MAC" error and bit 1 indicates a "PAD" error.
@@ -137,7 +137,7 @@ struct ccr_session_blkcipher {
 	unsigned int cipher_mode;
 	unsigned int key_len;
 	unsigned int iv_len;
-	__be32 key_ctx_hdr; 
+	__be32 key_ctx_hdr;
 	char enckey[CHCR_AES_MAX_KEY_LEN];
 	char deckey[CHCR_AES_MAX_KEY_LEN];
 };
@@ -368,7 +368,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
     u_int iv_loc, struct cryptop *crp)
 {
 	u_int cctx_size;
-	
+
 	cctx_size = sizeof(struct _key_ctx) + kctx_len;
 	crwr->wreq.op_to_cctx_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_OPCODE(FW_CRYPTO_LOOKASIDE_WR) |
@@ -519,7 +519,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
-		    
+
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
 	if (wr == NULL)
@@ -633,7 +633,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			memcpy(iv, crd->crd_iv, s->blkcipher.iv_len);
 		else
 			arc4rand(iv, s->blkcipher.iv_len, 0);
-		iv_loc = IV_IMMEDIATE;		
+		iv_loc = IV_IMMEDIATE;
 		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0)
 			crypto_copyback(crp->crp_flags, crp->crp_buf,
 			    crd->crd_inject, s->blkcipher.iv_len, iv);
