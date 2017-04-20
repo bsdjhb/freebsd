@@ -1130,9 +1130,14 @@ main(int ac, char **av)
 		sizes[0] = 16;
 		nsizes++;
 		if (testall) {
-			while (sizes[nsizes - 1] < 32 * 1024) {
+			while (sizes[nsizes - 1] * 2 < 240 * 1024) {
 				assert(nsizes < nitems(sizes));
 				sizes[nsizes] = sizes[nsizes - 1] * 2;
+				nsizes++;
+			}
+			if (sizes[nsizes - 1] < 240 * 1024) {
+				assert(nsizes < nitems(sizes));
+				sizes[nsizes] = 240 * 1024;
 				nsizes++;
 			}
 		}
