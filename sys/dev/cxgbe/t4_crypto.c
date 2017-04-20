@@ -115,6 +115,7 @@ __FBSDID("$FreeBSD$");
  * SG entries.
  */
 #define	MAX_RX_PHYS_DSGL_SGE	32
+#define	DSGL_SGE_MAXLEN		65535
 
 static MALLOC_DEFINE(M_CCR, "ccr", "Chelsio T6 crypto");
 
@@ -164,7 +165,18 @@ struct ccr_softc {
 	bool detaching;
 	struct sge_wrq *ofld_txq;
 	struct sge_ofld_rxq *ofld_rxq;
-	struct sglist *sg;
+
+	/*
+	 * Pre-allocate S/G lists used when preparing a work request.
+	 * 'sg_crp' contains an sglist describing the entire buffer
+	 * for a 'struct cryptop'.  'sg_ulptx' is used to describe
+	 * the data the engine should DMA as input via ULPTX_SGL.
+	 * 'sg_dsgl' is used to describe the destination that cipher
+	 * text and a tag should be written to.
+	 */
+	struct sglist *sg_crp;
+	struct sglist *sg_ulptx;
+	struct sglist *sg_dsgl;
 };
 
 /*
@@ -173,15 +185,23 @@ struct ccr_softc {
  * Non-hash-only requests require a PHYS_DSGL that describes the
  * location to store the results of the encryption or decryption
  * operation.  This SGL uses a different format (PHYS_DSGL) and should
- * exclude the crd_skip bytes at the start of the data.
+ * exclude the crd_skip bytes at the start of the data as well as
+ * any AAD or IV.  For authenticated encryption requests it should
+ * cover include the destination of the hash or tag.
  *
  * The input payload may either be supplied inline as immediate data,
- * or via a standard ULP_TX SGL.  This SGL may include the crd_skip
- * bytes if they cover an IV needed by the crypto engine.  Otherwise,
- * this SGL should exclude the crd_skip bytes.
+ * or via a standard ULP_TX SGL.  This SGL should include AAD,
+ * ciphertext, and the hash or tag for authenticated decryption
+ * requests.
+ *
+ * These scatter/gather lists can describe different subsets of the
+ * buffer described by the crypto operation.  ccr_populate_sglist()
+ * generates a scatter/gather list that covers the entire crypto
+ * operation buffer that is then used to construct the other
+ * scatter/gather lists.
  */
 static int
-ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
+ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 {
 	int error;
 
@@ -192,6 +212,7 @@ ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
 	else
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
+#ifdef nomore
 	if (error == 0) {
 		for (unsigned i = 0; i < sg->sg_nseg; i++) {
 			if (sg->sg_segs[i].ss_len >= 65536) {
@@ -203,40 +224,23 @@ ccr_populage_sglist(struct sglist *sg, struct cryptop *crp)
 			}
 		}
 	}
+#endif
 	return (error);
 }
 
+/*
+ * Segments in 'sg' larger than 'maxsegsize' are counted as multiple
+ * segments.
+ */
 static int
-ccr_count_sgl(struct sglist *sg, int skip, int len)
+ccr_count_sgl(struct sglist *sg, int maxsegsize)
 {
-	struct sglist_seg *seg;
-	size_t seglen;
-	int nsegs;
+	int i, nsegs;
 
-	MPASS(len != 0);
-	seg = &sg->sg_segs[0];
-	while (skip >= seg->ss_len) {
-		skip -= seg->ss_len;
-		seg++;
-		KASSERT(seg - sg->sg_segs < sg->sg_nseg,
-		    ("crd_skip too long"));
-	}
-	seglen = seg->ss_len - skip;
-	if (seglen >= len)
-		return (1);
-	nsegs = 1;
-	len -= seglen;
-	seg++;
-	for (;;) {
-		KASSERT(seg - sg->sg_segs < sg->sg_nseg,
-		    ("crd_len + crd_skip too long"));
-		seglen = seg->ss_len;
-		nsegs++;
-		if (seglen >= len)
-			return (nsegs);
-		len -= seglen;
-		seg++;
-	}
+	nsegs = 0;
+	for (i = 0; i < sg->sg_nseg; i++)
+		nsegs += howmany(sg->sg_segs[i].ss_len, maxsegsize);
+	return (nsegs);
 }
 
 /* These functions deal with PHYS_DSGL for the reply buffer. */
@@ -254,16 +258,16 @@ ccr_phys_dsgl_len(int nsegs)
 }
 
 static void
-ccr_write_phys_dsgl(struct ccr_softc *sc, int skip, int len, void *dst,
-    int nsegs)
+ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, int nsegs)
 {
 	struct sglist *sg;
 	struct cpl_rx_phys_dsgl *cpl;
 	struct phys_sge_pairs *sgl;
+	vm_paddr_t paddr;
 	size_t seglen;
 	u_int i, j;
 
-	sg = sc->sg;
+	sg = sc->sg_dsgl;
 	cpl = dst;
 	cpl->op_to_tid = htobe32(V_CPL_RX_PHYS_DSGL_OPCODE(CPL_RX_PHYS_DSGL) |
 	    V_CPL_RX_PHYS_DSGL_ISRDMA(0));
@@ -279,27 +283,25 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, int skip, int len, void *dst,
 	j = 0;
 	for (i = 0; i < sg->sg_nseg; i++) {
 		seglen = sg->sg_segs[i].ss_len;
-		if (skip >= seglen) {
-			skip -= seglen;
-			continue;
-		}
-		sgl->addr[j] = htobe64(sg->sg_segs[i].ss_paddr + skip);
-		if (skip > 0) {
-			seglen -= skip;
-			skip = 0;
-		}
-		if (seglen >= len) {
-			sgl->len[j] = htobe16(len);
-			break;
-		}
-		sgl->len[j] = htobe16(seglen);
-		len -= seglen;
-		j++;
-		if (j == 8) {
-			sgl++;
-			j = 0;
-		}
+		paddr = sg->sg_segs[i].ss_paddr;
+		do {
+			sgl->addr[j] = htobe64(paddr);
+			if (seglen > DSGL_SGE_MAXLEN) {
+				sgl->len[j] = htobe16(DSGL_SGE_MAXLEN);
+				paddr += DSGL_SGE_MAXLEN;
+				seglen -= DSGL_SGE_MAXLEN;
+			} else {
+				sgl->len[j] = htobe16(seglen);
+				seglen = 0;
+			}
+			j++;
+			if (j == 8) {
+				sgl++;
+				j = 0;
+			}
+		} while (seglen != 0);
 	}
+	MPASS(j == nsegs);
 }
 
 /* These functions deal with the ULPTX_SGL for input payload. */
@@ -314,40 +316,28 @@ ccr_ulptx_sgl_len(int nsegs)
 }
 
 static void
-ccr_write_ulptx_sgl(struct ccr_softc *sc, int skip, int len, void *dst,
-    int nsegs)
+ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, int nsegs)
 {
 	struct ulptx_sgl *usgl;
 	struct sglist *sg;
-	struct sglist_seg *seg;
-	size_t seglen;
+	struct sglist_seg *ss;
 	int i;
 
-	sg = sc->sg;
-	seg = &sg->sg_segs[0];
+	sg = sc->sg_ulptx;
+	MPASS(nsegs == sg->sg_nseg);
+	ss = &sg->sg_segs[0];
 	usgl = dst;
 	usgl->cmd_nsge = htobe32(V_ULPTX_CMD(ULP_TX_SC_DSGL) |
 	    V_ULPTX_NSGE(nsegs));
-	while (skip >= seg->ss_len) {
-		skip -= seg->ss_len;
-		seg++;
+	usgl->len0 = htobe32(ss->ss_len);
+	usgl->addr0 = htobe64(ss->ss_paddr);
+	ss++;
+	for (i = 0; i < sg->sg_nseg - 1; i++) {
+		usgl->sge[i / 2].len[i & 1] = htobe32(ss->ss_len);
+		usgl->sge[i / 2].addr[i & 1] = htobe64(ss->ss_paddr);
+		ss++;
 	}
-	seglen = seg->ss_len - skip;
-	if (seglen > len)
-		seglen = len;
-	usgl->len0 = htobe32(seglen);
-	usgl->addr0 = htobe64(seg->ss_paddr + skip);
-	len -= seglen;
-	seg++;
-	for (i = 0; len != 0; i++) {
-		seglen = seg->ss_len;
-		if (seglen > len)
-			seglen = len;
-		usgl->sge[i / 2].len[i & 1] = htobe32(seglen);
-		usgl->sge[i / 2].addr[i & 1] = htobe64(seg->ss_paddr);
-		len -= seglen;
-		seg++;
-	}
+	
 }
 
 static bool
@@ -494,7 +484,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	char *dst;
 	u_int hash_size_in_response, kctx_flits, kctx_len, transhdr_len, wr_len;
 	u_int imm_len, iopad_size;
-	int sgl_nsegs, sgl_len;
+	int error, sgl_nsegs, sgl_len;
 
 	axf = s->hmac.auth_hash;
 
@@ -516,7 +506,12 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
+		sglist_reset(sc->sg_ulptx);
+		error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+		    crd->crd_skip, crd->crd_len);
+		if (error)
+			return (error);
+		sgl_nsegs = sc->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
@@ -569,8 +564,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
 		    crd->crd_len, dst);
 	else
-		ccr_write_ulptx_sgl(sc, crd->crd_skip, crd->crd_len, dst,
-		    sgl_nsegs);
+		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting HMAC request:\n");
@@ -617,6 +611,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	u_int imm_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
+	int error;
 
 	crd = crp->crp_desc;
 
@@ -646,7 +641,14 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			iv_loc = IV_DSGL;
 	}
 
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crd->crd_skip, crd->crd_len);
+	sglist_reset(sc->sg_dsgl);
+	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp, crd->crd_skip,
+	    crd->crd_len);
+	if (error)
+		return (error);
+	dsgl_nsegs = ccr_count_sgl(sc->sg_dsgl, DSGL_SGE_MAXLEN);
+	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE)
+		return (EFBIG);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/* The 'key' must be 128-bit aligned. */
@@ -665,11 +667,16 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
+		sglist_reset(sc->sg_ulptx);
 		if (iv_loc == IV_DSGL)
-			sgl_nsegs = ccr_count_sgl(sc->sg, 0, crd->crd_skip +
-			    crd->crd_len);
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    0, crd->crd_skip + crd->crd_len);
 		else
-			sgl_nsegs = dsgl_nsegs;
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    crd->crd_skip, crd->crd_len);
+		if (error)
+			return (error);
+		sgl_nsegs = sc->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
@@ -746,7 +753,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, crd->crd_skip, crd->crd_len, dst, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
@@ -755,12 +762,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (imm_len != 0)
 		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
 		    crd->crd_len, dst);
-	else if (iv_loc == IV_IMMEDIATE)
-		ccr_write_ulptx_sgl(sc, crd->crd_skip, crd->crd_len, dst,
-		    sgl_nsegs);
 	else
-		ccr_write_ulptx_sgl(sc, 0, crd->crd_skip + crd->crd_len, dst,
-		    sgl_nsegs);
+		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
@@ -819,9 +822,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	u_int aad_start, aad_len, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop;
-	u_int hmac_ctrl, input_skip, input_len, output_len;
+	u_int hmac_ctrl, input_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
+	int error;
 
 	if (s->blkcipher.key_len == 0)
 		return (EINVAL);
@@ -830,13 +834,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (EINVAL);
 
 	/*
-	 * The hardware insists on appending the hash to the end of
-	 * the ciphertext.  Reject requests that do not do this.
-	 * Requests from IPSec and /dev/crypto should all follow this
-	 * requirement.
+	 * AAD is only permitted before the cipher/plain text, not
+	 * after.
 	 */
-	if (crda->crd_inject != crde->crd_len + crde->crd_skip ||
-	    crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
+	if (crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
 		return (EINVAL);
 
 	axf = s->hmac.auth_hash;
@@ -867,10 +868,25 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			    crde->crd_inject, s->blkcipher.iv_len, iv);
 	}
 
-	output_len = crde->crd_len;
-	if (op_type == CHCR_ENCRYPT_OP)
-		output_len += hash_size_in_response;
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, output_len);
+	/*
+	 * The output buffer consists of the cipher text followed by
+	 * the hash when encrypting.  For decryption it only contains
+	 * the plain text.
+	 */
+	sglist_reset(sc->sg_dsgl);
+	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx, crde->crd_skip,
+	    crde->crd_len);
+	if (error)
+		return (error);
+	if (op_type == CHCR_ENCRYPT_OP) {
+		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx,
+		    crda->crd_inject, hash_size_in_response);
+		if (error)
+			return (error);
+	}
+	dsgl_nsegs = ccr_count_sgl(sc->sg_dsgl, DSGL_SGE_MAXLEN);
+	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE)
+		return (EFBIG);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/* PADs must be 128-bit aligned. */
@@ -883,55 +899,65 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	kctx_len = roundup2(s->blkcipher.key_len, 16) + iopad_size * 2;
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 
-	input_skip = MIN(crde->crd_skip, crda->crd_skip);
-	input_len = crde->crd_skip + crde->crd_len - input_skip;
+	/*
+	 * The input buffer consists of the IV, any AAD, and then the
+	 * cipher/plain text.  For decryption requests the hash is
+	 * appended after the cipher text.
+	 */
+	if (crda->crd_skip < crde->crd_skip) {
+		if (crda->crd_skip + crda->crd_len > crde->crd_skip)
+			aad_len = (crde->crd_skip - crda->crd_skip);
+		else
+			aad_len = crda->crd_len;
+	} else
+		aad_len = 0;
+	input_len = aad_len + crde->crd_len;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (ccr_use_imm_data(transhdr_len, input_len + s->blkcipher.iv_len)) {
+	if (ccr_use_imm_data(transhdr_len, s->blkcipher.iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, input_skip, input_len);
+		sglist_reset(sc->sg_ulptx);
+		if (aad_len != 0) {
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    crda->crd_skip, aad_len);
+			if (error)
+				return (error);
+		}
+		error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+		    crde->crd_skip, crde->crd_len);
+		if (error)
+			return (error);
+		if (op_type == CHCR_DECRYPT_OP) {
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    crda->crd_inject, hash_size_in_response);
+			if (error)
+				return (error);
+		}
+		sgl_nsegs = sc->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
 	/*
-	 * The crd_inject and crd_skip values are offsets in the input
-	 * buffer.  However, some input buffers may include a header
-	 * that needs to be skipped.  'input_skip' and 'input_len' are
-	 * the subset of the input buffer that should be sent in the
-	 * request.
-	 *
-	 * The request buffer sent to the crypto engine consists of
-	 * the IV followed by the subset of the input buffer described
-	 * by 'input_skip' and 'input_len'.  The
-	 * {aad,auth,cipher}_{start,stop,insert} values are offsets in
-	 * this request buffer.  When computing these values,
-	 * crd_inject and crd_skip need to be adjusted to account for
-	 * the differing layouts by adding the length of the IV and
-	 * subtracting 'input_skip'.
-	 *
 	 * Any auth-only data before the cipher region is marked as AAD.
 	 * Auth-data that overlaps with the cipher region is placed in
 	 * the auth section.
 	 */
-	if (crda->crd_skip < crde->crd_skip) {
-		aad_start = s->blkcipher.iv_len + crda->crd_skip - input_skip +
-		    1;
-		if (crda->crd_skip + crda->crd_len > crde->crd_skip)
-			aad_len = (crde->crd_skip - crda->crd_skip);
-		else
-			aad_len = crda->crd_len;
+	if (aad_len != 0) {
+		aad_start = s->blkcipher.iv_len + 1;
 		aad_stop = aad_start + aad_len - 1;
 	} else {
 		aad_start = 0;
-		aad_len = 0;
 		aad_stop = 0;
 	}
-	cipher_start = s->blkcipher.iv_len + crde->crd_skip - input_skip + 1;
-	cipher_stop = input_len - (crde->crd_skip + crde->crd_len - input_skip);
+	cipher_start = s->blkcipher.iv_len + aad_len + 1;
+	if (op_type == CHCR_DECRYPT_OP)
+		cipher_stop = hash_size_in_response;
+	else
+		cipher_stop = 0;
 	if (aad_len == crda->crd_len) {
 		auth_start = 0;
 		auth_stop = 0;
@@ -940,14 +966,14 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			auth_start = cipher_start;
 		else
 			auth_start = s->blkcipher.iv_len + crda->crd_skip -
-			    input_skip + 1;
-		auth_stop = input_len - (crda->crd_skip + crda->crd_len -
-		    input_skip);
+			    crde->crd_skip + 1;
+		auth_stop = (crde->crd_skip + crde->crd_len) -
+		    (crda->crd_skip + crda->crd_len) + cipher_stop;
 	}
-	auth_insert = input_len - (crda->crd_inject - input_skip);
-	MPASS(op_type == CHCR_DECRYPT_OP ?
-	    auth_insert == hash_size_in_response :
-	    auth_insert == 0);
+	if (op_type == CHCR_DECRYPT_OP)
+		auth_insert = hash_size_in_response;
+	else
+		auth_insert = 0;
 
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
@@ -1034,17 +1060,26 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memcpy(dst + iopad_size, s->hmac.opad, s->hmac.partial_digest_len);
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, crde->crd_skip, output_len, dst, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, s->blkcipher.iv_len);
 		dst += s->blkcipher.iv_len;
 	}
-	if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, input_skip,
-		    input_len, dst);
-	else
-		ccr_write_ulptx_sgl(sc, input_skip, input_len, dst, sgl_nsegs);
+	if (imm_len != 0) {
+		if (aad_len != 0) {
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crda->crd_skip, aad_len, dst);
+			dst += aad_len;
+		}
+		crypto_copydata(crp->crp_flags, crp->crp_buf, crde->crd_skip,
+		    crde->crd_len, dst);
+		dst += crde->crd_len;
+		if (op_type == CHCR_DECRYPT_OP)
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crda->crd_inject, hash_size_in_response, dst);
+	} else
+		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting AUTHENC request:\n");
@@ -1108,22 +1143,20 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	char *dst;
 	u_int iv_len, iv_loc, kctx_len, op_type, transhdr_len, wr_len;
 	u_int hash_size_in_response, imm_len;
-	u_int cipher_start, cipher_stop, aad_start, aad_stop, auth_insert;
-	u_int hmac_ctrl, input_skip, input_len, output_len;
+	u_int aad_start, aad_stop, cipher_start, cipher_stop, auth_insert;
+	u_int hmac_ctrl, input_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
+	int error;
 
 	if (s->blkcipher.key_len == 0)
 		return (EINVAL);
 
 	/*
-	 * The hardware insists on appending the hash to the end of
-	 * the ciphertext.  Reject requests that do not do this.
-	 * Requests from IPSec and /dev/crypto should all follow this
-	 * requirement.
+	 * AAD is only permitted before the cipher/plain text, not
+	 * after.
 	 */
-	if (crda->crd_inject != crde->crd_len + crde->crd_skip ||
-	    crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
+	if (crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
 		return (EINVAL);
 
 	hash_size_in_response = s->gmac.hash_len;
@@ -1171,10 +1204,25 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	} else
 		iv_len = s->blkcipher.iv_len;
 
-	output_len = crde->crd_len;
-	if (op_type == CHCR_ENCRYPT_OP)
-		output_len += hash_size_in_response;
-	dsgl_nsegs = ccr_count_sgl(sc->sg, crde->crd_skip, output_len);
+	/*
+	 * The output buffer consists of the cipher text followed by
+	 * the tag when encrypting.  For decryption it only contains
+	 * the plain text.
+	 */
+	sglist_reset(sc->sg_dsgl);
+	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx, crde->crd_skip,
+	    crde->crd_len);
+	if (error)
+		return (error);
+	if (op_type == CHCR_ENCRYPT_OP) {
+		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx,
+		    crda->crd_inject, hash_size_in_response);
+		if (error)
+			return (error);
+	}
+	dsgl_nsegs = ccr_count_sgl(sc->sg_dsgl, DSGL_SGE_MAXLEN);
+	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE)
+		return (EFBIG);
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/*
@@ -1184,44 +1232,57 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	kctx_len = roundup2(s->blkcipher.key_len, 16) + GMAC_BLOCK_LEN;
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 
-	input_skip = MIN(crde->crd_skip, crda->crd_skip);
-	input_len = crde->crd_skip + crde->crd_len - input_skip;
+	/*
+	 * The input buffer consists of the IV, any AAD, and then the
+	 * cipher/plain text.  For decryption requests the hash is
+	 * appended after the cipher text.
+	 */
+	input_len = crda->crd_len + crde->crd_len;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (ccr_use_imm_data(transhdr_len, input_len + iv_len)) {
+	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
 	} else {
 		imm_len = 0;
-		sgl_nsegs = ccr_count_sgl(sc->sg, input_skip, input_len);
+		sglist_reset(sc->sg_ulptx);
+		if (crda->crd_len != 0) {
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    crda->crd_skip, crda->crd_len);
+			if (error)
+				return (error);
+		}
+		error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+		    crde->crd_skip, crde->crd_len);
+		if (error)
+			return (error);
+		if (op_type == CHCR_DECRYPT_OP) {
+			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+			    crda->crd_inject, hash_size_in_response);
+			if (error)
+				return (error);
+		}
+		sgl_nsegs = sc->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
-	/*
-	 * The crd_inject and crd_skip values are offsets in the input
-	 * buffer.  However, some input buffers may include a header
-	 * that needs to be skipped.  'input_skip' and 'input_len' are
-	 * the subset of the input buffer that should be sent in the
-	 * request.
-	 *
-	 * The request buffer sent to the crypto engine consists of
-	 * the IV followed by the subset of the input buffer described
-	 * by 'input_skip' and 'input_len'.  The
-	 * {aad,auth,cipher}_{start,stop,insert} values are offsets in
-	 * this request buffer.  When computing these values,
-	 * crd_inject and crd_skip need to be adjusted to account for
-	 * the differing layouts by adding the length of the IV and
-	 * subtracting 'input_skip'.
-	 */
-	cipher_start = iv_len + crde->crd_skip - input_skip + 1;
-	cipher_stop = input_len - (crde->crd_skip + crde->crd_len - input_skip);
-	aad_start = iv_len + crda->crd_skip - input_skip + 1;
-	aad_stop = aad_start + crda->crd_len - 1;
-	auth_insert = input_len - (crda->crd_inject - input_skip);
-	MPASS(op_type == CHCR_DECRYPT_OP ?
-	    auth_insert == hash_size_in_response :
-	    auth_insert == 0);
+	if (crda->crd_len != 0) {
+		aad_start = iv_len + 1;
+		aad_stop = aad_start + crda->crd_len - 1;
+	} else {
+		aad_start = 0;
+		aad_stop = 0;
+	}
+	cipher_start = iv_len + crda->crd_len + 1;
+	if (op_type == CHCR_DECRYPT_OP)
+		cipher_stop = hash_size_in_response;
+	else
+		cipher_stop = 0;
+	if (op_type == CHCR_DECRYPT_OP)
+		auth_insert = hash_size_in_response;
+	else
+		auth_insert = 0;
 
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
@@ -1291,17 +1352,26 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	memcpy(dst, s->gmac.ghash_h, GMAC_BLOCK_LEN);
 
 	dst = (char *)(crwr + 1) + kctx_len;
-	ccr_write_phys_dsgl(sc, crde->crd_skip, output_len, dst, dsgl_nsegs);
+	ccr_write_phys_dsgl(sc, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
 	if (iv_loc == IV_IMMEDIATE) {
 		memcpy(dst, iv, iv_len);
 		dst += iv_len;
 	}
-	if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, input_skip,
-		    input_len, dst);
-	else
-		ccr_write_ulptx_sgl(sc, input_skip, input_len, dst, sgl_nsegs);
+	if (imm_len != 0) {
+		if (crda->crd_len != 0) {
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crda->crd_skip, crda->crd_len, dst);
+			dst += crda->crd_len;
+		}
+		crypto_copydata(crp->crp_flags, crp->crp_buf, crde->crd_skip,
+		    crde->crd_len, dst);
+		dst += crde->crd_len;
+		if (op_type == CHCR_DECRYPT_OP)
+			crypto_copydata(crp->crp_flags, crp->crp_buf,
+			    crda->crd_inject, hash_size_in_response, dst);
+	} else
+		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
 #if 0
 	device_printf(sc->dev, "submitting GCM request:\n");
@@ -1388,7 +1458,9 @@ ccr_attach(device_t dev)
 	sc->tx_channel_id = 0;
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
-	sc->sg = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
+	sc->sg_crp = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
+	sc->sg_ulptx = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
+	sc->sg_dsgl = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
 
 #ifdef notyet
 	/* Not even swcrypto handles this, so maybe not worth doing? */
@@ -1429,7 +1501,9 @@ ccr_detach(device_t dev)
 	crypto_unregister_all(sc->cid);
 	free(sc->sessions, M_CCR);
 	mtx_destroy(&sc->lock);
-	sglist_free(sc->sg);
+	sglist_free(sc->sg_dsgl);
+	sglist_free(sc->sg_ulptx);
+	sglist_free(sc->sg_crp);
 	sc->adapter->ccr_softc = NULL;
 	return (0);
 }
@@ -1879,7 +1953,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		return (EINVAL);
 	}
 
-	error = ccr_populage_sglist(sc->sg, crp);
+	error = ccr_populate_sglist(sc->sg_crp, crp);
 	if (error) {
 		mtx_unlock(&sc->lock);
 		return (error);
