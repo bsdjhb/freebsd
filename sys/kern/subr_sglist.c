@@ -448,6 +448,8 @@ sglist_append_sglist(struct sglist *sg, struct sglist *source, size_t offset,
 		if (length == 0)
 			break;
 	}
+	if (length != 0)
+		error = EINVAL;
 	if (error)
 		SGLIST_RESTORE(sg, save);
 	return (error);
