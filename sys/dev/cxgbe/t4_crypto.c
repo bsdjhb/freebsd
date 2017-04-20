@@ -874,12 +874,12 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 * the plain text.
 	 */
 	sglist_reset(sc->sg_dsgl);
-	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx, crde->crd_skip,
+	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp, crde->crd_skip,
 	    crde->crd_len);
 	if (error)
 		return (error);
 	if (op_type == CHCR_ENCRYPT_OP) {
-		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx,
+		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp,
 		    crda->crd_inject, hash_size_in_response);
 		if (error)
 			return (error);
@@ -1210,12 +1210,12 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 * the plain text.
 	 */
 	sglist_reset(sc->sg_dsgl);
-	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx, crde->crd_skip,
+	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp, crde->crd_skip,
 	    crde->crd_len);
 	if (error)
 		return (error);
 	if (op_type == CHCR_ENCRYPT_OP) {
-		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_ulptx,
+		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp,
 		    crda->crd_inject, hash_size_in_response);
 		if (error)
 			return (error);
