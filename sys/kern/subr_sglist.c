@@ -432,7 +432,7 @@ sglist_append_sglist(struct sglist *sg, struct sglist *source, size_t offset,
 	error = EINVAL;
 	ss = &sg->sg_segs[sg->sg_nseg - 1];
 	for (i = 0; i < source->sg_nseg; i++) {
-		if (source->sg_segs[i].ss_len > offset) {
+		if (offset >= source->sg_segs[i].ss_len) {
 			offset -= source->sg_segs[i].ss_len;
 			continue;
 		}
