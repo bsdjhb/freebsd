@@ -53,6 +53,8 @@ GENSRCS+= nm.h tm.h
 CFLAGS+= -DCROSS_DEBUGGER -I${BMAKE_ROOT:H:H}
 GDB_SUFFIX= -${TARGET_ARCH}
 MAN=
+.elif ${MK_GDB_LIBEXEC} != "no"
+BINDIR?=	/usr/libexec
 .endif
 
 .include "${TARGET_SUBDIR}/Makefile"
