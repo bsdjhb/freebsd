@@ -55,6 +55,7 @@ GDB_SUFFIX= -${TARGET_ARCH}
 MAN=
 .elif ${MK_GDB_LIBEXEC} != "no"
 BINDIR?=	/usr/libexec
+MAN=
 .endif
 
 .include "${TARGET_SUBDIR}/Makefile"
