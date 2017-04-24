@@ -40,7 +40,7 @@ find_gdb()
 {
 	local binary
 
-	for binary in /usr/local/bin/gdb /usr/bin/gdb /usr/libexec/gdb; do
+	for binary in /usr/local/bin/gdb /usr/libexec/gdb /usr/bin/gdb; do
 		if [ -x ${binary} ]; then
 			GDB=${binary}
 			return
@@ -57,7 +57,7 @@ gdb_command()
 
 	k=$1 ; shift
 
-	if [ ${GDB} = "/usr/local/bin/gdb" ]; then
+	if [ ${GDB} = /usr/local/bin/gdb ]; then
 		${GDB} -batch -ex "$@" $k
 	else
 		echo -e "$@" | ${GDB} -x /dev/stdin -batch $k
