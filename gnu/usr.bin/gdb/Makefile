@@ -1,5 +1,7 @@
 # $FreeBSD$
 
+.include <src.opts.mk>
+
 SUBDIR=	libgdb gdb kgdb
 
 .if ${MK_GDB_LIBEXEC} == "no"
