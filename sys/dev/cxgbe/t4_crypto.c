@@ -179,10 +179,13 @@ struct ccr_softc {
 	struct sglist *sg_dsgl;
 
 	/* Statistics. */
-	uint64_t stats_blkcipher;
+	uint64_t stats_blkcipher_encrypt;
+	uint64_t stats_blkcipher_decrypt;
 	uint64_t stats_hmac;
-	uint64_t stats_authenc;
-	uint64_t stats_gcm;
+	uint64_t stats_authenc_encrypt;
+	uint64_t stats_authenc_decrypt;
+	uint64_t stats_gcm_encrypt;
+	uint64_t stats_gcm_decrypt;
 	uint64_t stats_wr_nomem;
 	uint64_t stats_inflight;
 };
@@ -1462,14 +1465,24 @@ ccr_sysctls(struct ccr_softc *sc)
 	    NULL, "statistics");
 	children = SYSCTL_CHILDREN(oid);
 
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "cipher", CTLFLAG_RD,
-	    &sc->stats_blkcipher, 0, "Cipher requests submitted");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "hmac", CTLFLAG_RD,
 	    &sc->stats_hmac, 0, "HMAC requests submitted");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc", CTLFLAG_RD,
-	    &sc->stats_authenc, 0, "Combined AES+HMAC requests submitted");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "gcm", CTLFLAG_RD,
-	    &sc->stats_gcm, 0, "AES-GCM requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "cipher_encrypt", CTLFLAG_RD,
+	    &sc->stats_blkcipher_encrypt, 0,
+	    "Cipher encryption requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "cipher_decrypt", CTLFLAG_RD,
+	    &sc->stats_blkcipher_decrypt, 0,
+	    "Cipher decryption requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc_encrypt", CTLFLAG_RD,
+	    &sc->stats_authenc_encrypt, 0,
+	    "Combined AES+HMAC encryption requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc_decrypt", CTLFLAG_RD,
+	    &sc->stats_authenc_decrypt, 0,
+	    "Combined AES+HMAC decryption requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "gcm_encrypt", CTLFLAG_RD,
+	    &sc->stats_gcm_encrypt, 0, "AES-GCM encryption requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "gcm_decrypt", CTLFLAG_RD,
+	    &sc->stats_gcm_decrypt, 0, "AES-GCM decryption requests submitted");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "wr_nomem", CTLFLAG_RD,
 	    &sc->stats_wr_nomem, 0, "Work request memory allocation failures");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "inflight", CTLFLAG_RD,
@@ -2032,8 +2045,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crd->crd_klen);
 		}
 		error = ccr_blkcipher(sc, sid, s, crp);
-		if (error == 0)
-			sc->stats_blkcipher++;
+		if (error == 0) {
+			if (crd->crd_flags & CRD_F_ENCRYPT)
+				sc->stats_blkcipher_encrypt++;
+			else
+				sc->stats_blkcipher_decrypt++;
+		}
 		break;
 	case AUTHENC:
 		error = 0;
@@ -2072,8 +2089,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crde->crd_klen);
 		}
 		error = ccr_authenc(sc, sid, s, crp, crda, crde);
-		if (error == 0)
-			sc->stats_authenc++;
+		if (error == 0) {
+			if (crde->crd_flags & CRD_F_ENCRYPT)
+				sc->stats_authenc_encrypt++;
+			else
+				sc->stats_authenc_decrypt++;
+		}
 		break;
 	case GCM:
 		error = 0;
@@ -2095,8 +2116,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crde->crd_klen);
 		}
 		error = ccr_gcm(sc, sid, s, crp, crda, crde);
-		if (error == 0)
-			sc->stats_gcm++;
+		if (error == 0) {
+			if (crde->crd_flags & CRD_F_ENCRYPT)
+				sc->stats_gcm_encrypt++;
+			else
+				sc->stats_gcm_decrypt++;
+		}
 		break;
 	}
 
