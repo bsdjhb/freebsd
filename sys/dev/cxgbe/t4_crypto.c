@@ -177,6 +177,14 @@ struct ccr_softc {
 	struct sglist *sg_crp;
 	struct sglist *sg_ulptx;
 	struct sglist *sg_dsgl;
+
+	/* Statistics. */
+	uint64_t stats_blkcipher;
+	uint64_t stats_hmac;
+	uint64_t stats_authenc;
+	uint64_t stats_gcm;
+	uint64_t stats_wr_nomem;
+	uint64_t stats_inflight;
 };
 
 /*
@@ -517,8 +525,10 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
-	if (wr == NULL)
+	if (wr == NULL) {
+		sc->stats_wr_nomem++;
 		return (ENOMEM);
+	}
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
@@ -684,8 +694,10 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
-	if (wr == NULL)
+	if (wr == NULL) {
+		sc->stats_wr_nomem++;
 		return (ENOMEM);
+	}
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
@@ -979,8 +991,10 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
-	if (wr == NULL)
+	if (wr == NULL) {
+		sc->stats_wr_nomem++;
 		return (ENOMEM);
+	}
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
@@ -1288,8 +1302,10 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += iv_len;
 	wr = alloc_wrqe(wr_len, sc->ofld_txq);
-	if (wr == NULL)
+	if (wr == NULL) {
+		sc->stats_wr_nomem++;
 		return (ENOMEM);
+	}
 	crwr = wrtod(wr);
 	memset(crwr, 0, transhdr_len);
 
@@ -1424,6 +1440,42 @@ ccr_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
+static void
+ccr_sysctls(struct ccr_softc *sc)
+{
+	struct sysctl_ctx_list *ctx;
+	struct sysctl_oid *oid;
+	struct sysctl_oid_list *children;
+
+	ctx = device_get_sysctl_ctx(sc->dev);
+
+	/*
+	 * dev.ccr.X.
+	 */
+	oid = device_get_sysctl_tree(sc->dev);
+	children = SYSCTL_CHILDREN(oid);
+
+	/*
+	 * dev.ccr.X.stats.
+	 */
+	oid = SYSCTL_ADD_NODE(ctx, children, OID_AUTO, "stats", CTLFLAG_RD,
+	    NULL, "statistics");
+	children = SYSCTL_CHILDREN(oid);
+
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "cipher", CTLFLAG_RD,
+	    &sc->stats_blkcipher, 0, "Cipher requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "hmac", CTLFLAG_RD,
+	    &sc->stats_hmac, 0, "HMAC requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc", CTLFLAG_RD,
+	    &sc->stats_authenc, 0, "Combined AES+HMAC requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "gcm", CTLFLAG_RD,
+	    &sc->stats_gcm, 0, "AES-GCM requests submitted");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "wr_nomem", CTLFLAG_RD,
+	    &sc->stats_wr_nomem, 0, "Work request memory allocation failures");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "inflight", CTLFLAG_RD,
+	    &sc->stats_inflight, 0, "Requests currently pending");
+}
+
 static int
 ccr_attach(device_t dev)
 {
@@ -1461,6 +1513,7 @@ ccr_attach(device_t dev)
 	sc->sg_crp = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	sc->sg_ulptx = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	sc->sg_dsgl = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
+	ccr_sysctls(sc);
 
 #ifdef notyet
 	/* Not even swcrypto handles this, so maybe not worth doing? */
@@ -1966,6 +2019,8 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			ccr_init_hmac_digest(s, crd->crd_alg, crd->crd_key,
 			    crd->crd_klen);
 		error = ccr_hmac(sc, sid, s, crp);
+		if (error == 0)
+			sc->stats_hmac++;
 		break;
 	case BLKCIPHER:
 		if (crd->crd_flags & CRD_F_KEY_EXPLICIT) {
@@ -1977,6 +2032,8 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crd->crd_klen);
 		}
 		error = ccr_blkcipher(sc, sid, s, crp);
+		if (error == 0)
+			sc->stats_blkcipher++;
 		break;
 	case AUTHENC:
 		error = 0;
@@ -2015,6 +2072,8 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crde->crd_klen);
 		}
 		error = ccr_authenc(sc, sid, s, crp, crda, crde);
+		if (error == 0)
+			sc->stats_authenc++;
 		break;
 	case GCM:
 		error = 0;
@@ -2036,11 +2095,15 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			    crde->crd_klen);
 		}
 		error = ccr_gcm(sc, sid, s, crp, crda, crde);
+		if (error == 0)
+			sc->stats_gcm++;
 		break;
 	}
 
-	if (error == 0)
+	if (error == 0) {
 		s->pending++;
+		sc->stats_inflight++;
+	}
 	mtx_unlock(&sc->lock);
 
 	return (error);
@@ -2079,6 +2142,7 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	MPASS(sid < sc->nsessions);
 	s = &sc->sessions[sid];
 	s->pending--;
+	sc->stats_inflight--;
 
 	switch (s->mode) {
 	case HMAC:
