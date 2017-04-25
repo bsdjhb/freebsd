@@ -188,6 +188,8 @@ struct ccr_softc {
 	uint64_t stats_gcm_decrypt;
 	uint64_t stats_wr_nomem;
 	uint64_t stats_inflight;
+	uint64_t stats_mac_error;
+	uint64_t stats_pad_error;
 };
 
 /*
@@ -1487,6 +1489,10 @@ ccr_sysctls(struct ccr_softc *sc)
 	    &sc->stats_wr_nomem, 0, "Work request memory allocation failures");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "inflight", CTLFLAG_RD,
 	    &sc->stats_inflight, 0, "Requests currently pending");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "mac_error", CTLFLAG_RD,
+	    &sc->stats_mac_error, 0, "MAC errors");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "pad_error", CTLFLAG_RD,
+	    &sc->stats_pad_error, 0, "Padding errors");
 }
 
 static int
@@ -2184,6 +2190,12 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 		break;
 	}
 
+	if (error == EBADMSG) {
+		if (CHK_MAC_ERR_BIT(status))
+			sc->stats_mac_error++;
+		if (CHK_PAD_ERR_BIT(status))
+			sc->stats_pad_error++;
+	}
 	mtx_unlock(&sc->lock);
 	crp->crp_etype = error;
 	crypto_done(crp);
