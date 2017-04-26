@@ -190,6 +190,9 @@ struct ccr_softc {
 	uint64_t stats_inflight;
 	uint64_t stats_mac_error;
 	uint64_t stats_pad_error;
+	uint64_t stats_bad_session;
+	uint64_t stats_sglist_error;
+	uint64_t stats_process_error;
 };
 
 /*
@@ -1510,6 +1513,12 @@ ccr_sysctls(struct ccr_softc *sc)
 	    &sc->stats_mac_error, 0, "MAC errors");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "pad_error", CTLFLAG_RD,
 	    &sc->stats_pad_error, 0, "Padding errors");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "bad_session", CTLFLAG_RD,
+	    &sc->stats_pad_error, 0, "Requests with invalid session ID");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "sglist_error", CTLFLAG_RD,
+	    &sc->stats_pad_error, 0, "Requests for which DMA mapping failed");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "process_error", CTLFLAG_RD,
+	    &sc->stats_pad_error, 0, "Requests failed during queueing");
 }
 
 static int
@@ -2030,7 +2039,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	uint32_t sid;
 	int error;
 
-	if (crp == NULL || crp->crp_callback == NULL)
+	if (crp == NULL)
 		return (EINVAL);
 
 	crd = crp->crp_desc;
@@ -2038,14 +2047,15 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	sc = device_get_softc(dev);
 	mtx_lock(&sc->lock);
 	if (sid >= sc->nsessions || !sc->sessions[sid].active) {
-		mtx_unlock(&sc->lock);
-		return (EINVAL);
+		sc->stats_bad_session++;
+		error = EINVAL;
+		goto out;
 	}
 
 	error = ccr_populate_sglist(sc->sg_crp, crp);
 	if (error) {
-		mtx_unlock(&sc->lock);
-		return (error);
+		sc->stats_sglist_error++;
+		goto out;
 	}
 
 	s = &sc->sessions[sid];
@@ -2151,10 +2161,18 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	if (error == 0) {
 		s->pending++;
 		sc->stats_inflight++;
-	}
+	} else
+		sc->stats_process_error++;
+
+out:
 	mtx_unlock(&sc->lock);
 
-	return (error);
+	if (error) {
+		crp->crp_etype = error;
+		crypto_done(crp);
+	}
+
+	return (0);
 }
 
 static int
