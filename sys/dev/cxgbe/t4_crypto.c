@@ -698,12 +698,14 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	} else {
 		imm_len = 0;
 		sglist_reset(sc->sg_ulptx);
-		if (iv_loc == IV_DSGL)
+		if (iv_loc == IV_DSGL) {
 			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
-			    0, crd->crd_skip + crd->crd_len);
-		else
-			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
-			    crd->crd_skip, crd->crd_len);
+			    crd->crd_inject, s->blkcipher.iv_len);
+			if (error)
+				return (error);
+		}
+		error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
+		    crd->crd_skip, crd->crd_len);
 		if (error)
 			return (error);
 		sgl_nsegs = sc->sg_ulptx->sg_nseg;
