@@ -416,6 +416,17 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 #include <vm/vm_param.h>
 
 static void
+dump_sglist(struct ccr_softc *sc, struct sglist *sg, const char *descr)
+{
+	u_short i;
+
+	device_printf(sc->dev, "%s:\n", descr);
+	for (i = 0; i < sg->sg_nseg; i++)
+		printf("  seg[%d]: (%#lx:%#lx)\n", i, sg->sg_segs[i].ss_paddr,
+		    sg->sg_segs[i].ss_len);
+}
+
+static void
 dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 {
 	const struct ulptx_sgl *usgl;
