@@ -442,29 +442,33 @@ dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 }
 
 static void
-dump_crp(struct ccr_softc *sc, struct cryptop *crp, bool layout)
+dump_crp(struct ccr_softc *sc, struct cryptop *crp)
+{
+	struct cryptodesc *crd;
+	int i;
+
+	device_printf(sc->dev, "crp descriptors:\n");
+	for (crd = crp->crp_desc, i = 0; crd != NULL;
+	     crd = crd->crd_next, i++) {
+		printf("  [%d]: alg %d skip %d len %d inject %d\n", i,
+		    crd->crd_alg, crd->crd_skip, crd->crd_len,
+		    crd->crd_inject);
+		if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
+			hexdump(crd->crd_key, crd->crd_klen / 8,
+			    "    key: ", HD_OMIT_COUNT | HD_OMIT_CHARS);
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+			hexdump(crd->crd_iv, 16, "    iv:  ",
+			    HD_OMIT_CHARS | HD_OMIT_COUNT);
+	}
+}
+
+static void
+dump_crp_buffer(struct ccr_softc *sc, struct cryptop *crp)
 {
 	struct mbuf *m;
 	struct uio *uio;
 	int i;
 
-	if (layout) {
-		struct cryptodesc *crd;
-
-		device_printf(sc->dev, "crp descriptors:\n");
-		for (crd = crp->crp_desc, i = 0; crd != NULL;
-		     crd = crd->crd_next, i++) {
-			printf("  [%d]: alg %d skip %d len %d inject %d\n", i,
-			    crd->crd_alg, crd->crd_skip, crd->crd_len,
-			    crd->crd_inject);
-			if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
-				hexdump(crd->crd_key, crd->crd_klen / 8,
-				    "    key: ", HD_OMIT_COUNT | HD_OMIT_CHARS);
-			if (crd->crd_flags & CRD_F_IV_EXPLICIT)
-				hexdump(crd->crd_iv, 16, "    iv:  ",
-				    HD_OMIT_CHARS | HD_OMIT_COUNT);
-		}
-	}
 	device_printf(sc->dev, "crp buffer ");
 	if (crp->crp_flags & CRYPTO_F_IMBUF) {
 		printf("(mbuf):\n");
@@ -1146,7 +1150,7 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 	}
 #if 0
 	if (error == 0) {
-		dump_crp(sc, crp, false);
+		dump_crp_buffer(sc, crp);
 	}
 #endif
 	return (error);
@@ -1420,7 +1424,7 @@ ccr_gcm_done(struct ccr_softc *sc, struct ccr_session *s,
 	 */
 #if 0
 	if (error == 0) {
-		dump_crp(sc, crp, false);
+		dump_crp_buffer(sc, crp);
 	}
 #endif
 	return (error);
