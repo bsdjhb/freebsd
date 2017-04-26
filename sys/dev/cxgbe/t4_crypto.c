@@ -431,7 +431,7 @@ dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
 			len = usgl->len0;
 		} else {
 			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
-			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
+			len = usgl->sge[(i - 1) / 2].len[(i - 1) & 1];
 		}
 		addr = be64toh(addr);
 		len = be32toh(len);
