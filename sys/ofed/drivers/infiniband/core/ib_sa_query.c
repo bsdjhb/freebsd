@@ -172,7 +172,7 @@ static u32 tid;
 	.field_name          = "sa_path_rec:" #field
 
 static const struct ib_field path_rec_table[] = {
-	{ PATH_REC_FIELD(service_id),
+	{ PATH_REC_FIELD(ib.service_id),
 	  .offset_words = 0,
 	  .offset_bits  = 0,
 	  .size_bits    = 64 },
@@ -184,15 +184,15 @@ static const struct ib_field path_rec_table[] = {
 	  .offset_words = 6,
 	  .offset_bits  = 0,
 	  .size_bits    = 128 },
-	{ PATH_REC_FIELD(dlid),
+	{ PATH_REC_FIELD(ib.dlid),
 	  .offset_words = 10,
 	  .offset_bits  = 0,
 	  .size_bits    = 16 },
-	{ PATH_REC_FIELD(slid),
+	{ PATH_REC_FIELD(ib.slid),
 	  .offset_words = 10,
 	  .offset_bits  = 16,
 	  .size_bits    = 16 },
-	{ PATH_REC_FIELD(raw_traffic),
+	{ PATH_REC_FIELD(ib.raw_traffic),
 	  .offset_words = 11,
 	  .offset_bits  = 0,
 	  .size_bits    = 1 },
@@ -670,9 +670,9 @@ int ib_init_ah_from_path(struct ib_device *device, u8 port_num,
 	memset(ah_attr, 0, sizeof *ah_attr);
 	ah_attr->type = rdma_ah_find_type(device, port_num);
 
-	rdma_ah_set_dlid(ah_attr, be16_to_cpu(rec->dlid));
+	rdma_ah_set_dlid(ah_attr, be16_to_cpu(sa_path_get_dlid(rec)));
 	rdma_ah_set_sl(ah_attr, rec->sl);
-	rdma_ah_set_path_bits(ah_attr, be16_to_cpu(rec->slid) &
+	rdma_ah_set_path_bits(ah_attr, be16_to_cpu(sa_path_get_slid(rec)) &
 			      get_src_path_mask(device, port_num));
 	rdma_ah_set_port_num(ah_attr, port_num);
 	rdma_ah_set_static_rate(ah_attr, rec->rate);
@@ -681,9 +681,13 @@ int ib_init_ah_from_path(struct ib_device *device, u8 port_num,
 	if (use_roce) {
 		if_t idev;
 		if_t resolved_dev;
-		struct rdma_dev_addr dev_addr = {.bound_dev_if = rec->ifindex,
-						 .net = rec->net ? rec->net :
-							 &init_net};
+		struct rdma_dev_addr dev_addr = {
+			.bound_dev_if = ((sa_path_get_ifindex(rec) >= 0) ?
+					 sa_path_get_ifindex(rec) : 0),
+			.net = sa_path_get_ndev(rec) ?
+				sa_path_get_ndev(rec) :
+				&init_net
+		};
 		union rdma_sockaddr sgid_addr, dgid_addr;
 
 		if (!device->get_netdev)
@@ -746,8 +750,13 @@ int ib_init_ah_from_path(struct ib_device *device, u8 port_num,
 			dev_put(ndev);
 	}
 
-	if (use_roce)
-		memcpy(ah_attr->roce.dmac, rec->dmac, ETH_ALEN);
+	if (use_roce) {
+		u8 *dmac = sa_path_get_dmac(rec);
+
+		if (!dmac)
+			return -EINVAL;
+		memcpy(ah_attr->roce.dmac, dmac, ETH_ALEN);
+	}
 
 	return 0;
 }
@@ -875,10 +884,10 @@ static void ib_sa_path_rec_callback(struct ib_sa_query *sa_query,
 
 		ib_unpack(path_rec_table, ARRAY_SIZE(path_rec_table),
 			  mad->data, &rec);
-		rec.net = NULL;
-		rec.ifindex = 0;
 		rec.rec_type = SA_PATH_REC_TYPE_IB;
-		eth_zero_addr(rec.dmac);
+		sa_path_set_ndev(&rec, NULL);
+		sa_path_set_ifindex(&rec, 0);
+		sa_path_set_dmac_zero(&rec);
 		query->callback(status, &rec, query->context);
 	} else
 		query->callback(status, NULL, query->context);
