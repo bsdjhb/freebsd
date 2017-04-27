@@ -470,7 +470,7 @@ ipoib_mark_paths_invalid(struct ipoib_dev_priv *priv)
 
 	list_for_each_entry_safe(path, tp, &priv->path_list, list) {
 		ipoib_dbg(priv, "mark path LID 0x%04x GID %16D invalid\n",
-			be16_to_cpu(path->pathrec.dlid),
+			be16_to_cpu(sa_path_get_dlid(&path->pathrec)),
 			path->pathrec.dgid.raw, ":");
 		path->valid =  0;
 	}
@@ -519,7 +519,8 @@ path_rec_completion(int status, struct sa_path_rec *pathrec, void *path_ptr)
 
 	if (!status)
 		ipoib_dbg(priv, "PathRec LID 0x%04x for GID %16D\n",
-			  be16_to_cpu(pathrec->dlid), pathrec->dgid.raw, ":");
+			  be16_to_cpu(sa_path_get_dlid(pathrec)),
+			  pathrec->dgid.raw, ":");
 	else
 		ipoib_dbg(priv, "PathRec status %d for GID %16D\n",
 			  status, path->pathrec.dgid.raw, ":");
@@ -542,7 +543,8 @@ path_rec_completion(int status, struct sa_path_rec *pathrec, void *path_ptr)
 		path->ah = ah;
 
 		ipoib_dbg(priv, "created address handle %p for LID 0x%04x, SL %d\n",
-			  ah, be16_to_cpu(pathrec->dlid), pathrec->sl);
+			  ah, be16_to_cpu(sa_path_get_dlid(pathrec)),
+			  pathrec->sl);
 
 		for (;;) {
 			_IF_DEQUEUE(&path->queue, mb);
@@ -599,6 +601,7 @@ path_rec_create(struct ipoib_dev_priv *priv, uint8_t *hwaddr)
 #ifdef CONFIG_INFINIBAND_IPOIB_CM
 	memcpy(&path->hwaddr, hwaddr, INFINIBAND_ALEN);
 #endif
+	path->pathrec.rec_type	    = SA_PATH_REC_TYPE_IB;
 	memcpy(path->pathrec.dgid.raw, &hwaddr[4], sizeof (union ib_gid));
 	path->pathrec.sgid	    = priv->local_gid;
 	path->pathrec.pkey	    = cpu_to_be16(priv->pkey);
