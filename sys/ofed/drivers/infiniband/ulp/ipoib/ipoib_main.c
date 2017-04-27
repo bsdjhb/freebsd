@@ -601,7 +601,10 @@ path_rec_create(struct ipoib_dev_priv *priv, uint8_t *hwaddr)
 #ifdef CONFIG_INFINIBAND_IPOIB_CM
 	memcpy(&path->hwaddr, hwaddr, INFINIBAND_ALEN);
 #endif
-	path->pathrec.rec_type	    = SA_PATH_REC_TYPE_IB;
+	if (rdma_cap_opa_ah(priv->ca, priv->port))
+		path->pathrec.rec_type = SA_PATH_REC_TYPE_OPA;
+	else
+		path->pathrec.rec_type = SA_PATH_REC_TYPE_IB;
 	memcpy(path->pathrec.dgid.raw, &hwaddr[4], sizeof (union ib_gid));
 	path->pathrec.sgid	    = priv->local_gid;
 	path->pathrec.pkey	    = cpu_to_be16(priv->pkey);
