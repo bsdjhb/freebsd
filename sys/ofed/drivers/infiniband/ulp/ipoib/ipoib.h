@@ -417,7 +417,7 @@ struct ipoib_path {
 	struct ipoib_cm_tx   *cm;
 #endif
 	struct ipoib_ah      *ah;
-	struct ib_sa_path_rec pathrec;
+	struct sa_path_rec pathrec;
 	struct ifqueue	      queue;
 
 	int		      query_id;
