@@ -2815,6 +2815,7 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 	struct cma_work *work;
 	int ret;
 	if_t ndev = NULL;
+	enum ib_gid_type gid_type = IB_GID_TYPE_IB;
 	u8 default_roce_tos = id_priv->cma_dev->default_roce_tos[id_priv->id.port_num -
 					rdma_start_port(id_priv->cma_dev->device)];
 	u8 tos = id_priv->tos_set ? id_priv->tos : default_roce_tos;
@@ -2849,10 +2850,11 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		route->path_rec->ifindex = if_getindex(ndev);
 		supported_gids = roce_gid_type_mask_support(id_priv->id.device,
 							    id_priv->id.port_num);
-		route->path_rec->gid_type =
-			cma_route_gid_type(addr->dev_addr.network,
-					   supported_gids,
-					   id_priv->gid_type);
+		gid_type = cma_route_gid_type(addr->dev_addr.network,
+					      supported_gids,
+					      id_priv->gid_type);
+		route->path_rec->rec_type =
+			sa_conv_gid_to_pathrec_type(gid_type);
 	}
 	if (!ndev) {
 		ret = -ENODEV;
@@ -2867,8 +2869,10 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		    &route->path_rec->dgid);
 
 	/* Use the hint from IP Stack to select GID Type */
-	if (route->path_rec->gid_type < ib_network_to_gid_type(addr->dev_addr.network))
-		route->path_rec->gid_type = ib_network_to_gid_type(addr->dev_addr.network);
+	if (gid_type < ib_network_to_gid_type(addr->dev_addr.network))
+		gid_type = ib_network_to_gid_type(addr->dev_addr.network);
+	route->path_rec->rec_type = sa_conv_gid_to_pathrec_type(gid_type);
+
 	if (((struct sockaddr *)&id_priv->id.route.addr.dst_addr)->sa_family != AF_IB)
 		/* TODO: get the hoplimit from the inet/inet6 device */
 		route->path_rec->hop_limit = addr->dev_addr.hoplimit;
