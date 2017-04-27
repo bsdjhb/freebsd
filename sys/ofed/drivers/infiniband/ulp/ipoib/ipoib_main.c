@@ -469,9 +469,9 @@ ipoib_mark_paths_invalid(struct ipoib_dev_priv *priv)
 	spin_lock_irq(&priv->lock);
 
 	list_for_each_entry_safe(path, tp, &priv->path_list, list) {
-		ipoib_dbg(priv, "mark path LID 0x%04x GID %16D invalid\n",
-			be16_to_cpu(sa_path_get_dlid(&path->pathrec)),
-			path->pathrec.dgid.raw, ":");
+		ipoib_dbg(priv, "mark path LID 0x%08x GID %16D invalid\n",
+			  be32_to_cpu(sa_path_get_dlid(&path->pathrec)),
+			  path->pathrec.dgid.raw, ":");
 		path->valid =  0;
 	}
 
@@ -519,7 +519,7 @@ path_rec_completion(int status, struct sa_path_rec *pathrec, void *path_ptr)
 
 	if (!status)
 		ipoib_dbg(priv, "PathRec LID 0x%04x for GID %16D\n",
-			  be16_to_cpu(sa_path_get_dlid(pathrec)),
+			  be32_to_cpu(sa_path_get_dlid(pathrec)),
 			  pathrec->dgid.raw, ":");
 	else
 		ipoib_dbg(priv, "PathRec status %d for GID %16D\n",
@@ -543,7 +543,7 @@ path_rec_completion(int status, struct sa_path_rec *pathrec, void *path_ptr)
 		path->ah = ah;
 
 		ipoib_dbg(priv, "created address handle %p for LID 0x%04x, SL %d\n",
-			  ah, be16_to_cpu(sa_path_get_dlid(pathrec)),
+			  ah, be32_to_cpu(sa_path_get_dlid(pathrec)),
 			  pathrec->sl);
 
 		for (;;) {
