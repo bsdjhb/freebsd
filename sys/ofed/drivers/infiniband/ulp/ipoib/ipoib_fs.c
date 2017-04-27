@@ -220,7 +220,7 @@ static int ipoib_path_seq_show(struct seq_file *file, void *iter_ptr)
 			   "  DLID:     0x%04x\n"
 			   "  SL: %12d\n"
 			   "  rate: %*d%s Gb/sec\n",
-			   be16_to_cpu(sa_path_get_dlid(&path.pathrec)),
+			   be32_to_cpu(sa_path_get_dlid(&path.pathrec)),
 			   path.pathrec.sl,
 			   10 - ((rate % 10) ? 2 : 0),
 			   rate / 10, rate % 10 ? ".5" : "");
