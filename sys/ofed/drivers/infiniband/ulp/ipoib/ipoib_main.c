@@ -505,7 +505,7 @@ ipoib_flush_paths(struct ipoib_dev_priv *priv)
 }
 
 static void
-path_rec_completion(int status, struct ib_sa_path_rec *pathrec, void *path_ptr)
+path_rec_completion(int status, struct sa_path_rec *pathrec, void *path_ptr)
 {
 	struct ipoib_path *path = path_ptr;
 	struct ipoib_dev_priv *priv = path->priv;
@@ -614,7 +614,7 @@ path_rec_start(struct ipoib_dev_priv *priv, struct ipoib_path *path)
 	if_t dev = priv->dev;
 
 	ib_sa_comp_mask comp_mask = IB_SA_PATH_REC_MTU_SELECTOR | IB_SA_PATH_REC_MTU;
-	struct ib_sa_path_rec p_rec;
+	struct sa_path_rec p_rec;
 
 	p_rec = path->pathrec;
 	p_rec.mtu_selector = IB_SA_GT;
