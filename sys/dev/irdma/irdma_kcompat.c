@@ -591,7 +591,7 @@ irdma_create_sleepable_ah(struct ib_ah *ib_ah,
 		ah_info->tc_tos = attr->grh.traffic_class;
 	}
 
-	ether_addr_copy(dmac, attr->dmac);
+	ether_addr_copy(dmac, attr->roce.dmac);
 
 	irdma_fill_ah_info(if_getvnet(iwdev->netdev), ah_info, &sgid_attr, &sgid_addr, &dgid_addr,
 			   dmac, ah->av.net_type);
@@ -648,7 +648,7 @@ irdma_create_ah(struct ib_ah *ib_ah,
 void
 irdma_ether_copy(u8 *dmac, struct rdma_ah_attr *attr)
 {
-	ether_addr_copy(dmac, attr->dmac);
+	ether_addr_copy(dmac, attr->roce.dmac);
 }
 
 int

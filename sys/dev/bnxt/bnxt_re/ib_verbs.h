@@ -104,7 +104,7 @@ struct bnxt_re_dev;
 #define RDMA_NETWORK_IPV4	1
 #define RDMA_NETWORK_IPV6	2
 
-#define ROCE_DMAC(x) (x)->dmac
+#define ROCE_DMAC(x) (x)->roce.dmac
 
 #define dma_rmb()       rmb()
 
