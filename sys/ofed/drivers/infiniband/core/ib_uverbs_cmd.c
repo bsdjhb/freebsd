@@ -2441,7 +2441,7 @@ static int ib_uverbs_create_ah(struct uverbs_attr_bundle *attrs)
 		attr.ah_flags = 0;
 	}
 
-	ah = ib_create_user_ah(pd, &attr, &attrs->driver_udata);
+	ah = rdma_create_user_ah(pd, &attr, &attrs->driver_udata);
 	if (IS_ERR(ah)) {
 		ret = PTR_ERR(ah);
 		goto err_put;
