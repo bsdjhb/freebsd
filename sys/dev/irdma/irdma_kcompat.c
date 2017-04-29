@@ -1292,9 +1292,11 @@ kc_irdma_set_roce_cm_info(struct irdma_qp *iwqp, struct ib_qp_attr *attr,
 	union ib_gid sgid;
 	struct ib_gid_attr sgid_attr;
 	struct irdma_av *av = &iwqp->roce_ah.av;
+	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
 
-	ret = ib_get_cached_gid(iwqp->ibqp.device, attr->ah_attr.port_num,
-				attr->ah_attr.grh.sgid_index, &sgid,
+	ret = ib_get_cached_gid(iwqp->ibqp.device,
+				rdma_ah_get_port_num(&attr->ah_attr),
+				grh->sgid_index, &sgid,
 				&sgid_attr);
 	if (ret)
 		return ret;

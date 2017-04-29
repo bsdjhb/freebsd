@@ -194,9 +194,9 @@ static void update_sm_ah(struct mlx4_ib_dev *dev, u8 port_num, u16 lid, u8 sl)
 		return;
 
 	memset(&ah_attr, 0, sizeof ah_attr);
-	ah_attr.dlid     = lid;
-	ah_attr.sl       = sl;
-	ah_attr.port_num = port_num;
+	rdma_ah_set_dlid(&ah_attr, lid);
+	rdma_ah_set_sl(&ah_attr, sl);
+	rdma_ah_set_port_num(&ah_attr, port_num);
 
 	new_ah = rdma_create_ah(dev->send_agent[port_num - 1][0]->qp->pd,
 				&ah_attr, 0);
@@ -552,13 +552,15 @@ int mlx4_ib_send_to_slave(struct mlx4_ib_dev *dev, int slave, u8 port,
 	/* create ah. Just need an empty one with the port num for the post send.
 	 * The driver will set the force loopback bit in post_send */
 	memset(&attr, 0, sizeof attr);
-	attr.port_num = port;
+	rdma_ah_set_port_num(&attr, port);
 	if (is_eth) {
 		union ib_gid sgid;
+		union ib_gid dgid;
 
-		if (get_gids_from_l3_hdr(grh, &sgid, &attr.grh.dgid))
+		if (get_gids_from_l3_hdr(grh, &sgid, &dgid))
 			return -EINVAL;
 		attr.ah_flags = IB_AH_GRH;
+		rdma_ah_set_grh(&attr, &dgid, 0, 0, 0, 0);
 	}
 	ah = rdma_create_ah(tun_ctx->pd, &attr, 0);
 	if (IS_ERR(ah))
@@ -1454,10 +1456,11 @@ static int get_slave_base_gid_ix(struct mlx4_ib_dev *dev, int slave, int port)
 static void fill_in_real_sgid_index(struct mlx4_ib_dev *dev, int slave, int port,
 				    struct rdma_ah_attr *ah_attr)
 {
+	struct ib_global_route *grh = rdma_ah_retrieve_grh(ah_attr);
 	if (rdma_port_get_link_layer(&dev->ib_dev, port) == IB_LINK_LAYER_INFINIBAND)
-		ah_attr->grh.sgid_index = slave;
+		grh->sgid_index = slave;
 	else
-		ah_attr->grh.sgid_index += get_slave_base_gid_ix(dev, slave, port);
+		grh->sgid_index += get_slave_base_gid_ix(dev, slave, port);
 }
 
 static void mlx4_ib_multiplex_mad(struct mlx4_ib_demux_pv_ctx *ctx, struct ib_wc *wc)
@@ -1472,6 +1475,8 @@ static void mlx4_ib_multiplex_mad(struct mlx4_ib_demux_pv_ctx *ctx, struct ib_wc
 	int slave;
 	int port;
 	u16 vlan_id;
+	u8 qos;
+	u8 *dmac;
 
 	/* Get slave that sent this packet */
 	if (wc->src_qp < dev->dev->phys_caps.base_proxy_sqpn ||
@@ -1556,14 +1561,17 @@ static void mlx4_ib_multiplex_mad(struct mlx4_ib_demux_pv_ctx *ctx, struct ib_wc
 	ah.av.ib.port_pd = cpu_to_be32(port << 24 | (be32_to_cpu(ah.av.ib.port_pd) & 0xffffff));
 
 	mlx4_ib_query_ah(&ah.ibah, &ah_attr);
-	if (ah_attr.ah_flags & IB_AH_GRH)
+	if (rdma_ah_get_ah_flags(&ah_attr) & IB_AH_GRH)
 		fill_in_real_sgid_index(dev, slave, ctx->port, &ah_attr);
 
-	memcpy(ah_attr.dmac, tunnel->hdr.mac, 6);
+	dmac = rdma_ah_retrieve_dmac(&ah_attr);
+	if (dmac)
+		memcpy(dmac, tunnel->hdr.mac, ETH_ALEN);
 	vlan_id = be16_to_cpu(tunnel->hdr.vlan);
 	/* if slave have default vlan use it */
-	mlx4_get_slave_default_vlan(dev->dev, ctx->port, slave,
-				    &vlan_id, &ah_attr.sl);
+	if (mlx4_get_slave_default_vlan(dev->dev, ctx->port, slave,
+					&vlan_id, &qos))
+		rdma_ah_set_sl(&ah_attr, qos);
 
 	mlx4_ib_send_to_wire(dev, slave, ctx->port,
 			     is_proxy_qp0(dev, wc->src_qp, slave) ?

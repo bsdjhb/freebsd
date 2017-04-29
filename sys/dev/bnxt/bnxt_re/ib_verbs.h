@@ -380,7 +380,7 @@ void bnxt_re_handle_cqn(struct bnxt_qplib_cq *cq);
 static inline int
 bnxt_re_get_cached_gid(struct ib_device *dev, u8 port_num, int index,
 		       union ib_gid *sgid, struct ib_gid_attr **sgid_attr,
-		       struct ib_global_route *grh, struct ib_ah *ah);
+		       const struct ib_global_route *grh, struct ib_ah *ah);
 static inline enum rdma_network_type
 bnxt_re_gid_to_network_type(struct ib_gid_attr *sgid_attr,
 			    union ib_gid *sgid);

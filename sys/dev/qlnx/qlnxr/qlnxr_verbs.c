@@ -810,13 +810,13 @@ qlnxr_get_vlan_id_qp(qlnx_host_t *ha, struct ib_qp_attr *attr, int attr_mask,
 
 	u16 tmp_vlan_id;
 
-	union ib_gid *dgid;
+	const union ib_gid *dgid;
 
 	QL_DPRINT12(ha, "enter \n");
 
 	*vlan_id = 0;
 
-	dgid = &attr->ah_attr.grh.dgid;
+	dgid = &rdma_ah_read_grh(&attr->ah_attr)->dgid;
 	tmp_vlan_id = (dgid->raw[11] << 8) | dgid->raw[12];
 
 	if (!(tmp_vlan_id & ~EVL_VLID_MASK)) {
@@ -847,7 +847,7 @@ get_gid_info(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	       &dev->sgid_tbl[qp->sgid_idx].raw[0],
 	       sizeof(qp_params->sgid.bytes));
 	memcpy(&qp_params->dgid.bytes[0],
-	       &attr->ah_attr.grh.dgid.raw[0],
+	       &rdma_ah_read_grh(&attr->ah_attr)->dgid.raw[0],
 	       sizeof(qp_params->dgid));
 
 	qlnxr_get_vlan_id_qp(ha, attr, attr_mask, &qp_params->vlan_id);
@@ -3430,6 +3430,9 @@ qlnxr_modify_qp(struct ib_qp	*ibqp,
 	}
 
 	if (attr_mask & (IB_QP_AV | IB_QP_PATH_MTU)) {
+		const struct ib_global_route *grh =
+		    rdma_ah_read_grh(&attr->ah_attr);
+
 		if (attr_mask & IB_QP_PATH_MTU) {
 			if (attr->path_mtu < IB_MTU_256 ||
 			    attr->path_mtu > IB_MTU_4096) {
@@ -3458,11 +3461,11 @@ qlnxr_modify_qp(struct ib_qp	*ibqp,
 			  ECORE_ROCE_MODIFY_QP_VALID_ADDRESS_VECTOR,
 			  1);
 
-		qp_params.traffic_class_tos = attr->ah_attr.grh.traffic_class;
-		qp_params.flow_label = attr->ah_attr.grh.flow_label;
-		qp_params.hop_limit_ttl = attr->ah_attr.grh.hop_limit;
+		qp_params.traffic_class_tos = grh->traffic_class;
+		qp_params.flow_label = grh->flow_label;
+		qp_params.hop_limit_ttl = grh->hop_limit;
 
-		qp->sgid_idx = attr->ah_attr.grh.sgid_index;
+		qp->sgid_idx = grh->sgid_index;
 
 		get_gid_info(ibqp, attr, attr_mask, dev, qp, &qp_params);
 
@@ -3731,25 +3734,24 @@ qlnxr_query_qp(struct ib_qp *ibqp,
 	qp_attr->cap.max_inline_data = qp->max_inline_data;
 	qp_init_attr->cap = qp_attr->cap;
 
-	memcpy(&qp_attr->ah_attr.grh.dgid.raw[0], &params.dgid.bytes[0],
-	       sizeof(qp_attr->ah_attr.grh.dgid.raw));
+	rdma_ah_set_port_num(&qp_attr->ah_attr, 1); /* FIXME -> check this */
+	rdma_ah_set_sl(&qp_attr->ah_attr, 0); /* FIXME -> check this */
+	rdma_ah_set_path_bits(&qp_attr->ah_attr, 0);
+	rdma_ah_set_static_rate(&qp_attr->ah_attr, 0);
 
-	qp_attr->ah_attr.grh.flow_label = params.flow_label;
-	qp_attr->ah_attr.grh.sgid_index = qp->sgid_idx;
-	qp_attr->ah_attr.grh.hop_limit = params.hop_limit_ttl;
-	qp_attr->ah_attr.grh.traffic_class = params.traffic_class_tos;
+	rdma_ah_set_grh(&qp_attr->ah_attr, NULL,
+			params.flow_label,
+			qp->sgid_idx,
+			params.hop_limit_ttl,
+			params.traffic_class_tos);
+	rdma_ah_set_dgid_raw(&qp_attr->ah_attr, &params.dgid.bytes[0]);
 
-	qp_attr->ah_attr.ah_flags = IB_AH_GRH;
-	qp_attr->ah_attr.port_num = 1; /* FIXME -> check this */
-	qp_attr->ah_attr.sl = 0;/* FIXME -> check this */
 	qp_attr->timeout = params.timeout;
 	qp_attr->rnr_retry = params.rnr_retry;
 	qp_attr->retry_cnt = params.retry_cnt;
 	qp_attr->min_rnr_timer = params.min_rnr_nak_timer;
 	qp_attr->pkey_index = params.pkey_index;
 	qp_attr->port_num = 1; /* FIXME -> check this */
-	qp_attr->ah_attr.src_path_bits = 0;
-	qp_attr->ah_attr.static_rate = 0;
 	qp_attr->alt_pkey_index = 0;
 	qp_attr->alt_port_num = 0;
 	qp_attr->alt_timeout = 0;
