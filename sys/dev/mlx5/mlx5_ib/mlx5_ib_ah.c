@@ -30,8 +30,7 @@
 
 static void create_ib_ah(struct mlx5_ib_dev *dev,
 				  struct mlx5_ib_ah *ah,
-				  struct rdma_ah_attr *ah_attr,
-				  enum rdma_link_layer ll)
+				  struct rdma_ah_attr *ah_attr)
 {
 	if (rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH) {
 		const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
@@ -46,8 +45,9 @@ static void create_ib_ah(struct mlx5_ib_dev *dev,
 
 	ah->av.stat_rate_sl = (rdma_ah_get_static_rate(ah_attr) << 4);
 
-	if (ll == IB_LINK_LAYER_ETHERNET) {
-		memcpy(ah->av.rmac, ah_attr->dmac, sizeof(ah_attr->dmac));
+	if (ah_attr->type == RDMA_AH_ATTR_TYPE_ROCE) {
+		memcpy(ah->av.rmac, ah_attr->roce.dmac,
+		       sizeof(ah_attr->roce.dmac));
 		ah->av.udp_sport =
 			mlx5_get_roce_udp_sport(dev,
 			    rdma_ah_get_port_num(ah_attr),
@@ -66,16 +66,13 @@ int mlx5_ib_create_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr,
 {
 	struct mlx5_ib_ah *ah = to_mah(ibah);
 	struct mlx5_ib_dev *dev = to_mdev(ibah->device);
-	enum rdma_link_layer ll;
+	enum rdma_ah_attr_type ah_type = ah_attr->type;
 
-	ll = dev->ib_dev.get_link_layer(&dev->ib_dev,
-					rdma_ah_get_port_num(ah_attr));
-
-	if (ll == IB_LINK_LAYER_ETHERNET &&
+	if ((ah_type == RDMA_AH_ATTR_TYPE_ROCE) &&
 	    !(rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH))
 		return -EINVAL;
 
-	if (ll == IB_LINK_LAYER_ETHERNET && udata) {
+	if (ah_type == RDMA_AH_ATTR_TYPE_ROCE && udata) {
 		int err;
 		struct mlx5_ib_create_ah_resp resp = {};
 		u32 min_resp_len = offsetof(typeof(resp), dmac) +
@@ -90,13 +87,13 @@ int mlx5_ib_create_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr,
 		if (err)
 			return err;
 
-		memcpy(resp.dmac, ah_attr->dmac, ETH_ALEN);
+		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
 		err = ib_copy_to_udata(udata, &resp, resp.response_length);
 		if (err)
 			return err;
 	}
 
-	create_ib_ah(dev, ah, ah_attr, ll);
+	create_ib_ah(dev, ah, ah_attr);
 	return 0;
 }
 
@@ -106,6 +103,7 @@ int mlx5_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 	u32 tmp;
 
 	memset(ah_attr, 0, sizeof(*ah_attr));
+	ah_attr->type = ibah->type;
 
 	tmp = be32_to_cpu(ah->av.grh_gid_fl);
 	if (tmp & (1 << 30)) {

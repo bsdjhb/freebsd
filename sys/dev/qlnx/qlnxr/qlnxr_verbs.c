@@ -3734,6 +3734,7 @@ qlnxr_query_qp(struct ib_qp *ibqp,
 	qp_attr->cap.max_inline_data = qp->max_inline_data;
 	qp_init_attr->cap = qp_attr->cap;
 
+	qp_attr->ah_attr.type = RDMA_AH_ATTR_TYPE_ROCE;
 	rdma_ah_set_port_num(&qp_attr->ah_attr, 1); /* FIXME -> check this */
 	rdma_ah_set_sl(&qp_attr->ah_attr, 0); /* FIXME -> check this */
 	rdma_ah_set_path_bits(&qp_attr->ah_attr, 0);

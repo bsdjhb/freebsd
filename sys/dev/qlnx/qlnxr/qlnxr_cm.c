@@ -520,7 +520,7 @@ qlnxr_gsi_build_header(struct qlnxr_dev *dev,
 	}
 
 	/* ENET + VLAN headers*/
-	memcpy(udh->eth.dmac_h, ah_attr->dmac, ETH_ALEN);
+	memcpy(udh->eth.dmac_h, ah_attr->roce.dmac, ETH_ALEN);
 	memcpy(udh->eth.smac_h, dev->ha->primary_mac, ETH_ALEN);
 	if (has_vlan) {
 		udh->eth.type = htons(ETH_P_8021Q);

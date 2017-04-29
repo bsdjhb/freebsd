@@ -1132,6 +1132,7 @@ int bnxt_re_query_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 {
 	struct bnxt_re_ah *ah = to_bnxt_re(ib_ah, struct bnxt_re_ah, ibah);
 
+	ah_attr->type = ib_ah->type;
 	rdma_ah_set_sl(ah_attr, ah->qplib_ah.sl);
 	memcpy(ROCE_DMAC(ah_attr), ah->qplib_ah.dmac, ETH_ALEN);
 	rdma_ah_set_grh(ah_attr, NULL, 0,
@@ -2951,6 +2952,7 @@ int bnxt_re_query_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 	qp_attr->qp_access_flags = __to_ib_access_flags(qplib_qp->access);
 	qp_attr->pkey_index = qplib_qp->pkey_index;
 	qp_attr->qkey = qplib_qp->qkey;
+	qp_attr->ah_attr.type = RDMA_AH_ATTR_TYPE_ROCE;
 	rdma_ah_set_grh(&qp_attr->ah_attr, NULL, qplib_qp->ah.flow_label,
 			qplib_qp->ah.host_sgid_index,
 			qplib_qp->ah.hop_limit,
