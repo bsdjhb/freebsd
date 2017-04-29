@@ -854,7 +854,7 @@ qlnxr_get_dmac(struct qlnxr_dev *dev, struct rdma_ah_attr *ah_attr, u8 *mac_addr
         mac_addr[4] = guid[6];
         mac_addr[5] = guid[7];
 #else
-        memcpy(mac_addr, ah_attr->dmac, ETH_ALEN);
+        memcpy(mac_addr, ah_attr->roce.dmac, ETH_ALEN);
 #endif
         return 0;
 }
