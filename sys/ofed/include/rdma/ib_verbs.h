@@ -3080,12 +3080,12 @@ enum rdma_destroy_ah_flags {
 };
 
 /**
- * ib_destroy_ah_user - Destroys an address handle.
+ * rdma_destroy_ah_user - Destroys an address handle.
  * @ah: The address handle to destroy.
  * @flags: Destroy address handle flags (see enum rdma_destroy_ah_flags).
  * @udata: Valid user data or NULL for kernel objects
  */
-int ib_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata);
+int rdma_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata);
 
 /**
  * rdma_destroy_ah - Destroys an kernel address handle.
@@ -3094,9 +3094,9 @@ int ib_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata);
  *
  * NOTE: for user ah use ib_destroy_ah_user with valid udata!
  */
-static inline int ib_destroy_ah(struct ib_ah *ah, u32 flags)
+static inline int rdma_destroy_ah(struct ib_ah *ah, u32 flags)
 {
-	return ib_destroy_ah_user(ah, flags, NULL);
+	return rdma_destroy_ah_user(ah, flags, NULL);
 }
 
 /**
