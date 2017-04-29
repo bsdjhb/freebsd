@@ -234,7 +234,7 @@ struct cm_device {
 struct cm_av {
 	struct cm_port *port;
 	union ib_gid dgid;
-	struct ib_ah_attr ah_attr;
+	struct rdma_ah_attr ah_attr;
 	u16 pkey_index;
 	u8 timeout;
 };
@@ -461,7 +461,7 @@ static void cm_set_private_data(struct cm_id_private *cm_id_priv,
 static int cm_init_av_for_lap(struct cm_port *port, struct ib_wc *wc,
 			      struct ib_grh *grh, struct cm_av *av)
 {
-	struct ib_ah_attr new_ah_attr;
+	struct rdma_ah_attr new_ah_attr;
 	int ret;
 
 	av->port = port;
