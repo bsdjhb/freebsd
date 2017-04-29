@@ -685,7 +685,7 @@ int rdma_query_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 }
 EXPORT_SYMBOL(rdma_query_ah);
 
-int ib_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata)
+int rdma_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata)
 {
 	struct ib_pd *pd;
 
@@ -698,7 +698,7 @@ int ib_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata)
 	kfree(ah);
 	return 0;
 }
-EXPORT_SYMBOL(ib_destroy_ah_user);
+EXPORT_SYMBOL(rdma_destroy_ah_user);
 
 /* Shared receive queues */
 
