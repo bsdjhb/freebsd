@@ -834,7 +834,7 @@ struct ib_mr_status {
  */
 __attribute_const__ enum ib_rate mult_to_ib_rate(int mult);
 
-struct ib_ah_attr {
+struct rdma_ah_attr {
 	struct ib_global_route	grh;
 	u16			dlid;
 	u8			sl;
@@ -1180,8 +1180,8 @@ struct ib_qp_attr {
 	u32			dest_qp_num;
 	int			qp_access_flags;
 	struct ib_qp_cap	cap;
-	struct ib_ah_attr	ah_attr;
-	struct ib_ah_attr	alt_ah_attr;
+	struct rdma_ah_attr	ah_attr;
+	struct rdma_ah_attr	alt_ah_attr;
 	u16			pkey_index;
 	u16			alt_pkey_index;
 	u8			en_sqd_async_notify;
@@ -2203,12 +2203,12 @@ struct ib_device {
 	int                        (*alloc_pd)(struct ib_pd *pd,
 					       struct ib_udata *udata);
 	void                       (*dealloc_pd)(struct ib_pd *pd, struct ib_udata *udata);
-	int 			   (*create_ah)(struct ib_ah *ah, struct ib_ah_attr *ah_attr,
+	int 			   (*create_ah)(struct ib_ah *ah, struct rdma_ah_attr *ah_attr,
 						u32 flags, struct ib_udata *udata);
 	int                        (*modify_ah)(struct ib_ah *ah,
-						struct ib_ah_attr *ah_attr);
+						struct rdma_ah_attr *ah_attr);
 	int                        (*query_ah)(struct ib_ah *ah,
-					       struct ib_ah_attr *ah_attr);
+					       struct rdma_ah_attr *ah_attr);
 	void                       (*destroy_ah)(struct ib_ah *ah, u32 flags);
 	int 			   (*create_srq)(struct ib_srq *srq,
 						 struct ib_srq_init_attr *srq_init_attr,
@@ -2989,7 +2989,7 @@ enum rdma_create_ah_flags {
  * The address handle is used to reference a local or global destination
  * in all UD QP post sends.
  */
-struct ib_ah *ib_create_ah(struct ib_pd *pd, struct ib_ah_attr *ah_attr,
+struct ib_ah *ib_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
 			   u32 flags);
 
 /**
@@ -3005,7 +3005,7 @@ struct ib_ah *ib_create_ah(struct ib_pd *pd, struct ib_ah_attr *ah_attr,
  * in all UD QP post sends.
  */
 struct ib_ah *ib_create_user_ah(struct ib_pd *pd,
-				struct ib_ah_attr *ah_attr,
+				struct rdma_ah_attr *ah_attr,
 				struct ib_udata *udata);
 
 /**
@@ -3039,7 +3039,7 @@ int ib_get_rdma_header_version(const union rdma_network_hdr *hdr);
  */
 int ib_init_ah_from_wc(struct ib_device *device, u8 port_num,
 		       const struct ib_wc *wc, const struct ib_grh *grh,
-		       struct ib_ah_attr *ah_attr);
+		       struct rdma_ah_attr *ah_attr);
 
 /**
  * ib_create_ah_from_wc - Creates an address handle associated with the
@@ -3063,7 +3063,7 @@ struct ib_ah *ib_create_ah_from_wc(struct ib_pd *pd, const struct ib_wc *wc,
  * @ah_attr: The new address vector attributes to associate with the
  *   address handle.
  */
-int ib_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr);
+int ib_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr);
 
 /**
  * ib_query_ah - Queries the address vector associated with an address
@@ -3072,7 +3072,7 @@ int ib_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr);
  * @ah_attr: The address vector attributes associated with the address
  *   handle.
  */
-int ib_query_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr);
+int ib_query_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr);
 
 enum rdma_destroy_ah_flags {
 	/* In a sleepable context */
@@ -3918,5 +3918,5 @@ struct ib_ucontext *ib_uverbs_get_ucontext_file(struct ib_uverbs_file *ufile);
 int uverbs_destroy_def_handler(struct uverbs_attr_bundle *attrs);
 
 int ib_resolve_eth_dmac(struct ib_device *device,
-			struct ib_ah_attr *ah_attr);
+			struct rdma_ah_attr *ah_attr);
 #endif /* IB_VERBS_H */

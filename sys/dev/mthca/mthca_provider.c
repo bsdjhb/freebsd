@@ -387,7 +387,7 @@ static void mthca_dealloc_pd(struct ib_pd *pd, struct ib_udata *udata)
 }
 
 static int mthca_ah_create(struct ib_ah *ibah,
-			   struct ib_ah_attr *init_attr, u32 flags,
+			   struct rdma_ah_attr *init_attr, u32 flags,
 			   struct ib_udata *udata)
 
 {

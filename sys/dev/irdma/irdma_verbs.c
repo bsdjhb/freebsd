@@ -3233,7 +3233,7 @@ irdma_detach_mcast(struct ib_qp *ibqp, union ib_gid *ibgid, u16 lid)
  * @ah_attr: address handle attributes
  */
 static int
-irdma_query_ah(struct ib_ah *ibah, struct ib_ah_attr *ah_attr)
+irdma_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 {
 	struct irdma_ah *ah = to_iwah(ibah);
 

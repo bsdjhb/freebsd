@@ -460,7 +460,7 @@ qlnxr_destroy_gsi_qp(struct qlnxr_dev *dev)
 }
 
 static inline bool
-qlnxr_get_vlan_id_gsi(struct ib_ah_attr *ah_attr, u16 *vlan_id)
+qlnxr_get_vlan_id_gsi(struct rdma_ah_attr *ah_attr, u16 *vlan_id)
 {
 	u16 tmp_vlan_id;
 	union ib_gid *dgid = &ah_attr->grh.dgid;
@@ -485,7 +485,7 @@ qlnxr_gsi_build_header(struct qlnxr_dev *dev,
 		int *roce_mode)
 {
 	bool has_vlan = false, has_grh_ipv6 = true;
-	struct ib_ah_attr *ah_attr = &get_qlnxr_ah((ud_wr(swr)->ah))->attr;
+	struct rdma_ah_attr *ah_attr = &get_qlnxr_ah((ud_wr(swr)->ah))->attr;
 	struct ib_global_route *grh = &ah_attr->grh;
 	union ib_gid sgid;
 	int send_size = 0;

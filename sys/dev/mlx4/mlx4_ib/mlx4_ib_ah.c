@@ -42,7 +42,7 @@
 
 #include "mlx4_ib.h"
 
-static int create_ib_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
+static int create_ib_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 {
 	struct ib_pd *pd = ib_ah->pd;
 	struct mlx4_ib_ah *ah = to_mah(ib_ah);
@@ -71,7 +71,7 @@ static int create_ib_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
 	return 0;
 }
 
-static int create_iboe_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
+static int create_iboe_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 {
 	struct ib_pd *pd = ib_ah->pd;
 	struct mlx4_ib_dev *ibdev = to_mdev(ib_ah->device);
@@ -129,7 +129,7 @@ static int create_iboe_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
 	return 0;
 }
 
-int mlx4_ib_create_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr,
+int mlx4_ib_create_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr,
 		      u32 flags, struct ib_udata *udata)
 {
 	if (rdma_port_get_link_layer(ib_ah->pd->device, ah_attr->port_num) == IB_LINK_LAYER_ETHERNET) {
@@ -150,10 +150,10 @@ int mlx4_ib_create_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr,
 	return create_ib_ah(ib_ah, ah_attr);
 }
 
-int mlx4_ib_create_ah_slave(struct ib_ah *ah, struct ib_ah_attr *ah_attr,
+int mlx4_ib_create_ah_slave(struct ib_ah *ah, struct rdma_ah_attr *ah_attr,
 			    int slave_sgid_index, u8 *s_mac, u16 vlan_tag)
 {
-	struct ib_ah_attr slave_attr = *ah_attr;
+	struct rdma_ah_attr slave_attr = *ah_attr;
 	struct mlx4_ib_ah *mah = to_mah(ah);
 	int ret;
 
@@ -175,7 +175,7 @@ int mlx4_ib_create_ah_slave(struct ib_ah *ah, struct ib_ah_attr *ah_attr,
 	return 0;
 }
 
-int mlx4_ib_query_ah(struct ib_ah *ibah, struct ib_ah_attr *ah_attr)
+int mlx4_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 {
 	struct mlx4_ib_ah *ah = to_mah(ibah);
 	enum rdma_link_layer ll;

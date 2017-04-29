@@ -723,7 +723,7 @@ int ib_init_ah_from_mcmember(struct ib_device *device, u8 port_num,
 			     struct ib_sa_mcmember_rec *rec,
 			     if_t ndev,
 			     enum ib_gid_type gid_type,
-			     struct ib_ah_attr *ah_attr)
+			     struct rdma_ah_attr *ah_attr)
 {
 	int ret;
 	u16 gid_index;

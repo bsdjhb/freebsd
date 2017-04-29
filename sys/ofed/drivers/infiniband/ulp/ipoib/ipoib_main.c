@@ -527,7 +527,7 @@ path_rec_completion(int status, struct ib_sa_path_rec *pathrec, void *path_ptr)
 	bzero(&mbqueue, sizeof(mbqueue));
 
 	if (!status) {
-		struct ib_ah_attr av;
+		struct rdma_ah_attr av;
 
 		if (!ib_init_ah_from_path(priv->ca, priv->port, pathrec, &av))
 			ah = ipoib_create_ah(priv, priv->pd, &av);
