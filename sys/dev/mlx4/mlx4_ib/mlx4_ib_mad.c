@@ -205,7 +205,7 @@ static void update_sm_ah(struct mlx4_ib_dev *dev, u8 port_num, u16 lid, u8 sl)
 
 	spin_lock_irqsave(&dev->sm_lock, flags);
 	if (dev->sm_ah[port_num - 1])
-		ib_destroy_ah(dev->sm_ah[port_num - 1], 0);
+		rdma_destroy_ah(dev->sm_ah[port_num - 1], 0);
 	dev->sm_ah[port_num - 1] = new_ah;
 	spin_unlock_irqrestore(&dev->sm_lock, flags);
 }
@@ -577,7 +577,7 @@ int mlx4_ib_send_to_slave(struct mlx4_ib_dev *dev, int slave, u8 port,
 
 	tun_mad = (struct mlx4_rcv_tunnel_mad *) (tun_qp->tx_ring[tun_tx_ix].buf.addr);
 	if (tun_qp->tx_ring[tun_tx_ix].ah)
-		ib_destroy_ah(tun_qp->tx_ring[tun_tx_ix].ah, 0);
+		rdma_destroy_ah(tun_qp->tx_ring[tun_tx_ix].ah, 0);
 	tun_qp->tx_ring[tun_tx_ix].ah = ah;
 	ib_dma_sync_single_for_cpu(&dev->ib_dev,
 				   tun_qp->tx_ring[tun_tx_ix].buf.map,
@@ -652,7 +652,7 @@ int mlx4_ib_send_to_slave(struct mlx4_ib_dev *dev, int slave, u8 port,
 	spin_unlock(&tun_qp->tx_lock);
 	tun_qp->tx_ring[tun_tx_ix].ah = NULL;
 end:
-	ib_destroy_ah(ah, 0);
+	rdma_destroy_ah(ah, 0);
 	return ret;
 }
 
@@ -1006,7 +1006,7 @@ static void send_handler(struct ib_mad_agent *agent,
 			 struct ib_mad_send_wc *mad_send_wc)
 {
 	if (mad_send_wc->send_buf->context[0])
-		ib_destroy_ah(mad_send_wc->send_buf->context[0], 0);
+		rdma_destroy_ah(mad_send_wc->send_buf->context[0], 0);
 	ib_free_send_mad(mad_send_wc->send_buf);
 }
 
@@ -1061,7 +1061,7 @@ void mlx4_ib_mad_cleanup(struct mlx4_ib_dev *dev)
 		}
 
 		if (dev->sm_ah[p])
-			ib_destroy_ah(dev->sm_ah[p], 0);
+			rdma_destroy_ah(dev->sm_ah[p], 0);
 	}
 }
 
@@ -1699,7 +1699,7 @@ static void mlx4_ib_free_pv_qp_bufs(struct mlx4_ib_demux_pv_ctx *ctx,
 				    tx_buf_size, DMA_TO_DEVICE);
 		kfree(tun_qp->tx_ring[i].buf.addr);
 		if (tun_qp->tx_ring[i].ah)
-			ib_destroy_ah(tun_qp->tx_ring[i].ah, 0);
+			rdma_destroy_ah(tun_qp->tx_ring[i].ah, 0);
 	}
 	kfree(tun_qp->tx_ring);
 	kfree(tun_qp->ring);
@@ -1731,8 +1731,8 @@ static void mlx4_ib_tunnel_comp_worker(struct work_struct *work)
 				pr_debug("received tunnel send completion:"
 					 "wrid=0x%llx, status=0x%x\n",
 					 (unsigned long long)wc.wr_id, wc.status);
-				ib_destroy_ah(tun_qp->tx_ring[wc.wr_id &
-					      (MLX4_NUM_TUNNEL_BUFS - 1)].ah, 0);
+				rdma_destroy_ah(tun_qp->tx_ring[wc.wr_id &
+						(MLX4_NUM_TUNNEL_BUFS - 1)].ah, 0);
 				tun_qp->tx_ring[wc.wr_id & (MLX4_NUM_TUNNEL_BUFS - 1)].ah
 					= NULL;
 				spin_lock(&tun_qp->tx_lock);
@@ -1748,8 +1748,8 @@ static void mlx4_ib_tunnel_comp_worker(struct work_struct *work)
 				 " status = %d, wrid = 0x%llx\n",
 				 ctx->slave, wc.status, (unsigned long long)wc.wr_id);
 			if (!MLX4_TUN_IS_RECV(wc.wr_id)) {
-				ib_destroy_ah(tun_qp->tx_ring[wc.wr_id &
-					      (MLX4_NUM_TUNNEL_BUFS - 1)].ah, 0);
+				rdma_destroy_ah(tun_qp->tx_ring[wc.wr_id &
+						(MLX4_NUM_TUNNEL_BUFS - 1)].ah, 0);
 				tun_qp->tx_ring[wc.wr_id & (MLX4_NUM_TUNNEL_BUFS - 1)].ah
 					= NULL;
 				spin_lock(&tun_qp->tx_lock);
