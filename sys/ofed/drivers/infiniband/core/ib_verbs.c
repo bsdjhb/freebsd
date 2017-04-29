@@ -353,7 +353,7 @@ EXPORT_SYMBOL(ib_dealloc_pd_user);
 /* Address handles */
 
 static struct ib_ah *_ib_create_ah(struct ib_pd *pd,
-				     struct ib_ah_attr *ah_attr,
+				     struct rdma_ah_attr *ah_attr,
 				     u32 flags,
 				     struct ib_udata *udata)
 {
@@ -396,7 +396,7 @@ static struct ib_ah *_ib_create_ah(struct ib_pd *pd,
  * The address handle is used to reference a local or global destination
  * in all UD QP post sends.
  */
-struct ib_ah *ib_create_ah(struct ib_pd *pd, struct ib_ah_attr *ah_attr,
+struct ib_ah *ib_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
 			   u32 flags)
 {
 	struct ib_ah *ah;
@@ -422,7 +422,7 @@ EXPORT_SYMBOL(ib_create_ah);
  * in all UD QP post sends.
  */
 struct ib_ah *ib_create_user_ah(struct ib_pd *pd,
-				struct ib_ah_attr *ah_attr,
+				struct rdma_ah_attr *ah_attr,
 				struct ib_udata *udata)
 {
 	int err;
@@ -573,7 +573,7 @@ EXPORT_SYMBOL(ib_get_gids_from_rdma_hdr);
 
 int ib_init_ah_from_wc(struct ib_device *device, u8 port_num,
 		       const struct ib_wc *wc, const struct ib_grh *grh,
-		       struct ib_ah_attr *ah_attr)
+		       struct rdma_ah_attr *ah_attr)
 {
 	u32 flow_class;
 	u16 gid_index = 0;
@@ -658,7 +658,7 @@ EXPORT_SYMBOL(ib_init_ah_from_wc);
 struct ib_ah *ib_create_ah_from_wc(struct ib_pd *pd, const struct ib_wc *wc,
 				   const struct ib_grh *grh, u8 port_num)
 {
-	struct ib_ah_attr ah_attr;
+	struct rdma_ah_attr ah_attr;
 	int ret;
 
 	ret = ib_init_ah_from_wc(pd->device, port_num, wc, grh, &ah_attr);
@@ -669,7 +669,7 @@ struct ib_ah *ib_create_ah_from_wc(struct ib_pd *pd, const struct ib_wc *wc,
 }
 EXPORT_SYMBOL(ib_create_ah_from_wc);
 
-int ib_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
+int ib_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
 	return ah->device->modify_ah ?
 		ah->device->modify_ah(ah, ah_attr) :
@@ -677,7 +677,7 @@ int ib_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
 }
 EXPORT_SYMBOL(ib_modify_ah);
 
-int ib_query_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
+int ib_query_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
 	return ah->device->query_ah ?
 		ah->device->query_ah(ah, ah_attr) :
@@ -1273,7 +1273,7 @@ bool ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 EXPORT_SYMBOL(ib_modify_qp_is_ok);
 
 int ib_resolve_eth_dmac(struct ib_device *device,
-			struct ib_ah_attr *ah_attr)
+			struct rdma_ah_attr *ah_attr)
 {
 	struct ib_gid_attr sgid_attr;
 	union ib_gid sgid;
