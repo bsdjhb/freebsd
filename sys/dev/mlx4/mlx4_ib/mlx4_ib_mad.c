@@ -198,8 +198,8 @@ static void update_sm_ah(struct mlx4_ib_dev *dev, u8 port_num, u16 lid, u8 sl)
 	ah_attr.sl       = sl;
 	ah_attr.port_num = port_num;
 
-	new_ah = ib_create_ah(dev->send_agent[port_num - 1][0]->qp->pd,
-			      &ah_attr, 0);
+	new_ah = rdma_create_ah(dev->send_agent[port_num - 1][0]->qp->pd,
+				&ah_attr, 0);
 	if (IS_ERR(new_ah))
 		return;
 
@@ -560,7 +560,7 @@ int mlx4_ib_send_to_slave(struct mlx4_ib_dev *dev, int slave, u8 port,
 			return -EINVAL;
 		attr.ah_flags = IB_AH_GRH;
 	}
-	ah = ib_create_ah(tun_ctx->pd, &attr, 0);
+	ah = rdma_create_ah(tun_ctx->pd, &attr, 0);
 	if (IS_ERR(ah))
 		return -ENOMEM;
 

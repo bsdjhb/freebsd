@@ -352,7 +352,7 @@ EXPORT_SYMBOL(ib_dealloc_pd_user);
 
 /* Address handles */
 
-static struct ib_ah *_ib_create_ah(struct ib_pd *pd,
+static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
 				     struct rdma_ah_attr *ah_attr,
 				     u32 flags,
 				     struct ib_udata *udata)
@@ -396,19 +396,19 @@ static struct ib_ah *_ib_create_ah(struct ib_pd *pd,
  * The address handle is used to reference a local or global destination
  * in all UD QP post sends.
  */
-struct ib_ah *ib_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
-			   u32 flags)
+struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
+			     u32 flags)
 {
 	struct ib_ah *ah;
 
-	ah = _ib_create_ah(pd, ah_attr, flags, NULL);
+	ah = _rdma_create_ah(pd, ah_attr, flags, NULL);
 
 	return ah;
 }
-EXPORT_SYMBOL(ib_create_ah);
+EXPORT_SYMBOL(rdma_create_ah);
 
 /**
- * ib_create_user_ah - Creates an address handle for the
+ * rdma_create_user_ah - Creates an address handle for the
  * given address vector.
  * It resolves destination mac address for ah attribute of RoCE type.
  * @pd: The protection domain associated with the address handle.
@@ -421,9 +421,9 @@ EXPORT_SYMBOL(ib_create_ah);
  * The address handle is used to reference a local or global destination
  * in all UD QP post sends.
  */
-struct ib_ah *ib_create_user_ah(struct ib_pd *pd,
-				struct rdma_ah_attr *ah_attr,
-				struct ib_udata *udata)
+struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
+				  struct rdma_ah_attr *ah_attr,
+				  struct ib_udata *udata)
 {
 	int err;
 
@@ -433,7 +433,7 @@ struct ib_ah *ib_create_user_ah(struct ib_pd *pd,
 			return ERR_PTR(err);
 	}
 
-	return _ib_create_ah(pd, ah_attr, RDMA_CREATE_AH_SLEEPABLE, udata);
+	return _rdma_create_ah(pd, ah_attr, RDMA_CREATE_AH_SLEEPABLE, udata);
 }
 EXPORT_SYMBOL(ib_create_user_ah);
 
@@ -665,7 +665,7 @@ struct ib_ah *ib_create_ah_from_wc(struct ib_pd *pd, const struct ib_wc *wc,
 	if (ret)
 		return ERR_PTR(ret);
 
-	return ib_create_ah(pd, &ah_attr, RDMA_CREATE_AH_SLEEPABLE);
+	return rdma_create_ah(pd, &ah_attr, RDMA_CREATE_AH_SLEEPABLE);
 }
 EXPORT_SYMBOL(ib_create_ah_from_wc);
 
