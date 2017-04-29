@@ -426,7 +426,7 @@ int ib_init_ah_from_mcmember(struct ib_device *device, u8 port_num,
 			     struct ib_sa_mcmember_rec *rec,
 			     if_t ndev,
 			     enum ib_gid_type gid_type,
-			     struct ib_ah_attr *ah_attr);
+			     struct rdma_ah_attr *ah_attr);
 
 /**
  * ib_init_ah_from_path - Initialize address handle attributes based on an SA
@@ -434,7 +434,7 @@ int ib_init_ah_from_mcmember(struct ib_device *device, u8 port_num,
  */
 int ib_init_ah_from_path(struct ib_device *device, u8 port_num,
 			 struct ib_sa_path_rec *rec,
-			 struct ib_ah_attr *ah_attr);
+			 struct rdma_ah_attr *ah_attr);
 
 /**
  * ib_sa_pack_path - Conert a path record from struct ib_sa_path_rec
