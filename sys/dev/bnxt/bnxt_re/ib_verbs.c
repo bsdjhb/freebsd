@@ -53,7 +53,7 @@ void bnxt_re_resolve_dmac_task(struct work_struct *work)
 {
 	int rc = -1;
 	struct bnxt_re_dev *rdev;
-	struct ib_ah_attr	*ah_attr;
+	struct rdma_ah_attr	*ah_attr;
 	struct bnxt_re_resolve_dmac_work *dmac_work =
 			container_of(work, struct bnxt_re_resolve_dmac_work, work);
 
@@ -958,7 +958,7 @@ bnxt_re_gid_to_network_type(struct ib_gid_attr *sgid_attr,
 }
 
 static int bnxt_re_get_ah_info(struct bnxt_re_dev *rdev,
-			       struct ib_ah_attr *ah_attr,
+			       struct rdma_ah_attr *ah_attr,
 			       struct bnxt_re_ah_info *ah_info)
 {
 	struct ib_gid_attr *gattr;
@@ -997,7 +997,7 @@ static u8 _get_sgid_index(struct bnxt_re_dev *rdev, u8 gindx)
 	return gindx;
 }
 
-static int bnxt_re_init_dmac(struct bnxt_re_dev *rdev, struct ib_ah_attr *ah_attr,
+static int bnxt_re_init_dmac(struct bnxt_re_dev *rdev, struct rdma_ah_attr *ah_attr,
 			     struct bnxt_re_ah_info *ah_info, bool is_user,
 			     struct bnxt_re_ah *ah)
 {
@@ -1042,7 +1042,7 @@ static int bnxt_re_init_dmac(struct bnxt_re_dev *rdev, struct ib_ah_attr *ah_att
 	return rc;
 }
 
-int bnxt_re_create_ah(struct ib_ah *ah_in, struct ib_ah_attr *attr,
+int bnxt_re_create_ah(struct ib_ah *ah_in, struct rdma_ah_attr *attr,
 		      u32 flags, struct ib_udata *udata)
 {
 
@@ -1056,7 +1056,7 @@ int bnxt_re_create_ah(struct ib_ah *ah_in, struct ib_ah_attr *attr,
 	bool is_user;
 	int rc;
 	bool block = true;
-	struct ib_ah_attr *ah_attr = attr;
+	struct rdma_ah_attr *ah_attr = attr;
 	block = !(flags & RDMA_CREATE_AH_SLEEPABLE);
 
 	if (!(ah_attr->ah_flags & IB_AH_GRH))
@@ -1120,12 +1120,12 @@ fail:
 	return rc;
 }
 
-int bnxt_re_modify_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
+int bnxt_re_modify_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 {
 	return 0;
 }
 
-int bnxt_re_query_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
+int bnxt_re_query_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 {
 	struct bnxt_re_ah *ah = to_bnxt_re(ib_ah, struct bnxt_re_ah, ibah);
 

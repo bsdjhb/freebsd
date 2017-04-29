@@ -5522,7 +5522,7 @@ qlnxr_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
 
 int
 qlnxr_create_ah(struct ib_ah *ibah,
-	struct ib_ah_attr *attr, u32 flags,
+	struct rdma_ah_attr *attr, u32 flags,
 	struct ib_udata *udata)
 {
 	struct qlnxr_dev *dev;
@@ -5545,7 +5545,7 @@ qlnxr_destroy_ah(struct ib_ah *ibah, u32 flags)
 }
 
 int
-qlnxr_query_ah(struct ib_ah *ibah, struct ib_ah_attr *attr)
+qlnxr_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *attr)
 {
 	struct qlnxr_dev *dev;
 	qlnx_host_t     *ha;
@@ -5557,7 +5557,7 @@ qlnxr_query_ah(struct ib_ah *ibah, struct ib_ah_attr *attr)
 }
 
 int
-qlnxr_modify_ah(struct ib_ah *ibah, struct ib_ah_attr *attr)
+qlnxr_modify_ah(struct ib_ah *ibah, struct rdma_ah_attr *attr)
 {
 	struct qlnxr_dev *dev;
 	qlnx_host_t     *ha;

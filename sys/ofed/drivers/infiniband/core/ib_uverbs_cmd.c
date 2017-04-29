@@ -1624,7 +1624,7 @@ err_put:
 }
 
 static void copy_ah_attr_to_uverbs(struct ib_uverbs_qp_dest *uverb_attr,
-				   struct ib_ah_attr *rdma_attr)
+				   struct rdma_ah_attr *rdma_attr)
 {
 	uverb_attr->dlid              = rdma_attr->dlid;
 	uverb_attr->sl                = rdma_attr->sl;
@@ -1735,7 +1735,7 @@ static int modify_qp_mask(enum ib_qp_type qp_type, int mask)
 }
 
 static void copy_ah_attr_from_uverbs(struct ib_device *dev,
-				     struct ib_ah_attr *rdma_attr,
+				     struct rdma_ah_attr *rdma_attr,
 				     struct ib_uverbs_qp_dest *uverb_attr)
 {
 	if (uverb_attr->is_global) {
@@ -2399,7 +2399,7 @@ static int ib_uverbs_create_ah(struct uverbs_attr_bundle *attrs)
 	struct ib_uobject		*uobj;
 	struct ib_pd			*pd;
 	struct ib_ah			*ah;
-	struct ib_ah_attr		attr = {};
+	struct rdma_ah_attr		attr = {};
 	int ret;
 	struct ib_device *ib_dev;
 

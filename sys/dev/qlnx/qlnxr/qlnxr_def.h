@@ -540,7 +540,7 @@ struct qlnxr_cq {
 
 struct qlnxr_ah {
         struct ib_ah		ibah;
-        struct ib_ah_attr	attr;
+        struct rdma_ah_attr	attr;
 };
 
 union db_prod32 {
@@ -829,7 +829,7 @@ static inline bool qlnxr_qp_has_rq(struct qlnxr_qp *qp)
 #define QLNXR_RESP_RDMA_IMM (QLNXR_RESP_IMM | QLNXR_RESP_RDMA)
 
 static inline int
-qlnxr_get_dmac(struct qlnxr_dev *dev, struct ib_ah_attr *ah_attr, u8 *mac_addr)
+qlnxr_get_dmac(struct qlnxr_dev *dev, struct rdma_ah_attr *ah_attr, u8 *mac_addr)
 {
 #ifdef DEFINE_NO_IP_BASED_GIDS
         u8 *guid = &ah_attr->grh.dgid.raw[8]; /* GID's 64 MSBs are the GUID */

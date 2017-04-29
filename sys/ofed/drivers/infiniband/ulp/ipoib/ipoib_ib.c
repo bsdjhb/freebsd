@@ -56,7 +56,7 @@ MODULE_PARM_DESC(data_debug_level,
 static DEFINE_MUTEX(pkey_mutex);
 
 struct ipoib_ah *ipoib_create_ah(struct ipoib_dev_priv *priv,
-				 struct ib_pd *pd, struct ib_ah_attr *attr)
+				 struct ib_pd *pd, struct rdma_ah_attr *attr)
 {
 	struct ipoib_ah *ah;
 	struct ib_ah *vah;
