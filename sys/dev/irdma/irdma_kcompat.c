@@ -512,7 +512,7 @@ irdma_create_ah_wait(struct irdma_pci_f *rf,
  */
 int
 irdma_create_ah(struct ib_ah *ib_ah,
-		struct ib_ah_attr *attr, u32 flags,
+		struct rdma_ah_attr *attr, u32 flags,
 		struct ib_udata *udata)
 {
 	struct irdma_pd *pd = to_iwpd(ib_ah->pd);
@@ -614,14 +614,14 @@ err_gid_l2:
 }
 
 void
-irdma_ether_copy(u8 *dmac, struct ib_ah_attr *attr)
+irdma_ether_copy(u8 *dmac, struct rdma_ah_attr *attr)
 {
 	ether_addr_copy(dmac, attr->dmac);
 }
 
 int
 irdma_create_ah_stub(struct ib_ah *ib_ah,
-		     struct ib_ah_attr *attr, u32 flags,
+		     struct rdma_ah_attr *attr, u32 flags,
 		     struct ib_udata *udata)
 {
 	return -ENOSYS;
