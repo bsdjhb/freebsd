@@ -2462,8 +2462,8 @@ static int ib_uverbs_create_ah(struct uverbs_attr_bundle *attrs)
 	return 0;
 
 err_copy:
-	ib_destroy_ah_user(ah, RDMA_DESTROY_AH_SLEEPABLE,
-			   uverbs_get_cleared_udata(attrs));
+	rdma_destroy_ah_user(ah, RDMA_DESTROY_AH_SLEEPABLE,
+			     uverbs_get_cleared_udata(attrs));
 
 err_put:
 	uobj_put_obj_read(pd);
