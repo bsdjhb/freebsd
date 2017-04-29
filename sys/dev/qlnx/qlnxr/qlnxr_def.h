@@ -831,18 +831,19 @@ static inline bool qlnxr_qp_has_rq(struct qlnxr_qp *qp)
 static inline int
 qlnxr_get_dmac(struct qlnxr_dev *dev, struct rdma_ah_attr *ah_attr, u8 *mac_addr)
 {
+	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
 #ifdef DEFINE_NO_IP_BASED_GIDS
-        u8 *guid = &ah_attr->grh.dgid.raw[8]; /* GID's 64 MSBs are the GUID */
+        u8 *guid = &grh->dgid.raw[8]; /* GID's 64 MSBs are the GUID */
 #endif
         union ib_gid zero_sgid = { { 0 } };
         struct in6_addr in6;
 
-        if (!memcmp(&ah_attr->grh.dgid, &zero_sgid, sizeof(union ib_gid))) {
+        if (!memcmp(&grh->dgid, &zero_sgid, sizeof(union ib_gid))) {
                 memset(mac_addr, 0x00, ETH_ALEN);
                 return -EINVAL;
         }
 
-        memcpy(&in6, ah_attr->grh.dgid.raw, sizeof(in6));
+        memcpy(&in6, grh->dgid.raw, sizeof(in6));
 
 #ifdef DEFINE_NO_IP_BASED_GIDS
         /* get the MAC address from the GUID i.e. EUI-64 to MAC address */
