@@ -3241,6 +3241,7 @@ irdma_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 	struct irdma_ah *ah = to_iwah(ibah);
 
 	memset(ah_attr, 0, sizeof(*ah_attr));
+	ah_attr->type = ibah->type;
 	if (rdma_ah_get_ah_flags(&ah->av.attrs) & IB_AH_GRH) {
 		rdma_ah_set_grh(ah_attr, &ah->dgid,
 				ah->sc_ah.ah_info.flow_label,

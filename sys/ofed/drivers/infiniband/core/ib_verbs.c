@@ -374,6 +374,7 @@ static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
 
 	ah->device = device;
 	ah->pd = pd;
+	ah->type = ah_attr->type;
 
 	ret = device->create_ah(ah, ah_attr, flags, udata);
 	if (ret) {
@@ -585,6 +586,7 @@ int ib_init_ah_from_wc(struct ib_device *device, u8 port_num,
 	union ib_gid sgid;
 
 	memset(ah_attr, 0, sizeof *ah_attr);
+	ah_attr->type = rdma_ah_find_type(device, port_num);
 	if (rdma_cap_eth_ah(device, port_num)) {
 		if (wc->wc_flags & IB_WC_WITH_NETWORK_HDR_TYPE)
 			net_type = wc->network_hdr_type;
@@ -617,8 +619,9 @@ int ib_init_ah_from_wc(struct ib_device *device, u8 port_num,
 		if (dgid_attr.ndev == NULL)
 			return -ENODEV;
 
-		ret = rdma_addr_find_l2_eth_by_grh(&dgid, &sgid, ah_attr->dmac,
-		    dgid_attr.ndev, &hoplimit);
+		ret = rdma_addr_find_l2_eth_by_grh(&dgid, &sgid,
+                                                   ah_attr->roce.dmac,
+                                                   dgid_attr.ndev, &hoplimit);
 
 		dev_put(dgid_attr.ndev);
 		if (ret)
@@ -669,6 +672,9 @@ EXPORT_SYMBOL(ib_create_ah_from_wc);
 
 int rdma_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
+	if (ah->type != ah_attr->type)
+		return -EINVAL;
+
 	return ah->device->modify_ah ?
 		ah->device->modify_ah(ah, ah_attr) :
 		-ENOSYS;
@@ -1279,11 +1285,10 @@ int ib_resolve_eth_dmac(struct ib_device *device,
 	int ret;
 	struct ib_global_route *grh;
 
-	if (rdma_ah_get_port_num(ah_attr) < rdma_start_port(device) ||
-	    rdma_ah_get_port_num(ah_attr) > rdma_end_port(device))
+ 	if (!rdma_is_port_valid(device, rdma_ah_get_port_num(ah_attr)))
 		return -EINVAL;
 
-	if (!rdma_cap_eth_ah(device, rdma_ah_get_port_num(ah_attr)))
+	if (ah_attr->type != RDMA_AH_ATTR_TYPE_ROCE)
 		return 0;
 
 	grh = rdma_ah_retrieve_grh(ah_attr);
@@ -1293,10 +1298,10 @@ int ib_resolve_eth_dmac(struct ib_device *device,
 			__be32 addr = 0;
 
 			memcpy(&addr, ah_attr->grh.dgid.raw + 12, 4);
-			ip_eth_mc_map(addr, (char *)ah_attr->dmac);
+			ip_eth_mc_map(addr, (char *)ah_attr->roce.dmac);
 		} else {
 			ipv6_eth_mc_map((struct in6_addr *)ah_attr->grh.dgid.raw,
-					(char *)ah_attr->dmac);
+					(char *)ah_attr->roce.dmac);
 		}
 		return 0;
 	}
@@ -1310,9 +1315,8 @@ int ib_resolve_eth_dmac(struct ib_device *device,
 	if (!sgid_attr.ndev)
 		return -ENXIO;
 
-	ret = rdma_addr_find_l2_eth_by_grh(&sgid,
-					   &grh->dgid,
-					   ah_attr->dmac,
+	ret = rdma_addr_find_l2_eth_by_grh(&sgid, &grh->dgid,
+					   ah_attr->roce.dmac,
 					   sgid_attr.ndev, &hop_limit);
 	dev_put(sgid_attr.ndev);
 
