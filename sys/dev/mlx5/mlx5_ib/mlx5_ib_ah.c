@@ -33,28 +33,30 @@ static void create_ib_ah(struct mlx5_ib_dev *dev,
 				  struct rdma_ah_attr *ah_attr,
 				  enum rdma_link_layer ll)
 {
-	if (ah_attr->ah_flags & IB_AH_GRH) {
-		memcpy(ah->av.rgid, &ah_attr->grh.dgid, 16);
-		ah->av.grh_gid_fl = cpu_to_be32(ah_attr->grh.flow_label |
+	if (rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH) {
+		const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
+
+		memcpy(ah->av.rgid, &grh->dgid, 16);
+		ah->av.grh_gid_fl = cpu_to_be32(grh->flow_label |
 						(1 << 30) |
-						ah_attr->grh.sgid_index << 20);
-		ah->av.hop_limit = ah_attr->grh.hop_limit;
-		ah->av.tclass = ah_attr->grh.traffic_class;
+						grh->sgid_index << 20);
+		ah->av.hop_limit = grh->hop_limit;
+		ah->av.tclass = grh->traffic_class;
 	}
 
-	ah->av.stat_rate_sl = (ah_attr->static_rate << 4);
+	ah->av.stat_rate_sl = (rdma_ah_get_static_rate(ah_attr) << 4);
 
 	if (ll == IB_LINK_LAYER_ETHERNET) {
 		memcpy(ah->av.rmac, ah_attr->dmac, sizeof(ah_attr->dmac));
 		ah->av.udp_sport =
 			mlx5_get_roce_udp_sport(dev,
-						ah_attr->port_num,
-						ah_attr->grh.sgid_index);
-		ah->av.stat_rate_sl |= (ah_attr->sl & 0x7) << 1;
+			    rdma_ah_get_port_num(ah_attr),
+			    rdma_ah_read_grh(ah_attr)->sgid_index);
+		ah->av.stat_rate_sl |= (rdma_ah_get_sl(ah_attr) & 0x7) << 1;
 	} else {
-		ah->av.rlid = cpu_to_be16(ah_attr->dlid);
-		ah->av.fl_mlid = ah_attr->src_path_bits & 0x7f;
-		ah->av.stat_rate_sl |= (ah_attr->sl & 0xf);
+		ah->av.rlid = cpu_to_be16(rdma_ah_get_dlid(ah_attr));
+		ah->av.fl_mlid = rdma_ah_get_path_bits(ah_attr) & 0x7f;
+		ah->av.stat_rate_sl |= (rdma_ah_get_sl(ah_attr) & 0xf);
 	}
 }
 
@@ -66,9 +68,11 @@ int mlx5_ib_create_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr,
 	struct mlx5_ib_dev *dev = to_mdev(ibah->device);
 	enum rdma_link_layer ll;
 
-	ll = dev->ib_dev.get_link_layer(&dev->ib_dev, ah_attr->port_num);
+	ll = dev->ib_dev.get_link_layer(&dev->ib_dev,
+					rdma_ah_get_port_num(ah_attr));
 
-	if (ll == IB_LINK_LAYER_ETHERNET && !(ah_attr->ah_flags & IB_AH_GRH))
+	if (ll == IB_LINK_LAYER_ETHERNET &&
+	    !(rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH))
 		return -EINVAL;
 
 	if (ll == IB_LINK_LAYER_ETHERNET && udata) {
@@ -105,16 +109,16 @@ int mlx5_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 
 	tmp = be32_to_cpu(ah->av.grh_gid_fl);
 	if (tmp & (1 << 30)) {
-		ah_attr->ah_flags = IB_AH_GRH;
-		ah_attr->grh.sgid_index = (tmp >> 20) & 0xff;
-		ah_attr->grh.flow_label = tmp & 0xfffff;
-		memcpy(&ah_attr->grh.dgid, ah->av.rgid, 16);
-		ah_attr->grh.hop_limit = ah->av.hop_limit;
-		ah_attr->grh.traffic_class = ah->av.tclass;
+		rdma_ah_set_grh(ah_attr, NULL,
+				tmp & 0xfffff,
+				(tmp >> 20) & 0xff,
+				ah->av.hop_limit,
+				ah->av.tclass);
+		rdma_ah_set_dgid_raw(ah_attr, ah->av.rgid);
 	}
-	ah_attr->dlid = be16_to_cpu(ah->av.rlid);
-	ah_attr->static_rate = ah->av.stat_rate_sl >> 4;
-	ah_attr->sl = ah->av.stat_rate_sl & 0xf;
+	rdma_ah_set_dlid(ah_attr, be16_to_cpu(ah->av.rlid));
+	rdma_ah_set_static_rate(ah_attr, ah->av.stat_rate_sl >> 4);
+	rdma_ah_set_sl(ah_attr, ah->av.stat_rate_sl & 0xf);
 
 	return 0;
 }
