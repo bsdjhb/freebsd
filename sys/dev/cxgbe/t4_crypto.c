@@ -164,7 +164,7 @@ struct ccr_softc {
 	struct mtx lock;
 	bool detaching;
 	struct sge_wrq *txq;
-	struct sge_ofld_rxq *rxq;
+	struct sge_rxq *rxq;
 
 	/*
 	 * Pre-allocate S/G lists used when preparing a work request.
@@ -1536,13 +1536,8 @@ ccr_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 	sc->adapter = device_get_softc(device_get_parent(dev));
-	if (sc->adapter->sge.nofldrxq == 0) {
-		device_printf(dev,
-		    "parent device does not have offload queues\n");
-		return (ENXIO);
-	}
-	sc->txq = &sc->adapter->sge.ofld_txq[0];
-	sc->rxq = &sc->adapter->sge.ofld_rxq[0];
+	sc->txq = &sc->adapter->sge.ctrlq[0];
+	sc->rxq = &sc->adapter->sge.rxq[0];
 	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
