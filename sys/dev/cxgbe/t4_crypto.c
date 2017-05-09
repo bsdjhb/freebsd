@@ -163,8 +163,8 @@ struct ccr_softc {
 	int nsessions;
 	struct mtx lock;
 	bool detaching;
-	struct sge_wrq *ofld_txq;
-	struct sge_ofld_rxq *ofld_rxq;
+	struct sge_wrq *txq;
+	struct sge_ofld_rxq *rxq;
 
 	/*
 	 * Pre-allocate S/G lists used when preparing a work request.
@@ -293,7 +293,7 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, int nsegs)
 	    V_CPL_RX_PHYS_DSGL_PCITPHNTENB(0) | V_CPL_RX_PHYS_DSGL_DCAID(0) |
 	    V_CPL_RX_PHYS_DSGL_NOOFSGENTR(nsegs));
 	cpl->rss_hdr_int.opcode = CPL_RX_PHYS_ADDR;
-	cpl->rss_hdr_int.qid = htobe16(sc->ofld_rxq->iq.abs_id);
+	cpl->rss_hdr_int.qid = htobe16(sc->rxq->iq.abs_id);
 	cpl->rss_hdr_int.hash_val = 0;
 	sgl = (struct phys_sge_pairs *)(cpl + 1);
 	j = 0;
@@ -392,7 +392,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    V_FW_CRYPTO_LOOKASIDE_WR_IV(iv_loc) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_FQIDX(0) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_TX_CH(0) |
-	    V_FW_CRYPTO_LOOKASIDE_WR_RX_Q_ID(sc->ofld_rxq->iq.abs_id));
+	    V_FW_CRYPTO_LOOKASIDE_WR_RX_Q_ID(sc->rxq->iq.abs_id));
 	crwr->wreq.key_addr = 0;
 	crwr->wreq.pld_size_hash_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_PLD_SIZE(sgl_len) |
@@ -547,7 +547,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
-	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	wr = alloc_wrqe(wr_len, sc->txq);
 	if (wr == NULL) {
 		sc->stats_wr_nomem++;
 		return (ENOMEM);
@@ -718,7 +718,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
-	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	wr = alloc_wrqe(wr_len, sc->txq);
 	if (wr == NULL) {
 		sc->stats_wr_nomem++;
 		return (ENOMEM);
@@ -1015,7 +1015,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += s->blkcipher.iv_len;
-	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	wr = alloc_wrqe(wr_len, sc->txq);
 	if (wr == NULL) {
 		sc->stats_wr_nomem++;
 		return (ENOMEM);
@@ -1326,7 +1326,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (iv_loc == IV_IMMEDIATE)
 		wr_len += iv_len;
-	wr = alloc_wrqe(wr_len, sc->ofld_txq);
+	wr = alloc_wrqe(wr_len, sc->txq);
 	if (wr == NULL) {
 		sc->stats_wr_nomem++;
 		return (ENOMEM);
@@ -1541,8 +1541,8 @@ ccr_attach(device_t dev)
 		    "parent device does not have offload queues\n");
 		return (ENXIO);
 	}
-	sc->ofld_txq = &sc->adapter->sge.ofld_txq[0];
-	sc->ofld_rxq = &sc->adapter->sge.ofld_rxq[0];
+	sc->txq = &sc->adapter->sge.ofld_txq[0];
+	sc->rxq = &sc->adapter->sge.ofld_rxq[0];
 	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
