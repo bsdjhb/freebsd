@@ -553,7 +553,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (ENOMEM);
 	}
 	crwr = wrtod(wr);
-	memset(crwr, 0, transhdr_len);
+	memset(crwr, 0, wr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
 	    hash_size_in_response, IV_NOP, crp);
@@ -724,7 +724,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (ENOMEM);
 	}
 	crwr = wrtod(wr);
-	memset(crwr, 0, transhdr_len);
+	memset(crwr, 0, wr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len, 0,
 	    iv_loc, crp);
@@ -1021,7 +1021,7 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (ENOMEM);
 	}
 	crwr = wrtod(wr);
-	memset(crwr, 0, transhdr_len);
+	memset(crwr, 0, wr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
 	    op_type == CHCR_DECRYPT_OP ? hash_size_in_response : 0, iv_loc,
@@ -1332,7 +1332,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		return (ENOMEM);
 	}
 	crwr = wrtod(wr);
-	memset(crwr, 0, transhdr_len);
+	memset(crwr, 0, wr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, sid, imm_len, sgl_len,
 	    0, iv_loc, crp);
