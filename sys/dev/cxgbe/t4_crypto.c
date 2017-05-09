@@ -317,7 +317,7 @@ ccr_write_phys_dsgl(struct ccr_softc *sc, void *dst, int nsegs)
 			}
 		} while (seglen != 0);
 	}
-	MPASS(j == nsegs);
+	MPASS(j + 8 * (sgl - (struct phys_sge_pairs *)(cpl + 1)) == nsegs);
 }
 
 /* These functions deal with the ULPTX_SGL for input payload. */
