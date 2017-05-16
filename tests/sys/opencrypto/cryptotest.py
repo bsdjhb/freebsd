@@ -42,9 +42,9 @@ katdir = '/usr/local/share/nist-kat'
 def katg(base, glob):
 	return iglob(os.path.join(katdir, base, glob))
 
-aesmodules = [ 'cryptosoft0', 'aesni0', ]
+aesmodules = [ 'cryptosoft0', 'aesni0', 'ccr0' ]
 desmodules = [ 'cryptosoft0', ]
-shamodules = [ 'cryptosoft0', ]
+shamodules = [ 'cryptosoft0', 'ccr0' ]
 
 def GenTestCase(cname):
 	try:
@@ -102,6 +102,10 @@ def GenTestCase(cname):
 					if len(iv) != 12:
 						# XXX - isn't supported
 						continue
+
+                                        # XXX ccr hack
+                                        if len(ct) == 0 and cname == "ccr0":
+                                                continue
 
 					c = Crypto(cryptodev.CRYPTO_AES_NIST_GCM_16,
 					    cipherkey,
@@ -260,6 +264,7 @@ def GenTestCase(cname):
 
 cryptosoft = GenTestCase('cryptosoft0')
 aesni = GenTestCase('aesni0')
+ccr = GenTestCase('ccr0')
 
 if __name__ == '__main__':
 	unittest.main()
