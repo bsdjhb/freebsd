@@ -173,7 +173,7 @@ static u32 tid;
 	.field_name          = "sa_path_rec:" #field
 
 static const struct ib_field path_rec_table[] = {
-	{ PATH_REC_FIELD(ib.service_id),
+	{ PATH_REC_FIELD(service_id),
 	  .offset_words = 0,
 	  .offset_bits  = 0,
 	  .size_bits    = 64 },
@@ -275,7 +275,7 @@ static const struct ib_field path_rec_table[] = {
 	.field_name          = "sa_path_rec:" #field
 
 static const struct ib_field opa_path_rec_table[] = {
-	{ OPA_PATH_REC_FIELD(opa.service_id),
+	{ OPA_PATH_REC_FIELD(service_id),
 	  .offset_words = 0,
 	  .offset_bits  = 0,
 	  .size_bits    = 64 },
