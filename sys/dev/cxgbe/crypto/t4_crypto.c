@@ -235,6 +235,19 @@ ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
 	else
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
+#ifdef nomore
+	if (error == 0) {
+		for (unsigned i = 0; i < sg->sg_nseg; i++) {
+			if (sg->sg_segs[i].ss_len >= 65536) {
+				/* XXX */
+				printf("CCR: segment too big %#zx\n",
+				    sg->sg_segs[i].ss_len);
+				error = EFBIG;
+				break;
+			}
+		}
+	}
+#endif
 	return (error);
 }
 
@@ -406,6 +419,98 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	    sgl_len);
 }
 
+#if 1
+#include <sys/uio.h>
+#include <vm/vm.h>
+#include <vm/pmap.h>
+#include <vm/vm_param.h>
+
+static void
+dump_sglist(struct ccr_softc *sc, struct sglist *sg, const char *descr)
+{
+	u_short i;
+
+	device_printf(sc->dev, "%s:\n", descr);
+	for (i = 0; i < sg->sg_nseg; i++)
+		printf("  seg[%d]: (%#lx:%#lx)\n", i, sg->sg_segs[i].ss_paddr,
+		    sg->sg_segs[i].ss_len);
+}
+
+static void
+dump_payload(struct ccr_softc *sc, const void *dst, int sgl_nsegs)
+{
+	const struct ulptx_sgl *usgl;
+	uint64_t addr;
+	uint32_t len;
+	int i;
+
+	usgl = dst;
+	device_printf(sc->dev, "payload:\n");
+	for (i = 0; i < sgl_nsegs; i++) {
+		if (i == 0) {
+			addr = usgl->addr0;
+			len = usgl->len0;
+		} else {
+			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
+			len = usgl->sge[(i - 1) / 2].len[(i - 1) & 1];
+		}
+		addr = be64toh(addr);
+		len = be32toh(len);
+		printf("SGL[%d]: (%#lx:%#x)\n", i, addr, len);
+		hexdump((void *)PHYS_TO_DMAP(addr), len, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
+	}
+}
+
+static void
+dump_crp(struct ccr_softc *sc, struct cryptop *crp)
+{
+	struct cryptodesc *crd;
+	int i;
+
+	device_printf(sc->dev, "crp descriptors:\n");
+	for (crd = crp->crp_desc, i = 0; crd != NULL;
+	     crd = crd->crd_next, i++) {
+		printf("  [%d]: alg %d skip %d len %d inject %d\n", i,
+		    crd->crd_alg, crd->crd_skip, crd->crd_len,
+		    crd->crd_inject);
+		if (crd->crd_flags & CRD_F_KEY_EXPLICIT)
+			hexdump(crd->crd_key, crd->crd_klen / 8,
+			    "    key: ", HD_OMIT_COUNT | HD_OMIT_CHARS);
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
+			hexdump(crd->crd_iv, 16, "    iv:  ",
+			    HD_OMIT_CHARS | HD_OMIT_COUNT);
+	}
+}
+
+static void
+dump_crp_buffer(struct ccr_softc *sc, struct cryptop *crp)
+{
+	struct mbuf *m;
+	struct uio *uio;
+	int i;
+
+	device_printf(sc->dev, "crp buffer ");
+	if (crp->crp_flags & CRYPTO_F_IMBUF) {
+		printf("(mbuf):\n");
+		for (m = (struct mbuf *)crp->crp_buf; m != NULL; m = m->m_next)
+			hexdump(m->m_data, m->m_len, NULL, HD_OMIT_CHARS |
+			    HD_OMIT_COUNT);
+	} else if (crp->crp_flags & CRYPTO_F_IOV) {
+		printf("(uio):\n");
+		uio = (struct uio *)crp->crp_buf;
+		for (i = 0; i < uio->uio_iovcnt; i++)
+			hexdump(uio->uio_iov[i].iov_base,
+			    uio->uio_iov[i].iov_len, NULL, HD_OMIT_CHARS |
+			    HD_OMIT_COUNT);
+	} else {
+		printf(":\n");
+		hexdump(crp->crp_buf, crp->crp_ilen, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
+	}
+}
+#endif
+
 static int
 ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
     struct cryptop *crp)
@@ -516,6 +621,13 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
+#if 0
+	device_printf(sc->dev, "submitting HMAC request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
+#endif
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -530,6 +642,10 @@ ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 
 	crd = crp->crp_desc;
 	if (error == 0) {
+#if 0
+		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
+		    HD_OMIT_CHARS);
+#endif
 		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
 		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
 	}
@@ -709,6 +825,13 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		    crd->crd_len, dst);
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
+
+#if 0
+	device_printf(sc->dev, "submitting BLKCIPHER request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
+#endif
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -1041,6 +1164,13 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
+#if 0
+	device_printf(sc->dev, "submitting AUTHENC request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
+#endif
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -1070,10 +1200,19 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 	crd = crp->crp_desc;
 	if (error == EBADMSG && !CHK_PAD_ERR_BIT(be64toh(cpl->data[0])) &&
 	    !(crd->crd_flags & CRD_F_ENCRYPT)) {
+#if 0
+		hexdump(cpl + 1, s->hmac.hash_len, NULL, HD_OMIT_COUNT |
+		    HD_OMIT_CHARS);
+#endif
 		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
 		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
 		error = 0;
 	}
+#if 0
+	if (error == 0) {
+		dump_crp_buffer(sc, crp);
+	}
+#endif
 	return (error);
 }
 
@@ -1326,6 +1465,13 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
+#if 0
+	device_printf(sc->dev, "submitting GCM request:\n");
+	hexdump(crwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+	if (imm_len == 0)
+		dump_payload(sc, dst, sgl_nsegs);
+#endif
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -1343,6 +1489,11 @@ ccr_gcm_done(struct ccr_softc *sc, struct ccr_session *s,
 	 *
 	 * Note that the hardware should always verify the GMAC hash.
 	 */
+#if 0
+	if (error == 0) {
+		dump_crp_buffer(sc, crp);
+	}
+#endif
 	return (error);
 }
 
@@ -1604,6 +1755,10 @@ ccr_init_hmac_digest(struct ccr_session *s, int cri_alg, char *key,
 	struct auth_hash *axf;
 	u_int i;
 
+#if 0
+	printf("CCR: HMAC key:\n");
+	hexdump(key, klen / 8, NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
+#endif
 	/*
 	 * If the key is larger than the block size, use the digest of
 	 * the key as the key instead.
@@ -1720,6 +1875,10 @@ ccr_aes_setkey(struct ccr_session *s, int alg, const void *key, int klen)
 	unsigned int ck_size, iopad_size, kctx_flits, kctx_len, kbits, mk_size;
 	unsigned int opad_present;
 
+#if 0
+	printf("CCR: AES key:\n");
+	hexdump(key, klen / 8, NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
+#endif
 	if (alg == CRYPTO_AES_XTS)
 		kbits = klen / 2;
 	else
@@ -2148,6 +2307,11 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 		cpl = mtod(m, const void *);
 	else
 		cpl = (const void *)(rss + 1);
+
+#if 0
+	device_printf(sc->dev, "CPL6_FW_PLD:\n");
+	hexdump(cpl, sizeof(*cpl), NULL, HD_OMIT_COUNT | HD_OMIT_CHARS);
+#endif
 
 	crp = (struct cryptop *)(uintptr_t)be64toh(cpl->data[1]);
 	sid = CRYPTO_SESID2LID(crp->crp_sid);
