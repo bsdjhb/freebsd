@@ -235,19 +235,6 @@ ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
 	else
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
-#ifdef nomore
-	if (error == 0) {
-		for (unsigned i = 0; i < sg->sg_nseg; i++) {
-			if (sg->sg_segs[i].ss_len >= 65536) {
-				/* XXX */
-				printf("CCR: segment too big %#zx\n",
-				    sg->sg_segs[i].ss_len);
-				error = EFBIG;
-				break;
-			}
-		}
-	}
-#endif
 	return (error);
 }
 
