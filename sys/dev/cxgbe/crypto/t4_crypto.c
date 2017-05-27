@@ -2339,6 +2339,7 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	crp->crp_etype = error;
 	crypto_done(crp);
 	m_freem(m);
+	t4_wrq_drain(sc->txq);
 	return (0);
 }
 

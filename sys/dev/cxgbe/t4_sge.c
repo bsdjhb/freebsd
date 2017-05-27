@@ -1929,6 +1929,16 @@ t4_eth_rx(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0)
 }
 
 /*
+ * XXX: Exported for ccr(4) to use for now.
+ */
+void
+t4_wrq_drain(struct sge_wrq *wrq)
+{
+
+	wrq_tx_drain(wrq, 0);
+}
+
+/*
  * Must drain the wrq or make sure that someone else will.
  */
 static void

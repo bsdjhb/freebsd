@@ -1176,6 +1176,7 @@ void t4_intr(void *);
 void t4_vi_intr(void *);
 void t4_intr_err(void *);
 void t4_intr_evt(void *);
+void t4_wrq_drain(struct sge_wrq *);
 void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
 int parse_pkt(struct adapter *, struct mbuf **);
