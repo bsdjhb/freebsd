@@ -921,10 +921,6 @@ run_gcm_test(struct alg *alg, size_t size)
 		return;
 	}
 
-	/* XXX: CIOCCRYPTAEAD doesn't accept zero-sized AAD */
-	if (aad_len == 0)
-		aad_len = 16;
-
 	memset(control_tag, 0x3c, sizeof(control_tag));
 	memset(test_tag, 0x3c, sizeof(test_tag));
 
