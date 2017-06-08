@@ -516,7 +516,7 @@ run_blkcipher_test(struct alg *alg, size_t size)
 
 	/* OpenSSL cipher. */
 	openssl_cipher(alg, cipher, key, iv, cleartext, ciphertext, size, 1);
-	if (memcmp(cleartext, ciphertext, size) == 0)
+	if (size > 0 && memcmp(cleartext, ciphertext, size) == 0)
 		errx(1, "OpenSSL %s (%zu): cipher text unchanged", alg->name,
 		    size);
 	openssl_cipher(alg, cipher, key, iv, ciphertext, buffer, size, 0);
@@ -684,7 +684,8 @@ run_authenc_test(struct alg *alg, size_t size)
 		memcpy(ciphertext, cleartext, aad_len);
 	openssl_cipher(alg, cipher, cipher_key, iv, cleartext + aad_len,
 	    ciphertext + aad_len, size, 1);
-	if (memcmp(cleartext + aad_len, ciphertext + aad_len, size) == 0)
+	if (size > 0 && memcmp(cleartext + aad_len, ciphertext + aad_len,
+	    size) == 0)
 		errx(1, "OpenSSL %s (%zu): cipher text unchanged", alg->name,
 		    size);
 	digest_len = sizeof(control_digest);
