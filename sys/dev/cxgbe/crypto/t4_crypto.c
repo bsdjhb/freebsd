@@ -2279,6 +2279,15 @@ out:
 	return (0);
 }
 
+static inline uint16_t
+read_hw_cidx(struct sge_eq *eq)
+{
+	struct sge_qstat *spg = (void *)&eq->desc[eq->sidx];
+	uint16_t cidx = spg->cidx;	/* stable snapshot */
+
+	return (be16toh(cidx));
+}
+
 static int
 do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
     struct mbuf *m)
@@ -2339,6 +2348,18 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	crp->crp_etype = error;
 	crypto_done(crp);
 	m_freem(m);
+	{
+		struct sge_eq *eq = &sc->txq->eq;
+		u_int available, cidx;
+
+		cidx = read_hw_cidx(eq);
+		if (eq->pidx == cidx)
+			available = eq->sidx - 1;
+		else
+			available = IDXDIFF(cidx, eq->pidx, eq->sidx) - 1;
+		CTR4(KTR_CXGBE, "%s: wrq cidx %d, avail %d pending %d",
+		    __func__, cidx, available, sc->txq->nwr_pending);
+	}
 	t4_wrq_drain(sc->txq);
 	return (0);
 }

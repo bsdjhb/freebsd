@@ -1998,15 +1998,29 @@ drain_wrq_wr_list(struct adapter *sc, struct sge_wrq *wrq)
 		}
 		wrq->tx_wrs_copied++;
 
+#if 0
+		dst->equiq_to_len16 |= htobe32(F_FW_WR_EQUIQ |
+		    F_FW_WR_EQUEQ);
+		eq->equeqidx = eq->pidx;
+#else
 		if (available < eq->sidx / 4 &&
 		    atomic_cmpset_int(&eq->equiq, 0, 1)) {
 			dst->equiq_to_len16 |= htobe32(F_FW_WR_EQUIQ |
 			    F_FW_WR_EQUEQ);
 			eq->equeqidx = eq->pidx;
+			CTR4(KTR_CXGBE, "%s: eq %d cidx %d avail %d setting EQUIQ and EQUEQ",
+			    __func__, eq->cntxt_id, eq->cidx, available);
 		} else if (IDXDIFF(eq->pidx, eq->equeqidx, eq->sidx) >= 32) {
 			dst->equiq_to_len16 |= htobe32(F_FW_WR_EQUEQ);
 			eq->equeqidx = eq->pidx;
+			CTR4(KTR_CXGBE, "%s: eq %d cidx %d avail %d setting EQUEQ",
+			    __func__, eq->cntxt_id, eq->cidx, available);
 		}
+		else {
+			CTR4(KTR_CXGBE, "%s: eq %d cidx %d avail %d",
+			    __func__, eq->cntxt_id, eq->cidx, available);
+		}
+#endif
 
 		dbdiff += n;
 		if (dbdiff >= 16) {
@@ -2044,6 +2058,8 @@ t4_wrq_tx_locked(struct adapter *sc, struct sge_wrq *wrq, struct wrqe *wr)
 	STAILQ_INSERT_TAIL(&wrq->wr_list, wr, link);
 	wrq->nwr_pending++;
 	wrq->ndesc_needed += howmany(wr->wr_len, EQ_ESIZE);
+	CTR3(KTR_CXGBE, "%s: eq %d pending %d", __func__, wrq->eq.cntxt_id,
+	    wrq->nwr_pending);
 
 	if (!TAILQ_EMPTY(&wrq->incomplete_wrs))
 		return;	/* commit_wrq_wr will drain wr_list as well. */
@@ -5119,16 +5135,18 @@ add_fl_to_sfl(struct adapter *sc, struct sge_fl *fl)
 }
 
 static void
-handle_wrq_egr_update(struct adapter *sc, struct sge_eq *eq)
+handle_wrq_egr_update(struct adapter *sc, struct sge_eq *eq, const struct cpl_sge_egr_update *cpl)
 {
 	struct sge_wrq *wrq = (void *)eq;
 
 	atomic_readandclear_int(&eq->equiq);
+	CTR3(KTR_CXGBE, "egr update for eq %d spg cidx %d iq cidx %d",
+	    eq->cntxt_id, read_hw_cidx(eq), be16toh(cpl->cidx));
 	taskqueue_enqueue(sc->tq[eq->tx_chan], &wrq->wrq_tx_task);
 }
 
 static void
-handle_eth_egr_update(struct adapter *sc, struct sge_eq *eq)
+handle_eth_egr_update(struct adapter *sc, struct sge_eq *eq, const struct cpl_sge_egr_update *cpl)
 {
 	struct sge_txq *txq = (void *)eq;
 
@@ -5148,7 +5166,7 @@ handle_sge_egr_update(struct sge_iq *iq, const struct rss_header *rss,
 	struct adapter *sc = iq->adapter;
 	struct sge *s = &sc->sge;
 	struct sge_eq *eq;
-	static void (*h[])(struct adapter *, struct sge_eq *) = {NULL,
+	static void (*h[])(struct adapter *, struct sge_eq *, const struct cpl_sge_egr_update *) = {NULL,
 		&handle_wrq_egr_update, &handle_eth_egr_update,
 		&handle_wrq_egr_update};
 
@@ -5156,7 +5174,7 @@ handle_sge_egr_update(struct sge_iq *iq, const struct rss_header *rss,
 	    rss->opcode));
 
 	eq = s->eqmap[qid - s->eq_start - s->eq_base];
-	(*h[eq->flags & EQ_TYPEMASK])(sc, eq);
+	(*h[eq->flags & EQ_TYPEMASK])(sc, eq, cpl);
 
 	return (0);
 }
