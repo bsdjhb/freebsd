@@ -146,11 +146,13 @@ void copy_port_attr_to_resp(struct ib_port_attr *attr,
 	if (attr->grh_required)
 		resp->flags |= IB_UVERBS_QPF_GRH_REQUIRED;
 
-	resp->sm_lid = (u16)attr->sm_lid;
-	if (rdma_cap_opa_ah(ib_dev, port_num))
+	if (rdma_cap_opa_ah(ib_dev, port_num)) {
 		resp->lid = OPA_TO_IB_UCAST_LID(attr->lid);
-	else
+		resp->sm_lid = OPA_TO_IB_UCAST_LID(attr->sm_lid);
+	} else {
 		resp->lid = (u16)attr->lid;
+		resp->sm_lid = (u16)attr->sm_lid;
+	}
 
 	resp->lmc = attr->lmc;
 	resp->max_vl_num = attr->max_vl_num;
