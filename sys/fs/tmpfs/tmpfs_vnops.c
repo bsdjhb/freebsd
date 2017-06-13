@@ -1357,7 +1357,7 @@ tmpfs_pathconf(struct vop_pathconf_args *v)
 		break;
 
 	default:
-		error = vop_stdpathconf(ap);
+		error = vop_stdpathconf(v);
 	}
 
 	return error;
