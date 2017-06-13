@@ -70,7 +70,7 @@ void ENGINE_load_cryptodev(void)
 # include <string.h>
 
 struct dev_crypto_state {
-    struct session_op d_sess;
+    u_int32_t d_ses;
     int d_fd;
 # ifdef USE_CRYPTODEV_DIGESTS
     char dummy_mac_key[HASH_MAX_LEN];
@@ -79,6 +79,10 @@ struct dev_crypto_state {
     int mac_len;
 # endif
 };
+
+# ifdef CIOCGSESSION2
+static int crid = CRYPTO_FLAG_HARDWARE;
+# endif
 
 static u_int32_t cryptodev_asymfeat = 0;
 
@@ -133,7 +137,22 @@ static int cryptodev_ctrl(ENGINE *e, int cmd, long i, void *p,
                           void (*f) (void));
 void ENGINE_load_cryptodev(void);
 
+# define CRYPTODEV_CMD_CRID		ENGINE_CMD_BASE
+# define CRYPTODEV_CMD_DEVICE		(ENGINE_CMD_BASE + 1)
+
 static const ENGINE_CMD_DEFN cryptodev_defns[] = {
+# ifdef CIOCGSESSION2
+    {CRYPTODEV_CMD_CRID,
+     "CRID",
+     "Specifies id of desired driver",
+     ENGINE_CMD_FLAG_NUMERIC},
+#  ifdef CIOCFINDDEV
+    {CRYPTODEV_CMD_DEVICE,
+     "DEVICE",
+     "Specifies name of desired device",
+     ENGINE_CMD_FLAG_NUMERIC},
+#  endif
+# endif
     {0, NULL, NULL, 0}
 };
 
@@ -287,7 +306,11 @@ static int get_asym_dev_crypto(void)
 static int get_cryptodev_ciphers(const int **cnids)
 {
     static int nids[CRYPTO_ALGORITHM_MAX];
+# ifdef CIOCGSESSION2
+    struct session2_op sess;
+# else
     struct session_op sess;
+# endif
     int fd, i, count = 0;
 
     if ((fd = get_dev_crypto()) < 0) {
@@ -303,7 +326,12 @@ static int get_cryptodev_ciphers(const int **cnids)
         sess.cipher = ciphers[i].id;
         sess.keylen = ciphers[i].keylen;
         sess.mac = 0;
+# ifdef CIOCGSESSION2
+	sess.crid = crid;
+        if (ioctl(fd, CIOCGSESSION2, &sess) != -1 &&
+# else
         if (ioctl(fd, CIOCGSESSION, &sess) != -1 &&
+# endif
             ioctl(fd, CIOCFSESSION, &sess.ses) != -1)
             nids[count++] = ciphers[i].nid;
     }
@@ -326,7 +354,11 @@ static int get_cryptodev_ciphers(const int **cnids)
 static int get_cryptodev_digests(const int **cnids)
 {
     static int nids[CRYPTO_ALGORITHM_MAX];
+# ifdef CIOCGSESSION2
+    struct session2_op sess;
+# else
     struct session_op sess;
+# endif
     int fd, i, count = 0;
 
     if ((fd = get_dev_crypto()) < 0) {
@@ -341,7 +373,12 @@ static int get_cryptodev_digests(const int **cnids)
         sess.mac = digests[i].id;
         sess.mackeylen = digests[i].keylen;
         sess.cipher = 0;
+# ifdef CIOCGSESSION2
+	sess.crid = crid;
+        if (ioctl(fd, CIOCGSESSION2, &sess) != -1 &&
+# else
         if (ioctl(fd, CIOCGSESSION, &sess) != -1 &&
+# endif
             ioctl(fd, CIOCFSESSION, &sess.ses) != -1)
             nids[count++] = digests[i].nid;
     }
@@ -409,7 +446,6 @@ cryptodev_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 {
     struct crypt_op cryp;
     struct dev_crypto_state *state = ctx->cipher_data;
-    struct session_op *sess = &state->d_sess;
     const void *iiv;
     unsigned char save_iv[EVP_MAX_IV_LENGTH];
 
@@ -422,7 +458,7 @@ cryptodev_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     memset(&cryp, 0, sizeof(cryp));
 
-    cryp.ses = sess->ses;
+    cryp.ses = state->d_ses;
     cryp.flags = 0;
     cryp.len = inl;
     cryp.src = (caddr_t) in;
@@ -463,7 +499,11 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
                    const unsigned char *iv, int enc)
 {
     struct dev_crypto_state *state = ctx->cipher_data;
-    struct session_op *sess = &state->d_sess;
+# ifdef CIOCGSESSION2
+    struct session2_op sess;
+# else
+    struct session_op sess;
+# endif
     int cipher = -1, i;
 
     for (i = 0; ciphers[i].id; i++)
@@ -479,20 +519,28 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         return (0);
     }
 
-    memset(sess, 0, sizeof(struct session_op));
+    memset(&sess, 0, sizeof(sess));
 
     if ((state->d_fd = get_dev_crypto()) < 0)
         return (0);
 
-    sess->key = (caddr_t) key;
-    sess->keylen = ctx->key_len;
-    sess->cipher = cipher;
+    sess.key = (caddr_t) key;
+    sess.keylen = ctx->key_len;
+    sess.cipher = cipher;
+# ifdef CIOCGSESSION2
+    sess.crid = crid;
+# endif
 
-    if (ioctl(state->d_fd, CIOCGSESSION, sess) == -1) {
+# ifdef CIOCGSESSION2
+    if (ioctl(state->d_fd, CIOCGSESSION2, &sess) == -1) {
+# else
+    if (ioctl(state->d_fd, CIOCGSESSION, &sess) == -1) {
+# endif
         put_dev_crypto(state->d_fd);
         state->d_fd = -1;
         return (0);
     }
+    state->d_ses = sess.ses;
     return (1);
 }
 
@@ -504,7 +552,6 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
 {
     int ret = 0;
     struct dev_crypto_state *state = ctx->cipher_data;
-    struct session_op *sess = &state->d_sess;
 
     if (state->d_fd < 0)
         return (0);
@@ -519,7 +566,7 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
      * to users of the library. hmm..
      */
 
-    if (ioctl(state->d_fd, CIOCFSESSION, &sess->ses) == -1) {
+    if (ioctl(state->d_fd, CIOCFSESSION, &state->d_ses) == -1) {
         ret = 0;
     } else {
         ret = 1;
@@ -763,7 +810,11 @@ static int digest_key_length(int nid)
 static int cryptodev_digest_init(EVP_MD_CTX *ctx)
 {
     struct dev_crypto_state *state = ctx->md_data;
-    struct session_op *sess = &state->d_sess;
+# ifdef CIOCGSESSION2
+    struct session2_op sess;
+# else
+    struct session_op sess;
+# endif
     int digest;
 
     if ((digest = digest_nid_to_cryptodev(ctx->digest->type)) == NID_undef) {
@@ -772,23 +823,32 @@ static int cryptodev_digest_init(EVP_MD_CTX *ctx)
     }
 
     memset(state, 0, sizeof(struct dev_crypto_state));
+    memset(&sess, 0, sizeof(sess));
 
     if ((state->d_fd = get_dev_crypto()) < 0) {
         printf("cryptodev_digest_init: Can't get Dev \n");
         return (0);
     }
 
-    sess->mackey = state->dummy_mac_key;
-    sess->mackeylen = digest_key_length(ctx->digest->type);
-    sess->mac = digest;
+    sess.mackey = state->dummy_mac_key;
+    sess.mackeylen = digest_key_length(ctx->digest->type);
+    sess.mac = digest;
+# ifdef CIOCGSESSION2
+    sess.crid = crid;
+# endif
 
-    if (ioctl(state->d_fd, CIOCGSESSION, sess) < 0) {
+# ifdef CIOCGSESSION2
+    if (ioctl(state->d_fd, CIOCGSESSION2, &sess) == -1) {
+# else
+    if (ioctl(state->d_fd, CIOCGSESSION, &sess) == -1) {
+# endif
         put_dev_crypto(state->d_fd);
         state->d_fd = -1;
         printf("cryptodev_digest_init: Open session failed\n");
         return (0);
     }
 
+    state->d_ses = sess.ses;
     return (1);
 }
 
@@ -797,7 +857,6 @@ static int cryptodev_digest_update(EVP_MD_CTX *ctx, const void *data,
 {
     struct crypt_op cryp;
     struct dev_crypto_state *state = ctx->md_data;
-    struct session_op *sess = &state->d_sess;
 
     if (!data || state->d_fd < 0) {
         printf("cryptodev_digest_update: illegal inputs \n");
@@ -827,7 +886,7 @@ static int cryptodev_digest_update(EVP_MD_CTX *ctx, const void *data,
 
     memset(&cryp, 0, sizeof(cryp));
 
-    cryp.ses = sess->ses;
+    cryp.ses = state->d_ses;
     cryp.flags = 0;
     cryp.len = count;
     cryp.src = (caddr_t) data;
@@ -844,7 +903,6 @@ static int cryptodev_digest_final(EVP_MD_CTX *ctx, unsigned char *md)
 {
     struct crypt_op cryp;
     struct dev_crypto_state *state = ctx->md_data;
-    struct session_op *sess = &state->d_sess;
 
     int ret = 1;
 
@@ -856,7 +914,7 @@ static int cryptodev_digest_final(EVP_MD_CTX *ctx, unsigned char *md)
     if (!(ctx->flags & EVP_MD_CTX_FLAG_ONESHOT)) {
         /* if application doesn't support one buffer */
         memset(&cryp, 0, sizeof(cryp));
-        cryp.ses = sess->ses;
+        cryp.ses = state->d_ses;
         cryp.flags = 0;
         cryp.len = state->mac_len;
         cryp.src = state->mac_data;
@@ -879,7 +937,6 @@ static int cryptodev_digest_cleanup(EVP_MD_CTX *ctx)
 {
     int ret = 1;
     struct dev_crypto_state *state = ctx->md_data;
-    struct session_op *sess = &state->d_sess;
 
     if (state == NULL)
         return 0;
@@ -895,7 +952,7 @@ static int cryptodev_digest_cleanup(EVP_MD_CTX *ctx)
         state->mac_len = 0;
     }
 
-    if (ioctl(state->d_fd, CIOCFSESSION, &sess->ses) < 0) {
+    if (ioctl(state->d_fd, CIOCFSESSION, &state->d_ses) < 0) {
         printf("cryptodev_digest_cleanup: failed to close session\n");
         ret = 0;
     } else {
@@ -911,7 +968,11 @@ static int cryptodev_digest_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 {
     struct dev_crypto_state *fstate = from->md_data;
     struct dev_crypto_state *dstate = to->md_data;
-    struct session_op *sess;
+# ifdef CIOCGSESSION2
+    struct session2_op sess;
+# else
+    struct session_op sess;
+# endif
     int digest;
 
     if (dstate == NULL || fstate == NULL)
@@ -919,23 +980,31 @@ static int cryptodev_digest_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 
     memcpy(dstate, fstate, sizeof(struct dev_crypto_state));
 
-    sess = &dstate->d_sess;
+    memset(&sess, 0, sizeof(sess));
 
     digest = digest_nid_to_cryptodev(to->digest->type);
 
-    sess->mackey = dstate->dummy_mac_key;
-    sess->mackeylen = digest_key_length(to->digest->type);
-    sess->mac = digest;
+    sess.mackey = dstate->dummy_mac_key;
+    sess.mackeylen = digest_key_length(to->digest->type);
+    sess.mac = digest;
+# ifdef CIOCGSESSION2
+    sess.crid = crid;
+# endif
 
     dstate->d_fd = get_dev_crypto();
 
-    if (ioctl(dstate->d_fd, CIOCGSESSION, sess) < 0) {
+# ifdef CIOCGSESSION2
+    if (ioctl(dstate->d_fd, CIOCGSESSION2, &sess) == -1) {
+# else
+    if (ioctl(dstate->d_fd, CIOCGSESSION, &sess) == -1) {
+# endif
         put_dev_crypto(dstate->d_fd);
         dstate->d_fd = -1;
         printf("cryptodev_digest_init: Open session failed\n");
         return (0);
     }
 
+    dstate->d_ses = sess.ses;
     dstate->mac_len = fstate->mac_len;
     if (fstate->mac_len != 0) {
         if (fstate->mac_data != NULL) {
@@ -1453,6 +1522,27 @@ cryptodev_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void))
 # endif
 
     switch (cmd) {
+# ifdef CIOCGSESSION2
+    case CRYPTODEV_CMD_CRID:
+	crid = i;
+	break;
+#  ifdef CIOCFINDDEV
+    case CRYPTODEV_CMD_DEVICE: {
+	struct crypt_find_op cfo;
+	int fd;
+
+	fd = open_dev_crypto();
+	if (fd == -1)
+		return 0;
+	cfo.crid = -1;
+	strlcpy(cfo.name, p, sizeof(cfo.name));
+	if (ioctl(fd, CIOCFINDDEV, &cfo) == -1)
+		return 0;
+	crid = cfo.crid;
+	break;
+    }
+#  endif
+# endif
     default:
 # ifdef HAVE_SYSLOG_R
         syslog_r(LOG_ERR, &sd, "cryptodev_ctrl: unknown command %d", cmd);
