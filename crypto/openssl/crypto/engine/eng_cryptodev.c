@@ -150,7 +150,7 @@ static const ENGINE_CMD_DEFN cryptodev_defns[] = {
     {CRYPTODEV_CMD_DEVICE,
      "DEVICE",
      "Specifies name of desired device",
-     ENGINE_CMD_FLAG_NUMERIC},
+     ENGINE_CMD_FLAG_STRING},
 #  endif
 # endif
     {0, NULL, NULL, 0}
