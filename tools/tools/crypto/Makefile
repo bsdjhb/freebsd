@@ -26,7 +26,7 @@
 #
 
 ALL=	cryptotest cryptokeytest cryptostats \
-	ubsecstats hifnstats ipsecstats safestats
+	ubsecstats hifnstats ipsecstats safestats sslcheck
 BINDIR=	/usr/local/bin
 
 all:	${ALL}
@@ -54,6 +54,10 @@ safestats: safestats.c
 # program to print statistics kept by fast ipsec
 ipsecstats: ipsecstats.c
 	${CC} -o ipsecstats ipsecstats.c
+
+# program to test OpenSSL engine symmetric crypto
+sslcheck: sslcheck.c
+	${CC} -o sslcheck sslcheck.c -lcrypto -lutil
 
 clean:
 	rm -f ${ALL} core a.out
