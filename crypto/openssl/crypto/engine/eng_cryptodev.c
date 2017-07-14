@@ -1067,8 +1067,8 @@ cryptodev_engine_digests(ENGINE *e, const EVP_MD **digest,
     case NID_sha1:
         *digest = &cryptodev_sha1;
         break;
-    default:
 # endif                         /* USE_CRYPTODEV_DIGESTS */
+    default:
         *digest = NULL;
         break;
     }
