@@ -16,6 +16,8 @@ __FBSDID("$FreeBSD$");
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <pthread_np.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,9 +34,14 @@ __FBSDID("$FreeBSD$");
  */
 #define	GDB_SIGNAL_TRAP		5
 
+static void gdb_resume_vcpus(void);
+static void check_command(int fd);
+
 static struct mevent *read_event, *write_event;
 
-static cpuset_t vcpumask;
+static cpuset_t vcpus_active, vcpus_suspended, vcpus_waiting;
+static pthread_mutex_t gdb_lock;
+static pthread_cond_t idle_vcpus;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -54,6 +61,7 @@ static struct io_buffer cur_comm, cur_resp;
 static uint8_t cur_csum;
 static int cur_vcpu;
 static struct vmctx *ctx;
+static int cur_fd = -1;
 
 const int gdb_regset[] = {
 	VM_REG_GUEST_RAX,
@@ -100,7 +108,7 @@ const int gdb_regsize[] = {
 	8,
 	8,
 	8,
-	8,
+	4,
 	4,
 	4,
 	4,
@@ -121,6 +129,8 @@ debug(const char *fmt, ...)
 
 	if (logfile == NULL) {
 		logfile = fopen("/tmp/bhyve_gdb.log", "w");
+		if (logfile == NULL)
+			return;
 		setlinebuf(logfile);
 	}
 	va_start(ap, fmt);
@@ -286,14 +296,18 @@ close_connection(void)
 	 * XXX: This triggers a warning because mevent does the close
 	 * before the EV_DELETE.
 	 */
+	pthread_mutex_lock(&gdb_lock);
 	mevent_delete(write_event);
 	mevent_delete_close(read_event);
 	write_event = NULL;
 	read_event = NULL;
 	io_buffer_reset(&cur_comm);
 	io_buffer_reset(&cur_resp);
+	cur_fd = -1;
 
-	/* TODO: Simulate detach if stopped? */
+	/* Resume any stopped vCPUs. */
+	gdb_resume_vcpus();
+	pthread_mutex_unlock(&gdb_lock);
 }
 
 static uint8_t
@@ -546,17 +560,70 @@ void
 gdb_cpu_add(int vcpu)
 {
 
-	CPU_SET_ATOMIC(vcpu, &vcpumask);
+	CPU_SET_ATOMIC(vcpu, &vcpus_active);
+}
+
+static void
+gdb_finish_suspend_vcpus(void)
+{
+
+	/*
+	 * XXX: For now we only suspend when the connection is made,
+	 * so the proper thing to do when all vCPUs are suspended is
+	 * to check for any pending commands.  Eventually this will be
+	 * more complex.
+	 */
+	check_command(cur_fd);
 }
 
 void
 gdb_cpu_suspend(int vcpu)
 {
+
+	debug("$vCPU %d suspending\n", vcpu);
+	pthread_mutex_lock(&gdb_lock);
+	CPU_SET(vcpu, &vcpus_waiting);
+	if (CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
+		gdb_finish_suspend_vcpus();
+	while (CPU_ISSET(vcpu, &vcpus_suspended))
+		pthread_cond_wait(&idle_vcpus, &gdb_lock);
+	CPU_CLR(vcpu, &vcpus_waiting);
+	pthread_mutex_unlock(&gdb_lock);
+	debug("$vCPU %d resuming\n", vcpu);
 }
 
 void
 gdb_cpu_mtrap(int vcpu)
 {
+
+	gdb_cpu_suspend(vcpu);
+}
+
+static void
+gdb_suspend_vcpus(void)
+{
+
+	assert(pthread_mutex_isowned_np(&gdb_lock));
+	vcpus_suspended = vcpus_active;
+	vm_suspend_cpu(ctx, -1);
+}
+
+static bool
+gdb_suspend_pending(void)
+{
+
+	assert(pthread_mutex_isowned_np(&gdb_lock));
+	return (CPU_CMP(&vcpus_waiting, &vcpus_suspended) != 0);
+}
+
+static void
+gdb_resume_vcpus(void)
+{
+
+	assert(pthread_mutex_isowned_np(&gdb_lock));
+	vm_resume_cpu(ctx, -1);
+	CPU_ZERO(&vcpus_suspended);
+	pthread_cond_broadcast(&idle_vcpus);
 }
 
 static void
@@ -696,6 +763,7 @@ gdb_query(const uint8_t *data, size_t len)
 	 * TODO:
 	 * - qSearch
 	 * - qSupported
+	 * - qC
 	 */
 	if (command_equals(data, len, "qAttached")) {
 		start_packet();
@@ -706,11 +774,11 @@ gdb_query(const uint8_t *data, size_t len)
 		bool first;
 		int vcpu;
 
-		if (CPU_EMPTY(&vcpumask)) {
+		if (CPU_EMPTY(&vcpus_active)) {
 			send_error(EINVAL);
 			return;
 		}
-		mask = vcpumask;
+		mask = vcpus_active;
 		start_packet();
 		append_char('m');
 		first = true;
@@ -739,7 +807,7 @@ gdb_query(const uint8_t *data, size_t len)
 			return;
 		}
 		tid = parse_threadid(data + 1, len - 1);
-		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
+		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpus_active)) {
 			send_error(EINVAL);
 			return;
 		}
@@ -786,13 +854,13 @@ handle_command(const uint8_t *data, size_t len)
 			break;
 		}
 
-		if (CPU_EMPTY(&vcpumask)) {
+		if (CPU_EMPTY(&vcpus_active)) {
 			send_error(EINVAL);
 			break;
 		}
 		if (tid == -1 || tid == 0)
-			cur_vcpu = CPU_FFS(&vcpumask) - 1;
-		else if (CPU_ISSET(tid - 1, &vcpumask))
+			cur_vcpu = CPU_FFS(&vcpus_active) - 1;
+		else if (CPU_ISSET(tid - 1, &vcpus_active))
 			cur_vcpu = tid - 1;
 		else {
 			send_error(EINVAL);
@@ -808,7 +876,7 @@ handle_command(const uint8_t *data, size_t len)
 		int tid;
 
 		tid = parse_threadid(data + 1, len - 1);
-		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpumask)) {
+		if (tid <= 0 || !CPU_ISSET(tid - 1, &vcpus_active)) {
 			send_error(EINVAL);
 			return;
 		}
@@ -957,7 +1025,10 @@ gdb_readable(int fd, enum ev_type event, void *arg)
 		close_connection();
 	} else {
 		cur_comm.len += nread;
-		check_command(fd);
+		pthread_mutex_lock(&gdb_lock);
+		if (!gdb_suspend_pending())
+			check_command(fd);
+		pthread_mutex_unlock(&gdb_lock);
 	}
 }
 
@@ -990,7 +1061,8 @@ new_connection(int fd, enum ev_type event, void *arg)
 		return;
 	}
 
-	if (read_event != NULL) {
+	pthread_mutex_lock(&gdb_lock);
+	if (cur_fd != -1) {
 		close(s);
 		warnx("Ignoring additional GDB connection.");
 	}
@@ -999,6 +1071,7 @@ new_connection(int fd, enum ev_type event, void *arg)
 	if (read_event == NULL) {
 		if (arg != NULL)
 			err(1, "Failed to setup initial GDB connection");
+		pthread_mutex_unlock(&gdb_lock);
 		return;
 	}
 	write_event = mevent_add(s, EVF_WRITE, gdb_writable, NULL);
@@ -1009,14 +1082,27 @@ new_connection(int fd, enum ev_type event, void *arg)
 		read_event = NULL;
 	}
 
-	/* XXX: Break on attach always or just for arg != NULL (startup wait)? */
+	cur_fd = s;
+
+	/* XXX: Break on attach for now. */
+	gdb_suspend_vcpus();
+	pthread_mutex_unlock(&gdb_lock);
 }
 
 void
 init_gdb(struct vmctx *_ctx, int sport, bool wait)
 {
 	struct sockaddr_in sin;
-	int flags, s;
+	int error, flags, s;
+
+	debug("==> starting on %d, %swaiting\n", sport, wait ? "" : "not ");
+
+	error = pthread_mutex_init(&gdb_lock, NULL);
+	if (error != 0)
+		errc(1, error, "gdb mutex init");
+	error = pthread_cond_init(&idle_vcpus, NULL);
+	if (error != 0)
+		errc(1, error, "gdb cv init");
 
 	ctx = _ctx;
 	s = socket(PF_INET, SOCK_STREAM, 0);
