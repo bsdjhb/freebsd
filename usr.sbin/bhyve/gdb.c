@@ -464,6 +464,13 @@ append_packet_data(const uint8_t *data, size_t len)
 }
 
 static void
+append_string(const char *str)
+{
+
+	append_packet_data(str, strlen(str));
+}
+
+static void
 append_byte(uint8_t v)
 {
 	uint8_t buf[2];
@@ -763,11 +770,15 @@ gdb_query(const uint8_t *data, size_t len)
 	 * TODO:
 	 * - qSearch
 	 * - qSupported
-	 * - qC
 	 */
 	if (command_equals(data, len, "qAttached")) {
 		start_packet();
 		append_char('1');
+		finish_packet();
+	} else if (command_equals(data, len, "qC")) {
+		start_packet();
+		append_string("QC");
+		append_integer(cur_vcpu + 1);
 		finish_packet();
 	} else if (command_equals(data, len, "qfThreadInfo")) {
 		cpuset_t mask;
@@ -1083,6 +1094,7 @@ new_connection(int fd, enum ev_type event, void *arg)
 	}
 
 	cur_fd = s;
+	cur_vcpu = 0;
 
 	/* XXX: Break on attach for now. */
 	gdb_suspend_vcpus();
