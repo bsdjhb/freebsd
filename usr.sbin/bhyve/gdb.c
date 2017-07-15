@@ -938,6 +938,16 @@ check_command(int fd)
 			debug("<- Ctrl-C\n");
 			/* TODO: Handle Ctrl-C */
 			io_buffer_consume(&cur_comm, 1);
+
+			/*
+			 * XXX: vCPUs are already stopped.  Eventually this
+			 * will need to do a stop.
+			 */
+			start_packet();
+			append_char('S');
+			append_byte(GDB_SIGNAL_TRAP);
+			finish_packet();
+			send_pending_data(fd);
 			break;
 		case '+':
 			/* ACK of previous response. */
