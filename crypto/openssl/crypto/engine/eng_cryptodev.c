@@ -330,6 +330,7 @@ static int get_asym_dev_crypto(void)
 static int get_cryptodev_ciphers(const int **cnids)
 {
     static int nids[NUM_CIPHERS];
+    static char test_key[64] = "123456789abcdefghijklmno";
 # ifdef CIOCGSESSION2
     struct session2_op sess;
 # else
@@ -342,11 +343,12 @@ static int get_cryptodev_ciphers(const int **cnids)
         return (0);
     }
     memset(&sess, 0, sizeof(sess));
-    sess.key = (caddr_t) "123456789abcdefghijklmno";
+    sess.key = test_key;
 
     for (i = 0; ciphers[i].id && count < NUM_CIPHERS; i++) {
         if (ciphers[i].nid == NID_undef)
             continue;
+	assert(ciphers[i].keylen <= sizeof(test_key));
         sess.cipher = ciphers[i].id;
         sess.keylen = ciphers[i].keylen;
         sess.mac = 0;
