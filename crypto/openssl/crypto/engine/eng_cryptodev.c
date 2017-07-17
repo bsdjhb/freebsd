@@ -746,10 +746,8 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         if (ctx->cipher->iv_len != 12)
             return (0);
         state->gcm_tag_valid = 0;
-        OPENSSL_free(state->aad_data);
         state->aad_data = NULL;
         state->aad_len = 0;
-        OPENSSL_free(state->cipher_data);
         state->cipher_data = NULL;
         state->cipher_len = 0;
         return (1);
