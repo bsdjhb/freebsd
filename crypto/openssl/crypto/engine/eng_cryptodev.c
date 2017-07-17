@@ -726,7 +726,7 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     if (ioctl(state->d_fd, CIOCCRYPTAEAD, &cryp) == -1) {
         /*
-         * XXX need better errror handling this can fail for a number of
+         * XXX need better error handling this can fail for a number of
          * different reasons.
          */
         return (-1);
