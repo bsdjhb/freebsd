@@ -545,13 +545,6 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         return (0);
     }
 
-# ifdef CRYPTO_AES_XTS
-    if (cipher == CRYPTO_AES_XTS && iv != NULL) {
-        state->d_fd = -1;
-        return (0);
-    }
-# endif
-
     memset(&sess, 0, sizeof(sess));
 
     if ((state->d_fd = get_dev_crypto()) < 0)
@@ -574,6 +567,9 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         return (0);
     }
     state->d_ses = sess.ses;
+
+    if (iv != NULL)
+        memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
     return (1);
 }
 
@@ -619,7 +615,7 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
 const EVP_CIPHER cryptodev_rc4 = {
     NID_rc4,
     1, 16, 0,
-    EVP_CIPH_VARIABLE_LENGTH,
+    EVP_CIPH_VARIABLE_LENGTH | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -633,7 +629,7 @@ const EVP_CIPHER cryptodev_rc4 = {
 const EVP_CIPHER cryptodev_des_cbc = {
     NID_des_cbc,
     8, 8, 8,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -647,7 +643,7 @@ const EVP_CIPHER cryptodev_des_cbc = {
 const EVP_CIPHER cryptodev_3des_cbc = {
     NID_des_ede3_cbc,
     8, 24, 8,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -660,7 +656,7 @@ const EVP_CIPHER cryptodev_3des_cbc = {
 const EVP_CIPHER cryptodev_bf_cbc = {
     NID_bf_cbc,
     8, 16, 8,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -673,7 +669,7 @@ const EVP_CIPHER cryptodev_bf_cbc = {
 const EVP_CIPHER cryptodev_cast_cbc = {
     NID_cast5_cbc,
     8, 16, 8,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -686,7 +682,7 @@ const EVP_CIPHER cryptodev_cast_cbc = {
 const EVP_CIPHER cryptodev_aes_cbc = {
     NID_aes_128_cbc,
     16, 16, 16,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -699,7 +695,7 @@ const EVP_CIPHER cryptodev_aes_cbc = {
 const EVP_CIPHER cryptodev_aes_192_cbc = {
     NID_aes_192_cbc,
     16, 24, 16,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -712,7 +708,7 @@ const EVP_CIPHER cryptodev_aes_192_cbc = {
 const EVP_CIPHER cryptodev_aes_256_cbc = {
     NID_aes_256_cbc,
     16, 32, 16,
-    EVP_CIPH_CBC_MODE,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -726,7 +722,7 @@ const EVP_CIPHER cryptodev_aes_256_cbc = {
 const EVP_CIPHER cryptodev_aes_ctr = {
     NID_aes_128_ctr,
     16, 16, 14,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -739,7 +735,7 @@ const EVP_CIPHER cryptodev_aes_ctr = {
 const EVP_CIPHER cryptodev_aes_ctr_192 = {
     NID_aes_192_ctr,
     16, 24, 14,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -752,7 +748,7 @@ const EVP_CIPHER cryptodev_aes_ctr_192 = {
 const EVP_CIPHER cryptodev_aes_ctr_256 = {
     NID_aes_256_ctr,
     16, 32, 14,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -766,7 +762,7 @@ const EVP_CIPHER cryptodev_aes_ctr_256 = {
 const EVP_CIPHER cryptodev_aes_ctr = {
     NID_aes_128_ctr,
     1, 16, 16,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -779,7 +775,7 @@ const EVP_CIPHER cryptodev_aes_ctr = {
 const EVP_CIPHER cryptodev_aes_ctr_192 = {
     NID_aes_192_ctr,
     1, 24, 16,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -792,7 +788,7 @@ const EVP_CIPHER cryptodev_aes_ctr_192 = {
 const EVP_CIPHER cryptodev_aes_ctr_256 = {
     NID_aes_256_ctr,
     1, 32, 16,
-    EVP_CIPH_CTR_MODE,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
