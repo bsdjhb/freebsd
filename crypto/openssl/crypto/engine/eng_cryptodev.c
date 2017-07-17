@@ -804,13 +804,13 @@ const EVP_CIPHER cryptodev_rc4 = {
 const EVP_CIPHER cryptodev_des_cbc = {
     NID_des_cbc,
     8, 8, 8,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
@@ -818,78 +818,78 @@ const EVP_CIPHER cryptodev_des_cbc = {
 const EVP_CIPHER cryptodev_3des_cbc = {
     NID_des_ede3_cbc,
     8, 24, 8,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_bf_cbc = {
     NID_bf_cbc,
     8, 16, 8,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_cast_cbc = {
     NID_cast5_cbc,
     8, 16, 8,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_cbc = {
     NID_aes_128_cbc,
     16, 16, 16,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_192_cbc = {
     NID_aes_192_cbc,
     16, 24, 16,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_256_cbc = {
     NID_aes_256_cbc,
     16, 32, 16,
-    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CBC_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
@@ -897,39 +897,39 @@ const EVP_CIPHER cryptodev_aes_256_cbc = {
 const EVP_CIPHER cryptodev_aes_ctr = {
     NID_aes_128_ctr,
     16, 16, 14,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_ctr_192 = {
     NID_aes_192_ctr,
     16, 24, 14,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_ctr_256 = {
     NID_aes_256_ctr,
     16, 32, 14,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 # endif
@@ -937,39 +937,39 @@ const EVP_CIPHER cryptodev_aes_ctr_256 = {
 const EVP_CIPHER cryptodev_aes_ctr = {
     NID_aes_128_ctr,
     1, 16, 16,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_ctr_192 = {
     NID_aes_192_ctr,
     1, 24, 16,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_ctr_256 = {
     NID_aes_256_ctr,
     1, 32, 16,
-    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_CTR_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 # endif
@@ -977,26 +977,26 @@ const EVP_CIPHER cryptodev_aes_ctr_256 = {
 const EVP_CIPHER cryptodev_aes_xts = {
     NID_aes_128_xts,
     16, 32, 16,
-    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 
 const EVP_CIPHER cryptodev_aes_xts_256 = {
     NID_aes_256_xts,
     16, 64, 16,
-    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
+    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
-    EVP_CIPHER_set_asn1_iv,
-    EVP_CIPHER_get_asn1_iv,
+    NULL,
+    NULL,
     NULL
 };
 # endif
@@ -1004,8 +1004,9 @@ const EVP_CIPHER cryptodev_aes_xts_256 = {
 const EVP_CIPHER cryptodev_aes_gcm = {
     NID_aes_128_gcm,
     1, 16, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
-    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
+    EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
     cryptodev_cleanup,
@@ -1018,8 +1019,9 @@ const EVP_CIPHER cryptodev_aes_gcm = {
 const EVP_CIPHER cryptodev_aes_gcm_192 = {
     NID_aes_192_gcm,
     1, 24, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
-    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
+    EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
     cryptodev_cleanup,
@@ -1032,8 +1034,9 @@ const EVP_CIPHER cryptodev_aes_gcm_192 = {
 const EVP_CIPHER cryptodev_aes_gcm_256 = {
     NID_aes_256_gcm,
     1, 32, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
-    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
+    EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
     cryptodev_cleanup,
