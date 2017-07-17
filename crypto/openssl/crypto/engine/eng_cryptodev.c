@@ -224,6 +224,8 @@ static struct {
     },
 };
 
+#define NUM_CIPHERS	(sizeof(ciphers) / sizeof(ciphers[0]))
+
 # ifdef USE_CRYPTODEV_DIGESTS
 static struct {
     int id;
@@ -256,6 +258,9 @@ static struct {
         0, NID_undef, 0
     },
 };
+
+# define NUM_DIGESTS	(sizeof(digests) / sizeof(digests[0]))
+
 # endif
 
 /*
@@ -324,7 +329,7 @@ static int get_asym_dev_crypto(void)
  */
 static int get_cryptodev_ciphers(const int **cnids)
 {
-    static int nids[CRYPTO_ALGORITHM_MAX];
+    static int nids[NUM_CIPHERS];
 # ifdef CIOCGSESSION2
     struct session2_op sess;
 # else
@@ -339,7 +344,7 @@ static int get_cryptodev_ciphers(const int **cnids)
     memset(&sess, 0, sizeof(sess));
     sess.key = (caddr_t) "123456789abcdefghijklmno";
 
-    for (i = 0; ciphers[i].id && count < CRYPTO_ALGORITHM_MAX; i++) {
+    for (i = 0; ciphers[i].id && count < NUM_CIPHERS; i++) {
         if (ciphers[i].nid == NID_undef)
             continue;
         sess.cipher = ciphers[i].id;
@@ -372,7 +377,7 @@ static int get_cryptodev_ciphers(const int **cnids)
  */
 static int get_cryptodev_digests(const int **cnids)
 {
-    static int nids[CRYPTO_ALGORITHM_MAX];
+    static int nids[NUM_DIGESTS];
 # ifdef CIOCGSESSION2
     struct session2_op sess;
 # else
@@ -386,7 +391,7 @@ static int get_cryptodev_digests(const int **cnids)
     }
     memset(&sess, 0, sizeof(sess));
     sess.mackey = (caddr_t) "123456789abcdefghijklmno";
-    for (i = 0; digests[i].id && count < CRYPTO_ALGORITHM_MAX; i++) {
+    for (i = 0; digests[i].id && count < NUM_DIGESTS; i++) {
         if (digests[i].nid == NID_undef)
             continue;
         sess.mac = digests[i].id;
