@@ -878,7 +878,7 @@ cryptodev_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
     case NID_aes_128_xts:
         *cipher = &cryptodev_aes_xts;
         break;
-    case NID_aes_256_ctr:
+    case NID_aes_256_xts:
         *cipher = &cryptodev_aes_xts_256;
         break;
 # endif
