@@ -419,9 +419,10 @@ void ib_unregister_device(struct ib_device *device)
 	}
 	up_read(&lists_rwsem);
 
+	ib_device_unregister_sysfs(device);
+
 	mutex_unlock(&device_mutex);
 
-	ib_device_unregister_sysfs(device);
 	ib_cache_cleanup_one(device);
 
 	down_write(&lists_rwsem);
