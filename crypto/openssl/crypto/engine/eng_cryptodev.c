@@ -677,7 +677,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
             return (0);
         memcpy(state->gcm_tag, ptr, arg);
         state->gcm_tag_valid = 1;
-        break;
+        return (1);
 
     case EVP_CTRL_GCM_GET_TAG:
         /* The /dev/crypto interface only supports 16 byte tags. */
