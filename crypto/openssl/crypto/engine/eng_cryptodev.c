@@ -1014,7 +1014,7 @@ const EVP_CIPHER cryptodev_aes_gcm = {
     cryptodev_gcm_ctrl
 };
 
-const EVP_CIPHER cryptodev_aes_gcm192 = {
+const EVP_CIPHER cryptodev_aes_gcm_192 = {
     NID_aes_192_gcm,
     1, 24, 12,
     EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
@@ -1028,7 +1028,7 @@ const EVP_CIPHER cryptodev_aes_gcm192 = {
     cryptodev_gcm_ctrl
 };
 
-const EVP_CIPHER cryptodev_aes_gcm256 = {
+const EVP_CIPHER cryptodev_aes_gcm_256 = {
     NID_aes_256_gcm,
     1, 32, 12,
     EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
