@@ -655,8 +655,8 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
     state->d_fd = -1;
 
 # ifdef CRYPTO_AES_NIST_GCM_16
-    OPENSSL_free(state->aad);
-    state->aad = NULL;
+    OPENSSL_free(state->aad_data);
+    state->aad_data = NULL;
     state->aad_len = 0;
     OPENSSL_free(state->cipher_data);
     state->cipher_data = NULL;
@@ -679,14 +679,14 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     /* Accumulate data in buffers until Final is called. */
     if (inl != 0) {
         if (out == NULL) {
-            char *aad = OPENSSL_realloc(state->aad, state->aad_len + inl);
+            char *aad = OPENSSL_realloc(state->aad_data, state->aad_len + inl);
 
             if (aad == NULL)
                 return (0);
 
             memcpy(aad + state->aad_len, in, inl);
             state->aad_len += inl;
-            state->aad = aad;
+            state->aad_data = aad;
             return (1);
         } else {
             char *data = OPENSSL_realloc(state->cipher_data,
@@ -713,11 +713,11 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     cryp.ses = state->d_ses;
     cryp.flags = 0;
     cryp.len = state->cipher_len;
-    cryp.aad_len = state->aad_len;
+    cryp.aadlen = state->aad_len;
     cryp.ivlen = EVP_CIPHER_CTX_iv_length(ctx);
     cryp.src = state->cipher_data;
     cryp.dst = (caddr_t) out;
-    cryp.aad = state->aad;
+    cryp.aad = state->aad_data;
     cryp.tag = state->gcm_tag;
     cryp.iv = (caddr_t) ctx->iv;
 
@@ -1003,7 +1003,7 @@ const EVP_CIPHER cryptodev_aes_xts_256 = {
 const EVP_CIPHER cryptodev_aes_gcm = {
     NID_aes_128_gcm,
     1, 16, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
     EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
@@ -1017,7 +1017,7 @@ const EVP_CIPHER cryptodev_aes_gcm = {
 const EVP_CIPHER cryptodev_aes_gcm192 = {
     NID_aes_192_gcm,
     1, 24, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
     EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
@@ -1031,7 +1031,7 @@ const EVP_CIPHER cryptodev_aes_gcm192 = {
 const EVP_CIPHER cryptodev_aes_gcm256 = {
     NID_aes_256_gcm,
     1, 32, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_CUSTOM_CIPHER |
     EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
     cryptodev_gcm_cipher,
