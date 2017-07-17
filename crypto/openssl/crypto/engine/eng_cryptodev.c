@@ -675,7 +675,7 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     struct dev_crypto_state *state = ctx->cipher_data;
 
     if (state->d_fd < 0)
-        return (0);
+        return (-1);
 
     /* Accumulate data in buffers until Final is called. */
     if (inl != 0) {
@@ -683,23 +683,23 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             char *aad = OPENSSL_realloc(state->aad_data, state->aad_len + inl);
 
             if (aad == NULL)
-                return (0);
+                return (-1);
 
             memcpy(aad + state->aad_len, in, inl);
             state->aad_len += inl;
             state->aad_data = aad;
-            return (1);
+            return (0);
         } else {
             char *data = OPENSSL_realloc(state->cipher_data,
                 state->cipher_len + inl);
 
             if (data == NULL)
-                return (0);
+                return (-1);
 
             memcpy(data + state->cipher_len, in, inl);
             state->cipher_len += inl;
             state->cipher_data = data;
-            return (1);
+            return (0);
         }
     }
 
@@ -707,7 +707,7 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     /* Require a valid tag for decryption. */
     if (!ctx->encrypt && !state->gcm_tag_valid)
-        return (0);
+        return (-1);
 
     memset(&cryp, 0, sizeof(cryp));
 
@@ -729,12 +729,12 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
          * XXX need better errror handling this can fail for a number of
          * different reasons.
          */
-        return (0);
+        return (-1);
     }
 
     if (ctx->encrypt)
         state->gcm_tag_valid = 1;
-    return (1);
+    return (state->cipher_len);
 }
 
 static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
