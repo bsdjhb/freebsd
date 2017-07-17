@@ -538,6 +538,13 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         return (0);
     }
 
+# ifdef CRYPTO_AES_XTS
+    if (cipher == CRYPTO_AES_XTS && iv != NULL) {
+        state->d_fd = -1;
+        return (0);
+    }
+# endif
+
     memset(&sess, 0, sizeof(sess));
 
     if ((state->d_fd = get_dev_crypto()) < 0)
@@ -792,7 +799,7 @@ const EVP_CIPHER cryptodev_aes_ctr_256 = {
 const EVP_CIPHER cryptodev_aes_xts = {
     NID_aes_128_xts,
     16, 32, 16,
-    EVP_CIPH_XTS_MODE,
+    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
@@ -805,7 +812,7 @@ const EVP_CIPHER cryptodev_aes_xts = {
 const EVP_CIPHER cryptodev_aes_xts_256 = {
     NID_aes_256_xts,
     16, 64, 16,
-    EVP_CIPH_XTS_MODE,
+    EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
     cryptodev_init_key,
     cryptodev_cipher,
     cryptodev_cleanup,
