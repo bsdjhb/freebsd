@@ -1109,6 +1109,17 @@ cryptodev_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
         *cipher = &cryptodev_aes_xts_256;
         break;
 # endif
+# ifdef CRYPTO_AES_NIST_GCM_16
+    case NID_aes_128_gcm:
+        *cipher = &cryptodev_aes_gcm;
+        break;
+    case NID_aes_192_gcm:
+        *cipher = &cryptodev_aes_gcm_192;
+        break;
+    case NID_aes_256_gcm:
+        *cipher = &cryptodev_aes_gcm_256;
+        break;
+# endif
     default:
         *cipher = NULL;
         break;
