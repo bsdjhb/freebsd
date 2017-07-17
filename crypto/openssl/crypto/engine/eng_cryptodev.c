@@ -78,6 +78,10 @@ struct dev_crypto_state {
     char *mac_data;
     int mac_len;
 # endif
+# ifdef CRYPTO_AES_NIST_GCM_16
+    unsigned char gcm_tag[16];
+    int gcm_tag_valid;
+# endif
 };
 
 # ifdef CIOCGSESSION2
@@ -210,6 +214,17 @@ static struct {
         CRYPTO_AES_XTS, NID_aes_256_xts, 16, 64,
     },
 # endif
+# ifdef CRYPTO_AES_NIST_GCM_16
+    {
+        CRYPTO_AES_NIST_GCM_16, NID_aes_128_gcm, 12, 16
+    },
+    {
+        CRYPTO_AES_NIST_GCM_16, NID_aes_192_gcm, 12, 24
+    },
+    {
+        CRYPTO_AES_NIST_GCM_16, NID_aes_256_gcm, 12, 32
+    },
+# endif
     {
         CRYPTO_BLF_CBC, NID_bf_cbc, 8, 16,
     },
@@ -321,6 +336,22 @@ static int get_asym_dev_crypto(void)
     return fd;
 }
 
+# ifdef CRYPTO_AES_NIST_GCM_16
+static int mac_for_gcm(int keylen)
+{
+    switch (keylen) {
+    case 16:
+        return (CRYPTO_AES_128_NIST_GMAC);
+    case 24:
+        return (CRYPTO_AES_192_NIST_GMAC);
+    case 32:
+        return (CRYPTO_AES_256_NIST_GMAC);
+    default:
+        return (-1);
+    }
+}
+# endif
+
 /*
  * Find out what ciphers /dev/crypto will let us have a session for.
  * XXX note, that some of these openssl doesn't deal with yet!
@@ -352,6 +383,14 @@ static int get_cryptodev_ciphers(const int **cnids)
         sess.cipher = ciphers[i].id;
         sess.keylen = ciphers[i].keylen;
         sess.mac = 0;
+# ifdef CRYPTO_AES_NIST_GCM_16
+        if (sess.cipher == CRYPTO_AES_NIST_GCM_16) {
+            sess.mac = mac_for_gcm(sess.keylen);
+            assert(sess.mac != -1);
+            sess.mackey = sess.key;
+            sess.mackeylen = sess.keylen;
+        }
+# endif
 # ifdef CIOCGSESSION2
 	sess.crid = crid;
         if (ioctl(fd, CIOCGSESSION2, &sess) != -1 &&
@@ -553,6 +592,14 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     sess.key = (caddr_t) key;
     sess.keylen = ctx->key_len;
     sess.cipher = cipher;
+# ifdef CRYPTO_AES_NIST_GCM_16
+    if (sess.cipher == CRYPTO_AES_NIST_GCM_16) {
+        sess.mac = mac_for_gcm(sess.keylen);
+        assert(sess.mac != -1);
+        sess.mackey = sess.key;
+        sess.mackeylen = sess.keylen;
+    }
+# endif
 # ifdef CIOCGSESSION2
     sess.crid = crid;
 # endif
@@ -605,6 +652,45 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
 
     return (ret);
 }
+
+# ifdef CRYPTO_AES_NIST_GCM_16
+static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
+{
+    struct dev_crypto_state *state = ctx->cipher_data;
+
+    switch (type) {
+    case EVP_CTRL_INIT:
+        if (c->cipher->iv_len != 12)
+            return (0);
+        state->gcm_tag_valid = 0;
+        return (1);
+
+    case EVP_CTRL_GCM_SET_IVLEN:
+        /* The /dev/crypto interface only supports 12 byte IVs. */
+        if (arg != 12)
+            return (0);
+        return (1);
+
+    case EVP_CTRL_GCM_SET_TAG:
+        /* The /dev/crypto interface only supports 16 byte tags. */
+        if (arg != 16 || c->encrypt)
+            return (0);
+        memcpy(state->gcm_tag, ptr, arg);
+        state->gcm_tag_valid = 1;
+        break;
+
+    case EVP_CTRL_GCM_GET_TAG:
+        /* The /dev/crypto interface only supports 16 byte tags. */
+        if (arg != 16 || !c->encrypt || !state->gcm_tag_valid)
+            return (0);
+        memcpy(ptr, state->gcm_tag, arg);
+        return (1);
+
+    default:
+        return (-1);
+    }
+}
+# endif
 
 /*
  * libcrypto EVP stuff - this is how we get wired to EVP so the engine
@@ -823,6 +909,49 @@ const EVP_CIPHER cryptodev_aes_xts_256 = {
     EVP_CIPHER_set_asn1_iv,
     EVP_CIPHER_get_asn1_iv,
     NULL
+};
+# endif
+# ifdef CRYPTO_AES_NIST_GCM_16
+const EVP_CIPHER cryptodev_aes_gcm = {
+    NID_aes_128_gcm,
+    1, 16, 12,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    NULL,
+    NULL,
+    cryptodev_gcm_ctrl
+};
+
+const EVP_CIPHER cryptodev_aes_gcm192 = {
+    NID_aes_192_gcm,
+    1, 24, 12,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    NULL,
+    NULL,
+    cryptodev_gcm_ctrl
+};
+
+const EVP_CIPHER cryptodev_aes_gcm256 = {
+    NID_aes_256_gcm,
+    1, 32, 12,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
+    EVP_CIPH_FLAG_AEAD_CIPHER,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    NULL,
+    NULL,
+    cryptodev_gcm_ctrl
 };
 # endif
 /*
