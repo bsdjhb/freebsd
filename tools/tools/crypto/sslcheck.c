@@ -670,10 +670,10 @@ openssl_gcm_decrypt(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
 	total = outl;
 	if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AES_GMAC_HASH_LEN,
 	    tag) != 1)
-		errx(1, "%s (%zu) get tag failed for engine %s: %s", alg->name,
+		errx(1, "%s (%zu) set tag failed for engine %s: %s", alg->name,
 		    size, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
-	valid = (EVP_DecryptFinal_ex(ctx, (u_char *)output + outl, &outl) != 1);
+	valid = (EVP_DecryptFinal_ex(ctx, (u_char *)output + outl, &outl) == 1);
 	total += outl;
 	if (total != size)
 		errx(1, "%s (%zu) decrypt size mismatch for engine %s: %d",
