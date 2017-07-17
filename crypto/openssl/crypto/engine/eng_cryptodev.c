@@ -654,13 +654,13 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
 }
 
 # ifdef CRYPTO_AES_NIST_GCM_16
-static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
+static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
 {
     struct dev_crypto_state *state = ctx->cipher_data;
 
     switch (type) {
     case EVP_CTRL_INIT:
-        if (c->cipher->iv_len != 12)
+        if (ctx->cipher->iv_len != 12)
             return (0);
         state->gcm_tag_valid = 0;
         return (1);
@@ -673,7 +673,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
 
     case EVP_CTRL_GCM_SET_TAG:
         /* The /dev/crypto interface only supports 16 byte tags. */
-        if (arg != 16 || c->encrypt)
+        if (arg != 16 || ctx->encrypt)
             return (0);
         memcpy(state->gcm_tag, ptr, arg);
         state->gcm_tag_valid = 1;
@@ -681,7 +681,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
 
     case EVP_CTRL_GCM_GET_TAG:
         /* The /dev/crypto interface only supports 16 byte tags. */
-        if (arg != 16 || !c->encrypt || !state->gcm_tag_valid)
+        if (arg != 16 || !ctx->encrypt || !state->gcm_tag_valid)
             return (0);
         memcpy(ptr, state->gcm_tag, arg);
         return (1);
