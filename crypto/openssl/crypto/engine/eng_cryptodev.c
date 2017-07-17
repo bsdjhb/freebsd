@@ -81,6 +81,10 @@ struct dev_crypto_state {
 # ifdef CRYPTO_AES_NIST_GCM_16
     unsigned char gcm_tag[16];
     int gcm_tag_valid;
+    char *aad_data;
+    size_t aad_len;
+    char *cipher_data;
+    int cipher_len;
 # endif
 };
 
@@ -650,10 +654,88 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
     put_dev_crypto(state->d_fd);
     state->d_fd = -1;
 
+# ifdef CRYPTO_AES_NIST_GCM_16
+    OPENSSL_free(state->aad);
+    state->aad = NULL;
+    state->aad_len = 0;
+    OPENSSL_free(state->cipher_data);
+    state->cipher_data = NULL;
+    state->cipher_len = 0;
+# endif
+
     return (ret);
 }
 
 # ifdef CRYPTO_AES_NIST_GCM_16
+static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+    const unsigned char *in, size_t inl)
+{
+    struct crypt_aead cryp;
+    struct dev_crypto_state *state = ctx->cipher_data;
+
+    if (state->d_fd < 0)
+        return (0);
+
+    /* Accumulate data in buffers until Final is called. */
+    if (inl != 0) {
+        if (out == NULL) {
+            char *aad = OPENSSL_realloc(state->aad, state->aad_len + inl);
+
+            if (aad == NULL)
+                return (0);
+
+            memcpy(aad + state->aad_len, in, inl);
+            state->aad_len += inl;
+            state->aad = aad;
+            return (1);
+        } else {
+            char *data = OPENSSL_realloc(state->cipher_data,
+                state->cipher_len + inl);
+
+            if (data == NULL)
+                return (0);
+
+            memcpy(data + state->cipher_len, in, inl);
+            state->cipher_len += inl;
+            state->cipher_data = data;
+            return (1);
+        }
+    }
+
+    /* Perform the actual op when Final is called. */
+
+    /* Require a valid tag for decryption. */
+    if (!ctx->encrypt && !state->gcm_tag_valid)
+        return (0);
+
+    memset(&cryp, 0, sizeof(cryp));
+
+    cryp.ses = state->d_ses;
+    cryp.flags = 0;
+    cryp.len = state->cipher_len;
+    cryp.aad_len = state->aad_len;
+    cryp.ivlen = EVP_CIPHER_CTX_iv_length(ctx);
+    cryp.src = state->cipher_data;
+    cryp.dst = (caddr_t) out;
+    cryp.aad = state->aad;
+    cryp.tag = state->gcm_tag;
+    cryp.iv = (caddr_t) ctx->iv;
+
+    cryp.op = ctx->encrypt ? COP_ENCRYPT : COP_DECRYPT;
+
+    if (ioctl(state->d_fd, CIOCCRYPTAEAD, &cryp) == -1) {
+        /*
+         * XXX need better errror handling this can fail for a number of
+         * different reasons.
+         */
+        return (0);
+    }
+
+    if (ctx->encrypt)
+        state->gcm_tag_valid = 1;
+    return (1);
+}
+
 static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
 {
     struct dev_crypto_state *state = ctx->cipher_data;
@@ -663,6 +745,12 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         if (ctx->cipher->iv_len != 12)
             return (0);
         state->gcm_tag_valid = 0;
+        OPENSSL_free(state->aad_data);
+        state->aad_data = NULL;
+        state->aad_len = 0;
+        OPENSSL_free(state->cipher_data);
+        state->cipher_data = NULL;
+        state->cipher_len = 0;
         return (1);
 
     case EVP_CTRL_GCM_SET_IVLEN:
@@ -915,10 +1003,10 @@ const EVP_CIPHER cryptodev_aes_xts_256 = {
 const EVP_CIPHER cryptodev_aes_gcm = {
     NID_aes_128_gcm,
     1, 16, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
-    EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
-    cryptodev_cipher,
+    cryptodev_gcm_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
     NULL,
@@ -929,10 +1017,10 @@ const EVP_CIPHER cryptodev_aes_gcm = {
 const EVP_CIPHER cryptodev_aes_gcm192 = {
     NID_aes_192_gcm,
     1, 24, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
-    EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
-    cryptodev_cipher,
+    cryptodev_gcm_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
     NULL,
@@ -943,10 +1031,10 @@ const EVP_CIPHER cryptodev_aes_gcm192 = {
 const EVP_CIPHER cryptodev_aes_gcm256 = {
     NID_aes_256_gcm,
     1, 32, 12,
-    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CTRL_INIT |
-    EVP_CIPH_FLAG_AEAD_CIPHER,
+    EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_CUSTOM_CIPHER |
+    EVP_CIPH_CTRL_INIT | EVP_CIPH_FLAG_AEAD_CIPHER,
     cryptodev_init_key,
-    cryptodev_cipher,
+    cryptodev_gcm_cipher,
     cryptodev_cleanup,
     sizeof(struct dev_crypto_state),
     NULL,
