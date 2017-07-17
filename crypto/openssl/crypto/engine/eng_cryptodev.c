@@ -60,6 +60,7 @@ void ENGINE_load_cryptodev(void)
 # include <openssl/err.h>
 # include <openssl/rsa.h>
 # include <sys/ioctl.h>
+# include <assert.h>
 # include <errno.h>
 # include <stdio.h>
 # include <unistd.h>
