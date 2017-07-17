@@ -141,8 +141,8 @@ static int cryptodev_ctrl(ENGINE *e, int cmd, long i, void *p,
                           void (*f) (void));
 void ENGINE_load_cryptodev(void);
 
-# define CRYPTODEV_CMD_CRID		ENGINE_CMD_BASE
-# define CRYPTODEV_CMD_DEVICE		(ENGINE_CMD_BASE + 1)
+# define CRYPTODEV_CMD_CRID             ENGINE_CMD_BASE
+# define CRYPTODEV_CMD_DEVICE           (ENGINE_CMD_BASE + 1)
 
 static const ENGINE_CMD_DEFN cryptodev_defns[] = {
 # ifdef CIOCGSESSION2
@@ -239,7 +239,7 @@ static struct {
     },
 };
 
-#define NUM_CIPHERS	(sizeof(ciphers) / sizeof(ciphers[0]))
+#define NUM_CIPHERS     (sizeof(ciphers) / sizeof(ciphers[0]))
 
 # ifdef USE_CRYPTODEV_DIGESTS
 static struct {
@@ -274,7 +274,7 @@ static struct {
     },
 };
 
-# define NUM_DIGESTS	(sizeof(digests) / sizeof(digests[0]))
+# define NUM_DIGESTS    (sizeof(digests) / sizeof(digests[0]))
 
 # endif
 
@@ -379,7 +379,7 @@ static int get_cryptodev_ciphers(const int **cnids)
     for (i = 0; ciphers[i].id && count < NUM_CIPHERS; i++) {
         if (ciphers[i].nid == NID_undef)
             continue;
-	assert(ciphers[i].keylen <= sizeof(test_key));
+        assert(ciphers[i].keylen <= sizeof(test_key));
         sess.cipher = ciphers[i].id;
         sess.keylen = ciphers[i].keylen;
         sess.mac = 0;
@@ -392,7 +392,7 @@ static int get_cryptodev_ciphers(const int **cnids)
         }
 # endif
 # ifdef CIOCGSESSION2
-	sess.crid = crid;
+        sess.crid = crid;
         if (ioctl(fd, CIOCGSESSION2, &sess) != -1 &&
 # else
         if (ioctl(fd, CIOCGSESSION, &sess) != -1 &&
@@ -439,7 +439,7 @@ static int get_cryptodev_digests(const int **cnids)
         sess.mackeylen = digests[i].keylen;
         sess.cipher = 0;
 # ifdef CIOCGSESSION2
-	sess.crid = crid;
+        sess.crid = crid;
         if (ioctl(fd, CIOCGSESSION2, &sess) != -1 &&
 # else
         if (ioctl(fd, CIOCGSESSION, &sess) != -1 &&
@@ -1768,22 +1768,22 @@ cryptodev_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void))
     switch (cmd) {
 # ifdef CIOCGSESSION2
     case CRYPTODEV_CMD_CRID:
-	crid = i;
-	break;
+        crid = i;
+        break;
 #  ifdef CIOCFINDDEV
     case CRYPTODEV_CMD_DEVICE: {
-	struct crypt_find_op cfo;
-	int fd;
+        struct crypt_find_op cfo;
+        int fd;
 
-	fd = open_dev_crypto();
-	if (fd == -1)
-		return 0;
-	cfo.crid = -1;
-	strlcpy(cfo.name, p, sizeof(cfo.name));
-	if (ioctl(fd, CIOCFINDDEV, &cfo) == -1)
-		return 0;
-	crid = cfo.crid;
-	break;
+        fd = open_dev_crypto();
+        if (fd == -1)
+                return 0;
+        cfo.crid = -1;
+        strlcpy(cfo.name, p, sizeof(cfo.name));
+        if (ioctl(fd, CIOCFINDDEV, &cfo) == -1)
+                return 0;
+        crid = cfo.crid;
+        break;
     }
 #  endif
 # endif
