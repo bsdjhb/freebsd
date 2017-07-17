@@ -191,6 +191,25 @@ static struct {
         CRYPTO_AES_CTR, NID_aes_256_ctr, 14, 32,
     },
 # endif
+# ifdef CRYPTO_AES_ICM
+    {
+        CRYPTO_AES_ICM, NID_aes_128_ctr, 16, 16,
+    },
+    {
+        CRYPTO_AES_ICM, NID_aes_192_ctr, 16, 24,
+    },
+    {
+        CRYPTO_AES_ICM, NID_aes_256_ctr, 16, 32,
+    },
+# endif
+# ifdef CRYPTO_AES_XTS
+    {
+        CRYPTO_AES_XTS, NID_aes_128_xts, 16, 32,
+    },
+    {
+        CRYPTO_AES_XTS, NID_aes_256_xts, 16, 64,
+    },
+# endif
     {
         CRYPTO_BLF_CBC, NID_bf_cbc, 8, 16,
     },
@@ -729,6 +748,73 @@ const EVP_CIPHER cryptodev_aes_ctr_256 = {
     NULL
 };
 # endif
+# ifdef CRYPTO_AES_ICM
+const EVP_CIPHER cryptodev_aes_ctr = {
+    NID_aes_128_ctr,
+    1, 16, 16,
+    EVP_CIPH_CTR_MODE,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    EVP_CIPHER_set_asn1_iv,
+    EVP_CIPHER_get_asn1_iv,
+    NULL
+};
+
+const EVP_CIPHER cryptodev_aes_ctr_192 = {
+    NID_aes_192_ctr,
+    1, 24, 16,
+    EVP_CIPH_CTR_MODE,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    EVP_CIPHER_set_asn1_iv,
+    EVP_CIPHER_get_asn1_iv,
+    NULL
+};
+
+const EVP_CIPHER cryptodev_aes_ctr_256 = {
+    NID_aes_256_ctr,
+    1, 32, 16,
+    EVP_CIPH_CTR_MODE,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    EVP_CIPHER_set_asn1_iv,
+    EVP_CIPHER_get_asn1_iv,
+    NULL
+};
+# endif
+# ifdef CRYPTO_AES_XTS
+const EVP_CIPHER cryptodev_aes_xts = {
+    NID_aes_128_xts,
+    16, 32, 16,
+    EVP_CIPH_XTS_MODE,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    EVP_CIPHER_set_asn1_iv,
+    EVP_CIPHER_get_asn1_iv,
+    NULL
+};
+
+const EVP_CIPHER cryptodev_aes_xts_256 = {
+    NID_aes_256_xts,
+    16, 64, 16,
+    EVP_CIPH_XTS_MODE,
+    cryptodev_init_key,
+    cryptodev_cipher,
+    cryptodev_cleanup,
+    sizeof(struct dev_crypto_state),
+    EVP_CIPHER_set_asn1_iv,
+    EVP_CIPHER_get_asn1_iv,
+    NULL
+};
+# endif
 /*
  * Registered by the ENGINE when used to find out how to deal with
  * a particular NID in the ENGINE. this says what we'll do at the
@@ -775,6 +861,25 @@ cryptodev_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
         break;
     case NID_aes_256_ctr:
         *cipher = &cryptodev_aes_ctr_256;
+        break;
+# endif
+# ifdef CRYPTO_AES_ICM
+    case NID_aes_128_ctr:
+        *cipher = &cryptodev_aes_ctr;
+        break;
+    case NID_aes_192_ctr:
+        *cipher = &cryptodev_aes_ctr_192;
+        break;
+    case NID_aes_256_ctr:
+        *cipher = &cryptodev_aes_ctr_256;
+        break;
+# endif
+# ifdef CRYPTO_AES_XTS
+    case NID_aes_128_xts:
+        *cipher = &cryptodev_aes_xts;
+        break;
+    case NID_aes_256_ctr:
+        *cipher = &cryptodev_aes_xts_256;
         break;
 # endif
     default:
