@@ -942,8 +942,8 @@ main(int ac, char **av)
 			    CRYPTO_FLAG_SOFTWARE, NULL, NULL, 0) == 0)
 				warn("Failed to set device to \"soft\"");
 		} else {
-			if (ENGINE_ctrl_cmd_string(crypto_eng, "CRID", device,
-			    0) == 0)
+			if (ENGINE_ctrl_cmd_string(crypto_eng, "DEVICE",
+			    device, 0) == 0)
 				warn("Failed to set device to \"%s\"", device);
 		}
 	}
