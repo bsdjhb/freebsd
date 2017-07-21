@@ -51,6 +51,7 @@
  *	authenc		Run all authenticated encryption tests
  *	aead		Run all authenticated encryption with associated data
  *			tests
+ *      tls		Run all TLS tests
  *
  * HMACs:
  *	sha1		sha1 hmac
@@ -75,6 +76,11 @@
  *	aes-gcm		128-bit aes gcm
  *	aes-gcm192	192-bit aes gcm
  *	aes-gcm256	256-bit aes gcm
+ *
+ * TLS:
+ *	aes-gcm-tls	128-bit aes gcm in TLS mode
+ *	aes-gcm192-tls	192-bit aes gcm in TLS mode
+ *	aes-gcm256-tls	256-bit aes gcm in TLS mode
  */
 
 #include <sys/param.h>
@@ -95,7 +101,7 @@
 
 struct alg {
 	const char *name;
-	enum { T_HMAC, T_BLKCIPHER, /*T_AUTHENC,*/ T_GCM } type;
+	enum { T_HMAC, T_BLKCIPHER, /*T_AUTHENC,*/ T_GCM, T_TLS } type;
 	enum { CBC, CTR, XTS, GCM } iv_type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
@@ -125,6 +131,12 @@ struct alg {
 	{ .name = "aes-gcm192", .type = T_GCM, .iv_type = GCM,
 	  .evp_cipher = EVP_aes_192_gcm },
 	{ .name = "aes-gcm256", .type = T_GCM, .iv_type = GCM,
+	  .evp_cipher = EVP_aes_256_gcm },
+	{ .name = "aes-gcm-tls", .type = T_TLS, .iv_type = GCM,
+	  .evp_cipher = EVP_aes_128_gcm },
+	{ .name = "aes-gcm192-tls", .type = T_TLS, .iv_type = GCM,
+	  .evp_cipher = EVP_aes_192_gcm },
+	{ .name = "aes-gcm256-tls", .type = T_TLS, .iv_type = GCM,
 	  .evp_cipher = EVP_aes_256_gcm },
 };
 
@@ -770,6 +782,155 @@ out:
 	free(key);
 }
 
+
+static bool
+openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
+    const char *key, char *iv, char *aad,
+    const char *input, char *output, size_t size, int enc)
+{
+	EVP_CIPHER_CTX *ctx;
+	int outl, pad;
+
+	ctx = EVP_CIPHER_CTX_new();
+	if (ctx == NULL)
+		errx(1, "%s (%zu) ctx new failed for engine %s: %s", alg->name,
+		    size, engine_name(eng),
+		    ERR_error_string(ERR_get_error(), NULL));
+	if (EVP_CipherInit_ex(ctx, cipher, eng, (const u_char *)key, NULL, enc)
+	    != 1) {
+		warnx("%s (%zu) ctx init failed for engine %s: %s", alg->name,
+		    size, engine_name(eng),
+		    ERR_error_string(ERR_get_error(), NULL));
+		EVP_CIPHER_CTX_free(ctx);
+		return (false);
+	}
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
+	if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IV_FIXED,
+	    EVP_GCM_TLS_FIXED_IV_LEN, iv) != 1)
+		errx(1, "%s (%zu) failed to setup IV for engine %s: %s",
+		    alg->name, size, engine_name(eng),
+		    ERR_error_string(ERR_get_error(), NULL));
+	pad = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_TLS1_AAD,
+	    EVP_AEAD_TLS1_AAD_LEN, aad);
+	if (pad <= 0)
+		errx(1, "%s (%zu) failed to setup AAD for engine %s: %s",
+		    alg->name, size, engine_name(eng),
+		    ERR_error_string(ERR_get_error(), NULL));
+	if (pad != AES_GMAC_HASH_LEN)
+		errx(1, "%s (%zu) bad pad length %d for engine %s: %s",
+		    alg->name, size, pad, engine_name(eng),
+		    ERR_error_string(ERR_get_error(), NULL));
+	outl = EVP_Cipher(ctx, (u_char *)output, (const u_char *)input,
+	    size + pad);
+	if (EVP_CIPHER_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
+		if (outl < 0)
+			outl = 0;
+		else
+			outl = 1;
+	}
+	if (outl != 1)
+		errx(1, "%s (%zu) %s failed for engine %s: %s",
+		    alg->name, size, enc ? "encrypt" : "decrypt",
+		    engine_name(eng), ERR_error_string(ERR_get_error(), NULL));
+	EVP_CIPHER_CTX_free(ctx);
+	return (true);
+}
+
+static void
+run_tls_test(struct alg *alg, size_t size)
+{
+	const EVP_CIPHER *cipher;
+	char *buffer, *cleartext, *ciphertext;
+	char *iv, *key;
+	u_int iv_len, key_len;
+	char aad[EVP_AEAD_TLS1_AAD_LEN];
+
+	cipher = alg->evp_cipher();
+	if (size % EVP_CIPHER_block_size(cipher) != 0) {
+		if (verbose)
+			printf(
+			    "%s (%zu): invalid buffer size (block size %d)\n",
+			    alg->name, size, EVP_CIPHER_block_size(cipher));
+		return;
+	}
+        if (!(EVP_CIPHER_flags(cipher) & EVP_CIPH_FLAG_AEAD_CIPHER)) {
+		if (verbose)
+			printf("%s (%zu): cipher doesn't support AEAD\n",
+			    alg->name, size);
+		return;
+	}
+
+	key_len = EVP_CIPHER_key_length(cipher);
+	iv_len = EVP_CIPHER_iv_length(cipher);
+
+	key = alloc_buffer(key_len);
+	iv = generate_iv(iv_len, alg);
+	cleartext = alloc_buffer(size);
+	buffer = malloc(size + AES_GMAC_HASH_LEN);
+	ciphertext = malloc(size + AES_GMAC_HASH_LEN);
+
+	memset(buffer, 0x3c, size + AES_GMAC_HASH_LEN);
+	memset(ciphertext, 0x3c, size + AES_GMAC_HASH_LEN);
+
+	/* First 8 bytes of AAD are the TLS sequence number. */
+	for (u_int i = 0; i < 8; i++)
+		aad[i] = rdigit();
+	aad[8] = 22;	/* SSL3_RT_HANDSHAKE */
+	aad[9] = 0x3;	/* Version 3.3 */
+	aad[10] = 0x3;
+	aad[11] = size >> 8;
+	aad[12] = size & 0xff;
+	
+	/* Software encrypt */
+	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
+	    cleartext, ciphertext, size, 1))
+		exit(1);
+
+	/* Engine encrypt. */
+	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
+	    cleartext, buffer, size, 1))
+		goto out;
+	if (memcmp(ciphertext, buffer, size) != 0) {
+		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
+		printf("control:\n");
+		hexdump(ciphertext, size, NULL, 0);
+		printf("test:\n");
+		hexdump(buffer, size, NULL, 0);
+		goto out;
+	}
+	if (memcmp(ciphertext + size, buffer + size, AES_GMAC_HASH_LEN) != 0) {
+		printf("%s (%zu) enc tag mismatch:\n", alg->name, size);
+		printf("control:\n");
+		hexdump(ciphertext + size, AES_GMAC_HASH_LEN, NULL, 0);
+		printf("test:\n");
+		hexdump(buffer + size, AES_GMAC_HASH_LEN, NULL, 0);
+		goto out;
+	}
+
+	/* Engine decrypt */
+	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
+	    ciphertext, buffer, size, 0))
+		goto out;
+	if (memcmp(cleartext, buffer, size) != 0) {
+		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
+		printf("control:\n");
+		hexdump(cleartext, size, NULL, 0);
+		printf("test:\n");
+		hexdump(buffer, size, NULL, 0);
+		goto out;
+	}
+
+	if (verbose)
+		printf("%s (%zu) matched\n", alg->name, size);
+
+out:
+	free(ciphertext);
+	free(buffer);
+	free(cleartext);
+	free(iv);
+	free(key);
+}
+
 static void
 run_test(struct alg *alg, size_t size)
 {
@@ -788,6 +949,9 @@ run_test(struct alg *alg, size_t size)
 #endif
 	case T_GCM:
 		run_gcm_test(alg, size);
+		break;
+	case T_TLS:
+		run_tls_test(alg, size);
 		break;
 	}
 }
@@ -851,6 +1015,16 @@ run_aead_tests(size_t *sizes, u_int nsizes)
 
 	for (i = 0; i < nitems(algs); i++)
 		if (algs[i].type == T_GCM)
+			run_test_sizes(&algs[i], sizes, nsizes);
+}
+
+static void
+run_tls_tests(size_t *sizes, u_int nsizes)
+{
+	u_int i;
+
+	for (i = 0; i < nitems(algs); i++)
+		if (algs[i].type == T_TLS)
 			run_test_sizes(&algs[i], sizes, nsizes);
 }
 
@@ -958,6 +1132,8 @@ main(int ac, char **av)
 #endif
 	else if (strcasecmp(algname, "aead") == 0)
 		run_aead_tests(sizes, nsizes);
+	else if (strcasecmp(algname, "tls") == 0)
+		run_tls_tests(sizes, nsizes);
 	else if (strcasecmp(algname, "all") == 0) {
 		run_hmac_tests(sizes, nsizes);
 		run_blkcipher_tests(sizes, nsizes);
@@ -965,6 +1141,7 @@ main(int ac, char **av)
 		run_authenc_tests(sizes, nsizes);
 #endif
 		run_aead_tests(sizes, nsizes);
+		run_tls_tests(sizes, nsizes);
 #ifdef notyet
 	} else if (strchr(algname, '+') != NULL) {
 		alg = build_authenc_name(algname);
