@@ -736,7 +736,7 @@ static int cryptodev_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     /* Encrypt/decrypt must be performed in place */
     if (out != in
-        || len < (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN))
+        || inl < (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN))
         return -1;
     /*
      * Set IV from start of buffer or generate IV and write to start of
@@ -941,7 +941,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         return 1;
 
     case EVP_CTRL_GCM_SET_IV_INV:
-        if (ctx->gcm_iv_gen == 0 || ctx->encrypt)
+        if (state->gcm_iv_gen == 0 || ctx->encrypt)
             return 0;
         memcpy(ctx->iv + 12 - arg, ptr, arg);
         state->gcm_iv_set = 1;
@@ -951,12 +951,12 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         /* Save the AAD for later use */
         if (arg != EVP_AEAD_TLS1_AAD_LEN)
             return 0;
-	char *aad = OPENSSL_realloc(ctx->aad_data, arg);
+	char *aad = OPENSSL_realloc(state->aad_data, arg);
 	if (aad == NULL)
 		return 0;
 	memcpy(aad, ptr, arg);
-	ctx->aad_data = aad;
-	ctx->aad_len = arg;
+	state->aad_data = aad;
+	state->aad_len = arg;
         {
             unsigned int len = aad[arg - 2] << 8 | aad[arg - 1];
             /* Correct length for explicit IV */
