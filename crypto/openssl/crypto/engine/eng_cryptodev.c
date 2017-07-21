@@ -25,6 +25,55 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+/* ====================================================================
+ * Copyright (c) 2001-2011 The OpenSSL Project.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. All advertising materials mentioning features or use of this
+ *    software must display the following acknowledgment:
+ *    "This product includes software developed by the OpenSSL Project
+ *    for use in the OpenSSL Toolkit. (http://www.openssl.org/)"
+ *
+ * 4. The names "OpenSSL Toolkit" and "OpenSSL Project" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    openssl-core@openssl.org.
+ *
+ * 5. Products derived from this software may not be called "OpenSSL"
+ *    nor may "OpenSSL" appear in their names without prior written
+ *    permission of the OpenSSL Project.
+ *
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *    "This product includes software developed by the OpenSSL Project
+ *    for use in the OpenSSL Toolkit (http://www.openssl.org/)"
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE OpenSSL PROJECT OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
+ * ====================================================================
+ *
+ */
 
 #include <string.h>
 #include <openssl/objects.h>
@@ -82,10 +131,13 @@ struct dev_crypto_state {
 # ifdef CRYPTO_AES_NIST_GCM_16
     unsigned char gcm_tag[16];
     int gcm_tag_valid;
+    int gcm_iv_gen;
+    int gcm_iv_set;
+    int gcm_tls;
     char *aad_data;
     size_t aad_len;
     char *cipher_data;
-    int cipher_len;
+    size_t cipher_len;
 # endif
 };
 
@@ -576,6 +628,9 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 # endif
     int cipher = -1, i;
 
+    if (!key)
+	    return 1;
+
     for (i = 0; ciphers[i].id; i++)
         if (ctx->cipher->nid == ciphers[i].nid &&
             ctx->cipher->iv_len <= ciphers[i].ivmax &&
@@ -620,8 +675,12 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     }
     state->d_ses = sess.ses;
 
-    if (iv != NULL)
+    if (iv != NULL) {
         memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
+# ifdef CRYPTO_AES_NIST_GCM_16
+        state->gcm_iv_set = 1;
+# endif
+    }
     return (1);
 }
 
@@ -668,6 +727,68 @@ static int cryptodev_cleanup(EVP_CIPHER_CTX *ctx)
 }
 
 # ifdef CRYPTO_AES_NIST_GCM_16
+static int cryptodev_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+    const unsigned char *in, size_t inl)
+{
+    struct crypt_aead cryp;
+    struct dev_crypto_state *state = ctx->cipher_data;
+    int rv = -1;
+
+    /* Encrypt/decrypt must be performed in place */
+    if (out != in
+        || len < (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN))
+        return -1;
+    /*
+     * Set IV from start of buffer or generate IV and write to start of
+     * buffer.
+     */
+    if (EVP_CIPHER_CTX_ctrl(ctx, ctx->encrypt ?
+                            EVP_CTRL_GCM_IV_GEN : EVP_CTRL_GCM_SET_IV_INV,
+                            EVP_GCM_TLS_EXPLICIT_IV_LEN, out) <= 0)
+        goto err;
+
+    memset(&cryp, 0, sizeof(cryp));
+
+    cryp.ses = state->d_ses;
+    cryp.flags = 0;
+
+    /* Use saved AAD */
+    cryp.aadlen = state->aad_len;
+    cryp.aad = state->aad_data;
+
+    /* Fix buffer and length to point to payload */
+    in += EVP_GCM_TLS_EXPLICIT_IV_LEN;
+    out += EVP_GCM_TLS_EXPLICIT_IV_LEN;
+    inl -= EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN;
+    cryp.len = inl;
+    cryp.ivlen = EVP_CIPHER_CTX_iv_length(ctx);
+    cryp.src = (caddr_t) in;
+    cryp.dst = (caddr_t) out;
+    cryp.iv = (caddr_t) ctx->iv;
+
+    if (ctx->encrypt) {
+        cryp.op = COP_ENCRYPT;
+        cryp.tag = (caddr_t) out + inl;
+    } else {
+        cryp.op = COP_DECRYPT;
+        cryp.tag = (caddr_t) in + inl;
+    }
+
+    if (ioctl(state->d_fd, CIOCCRYPTAEAD, &cryp) == -1) {
+        /*
+         * XXX need better error handling this can fail for a number of
+         * different reasons.
+         */
+        goto err;
+    }
+    rv = inl;
+
+err:
+    state->gcm_iv_set = 0;
+    state->gcm_tls = 0;
+    return (rv);
+}
+
 static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     const unsigned char *in, size_t inl)
 {
@@ -675,6 +796,12 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     struct dev_crypto_state *state = ctx->cipher_data;
 
     if (state->d_fd < 0)
+        return (-1);
+
+    if (state->gcm_tls)
+        return (cryptodev_gcm_tls_cipher(ctx, out, in, inl));
+
+    if (!state->gcm_iv_set)
         return (-1);
 
     /* Accumulate data in buffers until Final is called. */
@@ -708,6 +835,9 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     /* Require a valid tag for decryption. */
     if (!ctx->encrypt && !state->gcm_tag_valid)
         return (-1);
+
+    /* Don't reuse the IV */
+    state->gcm_iv_set = 0;
 
     memset(&cryp, 0, sizeof(cryp));
 
@@ -746,6 +876,9 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         if (ctx->cipher->iv_len != 12)
             return (0);
         state->gcm_tag_valid = 0;
+	state->gcm_iv_gen = 0;
+        state->gcm_iv_set = 0;
+	state->gcm_tls = 0;
         state->aad_data = NULL;
         state->aad_len = 0;
         state->cipher_data = NULL;
@@ -772,6 +905,76 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
             return (0);
         memcpy(ptr, state->gcm_tag, arg);
         return (1);
+
+    case EVP_CTRL_GCM_SET_IV_FIXED:
+        /* Special case: -1 length restores whole IV */
+        if (arg == -1) {
+            memcpy(ctx->iv, ptr, 12);
+            state->gcm_iv_gen = 1;
+            return 1;
+        }
+        /*
+         * Fixed field must be at least 4 bytes and invocation field at least
+         * 8.
+         */
+        if ((arg < 4) || (12 - arg) < 8)
+            return 0;
+        if (arg)
+            memcpy(ctx->iv, ptr, arg);
+        if (ctx->encrypt && RAND_bytes(ctx->iv + arg, 12 - arg) <= 0)
+            return 0;
+	state->gcm_iv_gen = 1;
+        return 1;
+
+    case EVP_CTRL_GCM_IV_GEN:
+        if (state->gcm_iv_gen == 0)
+            return 0;
+        if (arg <= 0 || arg > 12)
+            arg = 12;
+        memcpy(ptr, ctx->iv + 12 - arg, arg);
+        /*
+         * Invocation field will be at least 8 bytes in size and so no need
+         * to check wrap around or increment more than last 8 bytes.
+         */
+        ctr64_inc(ctx->iv + 12 - 8);
+        state->gcm_iv_set = 1;
+        return 1;
+
+    case EVP_CTRL_GCM_SET_IV_INV:
+        if (ctx->gcm_iv_gen == 0 || ctx->encrypt)
+            return 0;
+        memcpy(ctx->iv + 12 - arg, ptr, arg);
+        state->gcm_iv_set = 1;
+        return 1;
+
+    case EVP_CTRL_AEAD_TLS1_AAD:
+        /* Save the AAD for later use */
+        if (arg != EVP_AEAD_TLS1_AAD_LEN)
+            return 0;
+	char *aad = OPENSSL_realloc(ctx->aad_data, arg);
+	if (aad == NULL)
+		return 0;
+	memcpy(aad, ptr, arg);
+	ctx->aad_data = aad;
+	ctx->aad_len = arg;
+        {
+            unsigned int len = aad[arg - 2] << 8 | aad[arg - 1];
+            /* Correct length for explicit IV */
+            if (len < EVP_GCM_TLS_EXPLICIT_IV_LEN)
+                return 0;
+            len -= EVP_GCM_TLS_EXPLICIT_IV_LEN;
+            /* If decrypting correct for tag too */
+            if (!ctx->encrypt) {
+                if (len < EVP_GCM_TLS_TAG_LEN)
+                    return 0;
+                len -= EVP_GCM_TLS_TAG_LEN;
+            }
+            aad[arg - 2] = len >> 8;
+            aad[arg - 1] = len & 0xff;
+        }
+	state->gcm_tls = 1;
+        /* Extra padding: tag appended to record */
+        return EVP_GCM_TLS_TAG_LEN;
 
     default:
         return (-1);
