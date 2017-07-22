@@ -785,8 +785,7 @@ out:
 
 static bool
 openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
-    const char *key, char *iv, char *aad,
-    const char *input, char *output, size_t size, int enc)
+    const char *key, char *iv, char *aad, char *buffer, size_t size, int enc)
 {
 	EVP_CIPHER_CTX *ctx;
 	int outl, pad;
@@ -820,9 +819,9 @@ openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
 		errx(1, "%s (%zu) bad pad length %d for engine %s: %s",
 		    alg->name, size, pad, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
-	outl = EVP_Cipher(ctx, (u_char *)output, (const u_char *)input,
+	outl = EVP_Cipher(ctx, (u_char *)buffer, (const u_char *)buffer,
 	    size + pad);
-	if (EVP_CIPHER_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
+	if (EVP_CIPHER_flags(ctx->cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
 		if (outl < 0)
 			outl = 0;
 		else
@@ -882,13 +881,17 @@ run_tls_test(struct alg *alg, size_t size)
 	aad[12] = size & 0xff;
 	
 	/* Software encrypt */
+	memcpy(ciphertext, cleartext, size);
+	memset(ciphertext + size, 0x3c, AES_GMAC_HASH_LEN);
 	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
-	    cleartext, ciphertext, size, 1))
+	    ciphertext, size, 1))
 		exit(1);
 
 	/* Engine encrypt. */
+	memcpy(buffer, cleartext, size);
+	memset(buffer + size, 0x3c, AES_GMAC_HASH_LEN);
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
-	    cleartext, buffer, size, 1))
+	    buffer, size, 1))
 		goto out;
 	if (memcmp(ciphertext, buffer, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
@@ -909,7 +912,7 @@ run_tls_test(struct alg *alg, size_t size)
 
 	/* Engine decrypt */
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
-	    ciphertext, buffer, size, 0))
+	    buffer, size, 0))
 		goto out;
 	if (memcmp(cleartext, buffer, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
