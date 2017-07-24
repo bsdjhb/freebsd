@@ -820,7 +820,7 @@ openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
 		    alg->name, size, pad, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
 	outl = EVP_Cipher(ctx, (u_char *)buffer, (const u_char *)buffer,
-	    EVP_GCM_TLS_FIXED_IV_LEN + size + pad);
+	    EVP_GCM_TLS_EXPLICIT_IV_LEN + size + pad);
 	if (EVP_CIPHER_flags(ctx->cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
 		if (outl < 0)
 			outl = 0;
