@@ -865,11 +865,14 @@ run_tls_test(struct alg *alg, size_t size)
 	key = alloc_buffer(key_len);
 	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
-	buffer = malloc(size + AES_GMAC_HASH_LEN);
-	ciphertext = malloc(size + AES_GMAC_HASH_LEN);
+	buffer = malloc(EVP_GCM_TLS_EXPLICIT_IV_LEN + size + AES_GMAC_HASH_LEN);
+	ciphertext = malloc(EVP_GCM_TLS_EXPLICIT_IV_LEN + size +
+	    AES_GMAC_HASH_LEN);
 
-	memset(buffer, 0x3c, size + AES_GMAC_HASH_LEN);
-	memset(ciphertext, 0x3c, size + AES_GMAC_HASH_LEN);
+	memset(buffer, 0x3c, EVP_GCM_TLS_EXPLICIT_IV_LEN + size +
+	    AES_GMAC_HASH_LEN);
+	memset(ciphertext, 0x3c, EVP_GCM_TLS_EXPLICIT_IV_LEN + size +
+	    AES_GMAC_HASH_LEN);
 
 	/* First 8 bytes of AAD are the TLS sequence number. */
 	for (u_int i = 0; i < 8; i++)
@@ -879,47 +882,51 @@ run_tls_test(struct alg *alg, size_t size)
 	aad[10] = 0x3;
 	aad[11] = size >> 8;
 	aad[12] = size & 0xff;
-	
-	/* Software encrypt */
-	memcpy(ciphertext, cleartext, size);
-	memset(ciphertext + size, 0x3c, AES_GMAC_HASH_LEN);
-	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
-	    ciphertext, size, 1))
-		exit(1);
 
-	/* Engine encrypt. */
-	memcpy(buffer, cleartext, size);
-	memset(buffer + size, 0x3c, AES_GMAC_HASH_LEN);
+	/*
+	 * Because GCM TLS always generates a random counter in the IV
+	 * (what OpenSSL refers to as the "invocation" portion of the
+	 * IV), don't try to compare software encryption with engine
+	 * encryption.  Instead, encrypt once with the /dev/crypto
+	 * engine and try to decrypt with both software and the
+	 * engine.
+	 */
+	memcpy(ciphertext + EVP_GCM_TLS_EXPLICIT_IV_LEN, cleartext, size);
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
 	    buffer, size, 1))
 		goto out;
-	if (memcmp(ciphertext, buffer, size) != 0) {
-		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
-		printf("control:\n");
-		hexdump(ciphertext, size, NULL, 0);
-		printf("test:\n");
-		hexdump(buffer, size, NULL, 0);
-		goto out;
-	}
-	if (memcmp(ciphertext + size, buffer + size, AES_GMAC_HASH_LEN) != 0) {
-		printf("%s (%zu) enc tag mismatch:\n", alg->name, size);
-		printf("control:\n");
-		hexdump(ciphertext + size, AES_GMAC_HASH_LEN, NULL, 0);
-		printf("test:\n");
-		hexdump(buffer + size, AES_GMAC_HASH_LEN, NULL, 0);
-		goto out;
-	}
 
-	/* Engine decrypt */
-	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
+	/* Software decrypt */
+	memcpy(buffer, ciphertext, EVP_GCM_TLS_EXPLICIT_IV_LEN + size +
+	    AES_GMAC_HASH_LEN);
+	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
 	    buffer, size, 0))
 		goto out;
-	if (memcmp(cleartext, buffer, size) != 0) {
-		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
+	if (memcmp(cleartext, buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size) !=
+	    0) {
+		printf("%s (%zu) software decryption mismatch:\n", alg->name,
+		    size);
 		printf("control:\n");
 		hexdump(cleartext, size, NULL, 0);
 		printf("test:\n");
-		hexdump(buffer, size, NULL, 0);
+		hexdump(buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size, NULL, 0);
+		goto out;
+	}
+
+	/* Engine decrypt. */
+	memcpy(buffer, ciphertext, EVP_GCM_TLS_EXPLICIT_IV_LEN + size +
+	    AES_GMAC_HASH_LEN);
+	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
+	    buffer, size, 0))
+		goto out;
+	if (memcmp(cleartext, buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size) !=
+	    0) {
+		printf("%s (%zu) engine decryption mismatch:\n", alg->name,
+		    size);
+		printf("control:\n");
+		hexdump(cleartext, size, NULL, 0);
+		printf("test:\n");
+		hexdump(buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size, NULL, 0);
 		goto out;
 	}
 
