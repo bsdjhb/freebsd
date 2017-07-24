@@ -630,7 +630,7 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     int cipher = -1, i;
 
     if (!key)
-	    return 1;
+            return 1;
 
     for (i = 0; ciphers[i].id; i++)
         if (ctx->cipher->nid == ciphers[i].nid &&
@@ -893,9 +893,9 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         if (ctx->cipher->iv_len != 12)
             return (0);
         state->gcm_tag_valid = 0;
-	state->gcm_iv_gen = 0;
+        state->gcm_iv_gen = 0;
         state->gcm_iv_set = 0;
-	state->gcm_tls = 0;
+        state->gcm_tls = 0;
         state->aad_data = NULL;
         state->aad_len = 0;
         state->cipher_data = NULL;
@@ -940,7 +940,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
             memcpy(state->gcm_iv, ptr, arg);
         if (ctx->encrypt && RAND_bytes(state->gcm_iv + arg, 12 - arg) <= 0)
             return 0;
-	state->gcm_iv_gen = 1;
+        state->gcm_iv_gen = 1;
         return 1;
 
     case EVP_CTRL_GCM_IV_GEN:
@@ -974,12 +974,12 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         /* Save the AAD for later use */
         if (arg != EVP_AEAD_TLS1_AAD_LEN)
             return 0;
-	char *aad = OPENSSL_realloc(state->aad_data, arg);
-	if (aad == NULL)
-		return 0;
-	memcpy(aad, ptr, arg);
-	state->aad_data = aad;
-	state->aad_len = arg;
+        char *aad = OPENSSL_realloc(state->aad_data, arg);
+        if (aad == NULL)
+                return 0;
+        memcpy(aad, ptr, arg);
+        state->aad_data = aad;
+        state->aad_len = arg;
         {
             unsigned int len = aad[arg - 2] << 8 | aad[arg - 1];
             /* Correct length for explicit IV */
@@ -995,7 +995,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
             aad[arg - 2] = len >> 8;
             aad[arg - 1] = len & 0xff;
         }
-	state->gcm_tls = 1;
+        state->gcm_tls = 1;
         /* Extra padding: tag appended to record */
         return EVP_GCM_TLS_TAG_LEN;
 
