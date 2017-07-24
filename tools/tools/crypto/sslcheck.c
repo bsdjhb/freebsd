@@ -820,7 +820,7 @@ openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
 		    alg->name, size, pad, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
 	outl = EVP_Cipher(ctx, (u_char *)buffer, (const u_char *)buffer,
-	    size + pad);
+	    EVP_GCM_TLS_FIXED_IV_LEN + size + pad);
 	if (EVP_CIPHER_flags(ctx->cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
 		if (outl < 0)
 			outl = 0;
@@ -866,7 +866,7 @@ run_tls_test(struct alg *alg, size_t size)
 	key = alloc_buffer(key_len);
 	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
-	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size;
+	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size + AES_GMAC_HASH_LEN;
 	buffer = malloc(buffer_size);
 	ciphertext = malloc(buffer_size);
 
@@ -879,8 +879,8 @@ run_tls_test(struct alg *alg, size_t size)
 	aad[8] = 22;	/* SSL3_RT_HANDSHAKE */
 	aad[9] = 0x3;	/* Version 3.3 */
 	aad[10] = 0x3;
-	aad[11] = buffer_size >> 8;
-	aad[12] = buffer_size & 0xff;
+	aad[11] = (EVP_GCM_TLS_EXPLICIT_IV_LEN + size) >> 8;
+	aad[12] = (EVP_GCM_TLS_EXPLICIT_IV_LEN + size) & 0xff;
 
 	/*
 	 * Because GCM TLS always generates a random counter in the IV
@@ -892,13 +892,13 @@ run_tls_test(struct alg *alg, size_t size)
 	 */
 	memcpy(ciphertext + EVP_GCM_TLS_EXPLICIT_IV_LEN, cleartext, size);
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
-	    ciphertext, buffer_size, 1))
+	    ciphertext, size, 1))
 		goto out;
 
 	/* Software decrypt */
-	memcpy(buffer, ciphertext, buffer_size + AES_GMAC_HASH_LEN);
+	memcpy(buffer, ciphertext, buffer_size);
 	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
-	    buffer, buffer_size, 0))
+	    buffer, size, 0))
 		goto out;
 	if (memcmp(cleartext, buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size) !=
 	    0) {
@@ -912,9 +912,9 @@ run_tls_test(struct alg *alg, size_t size)
 	}
 
 	/* Engine decrypt. */
-	memcpy(buffer, ciphertext, buffer_size + AES_GMAC_HASH_LEN);
+	memcpy(buffer, ciphertext, buffer_size);
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
-	    buffer, buffer_size, 0))
+	    buffer, size, 0))
 		goto out;
 	if (memcmp(cleartext, buffer + EVP_GCM_TLS_EXPLICIT_IV_LEN, size) !=
 	    0) {
