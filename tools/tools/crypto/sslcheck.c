@@ -846,7 +846,8 @@ run_tls_test(struct alg *alg, size_t size)
 	char aad[EVP_AEAD_TLS1_AAD_LEN];
 
 	cipher = alg->evp_cipher();
-	if (size % EVP_CIPHER_block_size(cipher) != 0) {
+	if (size % EVP_CIPHER_block_size(cipher) != 0 || size >
+	    (65535 - (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN)) {
 		if (verbose)
 			printf(
 			    "%s (%zu): invalid buffer size (block size %d)\n",
