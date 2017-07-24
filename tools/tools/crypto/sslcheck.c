@@ -866,7 +866,7 @@ run_tls_test(struct alg *alg, size_t size)
 	key = alloc_buffer(key_len);
 	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
-	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size + AES_GMAC_HASH_LEN;
+	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size;
 	buffer = malloc(buffer_size);
 	ciphertext = malloc(buffer_size);
 
@@ -879,8 +879,8 @@ run_tls_test(struct alg *alg, size_t size)
 	aad[8] = 22;	/* SSL3_RT_HANDSHAKE */
 	aad[9] = 0x3;	/* Version 3.3 */
 	aad[10] = 0x3;
-	aad[11] = size >> 8;
-	aad[12] = size & 0xff;
+	aad[11] = buffer_size >> 8;
+	aad[12] = buffer_size & 0xff;
 
 	/*
 	 * Because GCM TLS always generates a random counter in the IV
@@ -896,7 +896,7 @@ run_tls_test(struct alg *alg, size_t size)
 		goto out;
 
 	/* Software decrypt */
-	memcpy(buffer, ciphertext, buffer_size);
+	memcpy(buffer, ciphertext, buffer_size + AES_GMAC_HASH_LEN);
 	if (!openssl_gcm_tls_cipher(NULL, alg, cipher, key, iv, aad,
 	    buffer, buffer_size, 0))
 		goto out;
@@ -912,7 +912,7 @@ run_tls_test(struct alg *alg, size_t size)
 	}
 
 	/* Engine decrypt. */
-	memcpy(buffer, ciphertext, buffer_size);
+	memcpy(buffer, ciphertext, buffer_size + AES_GMAC_HASH_LEN);
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
 	    buffer, buffer_size, 0))
 		goto out;
