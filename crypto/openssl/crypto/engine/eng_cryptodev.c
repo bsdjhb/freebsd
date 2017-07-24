@@ -138,6 +138,7 @@ struct dev_crypto_state {
     size_t aad_len;
     char *cipher_data;
     size_t cipher_len;
+    unsigned char gcm_iv[12];   /* Holds next/template IV if gcm_iv_gen == 1 */
 # endif
 };
 
@@ -925,7 +926,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
     case EVP_CTRL_GCM_SET_IV_FIXED:
         /* Special case: -1 length restores whole IV */
         if (arg == -1) {
-            memcpy(ctx->iv, ptr, 12);
+            memcpy(state->gcm_iv, ptr, 12);
             state->gcm_iv_gen = 1;
             return 1;
         }
@@ -936,8 +937,8 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         if ((arg < 4) || (12 - arg) < 8)
             return 0;
         if (arg)
-            memcpy(ctx->iv, ptr, arg);
-        if (ctx->encrypt && RAND_bytes(ctx->iv + arg, 12 - arg) <= 0)
+            memcpy(state->gcm_iv, ptr, arg);
+        if (ctx->encrypt && RAND_bytes(state->gcm_iv + arg, 12 - arg) <= 0)
             return 0;
 	state->gcm_iv_gen = 1;
         return 1;
@@ -945,6 +946,11 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
     case EVP_CTRL_GCM_IV_GEN:
         if (state->gcm_iv_gen == 0)
             return 0;
+        /*
+         * Save the current IV and generate a new one for the next
+         * operation.
+         */
+        memcpy(ctx->iv, state->gcm_iv, 12);
         if (arg <= 0 || arg > 12)
             arg = 12;
         memcpy(ptr, ctx->iv + 12 - arg, arg);
@@ -952,14 +958,15 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
          * Invocation field will be at least 8 bytes in size and so no need
          * to check wrap around or increment more than last 8 bytes.
          */
-        ctr64_inc(ctx->iv + 12 - 8);
+        ctr64_inc(state->gcm_iv + 12 - 8);
         state->gcm_iv_set = 1;
         return 1;
 
     case EVP_CTRL_GCM_SET_IV_INV:
         if (state->gcm_iv_gen == 0 || ctx->encrypt)
             return 0;
-        memcpy(ctx->iv + 12 - arg, ptr, arg);
+        memcpy(state->gcm_iv + 12 - arg, ptr, arg);
+        memcpy(ctx->iv, state->gcm_iv, 12);
         state->gcm_iv_set = 1;
         return 1;
 
