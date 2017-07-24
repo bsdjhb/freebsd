@@ -134,9 +134,9 @@ struct dev_crypto_state {
     int gcm_iv_gen;
     int gcm_iv_set;
     int gcm_tls;
-    char *aad_data;
+    unsigned char *aad_data;
     size_t aad_len;
-    char *cipher_data;
+    unsigned char *cipher_data;
     size_t cipher_len;
     unsigned char gcm_iv[12];   /* Holds next/template IV if gcm_iv_gen == 1 */
 # endif
@@ -808,7 +808,8 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     /* Accumulate data in buffers until Final is called. */
     if (inl != 0) {
         if (out == NULL) {
-            char *aad = OPENSSL_realloc(state->aad_data, state->aad_len + inl);
+            unsigned char *aad = OPENSSL_realloc(state->aad_data,
+                state->aad_len + inl);
 
             if (aad == NULL)
                 return (-1);
@@ -818,7 +819,7 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             state->aad_data = aad;
             return (0);
         } else {
-            char *data = OPENSSL_realloc(state->cipher_data,
+            unsigned char *data = OPENSSL_realloc(state->cipher_data,
                 state->cipher_len + inl);
 
             if (data == NULL)
@@ -974,7 +975,7 @@ static int cryptodev_gcm_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr)
         /* Save the AAD for later use */
         if (arg != EVP_AEAD_TLS1_AAD_LEN)
             return 0;
-        char *aad = OPENSSL_realloc(state->aad_data, arg);
+        unsigned char *aad = OPENSSL_realloc(state->aad_data, arg);
         if (aad == NULL)
                 return 0;
         memcpy(aad, ptr, arg);
