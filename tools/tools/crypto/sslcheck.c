@@ -815,7 +815,7 @@ openssl_gcm_tls_cipher(ENGINE *eng, struct alg *alg, const EVP_CIPHER *cipher,
 		errx(1, "%s (%zu) failed to setup AAD for engine %s: %s",
 		    alg->name, size, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
-	if (pad != AES_GMAC_HASH_LEN)
+	if (pad != EVP_GCM_TLS_TAG_LEN)
 		errx(1, "%s (%zu) bad pad length %d for engine %s: %s",
 		    alg->name, size, pad, engine_name(eng),
 		    ERR_error_string(ERR_get_error(), NULL));
@@ -866,7 +866,7 @@ run_tls_test(struct alg *alg, size_t size)
 	key = alloc_buffer(key_len);
 	iv = generate_iv(iv_len, alg);
 	cleartext = alloc_buffer(size);
-	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size + AES_GMAC_HASH_LEN;
+	buffer_size = EVP_GCM_TLS_EXPLICIT_IV_LEN + size + EVP_GCM_TLS_TAG_LEN;
 	buffer = malloc(buffer_size);
 	ciphertext = malloc(buffer_size);
 
@@ -879,8 +879,8 @@ run_tls_test(struct alg *alg, size_t size)
 	aad[8] = 22;	/* SSL3_RT_HANDSHAKE */
 	aad[9] = 0x3;	/* Version 3.3 */
 	aad[10] = 0x3;
-	aad[11] = (EVP_GCM_TLS_EXPLICIT_IV_LEN + size) >> 8;
-	aad[12] = (EVP_GCM_TLS_EXPLICIT_IV_LEN + size) & 0xff;
+	aad[11] = (buffer_size - EVP_GCM_TLS_TAG_LEN) >> 8;
+	aad[12] = (buffer_size - EVP_GCM_TLS_TAG_LEN) & 0xff;
 
 	/*
 	 * Because GCM TLS always generates a random counter in the IV
@@ -894,6 +894,13 @@ run_tls_test(struct alg *alg, size_t size)
 	if (!openssl_gcm_tls_cipher(crypto_eng, alg, cipher, key, iv, aad,
 	    ciphertext, size, 1))
 		goto out;
+
+	/*
+	 * Adjust the length in the AAD to include the tag before
+	 * decryption.
+	 */
+	aad[11] = buffer_size >> 8;
+	aad[12] = buffer_size & 0xff;
 
 	/* Software decrypt */
 	memcpy(buffer, ciphertext, buffer_size);
