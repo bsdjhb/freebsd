@@ -42,6 +42,7 @@ static struct mevent *read_event, *write_event;
 static cpuset_t vcpus_active, vcpus_suspended, vcpus_waiting;
 static pthread_mutex_t gdb_lock;
 static pthread_cond_t idle_vcpus;
+static bool stop_pending;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -285,7 +286,11 @@ static bool
 response_pending(void)
 {
 
-	return (cur_resp.start != 0 || cur_resp.len != 0);
+	if (cur_resp.start == 0 && cur_resp.len == 0)
+		return (false);
+	if (cur_resp.start + cur_resp.len == 1 && cur_resp.data[0] == '+')
+		return (false);
+	return (true);
 }
 
 static void
@@ -563,6 +568,16 @@ parse_threadid(const uint8_t *data, size_t len)
 	return (parse_integer(data, len));
 }
 
+static void
+report_stop(void)
+{
+
+	start_packet();
+	append_char('S');
+	append_byte(GDB_SIGNAL_TRAP);
+	finish_packet();
+}
+
 void
 gdb_cpu_add(int vcpu)
 {
@@ -574,13 +589,12 @@ static void
 gdb_finish_suspend_vcpus(void)
 {
 
-	/*
-	 * XXX: For now we only suspend when the connection is made,
-	 * so the proper thing to do when all vCPUs are suspended is
-	 * to check for any pending commands.  Eventually this will be
-	 * more complex.
-	 */
-	check_command(cur_fd);
+	if (response_pending())
+		stop_pending = true;
+	else {
+		report_stop();
+		send_pending_data(cur_fd);
+	}
 }
 
 void
@@ -613,8 +627,11 @@ gdb_suspend_vcpus(void)
 	assert(pthread_mutex_isowned_np(&gdb_lock));
 	vcpus_suspended = vcpus_active;
 	vm_suspend_cpu(ctx, -1);
+	if (CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
+		gdb_finish_suspend_vcpus();
 }
 
+#if 0
 static bool
 gdb_suspend_pending(void)
 {
@@ -622,6 +639,7 @@ gdb_suspend_pending(void)
 	assert(pthread_mutex_isowned_np(&gdb_lock));
 	return (CPU_CMP(&vcpus_waiting, &vcpus_suspended) != 0);
 }
+#endif
 
 static void
 gdb_resume_vcpus(void)
@@ -843,6 +861,15 @@ handle_command(const uint8_t *data, size_t len)
 	}
 
 	switch (*data) {
+	case 'c':
+		if (len != 1) {
+			send_error(EINVAL);
+			break;
+		}
+
+		/* Don't send a reply until a stop occurs. */
+		gdb_resume_vcpus();
+		break;
 	case 'D':
 		send_ok();
 
@@ -898,14 +925,15 @@ handle_command(const uint8_t *data, size_t len)
 		gdb_query(data, len);
 		break;
 	case '?':
+		/* XXX: Only if stopped? */
 		/* For now, just report that we are always stopped. */
 		start_packet();
 		append_char('S');
 		append_byte(GDB_SIGNAL_TRAP);
 		finish_packet();
 		break;
-	case 'G':
-	case 'M':
+	case 'G': /* TODO */
+	case 'M': /* TODO */
 	case 'v':
 		/* Handle 'vCont' */
 		/* 'vCtrlC' */
@@ -936,18 +964,9 @@ check_command(int fd)
 		switch (*head) {
 		case 0x03:
 			debug("<- Ctrl-C\n");
-			/* TODO: Handle Ctrl-C */
 			io_buffer_consume(&cur_comm, 1);
 
-			/*
-			 * XXX: vCPUs are already stopped.  Eventually this
-			 * will need to do a stop.
-			 */
-			start_packet();
-			append_char('S');
-			append_byte(GDB_SIGNAL_TRAP);
-			finish_packet();
-			send_pending_data(fd);
+			gdb_suspend_vcpus();
 			break;
 		case '+':
 			/* ACK of previous response. */
@@ -955,6 +974,11 @@ check_command(int fd)
 			if (response_pending())
 				io_buffer_reset(&cur_resp);
 			io_buffer_consume(&cur_comm, 1);
+			if (stop_pending) {
+				stop_pending = false;
+				report_stop();
+				send_pending_data(fd);
+			}
 			break;
 		case '-':
 			/* NACK of previous response. */
@@ -1002,6 +1026,8 @@ check_command(int fd)
 
 			handle_command(head + 1, hash - (head + 1));
 			io_buffer_consume(&cur_comm, plen);
+			if (!response_pending())
+				debug("-> +\n");
 			send_pending_data(fd);
 			break;
 		default:
@@ -1047,8 +1073,7 @@ gdb_readable(int fd, enum ev_type event, void *arg)
 	} else {
 		cur_comm.len += nread;
 		pthread_mutex_lock(&gdb_lock);
-		if (!gdb_suspend_pending())
-			check_command(fd);
+		check_command(fd);
 		pthread_mutex_unlock(&gdb_lock);
 	}
 }
@@ -1105,8 +1130,9 @@ new_connection(int fd, enum ev_type event, void *arg)
 
 	cur_fd = s;
 	cur_vcpu = 0;
+	stop_pending = false;
 
-	/* XXX: Break on attach for now. */
+	/* Break on attach. */
 	gdb_suspend_vcpus();
 	pthread_mutex_unlock(&gdb_lock);
 }
