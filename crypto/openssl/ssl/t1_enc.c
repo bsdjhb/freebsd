@@ -148,6 +148,81 @@
 # include <openssl/des.h>
 #endif
 
+#if 1
+static FILE *tls1_debug_file(void)
+{
+    static int initted = 0;
+    static FILE *fp = NULL;
+
+    if (!initted) {
+        const char *name;
+
+        /* Require an absolute path. */
+        name = getenv("SSL_DEBUG_LOG");
+        if (name != NULL && name[0] == '/') {
+            fp = fopen(name, "ae");
+            if (fp != NULL)
+                setlinebuf(fp);
+        }
+        initted = 1;
+    }
+    return (fp);
+}
+
+static void tls1_debug_log(const char *fmt, ...) __printflike(1, 2)
+{
+    FILE *fp;
+    va_list ap;
+
+    fp = tls1_debug_file();
+    if (fp == NULL)
+        return;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+}
+
+static void tls1_debug_hexdump(void *buf, size_t len)
+{
+    FILE *fp;
+    unsigned char *cp;
+
+    fp = tls1_debug_file();
+    if (fp == NULL)
+        return;
+
+    cp = (unsigned char *)buf;
+    for (int i = 0; i < len; i += 16) {
+        fprintf(fp, "%04x  ", i);
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len)
+                fprintf(fp, "%02x ", cp[i + j]);
+            else
+                fprintf(fp, "   ");
+            if (j == 8)
+                fprintf(fp, " ");
+        }
+        fprintf(fp, " |");
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len) {
+                unsigned char c;
+
+                c = cp[i + j];
+                if (isspace(c) && isprint(c))
+                    fputc(fp, c);
+                else
+                    fputc(fp, '.');
+            } else
+                fputc(fp, ' ');
+        }
+        fprintf(fp, "|\n");
+    }
+}
+#else
+#define tls1_debug_log(__VA_ARGS__)
+#define tls1_debug_hexdump(buf, len)
+#endif
+
 /* seed1 through seed5 are virtually concatenated */
 static int tls1_P_hash(const EVP_MD *md, const unsigned char *sec,
                        int sec_len,
@@ -565,6 +640,8 @@ int tls1_change_cipher_state(SSL *s, int which)
 #endif                          /* KSSL_DEBUG */
 
     if (EVP_CIPHER_mode(c) == EVP_CIPH_GCM_MODE) {
+        tls1_debug_log("%s: CipherInit GCM key:\n", __func__);
+        tls1_debug_hexdump(key, c->key_len);
         if (!EVP_CipherInit_ex(dd, c, NULL, key, NULL, (which & SSL3_CC_WRITE))
             || !EVP_CIPHER_CTX_ctrl(dd, EVP_CTRL_GCM_SET_IV_FIXED, k, iv)) {
             SSLerr(SSL_F_TLS1_CHANGE_CIPHER_STATE, ERR_R_INTERNAL_ERROR);
@@ -840,6 +917,9 @@ int tls1_enc(SSL *s, int send)
                                       EVP_AEAD_TLS1_AAD_LEN, buf);
             if (pad <= 0)
                 return -1;
+            tls1_debug_log("%s: EVP_CTRL_AEAD_TLS1_AAD pad: %d AAD:\n",
+                           __func__, pad);
+            tls1_debug_hexdump(buf, sizeof(buf));
             if (send) {
                 l += pad;
                 rec->length += pad;
@@ -886,11 +966,15 @@ int tls1_enc(SSL *s, int send)
                 return 0;
         }
 
+        tls1_debug_log("%s: Cipher Input:\n", __func__);
+        tls1_debug_hexdump(rec->input, rec->length);
         i = EVP_Cipher(ds, rec->data, rec->input, l);
         if ((EVP_CIPHER_flags(ds->cipher) & EVP_CIPH_FLAG_CUSTOM_CIPHER)
             ? (i < 0)
             : (i == 0))
             return -1;          /* AEAD can fail to verify MAC */
+        tls1_debug_log("%s: Cipher Output:\n", __func__);
+        tls1_debug_hexdump(rec->data, rec->length);
         if (EVP_CIPHER_mode(enc) == EVP_CIPH_GCM_MODE && !send) {
             rec->data += EVP_GCM_TLS_EXPLICIT_IV_LEN;
             rec->input += EVP_GCM_TLS_EXPLICIT_IV_LEN;
