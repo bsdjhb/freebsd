@@ -142,6 +142,81 @@ struct dev_crypto_state {
 # endif
 };
 
+# if 1
+static FILE *cry_debug_file(void)
+{
+    static int initted = 0;
+    static FILE *fp = NULL;
+
+    if (!initted) {
+        const char *name;
+
+        /* Require an absolute path. */
+        name = getenv("SSL_DEBUG_LOG");
+        if (name != NULL && name[0] == '/') {
+            fp = fopen(name, "ae");
+            if (fp != NULL)
+                setlinebuf(fp);
+        }
+        initted = 1;
+    }
+    return (fp);
+}
+
+static void cry_debug_log(const char *fmt, ...) __printflike(1, 2)
+{
+    FILE *fp;
+    va_list ap;
+
+    fp = cry_debug_file();
+    if (fp == NULL)
+        return;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+}
+
+static void cry_debug_hexdump(void *buf, size_t len)
+{
+    FILE *fp;
+    unsigned char *cp;
+
+    fp = cry_debug_file();
+    if (fp == NULL)
+        return;
+
+    cp = (unsigned char *)buf;
+    for (int i = 0; i < len; i += 16) {
+        fprintf(fp, "%04x  ", i);
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len)
+                fprintf(fp, "%02x ", cp[i + j]);
+            else
+                fprintf(fp, "   ");
+            if (j == 8)
+                fprintf(fp, " ");
+        }
+        fprintf(fp, " |");
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len) {
+                unsigned char c;
+
+                c = cp[i + j];
+                if (isspace(c) && isprint(c))
+                    fputc(fp, c);
+                else
+                    fputc(fp, '.');
+            } else
+                fputc(fp, ' ');
+        }
+        fprintf(fp, "|\n");
+    }
+}
+# else
+#  define cry_debug_log(__VA_ARGS__)
+#  define cry_debug_hexdump(buf, len)
+# endif
+
 # ifdef CIOCGSESSION2
 static int crid = CRYPTO_FLAG_HARDWARE;
 # endif
@@ -674,9 +749,13 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         state->d_fd = -1;
         return (0);
     }
+    cry_debug_log("new session %d for cipher %d key:\n", sess.ses, cipher);
+    cry_debug_hexdump(key, ctx->key_len);
     state->d_ses = sess.ses;
 
     if (iv != NULL) {
+        cry_debug_log("session %d iv:\n");
+        cry_debug_hexdump(iv, EVP_CIPHER_CTX_iv_length(ctx));
         memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
 # ifdef CRYPTO_AES_NIST_GCM_16
         state->gcm_iv_set = 1;
@@ -775,6 +854,18 @@ static int cryptodev_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         cryp.tag = (caddr_t) in + inl;
     }
 
+    cry_debug_log("cry GCM %s session %d AAD:\n", ctx->encrypt ? "encrypt" :
+                  "decrypt", state->d_ses);
+    cry_debug_hexdump(state->aad_data, state->aad_len);
+    cry_debug_log("iv:\n");
+    cry_debug_hexdump(ctx->iv, 12);
+    cry_debug_log("input:\n");
+    cry_debug_hexdump(in, inl);
+    if (!ctx->encrypt) {
+        cry_debug_log("tag:\n");
+        cry_debug_hexdump(cryp.tag, EVP_GCM_TLS_TAG_LEN);
+    }
+
     if (ioctl(state->d_fd, CIOCCRYPTAEAD, &cryp) == -1) {
         /*
          * XXX need better error handling this can fail for a number of
@@ -783,6 +874,13 @@ static int cryptodev_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         goto err;
     }
     rv = inl;
+
+    cry_debug_log("output:\n");
+    cry_debug_hexdump(out, inl);
+    if (ctx->encrypt) {
+        cry_debug_log("tag:\n");
+        cry_debug_hexdump(cryp.tag, EVP_GCM_TLS_TAG_LEN);
+    }
 
 err:
     state->gcm_iv_set = 0;

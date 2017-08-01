@@ -117,6 +117,81 @@ typedef struct {
     ccm128_f str;
 } EVP_AES_CCM_CTX;
 
+#if 1
+static FILE *aes_debug_file(void)
+{
+    static int initted = 0;
+    static FILE *fp = NULL;
+
+    if (!initted) {
+        const char *name;
+
+        /* Require an absolute path. */
+        name = getenv("SSL_DEBUG_LOG");
+        if (name != NULL && name[0] == '/') {
+            fp = fopen(name, "ae");
+            if (fp != NULL)
+                setlinebuf(fp);
+        }
+        initted = 1;
+    }
+    return (fp);
+}
+
+static void aes_debug_log(const char *fmt, ...) __printflike(1, 2)
+{
+    FILE *fp;
+    va_list ap;
+
+    fp = aes_debug_file();
+    if (fp == NULL)
+        return;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+}
+
+static void aes_debug_hexdump(void *buf, size_t len)
+{
+    FILE *fp;
+    unsigned char *cp;
+
+    fp = aes_debug_file();
+    if (fp == NULL)
+        return;
+
+    cp = (unsigned char *)buf;
+    for (int i = 0; i < len; i += 16) {
+        fprintf(fp, "%04x  ", i);
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len)
+                fprintf(fp, "%02x ", cp[i + j]);
+            else
+                fprintf(fp, "   ");
+            if (j == 8)
+                fprintf(fp, " ");
+        }
+        fprintf(fp, " |");
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len) {
+                unsigned char c;
+
+                c = cp[i + j];
+                if (isspace(c) && isprint(c))
+                    fputc(fp, c);
+                else
+                    fputc(fp, '.');
+            } else
+                fputc(fp, ' ');
+        }
+        fprintf(fp, "|\n");
+    }
+}
+#else
+#define aes_debug_log(__VA_ARGS__)
+#define aes_debug_hexdump(buf, len)
+#endif
+
 # define MAXBITCHUNK     ((size_t)1<<(sizeof(size_t)*8-4))
 
 # ifdef VPAES_ASM
@@ -346,6 +421,8 @@ static int aesni_gcm_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     if (!iv && !key)
         return 1;
     if (key) {
+        aes_debug_log("aesni GCM session %p key:\n", gctx);
+        aes_debug_hexdump(key, ctx->key_len);
         aesni_set_encrypt_key(key, ctx->key_len * 8, &gctx->ks.ks);
         CRYPTO_gcm128_init(&gctx->gcm, &gctx->ks, (block128_f) aesni_encrypt);
         gctx->ctr = (ctr128_f) aesni_ctr32_encrypt_blocks;
@@ -355,15 +432,19 @@ static int aesni_gcm_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         if (iv == NULL && gctx->iv_set)
             iv = gctx->iv;
         if (iv) {
+            aes_debug_log("aesni GCM session %p iv:\n", gctx);
+            aes_debug_hexdump(iv, gctx->ivlen);
             CRYPTO_gcm128_setiv(&gctx->gcm, iv, gctx->ivlen);
             gctx->iv_set = 1;
         }
         gctx->key_set = 1;
     } else {
         /* If key set use IV, otherwise copy */
-        if (gctx->key_set)
+        if (gctx->key_set) {
+            aes_debug_log("aesni GCM session %p iv:\n", gctx);
+            aes_debug_hexdump(iv, gctx->ivlen);
             CRYPTO_gcm128_setiv(&gctx->gcm, iv, gctx->ivlen);
-        else
+        } else
             memcpy(gctx->iv, iv, gctx->ivlen);
         gctx->iv_set = 1;
         gctx->iv_gen = 0;
@@ -1208,6 +1289,8 @@ static int aes_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
     case EVP_CTRL_GCM_IV_GEN:
         if (gctx->iv_gen == 0 || gctx->key_set == 0)
             return 0;
+        aes_debug_log("CTRL_GCM_IV_GEN session %p iv:\n", gctx);
+        aes_debug_hexdump(gctx->iv, gctx->ivlen);
         CRYPTO_gcm128_setiv(&gctx->gcm, gctx->iv, gctx->ivlen);
         if (arg <= 0 || arg > gctx->ivlen)
             arg = gctx->ivlen;
@@ -1224,6 +1307,8 @@ static int aes_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr)
         if (gctx->iv_gen == 0 || gctx->key_set == 0 || c->encrypt)
             return 0;
         memcpy(gctx->iv + gctx->ivlen - arg, ptr, arg);
+        aes_debug_log("CTRL_GCM_SET_IV_INV session %p iv:\n", gctx);
+        aes_debug_hexdump(gctx->iv, gctx->ivlen);
         CRYPTO_gcm128_setiv(&gctx->gcm, gctx->iv, gctx->ivlen);
         gctx->iv_set = 1;
         return 1;
@@ -1285,6 +1370,8 @@ static int aes_gcm_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     if (!iv && !key)
         return 1;
     if (key) {
+        aes_debug_log("aes GCM session %p key:\n", gctx);
+        aes_debug_hexdump(key, ctx->key_len);
         do {
 # ifdef HWAES_CAPABLE
             if (HWAES_CAPABLE) {
@@ -1335,15 +1422,19 @@ static int aes_gcm_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         if (iv == NULL && gctx->iv_set)
             iv = gctx->iv;
         if (iv) {
+            aes_debug_log("aes GCM session %p iv:\n", gctx);
+            aes_debug_hexdump(iv, gctx->ivlen);
             CRYPTO_gcm128_setiv(&gctx->gcm, iv, gctx->ivlen);
             gctx->iv_set = 1;
         }
         gctx->key_set = 1;
     } else {
         /* If key set use IV, otherwise copy */
-        if (gctx->key_set)
+        if (gctx->key_set) {
+            aes_debug_log("aes GCM session %p iv:\n", gctx);
+            aes_debug_hexdump(iv, gctx->ivlen);
             CRYPTO_gcm128_setiv(&gctx->gcm, iv, gctx->ivlen);
-        else
+        } else
             memcpy(gctx->iv, iv, gctx->ivlen);
         gctx->iv_set = 1;
         gctx->iv_gen = 0;
@@ -1367,6 +1458,9 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (out != in
         || len < (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN))
         return -1;
+    aes_debug_log("aes GCM %s session %p AAD:\n", ctx->encrypt ? "encrypt" :
+                  "decrypt", gctx);
+    aes_debug_hexdump(ctx->buf, gctx->tls_aad_len);
     /*
      * Set IV from start of buffer or generate IV and write to start of
      * buffer.
@@ -1382,6 +1476,8 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     in += EVP_GCM_TLS_EXPLICIT_IV_LEN;
     out += EVP_GCM_TLS_EXPLICIT_IV_LEN;
     len -= EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN;
+    aes_debug_log("input:\n");
+    aes_debug_hexdump(in, len);
     if (ctx->encrypt) {
         /* Encrypt payload */
         if (gctx->ctr) {
@@ -1419,11 +1515,17 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                       in + bulk, out + bulk, len - bulk))
                 goto err;
         }
+        aes_debug_log("output:\n");
+        aes_debug_hexdump(out, len);
         out += len;
         /* Finally write tag */
         CRYPTO_gcm128_tag(&gctx->gcm, out, EVP_GCM_TLS_TAG_LEN);
+        aes_debug_log("tag:\n");
+        aes_debug_hexdump(out, EVP_GCM_TLS_TAG_LEN);
         rv = len + EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN;
     } else {
+        aes_debug_log("tag:\n");
+        aes_debug_hexdump(in + len, EVP_GCM_TLS_TAG_LEN);
         /* Decrypt */
         if (gctx->ctr) {
             size_t bulk = 0;
@@ -1467,6 +1569,8 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             OPENSSL_cleanse(out, len);
             goto err;
         }
+        aes_debug_log("output:\n");
+        aes_debug_hexdump(out, len);
         rv = len;
     }
 
