@@ -759,7 +759,7 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     state->d_ses = sess.ses;
 
     if (iv != NULL) {
-        cry_debug_log("session %d iv:\n");
+        cry_debug_log("session %d iv:\n", sess.ses);
         cry_debug_hexdump(iv, EVP_CIPHER_CTX_iv_length(ctx));
         memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
 # ifdef CRYPTO_AES_NIST_GCM_16
