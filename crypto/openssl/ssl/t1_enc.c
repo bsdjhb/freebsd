@@ -149,6 +149,8 @@
 #endif
 
 #if 1
+#include <ctype.h>
+
 static FILE *tls1_debug_file(void)
 {
     static int initted = 0;
@@ -169,7 +171,9 @@ static FILE *tls1_debug_file(void)
     return (fp);
 }
 
-static void tls1_debug_log(const char *fmt, ...) __printflike(1, 2)
+static void tls1_debug_log(const char *fmt, ...) __printflike(1, 2);
+
+static void tls1_debug_log(const char *fmt, ...)
 {
     FILE *fp;
     va_list ap;
@@ -182,19 +186,20 @@ static void tls1_debug_log(const char *fmt, ...) __printflike(1, 2)
     va_end(ap);
 }
 
-static void tls1_debug_hexdump(void *buf, size_t len)
+static void tls1_debug_hexdump(const void *buf, size_t len)
 {
     FILE *fp;
-    unsigned char *cp;
+    const unsigned char *cp;
+    int i, j;
 
     fp = tls1_debug_file();
     if (fp == NULL)
         return;
 
-    cp = (unsigned char *)buf;
-    for (int i = 0; i < len; i += 16) {
+    cp = (const unsigned char *)buf;
+    for (i = 0; i < len; i += 16) {
         fprintf(fp, "%04x  ", i);
-        for (int j = 0; j < 16; j++) {
+        for (j = 0; j < 16; j++) {
             if (i + j < len)
                 fprintf(fp, "%02x ", cp[i + j]);
             else
@@ -203,17 +208,17 @@ static void tls1_debug_hexdump(void *buf, size_t len)
                 fprintf(fp, " ");
         }
         fprintf(fp, " |");
-        for (int j = 0; j < 16; j++) {
+        for (j = 0; j < 16; j++) {
             if (i + j < len) {
                 unsigned char c;
 
                 c = cp[i + j];
                 if (isspace(c) && isprint(c))
-                    fputc(fp, c);
+                    fputc(c, fp);
                 else
-                    fputc(fp, '.');
+                    fputc('.', fp);
             } else
-                fputc(fp, ' ');
+                fputc(' ', fp);
         }
         fprintf(fp, "|\n");
     }
