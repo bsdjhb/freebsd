@@ -679,6 +679,15 @@ cryptodev_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     } else
         cryp.iv = NULL;
 
+    cry_debug_log("cry cipher %s session %d ", ctx->encrypt ? "encrypt" :
+                  "decrypt", state->d_ses);
+    if (ctx->cipher->iv_len) {
+        cry_debug_log("iv:\n");
+        cry_debug_hexdump(ctx->iv, ctx->cipher->iv_len);
+    }
+    cry_debug_log("input:\n");
+    cry_debug_hexdump(in, inl);
+
     if (ioctl(state->d_fd, CIOCCRYPT, &cryp) == -1) {
         /*
          * XXX need better errror handling this can fail for a number of
@@ -686,6 +695,9 @@ cryptodev_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
          */
         return (0);
     }
+
+    cry_debug_log("output:\n");
+    cry_debug_hexdump(out, inl);
 
     if (ctx->cipher->iv_len) {
         if (ctx->encrypt)
@@ -859,7 +871,7 @@ static int cryptodev_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         cryp.tag = (caddr_t) in + inl;
     }
 
-    cry_debug_log("cry GCM %s session %d AAD:\n", ctx->encrypt ? "encrypt" :
+    cry_debug_log("cry GCM TLS %s session %d AAD:\n", ctx->encrypt ? "encrypt" :
                   "decrypt", state->d_ses);
     cry_debug_hexdump(state->aad_data, state->aad_len);
     cry_debug_log("iv:\n");
@@ -959,6 +971,18 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     cryp.op = ctx->encrypt ? COP_ENCRYPT : COP_DECRYPT;
 
+    cry_debug_log("cry GCM %s session %d AAD:\n", ctx->encrypt ? "encrypt" :
+                  "decrypt", state->d_ses);
+    cry_debug_hexdump(state->aad_data, state->aad_len);
+    cry_debug_log("iv:\n");
+    cry_debug_hexdump(ctx->iv, 12);
+    cry_debug_log("input:\n");
+    cry_debug_hexdump(state->cipher_data, state->cipher_len);
+    if (!ctx->encrypt) {
+        cry_debug_log("tag:\n");
+        cry_debug_hexdump(state->gcm_tag, 16);
+    }
+
     if (ioctl(state->d_fd, CIOCCRYPTAEAD, &cryp) == -1) {
         /*
          * XXX need better error handling this can fail for a number of
@@ -967,6 +991,13 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         return (-1);
     }
 
+    cry_debug_log("output:\n");
+    cry_debug_hexdump(out, state->cipher_len);
+    if (ctx->encrypt) {
+        cry_debug_log("tag:\n");
+        cry_debug_hexdump(state->gcm_tag, 16);
+    }
+    
     if (ctx->encrypt)
         state->gcm_tag_valid = 1;
     return (state->cipher_len);

@@ -353,6 +353,8 @@ static int aesni_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     EVP_AES_KEY *dat = (EVP_AES_KEY *) ctx->cipher_data;
 
     mode = ctx->cipher->flags & EVP_CIPH_MODE;
+    aes_debug_log("aesni mode %d ctx %p key:\n", mode, ctx);
+    aes_debug_hexdump(key, ctx->key_len);
     if ((mode == EVP_CIPH_ECB_MODE || mode == EVP_CIPH_CBC_MODE)
         && !enc) {
         ret = aesni_set_decrypt_key(key, ctx->key_len * 8, ctx->cipher_data);
@@ -381,7 +383,17 @@ static int aesni_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 static int aesni_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                             const unsigned char *in, size_t len)
 {
+
+    aes_debug_log("aesni CBC %s ctx %p iv:", ctx->encrypt ? "encrypt" :
+                  "decrypt", ctx);
+    aes_debug_hexdump(ctx->iv, ctx->cipher->iv_len);
+    aes_debug_log("input:\n");
+    aes_debug_hexdump(in, len);
+
     aesni_cbc_encrypt(in, out, len, ctx->cipher_data, ctx->iv, ctx->encrypt);
+
+    aes_debug_log("output:\n");
+    aes_debug_hexdump(out, len);
 
     return 1;
 }
@@ -1013,6 +1025,8 @@ static int aes_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     EVP_AES_KEY *dat = (EVP_AES_KEY *) ctx->cipher_data;
 
     mode = ctx->cipher->flags & EVP_CIPH_MODE;
+    aes_debug_log("aes mode %d ctx %p key:\n", mode, ctx);
+    aes_debug_hexdump(key, ctx->key_len);
     if ((mode == EVP_CIPH_ECB_MODE || mode == EVP_CIPH_CBC_MODE)
         && !enc)
 # ifdef HWAES_CAPABLE
@@ -1104,12 +1118,21 @@ static int aes_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 {
     EVP_AES_KEY *dat = (EVP_AES_KEY *) ctx->cipher_data;
 
+    aes_debug_log("aes CBC %s ctx %p iv:", ctx->encrypt ? "encrypt" :
+                  "decrypt", ctx);
+    aes_debug_hexdump(ctx->iv, ctx->cipher->iv_len);
+    aes_debug_log("input:\n");
+    aes_debug_hexdump(in, len);
+
     if (dat->stream.cbc)
         (*dat->stream.cbc) (in, out, len, &dat->ks, ctx->iv, ctx->encrypt);
     else if (ctx->encrypt)
         CRYPTO_cbc128_encrypt(in, out, len, &dat->ks, ctx->iv, dat->block);
     else
         CRYPTO_cbc128_decrypt(in, out, len, &dat->ks, ctx->iv, dat->block);
+
+    aes_debug_log("output:\n");
+    aes_debug_hexdump(out, len);
 
     return 1;
 }
@@ -1463,7 +1486,7 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (out != in
         || len < (EVP_GCM_TLS_EXPLICIT_IV_LEN + EVP_GCM_TLS_TAG_LEN))
         return -1;
-    aes_debug_log("aes GCM %s session %p AAD:\n", ctx->encrypt ? "encrypt" :
+    aes_debug_log("aes GCM TLS %s session %p AAD:\n", ctx->encrypt ? "encrypt" :
                   "decrypt", gctx);
     aes_debug_hexdump(ctx->buf, gctx->tls_aad_len);
     /*
@@ -1602,7 +1625,12 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         if (out == NULL) {
             if (CRYPTO_gcm128_aad(&gctx->gcm, in, len))
                 return -1;
+            aes_debug_log("aes GCM %s session %p AAD:\n", ctx->encrypt ?
+                          "encrypt" : "decrypt", gctx);
+            aes_debug_hexdump(in, len);
         } else if (ctx->encrypt) {
+            aes_debug_log("aes GCM encrypt session %p input:\n", gctx);
+            aes_debug_hexdump(in, len);
             if (gctx->ctr) {
                 size_t bulk = 0;
 # if defined(AES_GCM_ASM)
@@ -1647,6 +1675,8 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     return -1;
             }
         } else {
+            aes_debug_log("aes GCM decrypt session %p input:\n", gctx);
+            aes_debug_hexdump(in, len);
             if (gctx->ctr) {
                 size_t bulk = 0;
 # if defined(AES_GCM_ASM)
@@ -1691,11 +1721,15 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     return -1;
             }
         }
+        aes_debug_log("output:\n");
+        aes_debug_hexdump(out, len);
         return len;
     } else {
         if (!ctx->encrypt) {
             if (gctx->taglen < 0)
                 return -1;
+            aes_debug_log("aes GCM decrypt session %p tag:\n", gctx);
+            aes_debug_hexdump(ctx->buf, gctx->taglen);
             if (CRYPTO_gcm128_finish(&gctx->gcm, ctx->buf, gctx->taglen) != 0)
                 return -1;
             gctx->iv_set = 0;
@@ -1703,6 +1737,8 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         }
         CRYPTO_gcm128_tag(&gctx->gcm, ctx->buf, 16);
         gctx->taglen = 16;
+        aes_debug_log("aes GCM encrypt session %p tag:\n", gctx);
+        aes_debug_hexdump(ctx->buf, gctx->taglen);
         /* Don't reuse the IV */
         gctx->iv_set = 0;
         return 0;
