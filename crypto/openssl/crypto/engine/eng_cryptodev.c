@@ -745,14 +745,6 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
     sess.key = (caddr_t) key;
     sess.keylen = ctx->key_len;
     sess.cipher = cipher;
-# ifdef CRYPTO_AES_NIST_GCM_16
-    if (sess.cipher == CRYPTO_AES_NIST_GCM_16) {
-        sess.mac = mac_for_gcm(sess.keylen);
-        assert(sess.mac != -1);
-        sess.mackey = sess.key;
-        sess.mackeylen = sess.keylen;
-    }
-# endif
 # ifdef CIOCGSESSION2
     sess.crid = crid;
 # endif
@@ -774,9 +766,6 @@ cryptodev_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
         cry_debug_log("session %d iv:\n", sess.ses);
         cry_debug_hexdump(iv, EVP_CIPHER_CTX_iv_length(ctx));
         memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
-# ifdef CRYPTO_AES_NIST_GCM_16
-        state->gcm_iv_set = 1;
-# endif
     }
     return (1);
 }
@@ -992,6 +981,48 @@ static int cryptodev_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (ctx->encrypt)
         state->gcm_tag_valid = 1;
     return (state->cipher_len);
+}
+
+static int
+cryptodev_gcm_init_key(EVP_CIPHER_CTX *ctx, const unsigned char *key,
+                       const unsigned char *iv, int enc)
+{
+    struct dev_crypto_state *state = ctx->cipher_data;
+    struct session2_op sess;
+
+    if (!key)
+            return 1;
+
+    memset(&sess, 0, sizeof(sess));
+
+    if ((state->d_fd = get_dev_crypto()) < 0)
+        return (0);
+
+    sess.key = (caddr_t) key;
+    sess.keylen = ctx->key_len;
+    sess.cipher = CRYPTO_AES_NIST_GCM_16;
+    sess.mac = mac_for_gcm(sess.keylen);
+    assert(sess.mac != -1);
+    sess.mackey = sess.key;
+    sess.mackeylen = sess.keylen;
+    sess.crid = crid;
+
+    if (ioctl(state->d_fd, CIOCGSESSION2, &sess) == -1) {
+        put_dev_crypto(state->d_fd);
+        state->d_fd = -1;
+        return (0);
+    }
+    cry_debug_log("new session %d for GCM key:\n", sess.ses);
+    cry_debug_hexdump(key, ctx->key_len);
+    state->d_ses = sess.ses;
+
+    if (iv != NULL) {
+        cry_debug_log("session %d iv:\n", sess.ses);
+        cry_debug_hexdump(iv, EVP_CIPHER_CTX_iv_length(ctx));
+        memcpy(ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
+        state->gcm_iv_set = 1;
+    }
+    return (1);
 }
 
 static int cryptodev_gcm_cleanup(EVP_CIPHER_CTX *ctx)
@@ -1374,7 +1405,7 @@ const EVP_CIPHER cryptodev_aes_gcm = {
     EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
     EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
     EVP_CIPH_FLAG_AEAD_CIPHER,
-    cryptodev_init_key,
+    cryptodev_gcm_init_key,
     cryptodev_gcm_cipher,
     cryptodev_gcm_cleanup,
     sizeof(struct dev_crypto_state),
@@ -1389,7 +1420,7 @@ const EVP_CIPHER cryptodev_aes_gcm_192 = {
     EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
     EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
     EVP_CIPH_FLAG_AEAD_CIPHER,
-    cryptodev_init_key,
+    cryptodev_gcm_init_key,
     cryptodev_gcm_cipher,
     cryptodev_gcm_cleanup,
     sizeof(struct dev_crypto_state),
@@ -1404,7 +1435,7 @@ const EVP_CIPHER cryptodev_aes_gcm_256 = {
     EVP_CIPH_GCM_MODE | EVP_CIPH_CUSTOM_IV | EVP_CIPH_FLAG_DEFAULT_ASN1 |
     EVP_CIPH_FLAG_CUSTOM_CIPHER | EVP_CIPH_CTRL_INIT |
     EVP_CIPH_FLAG_AEAD_CIPHER,
-    cryptodev_init_key,
+    cryptodev_gcm_init_key,
     cryptodev_gcm_cipher,
     cryptodev_gcm_cleanup,
     sizeof(struct dev_crypto_state),
