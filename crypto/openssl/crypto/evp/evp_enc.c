@@ -77,6 +77,45 @@
 
 const char EVP_version[] = "EVP" OPENSSL_VERSION_PTEXT;
 
+#if 1
+static FILE *cipher_debug_file(void)
+{
+    static int initted = 0;
+    static FILE *fp = NULL;
+
+    if (!initted) {
+        const char *name;
+
+        /* Require an absolute path. */
+        name = getenv("SSL_DEBUG_LOG");
+        if (name != NULL && name[0] == '/') {
+            fp = fopen(name, "ae");
+            if (fp != NULL)
+                setlinebuf(fp);
+        }
+        initted = 1;
+    }
+    return (fp);
+}
+
+static void cipher_debug_log(const char *fmt, ...) __printflike(1, 2);
+
+static void cipher_debug_log(const char *fmt, ...)
+{
+    FILE *fp;
+    va_list ap;
+
+    fp = cipher_debug_file();
+    if (fp == NULL)
+        return;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+}
+#else
+# define cipher_debug_log(__VA_ARGS__)
+#endif
+
 void EVP_CIPHER_CTX_init(EVP_CIPHER_CTX *ctx)
 {
     memset(ctx, 0, sizeof(EVP_CIPHER_CTX));
@@ -110,6 +149,8 @@ int EVP_CipherInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
             enc = 1;
         ctx->encrypt = enc;
     }
+    if (cipher != NULL)
+	    cipher_debug_log("%s(%s)\n", __func__, OBJ_nid2sn(cipher->nid));
 #ifndef OPENSSL_NO_ENGINE
     /*
      * Whether it's nice or not, "Inits" can be used on "Final"'d contexts so

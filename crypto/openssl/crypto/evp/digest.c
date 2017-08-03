@@ -122,6 +122,45 @@
 # include "evp_locl.h"
 #endif
 
+#if 1
+static FILE *digest_debug_file(void)
+{
+    static int initted = 0;
+    static FILE *fp = NULL;
+
+    if (!initted) {
+        const char *name;
+
+        /* Require an absolute path. */
+        name = getenv("SSL_DEBUG_LOG");
+        if (name != NULL && name[0] == '/') {
+            fp = fopen(name, "ae");
+            if (fp != NULL)
+                setlinebuf(fp);
+        }
+        initted = 1;
+    }
+    return (fp);
+}
+
+static void digest_debug_log(const char *fmt, ...) __printflike(1, 2);
+
+static void digest_debug_log(const char *fmt, ...)
+{
+    FILE *fp;
+    va_list ap;
+
+    fp = digest_debug_file();
+    if (fp == NULL)
+        return;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+}
+#else
+# define digest_debug_log(__VA_ARGS__)
+#endif
+
 void EVP_MD_CTX_init(EVP_MD_CTX *ctx)
 {
     memset(ctx, '\0', sizeof *ctx);
@@ -157,6 +196,8 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
         }
     }
 #endif
+    if (type != NULL)
+	    cipher_debug_log("%s(%s)\n", __func__, OBJ_nid2sn(type->type));
 #ifndef OPENSSL_NO_ENGINE
     /*
      * Whether it's nice or not, "Inits" can be used on "Final"'d contexts so
