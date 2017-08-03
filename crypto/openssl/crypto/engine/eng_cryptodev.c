@@ -218,8 +218,8 @@ static void cry_debug_hexdump(const void *buf, size_t len)
     }
 }
 # else
-#  define cry_debug_log(__VA_ARGS__)
-#  define cry_debug_hexdump(buf, len)
+#  define cry_debug_log(...) do { } while (0)
+#  define cry_debug_hexdump(buf, len) do { } while (0)
 # endif
 
 # ifdef CIOCGSESSION2

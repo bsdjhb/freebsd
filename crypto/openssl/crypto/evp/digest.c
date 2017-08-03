@@ -158,7 +158,7 @@ static void digest_debug_log(const char *fmt, ...)
     va_end(ap);
 }
 #else
-# define digest_debug_log(__VA_ARGS__)
+# define digest_debug_log(...) do { } while (0)
 #endif
 
 void EVP_MD_CTX_init(EVP_MD_CTX *ctx)

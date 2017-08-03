@@ -193,8 +193,8 @@ static void aes_debug_hexdump(const void *buf, size_t len)
     }
 }
 #else
-#define aes_debug_log(__VA_ARGS__)
-#define aes_debug_hexdump(buf, len)
+#define aes_debug_log(...) do { } while (0)
+#define aes_debug_hexdump(buf, len) do { } while (0)
 #endif
 
 # define MAXBITCHUNK     ((size_t)1<<(sizeof(size_t)*8-4))

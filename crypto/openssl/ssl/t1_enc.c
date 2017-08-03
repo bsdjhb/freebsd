@@ -224,8 +224,8 @@ static void tls1_debug_hexdump(const void *buf, size_t len)
     }
 }
 #else
-#define tls1_debug_log(__VA_ARGS__)
-#define tls1_debug_hexdump(buf, len)
+#define tls1_debug_log(...) do { } while (0)
+#define tls1_debug_hexdump(buf, len) do { } while (0)
 #endif
 
 /* seed1 through seed5 are virtually concatenated */

@@ -113,7 +113,7 @@ static void cipher_debug_log(const char *fmt, ...)
     va_end(ap);
 }
 #else
-# define cipher_debug_log(__VA_ARGS__)
+# define cipher_debug_log(...) do { } while (0)
 #endif
 
 void EVP_CIPHER_CTX_init(EVP_CIPHER_CTX *ctx)
