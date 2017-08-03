@@ -197,7 +197,7 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
     }
 #endif
     if (type != NULL)
-	    cipher_debug_log("%s(%s)\n", __func__, OBJ_nid2sn(type->type));
+	    digest_debug_log("%s(%s)\n", __func__, OBJ_nid2sn(type->type));
 #ifndef OPENSSL_NO_ENGINE
     /*
      * Whether it's nice or not, "Inits" can be used on "Final"'d contexts so
