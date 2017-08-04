@@ -1759,6 +1759,7 @@ static void copy_ah_attr_from_uverbs(struct ib_device *dev,
 	rdma_ah_set_path_bits(rdma_attr, uverb_attr->src_path_bits);
 	rdma_ah_set_static_rate(rdma_attr, uverb_attr->static_rate);
 	rdma_ah_set_port_num(rdma_attr, uverb_attr->port_num);
+	rdma_ah_set_make_grd(rdma_attr, false);
 }
 
 static int modify_qp(struct uverbs_attr_bundle *attrs,
@@ -2427,6 +2428,7 @@ static int ib_uverbs_create_ah(struct uverbs_attr_bundle *attrs)
 	}
 
 	attr.type = rdma_ah_find_type(ib_dev, cmd.attr.port_num);
+	rdma_ah_set_make_grd(&attr, false);
 	rdma_ah_set_dlid(&attr, cmd.attr.dlid);
 	rdma_ah_set_sl(&attr, cmd.attr.sl);
 	rdma_ah_set_path_bits(&attr, cmd.attr.src_path_bits);
