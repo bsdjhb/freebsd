@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
+#include <sys/pageset.h>
 #include <sys/uio.h>
 
 #include <opencrypto/cryptodev.h>
@@ -154,6 +155,46 @@ cuio_apply(struct uio *uio, int off, int len, int (*f)(void *, void *, u_int),
 	return (0);
 }
 
+static int
+cpageset_copyback(struct pageset *ps, int off, int size, c_caddr_t in)
+{
+	struct iovec iov[1];
+	struct uio uio;
+	int error;
+
+	iov[0].iov_base = __DECONST(caddr_t, in);
+	iov[0].iov_len = size;
+	uio.uio_iov = iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_offset = 0;
+	uio.uio_resid = size;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_rw = UIO_READ;
+	error = uiomove_fromphys(ps->pages, ps->offset + off, size, &uio);
+	MPASS(error != 0 || uio.uio_resid == 0);
+	return (error);
+}
+
+static int
+cpageset_copydata(struct pageset *ps, int off, int size, caddr_t out)
+{
+	struct iovec iov[1];
+	struct uio uio;
+	int error;
+
+	iov[0].iov_base = out;
+	iov[0].iov_len = size;
+	uio.uio_iov = iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_offset = 0;
+	uio.uio_resid = size;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_rw = UIO_WRITE;
+	error = uiomove_fromphys(ps->pages, ps->offset + off, size, &uio);
+	MPASS(error != 0 || uio.uio_resid == 0);
+	return (error);
+}
+
 void
 crypto_copyback(int flags, caddr_t buf, int off, int size, c_caddr_t in)
 {
@@ -162,6 +203,8 @@ crypto_copyback(int flags, caddr_t buf, int off, int size, c_caddr_t in)
 		m_copyback((struct mbuf *)buf, off, size, in);
 	else if ((flags & CRYPTO_F_IOV) != 0)
 		cuio_copyback((struct uio *)buf, off, size, in);
+	else if ((flags & CRYPTO_F_PAGESET) != 0)
+		cpageset_copyback((struct pageset *)buf, off, size, in);
 	else
 		bcopy(in, buf + off, size);
 }
@@ -174,6 +217,8 @@ crypto_copydata(int flags, caddr_t buf, int off, int size, caddr_t out)
 		m_copydata((struct mbuf *)buf, off, size, out);
 	else if ((flags & CRYPTO_F_IOV) != 0)
 		cuio_copydata((struct uio *)buf, off, size, out);
+	else if ((flags & CRYPTO_F_PAGESET) != 0)
+		cpageset_copydata((struct pageset *)buf, off, size, out);
 	else
 		bcopy(buf + off, out, size);
 }
@@ -188,6 +233,8 @@ crypto_apply(int flags, caddr_t buf, int off, int len,
 		error = m_apply((struct mbuf *)buf, off, len, f, arg);
 	else if ((flags & CRYPTO_F_IOV) != 0)
 		error = cuio_apply((struct uio *)buf, off, len, f, arg);
+	else if ((flags & CRYPTO_F_PAGESET) != 0)
+		panic("%s: not implemented for pageset", __func__);
 	else
 		error = (*f)(arg, buf + off, len);
 	return (error);

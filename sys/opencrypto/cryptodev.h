@@ -416,12 +416,18 @@ struct cryptop {
 
 #define	CRYPTO_F_IMBUF		0x0001	/* Input/output are mbuf chains */
 #define	CRYPTO_F_IOV		0x0002	/* Input/output are uio */
+#define	CRYPTO_F_PAGESET	0x0004	/* Input/output are pageset */
 #define	CRYPTO_F_BATCH		0x0008	/* Batch op if possible */
 #define	CRYPTO_F_CBIMM		0x0010	/* Do callback immediately */
 #define	CRYPTO_F_DONE		0x0020	/* Operation completed */
 #define	CRYPTO_F_CBIFSYNC	0x0040	/* Do CBIMM if op is synchronous */
 
-	caddr_t		crp_buf;	/* Data to be processed */
+	union {
+		caddr_t		crp_buf;	/* Data to be processed */
+		struct mbuf	*crp_mbuf;
+		struct uio	*crp_uio;
+		struct pageset	*crp_pageset;
+	};
 	caddr_t		crp_opaque;	/* Opaque pointer, passed along */
 	struct cryptodesc *crp_desc;	/* Linked list of processing descriptors */
 
@@ -473,6 +479,7 @@ extern	int crypto_freesession(u_int64_t sid);
 #define	CRYPTOCAP_F_HARDWARE	CRYPTO_FLAG_HARDWARE
 #define	CRYPTOCAP_F_SOFTWARE	CRYPTO_FLAG_SOFTWARE
 #define	CRYPTOCAP_F_SYNC	0x04000000	/* operates synchronously */
+#define	CRYPTOCAP_F_PAGESET	0x08000000	/* can accept pagesets */
 extern	int32_t crypto_get_driverid(device_t dev, int flags);
 extern	int crypto_find_driver(const char *);
 extern	device_t crypto_find_device_byhid(int hid);
@@ -522,5 +529,6 @@ extern	void crypto_copydata(int flags, caddr_t buf, int off, int size,
 	    caddr_t out);
 extern	int crypto_apply(int flags, caddr_t buf, int off, int len,
 	    int (*f)(void *, void *, u_int), void *arg);
+
 #endif /* _KERNEL */
 #endif /* _CRYPTO_CRYPTO_H_ */
