@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/module.h>
+#include <sys/pageset.h>
 #include <sys/sglist.h>
 
 #include <opencrypto/cryptodev.h>
@@ -233,6 +234,9 @@ ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append_mbuf(sg, (struct mbuf *)crp->crp_buf);
 	else if (crp->crp_flags & CRYPTO_F_IOV)
 		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
+	else if (crp->crp_flags & CRYPTO_F_PAGESET)
+		error = sglist_append_vmpages(sg, crp->crp_pageset->pages,
+		    crp->crp_pageset->offset, crp->crp_pageset->len);
 	else
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
 	return (error);
@@ -1508,7 +1512,8 @@ ccr_attach(device_t dev)
 	sc->adapter = device_get_softc(device_get_parent(dev));
 	sc->txq = &sc->adapter->sge.ctrlq[0];
 	sc->rxq = &sc->adapter->sge.rxq[0];
-	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE);
+	cid = crypto_get_driverid(dev, CRYPTOCAP_F_HARDWARE |
+	    CRYPTOCAP_F_PAGESET);
 	if (cid < 0) {
 		device_printf(dev, "could not get crypto driver id\n");
 		return (ENXIO);
