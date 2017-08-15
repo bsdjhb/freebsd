@@ -523,6 +523,10 @@ struct iovec;
 extern	int crypto_mbuftoiov(struct mbuf *mbuf, struct iovec **iovptr,
 	    int *cnt, int *allocated);
 
+extern	int crypto_copyto(struct cryptop *crp, int off, int size,
+	    c_caddr_t in);
+extern	int crypto_copyfrom(struct cryptop *crp, int off, int size,
+	    caddr_t out);
 extern	void crypto_copyback(int flags, caddr_t buf, int off, int size,
 	    c_caddr_t in);
 extern	void crypto_copydata(int flags, caddr_t buf, int off, int size,

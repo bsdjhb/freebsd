@@ -241,6 +241,30 @@ crypto_apply(int flags, caddr_t buf, int off, int len,
 }
 
 int
+crypto_copyto(struct cryptop *crp, int off, int size, c_caddr_t in)
+{
+
+	if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		return (cpageset_copyback(crp->crp_pageset, off, size, in));
+	} else {
+		crypto_copyback(crp->crp_flags, crp->crp_buf, off, size, in);
+		return (0);
+	}
+}
+
+int
+crypto_copyfrom(struct cryptop *crp, int off, int size, caddr_t out)
+{
+
+	if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		return (cpageset_copyback(crp->crp_pageset, off, size, out));
+	} else {
+		crypto_copyback(crp->crp_flags, crp->crp_buf, off, size, out);
+		return (0);
+	}
+}
+
+int
 crypto_mbuftoiov(struct mbuf *mbuf, struct iovec **iovptr, int *cnt,
     int *allocated)
 {
