@@ -428,7 +428,7 @@ struct cryptop {
 		struct uio	*crp_uio;
 		struct pageset	*crp_pageset;
 	};
-	caddr_t		crp_opaque;	/* Opaque pointer, passed along */
+	void *		crp_opaque;	/* Opaque pointer, passed along */
 	struct cryptodesc *crp_desc;	/* Linked list of processing descriptors */
 
 	int (*crp_callback)(struct cryptop *); /* Callback function */
