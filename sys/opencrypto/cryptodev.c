@@ -715,13 +715,14 @@ bail:
 static int cryptodev_cb(struct cryptop *);
 
 static struct cryptop_data *
-cod_alloc(size_t len, struct thread *td)
+cod_alloc(struct csession *cse, size_t len, struct thread *td)
 {
 	struct cryptop_data *cod;
 	struct uio *uio;
 
 	cod = malloc(sizeof(struct cryptop_data), M_XDATA, M_WAITOK | M_ZERO);
 
+	cod->cse = cse;
 	uio = &cod->uio;
 	uio->uio_iov = cod->iovec;
 	uio->uio_iovcnt = 1;
@@ -767,9 +768,9 @@ cryptodev_op(
 	}
 
 	if (cse->thash)
-		cod = cod_alloc(cop->len + cse->thash->hashsize, td);
+		cod = cod_alloc(cse, cop->len + cse->thash->hashsize, td);
 	else
-		cod = cod_alloc(cop->len, td);
+		cod = cod_alloc(cse, cop->len, td);
 
 	crp = crypto_getreq((cse->txform != NULL) + (cse->thash != NULL));
 	if (crp == NULL) {
@@ -943,7 +944,8 @@ cryptodev_aead(
 		return (EINVAL);
 	}
 
-	cod = cod_alloc(caead->aadlen + caead->len + cse->thash->hashsize, td);
+	cod = cod_alloc(cse, caead->aadlen + caead->len + cse->thash->hashsize,
+	    td);
 
 	crp = crypto_getreq(2);
 	if (crp == NULL) {
