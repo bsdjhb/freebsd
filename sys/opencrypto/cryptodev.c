@@ -754,12 +754,12 @@ cod_alloc_pageset(struct csession *cse, void *buf, size_t len,
 	cod = malloc(sizeof(struct cryptop_data), M_XDATA, M_WAITOK | M_ZERO);
 
 	cod->cse = cse;
-	cod->pageset = true;
 	error = pageset_create(&cod->ps, td->td_proc, buf, len, VM_PROT_WRITE);
 	if (error) {
 		free(cod, M_XDATA);
 		return (error);
 	}
+	cod->pageset = true;
 	*codp = cod;
 	return (0);
 }
