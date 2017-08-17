@@ -53,6 +53,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/file.h>
 #include <sys/filedesc.h>
 #include <sys/errno.h>
+#include <sys/pageset.h>
+#include <sys/proc.h>
 #include <sys/uio.h>
 #include <sys/random.h>
 #include <sys/conf.h>
@@ -286,9 +288,16 @@ struct csession {
 struct cryptop_data {
 	struct csession *cse;
 
-	struct iovec	iovec[1];
-	struct uio	uio;
+	union {
+		struct {
+			struct iovec	iovec[1];
+			struct uio	uio;
+			caddr_t buf;
+		};
+		struct pageset	ps;
+	};
 	bool		done;
+	bool		pageset;
 };
 
 struct fcrypt {
@@ -714,7 +723,7 @@ bail:
 static int cryptodev_cb(struct cryptop *);
 
 static struct cryptop_data *
-cod_alloc(struct csession *cse, size_t len, struct thread *td)
+cod_alloc_uio(struct csession *cse, size_t len, struct thread *td)
 {
 	struct cryptop_data *cod;
 	struct uio *uio;
@@ -722,6 +731,7 @@ cod_alloc(struct csession *cse, size_t len, struct thread *td)
 	cod = malloc(sizeof(struct cryptop_data), M_XDATA, M_WAITOK | M_ZERO);
 
 	cod->cse = cse;
+	cod->buf = malloc(len, M_XDATA, M_WAITOK);
 	uio = &cod->uio;
 	uio->uio_iov = cod->iovec;
 	uio->uio_iovcnt = 1;
@@ -730,15 +740,38 @@ cod_alloc(struct csession *cse, size_t len, struct thread *td)
 	uio->uio_rw = UIO_WRITE;
 	uio->uio_td = td;
 	uio->uio_iov[0].iov_len = len;
-	uio->uio_iov[0].iov_base = malloc(len, M_XDATA, M_WAITOK);
+	uio->uio_iov[0].iov_base = cod->buf;
 	return (cod);
+}
+
+static int
+cod_alloc_pageset(struct csession *cse, void *buf, size_t len,
+    struct thread *td, struct cryptop_data **codp)
+{
+	struct cryptop_data *cod;
+	int error;
+
+	cod = malloc(sizeof(struct cryptop_data), M_XDATA, M_WAITOK | M_ZERO);
+
+	cod->cse = cse;
+	cod->pageset = true;
+	error = pageset_create(&cod->ps, td->td_proc, buf, len, VM_PROT_WRITE);
+	if (error) {
+		free(cod, M_XDATA);
+		return (error);
+	}
+	*codp = cod;
+	return (0);
 }
 
 static void
 cod_free(struct cryptop_data *cod)
 {
 
-	free(cod->uio.uio_iov[0].iov_base, M_XDATA);
+	if (cod->pageset)
+		pageset_release(&cod->ps);
+	else
+		free(cod->buf, M_XDATA);
 	free(cod, M_XDATA);
 }
 
@@ -752,6 +785,7 @@ cryptodev_op(
 	struct cryptop_data *cod = NULL;
 	struct cryptop *crp = NULL;
 	struct cryptodesc *crde = NULL, *crda = NULL;
+	size_t buflen;
 	int error;
 
 	if (cop->len > 256*1024-4) {
@@ -766,16 +800,43 @@ cryptodev_op(
 		}
 	}
 
-	if (cse->thash)
-		cod = cod_alloc(cse, cop->len + cse->thash->hashsize, td);
-	else
-		cod = cod_alloc(cse, cop->len, td);
-
 	crp = crypto_getreq((cse->txform != NULL) + (cse->thash != NULL));
 	if (crp == NULL) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		error = ENOMEM;
-		goto bail;
+		return (ENOMEM);
+	}
+
+	if (cse->thash)
+		buflen = cop->len + cse->thash->hashsize;
+	else
+		buflen = cop->len;
+
+	/*
+	 * If the request is using the same buffer for input and output,
+	 * the hash (if present) is at the end of the ciphertext, and
+	 * the crypto device supports pagesets, wire the user pages to
+	 * permit the crypto driver to DMA directly to/from the user buffer.
+	 */
+	if (cop->src == cop->dst &&
+	    (cse->thash == NULL || cop->dst + cop->len == cop->mac) &&
+	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid) & CRYPTOCAP_F_PAGESET)) {
+		error = cod_alloc_pageset(cse, cop->dst, buflen, td, &cod);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+		crp->crp_pageset = &cod->ps;
+		crp->crp_flags = CRYPTO_F_PAGESET;
+	} else {
+		cod = cod_alloc_uio(cse, buflen, td);
+		crp->crp_uio = &cod->uio;
+		crp->crp_flags = CRYPTO_F_IOV;
+
+		error = copyin(cop->src, cod->buf, cop->len);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
 	if (cse->thash && cse->txform) {
@@ -793,12 +854,6 @@ cryptodev_op(
 	} else {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		error = EINVAL;
-		goto bail;
-	}
-
-	if ((error = copyin(cop->src, cod->uio.uio_iov[0].iov_base,
-	    cop->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
 	}
 
@@ -826,9 +881,9 @@ cryptodev_op(
 	}
 
 	crp->crp_ilen = cop->len;
-	crp->crp_flags = CRYPTO_F_IOV | CRYPTO_F_CBIMM
-		       | (cop->flags & COP_F_BATCH);
-	crp->crp_uio = &cod->uio;
+	crp->crp_flags |= CRYPTO_F_CBIMM;
+	if (cop->flags & COP_F_BATCH)
+		crp->crp_flags |= CRYPTO_F_BATCH;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_sid = cse->sid;
 	crp->crp_opaque = cod;
@@ -897,23 +952,23 @@ again:
 		goto bail;
 	}
 
-	if (cop->dst &&
-	    (error = copyout(cod->uio.uio_iov[0].iov_base, cop->dst,
-	    cop->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
-	}
+	if (!cod->pageset) {
+		if (cop->dst &&
+		    (error = copyout(cod->buf, cop->dst, cop->len))) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 
-	if (cop->mac &&
-	    (error = copyout((caddr_t)cod->uio.uio_iov[0].iov_base + cop->len,
-	    cop->mac, cse->thash->hashsize))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+		if (cop->mac &&
+		    (error = copyout(cod->buf + cop->len, cop->mac,
+		    cse->thash->hashsize))) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
 bail:
-	if (crp)
-		crypto_freereq(crp);
+	crypto_freereq(crp);
 	if (cod)
 		cod_free(cod);
 
@@ -943,14 +998,60 @@ cryptodev_aead(
 		return (EINVAL);
 	}
 
-	cod = cod_alloc(cse, caead->aadlen + caead->len + cse->thash->hashsize,
-	    td);
-
 	crp = crypto_getreq(2);
 	if (crp == NULL) {
-		error = ENOMEM;
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+		return (ENOMEM);
+	}
+
+	/*
+	 * If the request is using the same buffer for input and
+	 * output; the buffer is laid out in a contiguous virtual
+	 * address range of AAD, ciphertext, and tag; and the crypto
+	 * device supports pagesets, wire the user pages to permit the
+	 * crypto driver to DMA directly to/from the user buffer.
+	 */
+	if (caead->src == caead->dst &&
+	    caead->aad + caead->aadlen == caead->src &&
+	    caead->src + caead->len == caead->tag &&
+	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid) & CRYPTOCAP_F_PAGESET)) {
+		error = cod_alloc_pageset(cse, __DECONST(caddr_t, caead->aad),
+		    caead->aadlen + caead->len + cse->thash->hashsize, td,
+		    &cod);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+		crp->crp_pageset = &cod->ps;
+		crp->crp_flags = CRYPTO_F_PAGESET;
+	} else {
+		cod = cod_alloc_uio(cse, caead->aadlen + caead->len +
+		    cse->thash->hashsize, td);
+		crp->crp_uio = &cod->uio;
+		crp->crp_flags = CRYPTO_F_IOV;
+
+		error = copyin(caead->aad, cod->buf, caead->aadlen);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+
+		error = copyin(caead->src, cod->buf + caead->aadlen,
+		    caead->len);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+
+		if (caead->op == COP_DECRYPT) {
+			error = copyin(caead->tag, cod->buf + caead->aadlen +
+			    caead->len, cse->thash->hashsize);
+			if (error) {
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				goto bail;
+			}
+		}
 	}
 
 	if (caead->flags & COP_F_CIPHER_FIRST) {
@@ -959,18 +1060,6 @@ cryptodev_aead(
 	} else {
 		crda = crp->crp_desc;
 		crde = crda->crd_next;
-	}
-
-	if ((error = copyin(caead->aad, cod->uio.uio_iov[0].iov_base,
-	    caead->aadlen))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
-	}
-
-	if ((error = copyin(caead->src, (char *)cod->uio.uio_iov[0].iov_base +
-	    caead->aadlen, caead->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
 	}
 
 	/*
@@ -1027,11 +1116,6 @@ cryptodev_aead(
 		crde->crd_len -= cse->txform->blocksize;
 	}
 
-	if ((error = copyin(caead->tag, (caddr_t)cod->uio.uio_iov[0].iov_base +
-	    caead->len + caead->aadlen, cse->thash->hashsize))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
-	}
 again:
 	/*
 	 * Let the dispatch run unlocked, then, interlock against the
@@ -1064,17 +1148,20 @@ again:
 		goto bail;
 	}
 
-	if (caead->dst && (error = copyout(
-	    (caddr_t)cod->uio.uio_iov[0].iov_base + caead->aadlen, caead->dst,
-	    caead->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
-	}
+	if (!cod->pageset) {
+		if (caead->dst &&
+		    (error = copyout(cod->buf + caead->aadlen, caead->dst,
+		    caead->len))) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 
-	if ((error = copyout((caddr_t)cod->uio.uio_iov[0].iov_base +
-	    caead->aadlen + caead->len, caead->tag, cse->thash->hashsize))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+		if (caead->op == COP_ENCRYPT &&
+		    (error = copyout(cod->buf + caead->aadlen + caead->len,
+		    caead->tag, cse->thash->hashsize))) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
 bail:
