@@ -1100,8 +1100,9 @@ cryptodev_aead(
 	crde->crd_klen = cse->keylen * 8;
 
 	crp->crp_ilen = caead->aadlen + caead->len;
-	crp->crp_flags = CRYPTO_F_IOV | CRYPTO_F_CBIMM
-		       | (caead->flags & COP_F_BATCH);
+	crp->crp_flags |= CRYPTO_F_CBIMM;
+	if (caead->flags & COP_F_BATCH)
+		crp->crp_flags |= CRYPTO_F_BATCH;
 	crp->crp_uio = &cod->uio;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_sid = cse->sid;
