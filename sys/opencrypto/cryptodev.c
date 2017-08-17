@@ -292,10 +292,10 @@ struct cryptop_data {
 		struct {
 			struct iovec	iovec[1];
 			struct uio	uio;
-			caddr_t buf;
 		};
 		struct pageset	ps;
 	};
+	caddr_t		buf;
 	bool		done;
 	bool		pageset;
 };
@@ -770,8 +770,7 @@ cod_free(struct cryptop_data *cod)
 
 	if (cod->pageset)
 		pageset_release(&cod->ps);
-	else
-		free(cod->buf, M_XDATA);
+	free(cod->buf, M_XDATA);
 	free(cod, M_XDATA);
 }
 
@@ -1006,24 +1005,34 @@ cryptodev_aead(
 
 	/*
 	 * If the request is using the same buffer for input and
-	 * output; the buffer is laid out in a contiguous virtual
-	 * address range of AAD, ciphertext, and tag; and the crypto
-	 * device supports pagesets, wire the user pages to permit the
-	 * crypto driver to DMA directly to/from the user buffer.
+	 * output, the tag is at the end of the ciphertext, and the
+	 * crypto device supports pagesets, wire the user pages to
+	 * permit the crypto driver to DMA directly to/from the user
+	 * buffer.
 	 */
 	if (caead->src == caead->dst &&
-	    caead->aad + caead->aadlen == caead->src &&
 	    caead->src + caead->len == caead->tag &&
 	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid) & CRYPTOCAP_F_PAGESET)) {
-		error = cod_alloc_pageset(cse, __DECONST(caddr_t, caead->aad),
-		    caead->aadlen + caead->len + cse->thash->hashsize, td,
-		    &cod);
+		error = cod_alloc_pageset(cse, caead->dst, caead->len +
+		    cse->thash->hashsize, td, &cod);
 		if (error) {
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 			goto bail;
 		}
+
 		crp->crp_pageset = &cod->ps;
 		crp->crp_flags = CRYPTO_F_PAGESET;
+		
+		cod->buf = malloc(caead->aadlen, M_XDATA, M_WAITOK);
+
+		error = copyin(caead->aad, cod->buf, caead->aadlen);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+
+		crp->crp_aad = cod->buf;
+		crp->crp_aadlen = caead->aadlen;
 	} else {
 		cod = cod_alloc_uio(cse, caead->aadlen + caead->len +
 		    cse->thash->hashsize, td);

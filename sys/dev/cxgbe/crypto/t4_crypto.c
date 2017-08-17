@@ -238,10 +238,16 @@ ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append_mbuf(sg, (struct mbuf *)crp->crp_buf);
 	else if (crp->crp_flags & CRYPTO_F_IOV)
 		error = sglist_append_uio(sg, (struct uio *)crp->crp_buf);
-	else if (crp->crp_flags & CRYPTO_F_PAGESET)
+	else if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		if (crp->crp_aad != NULL) {
+			error = sglist_append(sg, crp->crp_aad,
+			    crp->crp_aadlen);
+			if (error)
+				return (error);
+		}
 		error = sglist_append_vmpages(sg, crp->crp_pageset->pages,
 		    crp->crp_pageset->offset, crp->crp_pageset->len);
-	else
+	} else
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
 	return (error);
 }
@@ -519,8 +525,7 @@ ccr_hmac(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		*(uint64_t *)(dst + axf->blocksize - sizeof(uint64_t)) =
 		    htobe64(axf->blocksize << 3);
 	} else if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
-		    crd->crd_len, dst);
+		crypto_copyfrom(crp, crd->crd_skip, crd->crd_len, dst);
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
@@ -538,8 +543,8 @@ ccr_hmac_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 
 	crd = crp->crp_desc;
 	if (error == 0) {
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
-		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+		crypto_copyto(crp, crd->crd_inject, s->hmac.hash_len,
+		    (c_caddr_t)(cpl + 1));
 	}
 
 	return (error);
@@ -581,8 +586,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 			arc4rand(iv, s->blkcipher.iv_len, 0);
 		iv_loc = IV_IMMEDIATE;
 		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0)
-			crypto_copyback(crp->crp_flags, crp->crp_buf,
-			    crd->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyto(crp, crd->crd_inject,
+			    s->blkcipher.iv_len, iv);
 	} else {
 		op_type = CHCR_DECRYPT_OP;
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT) {
@@ -610,8 +615,8 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	    s->blkcipher.iv_len)) {
 		imm_len = crd->crd_len;
 		if (iv_loc == IV_DSGL) {
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crd->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyfrom(crp, crd->crd_inject,
+			    s->blkcipher.iv_len, iv);
 			iv_loc = IV_IMMEDIATE;
 		}
 		sgl_nsegs = 0;
@@ -713,8 +718,7 @@ ccr_blkcipher(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		dst += s->blkcipher.iv_len;
 	}
 	if (imm_len != 0)
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crd->crd_skip,
-		    crd->crd_len, dst);
+		crypto_copyfrom(crp, crd->crd_skip, crd->crd_len, dst);
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
@@ -807,15 +811,15 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		else
 			arc4rand(iv, s->blkcipher.iv_len, 0);
 		if ((crde->crd_flags & CRD_F_IV_PRESENT) == 0)
-			crypto_copyback(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyto(crp, crde->crd_inject,
+			    s->blkcipher.iv_len, iv);
 	} else {
 		op_type = CHCR_DECRYPT_OP;
 		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
 		else
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyfrom(crp, crde->crd_inject,
+			    s->blkcipher.iv_len, iv);
 	}
 
 	/*
@@ -1036,16 +1040,14 @@ ccr_authenc(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 	if (imm_len != 0) {
 		if (aad_len != 0) {
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crda->crd_skip, aad_len, dst);
+			crypto_copyfrom(crp, crda->crd_skip, aad_len, dst);
 			dst += aad_len;
 		}
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crde->crd_skip,
-		    crde->crd_len, dst);
+		crypto_copyfrom(crp, crde->crd_skip, crde->crd_len, dst);
 		dst += crde->crd_len;
 		if (op_type == CHCR_DECRYPT_OP)
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crda->crd_inject, hash_size_in_response, dst);
+			crypto_copyfrom(crp, crda->crd_inject,
+			    hash_size_in_response, dst);
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
@@ -1078,8 +1080,8 @@ ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
 	crd = crp->crp_desc;
 	if (error == EBADMSG && !CHK_PAD_ERR_BIT(be64toh(cpl->data[0])) &&
 	    !(crd->crd_flags & CRD_F_ENCRYPT)) {
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crd->crd_inject,
-		    s->hmac.hash_len, (c_caddr_t)(cpl + 1));
+		crypto_copyto(crp, crd->crd_inject, s->hmac.hash_len,
+		    (c_caddr_t)(cpl + 1));
 		error = 0;
 	}
 	return (error);
@@ -1135,15 +1137,15 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		else
 			arc4rand(iv, s->blkcipher.iv_len, 0);
 		if ((crde->crd_flags & CRD_F_IV_PRESENT) == 0)
-			crypto_copyback(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyto(crp, crde->crd_inject,
+			    s->blkcipher.iv_len, iv);
 	} else {
 		op_type = CHCR_DECRYPT_OP;
 		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(iv, crde->crd_iv, s->blkcipher.iv_len);
 		else
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, s->blkcipher.iv_len, iv);
+			crypto_copyfrom(crp, crde->crd_inject,
+			    s->blkcipher.iv_len, iv);
 	}
 
 	/*
@@ -1321,16 +1323,15 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	}
 	if (imm_len != 0) {
 		if (crda->crd_len != 0) {
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crda->crd_skip, crda->crd_len, dst);
+			crypto_copyfrom(crp, crda->crd_skip, crda->crd_len,
+			    dst);
 			dst += crda->crd_len;
 		}
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crde->crd_skip,
-		    crde->crd_len, dst);
+		crypto_copyfrom(crp, crde->crd_skip, crde->crd_len, dst);
 		dst += crde->crd_len;
 		if (op_type == CHCR_DECRYPT_OP)
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crda->crd_inject, hash_size_in_response, dst);
+			crypto_copyfrom(crp, crda->crd_inject,
+			    hash_size_in_response, dst);
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
@@ -1381,8 +1382,7 @@ ccr_gcm_soft(struct ccr_session *s, struct cryptop *crp,
 		if (crde->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(iv, crde->crd_iv, 12);
 		else
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crde->crd_inject, 12, iv);
+			crypto_copyfrom(crp, crde->crd_inject, 12, iv);
 	}
 	*(uint32_t *)&iv[12] = htobe32(1);
 
@@ -1394,8 +1394,7 @@ ccr_gcm_soft(struct ccr_session *s, struct cryptop *crp,
 	/* MAC the AAD. */
 	for (i = 0; i < crda->crd_len; i += sizeof(block)) {
 		len = imin(crda->crd_len - i, sizeof(block));
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crda->crd_skip +
-		    i, len, block);
+		crypto_copyfrom(crp, crda->crd_skip + i, len, block);
 		bzero(block + len, sizeof(block) - len);
 		AES_GMAC_Update(&gmac_ctx, block, sizeof(block));
 	}
@@ -1407,14 +1406,13 @@ ccr_gcm_soft(struct ccr_session *s, struct cryptop *crp,
 	AES_GMAC_Final(digest, &gmac_ctx);
 
 	if (crde->crd_flags & CRD_F_ENCRYPT) {
-		crypto_copyback(crp->crp_flags, crp->crp_buf, crda->crd_inject,
-		    sizeof(digest), digest);
+		crypto_copyto(crp, crda->crd_inject, sizeof(digest), digest);
 		crp->crp_etype = 0;
 	} else {
 		char digest2[GMAC_DIGEST_LEN];
 
-		crypto_copydata(crp->crp_flags, crp->crp_buf, crda->crd_inject,
-		    sizeof(digest2), digest2);
+		crypto_copyfrom(crp, crda->crd_inject, sizeof(digest2),
+		    digest2);
 		if (timingsafe_bcmp(digest, digest2, sizeof(digest)) == 0)
 			crp->crp_etype = 0;
 		else

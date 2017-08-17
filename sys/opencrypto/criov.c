@@ -245,6 +245,23 @@ crypto_copyto(struct cryptop *crp, int off, int size, c_caddr_t in)
 {
 
 	if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		if (crp->crp_aad != NULL && crp->crp_aadlen != 0) {
+			if (off >= crp->crp_aadlen)
+				off -= crp->crp_aadlen;
+			else {
+				int tocopy;
+
+				tocopy = crp->crp_aadlen - off;
+				if (tocopy > size)
+					tocopy = size;
+				bcopy(in, crp->crp_aad + off, tocopy);
+				size -= tocopy;
+				if (size == 0)
+					return (0);
+				in += tocopy;
+				off = 0;
+			}
+		}
 		return (cpageset_copyback(crp->crp_pageset, off, size, in));
 	} else {
 		crypto_copyback(crp->crp_flags, crp->crp_buf, off, size, in);
@@ -257,6 +274,23 @@ crypto_copyfrom(struct cryptop *crp, int off, int size, caddr_t out)
 {
 
 	if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		if (crp->crp_aad != NULL && crp->crp_aadlen != 0) {
+			if (off >= crp->crp_aadlen)
+				off -= crp->crp_aadlen;
+			else {
+				int tocopy;
+
+				tocopy = crp->crp_aadlen - off;
+				if (tocopy > size)
+					tocopy = size;
+				bcopy(crp->crp_aad + off, out, tocopy);
+				size -= tocopy;
+				if (size == 0)
+					return (0);
+				out += tocopy;
+				off = 0;
+			}
+		}
 		return (cpageset_copyback(crp->crp_pageset, off, size, out));
 	} else {
 		crypto_copyback(crp->crp_flags, crp->crp_buf, off, size, out);

@@ -428,6 +428,8 @@ struct cryptop {
 		struct uio	*crp_uio;
 		struct pageset	*crp_pageset;
 	};
+	caddr_t		crp_aad;	/* Hack! */
+	int		crp_aadlen;
 	void *		crp_opaque;	/* Opaque pointer, passed along */
 	struct cryptodesc *crp_desc;	/* Linked list of processing descriptors */
 
