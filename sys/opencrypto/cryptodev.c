@@ -818,7 +818,7 @@ cryptodev_op(
 	 */
 	if (cop->src == cop->dst &&
 	    (cse->thash == NULL || cop->dst + cop->len == cop->mac) &&
-	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid) & CRYPTOCAP_F_PAGESET)) {
+	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid)) & CRYPTOCAP_F_PAGESET) {
 		error = cod_alloc_pageset(cse, cop->dst, buflen, td, &cod);
 		if (error) {
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
@@ -1012,7 +1012,7 @@ cryptodev_aead(
 	 */
 	if (caead->src == caead->dst &&
 	    caead->src + caead->len == caead->tag &&
-	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid) & CRYPTOCAP_F_PAGESET)) {
+	    crypto_getcaps(CRYPTO_SESID2HID(cse->sid)) & CRYPTOCAP_F_PAGESET) {
 		error = cod_alloc_pageset(cse, caead->dst, caead->len +
 		    cse->thash->hashsize, td, &cod);
 		if (error) {
