@@ -291,9 +291,9 @@ crypto_copyfrom(struct cryptop *crp, int off, int size, caddr_t out)
 				off = 0;
 			}
 		}
-		return (cpageset_copyback(crp->crp_pageset, off, size, out));
+		return (cpageset_copydata(crp->crp_pageset, off, size, out));
 	} else {
-		crypto_copyback(crp->crp_flags, crp->crp_buf, off, size, out);
+		crypto_copydata(crp->crp_flags, crp->crp_buf, off, size, out);
 		return (0);
 	}
 }
