@@ -1499,11 +1499,11 @@ ccr_sysctls(struct ccr_softc *sc)
 	    &sc->stats_process_error, 0, "Requests failed during queueing");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
 	    &sc->stats_buf, 0, "Requests described by a KVA buffer");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "mbuf", CTLFLAG_RD,
 	    &sc->stats_mbuf, 0, "Requests described by an mbuf");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "uio", CTLFLAG_RD,
 	    &sc->stats_uio, 0, "Requests described by a UIO");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "pageset", CTLFLAG_RD,
 	    &sc->stats_pageset, 0, "Requests described by a pageset");
 }
 
