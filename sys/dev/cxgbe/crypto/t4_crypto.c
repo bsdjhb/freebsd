@@ -201,6 +201,10 @@ struct ccr_softc {
 	uint64_t stats_bad_session;
 	uint64_t stats_sglist_error;
 	uint64_t stats_process_error;
+	uint64_t stats_buf;
+	uint64_t stats_mbuf;
+	uint64_t stats_uio;
+	uint64_t stats_pageset;
 };
 
 /*
@@ -1493,6 +1497,14 @@ ccr_sysctls(struct ccr_softc *sc)
 	    "Requests for which DMA mapping failed");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "process_error", CTLFLAG_RD,
 	    &sc->stats_process_error, 0, "Requests failed during queueing");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	    &sc->stats_buf, 0, "Requests described by a KVA buffer");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	    &sc->stats_mbuf, 0, "Requests described by an mbuf");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	    &sc->stats_uio, 0, "Requests described by a UIO");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "buf", CTLFLAG_RD,
+	    &sc->stats_pageset, 0, "Requests described by a pageset");
 }
 
 static int
@@ -2124,6 +2136,14 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	if (error == 0) {
 		s->pending++;
 		sc->stats_inflight++;
+		if (crp->crp_flags & CRYPTO_F_IMBUF)
+			sc->stats_mbuf++;
+		else if (crp->crp_flags & CRYPTO_F_IOV)
+			sc->stats_uio++;
+		else if (crp->crp_flags & CRYPTO_F_PAGESET)
+			sc->stats_pageset++;
+		else
+			sc->stats_buf++;
 	} else
 		sc->stats_process_error++;
 
