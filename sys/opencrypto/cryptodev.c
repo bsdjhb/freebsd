@@ -832,7 +832,7 @@ cryptodev_op(
 	crp->crp_uio = &cod->uio;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_sid = cse->sid;
-	crp->crp_opaque = (void *)cod;
+	crp->crp_opaque = cod;
 
 	if (cop->iv) {
 		if (crde == NULL) {
@@ -1008,7 +1008,7 @@ cryptodev_aead(
 	crp->crp_uio = &cod->uio;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_sid = cse->sid;
-	crp->crp_opaque = (void *)cod;
+	crp->crp_opaque = cod;
 
 	if (caead->iv) {
 		if (caead->ivlen > sizeof(crde->crd_iv)) {
