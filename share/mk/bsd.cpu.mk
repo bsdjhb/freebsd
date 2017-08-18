@@ -318,6 +318,7 @@ LDFLAGS += -EB
 . if ${MACHINE_ARCH:Mmips64*} != ""
 AFLAGS+= -mabi=64
 CFLAGS+= -mabi=64
+CFLAGS.clang += -integrated-as
 LDFLAGS+= -mabi=64
 . elif ${MACHINE_ARCH:Mmipsn32*} != ""
 AFLAGS+= -mabi=n32
