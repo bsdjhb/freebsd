@@ -169,7 +169,7 @@ cpageset_copyback(struct pageset *ps, int off, int size, c_caddr_t in)
 	uio.uio_offset = 0;
 	uio.uio_resid = size;
 	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_rw = UIO_READ;
+	uio.uio_rw = UIO_WRITE;
 	error = uiomove_fromphys(ps->pages, ps->offset + off, size, &uio);
 	MPASS(error != 0 || uio.uio_resid == 0);
 	return (error);
@@ -189,7 +189,7 @@ cpageset_copydata(struct pageset *ps, int off, int size, caddr_t out)
 	uio.uio_offset = 0;
 	uio.uio_resid = size;
 	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_rw = UIO_WRITE;
+	uio.uio_rw = UIO_READ;
 	error = uiomove_fromphys(ps->pages, ps->offset + off, size, &uio);
 	MPASS(error != 0 || uio.uio_resid == 0);
 	return (error);
