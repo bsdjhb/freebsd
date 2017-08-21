@@ -1103,7 +1103,6 @@ cryptodev_aead(
 	crp->crp_flags |= CRYPTO_F_CBIMM;
 	if (caead->flags & COP_F_BATCH)
 		crp->crp_flags |= CRYPTO_F_BATCH;
-	crp->crp_uio = &cod->uio;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_sid = cse->sid;
 	crp->crp_opaque = cod;
