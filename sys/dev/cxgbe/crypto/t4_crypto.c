@@ -437,6 +437,7 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 #include <sys/uio.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
+#include <vm/vm_page.h>
 #include <vm/vm_param.h>
 
 static void
@@ -500,8 +501,10 @@ dump_crp(struct ccr_softc *sc, struct cryptop *crp)
 static void
 dump_crp_buffer(struct ccr_softc *sc, struct cryptop *crp)
 {
+	struct pageset *ps;
 	struct mbuf *m;
 	struct uio *uio;
+	vm_size_t total, len;
 	int i;
 
 	device_printf(sc->dev, "crp buffer ");
@@ -517,6 +520,34 @@ dump_crp_buffer(struct ccr_softc *sc, struct cryptop *crp)
 			hexdump(uio->uio_iov[i].iov_base,
 			    uio->uio_iov[i].iov_len, NULL, HD_OMIT_CHARS |
 			    HD_OMIT_COUNT);
+	} else if (crp->crp_flags & CRYPTO_F_PAGESET) {
+		printf("(pageset)");
+		if (crp->crp_aad != NULL && crp->crp_aadlen != 0) {
+			printf(" AAD:\n");
+			hexdump(crp->crp_aad, crp->crp_aadlen, NULL,
+			    HD_OMIT_CHARS | HD_OMIT_COUNT);
+		}
+		printf(" buffer:\n");
+		ps = crp->crp_pageset;
+		total = 0;
+		for (i = 0; total < ps->len; i++) {
+			if (i == 0) {
+				len = PAGE_SIZE - ps->offset;
+				if (len > ps->len)
+					len = ps->len;
+				hexdump((void *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(
+				    ps->pages[i]) + ps->offset), len, NULL,
+				    HD_OMIT_CHARS | HD_OMIT_COUNT);
+			} else {
+				len = PAGE_SIZE;
+				if (total + len > ps->len)
+					len = ps->len - total;
+				hexdump((void *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(
+				    ps->pages[i])), len, NULL, HD_OMIT_CHARS |
+				    HD_OMIT_COUNT);
+			}
+			total += len;
+		}
 	} else {
 		printf(":\n");
 		hexdump(crp->crp_buf, crp->crp_ilen, NULL, HD_OMIT_CHARS |
