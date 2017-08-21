@@ -1273,15 +1273,19 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	int sgl_nsegs, sgl_len;
 	int error;
 
-	if (s->blkcipher.key_len == 0)
+	if (s->blkcipher.key_len == 0) {
+		CTR1(KTR_CXGBE, "%s: no cipher key", __func__);
 		return (EINVAL);
+	}
 
 	/*
 	 * AAD is only permitted before the cipher/plain text, not
 	 * after.
 	 */
-	if (crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip)
+	if (crda->crd_len + crda->crd_skip > crde->crd_len + crde->crd_skip) {
+		CTR1(KTR_CXGBE, "%s: AAD after cipher text", __func__);
 		return (EINVAL);
+	}
 
 	hash_size_in_response = s->gmac.hash_len;
 
@@ -1334,26 +1338,41 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	 * the plain text.
 	 */
 	if (op_type == CHCR_ENCRYPT_OP) {
-		if (crde->crd_len + hash_size_in_response > MAX_REQUEST_SIZE)
+		if (crde->crd_len + hash_size_in_response > MAX_REQUEST_SIZE) {
+			CTR1(KTR_CXGBE, "%s: output buffer too large",
+			    __func__);
 			return (EFBIG);
+		}
 	} else {
-		if (crde->crd_len > MAX_REQUEST_SIZE)
+		if (crde->crd_len > MAX_REQUEST_SIZE) {
+			CTR1(KTR_CXGBE, "%s: output buffer too large",
+			    __func__);
 			return (EFBIG);
+		}
 	}
 	sglist_reset(sc->sg_dsgl);
 	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp, crde->crd_skip,
 	    crde->crd_len);
-	if (error)
+	if (error) {
+		CTR1(KTR_CXGBE, "%s: appending cipher text to dsgl failed",
+		    __func__);
 		return (error);
+	}
 	if (op_type == CHCR_ENCRYPT_OP) {
 		error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp,
 		    crda->crd_inject, hash_size_in_response);
-		if (error)
+		if (error) {
+			CTR1(KTR_CXGBE, "%s: appending tag to dsgl failed",
+			    __func__);
 			return (error);
+		}
 	}
 	dsgl_nsegs = ccr_count_sgl(sc->sg_dsgl, DSGL_SGE_MAXLEN);
-	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE)
+	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE) {
+		CTR2(KTR_CXGBE, "%s: too many entries in dsgl: %d", __func__,
+		    dsgl_nsegs);
 		return (EFBIG);
+	}
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/*
@@ -1371,8 +1390,10 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 	input_len = crda->crd_len + crde->crd_len;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (input_len > MAX_REQUEST_SIZE)
+	if (input_len > MAX_REQUEST_SIZE) {
+		CTR1(KTR_CXGBE, "%s: input buffer too large", __func__);
 		return (EFBIG);
+	}
 	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
@@ -1383,18 +1404,30 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		if (crda->crd_len != 0) {
 			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
 			    crda->crd_skip, crda->crd_len);
-			if (error)
+			if (error) {
+				CTR1(KTR_CXGBE,
+				    "%s: appending AAD to ulp sgl failed",
+				    __func__);
 				return (error);
+			}
 		}
 		error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
 		    crde->crd_skip, crde->crd_len);
-		if (error)
+		if (error) {
+			CTR1(KTR_CXGBE,
+			    "%s: appending cipher text to ulp sgl failed",
+			    __func__);
 			return (error);
+		}
 		if (op_type == CHCR_DECRYPT_OP) {
 			error = sglist_append_sglist(sc->sg_ulptx, sc->sg_crp,
 			    crda->crd_inject, hash_size_in_response);
-			if (error)
+			if (error) {
+				CTR1(KTR_CXGBE,
+				    "%s: appending tag to ulp sgl failed",
+				    __func__);
 				return (error);
+			}
 		}
 		sgl_nsegs = sc->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
@@ -1422,6 +1455,7 @@ ccr_gcm(struct ccr_softc *sc, uint32_t sid, struct ccr_session *s,
 		wr_len += iv_len;
 	wr = alloc_wrqe(wr_len, sc->txq);
 	if (wr == NULL) {
+		CTR1(KTR_CXGBE, "%s: failed to alloc work request", __func__);
 		sc->stats_wr_nomem++;
 		return (ENOMEM);
 	}
