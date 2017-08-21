@@ -50,6 +50,13 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   if (Triple.getOS() == llvm::Triple::OpenBSD)
     DefMips64CPU = "mips3";
 
+  // MIPS3 is the default for mips*-unknown-freebsd.
+  // FIXME: MIPS3 doesn't support O32, MIPS2 used instead
+  if (Triple.getOS() == llvm::Triple::FreeBSD) {
+    DefMips32CPU = "mips2";
+    DefMips64CPU = "mips3";
+  }
+
   if (Arg *A = Args.getLastArg(clang::driver::options::OPT_march_EQ,
                                options::OPT_mcpu_EQ))
     CPUName = A->getValue();
