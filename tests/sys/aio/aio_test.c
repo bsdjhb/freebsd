@@ -302,6 +302,7 @@ aio_write_test(struct aio_context *ac, completion comp, struct sigevent *sev)
 {
 	struct aiocb aio;
 	ssize_t len;
+	int retries;
 
 	bzero(&aio, sizeof(aio));
 	aio.aio_buf = ac->ac_buffer;
@@ -311,8 +312,15 @@ aio_write_test(struct aio_context *ac, completion comp, struct sigevent *sev)
 	if (sev)
 		aio.aio_sigevent = *sev;
 
-	if (aio_write(&aio) < 0)
-		atf_tc_fail("aio_write failed: %s", strerror(errno));
+	retries = 5;
+	for (;;) {
+		if (aio_write(&aio) == 0)
+			break;
+		if (errno != EAGAIN || retries == 0)
+			atf_tc_fail("aio_write failed: %s", strerror(errno));
+		retries--;
+		usleep(1000);
+	}
 
 	len = comp(&aio);
 	if (len < 0)
@@ -372,6 +380,7 @@ aio_read_test(struct aio_context *ac, completion comp, struct sigevent *sev)
 {
 	struct aiocb aio;
 	ssize_t len;
+	int retries;
 
 	bzero(ac->ac_buffer, ac->ac_buflen);
 	bzero(&aio, sizeof(aio));
@@ -382,8 +391,15 @@ aio_read_test(struct aio_context *ac, completion comp, struct sigevent *sev)
 	if (sev)
 		aio.aio_sigevent = *sev;
 
-	if (aio_read(&aio) < 0)
-		atf_tc_fail("aio_read failed: %s", strerror(errno));
+	retries = 5;
+	for (;;) {
+		if (aio_read(&aio) == 0)
+			break;
+		if (errno != EAGAIN || retries == 0)
+			atf_tc_fail("aio_read failed: %s", strerror(errno));
+		retries--;
+		usleep(1000);
+	}
 
 	len = comp(&aio);
 	if (len < 0)
