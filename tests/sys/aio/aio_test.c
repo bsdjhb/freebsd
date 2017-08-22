@@ -656,6 +656,7 @@ aio_md_cleanup(void)
 	ATF_REQUIRE(mdctl_fd >= 0);
 	n = readlink(MDUNIT_LINK, buf, sizeof(buf));
 	if (n > 0) {
+		unlink(MDUNIT_LINK);
 		if (sscanf(buf, "%d", &unit) == 1 && unit >= 0) {
 			bzero(&mdio, sizeof(mdio));
 			mdio.md_version = MDIOVERSION;
