@@ -1,5 +1,7 @@
 # $FreeBSD$
 
+.include <bsd.compiler.mk>
+
 .PATH: ${.CURDIR:H}/common
 
 SRCS=		crt1.c crti.S crtn.S
@@ -17,10 +19,12 @@ FILESDIR=	${LIBDIR}
 .undef LIBRARIES_ONLY
 
 CLEANFILES=	${OBJS}
-CLEANFILES+=	crt1.s gcrt1.s Scrt1.s
 
+.if ${COMPILER_TYPE} == "gcc"
 # See the comment in lib/csu/common/crtbrand.c for the reason crt1.c is not
 # directly compiled to .o files.
+
+CLEANFILES+=	crt1.s gcrt1.s Scrt1.s
 
 crt1.s: crt1.c
 	${CC} ${CFLAGS} -S -o ${.TARGET} ${.CURDIR}/crt1.c
@@ -42,5 +46,13 @@ Scrt1.s: crt1.c
 
 Scrt1.o: Scrt1.s
 	${CC} ${CFLAGS:N-g} ${ACFLAGS} -c -o ${.TARGET} Scrt1.s
+
+.else
+gcrt1.o: crt1.c
+	${CC} ${CFLAGS} -DGCRT -c -o gcrt1.o ${.ALLSRC}
+
+Scrt1.o: crt1.c
+	${CC} ${CFLAGS} -fPIC -DPIC -c -o Scrt1.o ${.ALLSRC}
+.endif
 
 .include <bsd.lib.mk>
