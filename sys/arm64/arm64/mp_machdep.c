@@ -227,6 +227,9 @@ release_aps(void *dummy __unused)
 	if (mp_ncpus == 1)
 		return;
 
+#ifdef EARLY_AP_STARTUP
+	bus_set_pass(BUS_PASS_INTR);
+#endif
 	intr_pic_ipi_setup(IPI_AST, "ast", ipi_ast, NULL);
 	intr_pic_ipi_setup(IPI_PREEMPT, "preempt", ipi_preempt, NULL);
 	intr_pic_ipi_setup(IPI_RENDEZVOUS, "rendezvous", ipi_rendezvous, NULL);

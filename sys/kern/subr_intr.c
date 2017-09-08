@@ -125,7 +125,7 @@ static struct mtx isrc_table_lock;
 static struct intr_irqsrc *irq_sources[NIRQ];
 u_int irq_next_free;
 
-#ifdef SMP
+#if defined(SMP) && !defined(EARLY_AP_STARTUP)
 static boolean_t irq_assign_cpu = FALSE;
 #endif
 
@@ -593,7 +593,11 @@ intr_isrc_assign_cpu(void *arg, int cpu)
 	 * PIC is expected to change isrc_cpu appropriately to keep us well
 	 * informed if the call is successful.
 	 */
+#ifdef EARLY_AP_STARTUP
+	{
+#else
 	if (irq_assign_cpu) {
+#endif
 		error = PIC_BIND_INTR(isrc->isrc_dev, isrc);
 		if (error) {
 			CPU_ZERO(&isrc->isrc_cpu);
@@ -1172,7 +1176,11 @@ intr_irq_next_cpu(u_int last_cpu, cpuset_t *cpumask)
 	u_int cpu;
 
 	KASSERT(!CPU_EMPTY(cpumask), ("%s: Empty CPU mask", __func__));
+#ifdef EARLY_AP_STARTUP
+	if (mp_ncpus == 1) {
+#else
 	if (!irq_assign_cpu || mp_ncpus == 1) {
+#endif
 		cpu = PCPU_GET(cpuid);
 
 		if (CPU_ISSET(cpu, cpumask))
@@ -1189,6 +1197,7 @@ intr_irq_next_cpu(u_int last_cpu, cpuset_t *cpumask)
 	return (last_cpu);
 }
 
+#ifndef EARLY_AP_STARTUP
 /*
  *  Distribute all the interrupt sources among the available
  *  CPUs once the AP's have been launched.
@@ -1229,6 +1238,7 @@ intr_irq_shuffle(void *arg __unused)
 	mtx_unlock(&isrc_table_lock);
 }
 SYSINIT(intr_irq_shuffle, SI_SUB_SMP, SI_ORDER_SECOND, intr_irq_shuffle, NULL);
+#endif
 
 #else
 u_int

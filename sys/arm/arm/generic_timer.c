@@ -213,6 +213,7 @@ setup_user_access(void *arg __unused)
 	isb();
 }
 
+#ifndef EARLY_AP_STARTUP
 static void
 tmr_setup_user_access(void *arg __unused)
 {
@@ -221,6 +222,7 @@ tmr_setup_user_access(void *arg __unused)
 		smp_rendezvous(NULL, setup_user_access, NULL, NULL);
 }
 SYSINIT(tmr_ua, SI_SUB_SMP, SI_ORDER_SECOND, tmr_setup_user_access, NULL);
+#endif
 
 static unsigned
 arm_tmr_get_timecount(struct timecounter *tc)
@@ -451,6 +453,9 @@ arm_tmr_attach(device_t dev)
 
 #if defined(__arm__)
 	arm_set_delay(arm_tmr_do_delay, sc);
+#endif
+#ifdef EARLY_AP_STARTUP
+	smp_rendezvous(NULL, setup_user_access, NULL, NULL);
 #endif
 
 	return (0);
