@@ -405,7 +405,7 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 /*
  * Get machine VFP context.
  */
-static void
+void
 get_vfpcontext(struct thread *td, mcontext_vfp_t *vfp)
 {
 	struct pcb *curpcb;
@@ -424,7 +424,7 @@ get_vfpcontext(struct thread *td, mcontext_vfp_t *vfp)
 /*
  * Set machine VFP context.
  */
-static void
+void
 set_vfpcontext(struct thread *td, mcontext_vfp_t *vfp)
 {
 	struct pcb *curpcb;
