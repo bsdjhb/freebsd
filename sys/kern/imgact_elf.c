@@ -137,6 +137,8 @@ SYSCTL_INT(_kern_elf32, OID_AUTO, read_exec, CTLFLAG_RW, &i386_read_exec, 0,
 #endif
 #endif
 
+int __elfN(hwcap);
+
 static Elf_Brandinfo *elf_brand_list[MAX_BRANDS];
 
 #define	trunc_page_ps(va, ps)	rounddown2(va, ps)
@@ -1110,9 +1112,7 @@ __elfN(freebsd_fixup)(register_t **stack_base, struct image_params *imgp)
 	AUXARGS_ENTRY(pos, AT_FLAGS, args->flags);
 	AUXARGS_ENTRY(pos, AT_ENTRY, args->entry);
 	AUXARGS_ENTRY(pos, AT_BASE, args->base);
-#ifdef AT_EHDRFLAGS
 	AUXARGS_ENTRY(pos, AT_EHDRFLAGS, args->hdr_eflags);
-#endif
 	if (imgp->execpathp != 0)
 		AUXARGS_ENTRY(pos, AT_EXECPATH, imgp->execpathp);
 	AUXARGS_ENTRY(pos, AT_OSRELDATE,
@@ -1133,6 +1133,7 @@ __elfN(freebsd_fixup)(register_t **stack_base, struct image_params *imgp)
 	AUXARGS_ENTRY(pos, AT_STACKPROT, imgp->sysent->sv_shared_page_obj
 	    != NULL && imgp->stack_prot != 0 ? imgp->stack_prot :
 	    imgp->sysent->sv_stackprot);
+	AUXARGS_ENTRY(pos, AT_HWCAP, __elfN(hwcap));
 	AUXARGS_ENTRY(pos, AT_NULL, 0);
 
 	free(imgp->auxargs, M_TEMP);

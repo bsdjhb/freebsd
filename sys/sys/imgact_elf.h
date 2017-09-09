@@ -100,6 +100,7 @@ size_t	__elfN(populate_note)(int, void *, void *, size_t, void **);
 void	__elfN(dump_thread)(struct thread *, void *, size_t *);
 
 extern int __elfN(fallback_brand);
+extern int __elfN(hwcap);
 extern Elf_Brandnote __elfN(freebsd_brandnote);
 extern Elf_Brandnote __elfN(kfreebsd_brandnote);
 #endif /* _KERNEL */
