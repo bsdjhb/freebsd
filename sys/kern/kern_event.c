@@ -481,21 +481,17 @@ static int
 filt_proc(struct knote *kn, long hint)
 {
 	struct proc *p;
-	u_int event;
 
 	p = kn->kn_ptr.p_proc;
 	if (p == NULL) /* already activated, from attach filter */
 		return (0);
 
-	/* Mask off extra data. */
-	event = (u_int)hint & NOTE_PCTRLMASK;
-
 	/* If the user is interested in this event, record it. */
-	if (kn->kn_sfflags & event)
-		kn->kn_fflags |= event;
+	if (kn->kn_sfflags & hint)
+		kn->kn_fflags |= hint;
 
 	/* Process is gone, so flag the event as finished. */
-	if (event == NOTE_EXIT) {
+	if (hint == NOTE_EXIT) {
 		kn->kn_flags |= EV_EOF | EV_ONESHOT;
 		kn->kn_ptr.p_proc = NULL;
 		if (kn->kn_fflags & NOTE_EXIT)

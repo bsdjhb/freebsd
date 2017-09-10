@@ -141,8 +141,6 @@ struct kevent {
 #define	NOTE_EXIT	0x80000000		/* process exited */
 #define	NOTE_FORK	0x40000000		/* process forked */
 #define	NOTE_EXEC	0x20000000		/* process exec'd */
-#define	NOTE_PCTRLMASK	0xf0000000		/* mask for hint bits */
-#define	NOTE_PDATAMASK	0x000fffff		/* mask for pid */
 
 /* additional flags for EVFILT_PROC */
 #define	NOTE_TRACK	0x00000001		/* follow across forks */

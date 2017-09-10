@@ -464,7 +464,6 @@ static int
 procdesc_kqops_event(struct knote *kn, long hint)
 {
 	struct procdesc *pd;
-	u_int event;
 
 	pd = kn->kn_fp->f_data;
 	if (hint == 0) {
@@ -472,18 +471,15 @@ procdesc_kqops_event(struct knote *kn, long hint)
 		 * Initial test after registration. Generate a NOTE_EXIT in
 		 * case the process already terminated before registration.
 		 */
-		event = pd->pd_flags & PDF_EXITED ? NOTE_EXIT : 0;
-	} else {
-		/* Mask off extra data. */
-		event = (u_int)hint & NOTE_PCTRLMASK;
+		hint = pd->pd_flags & PDF_EXITED ? NOTE_EXIT : 0;
 	}
 
 	/* If the user is interested in this event, record it. */
-	if (kn->kn_sfflags & event)
-		kn->kn_fflags |= event;
+	if (kn->kn_sfflags & hint)
+		kn->kn_fflags |= hint;
 
 	/* Process is gone, so flag the event as finished. */
-	if (event == NOTE_EXIT) {
+	if (hint == NOTE_EXIT) {
 		kn->kn_flags |= EV_EOF | EV_ONESHOT;
 		if (kn->kn_fflags & NOTE_EXIT)
 			kn->kn_data = pd->pd_xstat;
