@@ -49,6 +49,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/errno.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/event.h>
 #include <sys/ktrace.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -111,6 +112,8 @@ void ktrstruct(char *, size_t);
 void ktrcapfail(struct ktr_cap_fail *);
 void ktrfault(struct ktr_fault *);
 void ktrfaultend(struct ktr_faultend *);
+void ktrkevent(struct kevent *);
+void ktrstructarray(struct ktr_struct_array *, size_t);
 void usage(void);
 
 #define	TIMESTAMP_NONE		0x0
@@ -546,6 +549,9 @@ main(int argc, char *argv[])
 		case KTR_FAULTEND:
 			ktrfaultend((struct ktr_faultend *)m);
 			break;
+		case KTR_STRUCT_ARRAY:
+			ktrstructarray((struct ktr_struct_array *)m, ktrlen);
+			break;
 		default:
 			printf("\n");
 			break;
@@ -680,6 +686,7 @@ dumpheader(struct ktr_header *kth)
 		type = "USER";
 		break;
 	case KTR_STRUCT:
+	case KTR_STRUCT_ARRAY:
 		type = "STRU";
 		break;
 	case KTR_SYSCTL:
@@ -2069,6 +2076,68 @@ ktrfaultend(struct ktr_faultend *ktr)
 	else
 		printf("<invalid=%d>", ktr->result);
 	printf("\n");
+}
+
+void
+ktrkevent(struct kevent *kev)
+{
+
+	printf(
+    "{ ident=%p, filter=%d, flags=%#x, fflags=%#x, data=%#jx, udata=%p }",
+	    (void *)kev->ident, kev->filter, kev->flags, kev->fflags,
+	    (uintmax_t)kev->data, kev->udata);
+}
+
+void
+ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
+{
+	struct kevent kev;
+	char *name, *data;
+	size_t namelen, datalen;
+	int i;
+	bool first;
+
+	buflen -= sizeof(*ksa);
+	for (name = (char *)(ksa + 1), namelen = 0;
+	     namelen < buflen && name[namelen] != '\0';
+	     ++namelen)
+		/* nothing */;
+	if (namelen == buflen)
+		goto invalid;
+	if (name[namelen] != '\0')
+		goto invalid;
+	/* sanity check */
+	for (i = 0; i < (int)namelen; ++i)
+		if (!isalpha(name[i]))
+			goto invalid;
+	data = name + namelen + 1;
+	datalen = buflen - namelen - 1;
+	printf("struct %s[] = { ", name);
+	first = true;
+	for (; datalen >= ksa->struct_size;
+	    data += ksa->struct_size, datalen -= ksa->struct_size) {
+		if (!first)
+			printf("\n             ");
+		else
+			first = false;
+		if (strcmp(name, "kevent") == 0) {
+			if (ksa->struct_size != sizeof(struct kevent))
+				goto bad_size;
+			memcpy(&kev, data, sizeof(struct kevent));
+			ktrkevent(&kev);
+		} else {
+			printf("<unknown structure> }\n");
+			return;
+		}
+	}
+	printf(" }\n");
+	return;
+invalid:
+	printf("invalid record\n");
+	return;
+bad_size:
+	printf("<bad size> }\n");
+	return;
 }
 
 void

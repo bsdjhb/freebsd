@@ -905,17 +905,6 @@ kern_kqueue(struct thread *td, int flags, struct filecaps *fcaps)
 	return (0);
 }
 
-#ifdef KTRACE
-static size_t
-kev_iovlen(int n, u_int kgio, size_t kevent_size)
-{
-
-	if (n < 0 || n >= kgio / kevent_size)
-		return (kgio);
-	return (n * kevent_size);
-}
-#endif
-
 struct g_kevent_args {
 	int	fd;
 	void	*changelist;
@@ -952,13 +941,6 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
 {
 	struct timespec ts, *tsp;
 	int error;
-#ifdef KTRACE
-	struct uio ktruio;
-	struct iovec ktriov;
-	struct uio *ktruioin = NULL;
-	struct uio *ktruioout = NULL;
-	u_int kgio;
-#endif
 
 	if (uap->timeout != NULL) {
 		error = copyin(uap->timeout, &ts, sizeof(ts));
@@ -969,35 +951,18 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
 		tsp = NULL;
 
 #ifdef KTRACE
-	if (KTRPOINT(td, KTR_GENIO)) {
-		kgio = ktr_geniosize;
-		ktriov.iov_base = uap->changelist;
-		ktriov.iov_len = kev_iovlen(uap->nchanges, kgio,
-		    k_ops->kevent_size);
-		ktruio = (struct uio){ .uio_iov = &ktriov, .uio_iovcnt = 1,
-		    .uio_segflg = UIO_USERSPACE, .uio_rw = UIO_READ,
-		    .uio_td = td };
-		ktruioin = cloneuio(&ktruio);
-		ktriov.iov_base = uap->eventlist;
-		ktriov.iov_len = kev_iovlen(uap->nevents, kgio,
-		    k_ops->kevent_size);
-		ktriov.iov_len = uap->nevents * k_ops->kevent_size;
-		ktruioout = cloneuio(&ktruio);
-	}
+	if (KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent", UIO_USERSPACE, uap->changelist,
+		    uap->nchanges, k_ops->kevent_size);
 #endif
 
 	error = kern_kevent(td, uap->fd, uap->nchanges, uap->nevents,
 	    k_ops, tsp);
 
 #ifdef KTRACE
-	if (ktruioin != NULL) {
-		ktruioin->uio_resid = kev_iovlen(uap->nchanges, kgio,
-		    k_ops->kevent_size);
-		ktrgenio(uap->fd, UIO_WRITE, ktruioin, 0);
-		ktruioout->uio_resid = kev_iovlen(td->td_retval[0], kgio,
-		    k_ops->kevent_size);
-		ktrgenio(uap->fd, UIO_READ, ktruioout, error);
-	}
+	if (error == 0 && KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent", UIO_USERSPACE, uap->eventlist,
+		    td->td_retval[0], k_ops->kevent_size);
 #endif
 
 	return (error);
