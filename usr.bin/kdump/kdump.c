@@ -2082,10 +2082,31 @@ void
 ktrkevent(struct kevent *kev)
 {
 
-	printf(
-    "{ ident=%p, filter=%d, flags=%#x, fflags=%#x, data=%#jx, udata=%p }",
-	    (void *)kev->ident, kev->filter, kev->flags, kev->fflags,
-	    (uintmax_t)kev->data, kev->udata);
+	printf("{ ident=");
+	switch (kev->filter) {
+	case EVFILT_READ:
+	case EVFILT_WRITE:
+	case EVFILT_VNODE:
+	case EVFILT_PROC:
+	case EVFILT_TIMER:
+	case EVFILT_PROCDESC:
+	case EVFILT_EMPTY:
+		printf("%ju", (uintmax_t)kev->ident);
+		break;
+	case EVFILT_SIGNAL:
+		print_signal(kev->ident);
+		break;
+	default:
+		printf("%p", (void *)kev->ident);
+	}
+	printf(", filter=");
+	print_integer_arg(sysdecode_kevent_filter, kev->filter);
+	printf(", flags=");
+	print_mask_arg0(sysdecode_kevent_flags, kev->flags);
+	printf(", fflags=");
+	sysdecode_kevent_fflags(stdout, kev->filter, kev->fflags,
+	    decimal ? 10 : 16);
+	printf(", data=%#jx, udata=%p }", (uintmax_t)kev->data, kev->udata);
 }
 
 void
