@@ -1338,7 +1338,7 @@ tmpfs_print(struct vop_print_args *v)
 	return 0;
 }
 
-static int
+int
 tmpfs_pathconf(struct vop_pathconf_args *v)
 {
 	struct vnode *vp = v->a_vp;

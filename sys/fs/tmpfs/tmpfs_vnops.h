@@ -53,5 +53,6 @@ vop_getattr_t	tmpfs_getattr;
 vop_setattr_t	tmpfs_setattr;
 vop_print_t	tmpfs_print;
 vop_reclaim_t	tmpfs_reclaim;
+vop_pathconf_t	tmpfs_pathconf;
 
 #endif /* _FS_TMPFS_TMPFS_VNOPS_H_ */
