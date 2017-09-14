@@ -166,7 +166,6 @@ do_onestr(const char *name, int key)
 		return;
 	}
 	printf("%s: ", name);
-	
 	if (len == 0)
 		printf("undefined\n");
 	else {
