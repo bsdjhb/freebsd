@@ -273,7 +273,7 @@
 
 [fini]
 	version = 0x1
-	checksum = 0xf438bb8f
+	checksum = 0x7191019f
 #
 # $FreeBSD$
 #
