@@ -487,7 +487,7 @@ filt_proc(struct knote *kn, long hint)
 		return (0);
 
 	/* If the user is interested in this event, record it. */
-	if (kn->kn_sfflags & hint)
+	if ((kn->kn_sfflags & hint) != 0)
 		kn->kn_fflags |= hint;
 
 	/* Process is gone, so flag the event as finished. */
