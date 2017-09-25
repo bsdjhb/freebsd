@@ -68,7 +68,7 @@
 #  include <openssl/rsa.h>
 # endif
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #define uint64_t unsigned long long
 #define htonll(data) ( \
     (((uint64_t)(data) >> 56) & 0x00000000000000FF) | \
@@ -93,7 +93,7 @@ static int update(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final(EVP_MD_CTX *ctx, unsigned char *md)
 {
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (ctx->is_chssl) {
         unsigned int *temp;
         unsigned char *iopad;
@@ -154,7 +154,7 @@ static int update256(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final256(EVP_MD_CTX *ctx, unsigned char *md)
 {
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (ctx->is_chssl) {
         unsigned int *temp;
         unsigned char *iopad;
@@ -231,7 +231,7 @@ static int update512(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final512(EVP_MD_CTX *ctx, unsigned char *md)
 {
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (ctx->is_chssl) {
         unsigned long long *temp;
         unsigned char *iopad;

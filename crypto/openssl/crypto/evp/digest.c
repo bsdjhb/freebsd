@@ -186,7 +186,7 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
             /* Ask if an ENGINE is reserved for this job */
             impl = ENGINE_get_digest_engine(type->type);
         if (impl
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             && !ctx->is_chssl
 #endif
            ) {
@@ -368,7 +368,7 @@ int EVP_Digest(const void *data, size_t count,
     return ret;
 }
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 int CHSSL_EVP_Digest(const void *data, size_t count,
                     unsigned char *md, unsigned int *size,
                     const EVP_MD *type, ENGINE *impl)

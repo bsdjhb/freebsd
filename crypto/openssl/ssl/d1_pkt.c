@@ -504,7 +504,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
     {
 #endif
@@ -521,7 +521,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
         s->packet_length = 0;
         goto err;
     }
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     }
 #endif
 #ifdef TLS_DEBUG
@@ -537,7 +537,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     /* r->length is now the compressed data plus mac */
     if ((sess != NULL) &&
         (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
         && !(SSL_mac_offload(s) && SSL_ofld_vers(s))
 #endif
 	) {

@@ -130,7 +130,7 @@
 #include "ssl_tom.h"
 #include <sys/uio.h>
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 int ssl_tls_offload(SSL *s)
 {
     int ret, mode = 0;

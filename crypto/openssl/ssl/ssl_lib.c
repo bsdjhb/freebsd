@@ -159,7 +159,7 @@
 #ifndef OPENSSL_NO_ENGINE
 # include <openssl/engine.h>
 #endif
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #include "ssl_tom.h"
 #endif
 
@@ -1072,7 +1072,7 @@ int SSL_shutdown(SSL *s)
         SSLerr(SSL_F_SSL_SHUTDOWN, SSL_R_UNINITIALIZED);
         return -1;
     }
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (s->chssl) {
         chssl_free(s);
     }

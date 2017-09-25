@@ -118,7 +118,7 @@
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
 #include <openssl/rand.h>
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #include "ssl_tom.h"
 #endif
 
@@ -356,7 +356,7 @@ static int ssl3_get_record(SSL *s)
 	}
         p = s->packet;
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     #define SSL3_RT_CHERROR 127
     if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
         s->rstate = SSL_ST_READ_ERROR;
@@ -365,7 +365,7 @@ static int ssl3_get_record(SSL *s)
         s->rstate = SSL_ST_READ_BODY;
 
 	if (s->msg_callback
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             && (SSL_ofld_vers(s) && (s->rstate != SSL_ST_READ_ERROR))
 #endif
         )
@@ -422,7 +422,7 @@ static int ssl3_get_record(SSL *s)
         /* now s->rstate == SSL_ST_READ_BODY */
     }
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (SSL_Chelsio_ofld(s)) {
         if (s->rstate == SSL_ST_READ_ERROR) {
             i = rr->length;
@@ -489,7 +489,7 @@ static int ssl3_get_record(SSL *s)
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
 #endif
     {
@@ -522,7 +522,7 @@ static int ssl3_get_record(SSL *s)
     if ((sess != NULL) &&
 	(s->enc_read_ctx != NULL) &&
 	(EVP_MD_CTX_md(s->read_hash) != NULL)
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 	&&
 	!(SSL_mac_offload(s) && SSL_ofld_vers(s))
 #endif
@@ -1775,7 +1775,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
      * before we read the finished message
      */
     if (s->state & SSL_ST_CONNECT) {
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
         if (SSL_ofld_rx(s))
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_CONNECT);
         if (SSL_clr_quiesce(s))
@@ -1784,7 +1784,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
         sender = s->method->ssl3_enc->server_finished_label;
         slen = s->method->ssl3_enc->server_finished_label_len;
     } else {
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
         if (SSL_ofld_rx(s))
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_ACCEPT);
 #endif
@@ -1804,7 +1804,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
 
     return (1);
 err:
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (SSL_ofld_rx(s))
         ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
 #endif

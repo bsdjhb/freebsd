@@ -166,7 +166,7 @@
 #ifndef OPENSSL_NO_ENGINE
 # include <openssl/engine.h>
 #endif
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #include "ssl_tom.h"
 #endif
 
@@ -302,7 +302,7 @@ int ssl3_connect(SSL *s)
             ret = ssl3_client_hello(s);
             if (ret <= 0)
                 goto end;
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             if (chssl_new(s) || SSL_ofld_vers(s))
                 ssl_tls_offload(s);
 #endif
@@ -310,12 +310,12 @@ int ssl3_connect(SSL *s)
             s->init_num = 0;
 
             /* turn on buffering for the next lot of output */
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
            if (!(SSL_ofld(s) && s->renegotiate)) {
 #endif
             if (s->bbio != s->wbio)
                 s->wbio = BIO_push(s->bbio, s->wbio);
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
            }
 #endif
 
@@ -499,7 +499,7 @@ int ssl3_connect(SSL *s)
                 s->state = SSL3_ST_CW_FINISHED_A;
 #endif
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             //if (SSL_ofld(s)) {
 		s->s3->tmp.next_state = s->state;
 		s->state = SSL3_ST_CW_FLUSH;
@@ -544,7 +544,7 @@ int ssl3_connect(SSL *s)
 
         case SSL3_ST_CW_FINISHED_A:
         case SSL3_ST_CW_FINISHED_B:
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
         if (SSL_ofld(s))
                chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_CONNECT);
 #endif
