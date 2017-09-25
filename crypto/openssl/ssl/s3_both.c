@@ -123,6 +123,9 @@
 #include <openssl/objects.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 /*
  * send s->init_buf in records of type 'type' (SSL3_RT_HANDSHAKE or
@@ -131,6 +134,9 @@
 int ssl3_do_write(SSL *s, int type)
 {
     int ret;
+#ifdef TLS_DEBUG
+    printf("%s type:%d len:%d \n",__func__,type,s->init_num);
+#endif
 
     ret = ssl3_write_bytes(s, type, &s->init_buf->data[s->init_off],
                            s->init_num);
@@ -161,6 +167,9 @@ int ssl3_send_finished(SSL *s, int a, int b, const char *sender, int slen)
     unsigned char *p;
     int i;
     unsigned long l;
+#ifdef TLS_DEBUG
+    printf("ssl3_send_finished: state:%x a:%x b%x slen:%d M:%x s:%p\n",s->state,a,b,slen,s->method->version,s);
+#endif
 
     if (s->state == a) {
         p = ssl_handshake_start(s);
@@ -168,6 +177,9 @@ int ssl3_send_finished(SSL *s, int a, int b, const char *sender, int slen)
         i = s->method->ssl3_enc->final_finish_mac(s,
                                                   sender, slen,
                                                   s->s3->tmp.finish_md);
+#ifdef TLS_DEBUG
+        printf("ssl3_send_finished: i:%d slen:%d ver:%x s:%p\n",i,slen,s->method->version,s);
+#endif
         if (i <= 0)
             return 0;
         s->s3->tmp.finish_md_len = i;
@@ -244,10 +256,21 @@ int ssl3_get_finished(SSL *s, int a, int b)
      * spec message and is in s->s3->tmp.peer_finish_md
      */
 #endif
+#ifdef TLS_DEBUG
+    printf("Enter %s \n",__func__);	
+#endif
 
     /* 64 argument should actually be 36+4 :-) */
+#ifndef CHSSL_OFFLOAD
+    if (SSL_ofld(s))
+	n = s->method->ssl_get_message(s, a, b, SSL3_MT_FINISHED, 16, &ok);
+    else
+#endif
     n = s->method->ssl_get_message(s, a, b, SSL3_MT_FINISHED, 64, &ok);
 
+#ifdef TLS_DEBUG
+    printf("%s ok:%d n:%d \n",__func__,ok,n);
+#endif
     if (!ok)
         return ((int)n);
 
@@ -346,6 +369,9 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
     unsigned long l;
     long n;
     int i, al;
+#ifdef TLS_DEBUG
+    printf("ssl3_get_message st1:%d stn:%d mt:%d max:%d\n",st1,stn,mt,max);
+#endif
 
     if (s->s3->tmp.reuse_message) {
         s->s3->tmp.reuse_message = 0;

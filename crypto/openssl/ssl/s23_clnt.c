@@ -221,6 +221,10 @@ int ssl23_connect(SSL *s)
             ret = ssl23_client_hello(s);
             if (ret <= 0)
                 goto end;
+#ifndef CHSSL_OFFLOAD
+            if (chssl_new(s))
+                ssl_tls_offload(s);
+#endif
             s->state = SSL23_ST_CR_SRVR_HELLO_A;
             s->init_num = 0;
 

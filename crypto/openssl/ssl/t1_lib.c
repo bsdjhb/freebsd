@@ -121,6 +121,9 @@
 #include <openssl/ocsp.h>
 #include <openssl/rand.h>
 #include "ssl_locl.h"
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 const char tls1_version_str[] = "TLSv1" OPENSSL_VERSION_PTEXT;
 
@@ -4051,6 +4054,9 @@ int tls1_process_heartbeat(SSL *s)
             s->tlsext_hb_pending = 0;
         }
     }
+#ifndef CHSSL_OFFLOAD
+	ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
+#endif
 
     return 0;
 }

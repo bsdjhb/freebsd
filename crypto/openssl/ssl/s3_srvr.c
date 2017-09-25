@@ -169,6 +169,9 @@
 # include <openssl/krb5_asn.h>
 #endif
 #include <openssl/md5.h>
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 #ifndef OPENSSL_NO_SSL3_METHOD
 static const SSL_METHOD *ssl3_get_server_method(int ver);
@@ -270,6 +273,10 @@ int ssl3_accept(SSL *s)
                 return -1;
             }
             s->type = SSL_ST_ACCEPT;
+#ifndef CHSSL_OFFLOAD
+            if (chssl_new(s))
+                ssl_tls_offload(s);
+#endif
 
             if (s->init_buf == NULL) {
                 if ((buf = BUF_MEM_new()) == NULL) {
@@ -423,6 +430,12 @@ int ssl3_accept(SSL *s)
             else
                 s->state = SSL3_ST_SW_CERT_A;
             s->init_num = 0;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s) && s->new_session) {
+                s->s3->tmp.next_state = s->state;
+                s->state = SSL3_ST_SW_FLUSH;
+            }
+#endif
             break;
 
         case SSL3_ST_SW_CERT_A:
@@ -453,6 +466,12 @@ int ssl3_accept(SSL *s)
             s->state = SSL3_ST_SW_KEY_EXCH_A;
 #endif
             s->init_num = 0;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s) && s->new_session) {
+                s->s3->tmp.next_state = s->state;
+                s->state = SSL3_ST_SW_FLUSH;
+            }
+#endif
             break;
 
         case SSL3_ST_SW_KEY_EXCH_A:
@@ -505,6 +524,12 @@ int ssl3_accept(SSL *s)
 
             s->state = SSL3_ST_SW_CERT_REQ_A;
             s->init_num = 0;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s) && s->new_session) {
+                s->s3->tmp.next_state = s->state;
+                s->state = SSL3_ST_SW_FLUSH;
+            }
+#endif
             break;
 
         case SSL3_ST_SW_CERT_REQ_A:
@@ -765,6 +790,12 @@ int ssl3_accept(SSL *s)
                 goto end;
             s->state = SSL3_ST_SW_CHANGE_A;
             s->init_num = 0;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s) && s->new_session) {
+                s->s3->tmp.next_state = s->state;
+                s->state = SSL3_ST_SW_FLUSH;
+            }
+#endif
             break;
 
         case SSL3_ST_SW_CERT_STATUS_A:
@@ -774,6 +805,12 @@ int ssl3_accept(SSL *s)
                 goto end;
             s->state = SSL3_ST_SW_KEY_EXCH_A;
             s->init_num = 0;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s) && s->new_session) {
+                s->s3->tmp.next_state = s->state;
+                s->state = SSL3_ST_SW_FLUSH;
+            }
+#endif
             break;
 
 #endif
@@ -794,7 +831,17 @@ int ssl3_accept(SSL *s)
 
             if (ret <= 0)
                 goto end;
+
+#ifndef CHSSL_OFFLOAD 
+            if (SSL_ofld(s)) {
+                s->s3->tmp.next_state = SSL3_ST_SW_FINISHED_A;
+                s->state = SSL3_ST_SW_FLUSH;
+            } else {
             s->state = SSL3_ST_SW_FINISHED_A;
+            }
+#else
+            s->state = SSL3_ST_SW_FINISHED_A;
+#endif
             s->init_num = 0;
 
             if (!s->method->ssl3_enc->change_cipher_state(s,
@@ -804,11 +851,14 @@ int ssl3_accept(SSL *s)
                 s->state = SSL_ST_ERR;
                 goto end;
             }
-
             break;
 
         case SSL3_ST_SW_FINISHED_A:
         case SSL3_ST_SW_FINISHED_B:
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s))
+                chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_ACCEPT);
+#endif
             ret = ssl3_send_finished(s,
                                      SSL3_ST_SW_FINISHED_A,
                                      SSL3_ST_SW_FINISHED_B,
@@ -831,6 +881,7 @@ int ssl3_accept(SSL *s)
             } else
                 s->s3->tmp.next_state = SSL_ST_OK;
             s->init_num = 0;
+
             break;
 
         case SSL_ST_OK:

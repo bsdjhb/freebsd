@@ -125,6 +125,9 @@
 #ifndef OPENSSL_NO_DH
 # include <openssl/dh.h>
 #endif
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 static const SSL_METHOD *dtls1_get_server_method(int ver);
 static int dtls1_send_hello_verify_request(SSL *s);
@@ -752,6 +755,10 @@ int dtls1_accept(SSL *s)
                                     SSL3_ST_SR_FINISHED_B);
             if (ret <= 0)
                 goto end;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld_rx(s))
+                chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_ACCEPT);
+#endif
             dtls1_stop_timer(s);
             if (s->hit)
                 s->state = SSL_ST_OK;
@@ -812,8 +819,14 @@ int dtls1_accept(SSL *s)
                          0, NULL);
             }
 #endif
-
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld(s)) {
+                s->s3->tmp.next_state = SSL3_ST_SW_FINISHED_A;
+                s->state = SSL3_ST_SW_FLUSH;
+            } else {
             s->state = SSL3_ST_SW_FINISHED_A;
+            }
+#endif
             s->init_num = 0;
 
             if (!s->method->ssl3_enc->change_cipher_state(s,
@@ -829,6 +842,10 @@ int dtls1_accept(SSL *s)
 
         case SSL3_ST_SW_FINISHED_A:
         case SSL3_ST_SW_FINISHED_B:
+#ifndef CHSSL_OFFLOAD
+        if (SSL_ofld(s))
+               chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_ACCEPT);
+#endif
             ret = ssl3_send_finished(s,
                                      SSL3_ST_SW_FINISHED_A,
                                      SSL3_ST_SW_FINISHED_B,

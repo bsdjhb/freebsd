@@ -112,11 +112,15 @@
 #include <stdio.h>
 #include <limits.h>
 #include <errno.h>
+ #include <fcntl.h>
 #define USE_SOCKETS
 #include "ssl_locl.h"
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
 #include <openssl/rand.h>
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 #ifndef  EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK
 # define EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK 0
@@ -152,6 +156,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
     long align = 0;
     unsigned char *pkt;
     SSL3_BUFFER *rb;
+    //printf("%s n:%d \n",__func__,n);
 
     if (n <= 0)
         return n;
@@ -161,6 +166,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
         if (!ssl3_setup_read_buffer(s))
             return -1;
 
+    //printf("%s left:%d \n",__func__,left);
     left = rb->left;
 #if defined(SSL3_ALIGN_PAYLOAD) && SSL3_ALIGN_PAYLOAD!=0
     align = (long)rb->buf + SSL3_RT_HEADER_LENGTH;
@@ -212,6 +218,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
         s->packet_length += n;
         rb->left = left - n;
         rb->offset += n;
+        //printf("%s n:%d off:%d\n",__func__,n,rb->offset);
         return (n);
     }
 
@@ -228,6 +235,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
         s->packet = pkt;
         rb->offset = len + align;
     }
+    //printf("%s n:%d rb->len:%d off:%d\n",__func__,n,rb->len,rb->offset);
 
     if (n > (int)(rb->len - rb->offset)) { /* does not happen */
         SSLerr(SSL_F_SSL3_READ_N, ERR_R_INTERNAL_ERROR);
@@ -244,6 +252,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
         if (max > (int)(rb->len - rb->offset))
             max = rb->len - rb->offset;
     }
+    //printf("max:%d \n",max);
 
     while (left < n) {
         /*
@@ -260,6 +269,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
             SSLerr(SSL_F_SSL3_READ_N, SSL_R_READ_BIO_NOT_SET);
             i = -1;
         }
+        //printf("bio read:%d sf:%d\n",i,s->rbio->num);
 
         if (i <= 0) {
             rb->left = left;
@@ -285,6 +295,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
     rb->left = left - n;
     s->packet_length += n;
     s->rwstate = SSL_NOTHING;
+    //printf("%s Exit n:%d \n",__func__,n);
     return (n);
 }
 
@@ -309,7 +320,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend)
 static int ssl3_get_record(SSL *s)
 {
     int ssl_major, ssl_minor, al;
-    int enc_err, n, i, ret = -1;
+    int enc_err = 0, n, i, ret = -1;
     SSL3_RECORD *rr;
     SSL_SESSION *sess;
     unsigned char *p;
@@ -340,12 +351,24 @@ static int ssl3_get_record(SSL *s)
     if ((s->rstate != SSL_ST_READ_BODY) ||
         (s->packet_length < SSL3_RT_HEADER_LENGTH)) {
         n = ssl3_read_n(s, SSL3_RT_HEADER_LENGTH, s->s3->rbuf.len, 0);
-        if (n <= 0)
+        if (n <= 0) {
             return (n);         /* error or non-blocking */
+	}
+        p = s->packet;
+
+#ifndef CHSSL_OFFLOAD
+    #define SSL3_RT_CHERROR 127
+    if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
+        s->rstate = SSL_ST_READ_ERROR;
+    } else
+#endif
         s->rstate = SSL_ST_READ_BODY;
 
-        p = s->packet;
-        if (s->msg_callback)
+	if (s->msg_callback
+#ifndef CHSSL_OFFLOAD
+            && (SSL_ofld_vers(s) && (s->rstate != SSL_ST_READ_ERROR))
+#endif
+        )
             s->msg_callback(0, 0, SSL3_RT_HEADER, p, 5, s,
                             s->msg_callback_arg);
 
@@ -399,18 +422,40 @@ static int ssl3_get_record(SSL *s)
         /* now s->rstate == SSL_ST_READ_BODY */
     }
 
-    /* s->rstate == SSL_ST_READ_BODY, get and decode the data */
+#ifndef CHSSL_OFFLOAD
+    if (SSL_Chelsio_ofld(s)) {
+        if (s->rstate == SSL_ST_READ_ERROR) {
+            i = rr->length;
+            n = ssl3_read_n(s, i, i, 1);
+            s->rstate = SSL_ST_READ_HEADER;
+            if (n<=0)
+                return n;
+            al = chssl_process_cherror(s);
+            printf("%s rstate SSL_ST_READ_ERROR \n",__func__);
+            goto f_err;
+        }
+    }
 
+    /* this may not be required len in Hdr = '5bytes + decrypted payload' */
+#endif
+
+    /* s->rstate == SSL_ST_READ_BODY, get and decode the data */
     if (rr->length > s->packet_length - SSL3_RT_HEADER_LENGTH) {
         /* now s->packet_length == SSL3_RT_HEADER_LENGTH */
         i = rr->length;
         n = ssl3_read_n(s, i, i, 1);
-        if (n <= 0)
+        if (n <= 0) {
+	    printf("%s n:%d \n",__func__,n);
             return (n);         /* error or non-blocking io */
+	}
         /*
          * now n == rr->length, and s->packet_length == SSL3_RT_HEADER_LENGTH
          * + rr->length
          */
+#if 0
+	for(i=0;i<16;i++)
+	printf("%x ",s->packet[i]);
+#endif
     }
 
     s->rstate = SSL_ST_READ_HEADER; /* set state for later operations */
@@ -437,12 +482,17 @@ static int ssl3_get_record(SSL *s)
     if (rr->length > SSL3_RT_MAX_ENCRYPTED_LENGTH + extra) {
         al = SSL_AD_RECORD_OVERFLOW;
         SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_ENCRYPTED_LENGTH_TOO_LONG);
+	    printf("%s SSL_R_ENCRYPTED_LENGTH_TOO_LONG \n",__func__);
         goto f_err;
     }
 
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
+#ifndef CHSSL_OFFLOAD
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
+#endif
+    {
     enc_err = s->method->ssl3_enc->enc(s, 0);
     /*-
      * enc_err is:
@@ -453,10 +503,13 @@ static int ssl3_get_record(SSL *s)
     if (enc_err == 0) {
         al = SSL_AD_DECRYPTION_FAILED;
         SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_BLOCK_CIPHER_PAD_IS_WRONG);
+		    printf("%s SSL_R_BLOCK_CIPHER_PAD_IS_WRONG \n",__func__);
         goto f_err;
     }
+    }
 #ifdef TLS_DEBUG
-    printf("dec %d\n", rr->length);
+    printf("\n dec %d host enc:%d mac:%d enc_err:%d\n",
+	   rr->length,SSL_enc_host(s),SSL_mac_host(s),enc_err);
     {
         unsigned int z;
         for (z = 0; z < rr->length; z++)
@@ -467,7 +520,13 @@ static int ssl3_get_record(SSL *s)
 
     /* r->length is now the compressed data plus mac */
     if ((sess != NULL) &&
-        (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)) {
+	(s->enc_read_ctx != NULL) &&
+	(EVP_MD_CTX_md(s->read_hash) != NULL)
+#ifndef CHSSL_OFFLOAD
+	&&
+	!(SSL_mac_offload(s) && SSL_ofld_vers(s))
+#endif
+       ) {
         /* s->read_hash != NULL => mac_size != -1 */
         unsigned char *mac = NULL;
         unsigned char mac_tmp[EVP_MAX_MD_SIZE];
@@ -491,6 +550,7 @@ static int ssl3_get_record(SSL *s)
              orig_len < mac_size + 1)) {
             al = SSL_AD_DECODE_ERROR;
             SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_LENGTH_TOO_SHORT);
+	    printf("%s SSL_R_LENGTH_TOO_SHORT \n",__func__);
             goto f_err;
         }
 
@@ -533,6 +593,7 @@ static int ssl3_get_record(SSL *s)
         al = SSL_AD_BAD_RECORD_MAC;
         SSLerr(SSL_F_SSL3_GET_RECORD,
                SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC);
+	printf("%s SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC \n",__func__);
         goto f_err;
     }
 
@@ -541,6 +602,7 @@ static int ssl3_get_record(SSL *s)
         if (rr->length > SSL3_RT_MAX_COMPRESSED_LENGTH + extra) {
             al = SSL_AD_RECORD_OVERFLOW;
             SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_COMPRESSED_LENGTH_TOO_LONG);
+	    printf("%s SSL_R_COMPRESSED_LENGTH_TOO_LONG \n",__func__);
             goto f_err;
         }
         if (!ssl3_do_uncompress(s)) {
@@ -553,6 +615,7 @@ static int ssl3_get_record(SSL *s)
     if (rr->length > SSL3_RT_MAX_PLAIN_LENGTH + extra) {
         al = SSL_AD_RECORD_OVERFLOW;
         SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_DATA_LENGTH_TOO_LONG);
+	printf("%s rr->length :%d extra:%d\n",__func__,rr->length,extra);
         goto f_err;
     }
 
@@ -575,11 +638,13 @@ static int ssl3_get_record(SSL *s)
         if (empty_record_count > MAX_EMPTY_RECORDS) {
             al = SSL_AD_UNEXPECTED_MESSAGE;
             SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_RECORD_TOO_SMALL);
+		printf("rr->length == 0 empty_record_count:%d\n",empty_record_count);
+	    printf("%s SSL_F_SSL3_GET_RECORD \n",__func__);
             goto f_err;
         }
         goto again;
     }
-#if 0
+#ifdef TLS_DEBUG
     fprintf(stderr, "Ultimate Record type=%d, Length=%d\n", rr->type,
             rr->length);
 #endif
@@ -688,7 +753,8 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len)
         }
         tot += i;               /* this might be last fragment */
     }
-#if !defined(OPENSSL_NO_MULTIBLOCK) && EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK
+#if !defined(OPENSSL_NO_MULTIBLOCK) && EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK && \
+    CHSSL_OFFLOAD
     /*
      * Depending on platform multi-block can deliver several *times*
      * better performance. Downside is that it has to allocate
@@ -986,7 +1052,8 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
     plen = p;
     p += 2;
     /* Explicit IV length, block ciphers appropriate version flag */
-    if (s->enc_write_ctx && SSL_USE_EXPLICIT_IV(s)) {
+    if (s->enc_write_ctx && SSL_USE_EXPLICIT_IV(s) &&
+	!(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
         int mode = EVP_CIPHER_CTX_mode(s->enc_write_ctx);
         if (mode == EVP_CIPH_CBC_MODE) {
             eivlen = EVP_CIPHER_CTX_iv_length(s->enc_write_ctx);
@@ -1027,7 +1094,7 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
      * wb->buf
      */
 
-    if (mac_size != 0) {
+    if (mac_size != 0 && !(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
         if (s->method->ssl3_enc->mac(s, &(p[wr->length + eivlen]), 1) < 0)
             goto err;
         wr->length += mac_size;
@@ -1043,8 +1110,10 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
         wr->length += eivlen;
     }
 
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
     if (s->method->ssl3_enc->enc(s, 1) < 1)
         goto err;
+    }
 
     /* record length after mac and block padding */
     s2n(wr->length, plen);
@@ -1172,8 +1241,10 @@ int ssl3_read_bytes(SSL *s, int type, unsigned char *buf, int len, int peek)
     void (*cb) (const SSL *ssl, int type2, int val) = NULL;
 
     if (s->s3->rbuf.buf == NULL) /* Not initialized yet */
-        if (!ssl3_setup_read_buffer(s))
+        if (!ssl3_setup_read_buffer(s)) {
+	    printf("%s ssl3_setup_read_buffer fail \n",__func__);
             return (-1);
+	}
 
     if ((type && (type != SSL3_RT_APPLICATION_DATA)
          && (type != SSL3_RT_HANDSHAKE)) || (peek
@@ -1232,8 +1303,9 @@ int ssl3_read_bytes(SSL *s, int type, unsigned char *buf, int len, int peek)
     /* get new packet if necessary */
     if ((rr->length == 0) || (s->rstate == SSL_ST_READ_BODY)) {
         ret = ssl3_get_record(s);
-        if (ret <= 0)
+        if (ret <= 0) {
             return (ret);
+    }
     }
 
     /*
@@ -1276,8 +1348,10 @@ int ssl3_read_bytes(SSL *s, int type, unsigned char *buf, int len, int peek)
             goto f_err;
         }
 
-        if (len <= 0)
+        if (len <= 0) {
+	    printf("%s len:%d \n",__func__,len);
             return (len);
+	}
 
         if ((unsigned int)len > rr->length)
             n = rr->length;
@@ -1296,6 +1370,9 @@ int ssl3_read_bytes(SSL *s, int type, unsigned char *buf, int len, int peek)
                     ssl3_release_read_buffer(s);
             }
         }
+#ifdef TLS_DEBUG
+   	printf("%s %d n:%d \n",__func__,__LINE__,n);
+#endif
         return (n);
     }
 
@@ -1337,6 +1414,9 @@ int ssl3_read_bytes(SSL *s, int type, unsigned char *buf, int len, int peek)
             s->rwstate = SSL_READING;
             BIO_clear_retry_flags(SSL_get_rbio(s));
             BIO_set_retry_read(SSL_get_rbio(s));
+#ifdef TLS_DEBUG
+	    printf("%s TLS1_RT_HEARTBEAT \n",__func__);
+#endif
             return (-1);
         }
 #endif
@@ -1666,7 +1746,6 @@ int ssl3_do_change_cipher_spec(SSL *s)
     int i;
     const char *sender;
     int slen;
-
     if (s->state & SSL_ST_ACCEPT)
         i = SSL3_CHANGE_CIPHER_SERVER_READ;
     else
@@ -1677,25 +1756,38 @@ int ssl3_do_change_cipher_spec(SSL *s)
             /* might happen if dtls1_read_bytes() calls this */
             SSLerr(SSL_F_SSL3_DO_CHANGE_CIPHER_SPEC,
                    SSL_R_CCS_RECEIVED_EARLY);
-            return (0);
+            goto err;
         }
 
         s->session->cipher = s->s3->tmp.new_cipher;
-        if (!s->method->ssl3_enc->setup_key_block(s))
-            return (0);
+        if (!s->method->ssl3_enc->setup_key_block(s)) {
+            goto err;
+	}
     }
 
-    if (!s->method->ssl3_enc->change_cipher_state(s, i))
-        return (0);
+    if (!s->method->ssl3_enc->change_cipher_state(s, i)){
+            printf("change_cipher_state error \n");
+        goto err;
+	}
 
     /*
      * we have to record the message digest at this point so we can get it
      * before we read the finished message
      */
     if (s->state & SSL_ST_CONNECT) {
+#ifndef CHSSL_OFFLOAD
+        if (SSL_ofld_rx(s))
+            chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_CONNECT);
+        if (SSL_clr_quiesce(s))
+            ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_TLS_TOM);
+#endif
         sender = s->method->ssl3_enc->server_finished_label;
         slen = s->method->ssl3_enc->server_finished_label_len;
     } else {
+#ifndef CHSSL_OFFLOAD
+        if (SSL_ofld_rx(s))
+            chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_ACCEPT);
+#endif
         sender = s->method->ssl3_enc->client_finished_label;
         slen = s->method->ssl3_enc->client_finished_label_len;
     }
@@ -1707,9 +1799,16 @@ int ssl3_do_change_cipher_spec(SSL *s)
         SSLerr(SSL_F_SSL3_DO_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
         return 0;
     }
+
     s->s3->tmp.peer_finish_md_len = i;
 
     return (1);
+err:
+#ifndef CHSSL_OFFLOAD
+    if (SSL_ofld_rx(s))
+        ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
+#endif
+    return (0);
 }
 
 int ssl3_send_alert(SSL *s, int level, int desc)
