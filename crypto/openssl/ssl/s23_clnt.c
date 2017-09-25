@@ -221,7 +221,7 @@ int ssl23_connect(SSL *s)
             ret = ssl23_client_hello(s);
             if (ret <= 0)
                 goto end;
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             if (chssl_new(s))
                 ssl_tls_offload(s);
 #endif

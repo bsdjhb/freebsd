@@ -1408,7 +1408,7 @@ int SSL_extension_supported(unsigned int ext_type);
 # define SSL_READING     3
 # define SSL_X509_LOOKUP 4
 
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 enum {
         SSL_ENC_HOST = 0,
         SSL_ENC_OFLD,
@@ -1442,7 +1442,7 @@ struct ch_ssl_st {
 # define SSL_want_read(s)        (SSL_want(s) == SSL_READING)
 # define SSL_want_write(s)       (SSL_want(s) == SSL_WRITING)
 # define SSL_want_x509_lookup(s) (SSL_want(s) == SSL_X509_LOOKUP)
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 # define SSL_enc_offload(s)      (SSL_enc(s)  == SSL_ENC_OFLD)
 # define SSL_enc_host(s)         (SSL_enc(s)  == SSL_ENC_HOST)
 # define SSL_mac_offload(s)      (SSL_mac(s)  == SSL_MAC_OFLD)
@@ -1604,7 +1604,7 @@ struct ssl_st {
                                          unsigned int max_psk_len);
 #  endif
     SSL_CTX *ctx;
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     struct ch_ssl_st *chssl;
 #endif
     /*
@@ -1797,7 +1797,7 @@ extern "C" {
 # define SSL_ST_READ_HEADER                      0xF0
 # define SSL_ST_READ_BODY                        0xF1
 # define SSL_ST_READ_DONE                        0xF2
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 # define SSL_ST_READ_ERROR                       0xF3
 #endif
 
@@ -2178,7 +2178,7 @@ X509_STORE *SSL_CTX_get_cert_store(const SSL_CTX *);
 void SSL_CTX_set_cert_store(SSL_CTX *, X509_STORE *);
 int SSL_want(const SSL *s);
 int SSL_clear(SSL *s);
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 int SSL_enc(const SSL *s);
 int SSL_mac(const SSL *s);
 int SSL_Rx_keys(const SSL *s);

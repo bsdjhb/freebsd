@@ -123,7 +123,7 @@
 #include <openssl/objects.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #include "ssl_tom.h"
 #endif
 
@@ -261,7 +261,7 @@ int ssl3_get_finished(SSL *s, int a, int b)
 #endif
 
     /* 64 argument should actually be 36+4 :-) */
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
     if (SSL_ofld(s))
 	n = s->method->ssl_get_message(s, a, b, SSL3_MT_FINISHED, 16, &ok);
     else

@@ -125,7 +125,7 @@
 #ifndef OPENSSL_NO_DH
 # include <openssl/dh.h>
 #endif
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
 #include "ssl_tom.h"
 #endif
 
@@ -755,7 +755,7 @@ int dtls1_accept(SSL *s)
                                     SSL3_ST_SR_FINISHED_B);
             if (ret <= 0)
                 goto end;
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             if (SSL_ofld_rx(s))
                 chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_ACCEPT);
 #endif
@@ -819,7 +819,7 @@ int dtls1_accept(SSL *s)
                          0, NULL);
             }
 #endif
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
             if (SSL_ofld(s)) {
                 s->s3->tmp.next_state = SSL3_ST_SW_FINISHED_A;
                 s->state = SSL3_ST_SW_FLUSH;
@@ -842,7 +842,7 @@ int dtls1_accept(SSL *s)
 
         case SSL3_ST_SW_FINISHED_A:
         case SSL3_ST_SW_FINISHED_B:
-#ifndef CHSSL_OFFLOAD
+#ifdef CHSSL_OFFLOAD
         if (SSL_ofld(s))
                chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_ACCEPT);
 #endif
