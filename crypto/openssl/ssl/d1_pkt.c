@@ -121,6 +121,7 @@
 #include <openssl/buffer.h>
 #include <openssl/pqueue.h>
 #include <openssl/rand.h>
+#include "ssl_tom.h"
 
 /* mod 128 saturating subtract of two 64-bit values in big-endian order */
 static int satsub64be(const unsigned char *v1, const unsigned char *v2)
@@ -503,6 +504,10 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
+#ifndef CHSSL_OFFLOAD
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
+    {
+#endif
     enc_err = s->method->ssl3_enc->enc(s, 0);
     /*-
      * enc_err is:
@@ -516,6 +521,9 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
         s->packet_length = 0;
         goto err;
     }
+#ifndef CHSSL_OFFLOAD
+    }
+#endif
 #ifdef TLS_DEBUG
     printf("dec %d\n", rr->length);
     {
@@ -528,7 +536,11 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
 
     /* r->length is now the compressed data plus mac */
     if ((sess != NULL) &&
-        (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)) {
+        (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)
+#ifndef CHSSL_OFFLOAD
+        && !(SSL_mac_offload(s) && SSL_ofld_vers(s))
+#endif
+	) {
         /* s->read_hash != NULL => mac_size != -1 */
         unsigned char *mac = NULL;
         unsigned char mac_tmp[EVP_MAX_MD_SIZE];
@@ -648,7 +660,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
 int dtls1_get_record(SSL *s)
 {
     int ssl_major, ssl_minor;
-    int i, n;
+    int i, n, al;
     SSL3_RECORD *rr;
     unsigned char *p = NULL;
     unsigned short version;
@@ -684,6 +696,13 @@ int dtls1_get_record(SSL *s)
             goto again;
         }
 
+#ifdef CHSSL_OFFLOAD
+        #define SSL3_RT_CHERROR 127
+	if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
+		s->rstate = SSL_ST_READ_ERROR;
+	}
+	else
+#endif
         s->rstate = SSL_ST_READ_BODY;
 
         p = s->packet;
@@ -733,11 +752,27 @@ int dtls1_get_record(SSL *s)
         /* now s->rstate == SSL_ST_READ_BODY */
     }
 
+#ifdef CHSSL_OFFLOAD
+    if (SSL_Chelsio_ofld(s)) {
+	    if (s->rstate == SSL_ST_READ_ERROR) {
+		    i = rr->length;
+		    n = ssl3_read_n(s, i, i, 1);
+		    s->rstate = SSL_ST_READ_HEADER;
+		    if (n<=0) return n;
+		    al = chssl_process_cherror(s);
+		    printf("%s rstate SSL_ST_READ_ERROR \n",__func__);
+		    goto again;
+	    }
+    }
+    /* this may not be required len in Hdr = '13bytes + decrypted payload' */
+#endif
+
     /* s->rstate == SSL_ST_READ_BODY, get and decode the data */
 
     if (rr->length > s->packet_length - DTLS1_RT_HEADER_LENGTH) {
         /* now s->packet_length == DTLS1_RT_HEADER_LENGTH */
         i = rr->length;
+	printf("%s i:%d rrl:%d pl:%d\n",__func__,i,rr->length,s->packet_length);
         n = ssl3_read_n(s, i, i, 1);
         /* this packet contained a partial record, dump it */
         if (n != i) {
@@ -1680,7 +1715,8 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
     p += 10;
 
     /* Explicit IV length, block ciphers appropriate version flag */
-    if (s->enc_write_ctx) {
+    if (s->enc_write_ctx &&
+	!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))) {
         int mode = EVP_CIPHER_CTX_mode(s->enc_write_ctx);
         if (mode == EVP_CIPH_CBC_MODE) {
             eivlen = EVP_CIPHER_CTX_iv_length(s->enc_write_ctx);
@@ -1721,7 +1757,8 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
      * wb->buf
      */
 
-    if (mac_size != 0) {
+    if (mac_size != 0 && !(SSL_enc_offload(s) && SSL_ofld_vers(s) && 
+			   SSL_Tx_keys(s))) {
         if (s->method->ssl3_enc->mac(s, &(p[wr->length + eivlen]), 1) < 0)
             goto err;
         wr->length += mac_size;
@@ -1734,8 +1771,10 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
     if (eivlen)
         wr->length += eivlen;
 
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))) {
     if (s->method->ssl3_enc->enc(s, 1) < 1)
         goto err;
+    }
 
     /* record length after mac and block padding */
     /*

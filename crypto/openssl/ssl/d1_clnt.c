@@ -127,6 +127,9 @@
 #ifndef OPENSSL_NO_DH
 # include <openssl/dh.h>
 #endif
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 static const SSL_METHOD *dtls1_get_client_method(int ver);
 static int dtls1_get_hello_verify(SSL *s);
@@ -615,6 +618,10 @@ int dtls1_connect(SSL *s)
 
         case SSL3_ST_CW_FINISHED_A:
         case SSL3_ST_CW_FINISHED_B:
+#ifndef CHSSL_OFFLOAD
+        if (SSL_ofld(s))
+                chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_CONNECT);
+#endif
             if (!s->hit)
                 dtls1_start_timer(s);
             ret = ssl3_send_finished(s,
@@ -700,6 +707,10 @@ int dtls1_connect(SSL *s)
                                     SSL3_ST_CR_FINISHED_B);
             if (ret <= 0)
                 goto end;
+#ifndef CHSSL_OFFLOAD
+            if (SSL_ofld_rx(s))
+                chssl_program_hwkey_context(s, KEY_WRITE_RX,SSL_ST_CONNECT);
+#endif
             dtls1_stop_timer(s);
 
             if (s->hit)

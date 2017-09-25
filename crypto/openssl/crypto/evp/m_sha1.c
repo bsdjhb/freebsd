@@ -68,6 +68,19 @@
 #  include <openssl/rsa.h>
 # endif
 
+#ifndef CHSSL_OFFLOAD
+#define uint64_t unsigned long long
+#define htonll(data) ( \
+    (((uint64_t)(data) >> 56) & 0x00000000000000FF) | \
+    (((uint64_t)(data) >> 40) & 0x000000000000FF00) | \
+    (((uint64_t)(data) >> 24) & 0x0000000000FF0000) | \
+    (((uint64_t)(data) >> 8 ) & 0x00000000FF000000) | \
+    (((uint64_t)(data) << 8)  & 0x000000FF00000000) | \
+    (((uint64_t)(data) << 24) & 0x0000FF0000000000) | \
+    (((uint64_t)(data) << 40) & 0x00FF000000000000) | \
+    (((uint64_t)(data) << 56) & 0xFF00000000000000))
+#endif
+
 static int init(EVP_MD_CTX *ctx)
 {
     return SHA1_Init(ctx->md_data);
@@ -80,6 +93,20 @@ static int update(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final(EVP_MD_CTX *ctx, unsigned char *md)
 {
+#ifndef CHSSL_OFFLOAD
+    if (ctx->is_chssl) {
+        unsigned int *temp;
+        unsigned char *iopad;
+        int i;
+        temp = ctx->md_data;
+        for (i=0; i< 5; i++)
+                temp[i] = htonl(temp[i]);
+        iopad = (unsigned char *)temp;
+        memcpy(md, iopad, 20);
+        return 1;
+    }
+#endif
+
     return SHA1_Final(md, ctx->md_data);
 }
 
@@ -127,6 +154,20 @@ static int update256(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final256(EVP_MD_CTX *ctx, unsigned char *md)
 {
+#ifndef CHSSL_OFFLOAD
+    if (ctx->is_chssl) {
+        unsigned int *temp;
+        unsigned char *iopad;
+        int i;
+
+	temp = ctx->md_data;
+	for (i=0; i< 8; i++)
+	    temp[i] = htonl(temp[i]);
+	iopad = (unsigned char *)temp;
+	memcpy(md, iopad, 32);
+	return 1;
+    }
+#endif
     return SHA256_Final(md, ctx->md_data);
 }
 
@@ -190,6 +231,21 @@ static int update512(EVP_MD_CTX *ctx, const void *data, size_t count)
 
 static int final512(EVP_MD_CTX *ctx, unsigned char *md)
 {
+#ifndef CHSSL_OFFLOAD
+    if (ctx->is_chssl) {
+        unsigned long long *temp;
+        unsigned char *iopad;
+        int i;
+
+	temp = ctx->md_data;
+	for (i = 0; i < 8; i++)
+	    temp[i] = htonll(temp[i]);
+	iopad = (unsigned char *)temp;
+	memcpy(md, iopad, 64);
+	return 1;
+    }
+#endif
+
     return SHA512_Final(md, ctx->md_data);
 }
 

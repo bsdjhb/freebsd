@@ -166,6 +166,9 @@
 #ifndef OPENSSL_NO_ENGINE
 # include <openssl/engine.h>
 #endif
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 static int ca_dn_cmp(const X509_NAME *const *a, const X509_NAME *const *b);
 #ifndef OPENSSL_NO_TLSEXT
@@ -299,12 +302,22 @@ int ssl3_connect(SSL *s)
             ret = ssl3_client_hello(s);
             if (ret <= 0)
                 goto end;
+#ifndef CHSSL_OFFLOAD
+            if (chssl_new(s) || SSL_ofld_vers(s))
+                ssl_tls_offload(s);
+#endif
             s->state = SSL3_ST_CR_SRVR_HELLO_A;
             s->init_num = 0;
 
             /* turn on buffering for the next lot of output */
+#ifndef CHSSL_OFFLOAD
+           if (!(SSL_ofld(s) && s->renegotiate)) {
+#endif
             if (s->bbio != s->wbio)
                 s->wbio = BIO_push(s->bbio, s->wbio);
+#ifndef CHSSL_OFFLOAD
+           }
+#endif
 
             break;
 
@@ -485,6 +498,14 @@ int ssl3_connect(SSL *s)
             else
                 s->state = SSL3_ST_CW_FINISHED_A;
 #endif
+
+#ifndef CHSSL_OFFLOAD
+            //if (SSL_ofld(s)) {
+		s->s3->tmp.next_state = s->state;
+		s->state = SSL3_ST_CW_FLUSH;
+	    //}
+#endif
+
             s->init_num = 0;
 
             s->session->cipher = s->s3->tmp.new_cipher;
@@ -509,7 +530,6 @@ int ssl3_connect(SSL *s)
                 s->state = SSL_ST_ERR;
                 goto end;
             }
-
             break;
 
 #if !defined(OPENSSL_NO_TLSEXT) && !defined(OPENSSL_NO_NEXTPROTONEG)
@@ -524,6 +544,10 @@ int ssl3_connect(SSL *s)
 
         case SSL3_ST_CW_FINISHED_A:
         case SSL3_ST_CW_FINISHED_B:
+#ifndef CHSSL_OFFLOAD
+        if (SSL_ofld(s))
+               chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_CONNECT);
+#endif
             ret = ssl3_send_finished(s,
                                      SSL3_ST_CW_FINISHED_A,
                                      SSL3_ST_CW_FINISHED_B,
@@ -553,7 +577,6 @@ int ssl3_connect(SSL *s)
                     s->s3->tmp.next_state = SSL3_ST_CR_SESSION_TICKET_A;
                 else
 #endif
-
                     s->s3->tmp.next_state = SSL3_ST_CR_FINISHED_A;
             }
             s->init_num = 0;

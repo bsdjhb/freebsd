@@ -1408,11 +1408,46 @@ int SSL_extension_supported(unsigned int ext_type);
 # define SSL_READING     3
 # define SSL_X509_LOOKUP 4
 
+#ifndef CHSSL_OFFLOAD
+enum {
+        SSL_ENC_HOST = 0,
+        SSL_ENC_OFLD,
+};
+
+enum {
+        SSL_MAC_HOST = 0,
+        SSL_MAC_OFLD,
+};
+
+enum {
+        KEY_SPACE_AVAIL = 0,
+        KEY_SPACE_NOTAVL,
+};
+
+struct ch_ssl_st {
+    int  nl_fd;
+    int  sock_fd; 	
+    char ofld_enable;
+    char ofld_enc;
+    char ofld_mac;
+    char key_state;
+    char rx_keys_copied;
+    char tx_keys_copied;
+    void *key_context;
+};
+#endif
+
 /* These will only be used when doing non-blocking IO */
 # define SSL_want_nothing(s)     (SSL_want(s) == SSL_NOTHING)
 # define SSL_want_read(s)        (SSL_want(s) == SSL_READING)
 # define SSL_want_write(s)       (SSL_want(s) == SSL_WRITING)
 # define SSL_want_x509_lookup(s) (SSL_want(s) == SSL_X509_LOOKUP)
+#ifndef CHSSL_OFFLOAD
+# define SSL_enc_offload(s)      (SSL_enc(s)  == SSL_ENC_OFLD)
+# define SSL_enc_host(s)         (SSL_enc(s)  == SSL_ENC_HOST)
+# define SSL_mac_offload(s)      (SSL_mac(s)  == SSL_MAC_OFLD)
+# define SSL_mac_host(s)         (SSL_mac(s)  == SSL_MAC_HOST)
+#endif
 
 # define SSL_MAC_FLAG_READ_MAC_STREAM 1
 # define SSL_MAC_FLAG_WRITE_MAC_STREAM 2
@@ -1447,6 +1482,7 @@ struct ssl_st {
     char *wbio;
     char *bbio;
 #  endif
+
     /*
      * This holds a variable that indicates what we were doing when a 0 or -1
      * is returned.  This is needed for non-blocking IO so we know what
@@ -1568,6 +1604,9 @@ struct ssl_st {
                                          unsigned int max_psk_len);
 #  endif
     SSL_CTX *ctx;
+#ifndef CHSSL_OFFLOAD
+    struct ch_ssl_st *chssl;
+#endif
     /*
      * set this flag to 1 and a sleep(1) is put into all SSL_read() and
      * SSL_write() calls, good for nbio debuging :-)
@@ -1758,6 +1797,9 @@ extern "C" {
 # define SSL_ST_READ_HEADER                      0xF0
 # define SSL_ST_READ_BODY                        0xF1
 # define SSL_ST_READ_DONE                        0xF2
+#ifndef CHSSL_OFFLOAD
+# define SSL_ST_READ_ERROR                       0xF3
+#endif
 
 /*-
  * Obtain latest Finished message
@@ -2136,6 +2178,17 @@ X509_STORE *SSL_CTX_get_cert_store(const SSL_CTX *);
 void SSL_CTX_set_cert_store(SSL_CTX *, X509_STORE *);
 int SSL_want(const SSL *s);
 int SSL_clear(SSL *s);
+#ifndef CHSSL_OFFLOAD
+int SSL_enc(const SSL *s);
+int SSL_mac(const SSL *s);
+int SSL_Rx_keys(const SSL *s);
+int SSL_Tx_keys(const SSL *s);
+int SSL_ofld(const SSL *s);
+int SSL_compress(const SSL *s);
+int SSL_Chelsio_ofld(const SSL *s);
+int chssl_process_cherror(SSL *s);
+void chssl_program_hwkey_context(SSL *s, int rw, int state);
+#endif
 
 void SSL_CTX_flush_sessions(SSL_CTX *ctx, long tm);
 

@@ -159,6 +159,9 @@
 #ifndef OPENSSL_NO_ENGINE
 # include <openssl/engine.h>
 #endif
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 const char *SSL_version_str = OPENSSL_VERSION_TEXT;
 
@@ -742,6 +745,7 @@ int SSL_set_fd(SSL *s, int fd)
     }
     BIO_set_fd(bio, fd, BIO_NOCLOSE);
     SSL_set_bio(s, bio, bio);
+    printf("SSL_set_fd: fd:%d bio_fd:%d BIO:%p:%p:%p\n",fd,bio->num,bio,s->wbio,s->rbio);	
     ret = 1;
  err:
     return (ret);
@@ -1068,6 +1072,11 @@ int SSL_shutdown(SSL *s)
         SSLerr(SSL_F_SSL_SHUTDOWN, SSL_R_UNINITIALIZED);
         return -1;
     }
+#ifndef CHSSL_OFFLOAD
+    if (s->chssl) {
+        chssl_free(s);
+    }
+#endif
 
     if (!SSL_in_init(s)) {
         return s->method->ssl_shutdown(s);

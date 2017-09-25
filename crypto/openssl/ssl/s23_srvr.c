@@ -118,6 +118,9 @@
 #ifdef OPENSSL_FIPS
 # include <openssl/fips.h>
 #endif
+#ifndef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 static const SSL_METHOD *ssl23_get_server_method(int ver);
 int ssl23_get_client_hello(SSL *s);
@@ -181,6 +184,10 @@ int ssl23_accept(SSL *s)
 
             /* s->version=SSL3_VERSION; */
             s->type = SSL_ST_ACCEPT;
+#ifndef CHSSL_OFFLOAD
+            if (chssl_new(s))
+                ssl_tls_offload(s);
+#endif
 
             if (s->init_buf == NULL) {
                 if ((buf = BUF_MEM_new()) == NULL) {
