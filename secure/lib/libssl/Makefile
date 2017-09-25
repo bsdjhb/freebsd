@@ -25,6 +25,12 @@ LIBADD=	crypto
 
 CFLAGS+=	-I${LCRYPTO_SRC}/crypto
 
+.if defined(CHSSL_OFFLOAD)
+SRCS+=	ssl_tom.c
+
+CFLAGS+=	-DCHSSL_OFFLOAD
+.endif
+
 .include <bsd.lib.mk>
 
 .PATH:	${LCRYPTO_SRC}/ssl \
