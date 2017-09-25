@@ -406,6 +406,10 @@ CFLAGS+=	-I${LCRYPTO_SRC}/crypto/asn1
 CFLAGS+=	-I${LCRYPTO_SRC}/crypto/evp
 CFLAGS+=	-I${LCRYPTO_SRC}/crypto/modes
 
+.if defined(CHSSL_OFFLOAD)
+CFLAGS+=	-DCHSSL_OFFLOAD
+.endif
+
 .if !empty(SRCS:M*.S)
 ACFLAGS+=	-Wa,--noexecstack
 .endif
