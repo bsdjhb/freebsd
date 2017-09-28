@@ -115,6 +115,9 @@
 #include <openssl/rand.h>
 #include <openssl/objects.h>
 #include <openssl/evp.h>
+#ifdef CHSSL_OFFLOAD
+#include "ssl_tom.h"
+#endif
 
 static const SSL_METHOD *ssl23_get_client_method(int ver);
 static int ssl23_client_hello(SSL *s);
