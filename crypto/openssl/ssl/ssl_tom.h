@@ -10,7 +10,9 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the LICENSE file included in this
  * release for licensing terms and conditions.
  */
+#ifdef __linux__
 #include <linux/byteorder/little_endian.h>
+#endif
 #ifndef __TLSOM_CMN_H
 #define __TLSOM_CMN_H
 
@@ -159,6 +161,7 @@ struct ch_ssl_st *chssl_new(SSL *s);
 struct ch_ssl_st *chssl_free(SSL *s);
 int ssl_tls_offload(SSL *s);
 int SSL_ofld_rx(const SSL *s);
+int SSL_ofld_vers(const SSL *s);
 int SSL_clr_quiesce(const SSL *s);
 #endif
 
