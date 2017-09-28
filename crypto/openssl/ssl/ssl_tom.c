@@ -122,8 +122,10 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#ifdef __linux__
 #include <linux/genetlink.h>
 #include <linux/types.h>
+#endif
 #include "ssl_locl.h"
 #include <openssl/ssl.h>
 #include <netinet/in.h>
@@ -168,7 +170,7 @@ int SSL_ofld_rx(const SSL *s)
 
 int SSL_compress(const SSL *s)
 {
-    return(s->compress);
+    return(s->compress != NULL);
 }
 
 int SSL_Rx_keys(const SSL *s)
