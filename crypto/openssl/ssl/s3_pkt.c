@@ -615,7 +615,7 @@ static int ssl3_get_record(SSL *s)
     if (rr->length > SSL3_RT_MAX_PLAIN_LENGTH + extra) {
         al = SSL_AD_RECORD_OVERFLOW;
         SSLerr(SSL_F_SSL3_GET_RECORD, SSL_R_DATA_LENGTH_TOO_LONG);
-	printf("%s rr->length :%d extra:%d\n",__func__,rr->length,extra);
+	printf("%s rr->length :%d extra:%zu\n",__func__,rr->length,extra);
         goto f_err;
     }
 
