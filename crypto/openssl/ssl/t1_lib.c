@@ -4055,7 +4055,7 @@ int tls1_process_heartbeat(SSL *s)
         }
     }
 #ifdef CHSSL_OFFLOAD
-	ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
+    chssl_clear_quies(s);
 #endif
 
     return 0;

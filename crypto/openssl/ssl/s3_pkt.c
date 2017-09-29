@@ -1779,7 +1779,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
         if (SSL_ofld_rx(s))
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_CONNECT);
         if (SSL_clr_quiesce(s))
-            ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_TLS_TOM);
+            chssl_clear_tom(s);
 #endif
         sender = s->method->ssl3_enc->server_finished_label;
         slen = s->method->ssl3_enc->server_finished_label_len;
@@ -1806,7 +1806,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
 err:
 #ifdef CHSSL_OFFLOAD
     if (SSL_ofld_rx(s))
-        ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
+        chssl_clear_quies(s);
 #endif
     return (0);
 }

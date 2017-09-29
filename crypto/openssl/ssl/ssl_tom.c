@@ -126,6 +126,9 @@
 #include <linux/genetlink.h>
 #include <linux/types.h>
 #endif
+#ifdef __FreeBSD__
+#include <netinet/tcp.h>
+#endif
 #include "ssl_locl.h"
 #include <openssl/ssl.h>
 #include <netinet/in.h>
@@ -135,6 +138,9 @@
 #ifdef CHSSL_OFFLOAD
 int ssl_tls_offload(SSL *s)
 {
+#ifdef __FreeBSD__
+    socklen_t optlen;
+#endif
     int ret, mode = 0;
 
     if ((s->wbio == NULL) || (s->rbio == NULL)) {
@@ -143,7 +149,13 @@ int ssl_tls_offload(SSL *s)
     }
     s->chssl->sock_fd = s->wbio->num = s->rbio->num;
 
+#ifdef __linux__
     ret = ioctl(s->chssl->sock_fd, IOCTL_TLSOM_GET_TLS_TOM, &mode);
+#else
+    optlen = sizeof(mode);
+    ret = getsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_GET_TLS_TOM,
+	&mode, &optlen);
+#endif
 
     if (!ret && mode)
         s->chssl->ofld_enable = TLS_OFLD_TRUE;
@@ -600,14 +612,19 @@ void chssl_program_hwkey_context(SSL *s, int rw, int state)
     if((ret = ssl_key_context(s, rw, state)) <=0) {
         /* Clear quiesce after CCS receive */
         if (rw == KEY_WRITE_RX) {
-            ret = ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_TLS_TOM);
+            ret = chssl_clear_tom(s);
             s->chssl->ofld_enable = TLS_OFLD_FALSE;
         }
 	goto end;
     }
 
+#ifdef __linux__
     ret = ioctl(s->chssl->sock_fd, IOCTL_TLSOM_SET_TLS_CONTEXT,
 		s->chssl->key_context);
+#else
+    ret = setsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_SET_TLS_CONTEXT,
+	s->chssl->key_context, sizeof(*s->chssl->key_context));
+#endif
     if (!ret) {
         if (rw & KEY_WRITE_TX)
             s->chssl->tx_keys_copied = 1;
@@ -622,6 +639,26 @@ end:
     free(s->chssl->key_context);
     s->chssl->key_context = NULL;
     return;
+}
+
+int chssl_clear_quies(const SSL *s)
+{
+#ifdef __linux__
+    return ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_QUIES);
+#else
+    return setsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_CLR_QUIES,
+	NULL, 0);
+#endif
+}
+
+int chssl_clear_tom(const SSL *s)
+{
+#ifdef __linux__
+    return ioctl(s->chssl->sock_fd, IOCTL_TLSOM_CLR_TLS_TOM);
+#else
+    return setsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_CLR_TLS_TOM,
+	NULL, 0);
+#endif
 }
 
 int chssl_process_cherror(SSL *s)

@@ -2186,6 +2186,8 @@ int SSL_Tx_keys(const SSL *s);
 int SSL_ofld(const SSL *s);
 int SSL_compress(const SSL *s);
 int SSL_Chelsio_ofld(const SSL *s);
+int chssl_clear_quies(const SSL *s);
+int chssl_clear_tom(const SSL *s);
 int chssl_process_cherror(SSL *s);
 void chssl_program_hwkey_context(SSL *s, int rw, int state);
 #endif
