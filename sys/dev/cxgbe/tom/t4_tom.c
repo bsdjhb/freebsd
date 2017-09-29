@@ -70,6 +70,7 @@ __FBSDID("$FreeBSD$");
 #include "common/t4_tcb.h"
 #include "tom/t4_tom_l2t.h"
 #include "tom/t4_tom.h"
+#include "tom/t4_tls.h"
 
 static struct protosw toe_protosw;
 static struct pr_usrreqs toe_usrreqs;
@@ -372,6 +373,8 @@ t4_pcb_detach(struct toedev *tod __unused, struct tcpcb *tp)
 
 /*
  * setsockopt handler.
+ *
+ * XXX: This should possibly be merged into t4_ctloutput_tom?
  */
 static void
 t4_ctloutput(struct toedev *tod, struct tcpcb *tp, int dir, int name)
@@ -1168,6 +1171,24 @@ t4_aio_queue_tom(struct socket *so, struct kaiocb *job)
 }
 
 static int
+t4_ctloutput_tom(struct socket *so, struct sockopt *sopt)
+{
+
+	if (sopt->sopt_level != IPPROTO_TCP)
+		return (tcp_ctloutput(so, sopt));
+
+	switch (sopt->sopt_name) {
+	case TCP_TLSOM_SET_TLS_CONTEXT:
+	case TCP_TLSOM_GET_TLS_TOM:
+	case TCP_TLSOM_CLR_TLS_TOM:
+	case TCP_TLSOM_CLR_QUIES:
+		return (t4_ctloutput_tls(so, sopt));
+	default:
+		return (tcp_ctloutput(so, sopt));
+	}
+}
+
+static int
 t4_tom_mod_load(void)
 {
 	int rc;
@@ -1188,6 +1209,7 @@ t4_tom_mod_load(void)
 	bcopy(tcp_protosw, &toe_protosw, sizeof(toe_protosw));
 	bcopy(tcp_protosw->pr_usrreqs, &toe_usrreqs, sizeof(toe_usrreqs));
 	toe_usrreqs.pru_aio_queue = t4_aio_queue_tom;
+	toe_protosw.pr_ctloutput = t4_ctloutput_tom;
 	toe_protosw.pr_usrreqs = &toe_usrreqs;
 
 	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
@@ -1196,6 +1218,7 @@ t4_tom_mod_load(void)
 	bcopy(tcp6_protosw, &toe6_protosw, sizeof(toe6_protosw));
 	bcopy(tcp6_protosw->pr_usrreqs, &toe6_usrreqs, sizeof(toe6_usrreqs));
 	toe6_usrreqs.pru_aio_queue = t4_aio_queue_tom;
+	toe6_protosw.pr_ctloutput = t4_ctloutput_tom;
 	toe6_protosw.pr_usrreqs = &toe6_usrreqs;
 
 	TIMEOUT_TASK_INIT(taskqueue_thread, &clip_task, 0, t4_clip_task, NULL);
