@@ -33,6 +33,11 @@
 
 /* Custom socket options for TLS+TOE. */
 
+#define MAX_MAC_KSZ		64	/*512 bits */
+#define MAX_CIPHER_KSZ		32	/* 256 bits */
+#define CIPHER_BLOCK_SZ		16
+#define SALT_SIZE		4
+
 /* Can accomodate 16, 11-15 are reserved */
 enum {
     CHSSL_SHA_NOP,
@@ -63,7 +68,7 @@ enum {
 #define S_KEY_CLR_LOC		4
 #define M_KEY_CLR_LOC		0xf
 #define V_KEY_CLR_LOC(x)	((x) << S_KEY_CLR_LOC)
-#define G_FW_WR_EQUIQ(s)	(((x) >> S_KEY_CLR_LOC) & M_KEY_CLR_LOC)
+#define G_KEY_CLR_LOC(s)	(((x) >> S_KEY_CLR_LOC) & M_KEY_CLR_LOC)
 #define F_KEY_CLR_LOC		V_KEY_CLR_LOC(1U)
 
 #define S_KEY_GET_LOC           0
@@ -132,5 +137,8 @@ struct tls_key_context {
 /* Set with no value. */
 #define	TCP_TLSOM_CLR_QUIES		(TCP_VENDOR + 3)
 
+#ifdef _KERNEL
+int	t4_ctloutput_tls(struct socket *, struct sockopt *);
+#endif /* _KERNEL */
 
 #endif /* !__T4_TLS_H__ */
