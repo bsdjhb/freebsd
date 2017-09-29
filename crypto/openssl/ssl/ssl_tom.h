@@ -36,17 +36,24 @@
 #define GHASH_SIZE		16
 #define MAX_TLS_KSZ	(2*MAX_MAC_KSZ + MAX_CIPHER_KSZ)
 
+#ifdef __FreeBSD__
+#include <dev/cxgbe/tom/t4_tls.h>
+#endif
+#ifdef __linux__
+/* XXX: TCP_TLSKEY is not used */
 #define TCP_TLSKEY 291 /* Program Key Context on HW */
 #define IOCTL_TLSOM_SET_TLS_CONTEXT 201 /* Program Key Context on HW */
 #define IOCTL_TLSOM_GET_TLS_TOM     202 /* Query the TLS offload mode */
 #define IOCTL_TLSOM_CLR_TLS_TOM     203	/* Clear the Key */
 #define IOCTL_TLSOM_CLR_QUIES     204	/* Clear the Quiesec */
+#endif
 
 enum {
     TLS_OFLD_FALSE = 0,
     TLS_OFLD_TRUE,
 };
 
+#ifdef __linux__
 /* Can accomodate 16, 11-15 are reserved */
 enum {
     CHSSL_SHA_NOP,
@@ -73,23 +80,27 @@ enum {
     CHSSL_AES_XTS,
     CHSSL_AES_CCM,
 };
+#endif
 
 #define KEY_WRITE_RX	0x1	/* Program Receive Key */
 #define KEY_WRITE_TX	0x2	/* Program Transmit Key */
 #define KEY_DELETE_RX	0x4	/* Delete Receive Key */
 #define KEY_DELETE_TX	0x8	/* Delete Transmit Key */
 
+#ifdef __linux__
 #define S_KEY_CLR_LOC		4
 #define M_KEY_CLR_LOC		0xf
 #define V_KEY_CLR_LOC(x)	((x) << S_KEY_CLR_LOC)
 #define G_FW_WR_EQUIQ(s)	(((x) >> S_KEY_CLR_LOC) & M_KEY_CLR_LOC)
 #define F_KEY_CLR_LOC		V_KEY_CLR_LOC(1U)
 
+/* XXX: Not used. */
 #define S_KEY_GET_LOC           0
 #define M_KEY_GET_LOC           0xf
 #define V_KEY_GET_LOC(x)        ((x) << S_KEY_GET_LOC)
 #define G_KEY_GET_LOC(s)        (((x) >> S_KEY_GET_LOC) & M_KEY_GET_LOC)
 
+/* XXX: Not used. */
 enum {
     CHSSL_OFLDMODE_NONE,
     CHSSL_OFLDMODE_ALLIN_HOST,
@@ -98,6 +109,7 @@ enum {
     CHSSL_OFLDMODE_FRAGMENTATIONIN_HOST,
 };
 
+/* XXX: Not used. */
 enum {
     CHSSL_HOST_FRAGMENT,
     CHSSL_CARD_FRAGMENT,
@@ -151,7 +163,9 @@ struct tls_key_context {
     unsigned short dtls_epoch;
     unsigned short rsv;
 };
+#endif
 
+/* XXX: Not used. */
 struct tls_key_location {
     unsigned int sock_fd;
     unsigned int key_location;
