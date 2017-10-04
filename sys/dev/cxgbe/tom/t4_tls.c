@@ -25,10 +25,23 @@
  * SUCH DAMAGE.
  */
 
+#include "opt_inet.h"
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <sys/socketvar.h>
+#include <sys/systm.h>
+#include <netinet/in.h>
+#include <netinet/in_pcb.h>
+#include <netinet/tcp_var.h>
+#include <netinet/toecore.h>
+
 #ifdef TCP_OFFLOAD
+#include "common/common.h"
+#include "tom/t4_tom.h"
 #include "tom/t4_tls.h"
 
 /*
@@ -42,7 +55,9 @@ int
 t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 {
 	struct inpcb *inp;
-	int error;
+	struct tcpcb *tp;
+	struct toepcb *toep;
+	int error, optval;
 
 	error = 0;
 	inp = sotoinpcb(so);
@@ -53,6 +68,7 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 		return (ECONNRESET);
 	}
 	tp = intotcpcb(inp);
+	toep = tp->t_toe;
 	switch (sopt->sopt_dir) {
 	case SOPT_SET:
 		switch (sopt->sopt_name) {
@@ -69,7 +85,10 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	case SOPT_GET:
 		switch (sopt->sopt_name) {
 		case TCP_TLSOM_GET_TLS_TOM:
-			/* FALLTHROUGH */
+			optval = (toep->ulp_mode == ULP_MODE_TLS);
+			INP_WUNLOCK(inp);
+			error = sooptcopyout(sopt, &optval, sizeof(optval));
+			break;
 		default:
 			INP_WUNLOCK(inp);
 			error = EOPNOTSUPP;
