@@ -1347,11 +1347,15 @@ found:
 
 		INIT_TP_WR_MIT_CPL(rpl5, CPL_PASS_ACCEPT_RPL, tid);
 	}
-	if (sc->tt.ddp && (so->so_options & SO_NO_DDP) == 0) {
-		ulp_mode = ULP_MODE_TCPDDP;
+	ulp_mode = select_ulp_mode(so, sc);
+	switch (ulp_mode) {
+	case ULP_MODE_TCPDDP:
 		synqe->flags |= TPF_SYNQE_TCPDDP;
-	} else
-		ulp_mode = ULP_MODE_NONE;
+		break;
+	case ULP_MODE_TLS:
+		synqe->flags |= TPF_SYNQE_TLS;
+		break;
+	}
 	rpl->opt0 = calc_opt0(so, vi, e, mtu_idx, rscale, rx_credits, ulp_mode);
 	rpl->opt2 = calc_opt2p(sc, pi, rxqid, &cpl->tcpopt, &th, ulp_mode);
 
@@ -1557,9 +1561,11 @@ reset:
 	toep->tid = tid;
 	toep->l2te = &sc->l2t->l2tab[synqe->l2e_idx];
 	if (synqe->flags & TPF_SYNQE_TCPDDP)
-		set_tcpddp_ulp_mode(toep);
+		set_ulp_mode(toep, ULP_MODE_TCPDDP);
+	else if (synqe->flags & TPF_SYNQE_TLS)
+		set_ulp_mode(toep, ULP_MODE_TLS);
 	else
-		toep->ulp_mode = ULP_MODE_NONE;
+		set_ulp_mode(toep, ULP_MODE_NONE);
 	/* opt0 rcv_bufsiz initially, assumes its normal meaning later */
 	toep->rx_credits = synqe->rcv_bufsize;
 

@@ -79,4 +79,14 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	}
 	return (error);
 }
+
+void
+tls_init_toep(struct toepcb *toep)
+{
+}
+
+void
+tls_uninit_toep(struct toepcb *toep)
+{
+}
 #endif	/* TCP_OFFLOAD */

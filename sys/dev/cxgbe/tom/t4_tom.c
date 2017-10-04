@@ -197,8 +197,14 @@ free_toepcb(struct toepcb *toep)
 	KASSERT(!(toep->flags & TPF_CPL_PENDING),
 	    ("%s: CPL pending", __func__));
 
-	if (toep->ulp_mode == ULP_MODE_TCPDDP)
+	switch (toep->ulp_mode) {
+	case ULP_MODE_TCPDDP:
 		ddp_uninit_toep(toep);
+		break;
+	case ULP_MODE_TLS:
+		tls_uninit_toep(toep);
+		break;
+	}
 	free(toep, M_CXGBE);
 }
 
@@ -623,12 +629,48 @@ select_ntuple(struct vi_info *vi, struct l2t_entry *e)
 		return (htobe64(V_FILTER_TUPLE(ntuple)));
 }
 
-void
-set_tcpddp_ulp_mode(struct toepcb *toep)
+static int
+is_tls_sock(struct socket *so)
+{
+	struct inpcb *inp = sotoinpcb(so);
+	static int tls_ports[] = { 443 };  /* XXX: Tunable? */
+	int i;
+
+	/* XXX: Eventually add a SO_WANT_TLS socket option perhaps? */
+	for (i = 0; i < nitems(tls_ports); i++) {
+		if (inp->inp_lport == htons(tls_ports[i]) ||
+		    inp->inp_fport == htons(tls_ports[i]))
+			return (1);
+	}
+	return (0);
+}
+
+int
+select_ulp_mode(struct socket *so, struct adapter *sc)
 {
 
-	toep->ulp_mode = ULP_MODE_TCPDDP;
-	ddp_init_toep(toep);
+	if (sc->tt.tls && sc->cryptocaps & FW_CAPS_CONFIG_TLSKEYS &&
+	    is_tls_sock(so))
+		return (ULP_MODE_TLS);
+	else if (sc->tt.ddp && (so->so_options & SO_NO_DDP) == 0)
+		return (ULP_MODE_TCPDDP);
+	else
+		return (ULP_MODE_NONE);
+}
+
+void
+set_ulp_mode(struct toepcb *toep, int ulp_mode)
+{
+
+	toep->ulp_mode = ulp_mode;
+	switch (ulp_mode) {
+	case ULP_MODE_TCPDDP:
+		ddp_init_toep(toep);
+		break;
+	case ULP_MODE_TLS:
+		tls_init_toep(toep);
+		break;
+	}
 }
 
 int

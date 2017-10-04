@@ -5376,6 +5376,10 @@ t4_sysctls(struct adapter *sc)
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "rx_coalesce",
 		    CTLFLAG_RW, &sc->tt.rx_coalesce, 0, "receive coalescing");
 
+		sc->tt.tls = 0;
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "tls", CTLFLAG_RW,
+		    &sc->tt.tls, 0, "Inline TLS allowed");
+
 		sc->tt.tx_align = 1;
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "tx_align",
 		    CTLFLAG_RW, &sc->tt.tx_align, 0, "chop and align payload");

@@ -378,10 +378,7 @@ t4_connect(struct toedev *tod, struct socket *so, struct rtentry *rt,
 		DONT_OFFLOAD_ACTIVE_OPEN(ENOMEM);
 
 	toep->vnet = so->so_vnet;
-	if (sc->tt.ddp && (so->so_options & SO_NO_DDP) == 0)
-		set_tcpddp_ulp_mode(toep);
-	else
-		toep->ulp_mode = ULP_MODE_NONE;
+	set_ulp_mode(toep, select_ulp_mode(so, sc));
 	SOCKBUF_LOCK(&so->so_rcv);
 	/* opt0 rcv_bufsiz initially, assumes its normal meaning later */
 	toep->rx_credits = min(select_rcv_wnd(so) >> 10, M_RCV_BUFSIZ);

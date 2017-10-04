@@ -150,6 +150,7 @@ struct tom_tunables {
 	int sndbuf;
 	int ddp;
 	int rx_coalesce;
+	int tls;
 	int tx_align;
 	int tx_zcopy;
 };
