@@ -71,6 +71,7 @@ enum {
 	TPF_SYNQE_TCPDDP   = (1 << 10),	/* ulp_mode TCPDDP in toepcb */
 	TPF_SYNQE_EXPANDED = (1 << 11),	/* toepcb ready, tid context updated */
 	TPF_SYNQE_HAS_L2TE = (1 << 12),	/* we've replied to PASS_ACCEPT_REQ */
+	TPF_SYNQE_TLS      = (1 << 13), /* ulp_mode TLS in toepcb */
 };
 
 enum {
@@ -146,6 +147,9 @@ struct ddp_pcb {
 	struct mtx lock;
 };
 
+struct tls_pcb {
+};
+
 struct aiotx_buffer {
 	struct pageset ps;
 	struct kaiocb *job;
@@ -184,7 +188,10 @@ struct toepcb {
 	struct mbufq ulp_pduq;	/* PDUs waiting to be sent out. */
 	struct mbufq ulp_pdu_reclaimq;
 
-	struct ddp_pcb ddp;
+	union {			/* ULP mode-specific data. */
+		struct ddp_pcb ddp;
+		struct tls_pcb tls;
+	};
 
 	TAILQ_HEAD(, kaiocb) aiotx_jobq;
 	struct task aiotx_task;
@@ -327,7 +334,8 @@ int select_rcv_wscale(void);
 uint64_t calc_opt0(struct socket *, struct vi_info *, struct l2t_entry *,
     int, int, int, int);
 uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
-void set_tcpddp_ulp_mode(struct toepcb *);
+int select_ulp_mode(struct socket *, struct adapter *);
+void set_ulp_mode(struct toepcb *, int);
 int negative_advice(int);
 struct clip_entry *hold_lip(struct tom_data *, struct in6_addr *,
     struct clip_entry *);
@@ -400,5 +408,9 @@ void handle_ddp_close(struct toepcb *, struct tcpcb *, uint32_t);
 void handle_ddp_indicate(struct toepcb *);
 void handle_ddp_tcb_rpl(struct toepcb *, const struct cpl_set_tcb_rpl *);
 void insert_ddp_data(struct toepcb *, uint32_t);
+
+/* t4_tls.c */
+void tls_init_toep(struct toepcb *);
+void tls_uninit_toep(struct toepcb *);
 
 #endif
