@@ -31,6 +31,13 @@ __FBSDID("$FreeBSD$");
 #ifdef TCP_OFFLOAD
 #include "tom/t4_tls.h"
 
+/*
+ * TODO:
+ * - socket options
+ * - transmit TLS records via CPL_TX_TLS_SFO
+ * - how to receive TLS data?
+ */
+
 int
 t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 {
