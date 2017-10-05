@@ -31,6 +31,16 @@
 #ifndef __T4_TLS_H__
 #define __T4_TLS_H__
 
+#define TLS1_VERSION                    0x0301
+#define TLS1_1_VERSION                  0x0302
+#define TLS1_2_VERSION                  0x0303
+#define TLS_MAX_VERSION                 TLS1_2_VERSION
+
+#define DTLS1_VERSION                   0xFEFF
+#define DTLS1_2_VERSION                 0xFEFD
+#define DTLS_MAX_VERSION                DTLS1_2_VERSION
+#define DTLS1_VERSION_MAJOR             0xFE
+
 /* Custom socket options for TLS+TOE. */
 
 #define MAX_MAC_KSZ		64	/*512 bits */
@@ -65,16 +75,22 @@ enum {
     CHSSL_AES_CCM,
 };
 
+/* Key Context Programming Operation type */
+#define KEY_WRITE_RX			0x1
+#define KEY_WRITE_TX			0x2
+#define KEY_DELETE_RX			0x4
+#define KEY_DELETE_TX			0x8
+
 #define S_KEY_CLR_LOC		4
 #define M_KEY_CLR_LOC		0xf
 #define V_KEY_CLR_LOC(x)	((x) << S_KEY_CLR_LOC)
-#define G_KEY_CLR_LOC(s)	(((x) >> S_KEY_CLR_LOC) & M_KEY_CLR_LOC)
+#define G_KEY_CLR_LOC(x)	(((x) >> S_KEY_CLR_LOC) & M_KEY_CLR_LOC)
 #define F_KEY_CLR_LOC		V_KEY_CLR_LOC(1U)
 
 #define S_KEY_GET_LOC           0
 #define M_KEY_GET_LOC           0xf
 #define V_KEY_GET_LOC(x)        ((x) << S_KEY_GET_LOC)
-#define G_KEY_GET_LOC(s)        (((x) >> S_KEY_GET_LOC) & M_KEY_GET_LOC)
+#define G_KEY_GET_LOC(x)        (((x) >> S_KEY_GET_LOC) & M_KEY_GET_LOC)
 
 struct tls_ofld_state {
     unsigned char enc_mode;
@@ -138,7 +154,43 @@ struct tls_key_context {
 #define	TCP_TLSOM_CLR_QUIES		(TCP_VENDOR + 3)
 
 #ifdef _KERNEL
-int	t4_ctloutput_tls(struct socket *, struct sockopt *);
+enum {
+	TLS_1_2_VERSION,
+	TLS_1_1_VERSION,
+	DTLS_1_2_VERSION,
+	TLS_VERSION_MAX,
+};
+
+enum {
+	CH_EVP_CIPH_STREAM_CIPHER,
+	CH_EVP_CIPH_CBC_MODE,
+	CH_EVP_CIPH_GCM_MODE,
+	CH_EVP_CIPH_CTR_MODE,
+};
+
+enum {
+	TLS_SFO_WR_CONTEXTLOC_DSGL,
+	TLS_SFO_WR_CONTEXTLOC_IMMEDIATE,
+	TLS_SFO_WR_CONTEXTLOC_DDR,
+};
+
+#define SCMD_ENCDECCTRL_ENCRYPT 0
+#define SCMD_ENCDECCTRL_DECRYPT 1
+
+struct tls_scmd {
+	__be32 seqno_numivs;
+	__be32 ivgen_hdrlen;
+};
+
+struct tls_pcb {
+	struct tls_key_context k_ctx;
+	char key_location;
+	int mac_length;
+	int rx_key_id;
+	int tx_key_id;
+	uint64_t tx_seq_no;
+	struct tls_scmd scmd0;
+};
 #endif /* _KERNEL */
 
 #endif /* !__T4_TLS_H__ */
