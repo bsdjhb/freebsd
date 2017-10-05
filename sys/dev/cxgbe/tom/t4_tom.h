@@ -33,6 +33,7 @@
 #ifndef __T4_TOM_H__
 #define __T4_TOM_H__
 #include <sys/vmem.h>
+#include "tom/t4_tls.h"
 
 #define LISTEN_HASH_SIZE 32
 
@@ -145,9 +146,6 @@ struct ddp_pcb {
 	struct task requeue_task;
 	struct kaiocb *queueing;
 	struct mtx lock;
-};
-
-struct tls_pcb {
 };
 
 struct aiotx_buffer {
@@ -416,6 +414,7 @@ void handle_ddp_tcb_rpl(struct toepcb *, const struct cpl_set_tcb_rpl *);
 void insert_ddp_data(struct toepcb *, uint32_t);
 
 /* t4_tls.c */
+int t4_ctloutput_tls(struct socket *, struct sockopt *);
 void tls_init_toep(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
 

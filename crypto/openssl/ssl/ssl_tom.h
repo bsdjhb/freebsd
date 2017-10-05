@@ -80,14 +80,12 @@ enum {
     CHSSL_AES_XTS,
     CHSSL_AES_CCM,
 };
-#endif
 
 #define KEY_WRITE_RX	0x1	/* Program Receive Key */
 #define KEY_WRITE_TX	0x2	/* Program Transmit Key */
 #define KEY_DELETE_RX	0x4	/* Delete Receive Key */
 #define KEY_DELETE_TX	0x8	/* Delete Transmit Key */
 
-#ifdef __linux__
 #define S_KEY_CLR_LOC		4
 #define M_KEY_CLR_LOC		0xf
 #define V_KEY_CLR_LOC(x)	((x) << S_KEY_CLR_LOC)
