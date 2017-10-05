@@ -62,6 +62,16 @@ t4_set_tls_tcb_field(struct toepcb *toep, uint16_t word, uint64_t mask,
 	    toep->ofld_rxq->iq.abs_id);
 }
 
+/* Set TLS Key-Id in TCB */
+static void
+t4_set_tls_keyid(struct toepcb *toep, unsigned int key_id)
+{
+
+	t4_set_tls_tcb_field(toep, W_TCB_RX_TLS_KEY_TAG,
+			 V_TCB_RX_TLS_KEY_TAG(M_TCB_RX_TLS_BUF_TAG),
+			 V_TCB_RX_TLS_KEY_TAG(key_id));
+}
+
 /* Clear TF_RX_QUIESCE to re-enable receive. */
 static void
 t4_clear_rx_quiesce(struct toepcb *toep)
@@ -203,7 +213,7 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX) {
 		/* Key address is 3 multiple of key-id */
-		t4_set_tls_keyid(sk, (unsigned int)(3 * tls_ofld->rx_key_id));
+		t4_set_tls_keyid(toep, (unsigned int)(3 * tls_ofld->rx_key_id));
 		t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
 				 V_TCB_ULP_RAW(M_TCB_ULP_RAW),
 				 V_TCB_ULP_RAW((V_TF_TLS_KEY_SIZE(3) |
