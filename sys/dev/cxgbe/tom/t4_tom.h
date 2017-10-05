@@ -316,6 +316,12 @@ mbuf_ulp_submode(struct mbuf *m)
 	return (m->m_pkthdr.PH_per.eight[0]);
 }
 
+static inline int
+is_tls_offload(struct toepcb *toep)
+{
+	return (toep->ulp_mode == ULP_MODE_TLS);
+}
+
 /* t4_tom.c */
 struct toepcb *alloc_toepcb(struct vi_info *, int, int, int);
 struct toepcb *hold_toepcb(struct toepcb *);
