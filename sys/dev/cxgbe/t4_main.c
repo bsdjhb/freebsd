@@ -3622,6 +3622,18 @@ get_params__post_init(struct adapter *sc)
 		sc->vres.iscsi.start = val[0];
 		sc->vres.iscsi.size = val[1] - val[0] + 1;
 	}
+	if (sc->cryptocaps & FW_CAPS_CONFIG_TLSKEYS) {
+		param[0] = FW_PARAM_PFVF(TLS_START);
+		param[1] = FW_PARAM_PFVF(TLS_END);
+		rc = -t4_query_params(sc, sc->mbox, sc->pf, 0, 2, param, val);
+		if (rc != 0) {
+			device_printf(sc->dev,
+			    "failed to query TLS parameters: %d.\n", rc);
+			return (rc);
+		}
+		sc->vres.key.start = val[0];
+		sc->vres.key.size = val[1] - val[0] + 1;
+	}
 
 	t4_init_sge_params(sc);
 
