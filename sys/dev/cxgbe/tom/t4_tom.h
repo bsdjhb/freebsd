@@ -188,7 +188,7 @@ struct toepcb {
 
 	union {			/* ULP mode-specific data. */
 		struct ddp_pcb ddp;
-		struct tls_pcb tls;
+		struct tls_ofld_info tls;
 	};
 
 	TAILQ_HEAD(, kaiocb) aiotx_jobq;
@@ -274,6 +274,8 @@ struct tom_data {
 
 	struct ppod_region pr;
 
+	vmem_t *key_map;
+	
 	struct mtx clip_table_lock;
 	struct clip_head clip_table;
 	int clip_gen;
@@ -415,6 +417,8 @@ void insert_ddp_data(struct toepcb *, uint32_t);
 
 /* t4_tls.c */
 int t4_ctloutput_tls(struct socket *, struct sockopt *);
+void tls_free_kmap(struct tom_data *);
+int tls_init_kmap(struct adapter *, struct tom_data *);
 void tls_init_toep(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
 

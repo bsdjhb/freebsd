@@ -117,14 +117,160 @@ get_proto_ver(int proto_ver)
 	}
 }
 
+/* TLS Key bitmap processing */
+int
+tls_init_kmap(struct adapter *sc, struct tom_data *td)
+{
+
+	td->key_map = vmem_create("T4TLS key map", 0, sc->vres.key.size,
+	    TLS_KEY_CONTEXT_SZ, 0, M_FIRSTFIT | M_NOWAIT);
+	if (td->key_map == NULL)
+		return (ENOMEM);
+	return (0);
+}
+
+void
+tls_free_kmap(struct tom_data *td)
+{
+
+	if (td->key_map != NULL)
+		vmem_destroy(td->key_map);
+}
+
+static int
+get_new_keyid(struct toepcb *toep, struct tls_key_context *k_ctx)
+{
+	struct tls_ofld_info *tls_ofld = &toep->tls;
+	struct tom_data *td = toep->td;
+	vmem_addr_t keyid;
+
+	if (vmem_alloc(td->key_map, TLS_KEY_CONTEXT_SZ, M_NOWAIT | M_FIRSTFIT,
+	    &keyid) != 0)
+		return (-1);
+
+	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX) {
+		tls_ofld->rx_key_id = keyid;
+	} else {
+		tls_ofld->tx_key_id = keyid;
+	}
+	return (keyid);
+}
+
+static void
+clear_tls_keyid(struct toepcb *toep)
+{
+	struct tls_ofld_info *tls_ofld = &toep->tls;
+	struct tom_data *td = toep->td;
+
+	if (tls_ofld->rx_key_id >= 0) {
+		vmem_free(td->key_map, tls_ofld->rx_key_id, TLS_KEY_CONTEXT_SZ);
+		tls_ofld->rx_key_id = -1;
+	}
+	if (tls_ofld->tx_key_id >= 0) {
+		vmem_free(td->key_map, tls_ofld->tx_key_id, TLS_KEY_CONTEXT_SZ);
+		tls_ofld->tx_key_id = -1;
+	}
+}
+
+static int
+get_keyid(struct tls_ofld_info *tls_ofld, unsigned int ops)
+{
+	return (ops & KEY_WRITE_RX ? tls_ofld->rx_key_id : 
+		((ops & KEY_WRITE_TX) ? tls_ofld->rx_key_id : -1)); 
+}
+
+/* Send request to get the key-id */
+static int
+tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
+{
+	struct tls_ofld_info *tls_ofld = &toep->tls;
+#if 0
+	int error;
+
+	struct cpl_io_state *cplios = CPL_IO_STATE(sk);
+	struct toedev *tdev = cplios->toedev;
+	struct tom_data *td = TOM_DATA(tdev);
+#endif
+	int kwrlen, kctxlen, keyid, len;
+#if 0
+	struct sk_buff *skb;
+#endif
+	struct tls_key_req *kwr;
+	struct tls_keyctx *kctx;
+
+	kwrlen = roundup2(sizeof(*kwr), 16);
+	kctxlen = roundup2(sizeof(*kctx), 32);
+	len = kwrlen + kctxlen;
+
+	/* Dont initialize key for re-neg */
+	if (!G_KEY_CLR_LOC(k_ctx->l_p_key)) {
+		if ((keyid = get_new_keyid(toep, k_ctx)) < 0) {
+			return (ENOSPC);
+		}
+	} else {
+		keyid = get_keyid(tls_ofld, k_ctx->l_p_key);
+	}
+
+#if 0
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (!skb)
+		return -ENOMEM;
+
+	kwr = (struct tls_key_req *)__skb_put(skb, len);
+	memset(kwr, 0, kwrlen);
+
+	kwr->wr_hi =
+		cpu_to_be32(V_FW_WR_OP(FW_ULPTX_WR) |
+			    F_FW_WR_COMPL |
+			    F_FW_WR_ATOMIC);
+	kwr->wr_mid =
+		cpu_to_be32(V_FW_WR_LEN16(DIV_ROUND_UP(len, 16)) |
+		      V_FW_WR_FLOWID(cplios->tid));
+	kwr->protocol = get_proto_ver(k_ctx->proto_ver);
+	kwr->mfs = htons(tls_ofld->k_ctx->frag_size);
+	tls_ofld->fcplenmax = get_tp_plen_max(tls_ofld);
+	kwr->reneg_to_write_rx = k_ctx->l_p_key;
+
+	/* master command */
+	kwr->cmd = cpu_to_be32(V_ULPTX_CMD(ULP_TX_MEM_WRITE) |
+			 V_T5_ULP_MEMIO_ORDER(1) |
+			 V_T5_ULP_MEMIO_IMM(1));
+	kwr->dlen = cpu_to_be32(V_ULP_MEMIO_DATA_LEN(kctxlen >> 5));
+	kwr->len16 = cpu_to_be32((cplios->tid << 8) |
+				 DIV_ROUND_UP(len - sizeof(struct work_request_hdr), 16));
+	kwr->kaddr = cpu_to_be32(V_ULP_MEMIO_ADDR(keyid_to_addr(td->kmap.start, keyid)));
+
+	/* sub command */
+	kwr->sc_more = cpu_to_be32(V_ULPTX_CMD(ULP_TX_SC_IMM));	
+	kwr->sc_len = cpu_to_be32(kctxlen);
+
+	kctx = (struct tls_keyctx *)(kwr + 1);
+	memset(kctx, 0, kctxlen);
+
+	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_TX)
+		prepare_txkey_wr(kctx, k_ctx);
+	else if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
+		prepare_rxkey_wr(kctx, k_ctx);
+
+	set_wr_txq(skb, CPL_PRIORITY_DATA, tls_ofld->tx_qid);
+	tls_ofld->key_rqst = 0;
+	cplios->wr_credits -= DIV_ROUND_UP(len, 16);
+	cplios->wr_unacked += DIV_ROUND_UP(len, 16);
+	enqueue_wr(sk, skb);
+	cxgb4_ofld_send(cplios->egress_dev, skb);
+#endif
+
+	return (0);
+}
+
 /* Store a key received from SSL in DDR. */
 static int
 program_key_context(struct tcpcb *tp, struct toepcb *toep,
     struct tls_key_context *uk_ctx)
 {
 	struct adapter *sc = td_adapter(toep->td);
+	struct tls_ofld_info *tls_ofld = &toep->tls;
 	struct tls_key_context *k_ctx;
-	struct tls_pcb *tls_ofld;
 	int error;
 
 	if (tp->t_state != TCPS_ESTABLISHED) {
@@ -137,7 +283,6 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	/* XXX: Stop handshake timer. */
 
-	tls_ofld = &toep->tls;
 	k_ctx = &tls_ofld->k_ctx;
 
 	/* Don't copy the 'tx' and 'rx' fields. */
@@ -212,8 +357,12 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 	}
 
 	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX) {
-		/* Key address is 3 multiple of key-id */
-		t4_set_tls_keyid(toep, (unsigned int)(3 * tls_ofld->rx_key_id));
+		/*
+		 * RX key tags are an index into the key portion of MA
+		 * memory stored as an offset from the base address in
+		 * units of 64 bytes.
+		 */
+		t4_set_tls_keyid(toep, tls_ofld->rx_key_id / 64);
 		t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
 				 V_TCB_ULP_RAW(M_TCB_ULP_RAW),
 				 V_TCB_ULP_RAW((V_TF_TLS_KEY_SIZE(3) |

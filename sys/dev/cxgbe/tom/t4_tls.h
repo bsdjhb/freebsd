@@ -48,6 +48,8 @@
 #define CIPHER_BLOCK_SZ		16
 #define SALT_SIZE		4
 
+#define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_tx_ctxt), 32)
+
 /* Can accomodate 16, 11-15 are reserved */
 enum {
     CHSSL_SHA_NOP,
@@ -182,7 +184,7 @@ struct tls_scmd {
 	__be32 ivgen_hdrlen;
 };
 
-struct tls_pcb {
+struct tls_ofld_info {
 	struct tls_key_context k_ctx;
 	char key_location;
 	int mac_length;
@@ -191,6 +193,259 @@ struct tls_pcb {
 	uint64_t tx_seq_no;
 	struct tls_scmd scmd0;
 };
+
+struct tls_key_req {
+	__be32 wr_hi;
+	__be32 wr_mid;
+        __be32 ftid;
+        __u8   reneg_to_write_rx;
+        __u8   protocol;
+        __be16 mfs;
+	/* master command */
+	__be32 cmd;
+	__be32 len16;             /* command length */
+	__be32 dlen;              /* data length in 32-byte units */
+	__be32 kaddr;
+	/* sub-command */
+	__be32 sc_more;
+	__be32 sc_len;
+}__packed;
+
+struct tls_keyctx {
+        union key_ctx {
+                struct tx_keyctx_hdr {
+                        __u8   ctxlen;
+                        __u8   r2;
+                        __be16 dualck_to_txvalid;
+                        __u8   txsalt[4];
+                        __be64 r5;
+                } txhdr;
+                struct rx_keyctx_hdr {
+                        __u8   flitcnt_hmacctrl;
+                        __u8   protover_ciphmode;
+                        __u8   authmode_to_rxvalid;
+                        __u8   ivpresent_to_rxmk_size;
+                        __u8   rxsalt[4];
+                        __be64 ivinsert_to_authinsrt;
+                } rxhdr;
+        } u;
+        struct keys {
+                __u8   edkey[32];
+                __u8   ipad[64];
+                __u8   opad[64];
+        } keys;
+};
+
+#define S_TLS_KEYCTX_TX_WR_DUALCK    12
+#define M_TLS_KEYCTX_TX_WR_DUALCK    0x1
+#define V_TLS_KEYCTX_TX_WR_DUALCK(x) ((x) << S_TLS_KEYCTX_TX_WR_DUALCK)
+#define G_TLS_KEYCTX_TX_WR_DUALCK(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_DUALCK) & M_TLS_KEYCTX_TX_WR_DUALCK)
+#define F_TLS_KEYCTX_TX_WR_DUALCK    V_TLS_KEYCTX_TX_WR_DUALCK(1U)
+
+#define S_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT 11
+#define M_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT 0x1
+#define V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT)
+#define G_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT) & \
+     M_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT)
+#define F_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT \
+    V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1U)
+
+#define S_TLS_KEYCTX_TX_WR_SALT_PRESENT 10
+#define M_TLS_KEYCTX_TX_WR_SALT_PRESENT 0x1
+#define V_TLS_KEYCTX_TX_WR_SALT_PRESENT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_SALT_PRESENT)
+#define G_TLS_KEYCTX_TX_WR_SALT_PRESENT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_SALT_PRESENT) & \
+     M_TLS_KEYCTX_TX_WR_SALT_PRESENT)
+#define F_TLS_KEYCTX_TX_WR_SALT_PRESENT \
+    V_TLS_KEYCTX_TX_WR_SALT_PRESENT(1U)
+
+#define S_TLS_KEYCTX_TX_WR_TXCK_SIZE 6
+#define M_TLS_KEYCTX_TX_WR_TXCK_SIZE 0xf
+#define V_TLS_KEYCTX_TX_WR_TXCK_SIZE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_TXCK_SIZE)
+#define G_TLS_KEYCTX_TX_WR_TXCK_SIZE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_TXCK_SIZE) & \
+     M_TLS_KEYCTX_TX_WR_TXCK_SIZE)
+
+#define S_TLS_KEYCTX_TX_WR_TXMK_SIZE 2
+#define M_TLS_KEYCTX_TX_WR_TXMK_SIZE 0xf
+#define V_TLS_KEYCTX_TX_WR_TXMK_SIZE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_TXMK_SIZE)
+#define G_TLS_KEYCTX_TX_WR_TXMK_SIZE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_TXMK_SIZE) & \
+     M_TLS_KEYCTX_TX_WR_TXMK_SIZE)
+
+#define S_TLS_KEYCTX_TX_WR_TXVALID   0
+#define M_TLS_KEYCTX_TX_WR_TXVALID   0x1
+#define V_TLS_KEYCTX_TX_WR_TXVALID(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_TXVALID)
+#define G_TLS_KEYCTX_TX_WR_TXVALID(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_TXVALID) & M_TLS_KEYCTX_TX_WR_TXVALID)
+#define F_TLS_KEYCTX_TX_WR_TXVALID   V_TLS_KEYCTX_TX_WR_TXVALID(1U)
+
+#define S_TLS_KEYCTX_TX_WR_FLITCNT   3
+#define M_TLS_KEYCTX_TX_WR_FLITCNT   0x1f
+#define V_TLS_KEYCTX_TX_WR_FLITCNT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_FLITCNT)
+#define G_TLS_KEYCTX_TX_WR_FLITCNT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_FLITCNT) & M_TLS_KEYCTX_TX_WR_FLITCNT)
+
+#define S_TLS_KEYCTX_TX_WR_HMACCTRL  0
+#define M_TLS_KEYCTX_TX_WR_HMACCTRL  0x7
+#define V_TLS_KEYCTX_TX_WR_HMACCTRL(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_HMACCTRL)
+#define G_TLS_KEYCTX_TX_WR_HMACCTRL(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_HMACCTRL) & M_TLS_KEYCTX_TX_WR_HMACCTRL)
+
+#define S_TLS_KEYCTX_TX_WR_PROTOVER  4
+#define M_TLS_KEYCTX_TX_WR_PROTOVER  0xf
+#define V_TLS_KEYCTX_TX_WR_PROTOVER(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_PROTOVER)
+#define G_TLS_KEYCTX_TX_WR_PROTOVER(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_PROTOVER) & M_TLS_KEYCTX_TX_WR_PROTOVER)
+
+#define S_TLS_KEYCTX_TX_WR_CIPHMODE  0
+#define M_TLS_KEYCTX_TX_WR_CIPHMODE  0xf
+#define V_TLS_KEYCTX_TX_WR_CIPHMODE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_CIPHMODE)
+#define G_TLS_KEYCTX_TX_WR_CIPHMODE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_CIPHMODE) & M_TLS_KEYCTX_TX_WR_CIPHMODE)
+
+#define S_TLS_KEYCTX_TX_WR_AUTHMODE  4
+#define M_TLS_KEYCTX_TX_WR_AUTHMODE  0xf
+#define V_TLS_KEYCTX_TX_WR_AUTHMODE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AUTHMODE)
+#define G_TLS_KEYCTX_TX_WR_AUTHMODE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AUTHMODE) & M_TLS_KEYCTX_TX_WR_AUTHMODE)
+
+#define S_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL 3
+#define M_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL 0x1
+#define V_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL)
+#define G_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL) & \
+     M_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL)
+#define F_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL \
+    V_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL(1U)
+
+#define S_TLS_KEYCTX_TX_WR_SEQNUMCTRL 1
+#define M_TLS_KEYCTX_TX_WR_SEQNUMCTRL 0x3
+#define V_TLS_KEYCTX_TX_WR_SEQNUMCTRL(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_SEQNUMCTRL)
+#define G_TLS_KEYCTX_TX_WR_SEQNUMCTRL(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_SEQNUMCTRL) & \
+     M_TLS_KEYCTX_TX_WR_SEQNUMCTRL)
+
+#define S_TLS_KEYCTX_TX_WR_RXVALID   0
+#define M_TLS_KEYCTX_TX_WR_RXVALID   0x1
+#define V_TLS_KEYCTX_TX_WR_RXVALID(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_RXVALID)
+#define G_TLS_KEYCTX_TX_WR_RXVALID(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_RXVALID) & M_TLS_KEYCTX_TX_WR_RXVALID)
+#define F_TLS_KEYCTX_TX_WR_RXVALID   V_TLS_KEYCTX_TX_WR_RXVALID(1U)
+
+#define S_TLS_KEYCTX_TX_WR_IVPRESENT 7
+#define M_TLS_KEYCTX_TX_WR_IVPRESENT 0x1
+#define V_TLS_KEYCTX_TX_WR_IVPRESENT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_IVPRESENT)
+#define G_TLS_KEYCTX_TX_WR_IVPRESENT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_IVPRESENT) & \
+     M_TLS_KEYCTX_TX_WR_IVPRESENT)
+#define F_TLS_KEYCTX_TX_WR_IVPRESENT V_TLS_KEYCTX_TX_WR_IVPRESENT(1U)
+
+#define S_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT 6
+#define M_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT 0x1
+#define V_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT)
+#define G_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT) & \
+     M_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT)
+#define F_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT \
+    V_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT(1U)
+
+#define S_TLS_KEYCTX_TX_WR_RXCK_SIZE 3
+#define M_TLS_KEYCTX_TX_WR_RXCK_SIZE 0x7
+#define V_TLS_KEYCTX_TX_WR_RXCK_SIZE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_RXCK_SIZE)
+#define G_TLS_KEYCTX_TX_WR_RXCK_SIZE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_RXCK_SIZE) & \
+     M_TLS_KEYCTX_TX_WR_RXCK_SIZE)
+
+#define S_TLS_KEYCTX_TX_WR_RXMK_SIZE 0
+#define M_TLS_KEYCTX_TX_WR_RXMK_SIZE 0x7
+#define V_TLS_KEYCTX_TX_WR_RXMK_SIZE(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_RXMK_SIZE)
+#define G_TLS_KEYCTX_TX_WR_RXMK_SIZE(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_RXMK_SIZE) & \
+     M_TLS_KEYCTX_TX_WR_RXMK_SIZE)
+
+#define S_TLS_KEYCTX_TX_WR_IVINSERT  55
+#define M_TLS_KEYCTX_TX_WR_IVINSERT  0x1ffULL
+#define V_TLS_KEYCTX_TX_WR_IVINSERT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_IVINSERT)
+#define G_TLS_KEYCTX_TX_WR_IVINSERT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_IVINSERT) & M_TLS_KEYCTX_TX_WR_IVINSERT)
+
+#define S_TLS_KEYCTX_TX_WR_AADSTRTOFST 47
+#define M_TLS_KEYCTX_TX_WR_AADSTRTOFST 0xffULL
+#define V_TLS_KEYCTX_TX_WR_AADSTRTOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AADSTRTOFST)
+#define G_TLS_KEYCTX_TX_WR_AADSTRTOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AADSTRTOFST) & \
+     M_TLS_KEYCTX_TX_WR_AADSTRTOFST)
+
+#define S_TLS_KEYCTX_TX_WR_AADSTOPOFST 39
+#define M_TLS_KEYCTX_TX_WR_AADSTOPOFST 0xffULL
+#define V_TLS_KEYCTX_TX_WR_AADSTOPOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AADSTOPOFST)
+#define G_TLS_KEYCTX_TX_WR_AADSTOPOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AADSTOPOFST) & \
+     M_TLS_KEYCTX_TX_WR_AADSTOPOFST)
+
+#define S_TLS_KEYCTX_TX_WR_CIPHERSRTOFST 30
+#define M_TLS_KEYCTX_TX_WR_CIPHERSRTOFST 0x1ffULL
+#define V_TLS_KEYCTX_TX_WR_CIPHERSRTOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_CIPHERSRTOFST)
+#define G_TLS_KEYCTX_TX_WR_CIPHERSRTOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_CIPHERSRTOFST) & \
+     M_TLS_KEYCTX_TX_WR_CIPHERSRTOFST)
+
+#define S_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST 23
+#define M_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST 0x7f
+#define V_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST)
+#define G_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST) & \
+     M_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST)
+
+#define S_TLS_KEYCTX_TX_WR_AUTHSRTOFST 14
+#define M_TLS_KEYCTX_TX_WR_AUTHSRTOFST 0x1ff
+#define V_TLS_KEYCTX_TX_WR_AUTHSRTOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AUTHSRTOFST)
+#define G_TLS_KEYCTX_TX_WR_AUTHSRTOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AUTHSRTOFST) & \
+     M_TLS_KEYCTX_TX_WR_AUTHSRTOFST)
+
+#define S_TLS_KEYCTX_TX_WR_AUTHSTOPOFST 7
+#define M_TLS_KEYCTX_TX_WR_AUTHSTOPOFST 0x7f
+#define V_TLS_KEYCTX_TX_WR_AUTHSTOPOFST(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AUTHSTOPOFST)
+#define G_TLS_KEYCTX_TX_WR_AUTHSTOPOFST(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AUTHSTOPOFST) & \
+     M_TLS_KEYCTX_TX_WR_AUTHSTOPOFST)
+
+#define S_TLS_KEYCTX_TX_WR_AUTHINSRT 0
+#define M_TLS_KEYCTX_TX_WR_AUTHINSRT 0x7f
+#define V_TLS_KEYCTX_TX_WR_AUTHINSRT(x) \
+    ((x) << S_TLS_KEYCTX_TX_WR_AUTHINSRT)
+#define G_TLS_KEYCTX_TX_WR_AUTHINSRT(x) \
+    (((x) >> S_TLS_KEYCTX_TX_WR_AUTHINSRT) & \
+     M_TLS_KEYCTX_TX_WR_AUTHINSRT)
+
 #endif /* _KERNEL */
 
 #endif /* !__T4_TLS_H__ */
