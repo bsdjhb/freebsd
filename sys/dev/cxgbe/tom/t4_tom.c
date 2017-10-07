@@ -1005,6 +1005,7 @@ free_tom_data(struct adapter *sc, struct tom_data *td)
 	KASSERT(td->lctx_count == 0,
 	    ("%s: lctx hash table is not empty.", __func__));
 
+	tls_free_kmap(td);
 	t4_free_ppod_region(&td->pr);
 	destroy_clip_table(sc, td);
 
@@ -1108,6 +1109,12 @@ t4_tom_activate(struct adapter *sc)
 
 	/* CLIP table for IPv6 offload */
 	init_clip_table(sc, td);
+
+	if (sc->vres.key.size != 0) {
+		rc = tls_init_kmap(sc, td);
+		if (rc != 0)
+			goto done;
+	}
 
 	/* toedev ops */
 	tod = &td->tod;
