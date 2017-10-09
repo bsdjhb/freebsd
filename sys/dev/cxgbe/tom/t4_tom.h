@@ -85,6 +85,8 @@ enum {
 	DDP_DEAD	= (1 << 6),	/* toepcb is shutting down */
 };
 
+struct sockopt;
+
 struct ofld_tx_sdesc {
 	uint32_t plen;		/* payload length */
 	uint8_t tx_credits;	/* firmware tx credits (unit is 16B) */

@@ -103,6 +103,50 @@ tls_clr_quiesce(struct toepcb *toep)
 }
 
 static unsigned int
+keyid_to_addr(int start_addr, int keyid)
+{
+	return ((start_addr + keyid) >> 5);
+}
+
+static unsigned char
+get_cipher_key_size(unsigned int ck_size)
+{
+	switch (ck_size) {
+	case AES_NOP: /* NOP */
+		return 15;
+	case AES_128: /* AES128 */
+		return CH_CK_SIZE_128;
+	case AES_192: /* AES192 */
+		return CH_CK_SIZE_192;
+	case AES_256: /* AES256 */
+		return CH_CK_SIZE_256;
+	default:
+		return CH_CK_SIZE_256;
+	}
+}
+
+static unsigned char
+get_mac_key_size(unsigned int mk_size)
+{
+	switch (mk_size) {
+	case SHA_NOP: /* NOP */
+		return CH_MK_SIZE_128;
+	case SHA_GHASH: /* GHASH */
+	case SHA_512: /* SHA512 */
+		return CH_MK_SIZE_512;
+	case SHA_224: /* SHA2-224 */
+		return CH_MK_SIZE_192;
+	case SHA_256: /* SHA2-256*/
+		return CH_MK_SIZE_256;
+	case SHA_384: /* SHA384 */
+		return CH_MK_SIZE_512;
+	case SHA1: /* SHA1 */
+	default:
+		return CH_MK_SIZE_160;
+	}
+}
+
+static unsigned int
 get_proto_ver(int proto_ver)
 {
 	switch (proto_ver) {
@@ -117,7 +161,106 @@ get_proto_ver(int proto_ver)
 	}
 }
 
-/* TLS Key bitmap processing */
+static void
+tls_rxkey_flit1(struct tls_keyctx *kwr, struct tls_key_context *kctx)
+{
+
+	if (kctx->state.enc_mode == CH_EVP_CIPH_GCM_MODE) {
+		kwr->u.rxhdr.ivinsert_to_authinsrt =
+		    htobe64(V_TLS_KEYCTX_TX_WR_IVINSERT(6ULL) |
+			V_TLS_KEYCTX_TX_WR_AADSTRTOFST(1ULL) |
+			V_TLS_KEYCTX_TX_WR_AADSTOPOFST(5ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHSRTOFST(14ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHSTOPOFST(16ULL) |
+			V_TLS_KEYCTX_TX_WR_CIPHERSRTOFST(14ULL) |
+			V_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST(0ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHINSRT(16ULL));
+		kwr->u.rxhdr.ivpresent_to_rxmk_size &=
+			~(V_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT(1));
+		kwr->u.rxhdr.authmode_to_rxvalid &=
+			~(V_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL(1));
+	} else {
+		kwr->u.rxhdr.ivinsert_to_authinsrt =
+		    htobe64(V_TLS_KEYCTX_TX_WR_IVINSERT(6ULL) |
+			V_TLS_KEYCTX_TX_WR_AADSTRTOFST(1ULL) |
+			V_TLS_KEYCTX_TX_WR_AADSTOPOFST(5ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHSRTOFST(22ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHSTOPOFST(0ULL) |
+			V_TLS_KEYCTX_TX_WR_CIPHERSRTOFST(22ULL) |
+			V_TLS_KEYCTX_TX_WR_CIPHERSTOPOFST(0ULL) |
+			V_TLS_KEYCTX_TX_WR_AUTHINSRT(0ULL));
+	}
+}
+
+/* Rx key */
+static void
+prepare_rxkey_wr(struct tls_keyctx *kwr, struct tls_key_context *kctx)
+{
+	unsigned int ck_size = kctx->cipher_secret_size;
+	unsigned int mk_size = kctx->mac_secret_size;
+	int proto_ver = kctx->proto_ver;
+
+	kwr->u.rxhdr.flitcnt_hmacctrl =
+		((kctx->tx_key_info_size >> 4) << 3) | kctx->hmac_ctrl;
+
+	kwr->u.rxhdr.protover_ciphmode =
+		V_TLS_KEYCTX_TX_WR_PROTOVER(get_proto_ver(proto_ver)) |
+		V_TLS_KEYCTX_TX_WR_CIPHMODE(kctx->state.enc_mode);
+
+	kwr->u.rxhdr.authmode_to_rxvalid =
+		V_TLS_KEYCTX_TX_WR_AUTHMODE(kctx->state.auth_mode) |
+		V_TLS_KEYCTX_TX_WR_CIPHAUTHSEQCTRL(1) |
+		V_TLS_KEYCTX_TX_WR_SEQNUMCTRL(3) |
+		V_TLS_KEYCTX_TX_WR_RXVALID(1);
+
+	kwr->u.rxhdr.ivpresent_to_rxmk_size =
+		V_TLS_KEYCTX_TX_WR_IVPRESENT(0) |
+		V_TLS_KEYCTX_TX_WR_RXOPAD_PRESENT(1) |
+		V_TLS_KEYCTX_TX_WR_RXCK_SIZE(get_cipher_key_size(ck_size)) |
+		V_TLS_KEYCTX_TX_WR_RXMK_SIZE(get_mac_key_size(mk_size));
+
+	tls_rxkey_flit1(kwr, kctx);
+
+	/* No key reversal for GCM */
+	if (kctx->state.enc_mode != CH_EVP_CIPH_GCM_MODE) {
+		t4_aes_getdeckey(kwr->keys.edkey, kctx->rx.key,
+				 (kctx->cipher_secret_size << 3));
+		memcpy(kwr->keys.edkey + kctx->cipher_secret_size,
+		       kctx->rx.key + kctx->cipher_secret_size,
+		       (IPAD_SIZE + OPAD_SIZE));
+	} else {
+		memcpy(kwr->keys.edkey, kctx->rx.key,
+		       (kctx->tx_key_info_size - SALT_SIZE));
+		memcpy(kwr->u.rxhdr.rxsalt, kctx->rx.salt, SALT_SIZE);
+	}
+}
+
+/* Tx key */
+static void
+prepare_txkey_wr(struct tls_keyctx *kwr, struct tls_key_context *kctx)
+{
+	unsigned int ck_size = kctx->cipher_secret_size;
+	unsigned int mk_size = kctx->mac_secret_size;
+
+	kwr->u.txhdr.ctxlen =
+		(kctx->tx_key_info_size >> 4);
+	kwr->u.txhdr.dualck_to_txvalid =
+		V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1) |
+		V_TLS_KEYCTX_TX_WR_SALT_PRESENT(1) |
+		V_TLS_KEYCTX_TX_WR_TXCK_SIZE(get_cipher_key_size(ck_size)) |
+		V_TLS_KEYCTX_TX_WR_TXMK_SIZE(get_mac_key_size(mk_size)) |
+		V_TLS_KEYCTX_TX_WR_TXVALID(1);
+
+	memcpy(kwr->keys.edkey, kctx->tx.key, HDR_KCTX_SIZE);
+	if (kctx->state.enc_mode == CH_EVP_CIPH_GCM_MODE) {
+		memcpy(kwr->u.txhdr.txsalt, kctx->tx.salt, SALT_SIZE);
+		kwr->u.txhdr.dualck_to_txvalid &=
+			~(V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1));
+	}
+	kwr->u.txhdr.dualck_to_txvalid = htons(kwr->u.txhdr.dualck_to_txvalid);
+}
+
+/* TLS Key memory management */
 int
 tls_init_kmap(struct adapter *sc, struct tom_data *td)
 {
@@ -179,22 +322,22 @@ get_keyid(struct tls_ofld_info *tls_ofld, unsigned int ops)
 		((ops & KEY_WRITE_TX) ? tls_ofld->rx_key_id : -1)); 
 }
 
+static int
+get_tp_plen_max(struct tls_ofld_info *tls_ofld)
+{
+	int plen = ((min(3*4096, TP_TX_PG_SZ))/1448) * 1448;
+
+	return (tls_ofld->k_ctx.frag_size <= 8192 ? plen : FC_TP_PLEN_MAX);	
+}
+
 /* Send request to get the key-id */
 static int
 tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 {
 	struct tls_ofld_info *tls_ofld = &toep->tls;
-#if 0
-	int error;
-
-	struct cpl_io_state *cplios = CPL_IO_STATE(sk);
-	struct toedev *tdev = cplios->toedev;
-	struct tom_data *td = TOM_DATA(tdev);
-#endif
+	struct adapter *sc = td_adapter(toep->td);
 	int kwrlen, kctxlen, keyid, len;
-#if 0
-	struct sk_buff *skb;
-#endif
+	struct wrqe *wr;
 	struct tls_key_req *kwr;
 	struct tls_keyctx *kctx;
 
@@ -211,39 +354,35 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 		keyid = get_keyid(tls_ofld, k_ctx->l_p_key);
 	}
 
-#if 0
-	skb = alloc_skb(len, GFP_KERNEL);
-	if (!skb)
-		return -ENOMEM;
-
-	kwr = (struct tls_key_req *)__skb_put(skb, len);
+	wr = alloc_wrqe(len, toep->ofld_txq);
+	if (wr == NULL)
+		return (ENOMEM);
+	kwr = wrtod(wr);
 	memset(kwr, 0, kwrlen);
 
-	kwr->wr_hi =
-		cpu_to_be32(V_FW_WR_OP(FW_ULPTX_WR) |
-			    F_FW_WR_COMPL |
-			    F_FW_WR_ATOMIC);
-	kwr->wr_mid =
-		cpu_to_be32(V_FW_WR_LEN16(DIV_ROUND_UP(len, 16)) |
-		      V_FW_WR_FLOWID(cplios->tid));
+	kwr->wr_hi = htobe32(V_FW_WR_OP(FW_ULPTX_WR) | F_FW_WR_COMPL |
+	    F_FW_WR_ATOMIC);
+	kwr->wr_mid = htobe32(V_FW_WR_LEN16(DIV_ROUND_UP(len, 16)) |
+	    V_FW_WR_FLOWID(toep->tid));
 	kwr->protocol = get_proto_ver(k_ctx->proto_ver);
-	kwr->mfs = htons(tls_ofld->k_ctx->frag_size);
+	kwr->mfs = htons(k_ctx->frag_size);
 	tls_ofld->fcplenmax = get_tp_plen_max(tls_ofld);
 	kwr->reneg_to_write_rx = k_ctx->l_p_key;
 
 	/* master command */
-	kwr->cmd = cpu_to_be32(V_ULPTX_CMD(ULP_TX_MEM_WRITE) |
-			 V_T5_ULP_MEMIO_ORDER(1) |
-			 V_T5_ULP_MEMIO_IMM(1));
-	kwr->dlen = cpu_to_be32(V_ULP_MEMIO_DATA_LEN(kctxlen >> 5));
-	kwr->len16 = cpu_to_be32((cplios->tid << 8) |
-				 DIV_ROUND_UP(len - sizeof(struct work_request_hdr), 16));
-	kwr->kaddr = cpu_to_be32(V_ULP_MEMIO_ADDR(keyid_to_addr(td->kmap.start, keyid)));
+	kwr->cmd = htobe32(V_ULPTX_CMD(ULP_TX_MEM_WRITE) |
+	    V_T5_ULP_MEMIO_ORDER(1) | V_T5_ULP_MEMIO_IMM(1));
+	kwr->dlen = htobe32(V_ULP_MEMIO_DATA_LEN(kctxlen >> 5));
+	kwr->len16 = htobe32((toep->tid << 8) |
+	    roundup2(len - sizeof(struct work_request_hdr), 16));
+	kwr->kaddr = htobe32(V_ULP_MEMIO_ADDR(keyid_to_addr(sc->vres.key.start,
+	    keyid)));
 
 	/* sub command */
-	kwr->sc_more = cpu_to_be32(V_ULPTX_CMD(ULP_TX_SC_IMM));	
-	kwr->sc_len = cpu_to_be32(kctxlen);
+	kwr->sc_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));	
+	kwr->sc_len = htobe32(kctxlen);
 
+	/* XXX: This assumes that kwrlen == sizeof(*kwr). */
 	kctx = (struct tls_keyctx *)(kwr + 1);
 	memset(kctx, 0, kctxlen);
 
@@ -252,13 +391,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 	else if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
 		prepare_rxkey_wr(kctx, k_ctx);
 
-	set_wr_txq(skb, CPL_PRIORITY_DATA, tls_ofld->tx_qid);
-	tls_ofld->key_rqst = 0;
-	cplios->wr_credits -= DIV_ROUND_UP(len, 16);
-	cplios->wr_unacked += DIV_ROUND_UP(len, 16);
-	enqueue_wr(sk, skb);
-	cxgb4_ofld_send(cplios->egress_dev, skb);
-#endif
+	t4_wrq_tx(sc, wr);
 
 	return (0);
 }
