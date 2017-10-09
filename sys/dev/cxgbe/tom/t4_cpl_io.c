@@ -106,7 +106,7 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 {
 	struct wrqe *wr;
 	struct fw_flowc_wr *flowc;
-	unsigned int nparams = ftxp ? 8 : 6, flowclen;
+	unsigned int nparams, flowclen, paramidx;
 	struct vi_info *vi = toep->vi;
 	struct port_info *pi = vi->pi;
 	struct adapter *sc = pi->adapter;
@@ -115,6 +115,13 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 
 	KASSERT(!(toep->flags & TPF_FLOWC_WR_SENT),
 	    ("%s: flowc for tid %u sent already", __func__, toep->tid));
+
+	if (ftxp != NULL)
+		nparams = 8;
+	else
+		nparams = 6;
+	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
+		nparams++;
 
 	flowclen = sizeof(*flowc) + nparams * sizeof(struct fw_flowc_mnemval);
 
@@ -131,38 +138,40 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 	flowc->flowid_len16 = htonl(V_FW_WR_LEN16(howmany(flowclen, 16)) |
 	    V_FW_WR_FLOWID(toep->tid));
 
-	flowc->mnemval[0].mnemonic = FW_FLOWC_MNEM_PFNVFN;
-	flowc->mnemval[0].val = htobe32(pfvf);
-	flowc->mnemval[1].mnemonic = FW_FLOWC_MNEM_CH;
-	flowc->mnemval[1].val = htobe32(pi->tx_chan);
-	flowc->mnemval[2].mnemonic = FW_FLOWC_MNEM_PORT;
-	flowc->mnemval[2].val = htobe32(pi->tx_chan);
-	flowc->mnemval[3].mnemonic = FW_FLOWC_MNEM_IQID;
-	flowc->mnemval[3].val = htobe32(toep->ofld_rxq->iq.abs_id);
+#define FLOWC_PARAM(__m, __v) \
+	do { \
+		flowc->mnemval[paramidx].mnemonic = FW_FLOWC_MNEM_##__m; \
+		flowc->mnemval[paramidx].val = htobe32(__v); \
+		paramidx++; \
+	} while (0)
+
+	paramidx = 0;
+
+	FLOWC_PARAM(PFNVFN, pfvf);
+	FLOWC_PARAM(CH, pi->tx_chan);
+	FLOWC_PARAM(PORT, pi->tx_chan);
+	FLOWC_PARAM(IQID, toep->ofld_rxq->iq.abs_id);
 	if (ftxp) {
 		uint32_t sndbuf = min(ftxp->snd_space, sc->tt.sndbuf);
 
-		flowc->mnemval[4].mnemonic = FW_FLOWC_MNEM_SNDNXT;
-		flowc->mnemval[4].val = htobe32(ftxp->snd_nxt);
-		flowc->mnemval[5].mnemonic = FW_FLOWC_MNEM_RCVNXT;
-		flowc->mnemval[5].val = htobe32(ftxp->rcv_nxt);
-		flowc->mnemval[6].mnemonic = FW_FLOWC_MNEM_SNDBUF;
-		flowc->mnemval[6].val = htobe32(sndbuf);
-		flowc->mnemval[7].mnemonic = FW_FLOWC_MNEM_MSS;
-		flowc->mnemval[7].val = htobe32(ftxp->mss);
+		FLOWC_PARAM(SNDNXT, ftxp->snd_nxt);
+		FLOWC_PARAM(RCVNXT, ftxp->rcv_nxt);
+		FLOWC_PARAM(SNDBUF, sndbuf);
+		FLOWC_PARAM(MSS, ftxp->mss);
 
 		CTR6(KTR_CXGBE,
 		    "%s: tid %u, mss %u, sndbuf %u, snd_nxt 0x%x, rcv_nxt 0x%x",
 		    __func__, toep->tid, ftxp->mss, sndbuf, ftxp->snd_nxt,
 		    ftxp->rcv_nxt);
 	} else {
-		flowc->mnemval[4].mnemonic = FW_FLOWC_MNEM_SNDBUF;
-		flowc->mnemval[4].val = htobe32(512);
-		flowc->mnemval[5].mnemonic = FW_FLOWC_MNEM_MSS;
-		flowc->mnemval[5].val = htobe32(512);
+		FLOWC_PARAM(SNDBUF, 512);
+		FLOWC_PARAM(MSS, 512);
 
 		CTR2(KTR_CXGBE, "%s: tid %u", __func__, toep->tid);
 	}
+	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
+		FLOWC_PARAM(TXDATAPLEN_MAX, toep->tls.fcplenmax);
+#undef FLOWC_PARAM
 
 	txsd->tx_credits = howmany(flowclen, 16);
 	txsd->plen = 0;
