@@ -48,8 +48,6 @@
 #define CIPHER_BLOCK_SZ		16
 #define SALT_SIZE		4
 
-#define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_tx_ctxt), 32)
-
 /* Can accomodate 16, 11-15 are reserved */
 enum {
     CHSSL_SHA_NOP,
@@ -156,6 +154,31 @@ struct tls_key_context {
 #define	TCP_TLSOM_CLR_QUIES		(TCP_VENDOR + 3)
 
 #ifdef _KERNEL
+#define TP_TX_PG_SZ			65536
+#define FC_TP_PLEN_MAX			17408
+
+#define IPAD_SIZE			64
+#define OPAD_SIZE			64
+#define KEY_SIZE			32
+#define HDR_KCTX_SIZE   (IPAD_SIZE + OPAD_SIZE + KEY_SIZE)
+
+#define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_tx_ctxt), 32)
+
+/* MAC KEY SIZE */
+#define SHA_NOP				0
+#define SHA_GHASH			16
+#define SHA_224				28
+#define SHA_256				32
+#define SHA_384				48
+#define SHA_512				64
+#define SHA1				20
+
+/* CIPHER KEY SIZE */
+#define AES_NOP				0
+#define AES_128				16
+#define AES_192				24
+#define AES_256				32
+
 enum {
 	TLS_1_2_VERSION,
 	TLS_1_1_VERSION,
@@ -176,6 +199,22 @@ enum {
 	TLS_SFO_WR_CONTEXTLOC_DDR,
 };
 
+enum {
+	CH_CK_SIZE_128,
+	CH_CK_SIZE_192,
+	CH_CK_SIZE_256,
+	CH_CK_SIZE_NOP,
+};
+
+enum {
+	CH_MK_SIZE_128,
+	CH_MK_SIZE_160,
+	CH_MK_SIZE_192,
+	CH_MK_SIZE_256,
+	CH_MK_SIZE_512,
+	CH_MK_SIZE_NOP,
+};
+
 #define SCMD_ENCDECCTRL_ENCRYPT 0
 #define SCMD_ENCDECCTRL_DECRYPT 1
 
@@ -191,6 +230,7 @@ struct tls_ofld_info {
 	int rx_key_id;
 	int tx_key_id;
 	uint64_t tx_seq_no;
+	unsigned short fcplenmax;
 	struct tls_scmd scmd0;
 };
 
