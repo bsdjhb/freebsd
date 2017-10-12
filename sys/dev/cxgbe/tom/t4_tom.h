@@ -90,6 +90,7 @@ struct sockopt;
 struct ofld_tx_sdesc {
 	uint32_t plen;		/* payload length */
 	uint8_t tx_credits;	/* firmware tx credits (unit is 16B) */
+	void *iv_buffer;	/* optional buffer holding IVs for TLS */
 };
 
 struct ppod_region {
@@ -379,6 +380,7 @@ void send_abort_rpl(struct adapter *, struct sge_wrq *, int , int);
 void send_flowc_wr(struct toepcb *, struct flowc_tx_params *);
 void send_reset(struct adapter *, struct toepcb *, uint32_t);
 void make_established(struct toepcb *, uint32_t, uint32_t, uint16_t);
+int t4_close_conn(struct adapter *, struct toepcb *);
 void t4_rcvd(struct toedev *, struct tcpcb *);
 void t4_rcvd_locked(struct toedev *, struct tcpcb *);
 int t4_tod_output(struct toedev *, struct tcpcb *);
@@ -419,9 +421,12 @@ void insert_ddp_data(struct toepcb *, uint32_t);
 
 /* t4_tls.c */
 int t4_ctloutput_tls(struct socket *, struct sockopt *);
+void t4_push_tls_records(struct adapter *, struct toepcb *, int);
 void tls_free_kmap(struct tom_data *);
 int tls_init_kmap(struct adapter *, struct tom_data *);
 void tls_init_toep(struct toepcb *);
+int tls_rx_key(struct toepcb *);
+int tls_tx_key(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
 
 #endif

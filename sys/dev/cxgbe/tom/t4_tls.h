@@ -154,14 +154,27 @@ struct tls_key_context {
 #define	TCP_TLSOM_CLR_QUIES		(TCP_VENDOR + 3)
 
 #ifdef _KERNEL
+#define CONTENT_TYPE_CCS		20
+#define CONTENT_TYPE_ALERT		21
+#define CONTENT_TYPE_HANDSHAKE		22
+#define CONTENT_TYPE_APP_DATA		23
+#define CONTENT_TYPE_HEARTBEAT		24
+#define CONTENT_TYPE_KEY_CONTEXT	32
+#define CONTENT_TYPE_ERROR		127
+
+#define GCM_TAG_SIZE			16
+#define AEAD_EXPLICIT_DATA_SIZE		8
+#define TLS_HEADER_LENGTH		5
 #define TP_TX_PG_SZ			65536
 #define FC_TP_PLEN_MAX			17408
 
 #define IPAD_SIZE			64
 #define OPAD_SIZE			64
 #define KEY_SIZE			32
+#define CIPHER_BLOCK_SIZE		16
 #define HDR_KCTX_SIZE   (IPAD_SIZE + OPAD_SIZE + KEY_SIZE)
 
+#define KEY_IN_DDR_SIZE			16
 #define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_tx_ctxt), 32)
 
 /* MAC KEY SIZE */
@@ -200,6 +213,14 @@ enum {
 };
 
 enum {
+	CPL_TX_TLS_SFO_TYPE_CCS,
+	CPL_TX_TLS_SFO_TYPE_ALERT,
+	CPL_TX_TLS_SFO_TYPE_HANDSHAKE,
+	CPL_TX_TLS_SFO_TYPE_DATA,
+	CPL_TX_TLS_SFO_TYPE_HEARTBEAT,	/* XXX: Shouldn't this be "CUSTOM"? */
+};
+
+enum {
 	CH_CK_SIZE_128,
 	CH_CK_SIZE_192,
 	CH_CK_SIZE_256,
@@ -218,6 +239,13 @@ enum {
 #define SCMD_ENCDECCTRL_ENCRYPT 0
 #define SCMD_ENCDECCTRL_DECRYPT 1
 
+#define SCMD_CIPH_MODE_NOP			0
+#define SCMD_CIPH_MODE_AES_CBC			1
+#define SCMD_CIPH_MODE_AES_GCM			2
+#define SCMD_CIPH_MODE_AES_CTR			3
+#define SCMD_CIPH_MODE_AES_GEN			4
+#define SCMD_CIPH_MODE_AES_CCM			7
+
 struct tls_scmd {
 	__be32 seqno_numivs;
 	__be32 ivgen_hdrlen;
@@ -225,13 +253,17 @@ struct tls_scmd {
 
 struct tls_ofld_info {
 	struct tls_key_context k_ctx;
-	char key_location;
+	int key_location;
 	int mac_length;
-	int rx_key_id;
-	int tx_key_id;
+	int rx_key_addr;
+	int tx_key_addr;
 	uint64_t tx_seq_no;
 	unsigned short fcplenmax;
+	unsigned short adjusted_plen;
+	unsigned short expn_per_ulp;
+	unsigned short pdus_per_ulp;
 	struct tls_scmd scmd0;
+	u_int sb_off;
 };
 
 struct tls_key_req {
@@ -485,6 +517,12 @@ struct tls_keyctx {
 #define G_TLS_KEYCTX_TX_WR_AUTHINSRT(x) \
     (((x) >> S_TLS_KEYCTX_TX_WR_AUTHINSRT) & \
      M_TLS_KEYCTX_TX_WR_AUTHINSRT)
+
+struct tls_hdr {
+	__u8   type;
+	__be16 version;
+	__be16 length;
+} __packed;
 
 #endif /* _KERNEL */
 
