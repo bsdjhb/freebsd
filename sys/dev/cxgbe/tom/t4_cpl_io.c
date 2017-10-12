@@ -498,8 +498,8 @@ t4_rcvd(struct toedev *tod, struct tcpcb *tp)
 /*
  * Close a connection by sending a CPL_CLOSE_CON_REQ message.
  */
-static int
-close_conn(struct adapter *sc, struct toepcb *toep)
+int
+t4_close_conn(struct adapter *sc, struct toepcb *toep)
 {
 	struct wrqe *wr;
 	struct cpl_close_con_req *req;
@@ -700,6 +700,7 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 
 	KASSERT(toep->ulp_mode == ULP_MODE_NONE ||
 	    toep->ulp_mode == ULP_MODE_TCPDDP ||
+	    toep->ulp_mode == ULP_MODE_TLS ||
 	    toep->ulp_mode == ULP_MODE_RDMA,
 	    ("%s: ulp_mode %u for toep %p", __func__, toep->ulp_mode, toep));
 
@@ -914,7 +915,7 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 
 	/* Send a FIN if requested, but only if there's no more data to send */
 	if (m == NULL && toep->flags & TPF_SEND_FIN)
-		close_conn(sc, toep);
+		t4_close_conn(sc, toep);
 }
 
 static inline void
@@ -1106,7 +1107,7 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 
 	/* Send a FIN if requested, but only if there are no more PDUs to send */
 	if (mbufq_first(pduq) == NULL && toep->flags & TPF_SEND_FIN)
-		close_conn(sc, toep);
+		t4_close_conn(sc, toep);
 }
 
 int
@@ -1125,6 +1126,8 @@ t4_tod_output(struct toedev *tod, struct tcpcb *tp)
 
 	if (toep->ulp_mode == ULP_MODE_ISCSI)
 		t4_push_pdus(sc, toep, 0);
+	else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+		t4_push_tls_records(sc, toep, 0);
 	else
 		t4_push_frames(sc, toep, 0);
 
@@ -1149,6 +1152,8 @@ t4_send_fin(struct toedev *tod, struct tcpcb *tp)
 	if (tp->t_state >= TCPS_ESTABLISHED) {
 		if (toep->ulp_mode == ULP_MODE_ISCSI)
 			t4_push_pdus(sc, toep, 0);
+		else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+			t4_push_tls_records(sc, toep, 0);
 		else
 			t4_push_frames(sc, toep, 0);
 	}
@@ -1781,6 +1786,10 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		credits -= txsd->tx_credits;
 		toep->tx_credits += txsd->tx_credits;
 		plen += txsd->plen;
+		if (txsd->iv_buffer) {
+			free(txsd->iv_buffer, M_CXGBE);
+			txsd->iv_buffer = NULL;
+		}
 		txsd++;
 		toep->txsd_avail++;
 		KASSERT(toep->txsd_avail <= toep->txsd_total,
@@ -1806,6 +1815,8 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CURVNET_SET(toep->vnet);
 		if (toep->ulp_mode == ULP_MODE_ISCSI)
 			t4_push_pdus(sc, toep, plen);
+		else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+			t4_push_tls_records(sc, toep, plen);
 		else
 			t4_push_frames(sc, toep, plen);
 		CURVNET_RESTORE();
@@ -2307,6 +2318,10 @@ t4_aio_queue_aiotx(struct socket *so, struct kaiocb *job)
 		return (EOPNOTSUPP);
 
 	if (!sc->tt.tx_zcopy)
+		return (EOPNOTSUPP);
+
+	/* XXX: Possibly revisit. */
+	if (is_tls_offload(toep) && tls_tx_key(toep))
 		return (EOPNOTSUPP);
 
 	SOCKBUF_LOCK(&so->so_snd);
