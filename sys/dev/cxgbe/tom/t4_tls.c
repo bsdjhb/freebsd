@@ -59,7 +59,6 @@ VNET_DECLARE(int, tcp_autosndbuf_max);
  * + transmit TLS records via CPL_TX_TLS_SFO
  *   + TLS handling in chelsio_sendpage / chelsio_sendmsg will move to
  *     t4_push_frames, and state won't be cached in mbuf
- * - review all 'is_tls' code outside of t4_tls.c
  * - how to receive TLS data?
  * - handshake timer?
  */
@@ -582,6 +581,10 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 		 */
 		return (ENOENT);
 	}
+
+	/* XXX: Only offload TX for now. */
+	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
+		return (EOPNOTSUPP);
 
 	/* XXX: Stop handshake timer. */
 
