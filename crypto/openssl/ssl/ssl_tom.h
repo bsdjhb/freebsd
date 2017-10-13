@@ -172,8 +172,10 @@ struct tls_key_location {
 struct ch_ssl_st *chssl_new(SSL *s);
 struct ch_ssl_st *chssl_free(SSL *s);
 int ssl_tls_offload(SSL *s);
-int SSL_ofld_rx(const SSL *s);
 int SSL_ofld_vers(const SSL *s);
+#ifdef CHSSL_TLS_RX
+int SSL_ofld_rx(const SSL *s);
 int SSL_clr_quiesce(const SSL *s);
+#endif
 #endif
 

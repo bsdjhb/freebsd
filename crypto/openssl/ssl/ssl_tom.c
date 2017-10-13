@@ -175,20 +175,24 @@ int SSL_ofld(const SSL *s)
     return(SSL_ofld_vers(s) && s->chssl && s->chssl->ofld_enable);
 }
 
+#ifdef CHSSL_TLS_RX
 int SSL_ofld_rx(const SSL *s)
 {
     return(s->chssl && s->chssl->ofld_enable);
 }
+#endif
 
 int SSL_compress(const SSL *s)
 {
     return(s->compress != NULL);
 }
 
+#ifdef CHSSL_TLS_RX
 int SSL_Rx_keys(const SSL *s)
 {
     return(s->chssl && s->chssl->rx_keys_copied);
 }
+#endif
 
 int SSL_Tx_keys(const SSL *s)
 {
@@ -210,10 +214,12 @@ int SSL_Chelsio_ofld(const SSL *s)
     return (SSL_ofld(s) && SSL_enc(s) && SSL_mac(s));
 }
 
+#ifdef CHSSL_TLS_RX
 int SSL_clr_quiesce(const SSL *s)
 {
     return (s->chssl && (s->chssl->key_state == KEY_SPACE_NOTAVL));
 }
+#endif
 
 /* 
  * Determine HW capability for Digest and Cipher Offload 
@@ -610,11 +616,13 @@ void chssl_program_hwkey_context(SSL *s, int rw, int state)
 
     memset(s->chssl->key_context, 0, sizeof(struct tls_key_context));
     if((ret = ssl_key_context(s, rw, state)) <=0) {
+#ifdef CHSSL_TLS_RX
         /* Clear quiesce after CCS receive */
         if (rw == KEY_WRITE_RX) {
             ret = chssl_clear_tom(s);
             s->chssl->ofld_enable = TLS_OFLD_FALSE;
         }
+#endif
 	goto end;
     }
 
@@ -641,6 +649,7 @@ end:
     return;
 }
 
+#ifdef CHSSL_TLS_RX
 int chssl_clear_quies(const SSL *s)
 {
 #ifdef __linux__
@@ -660,6 +669,7 @@ int chssl_clear_tom(const SSL *s)
 	NULL, 0);
 #endif
 }
+#endif
 
 int chssl_process_cherror(SSL *s)
 {

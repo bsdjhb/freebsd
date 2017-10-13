@@ -261,7 +261,8 @@ int ssl3_get_finished(SSL *s, int a, int b)
 #endif
 
     /* 64 argument should actually be 36+4 :-) */
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
+    /* XXX: Why a smaller maximum message size? */
     if (SSL_ofld(s))
 	n = s->method->ssl_get_message(s, a, b, SSL3_MT_FINISHED, 16, &ok);
     else

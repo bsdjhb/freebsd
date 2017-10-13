@@ -356,7 +356,7 @@ static int ssl3_get_record(SSL *s)
 	}
         p = s->packet;
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
     #define SSL3_RT_CHERROR 127
     if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
         s->rstate = SSL_ST_READ_ERROR;
@@ -365,7 +365,7 @@ static int ssl3_get_record(SSL *s)
         s->rstate = SSL_ST_READ_BODY;
 
 	if (s->msg_callback
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
             && (SSL_ofld_vers(s) && (s->rstate != SSL_ST_READ_ERROR))
 #endif
         )
@@ -422,7 +422,7 @@ static int ssl3_get_record(SSL *s)
         /* now s->rstate == SSL_ST_READ_BODY */
     }
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
     if (SSL_Chelsio_ofld(s)) {
         if (s->rstate == SSL_ST_READ_ERROR) {
             i = rr->length;
@@ -489,7 +489,7 @@ static int ssl3_get_record(SSL *s)
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
 #endif
     {
@@ -522,7 +522,7 @@ static int ssl3_get_record(SSL *s)
     if ((sess != NULL) &&
 	(s->enc_read_ctx != NULL) &&
 	(EVP_MD_CTX_md(s->read_hash) != NULL)
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
 	&&
 	!(SSL_mac_offload(s) && SSL_ofld_vers(s))
 #endif
@@ -753,8 +753,7 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len)
         }
         tot += i;               /* this might be last fragment */
     }
-#if !defined(OPENSSL_NO_MULTIBLOCK) && EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK && \
-    CHSSL_OFFLOAD
+#if !defined(OPENSSL_NO_MULTIBLOCK) && EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK
     /*
      * Depending on platform multi-block can deliver several *times*
      * better performance. Downside is that it has to allocate
@@ -767,7 +766,11 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len)
         SSL_USE_EXPLICIT_IV(s) &&
         s->enc_write_ctx != NULL &&
         EVP_CIPHER_flags(s->enc_write_ctx->cipher) &
-        EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK) {
+        EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK
+#ifdef CHSSL_OFFLOAD
+	&& !SSL_ofld(s)
+#endif
+	) {
         unsigned char aad[13];
         EVP_CTRL_TLS1_1_MULTIBLOCK_PARAM mb_param;
         int packlen;
@@ -1052,8 +1055,11 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
     plen = p;
     p += 2;
     /* Explicit IV length, block ciphers appropriate version flag */
-    if (s->enc_write_ctx && SSL_USE_EXPLICIT_IV(s) &&
-	!(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
+    if (s->enc_write_ctx && SSL_USE_EXPLICIT_IV(s)
+#ifdef CHSSL_OFFLOAD
+	&& !(SSL_enc_offload(s) && SSL_ofld_vers(s))
+#endif
+	) {
         int mode = EVP_CIPHER_CTX_mode(s->enc_write_ctx);
         if (mode == EVP_CIPH_CBC_MODE) {
             eivlen = EVP_CIPHER_CTX_iv_length(s->enc_write_ctx);
@@ -1094,7 +1100,11 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
      * wb->buf
      */
 
-    if (mac_size != 0 && !(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
+    if (mac_size != 0
+#ifdef CHSSL_OFFLOAD
+	&& !(SSL_enc_offload(s) && SSL_ofld_vers(s))
+#endif
+	) {
         if (s->method->ssl3_enc->mac(s, &(p[wr->length + eivlen]), 1) < 0)
             goto err;
         wr->length += mac_size;
@@ -1110,10 +1120,14 @@ static int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
         wr->length += eivlen;
     }
 
+#ifdef CHSSL_OFFLOAD
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s))) {
+#endif
     if (s->method->ssl3_enc->enc(s, 1) < 1)
         goto err;
+#ifdef CHSSL_OFFLOAD
     }
+#endif
 
     /* record length after mac and block padding */
     s2n(wr->length, plen);
@@ -1775,7 +1789,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
      * before we read the finished message
      */
     if (s->state & SSL_ST_CONNECT) {
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
         if (SSL_ofld_rx(s))
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_CONNECT);
         if (SSL_clr_quiesce(s))
@@ -1784,7 +1798,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
         sender = s->method->ssl3_enc->server_finished_label;
         slen = s->method->ssl3_enc->server_finished_label_len;
     } else {
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
         if (SSL_ofld_rx(s))
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_ACCEPT);
 #endif
@@ -1804,7 +1818,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
 
     return (1);
 err:
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
     if (SSL_ofld_rx(s))
         chssl_clear_quies(s);
 #endif
