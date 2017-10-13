@@ -127,7 +127,7 @@
 #ifndef OPENSSL_NO_DH
 # include <openssl/dh.h>
 #endif
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
 #include "ssl_tom.h"
 #endif
 
@@ -618,7 +618,7 @@ int dtls1_connect(SSL *s)
 
         case SSL3_ST_CW_FINISHED_A:
         case SSL3_ST_CW_FINISHED_B:
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
         if (SSL_ofld(s))
                 chssl_program_hwkey_context(s, KEY_WRITE_TX, SSL_ST_CONNECT);
 #endif
@@ -707,7 +707,7 @@ int dtls1_connect(SSL *s)
                                     SSL3_ST_CR_FINISHED_B);
             if (ret <= 0)
                 goto end;
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
             if (SSL_ofld_rx(s))
                 chssl_program_hwkey_context(s, KEY_WRITE_RX,SSL_ST_CONNECT);
 #endif
