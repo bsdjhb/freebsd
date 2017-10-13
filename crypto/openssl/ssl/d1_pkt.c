@@ -121,7 +121,7 @@
 #include <openssl/buffer.h>
 #include <openssl/pqueue.h>
 #include <openssl/rand.h>
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
 #include "ssl_tom.h"
 #endif
 
@@ -506,7 +506,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     /* decrypt in place in 'rr->input' */
     rr->data = rr->input;
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
     {
 #endif
@@ -523,7 +523,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
         s->packet_length = 0;
         goto err;
     }
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
     }
 #endif
 #ifdef TLS_DEBUG
@@ -539,7 +539,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     /* r->length is now the compressed data plus mac */
     if ((sess != NULL) &&
         (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
         && !(SSL_mac_offload(s) && SSL_ofld_vers(s))
 #endif
 	) {
@@ -698,7 +698,7 @@ int dtls1_get_record(SSL *s)
             goto again;
         }
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
         #define SSL3_RT_CHERROR 127
 	if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
 		s->rstate = SSL_ST_READ_ERROR;
@@ -754,7 +754,7 @@ int dtls1_get_record(SSL *s)
         /* now s->rstate == SSL_ST_READ_BODY */
     }
 
-#ifdef CHSSL_OFFLOAD
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
     if (SSL_Chelsio_ofld(s)) {
 	    if (s->rstate == SSL_ST_READ_ERROR) {
 		    i = rr->length;
@@ -1717,8 +1717,11 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
     p += 10;
 
     /* Explicit IV length, block ciphers appropriate version flag */
-    if (s->enc_write_ctx &&
-	!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))) {
+    if (s->enc_write_ctx
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
+	&& !(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))
+#endif
+	) {
         int mode = EVP_CIPHER_CTX_mode(s->enc_write_ctx);
         if (mode == EVP_CIPH_CBC_MODE) {
             eivlen = EVP_CIPHER_CTX_iv_length(s->enc_write_ctx);
@@ -1759,8 +1762,11 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
      * wb->buf
      */
 
-    if (mac_size != 0 && !(SSL_enc_offload(s) && SSL_ofld_vers(s) && 
-			   SSL_Tx_keys(s))) {
+    if (mac_size != 0
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
+	&& !(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))
+#endif
+	) {
         if (s->method->ssl3_enc->mac(s, &(p[wr->length + eivlen]), 1) < 0)
             goto err;
         wr->length += mac_size;
@@ -1773,10 +1779,14 @@ int do_dtls1_write(SSL *s, int type, const unsigned char *buf,
     if (eivlen)
         wr->length += eivlen;
 
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
     if (!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_Tx_keys(s))) {
+#endif
     if (s->method->ssl3_enc->enc(s, 1) < 1)
         goto err;
+#if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
     }
+#endif
 
     /* record length after mac and block padding */
     /*
