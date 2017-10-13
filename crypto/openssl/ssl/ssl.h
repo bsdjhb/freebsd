@@ -2181,12 +2181,16 @@ int SSL_clear(SSL *s);
 #ifdef CHSSL_OFFLOAD
 int SSL_enc(const SSL *s);
 int SSL_mac(const SSL *s);
+#ifdef CHSSL_TLS_RX
 int SSL_Rx_keys(const SSL *s);
+#endif
 int SSL_Tx_keys(const SSL *s);
 int SSL_ofld(const SSL *s);
 int SSL_compress(const SSL *s);
 int SSL_Chelsio_ofld(const SSL *s);
+#ifdef CHSSL_TLS_RX
 int chssl_clear_quies(const SSL *s);
+#endif
 int chssl_clear_tom(const SSL *s);
 int chssl_process_cherror(SSL *s);
 void chssl_program_hwkey_context(SSL *s, int rw, int state);
