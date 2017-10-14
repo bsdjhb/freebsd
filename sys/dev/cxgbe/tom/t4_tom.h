@@ -130,6 +130,9 @@ TAILQ_HEAD(pagesetq, pageset);
 
 #define	EXT_FLAG_AIOTX		EXT_FLAG_VENDOR1
 
+#define	IS_AIOTX_MBUF(m)						\
+	((m)->m_flags & M_EXT && (m)->m_ext.ext_flags & EXT_FLAG_AIOTX)
+
 struct ddp_buffer {
 	struct pageset *ps;
 
