@@ -3942,9 +3942,6 @@ struct ib_ucontext *ib_uverbs_get_ucontext_file(struct ib_uverbs_file *ufile);
 
 int uverbs_destroy_def_handler(struct uverbs_attr_bundle *attrs);
 
-int ib_resolve_eth_dmac(struct ib_device *device,
-			struct rdma_ah_attr *ah_attr);
-
 static inline u8 *rdma_ah_retrieve_dmac(struct rdma_ah_attr *attr)
 {
 	if (attr->type == RDMA_AH_ATTR_TYPE_ROCE)
