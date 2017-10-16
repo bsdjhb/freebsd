@@ -582,13 +582,13 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 		return (ENOENT);
 	}
 
-	/* XXX: Only offload TX for now. */
-	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
-		return (EOPNOTSUPP);
-
 	/* XXX: Stop handshake timer. */
 
 	k_ctx = &tls_ofld->k_ctx;
+
+	/* XXX: Only offload TX for now. */
+	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
+		return (EOPNOTSUPP);
 
 	/* Don't copy the 'tx' and 'rx' fields. */
 	memcpy(&k_ctx->l_p_key, &uk_ctx->l_p_key,
@@ -1183,6 +1183,10 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 			return;
 		}
 
+#ifdef VERBOSE_TRACES
+		CTR5(KTR_CXGBE, "%s: tid %d TLS record %d len %#x pdus %d",
+		    __func__, toep->tid, thdr.type, tls_size, pdus);
+#endif
 		txwr = wrtod(wr);
 		cpl = (struct cpl_tx_tls_sfo *)(txwr + 1);
 		memset(txwr, 0, roundup2(wr_len, 16));
