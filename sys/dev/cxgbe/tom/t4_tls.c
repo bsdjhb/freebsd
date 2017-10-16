@@ -431,7 +431,7 @@ tls_init_kmap(struct adapter *sc, struct tom_data *td)
 {
 
 	td->key_map = vmem_create("T4TLS key map", sc->vres.key.start,
-	    sc->vres.key.size, TLS_KEY_CONTEXT_SZ, 0, M_FIRSTFIT | M_NOWAIT);
+	    sc->vres.key.size, 8, 0, M_FIRSTFIT | M_NOWAIT);
 	if (td->key_map == NULL)
 		return (ENOMEM);
 	return (0);
