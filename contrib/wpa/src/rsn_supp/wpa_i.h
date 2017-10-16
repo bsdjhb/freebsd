@@ -23,7 +23,7 @@ struct wpa_sm {
 	size_t pmk_len;
 	struct wpa_ptk ptk, tptk;
 	int ptk_set, tptk_set;
-	unsigned int tk_to_set:1;
+	int ptk_installed;
 	u8 snonce[WPA_NONCE_LEN];
 	u8 anonce[WPA_NONCE_LEN]; /* ANonce from the last 1/4 msg */
 	int renew_snonce;
