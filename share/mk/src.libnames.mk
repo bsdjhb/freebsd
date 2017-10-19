@@ -155,6 +155,7 @@ _LIBRARIES=	\
 		sdp \
 		sm \
 		smb \
+		smbios \
 		ssl \
 		ssp_nonshared \
 		stdthreads \
