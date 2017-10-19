@@ -619,6 +619,19 @@ icmp_input(struct mbuf **mp, int *offp, int proto)
 		}
 		ifa_free(&ia->ia_ifa);
 reflect:
+		if (!M_WRITABLE(m)) {
+			struct mbuf *n;
+
+			n = m_dup(m, M_NOWAIT);
+			if (n == NULL) {
+				/* XXX: Need a stat for this. */
+				goto freeit;
+			}
+			m_freem(m);
+			m = n;
+			ip = mtod(m, struct ip *);
+			icp = (struct icmp *)(ip + 1);
+		}
 		ICMPSTAT_INC(icps_reflect);
 		ICMPSTAT_INC(icps_outhist[icp->icmp_type]);
 		icmp_reflect(m);
