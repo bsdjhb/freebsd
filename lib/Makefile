@@ -74,6 +74,7 @@ SUBDIR=	${SUBDIR_BOOTSTRAP} \
 	${_librtld_db} \
 	libsbuf \
 	libsmb \
+	${_libsmbios} \
 	libsqlite3 \
 	libstdbuf \
 	libstdthreads \
@@ -171,6 +172,7 @@ SUBDIR.${MK_NETGRAPH}+=	libnetgraph
 SUBDIR.${MK_NIS}+=	libypclnt
 
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+_libsmbios=	libsmbios
 _libvgl=	libvgl
 .endif
 
