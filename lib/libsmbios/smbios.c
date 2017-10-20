@@ -31,11 +31,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/mman.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <kenv.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <machine/pc/bios.h>
 
 #include "smbios.h"
 
@@ -77,7 +76,32 @@ valid_eps(void *buf)
 }
 
 static int
-find_eps(int mem_fd, struct smbios_eps *eps)
+find_eps_hint(int mem_fd, struct smbios_eps *eps)
+{
+	char buf[KENV_MVALLEN + 1], *cp, *p;
+	long addr;
+
+	if (kenv(KENV_GET, "hint.smbios.0.mem", buf, sizeof(buf)) == -1)
+		return (errno);
+	addr = strtol(buf, &cp, 0);
+	if (*cp != '\0' || cp == buf)
+		return (EINVAL);
+
+	p = bios_map(mem_fd, addr, sizeof(*eps));
+	if (p == NULL)
+		return (errno);
+	if (memcmp(p + SMBIOS_OFF, SMBIOS_SIG, SMBIOS_LEN) == 0 &&
+	    valid_eps(p)) {
+		memcpy(eps, p, sizeof(*eps));
+		munmap(p, sizeof(*eps));
+		return (0);
+	}
+	munmap(p, sizeof(*eps));
+	return (ENOENT);
+}
+
+static int
+find_eps_search(int mem_fd, struct smbios_eps *eps)
 {
 	char *bios_base, *bios_end, *p;
 
@@ -93,6 +117,7 @@ find_eps(int mem_fd, struct smbios_eps *eps)
 			return (0);
 		}
 	}
+	munmap(bios_base, BIOS_END - SMBIOS_START);
 	return (ENOENT);
 }
 
@@ -113,9 +138,12 @@ smbios_open(smbios_handle_t *handlep)
 		goto out;
 	}
 
-	error = find_eps(mem_fd, &handle->eps);
-	if (error)
-		goto out;
+	error = find_eps_hint(mem_fd, &handle->eps);
+	if (error) {
+		error = find_eps_search(mem_fd, &handle->eps);
+		if (error)
+			goto out;
+	}
 
 	handle->table = bios_map(mem_fd, handle->eps.structure_table_address,
 	    handle->eps.structure_table_length);

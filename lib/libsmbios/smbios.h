@@ -29,6 +29,8 @@
 #ifndef __SMBIOS_H__
 #define	__SMBIOS_H__
 
+#include <machine/pc/bios.h>
+
 struct smbios_handle;
 
 typedef struct smbios_handle *smbios_handle_t;
