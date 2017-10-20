@@ -235,7 +235,7 @@ find_handle_cb(smbios_handle_t handle __unused,
 	return (SMBIOS_CONTINUE);
 }
 
-struct smbios_structure_header *
+const struct smbios_structure_header *
 smbios_find_handle(smbios_handle_t handle, u_int handle_id)
 {
 	struct find_handle_data fhd;
@@ -244,4 +244,59 @@ smbios_find_handle(smbios_handle_t handle, u_int handle_id)
 	fhd.hdr = NULL;
 	smbios_walk_table(handle, find_handle_cb, &fhd);
 	return (fhd.hdr);
+}
+
+const char *
+smbios_find_string(smbios_handle_t handle,
+    const struct smbios_structure_header *hdr, u_int index)
+{
+	const char *p, *end, *next;
+
+	/* Verify supplied header is within handle's table. */
+	if (!(hdr >= handle->table && hdr < handle->table_end))
+		return (NULL);
+
+	/* A string index of 0 indicates a non-existent string. */
+	if (index == 0)
+		return (NULL);
+
+	end = (const char *)handle->table_end;
+	p = (const char *)hdr + hdr->length;
+
+	/* Check for empty string list. */
+	if (p >= end || (p[0] == '\0' && p[1] == '\0'))
+		return (NULL);
+	for (;;) {
+		/* Bail if 'p' is beyond the end of the table. */
+		if (p >= end)
+			return (NULL);
+
+		/*
+		 * If '*p' is nul, there are two cases.  If this is
+		 * the first iteration, then the string list began
+		 * with a nul character.  The next character is either
+		 * the second nul (which means end of list), or some
+		 * non-nul character (which is not defined in the
+		 * standard).  If this is not the first iteration,
+		 * then '*(p - 1)' is a nul character and 'p'
+		 * references the second of a double nul terminating
+		 * the string list.  Treat '*p' as nul as signalling
+		 * end of the list in all cases.
+		 */
+		if (*p == '\0')
+			return (NULL);
+
+		/* Find the end of the current string. */
+		next = memchr(p, 0, end - p);
+
+		/* Search for '\0' walked off the end of the table. */
+		if (next == NULL)
+			return (NULL);
+
+		if (index == 1)
+			return (p);
+
+		p = next + 1;
+		index--;
+	}
 }
