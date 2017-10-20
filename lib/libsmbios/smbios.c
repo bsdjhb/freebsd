@@ -215,3 +215,33 @@ smbios_walk_table(smbios_handle_t handle, smbios_callback callback, void *arg)
 		s = (struct smbios_structure_header *)p;
 	}
 }
+
+struct find_handle_data {
+	u_int	handle_id;
+	struct smbios_structure_header *hdr;
+};
+
+static enum smbios_cb_retval
+find_handle_cb(smbios_handle_t handle __unused,
+    struct smbios_structure_header *hdr, void *arg)
+{
+	struct find_handle_data *fhd;
+
+	fhd = arg;
+	if (hdr->handle == fhd->handle_id) {
+		fhd->hdr = hdr;
+		return (SMBIOS_STOP);
+	}
+	return (SMBIOS_CONTINUE);
+}
+
+struct smbios_structure_header *
+smbios_find_handle(smbios_handle_t handle, u_int handle_id)
+{
+	struct find_handle_data fhd;
+
+	fhd.handle_id = handle_id;
+	fhd.hdr = NULL;
+	smbios_walk_table(handle, find_handle_cb, &fhd);
+	return (fhd.hdr);
+}
