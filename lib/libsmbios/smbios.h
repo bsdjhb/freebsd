@@ -41,7 +41,7 @@ enum smbios_cb_retval {
 };
 
 typedef enum smbios_cb_retval (*smbios_callback)(
-    struct smbios_structure_header *, void *);
+    smbios_handle_t, struct smbios_structure_header *, void *);
 
 int	smbios_open(smbios_handle_t *);
 int	smbios_close(smbios_handle_t);

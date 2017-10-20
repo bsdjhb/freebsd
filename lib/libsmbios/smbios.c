@@ -189,7 +189,7 @@ smbios_walk_table(smbios_handle_t handle, smbios_callback callback, void *arg)
 		if ((char *)s + s->length >= (char *)handle->table_end)
 			return;
 
-		if (callback(s, arg) == SMBIOS_STOP)
+		if (callback(handle, s, arg) == SMBIOS_STOP)
 			return;
 
 		/*
