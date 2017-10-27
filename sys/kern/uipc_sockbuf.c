@@ -88,6 +88,57 @@ sbm_clrprotoflags(struct mbuf *m, int flags)
 	}
 }
 
+static void
+sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thresh)
+{
+	struct mbuf *m, *n;
+
+
+	if ((sb->sb_flags & SB_NOCOALESCE) != 0)
+		return;
+
+	for (m = m0; m != end; m = m->m_next) {
+		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN) {
+			/*
+			 * Carve out a place to stand by downgrading
+			 * small unmapped mbufs to normal mbufs
+			 */
+			int ext_size = m->m_ext.ext_size;
+			if (0 == mb_ext_pgs_downgrade(m)) {
+				sb->sb_mbcnt -= ext_size;
+				sb->sb_ccnt -= 1;
+			}
+		}
+
+		n = m->m_next;
+		while (M_WRITABLE(m) &&
+		    (n != NULL) &&
+		    (n != end) &&
+		    (m->m_flags & M_NOMAP) == 0 &&
+		    (n->m_flags & M_EOR) == 0 &&
+		    n->m_len < thresh  &&
+		    n->m_type == m->m_type &&
+		    M_TRAILINGSPACE(m) >= n->m_len) {
+			m_copydata(n, 0, n->m_len, mtodo(m, m->m_len));
+			m->m_len += n->m_len;
+			m->m_next = n->m_next;
+			if (sb->sb_mbtail == n)
+				sb->sb_mbtail = m;
+			if (sb->sb_lastrecord == n)
+				sb->sb_lastrecord = m;
+
+			sb->sb_mbcnt -= MSIZE;
+			sb->sb_mcnt -= 1;
+			if (n->m_flags & M_EXT) {
+				sb->sb_mbcnt -= n->m_ext.ext_size;
+				sb->sb_ccnt -= 1;
+			}
+			m_free(n);
+			n = m->m_next;
+		}
+	}
+}
+
 /*
  * Mark ready "count" mbufs starting with "m".
  */
@@ -95,21 +146,41 @@ int
 sbready(struct sockbuf *sb, struct mbuf *m, int count)
 {
 	u_int blocker;
+	struct mbuf *om = m;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(sb->sb_fnrdy != NULL, ("%s: sb %p NULL fnrdy", __func__, sb));
 
 	blocker = (sb->sb_fnrdy == m) ? M_BLOCKED : 0;
 
-	for (int i = 0; i < count; i++, m = m->m_next) {
+	for (int i = 0; i < count; i++) {
 		KASSERT(m->m_flags & M_NOTREADY,
 		    ("%s: m %p !M_NOTREADY", __func__, m));
+		if ((m->m_flags & M_EXT) != 0 &&
+		    m->m_ext.ext_type == EXT_PGS) {
+			m->m_ext.ext_pgs->nrdy--;
+			if (m->m_ext.ext_pgs->nrdy != 0)
+				continue;
+		}
+
 		m->m_flags &= ~(M_NOTREADY | blocker);
 		if (blocker)
 			sb->sb_acc += m->m_len;
+		m = m->m_next;
 	}
 
-	if (!blocker)
+
+	if (!blocker) {
+		sbready_compress(sb, om, m, MCLBYTES / 2);
+		return (EINPROGRESS);
+	}
+
+
+	/*
+	 * not completing all of bocker's pages is the same
+	 * as not finding the blocker
+	 */
+	if (m == om)
 		return (EINPROGRESS);
 
 	/* This one was blocking all the queue. */
@@ -121,6 +192,7 @@ sbready(struct sockbuf *sb, struct mbuf *m, int count)
 	}
 
 	sb->sb_fnrdy = m;
+	sbready_compress(sb, om, m, MCLBYTES / 2);
 
 	return (0);
 }
@@ -563,8 +635,15 @@ sbrelease(struct sockbuf *sb, struct socket *so)
 void
 sbdestroy(struct sockbuf *sb, struct socket *so)
 {
+	int locked = 0;
 
+	if (SOCKBUF_OWNED(sb) == 0) {
+		SOCKBUF_LOCK(sb);
+		locked = 1;
+	}
 	sbrelease_internal(sb, so);
+	if (locked)
+		SOCKBUF_UNLOCK(sb);
 }
 
 /*
@@ -1030,12 +1109,11 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		    M_WRITABLE(n) &&
 		    ((sb->sb_flags & SB_NOCOALESCE) == 0) &&
 		    !(m->m_flags & M_NOTREADY) &&
-		    !(n->m_flags & M_NOTREADY) &&
+		    !(n->m_flags & (M_NOTREADY | M_NOMAP)) &&
 		    m->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
 		    m->m_len <= M_TRAILINGSPACE(n) &&
 		    n->m_type == m->m_type) {
-			bcopy(mtod(m, caddr_t), mtod(n, caddr_t) + n->m_len,
-			    (unsigned)m->m_len);
+			m_copydata(m, 0, m->m_len, mtodo(n, n->m_len));
 			n->m_len += m->m_len;
 			sb->sb_ccc += m->m_len;
 			if (sb->sb_fnrdy == NULL)
@@ -1051,6 +1129,15 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		else
 			sb->sb_mb = m;
 		sb->sb_mbtail = m;
+		/*
+		 * Note that if m is downgraded here, the sb
+		 * accounting does not need to be adjusted, since
+		 * sballoc() has not yet been called.
+		 */
+		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
+		    (m->m_flags & M_NOTREADY) == 0)
+			(void)mb_ext_pgs_downgrade(m);
+
 		sballoc(sb, m);
 		n = m;
 		m->m_flags &= ~M_EOR;
