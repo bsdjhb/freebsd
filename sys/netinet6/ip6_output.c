@@ -68,6 +68,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
+#include "opt_kern_tls.h"
 #include "opt_ratelimit.h"
 #include "opt_route.h"
 #include "opt_rss.h"
@@ -81,6 +82,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/priv.h>
 #include <sys/proc.h>
 #include <sys/protosw.h>
+#include <sys/sockbuf_tls.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/syslog.h>
@@ -278,7 +280,8 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 
 static int
 ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
-    struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro)
+    struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro,
+    struct sbtls_session *tls)
 {
 	struct m_snd_tag *mst;
 	int error;
@@ -286,8 +289,23 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 	MPASS((m->m_pkthdr.csum_flags & CSUM_SND_TAG) == 0);
 	mst = NULL;
 
+#ifdef KERN_TLS
+	if (tls != NULL) {
+		mst = tls->snd_tag;
+
+		/*
+		 * If a TLS session doesn't have a valid tag, it must
+		 * have had an earlier ifp mismatch, so drop this
+		 * packet.
+		 */
+		if (mst == NULL) {
+			error = EAGAIN;
+			goto done;
+		}
+	}
+#endif
 #ifdef RATELIMIT
-	if (inp != NULL) {
+	if (inp != NULL && mst == NULL) {
 		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
 		    (inp->inp_snd_tag != NULL &&
 		    inp->inp_snd_tag->ifp != ifp))
@@ -314,6 +332,10 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 
 done:
 	/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+	if (error == EAGAIN && tls != NULL)
+		error = sbtls_output_eagain(inp, tls);
+#endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
 		in_pcboutput_eagain(inp);
@@ -349,6 +371,7 @@ ip6_output(struct mbuf *m0, struct ip6_pktopts *opt,
 	struct ifnet *ifp, *origifp;
 	struct mbuf *m = m0;
 	struct mbuf *mprev = NULL;
+	struct sbtls_session *tls = NULL;
 	int hlen, tlen, len;
 	struct route_in6 ip6route;
 	struct rtentry *rt = NULL;
@@ -990,7 +1013,18 @@ passout:
 		sctp_delayed_cksum(m, sizeof(struct ip6_hdr));
 	}
 #endif
+#if defined(KERN_TLS)
+	/*
+	 * If this is an unencrypted TLS record, save a reference to
+	 * the record.  This local reference is used to call
+	 * sbtls_output_eagain after the mbuf has been freed (thus
+	 * dropping the mbuf's reference) in if_output.
+	 */
+	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
+		tls = sbtls_hold(m->m_next->m_ext.ext_pgs->tls);
+#endif
 	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
+	
 	tlen = m->m_pkthdr.len;
 
 	if ((opt && (opt->ip6po_flags & IP6PO_DONTFRAG)) || tso)
@@ -1032,7 +1066,7 @@ passout:
 			    m->m_pkthdr.len);
 			ifa_free(&ia6->ia_ifa);
 		}
-		error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
+		error = ip6_output_send(inp, ifp, origifp, m, dst, ro, tls);
 		goto done;
 	}
 
@@ -1143,7 +1177,8 @@ sendorfree:
 				counter_u64_add(ia->ia_ifa.ifa_obytes,
 				    m->m_pkthdr.len);
 			}
-			error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
+			error = ip6_output_send(inp, ifp, origifp, m, dst, ro,
+			    tls);
 		} else
 			m_freem(m);
 	}
@@ -1154,6 +1189,10 @@ sendorfree:
 done:
 	if (ro == &ip6route)
 		RO_RTFREE(ro);
+#ifdef KERN_TLS
+	if (tls != NULL)
+		sbtls_free(tls);
+#endif
 	return (error);
 
 freehdrs:

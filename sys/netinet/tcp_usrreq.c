@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
+#include "opt_kern_tls.h"
 #include "opt_tcpdebug.h"
 
 #include <sys/param.h>
@@ -59,6 +60,7 @@ __FBSDID("$FreeBSD$");
 #endif /* INET6 */
 #include <sys/socket.h>
 #include <sys/socketvar.h>
+#include <sys/sockbuf_tls.h>
 #include <sys/protosw.h>
 #include <sys/proc.h>
 #include <sys/jail.h>
@@ -1723,6 +1725,10 @@ tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 			     sopt->sopt_name);
 		}
 #endif
+#ifdef KERN_TLS
+		if (so->so_snd.sb_tls_info != NULL)
+			sbtls_tcp_stack_changed(so);
+#endif
 err_out:
 		INP_WUNLOCK(inp);
 		return (error);
@@ -1755,6 +1761,9 @@ tcp_default_ctloutput(struct socket *so, struct sockopt *sopt, struct inpcb *inp
 	int	error, opt, optval;
 	u_int	ui;
 	struct	tcp_info ti;
+#ifdef KERN_TLS
+	struct  tls_so_enable tls;
+#endif
 	struct cc_algo *algo;
 	char	*pbuf, buf[TCP_LOG_ID_LEN];
 	size_t	len;
@@ -1916,6 +1925,28 @@ unlock_and_done:
 			}
 			INP_WUNLOCK(inp);
 			break;
+
+#ifdef KERN_TLS
+		case TCP_TLS_ENABLE:
+			INP_WUNLOCK(inp);
+			error = sooptcopyin(sopt, &tls, sizeof(tls),
+			    sizeof(tls));
+			if (error == 0)
+				error = sbtls_crypt_tls_enable(so, &tls);
+			break;
+		case TCP_TLS_MODE:
+			INP_WUNLOCK(inp);
+			error = sooptcopyin(sopt, &ui, sizeof(ui), sizeof(ui));
+			if (error)
+				return (error);
+			if (ui != TCP_TLS_MODE_SW && ui != TCP_TLS_MODE_IFNET)
+				return (EINVAL);
+
+			INP_WLOCK_RECHECK(inp);
+			error = sbtls_set_tls_mode(so, ui);
+			INP_WUNLOCK(inp);
+			break;
+#endif
 
 		case TCP_KEEPIDLE:
 		case TCP_KEEPINTVL:
@@ -2196,6 +2227,13 @@ unlock_and_done:
 		case TCP_LOGDUMPID:
 			INP_WUNLOCK(inp);
 			error = EINVAL;
+			break;
+#endif
+#ifdef KERN_TLS
+		case TCP_TLS_MODE:
+			optval = sbtls_get_tls_mode(so);
+			INP_WUNLOCK(inp);
+			error = sooptcopyout(sopt, &optval, sizeof(optval));
 			break;
 #endif
 		default:

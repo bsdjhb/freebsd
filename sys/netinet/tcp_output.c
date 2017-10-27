@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
+#include "opt_kern_tls.h"
 #include "opt_tcpdebug.h"
 
 #include <sys/param.h>
@@ -53,6 +54,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/sdt.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
+#ifdef KERN_TLS
+#include <sys/ktr.h>
+#include <sys/sockbuf_tls.h>
+#endif
 #include <sys/sysctl.h>
 
 #include <net/if.h>
@@ -968,6 +973,61 @@ send:
 		struct sockbuf *msb;
 		u_int moff;
 
+		/*
+		 * Start the m_copy functions from the closest mbuf
+		 * to the offset in the socket buffer chain.
+		 */
+		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
+
+#ifdef KERN_TLS
+		/*
+		 * XXX: A gross hack to avoid mixing records between
+		 * different TLS sessions.
+		 */
+		if (so->so_snd.sb_tls_flags & SB_TLS_IFNET) {
+			struct sbtls_session *tls, *ntls;
+			struct mbuf *n;
+			u_int new_len;
+
+			/*
+			 * Walk forward to the first mbuf with data we
+			 * want to send.
+			 */
+			while (moff >= mb->m_len) {
+				moff -= mb->m_len;
+				mb = mb->m_next;
+			}
+			if (mb->m_flags & M_NOMAP)
+				tls = mb->m_ext.ext_pgs->tls;
+			else
+				tls = NULL;
+			new_len = mb->m_len - moff;
+			for (n = mb->m_next; new_len < len; n = n->m_next) {
+				if (n->m_flags & M_NOMAP)
+					ntls = n->m_ext.ext_pgs->tls;
+				else
+					ntls = NULL;
+				if (tls != ntls)
+					break;
+				new_len += n->m_len;
+			}
+			MPASS(new_len > 0);
+
+			if (new_len < len) {
+				/* XXX: KTR_CXGBE */
+				CTR3(KTR_SPARE3,
+				    "%s: truncating len from %u to %u",
+				    __func__, len, new_len);
+
+				flags &= ~TH_FIN;
+				if (new_len <= tp->t_maxseg - optlen)
+					tso = 0;
+				len = new_len;
+				sendalot = 1;
+			}
+		}
+#endif
+
 		if ((tp->t_flags & TF_FORCEDATA) && len == 1)
 			TCPSTAT_INC(tcps_sndprobe);
 		else if (SEQ_LT(tp->snd_nxt, tp->snd_max) || sack_rxmit) {
@@ -995,12 +1055,8 @@ send:
 		m->m_data += max_linkhdr;
 		m->m_len = hdrlen;
 
-		/*
-		 * Start the m_copy functions from the closest mbuf
-		 * to the offset in the socket buffer chain.
-		 */
-		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
-		if (len <= MHLEN - hdrlen - max_linkhdr) {
+		if (len <= MHLEN - hdrlen - max_linkhdr &&
+		    !mbuf_has_tls_session(mb)) {
 			m_copydata(mb, moff, len,
 			    mtod(m, caddr_t) + hdrlen);
 			if (SEQ_LT(tp->snd_nxt, tp->snd_max))

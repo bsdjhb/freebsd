@@ -240,6 +240,7 @@ struct tcptemp {
  */
 /* Flags for tcp functions */
 #define TCP_FUNC_BEING_REMOVED 0x01   	/* Can no longer be referenced */
+#define	TCP_FUNC_IFNET_TLS_OK  0x02	/* Optimized for ifnet TLS */
 
 /*
  * If defining the optional tcp_timers, in the
