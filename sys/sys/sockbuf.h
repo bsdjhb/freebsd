@@ -68,12 +68,14 @@ struct sockaddr;
 struct socket;
 struct thread;
 struct selinfo;
+struct sbtls_session;
 
 /*
  * Variables for socket buffering.
  *
  * Locking key to struct sockbuf:
  * (a) locked by SOCKBUF_LOCK().
+ * (b) locked by sblock()
  */
 struct	sockbuf {
 	struct	mtx sb_mtx;		/* sockbuf lock */
@@ -98,6 +100,9 @@ struct	sockbuf {
 	u_int	sb_ctl;		/* (a) non-data chars in buffer */
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
+	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
+	struct	sbtls_session *sb_tls_info; /* (a + b) TLS state */
+	u_int	sb_tls_flags;	/* (a + b) flags used by TLS */
 	short	sb_flags;	/* (a) flags, see above */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */
 	void	*sb_upcallarg;	/* (a) */

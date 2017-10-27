@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_ratelimit.h"
 
 #include <sys/types.h>
@@ -47,6 +48,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/sglist.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
+#include <sys/sockbuf_tls.h>
+#include <sys/socketvar.h>
 #include <sys/counter.h>
 #include <net/bpf.h>
 #include <net/ethernet.h>
@@ -85,6 +88,7 @@ __FBSDID("$FreeBSD$");
 /* Internal mbuf flags stored in PH_loc.eight[1]. */
 #define	MC_NOMAP		0x01
 #define	MC_RAW_WR		0x02
+#define	MC_TLS			0x04
 
 /*
  * Ethernet frames are DMA'd at this byte offset into the freelist buffer.
@@ -2240,7 +2244,8 @@ mbuf_len16(struct mbuf *m)
 
 	M_ASSERTPKTHDR(m);
 	n = m->m_pkthdr.PH_loc.eight[0];
-	MPASS(n > 0 && n <= SGE_MAX_WR_LEN / 16);
+	if (!(mbuf_cflags(m) & MC_TLS))
+		MPASS(n > 0 && n <= SGE_MAX_WR_LEN / 16);
 
 	return (n);
 }
@@ -2307,10 +2312,10 @@ set_mbuf_eo_tsclk_tsoff(struct mbuf *m, uint8_t tsclk_tsoff)
 }
 
 static inline int
-needs_eo(struct mbuf *m)
+needs_eo(struct cxgbe_snd_tag *cst)
 {
 
-	return (m->m_pkthdr.csum_flags & CSUM_SND_TAG);
+	return (cst != NULL && cst->type == IF_SND_TAG_TYPE_RATE_LIMIT);
 }
 #endif
 
@@ -2542,6 +2547,9 @@ parse_pkt(struct adapter *sc, struct mbuf **mp)
 #if defined(INET) || defined(INET6)
 	struct tcphdr *tcp;
 #endif
+#if defined(KERN_TLS) || defined(RATELIMIT)
+	struct cxgbe_snd_tag *cst;
+#endif
 	uint16_t eh_type;
 	uint8_t cflags;
 
@@ -2562,6 +2570,26 @@ restart:
 	M_ASSERTPKTHDR(m0);
 	MPASS(m0->m_pkthdr.len > 0);
 	nsegs = count_mbuf_nsegs(m0, 0, &cflags);
+#if defined(KERN_TLS) || defined(RATELIMIT)
+	if (m0->m_pkthdr.csum_flags & CSUM_SND_TAG)
+		cst = mst_to_cst(m0->m_pkthdr.snd_tag);
+	else
+		cst = NULL;
+#endif
+#ifdef KERN_TLS
+	if (cst != NULL && cst->type == IF_SND_TAG_TYPE_TLS) {
+		int len16;
+
+		cflags |= MC_TLS;
+		set_mbuf_cflags(m0, cflags);
+		rc = t6_sbtls_parse_pkt(m0, &nsegs, &len16);
+		if (rc != 0)
+			goto fail;
+		set_mbuf_nsegs(m0, nsegs);
+		set_mbuf_len16(m0, len16);
+		return (0);
+	}
+#endif
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
 			rc = EFBIG;
@@ -2595,16 +2623,17 @@ restart:
 	 * checksumming is enabled.  needs_l4_csum happens to check for all the
 	 * right things.
 	 */
-	if (__predict_false(needs_eo(m0) && !needs_l4_csum(m0))) {
+	if (__predict_false(needs_eo(cst) && !needs_l4_csum(m0))) {
 		m_snd_tag_rele(m0->m_pkthdr.snd_tag);
 		m0->m_pkthdr.snd_tag = NULL;
 		m0->m_pkthdr.csum_flags &= ~CSUM_SND_TAG;
+		cst = NULL;
 	}
 #endif
 
 	if (!needs_tso(m0) &&
 #ifdef RATELIMIT
-	    !needs_eo(m0) &&
+	    !needs_eo(cst) &&
 #endif
 	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0))))
 		return (0);
@@ -2666,7 +2695,7 @@ restart:
 #endif
 	}
 #ifdef RATELIMIT
-	if (needs_eo(m0)) {
+	if (needs_eo(cst)) {
 		u_int immhdrs;
 
 		/* EO WRs have the headers in the WR and not the GL. */
@@ -2831,7 +2860,7 @@ cannot_use_txpkts(struct mbuf *m)
 {
 	/* maybe put a GL limit too, to avoid silliness? */
 
-	return (needs_tso(m) || (mbuf_cflags(m) & MC_RAW_WR) != 0);
+	return (needs_tso(m) || (mbuf_cflags(m) & (MC_RAW_WR | MC_TLS)) != 0);
 }
 
 static inline int
@@ -2906,7 +2935,8 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 		M_ASSERTPKTHDR(m0);
 		MPASS(m0->m_nextpkt == NULL);
 
-		if (available < SGE_MAX_WR_NDESC) {
+		if (available < howmany(mbuf_len16(m0), EQ_ESIZE / 16)) {
+			MPASS(howmany(mbuf_len16(m0), EQ_ESIZE / 16) <= 64);
 			available += reclaim_tx_descs(txq, 64);
 			if (available < howmany(mbuf_len16(m0), EQ_ESIZE / 16))
 				break;	/* out of descriptors */
@@ -2917,7 +2947,19 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			next_cidx = 0;
 
 		wr = (void *)&eq->desc[eq->pidx];
-		if (sc->flags & IS_VF) {
+		if (mbuf_cflags(m0) & MC_RAW_WR) {
+			total++;
+			remaining--;
+			n = write_raw_wr(txq, (void *)wr, m0, available);
+#ifdef KERN_TLS
+		} else if (mbuf_cflags(m0) & MC_TLS) {
+			total++;
+			remaining--;
+			ETHER_BPF_MTAP(ifp, m0);
+			n = t6_sbtls_write_wr(txq,(void *)wr, m0,
+			    mbuf_nsegs(m0), available);
+#endif
+		} else if (sc->flags & IS_VF) {
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
@@ -2951,17 +2993,15 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			n = write_txpkts_wr(txq, wr, m0, &txp, available);
 			total += txp.npkt;
 			remaining -= txp.npkt;
-		} else if (mbuf_cflags(m0) & MC_RAW_WR) {
-			total++;
-			remaining--;
-			n = write_raw_wr(txq, (void *)wr, m0, available);
 		} else {
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
 			n = write_txpkt_wr(txq, (void *)wr, m0, available);
 		}
-		MPASS(n >= 1 && n <= available && n <= SGE_MAX_WR_NDESC);
+		MPASS(n >= 1 && n <= available);
+		if (!(mbuf_cflags(m0) & MC_TLS))		
+			MPASS(n <= SGE_MAX_WR_NDESC);
 
 		available -= n;
 		dbdiff += n;
@@ -4171,9 +4211,52 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "txpkts1_pkts",
 	    CTLFLAG_RD, &txq->txpkts1_pkts,
 	    "# of frames tx'd using type1 txpkts work requests");
+	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "tls_wrs", CTLFLAG_RD,
+	    &txq->tls_wrs, "# of TLS work requests (TLS records)");
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "raw_wrs", CTLFLAG_RD,
 	    &txq->raw_wrs, "# of raw work requests (non-packets)");
 
+#ifdef KERN_TLS
+	if (sc->flags & KERN_TLS_OK) {
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_records", CTLFLAG_RD, &txq->kern_tls_records,
+		    "# of NIC TLS records transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_short", CTLFLAG_RD, &txq->kern_tls_short,
+		    "# of short NIC TLS records transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_partial", CTLFLAG_RD, &txq->kern_tls_partial,
+		    "# of partial NIC TLS records transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_full", CTLFLAG_RD, &txq->kern_tls_full,
+		    "# of full NIC TLS records transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_octets", CTLFLAG_RD, &txq->kern_tls_octets,
+		    "# of payload octets in transmitted NIC TLS records");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_waste", CTLFLAG_RD, &txq->kern_tls_waste,
+		    "# of octets DMAd but not transmitted in NIC TLS records");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_options", CTLFLAG_RD, &txq->kern_tls_options,
+		    "# of NIC TLS options-only packets transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_header", CTLFLAG_RD, &txq->kern_tls_header,
+		    "# of NIC TLS header-only packets transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_fin", CTLFLAG_RD, &txq->kern_tls_fin,
+		    "# of NIC TLS FIN-only packets transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_fin_short", CTLFLAG_RD, &txq->kern_tls_fin_short,
+		    "# of NIC TLS padded FIN packets on short TLS records");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_cbc", CTLFLAG_RD, &txq->kern_tls_cbc,
+		    "# of NIC TLS sessions using AES-CBC");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_gcm", CTLFLAG_RD, &txq->kern_tls_gcm,
+		    "# of NIC TLS sessions using AES-GCM");
+	}
+#endif
+	
 	SYSCTL_ADD_COUNTER_U64(&vi->ctx, children, OID_AUTO, "r_enqueues",
 	    CTLFLAG_RD, &txq->r->enqueues,
 	    "# of enqueues to the mp_ring for this queue");
@@ -5722,7 +5805,7 @@ done:
 #define ETID_FLOWC_LEN16 (howmany(ETID_FLOWC_LEN, 16))
 
 static int
-send_etid_flowc_wr(struct cxgbe_snd_tag *cst, struct port_info *pi,
+send_etid_flowc_wr(struct cxgbe_rate_tag *cst, struct port_info *pi,
     struct vi_info *vi)
 {
 	struct wrq_cookie cookie;
@@ -5768,7 +5851,7 @@ send_etid_flowc_wr(struct cxgbe_snd_tag *cst, struct port_info *pi,
 #define ETID_FLUSH_LEN16 (howmany(sizeof (struct fw_flowc_wr), 16))
 
 void
-send_etid_flush_wr(struct cxgbe_snd_tag *cst)
+send_etid_flush_wr(struct cxgbe_rate_tag *cst)
 {
 	struct fw_flowc_wr *flowc;
 	struct wrq_cookie cookie;
@@ -5794,7 +5877,7 @@ send_etid_flush_wr(struct cxgbe_snd_tag *cst)
 }
 
 static void
-write_ethofld_wr(struct cxgbe_snd_tag *cst, struct fw_eth_tx_eo_wr *wr,
+write_ethofld_wr(struct cxgbe_rate_tag *cst, struct fw_eth_tx_eo_wr *wr,
     struct mbuf *m0, int compl)
 {
 	struct cpl_tx_pkt_core *cpl;
@@ -5943,7 +6026,7 @@ write_ethofld_wr(struct cxgbe_snd_tag *cst, struct fw_eth_tx_eo_wr *wr,
 }
 
 static void
-ethofld_tx(struct cxgbe_snd_tag *cst)
+ethofld_tx(struct cxgbe_rate_tag *cst)
 {
 	struct mbuf *m;
 	struct wrq_cookie cookie;
@@ -5976,7 +6059,7 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 		cst->tx_credits -= next_credits;
 		cst->tx_nocompl += next_credits;
 		compl = cst->ncompl == 0 || cst->tx_nocompl >= cst->tx_total / 2;
-		ETHER_BPF_MTAP(cst->com.ifp, m);
+		ETHER_BPF_MTAP(cst->com.com.ifp, m);
 		write_ethofld_wr(cst, wr, m, compl);
 		commit_wrq_wr(cst->eo_txq, wr, &cookie);
 		if (compl) {
@@ -5988,7 +6071,7 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 		/*
 		 * Drop the mbuf's reference on the tag now rather
 		 * than waiting until m_freem().  This ensures that
-		 * cxgbe_snd_tag_free gets called when the inp drops
+		 * cxgbe_rate_tag_free gets called when the inp drops
 		 * its reference on the tag and there are no more
 		 * mbufs in the pending_tx queue and can flush any
 		 * pending requests.  Otherwise if the last mbuf
@@ -5997,7 +6080,7 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 		 */
 		m->m_pkthdr.snd_tag = NULL;
 		m->m_pkthdr.csum_flags &= ~CSUM_SND_TAG;
-		m_snd_tag_rele(&cst->com);
+		m_snd_tag_rele(&cst->com.com);
 
 		mbufq_enqueue(&cst->pending_fwack, m);
 	}
@@ -6006,13 +6089,13 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 int
 ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 {
-	struct cxgbe_snd_tag *cst;
+	struct cxgbe_rate_tag *cst;
 	int rc;
 
 	MPASS(m0->m_nextpkt == NULL);
 	MPASS(m0->m_pkthdr.csum_flags & CSUM_SND_TAG);
 	MPASS(m0->m_pkthdr.snd_tag != NULL);
-	cst = mst_to_cst(m0->m_pkthdr.snd_tag);
+	cst = mst_to_crt(m0->m_pkthdr.snd_tag);
 
 	mtx_lock(&cst->lock);
 	MPASS(cst->flags & EO_SND_TAG_REF);
@@ -6051,10 +6134,10 @@ ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 	 * ethofld_tx() in case we are sending the final mbuf after
 	 * the inp was freed.
 	 */
-	m_snd_tag_ref(&cst->com);
+	m_snd_tag_ref(&cst->com.com);
 	ethofld_tx(cst);
 	mtx_unlock(&cst->lock);
-	m_snd_tag_rele(&cst->com);
+	m_snd_tag_rele(&cst->com.com);
 	return (0);
 
 done:
@@ -6071,7 +6154,7 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 	const struct cpl_fw4_ack *cpl = (const void *)(rss + 1);
 	struct mbuf *m;
 	u_int etid = G_CPL_FW4_ACK_FLOWID(be32toh(OPCODE_TID(cpl)));
-	struct cxgbe_snd_tag *cst;
+	struct cxgbe_rate_tag *cst;
 	uint8_t credits = cpl->credits;
 
 	cst = lookup_etid(sc, etid);
@@ -6103,7 +6186,7 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 
 			cst->flags &= ~EO_FLUSH_RPL_PENDING;
 			cst->tx_credits += cpl->credits;
-			cxgbe_snd_tag_free_locked(cst);
+			cxgbe_rate_tag_free_locked(cst);
 			return (0);	/* cst is gone. */
 		}
 		KASSERT(m != NULL,

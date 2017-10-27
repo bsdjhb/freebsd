@@ -31,6 +31,7 @@
 __FBSDID("$FreeBSD$");
 
 #include "opt_param.h"
+#include "opt_kern_tls.h"
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -45,10 +46,20 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <sys/protosw.h>
+#include <sys/refcount.h>
 #include <sys/sf_buf.h>
 #include <sys/smp.h>
 #include <sys/socket.h>
+#include <sys/socketvar.h>
+#ifdef KERN_TLS
+#include <sys/sockbuf_tls.h>
+#endif
 #include <sys/sysctl.h>
+#include <sys/taskqueue.h>
+
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/vnet.h>
 
 #include <net/if.h>
 #include <net/if_var.h>
@@ -111,6 +122,7 @@ int nmbclusters;		/* limits number of mbuf clusters */
 int nmbjumbop;			/* limits number of page size jumbo clusters */
 int nmbjumbo9;			/* limits number of 9k jumbo clusters */
 int nmbjumbo16;			/* limits number of 16k jumbo clusters */
+bool mb_use_ext_pgs;		/* use ext_pgs for sendfile & TLS  */
 
 bool mb_use_ext_pgs;		/* use EXT_PGS mbufs for sendfile */
 SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
@@ -277,6 +289,10 @@ sysctl_nmbufs(SYSCTL_HANDLER_ARGS)
 SYSCTL_PROC(_kern_ipc, OID_AUTO, nmbufs, CTLTYPE_INT|CTLFLAG_RW,
 &nmbufs, 0, sysctl_nmbufs, "IU",
     "Maximum number of mbufs allowed");
+
+SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
+    &mb_use_ext_pgs, 0,
+    "Use bundles of pages for sendfile(2) and TLS");
 
 /*
  * Zones from which we allocate.
@@ -1281,13 +1297,27 @@ mb_free_ext(struct mbuf *m)
 			uma_zfree(zone_jumbo16, m->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);
 			break;
-		case EXT_PGS:
+		case EXT_PGS: {
+#ifdef KERN_TLS
+			struct mbuf_ext_pgs *pgs;
+			struct sbtls_session *tls;
+#endif
+
 			KASSERT(mref->m_ext.ext_free != NULL,
 			    ("%s: ext_free not set", __func__));
 			mref->m_ext.ext_free(mref);
-			uma_zfree(zone_extpgs, mref->m_ext.ext_pgs);
+#ifdef KERN_TLS
+			pgs = mref->m_ext.ext_pgs;
+			tls = pgs->tls;
+			if (tls != NULL &&
+			    !refcount_release_if_not_last(&tls->refcount))
+				sbtls_enqueue_to_free(pgs);
+			else
+#endif
+				uma_zfree(zone_extpgs, mref->m_ext.ext_pgs);
 			uma_zfree(zone_mbuf, mref);
 			break;
+		}
 		case EXT_SFBUF:
 		case EXT_NET_DRV:
 		case EXT_MOD_TYPE:

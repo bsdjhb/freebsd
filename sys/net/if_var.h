@@ -192,7 +192,8 @@ struct m_snd_tag;
 
 #define	IF_SND_TAG_TYPE_RATE_LIMIT 0
 #define	IF_SND_TAG_TYPE_UNLIMITED 1
-#define	IF_SND_TAG_TYPE_MAX 2
+#define	IF_SND_TAG_TYPE_TLS 2
+#define	IF_SND_TAG_TYPE_MAX 3
 
 struct if_snd_tag_alloc_header {
 	uint32_t type;		/* send tag type, see IF_SND_TAG_XXX */
@@ -207,6 +208,16 @@ struct if_snd_tag_alloc_rate_limit {
 	uint32_t reserved;	/* alignment */
 };
 
+#ifdef KERN_TLS
+struct sbtls_session;
+
+struct if_snd_tag_alloc_tls {
+	struct if_snd_tag_alloc_header hdr;
+	struct inpcb *inp;
+	const struct sbtls_session *tls;
+};
+#endif
+
 struct if_snd_tag_rate_limit_params {
 	uint64_t max_rate;	/* in bytes/s */
 	uint32_t queue_level;	/* 0 (empty) .. 65535 (full) */
@@ -219,6 +230,9 @@ union if_snd_tag_alloc_params {
 	struct if_snd_tag_alloc_header hdr;
 	struct if_snd_tag_alloc_rate_limit rate_limit;
 	struct if_snd_tag_alloc_rate_limit unlimited;
+#ifdef KERN_TLS
+	struct if_snd_tag_alloc_tls tls;
+#endif
 };
 
 union if_snd_tag_modify_params {

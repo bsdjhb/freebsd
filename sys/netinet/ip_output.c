@@ -36,6 +36,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_ipsec.h"
+#include "opt_kern_tls.h"
 #include "opt_mbuf_stress_test.h"
 #include "opt_mpath.h"
 #include "opt_ratelimit.h"
@@ -54,6 +55,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/protosw.h>
 #include <sys/rmlock.h>
 #include <sys/sdt.h>
+#include <sys/sockbuf_tls.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
@@ -210,7 +212,7 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, int flags,
 
 static int
 ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
-    const struct sockaddr_in *gw, struct route *ro)
+    const struct sockaddr_in *gw, struct route *ro, struct sbtls_session *tls)
 {
 	struct m_snd_tag *mst;
 	int error;
@@ -218,8 +220,23 @@ ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
 	MPASS((m->m_pkthdr.csum_flags & CSUM_SND_TAG) == 0);
 	mst = NULL;
 
+#ifdef KERN_TLS
+	if (tls != NULL) {
+		mst = tls->snd_tag;
+
+		/*
+		 * If a TLS session doesn't have a valid tag, it must
+		 * have had an earlier ifp mismatch, so drop this
+		 * packet.
+		 */
+		if (mst == NULL) {
+			error = EAGAIN;
+			goto done;
+		}
+	}
+#endif
 #ifdef RATELIMIT
-	if (inp != NULL) {
+	if (inp != NULL && mst == NULL) {
 		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
 		    (inp->inp_snd_tag != NULL &&
 		    inp->inp_snd_tag->ifp != ifp))
@@ -246,6 +263,10 @@ ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
 
 done:
 	/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+	if (error == EAGAIN && tls != NULL)
+		error = sbtls_output_eagain(inp, tls);
+#endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
 		in_pcboutput_eagain(inp);
@@ -274,6 +295,7 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	struct ip *ip;
 	struct ifnet *ifp = NULL;	/* keep compiler happy */
 	struct mbuf *m0;
+	struct sbtls_session *tls = NULL;
 	int hlen = sizeof (struct ip);
 	int mtu;
 	int error = 0;
@@ -719,6 +741,16 @@ sendit:
 		m->m_pkthdr.csum_flags &= ~CSUM_SCTP;
 	}
 #endif
+#if defined(KERN_TLS)
+	/*
+	 * If this is an unencrypted TLS record, save a reference to
+	 * the record.  This local reference is used to call
+	 * sbtls_output_eagain after the mbuf has been freed (thus
+	 * dropping the mbuf's reference) in if_output.
+	 */
+	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
+		tls = sbtls_hold(m->m_next->m_ext.ext_pgs->tls);
+#endif
 
 	/*
 	 * If small enough for interface, or the interface will take
@@ -757,7 +789,7 @@ sendit:
 		 */
 		m_clrprotoflags(m);
 		IP_PROBE(send, NULL, NULL, ip, ifp, ip, NULL);
-		error = ip_output_send(inp, ifp, m, gw, ro);
+		error = ip_output_send(inp, ifp, m, gw, ro, tls);
 		goto done;
 	}
 
@@ -793,7 +825,7 @@ sendit:
 
 			IP_PROBE(send, NULL, NULL, mtod(m, struct ip *), ifp,
 			    mtod(m, struct ip *), NULL);
-			error = ip_output_send(inp, ifp, m, gw, ro);
+			error = ip_output_send(inp, ifp, m, gw, ro, tls);
 		} else
 			m_freem(m);
 	}
@@ -803,6 +835,10 @@ sendit:
 
 done:
 	NET_EPOCH_EXIT(et);
+#ifdef KERN_TLS
+	if (tls != NULL)
+		sbtls_free(tls);
+#endif
 	return (error);
  bad:
 	m_freem(m);
@@ -844,6 +880,15 @@ ip_fragment(struct ip *ip, struct mbuf **m_frag, int mtu,
 	 */
 	if (len < 8)
 		return EMSGSIZE;
+
+	/*
+	 * Ensure packet is accessible to CPU
+	 */
+	m0 = mb_unmapped_to_ext(m0);
+	if (m0 == NULL) {
+		*m_frag = NULL;
+		return ENOBUFS;
+	}
 
 	/*
 	 * If the interface will not calculate checksums on
