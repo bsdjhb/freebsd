@@ -35,6 +35,38 @@ struct smbios_handle;
 
 typedef struct smbios_handle *smbios_handle_t;
 
+enum smbios_structure_types {
+	SMBIOS_MEMORY_DEVICE = 17,
+};
+
+struct smbios_memory_device {
+	uint8_t		type;
+	uint8_t		length;
+	uint16_t	handle;
+	uint16_t	physical_memory_array_handle;
+	uint16_t	memory_error_info_handle;
+	uint16_t	total_width;
+	uint16_t	data_width;
+	uint16_t	size;
+	uint8_t		form_factor;
+	uint8_t		device_set;
+	uint8_t		device_locator;
+	uint8_t		bank_locator;
+	uint8_t		memory_type;
+	uint16_t	type_detail;
+	uint16_t	speed;
+	uint8_t		manufacturer;
+	uint8_t		serial_number;
+	uint8_t		asset_tag;
+	uint8_t		part_number;
+	uint8_t		attributes;
+	uint32_t	extended_size;
+	uint16_t	configured_memory_clock_speed;
+	uint16_t	minimum_voltage;
+	uint16_t	maximum_voltage;
+	uint16_t	configured_voltage;
+} __packed;
+
 enum smbios_cb_retval {
 	SMBIOS_CONTINUE,
 	SMBIOS_STOP
