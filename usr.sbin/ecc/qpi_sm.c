@@ -1,5 +1,5 @@
 /*
- * QPI DIMM labelers for SuperMicro motherboards.
+ * QPI DIMM labelers for Supermicro motherboards.
  */
 
 #include <sys/types.h>
@@ -7,11 +7,16 @@
 #include <machine/specialreg.h>
 #include <regex.h>
 #include <smbios.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "qpi.h"
+
+static smbios_handle_t smbios_handle;
+static bool smbios_opened = false;
 
 /*
  * XXX: These are legacy namers that predate support for parsing DIMM names
@@ -20,18 +25,28 @@
 static int
 qpi_x8_namer_probe(void)
 {
-	u_int regs[4];
+	const struct smbios_structure_header *hdr;
+	const struct smbios_baseboard_info *bi;
+	const char *str;
 
-	do_cpuid(1, regs);
-	switch (CPUID_TO_MODEL(regs[0])) {
-	case 0x1a:	/* Nehalem */
-	case 0x2a:	/* Sandybridge */
-	case 0x2c:	/* Westmere-EP */
-	case 0x2f:	/* E7 */
-		return (1);
-	default:
+	if (!smbios_opened && smbios_open(&smbios_handle) != 0)
+		return (-1);
+	smbios_opened = true;
+
+	hdr = smbios_find_by_type(smbios_handle, SMBIOS_BASEBOARD_INFO);
+	if (hdr == NULL)
+		return (-1);
+
+	bi = (const struct smbios_baseboard_info *)hdr;
+	str = smbios_find_string(smbios_handle, hdr, bi->manufacturer);
+	if (str == NULL || strcmp(str, "Supermicro") != 0)
 		return (0);
-	}
+
+	str = smbios_find_string(smbios_handle, hdr, bi->product);
+	if (str == NULL || strncmp(str, "X8", 2) != 0)
+		return (0);
+
+	return (1);
 }
 
 static const char *
@@ -54,16 +69,28 @@ QPI_DIMM_LABELER(qpi_sm_x8);
 static int
 qpi_x9_namer_probe(void)
 {
-	u_int regs[4];
+	const struct smbios_structure_header *hdr;
+	const struct smbios_baseboard_info *bi;
+	const char *str;
 
-	do_cpuid(1, regs);
-	switch (CPUID_TO_MODEL(regs[0])) {
-	case 0x2d:	/* Romley */
-	case 0x3e:	/* Romley V2 */
-		return (1);
-	default:
+	if (!smbios_opened && smbios_open(&smbios_handle) != 0)
+		return (-1);
+	smbios_opened = true;
+
+	hdr = smbios_find_by_type(smbios_handle, SMBIOS_BASEBOARD_INFO);
+	if (hdr == NULL)
+		return (-1);
+
+	bi = (const struct smbios_baseboard_info *)hdr;
+	str = smbios_find_string(smbios_handle, hdr, bi->manufacturer);
+	if (str == NULL || strcmp(str, "Supermicro") != 0)
 		return (0);
-	}
+
+	str = smbios_find_string(smbios_handle, hdr, bi->product);
+	if (str == NULL || strncmp(str, "X9", 2) != 0)
+		return (0);
+
+	return (1);
 }
 
 static const char *
@@ -84,13 +111,12 @@ static struct qpi_dimm_labeler qpi_sm_x9 = {
 QPI_DIMM_LABELER(qpi_sm_x9);
 
 /*
- * This namer handles SuperMicro boards which use the pattern
+ * This namer handles Supermicro boards which use the pattern
  * 'P<a>_Node<b>_Channel<c>_Dimm<d>' in the Bank Locator string of
  * SMBIOS memory device entries.  Currently this namer assumes that
  * 'a' matches the socket, 'c' matches the id, and 'd' matches the
  * channel.
  */
-static smbios_handle_t smbios_handle;
 static regex_t smbios_regex;
 
 static enum smbios_cb_retval
@@ -132,20 +158,21 @@ qpi_sm_smbios_probe(void)
 {
 	int matches;
 
-	matches = 0;
-	if (smbios_open(&smbios_handle) != 0)
+	if (!smbios_opened && smbios_open(&smbios_handle) != 0)
 		return (-1);
+	smbios_opened = true;
 
 	if (regcomp(&smbios_regex,
 	    "^P([0-9]+)_Node0_Channel([0-9]+)_Dimm([0-9]+)$", REG_EXTENDED) != 0)
 		goto bad;
+
+	matches = 0;
 	smbios_walk_table(smbios_handle, qpi_sm_probe_callback, &matches);
 	if (matches != 0)
 		return (10);
 
 	regfree(&smbios_regex);
 bad:
-	smbios_close(smbios_handle);
 	return (0);
 }
 
@@ -153,7 +180,7 @@ struct sm_find_dimm_data {
 	struct dimm *d;
 	const char *label;
 };
-	
+
 static enum smbios_cb_retval
 qpi_sm_find_dimm(smbios_handle_t handle,
     struct smbios_structure_header *hdr, void *arg)
