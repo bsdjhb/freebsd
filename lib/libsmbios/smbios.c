@@ -236,7 +236,7 @@ find_handle_cb(smbios_handle_t handle __unused,
 }
 
 const struct smbios_structure_header *
-smbios_find_handle(smbios_handle_t handle, u_int handle_id)
+smbios_find_by_handle(smbios_handle_t handle, u_int handle_id)
 {
 	struct find_handle_data fhd;
 
@@ -244,6 +244,36 @@ smbios_find_handle(smbios_handle_t handle, u_int handle_id)
 	fhd.hdr = NULL;
 	smbios_walk_table(handle, find_handle_cb, &fhd);
 	return (fhd.hdr);
+}
+
+struct find_type_data {
+	u_int	type_id;
+	struct smbios_structure_header *hdr;
+};
+
+static enum smbios_cb_retval
+find_type_cb(smbios_handle_t handle __unused,
+    struct smbios_structure_header *hdr, void *arg)
+{
+	struct find_type_data *ftd;
+
+	ftd = arg;
+	if (hdr->type == ftd->type_id) {
+		ftd->hdr = hdr;
+		return (SMBIOS_STOP);
+	}
+	return (SMBIOS_CONTINUE);
+}
+
+const struct smbios_structure_header *
+smbios_find_by_type(smbios_handle_t handle, u_int type_id)
+{
+	struct find_type_data ftd;
+
+	ftd.type_id = type_id;
+	ftd.hdr = NULL;
+	smbios_walk_table(handle, find_type_cb, &ftd);
+	return (ftd.hdr);
 }
 
 const char *

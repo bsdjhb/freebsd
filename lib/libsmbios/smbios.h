@@ -36,8 +36,26 @@ struct smbios_handle;
 typedef struct smbios_handle *smbios_handle_t;
 
 enum smbios_structure_types {
+	SMBIOS_BASEBOARD_INFO = 2,
 	SMBIOS_MEMORY_DEVICE = 17,
 };
+
+struct smbios_baseboard_info {
+	uint8_t		type;
+	uint8_t		length;
+	uint16_t	handle;
+	uint8_t		manufacturer;
+	uint8_t		product;
+	uint8_t		version;
+	uint8_t		serial_number;
+	uint8_t		asset_tag;
+	uint8_t		feature_flags;
+	uint8_t		location_in_chassis;
+	uint16_t	chassis_handle;
+	uint8_t		board_type;
+	uint8_t		number_of_contained_object_handles;
+	uint16_t	contained_object_handles[0];
+} __packed;
 
 struct smbios_memory_device {
 	uint8_t		type;
@@ -77,7 +95,9 @@ typedef enum smbios_cb_retval (*smbios_callback)(
 
 int	smbios_open(smbios_handle_t *);
 int	smbios_close(smbios_handle_t);
-const struct smbios_structure_header *smbios_find_handle(smbios_handle_t,
+const struct smbios_structure_header *smbios_find_by_handle(smbios_handle_t,
+    u_int);
+const struct smbios_structure_header *smbios_find_by_type(smbios_handle_t,
     u_int);
 const char *smbios_find_string(smbios_handle_t,
     const struct smbios_structure_header *, u_int);
