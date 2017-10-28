@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "ecc.h"
+#include "qpi.h"
 
 /* Fields in MISC for QPI MC8-MC11. */
 #define	QPI_MC8_MISC_RTID	0x00000000000000ff
@@ -19,18 +20,16 @@
 #define	QPI_MC8_MISC_CHANNEL	0x00000000000c0000
 #define	QPI_MC8_MISC_ECC_SYNDROME 0xffffffff00000000
 
-struct dimm {
-	int	socket;
-	int	channel;
-	int	id;
-	long	ccount;
-	long	ucount;
-	TAILQ_ENTRY(dimm) link;
-};
+SET_DECLARE(qpi_dimm_labelers, struct qpi_dimm_labeler);
 
 static TAILQ_HEAD(, dimm) dimms = TAILQ_HEAD_INITIALIZER(dimms);
 static int socket_divisor = 1;
 static int cpu_model;
+
+/*
+ * XXX: This backend assumes that there is one set of DIMM banks per
+ * physical processor socket.  This may not be true on COD machines.
+ */
 
 /* Figure out how to map APIC IDs to sockets. */
 static void
@@ -111,26 +110,51 @@ qpi_handle_event(struct mca_record *mr)
 	return (0);
 }
 
-/* XXX: This is a hack, should use motherboard name from smbios instead. */
 static const char *
-qpi_dimm_label(struct dimm *d)
+qpi_default_dimm_label(struct dimm *d)
 {
 	static char buf[64];
 
-	switch (cpu_model) {
-	case 0x2d:
-	case 0x3e:
-		/* X9 boards */
-		snprintf(buf, sizeof(buf), "P%d-DIMM%c%d", d->socket + 1,
-		    d->socket * 4 + d->id + 'A', d->channel + 1);
-		break;
-	default:
-		/* X8 boards */
-		snprintf(buf, sizeof(buf), "P%d-DIMM%d%c", d->socket + 1,
-		    d->channel + 1, d->id + 'A');
-		break;
-	}
+	snprintf(buf, sizeof(buf), "Socket %d ID %d Channel %d", d->socket,
+	    d->id, d->channel);
 	return (buf);
+}
+
+static struct qpi_dimm_labeler *
+find_labeler(void)
+{
+	struct qpi_dimm_labeler *best_l, **l;
+	int best_score, score;
+
+	best_l = NULL;
+	best_score = -1;
+	SET_FOREACH(l, qpi_dimm_labelers) {
+		score = (*l)->probe();
+		if (score <= 0)
+			continue;
+		if (best_l == NULL || score > best_score) {
+			best_l = *l;
+			best_score = score;
+		}
+	}
+	return (best_l);
+}
+
+static const char *
+qpi_dimm_label(struct dimm *d)
+{
+	static const char *(*label_func)(struct dimm *) = NULL;
+
+	if (label_func == NULL) {
+		struct qpi_dimm_labeler *l;
+
+		l = find_labeler();
+		if (l != NULL)
+			label_func = l->dimm_label;
+		else
+			label_func = qpi_default_dimm_label;
+	}
+	return (label_func(d));
 }
 
 static void
