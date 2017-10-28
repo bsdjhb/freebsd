@@ -80,6 +80,8 @@ fetch_events_kvm(char *mflag, char *nflag, struct mca_record **recordsp,
 	while (mr != NULL) {
 		records = reallocf(records, (count + 1) *
 		    sizeof(struct mca_record));
+		if (records == NULL)
+			err(1, "Failed to allocate memory for MCA records");
 		bzero(&records[count], sizeof(struct mca_record));
 		if (kread(kvm, mr, &records[count], record_size, 0) < 0)
 			break;
