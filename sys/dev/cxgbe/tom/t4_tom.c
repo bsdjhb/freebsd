@@ -662,7 +662,7 @@ void
 set_ulp_mode(struct toepcb *toep, int ulp_mode)
 {
 
-	CTR5(KTR_CXGBE, "%s: toep %p (tid %d) ulp_mode %d",
+	CTR4(KTR_CXGBE, "%s: toep %p (tid %d) ulp_mode %d",
 	    __func__, toep, toep->tid, ulp_mode);
 	toep->ulp_mode = ulp_mode;
 	switch (ulp_mode) {
