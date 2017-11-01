@@ -1415,8 +1415,8 @@ found:
 		REJECT_PASS_ACCEPT();
 	}
 
-	CTR5(KTR_CXGBE, "%s: stid %u, tid %u, lctx %p, synqe %p, SYNACK",
-	    __func__, stid, tid, lctx, synqe);
+	CTR6(KTR_CXGBE, "%s: stid %u, tid %u, lctx %p, synqe %p, SYNACK mode %d",
+	    __func__, stid, tid, lctx, synqe, ulp_mode);
 
 	INP_WLOCK(inp);
 	synqe->flags |= TPF_SYNQE_HAS_L2TE;
