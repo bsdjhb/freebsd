@@ -42,7 +42,7 @@ static struct mevent *read_event, *write_event;
 static cpuset_t vcpus_active, vcpus_suspended, vcpus_waiting;
 static pthread_mutex_t gdb_lock;
 static pthread_cond_t idle_vcpus;
-static bool stop_pending;
+static bool stop_pending, first_stop;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -589,7 +589,9 @@ static void
 gdb_finish_suspend_vcpus(void)
 {
 
-	if (response_pending())
+	if (first_stop)
+		first_stop = false;
+	else if (response_pending())
 		stop_pending = true;
 	else {
 		report_stop();
@@ -1133,6 +1135,7 @@ new_connection(int fd, enum ev_type event, void *arg)
 	stop_pending = false;
 
 	/* Break on attach. */
+	first_stop = true;
 	gdb_suspend_vcpus();
 	pthread_mutex_unlock(&gdb_lock);
 }
