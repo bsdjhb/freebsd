@@ -783,8 +783,7 @@ tls_init_toep(struct toepcb *toep)
 
 	/* For TX-only, operate in PDU extraction mode only. */
 	t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
-	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)),
-	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
+	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)), 0);
 	t4_clear_rx_quiesce(toep);
 }
 
