@@ -192,10 +192,8 @@ struct toepcb {
 	struct mbufq ulp_pduq;	/* PDUs waiting to be sent out. */
 	struct mbufq ulp_pdu_reclaimq;
 
-	union {			/* ULP mode-specific data. */
-		struct ddp_pcb ddp;
-		struct tls_ofld_info tls;
-	};
+	struct ddp_pcb ddp;
+	struct tls_ofld_info tls;
 
 	TAILQ_HEAD(, kaiocb) aiotx_jobq;
 	struct task aiotx_task;
