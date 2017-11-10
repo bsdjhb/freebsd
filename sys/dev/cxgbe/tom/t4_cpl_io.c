@@ -2318,7 +2318,7 @@ t4_aio_queue_aiotx(struct socket *so, struct kaiocb *job)
 		return (EOPNOTSUPP);
 
 	/* XXX: Possibly revisit. */
-	if (is_tls_offload(toep) && tls_tx_key(toep))
+	if (is_tls_offload(toep) || tls_tx_key(toep))
 		return (EOPNOTSUPP);
 
 	SOCKBUF_LOCK(&so->so_snd);

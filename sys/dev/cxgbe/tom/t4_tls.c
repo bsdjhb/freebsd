@@ -585,13 +585,12 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	/* XXX: Stop handshake timer. */
 
-	k_ctx = &tls_ofld->k_ctx;
-
-	/* XXX: Only offload TX for now. */
-	if (G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX)
+	if (G_KEY_GET_LOC(uk_ctx->l_p_key) == KEY_WRITE_RX &&
+	    toep->ulp_mode != ULP_MODE_TLS)
 		return (EOPNOTSUPP);
 
 	/* Don't copy the 'tx' and 'rx' fields. */
+	k_ctx = &tls_ofld->k_ctx;
 	memcpy(&k_ctx->l_p_key, &uk_ctx->l_p_key,
 	    sizeof(*k_ctx) - offsetof(struct tls_key_context, l_p_key));
 
@@ -714,6 +713,7 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	struct toepcb *toep;
+	struct adapter *sc;
 	int error, optval;
 
 	error = 0;
@@ -742,11 +742,17 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_TLS_TOM:
-			tls_clr_ofld_mode(toep);
+			if (toep->ulp_mode == ULP_MODE_TLS)
+				tls_clr_ofld_mode(toep);
+			else
+				error = EOPNOTSUPP;
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_QUIES:
-			tls_clr_quiesce(toep);
+			if (toep->ulp_mode == ULP_MODE_TLS)
+				tls_clr_quiesce(toep);
+			else
+				error = EOPNOTSUPP;
 			INP_WUNLOCK(inp);
 			break;
 		default:
@@ -758,7 +764,17 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	case SOPT_GET:
 		switch (sopt->sopt_name) {
 		case TCP_TLSOM_GET_TLS_TOM:
-			optval = is_tls_offload(toep);
+			/* TLS TX is permitted on any TOE socket. */
+			optval = 0;
+			if (can_tls_offload(td_adapter(toep->td))) {
+				switch (toep->ulp_mode) {
+				case ULP_MODE_NONE:
+				case ULP_MODE_TCPDDP:
+				case ULP_MODE_TLS:
+					optval = 1;
+					break;
+				}
+			}
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof(optval));
 			break;
