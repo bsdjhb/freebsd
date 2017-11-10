@@ -585,6 +585,10 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	/* XXX: Stop handshake timer. */
 
+	CTR4(KTR_CXGBE, "%s: %d %s proto_ver %#x", __func__, toep->tid,
+	    G_KEY_GET_LOC(uk_ctx->l_p_key) == KEY_WRITE_RX ? "KEY_WRITE_RX" :
+	    "KEY_WRITE_TX", uk_ctx->proto_ver);
+
 	if (G_KEY_GET_LOC(uk_ctx->l_p_key) == KEY_WRITE_RX &&
 	    toep->ulp_mode != ULP_MODE_TLS)
 		return (EOPNOTSUPP);
@@ -742,16 +746,20 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_TLS_TOM:
-			if (toep->ulp_mode == ULP_MODE_TLS)
+			if (toep->ulp_mode == ULP_MODE_TLS) {
+				CTR2(KTR_CXGBE, "%s: CLR_TLS_TOM tid %d",
+				    __func__, toep->tid);
 				tls_clr_ofld_mode(toep);
-			else
+			} else
 				error = EOPNOTSUPP;
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_QUIES:
-			if (toep->ulp_mode == ULP_MODE_TLS)
+			if (toep->ulp_mode == ULP_MODE_TLS) {
+				CTR2(KTR_CXGBE, "%s: CLR_QUIES tid %d",
+				    __func__, toep->tid);
 				tls_clr_quiesce(toep);
-			else
+			} else
 				error = EOPNOTSUPP;
 			INP_WUNLOCK(inp);
 			break;
@@ -775,6 +783,8 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 					break;
 				}
 			}
+			CTR3(KTR_CXGBE, "%s: GET_TLS_TOM tid %d = %d",
+			    __func__, toep->tid, optval);
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof(optval));
 			break;
