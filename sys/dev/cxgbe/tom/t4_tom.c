@@ -201,10 +201,8 @@ free_toepcb(struct toepcb *toep)
 	case ULP_MODE_TCPDDP:
 		ddp_uninit_toep(toep);
 		break;
-	case ULP_MODE_TLS:
-		tls_uninit_toep(toep);
-		break;
 	}
+	tls_uninit_toep(toep);
 	free(toep, M_CXGBE);
 }
 
@@ -632,6 +630,7 @@ select_ntuple(struct vi_info *vi, struct l2t_entry *e)
 static int
 is_tls_sock(struct socket *so)
 {
+#ifdef TLS_RX
 	struct inpcb *inp = sotoinpcb(so);
 	static int tls_ports[] = { 443 };  /* XXX: Tunable? */
 	int i;
@@ -642,6 +641,7 @@ is_tls_sock(struct socket *so)
 		    inp->inp_fport == htons(tls_ports[i]))
 			return (1);
 	}
+#endif
 	return (0);
 }
 
@@ -665,12 +665,10 @@ set_ulp_mode(struct toepcb *toep, int ulp_mode)
 	CTR4(KTR_CXGBE, "%s: toep %p (tid %d) ulp_mode %d",
 	    __func__, toep, toep->tid, ulp_mode);
 	toep->ulp_mode = ulp_mode;
+	tls_init_toep(toep);
 	switch (ulp_mode) {
 	case ULP_MODE_TCPDDP:
 		ddp_init_toep(toep);
-		break;
-	case ULP_MODE_TLS:
-		tls_init_toep(toep);
 		break;
 	}
 }
