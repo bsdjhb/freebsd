@@ -1123,7 +1123,7 @@ t4_tod_output(struct toedev *tod, struct tcpcb *tp)
 
 	if (toep->ulp_mode == ULP_MODE_ISCSI)
 		t4_push_pdus(sc, toep, 0);
-	else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+	else if (tls_tx_key(toep))
 		t4_push_tls_records(sc, toep, 0);
 	else
 		t4_push_frames(sc, toep, 0);
@@ -1149,7 +1149,7 @@ t4_send_fin(struct toedev *tod, struct tcpcb *tp)
 	if (tp->t_state >= TCPS_ESTABLISHED) {
 		if (toep->ulp_mode == ULP_MODE_ISCSI)
 			t4_push_pdus(sc, toep, 0);
-		else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+		else if (tls_tx_key(toep))
 			t4_push_tls_records(sc, toep, 0);
 		else
 			t4_push_frames(sc, toep, 0);
@@ -1812,7 +1812,7 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CURVNET_SET(toep->vnet);
 		if (toep->ulp_mode == ULP_MODE_ISCSI)
 			t4_push_pdus(sc, toep, plen);
-		else if (toep->ulp_mode == ULP_MODE_TLS && tls_tx_key(toep))
+		else if (tls_tx_key(toep))
 			t4_push_tls_records(sc, toep, plen);
 		else
 			t4_push_frames(sc, toep, plen);
