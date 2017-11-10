@@ -717,7 +717,6 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	struct toepcb *toep;
-	struct adapter *sc;
 	int error, optval;
 
 	error = 0;
