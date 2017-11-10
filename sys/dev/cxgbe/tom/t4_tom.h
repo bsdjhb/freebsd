@@ -326,6 +326,12 @@ is_tls_offload(struct toepcb *toep)
 	return (toep->ulp_mode == ULP_MODE_TLS);
 }
 
+static inline int
+can_tls_offload(struct adapter *sc)
+{
+	return (sc->tt.tls && sc->cryptocaps & FW_CAPS_CONFIG_TLSKEYS);
+}
+
 /* t4_tom.c */
 struct toepcb *alloc_toepcb(struct vi_info *, int, int, int);
 struct toepcb *hold_toepcb(struct toepcb *);
