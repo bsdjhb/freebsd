@@ -631,7 +631,7 @@ void chssl_program_hwkey_context(SSL *s, int rw, int state)
 		s->chssl->key_context);
 #else
     ret = setsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_SET_TLS_CONTEXT,
-	s->chssl->key_context, sizeof(*s->chssl->key_context));
+	s->chssl->key_context, sizeof(struct tls_key_context));
 #endif
     if (!ret) {
         if (rw & KEY_WRITE_TX)
