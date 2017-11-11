@@ -1024,7 +1024,8 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 	KASSERT(toep->flags & TPF_FLOWC_WR_SENT,
 	    ("%s: flowc_wr not sent for tid %u.", __func__, toep->tid));
 
-	KASSERT(toep->ulp_mode == ULP_MODE_TLS,
+	KASSERT(toep->ulp_mode == ULP_MODE_NONE ||
+	    toep->ulp_mode == ULP_MODE_TCPDDP || toep->ulp_mode == ULP_MODE_TLS,
 	    ("%s: ulp_mode %u for toep %p", __func__, toep->ulp_mode, toep));
 	KASSERT(tls_tx_key(toep),
 	    ("%s: TX key not set for toep %p", __func__, toep));
