@@ -649,8 +649,7 @@ int
 select_ulp_mode(struct socket *so, struct adapter *sc)
 {
 
-	if (sc->tt.tls && sc->cryptocaps & FW_CAPS_CONFIG_TLSKEYS &&
-	    is_tls_sock(so))
+	if (can_tls_offload(sc) && is_tls_sock(so))
 		return (ULP_MODE_TLS);
 	else if (sc->tt.ddp && (so->so_options & SO_NO_DDP) == 0)
 		return (ULP_MODE_TCPDDP);
