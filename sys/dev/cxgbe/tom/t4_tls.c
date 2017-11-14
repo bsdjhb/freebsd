@@ -1229,10 +1229,10 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		if (imm_ivs) {
 			MPASS(iv_buffer == NULL);
 			iv_dst = buf;
-			buf = (char *)iv_dst + pdus * CIPHER_BLOCK_SIZE;
+			buf = (char *)iv_dst + iv_len;
 		} else
 			iv_dst = iv_buffer;
-		arc4rand(iv_dst, pdus * CIPHER_BLOCK_SIZE, 0);
+		arc4rand(iv_dst, iv_len, 0);
 
 		if (imm_payload) {
 			m_copydata(sndptr, sndptroff + TLS_HEADER_LENGTH,
@@ -1240,7 +1240,7 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		} else {
 			write_tlstx_sgl(buf, sndptr,
 			    sndptroff + TLS_HEADER_LENGTH, tls_size, iv_buffer,
-			    pdus * CIPHER_BLOCK_SIZE, nsegs, max_nsegs_1mbuf);
+			    iv_len, nsegs, max_nsegs_1mbuf);
 		}
 
 		KASSERT(toep->tx_credits >= credits,
