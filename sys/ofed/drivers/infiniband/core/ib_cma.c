@@ -3738,10 +3738,10 @@ static int cma_sidr_rep_handler(struct ib_cm_id *cm_id,
 			event.status = ret;
 			break;
 		}
-		ret = ib_init_ah_from_path(id_priv->id.device,
-					   id_priv->id.port_num,
-					   id_priv->id.route.path_rec,
-					   &event.param.ud.ah_attr);
+		ret = ib_init_ah_attr_from_path(id_priv->id.device,
+						id_priv->id.port_num,
+						id_priv->id.route.path_rec,
+						&event.param.ud.ah_attr);
 		if (ret) {
 			event.event = RDMA_CM_EVENT_ADDR_ERROR;
 			event.status = ret;
