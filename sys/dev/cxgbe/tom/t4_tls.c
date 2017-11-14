@@ -541,7 +541,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 	    V_T5_ULP_MEMIO_ORDER(1) | V_T5_ULP_MEMIO_IMM(1));
 	kwr->dlen = htobe32(V_ULP_MEMIO_DATA_LEN(kctxlen >> 5));
 	kwr->len16 = htobe32((toep->tid << 8) |
-	    roundup2(len - sizeof(struct work_request_hdr), 16));
+	    DIV_ROUND_UP(len - sizeof(struct work_request_hdr), 16));
 	kwr->kaddr = htobe32(V_ULP_MEMIO_ADDR(keyid >> 5));
 
 	/* sub command */
