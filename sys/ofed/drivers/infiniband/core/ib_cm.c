@@ -474,9 +474,9 @@ static int cm_init_av_for_lap(struct cm_port *port, struct ib_wc *wc,
 	 * used for sending any responses. If initialization is successful,
 	 * than new ah_attr is used by overwriting old one.
 	 */
-	ret = ib_init_ah_from_wc(port->cm_dev->ib_device,
-				 port->port_num, wc,
-				 grh, &new_ah_attr);
+	ret = ib_init_ah_attr_from_wc(port->cm_dev->ib_device,
+				      port->port_num, wc,
+				      grh, &new_ah_attr);
 	if (ret)
 		return ret;
 
@@ -489,8 +489,9 @@ static int cm_init_av_for_response(struct cm_port *port, struct ib_wc *wc,
 {
 	av->port = port;
 	av->pkey_index = wc->pkey_index;
-	return ib_init_ah_from_wc(port->cm_dev->ib_device, port->port_num, wc,
-				  grh, &av->ah_attr);
+	return ib_init_ah_attr_from_wc(port->cm_dev->ib_device,
+				       port->port_num, wc,
+				       grh, &av->ah_attr);
 }
 
 static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
