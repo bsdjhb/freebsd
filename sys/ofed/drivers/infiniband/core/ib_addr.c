@@ -894,22 +894,21 @@ static void resolve_cb(int status, struct sockaddr *src_addr,
 
 int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 				 const union ib_gid *dgid,
-				 u8 *dmac, if_t dev,
+				 u8 *dmac, if_t ndev,
 				 int *hoplimit)
 {
-	int ret = 0;
 	struct rdma_dev_addr dev_addr;
 	struct resolve_cb_context ctx;
-
 	union rdma_sockaddr sgid_addr, dgid_addr;
+	int ret;
 
 	rdma_gid2ip(&sgid_addr._sockaddr, sgid);
 	rdma_gid2ip(&dgid_addr._sockaddr, dgid);
 
 	memset(&dev_addr, 0, sizeof(dev_addr));
 
-	dev_addr.bound_dev_if = if_getindex(dev);
-	dev_addr.net = dev_net(dev);
+	dev_addr.bound_dev_if = if_getindex(ndev);
+	dev_addr.net = dev_net(ndev);
 
 	ctx.addr = &dev_addr;
 	init_completion(&ctx.comp);
@@ -925,11 +924,9 @@ int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 		return ret;
 
 	memcpy(dmac, dev_addr.dst_dev_addr, ETH_ALEN);
-	if (hoplimit)
-		*hoplimit = dev_addr.hoplimit;
-	return ret;
+	*hoplimit = dev_addr.hoplimit;
+	return 0;
 }
-EXPORT_SYMBOL(rdma_addr_find_l2_eth_by_grh);
 
 int addr_init(void)
 {
