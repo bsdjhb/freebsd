@@ -150,7 +150,7 @@ int rdma_addr_size_kss(struct sockaddr_storage *addr);
 
 int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 				 const union ib_gid *dgid,
-				 u8 *smac, if_t dev,
+				 u8 *dmac, if_t ndev,
 				 int *hoplimit);
 
 static inline u16 ib_addr_get_pkey(struct rdma_dev_addr *dev_addr)
