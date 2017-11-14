@@ -877,7 +877,6 @@ void rdma_addr_cancel(struct rdma_dev_addr *addr)
 EXPORT_SYMBOL(rdma_addr_cancel);
 
 struct resolve_cb_context {
-	struct rdma_dev_addr *addr;
 	struct completion comp;
 	int status;
 };
@@ -885,9 +884,6 @@ struct resolve_cb_context {
 static void resolve_cb(int status, struct sockaddr *src_addr,
 	     struct rdma_dev_addr *addr, void *context)
 {
-	if (!status)
-		memcpy(((struct resolve_cb_context *)context)->addr,
-		       addr, sizeof(struct rdma_dev_addr));
 	((struct resolve_cb_context *)context)->status = status;
 	complete(&((struct resolve_cb_context *)context)->comp);
 }
@@ -910,7 +906,6 @@ int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 	dev_addr.bound_dev_if = if_getindex(ndev);
 	dev_addr.net = dev_net(ndev);
 
-	ctx.addr = &dev_addr;
 	init_completion(&ctx.comp);
 	ret = rdma_resolve_ip(&self, &sgid_addr._sockaddr, &dgid_addr._sockaddr,
 			&dev_addr, 1000, resolve_cb, &ctx);
