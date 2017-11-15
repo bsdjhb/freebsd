@@ -502,6 +502,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 {
 	struct tls_ofld_info *tls_ofld = &toep->tls;
 	struct adapter *sc = td_adapter(toep->td);
+	struct ofld_tx_sdesc *txsd;
 	int kwrlen, kctxlen, keyid, len;
 	struct wrqe *wr;
 	struct tls_key_req *kwr;
@@ -511,6 +512,9 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
+	if (toep->txsd_avail == 0)
+		return (EAGAIN);
+		
 	/* Dont initialize key for re-neg */
 	if (!G_KEY_CLR_LOC(k_ctx->l_p_key)) {
 		if ((keyid = get_new_keyid(toep, k_ctx)) < 0) {
@@ -559,6 +563,14 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 		tls_ofld->rx_key_addr = keyid;
 		prepare_rxkey_wr(kctx, k_ctx);
 	}
+
+	txsd = &toep->txsd[toep->txsd_pidx];
+	txsd->tx_credits = DIV_ROUND_UP(len, 16);
+	txsd->plen = 0;
+	toep->tx_credits -= txsd->tx_credits;
+	if (__predict_false(++toep->txsd_pidx == toep->txsd_total))
+		toep->txsd_pidx = 0;
+	toep->txsd_avail--;
 
 	t4_wrq_tx(sc, wr);
 
