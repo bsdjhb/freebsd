@@ -572,6 +572,10 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 		toep->txsd_pidx = 0;
 	toep->txsd_avail--;
 
+#if 1
+	device_printf(sc->dev, "submitting TLS key for addr %#x\n", keyid);
+	hexdump(kwr, len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+#endif
 	t4_wrq_tx(sc, wr);
 
 	return (0);
@@ -1004,6 +1008,38 @@ write_tlstx_sgl(void *dst, struct mbuf *start, int skip, int plen,
 	    __func__, nsegs, start, iv_buffer));
 }
 
+#if 1
+#include <vm/vm.h>
+#include <vm/pmap.h>
+#include <vm/vm_param.h>
+
+static void
+dump_payload(struct adapter *sc, const void *dst, int sgl_nsegs)
+{
+	const struct ulptx_sgl *usgl;
+	uint64_t addr;
+	uint32_t len;
+	int i;
+
+	usgl = dst;
+	device_printf(sc->dev, "payload:\n");
+	for (i = 0; i < sgl_nsegs; i++) {
+		if (i == 0) {
+			addr = usgl->addr0;
+			len = usgl->len0;
+		} else {
+			addr = usgl->sge[(i - 1) / 2].addr[(i - 1) & 1];
+			len = usgl->sge[(i - 1) / 2].len[(i - 1) & 1];
+		}
+		addr = be64toh(addr);
+		len = be32toh(len);
+		printf("SGL[%d]: (%#lx:%#x)\n", i, addr, len);
+		hexdump((void *)PHYS_TO_DMAP(addr), len, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
+	}
+}
+#endif
+
 /*
  * Similar to t4_push_frames() but handles TLS sockets when TLS offload
  * is enabled.  Rather than transmitting bulk data, the socket buffer
@@ -1296,6 +1332,13 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		}
 		toep->txsd_avail--;
 
+#if 1
+		device_printf(sc->dev, "submitting TLS record %d:%#x\n",
+		    thdr.type, tls_size);
+		hexdump(txwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+		if (!imm_payload)
+			dump_payload(sc, buf, nsegs);
+#endif
 		t4_l2t_send(sc, wr, toep->l2te);
 	}
 }
