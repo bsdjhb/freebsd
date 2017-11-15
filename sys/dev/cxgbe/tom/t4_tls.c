@@ -514,7 +514,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 
 	if (toep->txsd_avail == 0)
 		return (EAGAIN);
-		
+
 	/* Dont initialize key for re-neg */
 	if (!G_KEY_CLR_LOC(k_ctx->l_p_key)) {
 		if ((keyid = get_new_keyid(toep, k_ctx)) < 0) {
