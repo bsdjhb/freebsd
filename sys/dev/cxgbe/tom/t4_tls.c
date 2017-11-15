@@ -597,7 +597,7 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	/* XXX: Stop handshake timer. */
 
-	CTR4(KTR_CXGBE, "%s: %d %s proto_ver %#x", __func__, toep->tid,
+	CTR4(KTR_CXGBE, "%s: tid %d %s proto_ver %#x", __func__, toep->tid,
 	    G_KEY_GET_LOC(uk_ctx->l_p_key) == KEY_WRITE_RX ? "KEY_WRITE_RX" :
 	    "KEY_WRITE_TX", uk_ctx->proto_ver);
 
