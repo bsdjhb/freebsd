@@ -14,7 +14,19 @@
 #include "ecc.h"
 #include "qpi.h"
 
-/* Fields in MISC for QPI MC8-MC11. */
+/*
+ * Fields in MISC for QPI memory controller memory channel errors.
+ *
+ * The SDM claims this is only used for model 0x1a (Nehalem) but it
+ * seems to be used with other CPUs.  The SDM claims that memory
+ * controller errors are logged as bus errors in newer CPU models, but
+ * in practice ECC errors are logged as memory channel errors on newer
+ * CPUs.
+ *
+ * The model 0x1a section notes that these errors are only logged in
+ * bank 8.  Errors from other CPU models have been observed in banks
+ * 7 and 11.
+ */
 #define	QPI_MC8_MISC_RTID	0x00000000000000ff
 #define	QPI_MC8_MISC_DIMM	0x0000000000030000
 #define	QPI_MC8_MISC_CHANNEL	0x00000000000c0000
@@ -24,7 +36,6 @@ SET_DECLARE(qpi_dimm_labelers, struct qpi_dimm_labeler);
 
 static TAILQ_HEAD(, dimm) dimms = TAILQ_HEAD_INITIALIZER(dimms);
 static int socket_divisor = 1;
-static int cpu_model;
 
 /*
  * XXX: This backend assumes that there is one set of DIMM banks per
@@ -70,20 +81,12 @@ qpi_probe(const char *vendor, int family, int model)
 		return (0);
 	if (family != 6)
 		return (0);
-	switch (model) {
-	case 0x1a:	/* Nehalem */
-	case 0x2a:	/* Sandybridge */
-	case 0x2c:	/* Westmere-EP */
-	case 0x2d:	/* Romley */
-	case 0x2f:	/* E7 */
-	case 0x3e:	/* Romley V2 */
-		break;
-	default:
+
+	/* Ignore pre-Nehalem CPU models. */
+	if (model < 0x1a || model == 0x1d)
 		return (0);
-	}
 
 	socket_probe();
-	cpu_model = model;
 	return (100);
 }
 
@@ -95,8 +98,20 @@ qpi_handle_event(struct mca_record *mr)
 
 	mca_error = mr->mr_status & MC_STATUS_MCA_ERROR;
 
-	/* Memory controller error. */
-	if (mr->mr_bank >= 8 && (mca_error & 0xef80) == 0x0080) {
+	/*
+	 * Memory channel error in a memory controller bank.
+	 *
+	 * Some CPUs log memory write errors which do not have an
+	 * associated address and which have a MISC value which does
+	 * not seem to match any of the MISC formats described in the
+	 * SDM.  Ignore those errors for now.
+	 *
+	 * This assumes MSR_ERROR_CONTROL.1 is not set.  We could
+	 * perhaps infer the alternate decoding when this bit is set
+	 * by checking for the valid bits in the top two bits of MISC.
+	 */
+	if (mr->mr_bank >= 7 && (mca_error & 0xef80) == 0x0080 &&
+	    mr->mr_status & MC_STATUS_ADDRV) {
 		d = dimm_find(mr->mr_apic_id / socket_divisor,
 		    (mr->mr_misc & QPI_MC8_MISC_CHANNEL) >> 18,
 		    (mr->mr_misc & QPI_MC8_MISC_DIMM) >> 16);
