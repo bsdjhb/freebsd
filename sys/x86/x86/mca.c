@@ -1162,6 +1162,21 @@ _mca_init(int boot)
 		    PCPU_GET(cmci_mask) != 0 && boot)
 			lapic_enable_cmc();
 #endif
+
+		/*
+		 * Enable Local Machine Checks if supported.  This
+		 * permits certain errors to be logged to a single CPU
+		 * rather than a group of CPUs.
+		 */
+		if (mcg_cap & MCG_CAP_LMCE_P &&
+		    (rdmsr(MSR_IA32_FEATURE_CONTROL) &
+		    (IA32_FEATURE_CONTROL_LOCK |
+		    IA32_FEATURE_CONTROL_LMCE_ON)) ==
+		    (IA32_FEATURE_CONTROL_LOCK |
+		    IA32_FEATURE_CONTROL_LMCE_ON)) {
+			ctl = rdmsr(MSR_MCG_EXT_CTL);
+			wrmsr(MSR_MCG_EXT_CTL, ctl | MCG_EXT_CTL_LMCE);
+		}
 	}
 
 	load_cr4(rcr4() | CR4_MCE);
