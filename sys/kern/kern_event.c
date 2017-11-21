@@ -33,6 +33,10 @@ __FBSDID("$FreeBSD$");
 #include "opt_ktrace.h"
 #include "opt_kqueue.h"
 
+#ifdef COMPAT_FREEBSD11
+#define	_WANT_KEVENT11
+#endif
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/capsicum.h>
@@ -1005,15 +1009,6 @@ kevent_copyin(void *arg, struct kevent *kevp, int count)
 }
 
 #ifdef COMPAT_FREEBSD11
-struct kevent_freebsd11 {
-	__uintptr_t	ident;		/* identifier for this event */
-	short		filter;		/* filter for event */
-	unsigned short	flags;
-	unsigned int	fflags;
-	__intptr_t	data;
-	void		*udata;		/* opaque user data identifier */
-};
-
 static int
 kevent11_copyout(void *arg, struct kevent *kevp, int count)
 {

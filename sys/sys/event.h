@@ -71,6 +71,18 @@ struct kevent {
 	__uint64_t	ext[4];
 };
 
+#if defined(_WANT_KEVENT11)
+/* Older structure used in FreeBSD 11.x and older. */
+struct kevent_freebsd11 {
+	__uintptr_t	ident;		/* identifier for this event */
+	short		filter;		/* filter for event */
+	unsigned short	flags;
+	unsigned int	fflags;
+	__intptr_t	data;
+	void		*udata;		/* opaque user data identifier */
+};
+#endif
+
 /* actions */
 #define EV_ADD		0x0001		/* add event to kq (implies enable) */
 #define EV_DELETE	0x0002		/* delete event from kq */

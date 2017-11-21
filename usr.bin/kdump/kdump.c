@@ -44,6 +44,7 @@ static char sccsid[] = "@(#)kdump.c	8.1 (Berkeley) 6/6/93";
 __FBSDID("$FreeBSD$");
 
 #define _WANT_KERNEL_ERRNO
+#define	_WANT_KEVENT11
 #include <sys/param.h>
 #include <sys/capsicum.h>
 #include <sys/errno.h>
@@ -2142,9 +2143,18 @@ ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 		else
 			first = false;
 		if (strcmp(name, "kevent") == 0) {
-			if (ksa->struct_size != sizeof(struct kevent))
+			switch (ksa->struct_size) {
+			case sizeof(struct kevent_freebsd11):
+				memset(&kev, 0, sizeof(struct kevent));
+				memcpy(&kev, data,
+				    sizeof(struct kevent_freebsd11));
+				break;
+			case sizeof(struct kevent):
+				memcpy(&kev, data, sizeof(struct kevent));
+				break;
+			default:
 				goto bad_size;
-			memcpy(&kev, data, sizeof(struct kevent));
+			}
 			ktrkevent(&kev);
 		} else {
 			printf("<unknown structure> }\n");
