@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/capsicum.h>
 #include <sys/types.h>
+#define	_WANT_FREEBSD11_KEVENT
 #include <sys/event.h>
 #include <sys/ioccom.h>
 #include <sys/mount.h>
@@ -152,6 +153,9 @@ static struct syscall decoded_syscalls[] = {
 	{ .name = "compat11.fstatat", .ret_type = 1, .nargs = 4,
 	  .args = { { Atfd, 0 }, { Name | IN, 1 }, { Stat11 | OUT, 2 },
 		    { Atflags, 3 } } },
+	{ .name = "compat11.kevent", .ret_type = 1, .nargs = 6,
+	  .args = { { Int, 0 }, { Kevent11, 1 }, { Int, 2 },
+		    { Kevent11 | OUT, 3 }, { Int, 4 }, { Timespec, 5 } } },
 	{ .name = "compat11.lstat", .ret_type = 1, .nargs = 2,
 	  .args = { { Name | IN, 0 }, { Stat11 | OUT, 1 } } },
 	{ .name = "compat11.stat", .ret_type = 1, .nargs = 2,
@@ -1736,6 +1740,43 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 			fprintf(fp, "0x%lx", args[sc->offset]);
 		}
 		free(ke);
+		break;
+	}
+	case Kevent11: {
+		struct kevent_freebsd11 *ke11;
+		struct kevent ke;
+		int numevents = -1;
+		size_t bytes;
+		int i;
+
+		if (sc->offset == 1)
+			numevents = args[sc->offset+1];
+		else if (sc->offset == 3 && retval[0] != -1)
+			numevents = retval[0];
+
+		if (numevents >= 0) {
+			bytes = sizeof(struct kevent_freebsd11) * numevents;
+			if ((ke11 = malloc(bytes)) == NULL)
+				err(1,
+				    "Cannot malloc %zu bytes for kevent array",
+				    bytes);
+		} else
+			ke11 = NULL;
+		memset(&ke, 0, sizeof(ke));
+		if (numevents >= 0 && get_struct(pid, (void *)args[sc->offset],
+		    ke11, bytes) != -1) {
+			fputc('{', fp);
+			for (i = 0; i < numevents; i++) {
+				fputc(' ', fp);
+				memcpy(&ke, &ke11[i],
+				    sizeof(struct kevent_freebsd11));
+				print_kevent(fp, &ke);
+			}
+			fputs(" }", fp);
+		} else {
+			fprintf(fp, "0x%lx", args[sc->offset]);
+		}
+		free(ke11);
 		break;
 	}
 	case Stat: {
