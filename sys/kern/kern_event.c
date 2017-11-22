@@ -119,7 +119,7 @@ static void	kqueue_fo_release(int filt);
 struct g_kevent_args;
 static int	kern_kevent_generic(struct thread *td,
 		    struct g_kevent_args *uap,
-		    struct kevent_copyops *k_ops);
+		    struct kevent_copyops *k_ops, const char *struct_name);
 
 static fo_ioctl_t	kqueue_ioctl;
 static fo_poll_t	kqueue_poll;
@@ -936,12 +936,12 @@ sys_kevent(struct thread *td, struct kevent_args *uap)
 		.timeout = uap->timeout,
 	};
 
-	return (kern_kevent_generic(td, &gk_args, &k_ops));
+	return (kern_kevent_generic(td, &gk_args, &k_ops, "kevent"));
 }
 
 static int
 kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
-    struct kevent_copyops *k_ops)
+    struct kevent_copyops *k_ops, const char *struct_name)
 {
 	struct timespec ts, *tsp;
 	int error;
@@ -956,7 +956,7 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
 
 #ifdef KTRACE
 	if (KTRPOINT(td, KTR_STRUCT_ARRAY))
-		ktrstructarray("kevent", UIO_USERSPACE, uap->changelist,
+		ktrstructarray(struct_name, UIO_USERSPACE, uap->changelist,
 		    uap->nchanges, k_ops->kevent_size);
 #endif
 
@@ -965,7 +965,7 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
 
 #ifdef KTRACE
 	if (error == 0 && KTRPOINT(td, KTR_STRUCT_ARRAY))
-		ktrstructarray("kevent", UIO_USERSPACE, uap->eventlist,
+		ktrstructarray(struct_name, UIO_USERSPACE, uap->eventlist,
 		    td->td_retval[0], k_ops->kevent_size);
 #endif
 
@@ -1083,7 +1083,7 @@ freebsd11_kevent(struct thread *td, struct freebsd11_kevent_args *uap)
 		.timeout = uap->timeout,
 	};
 
-	return (kern_kevent_generic(td, &gk_args, &k_ops));
+	return (kern_kevent_generic(td, &gk_args, &k_ops, "kevent_freebsd11"));
 }
 #endif
 
