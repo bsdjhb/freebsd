@@ -34,7 +34,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_kqueue.h"
 
 #ifdef COMPAT_FREEBSD11
-#define	_WANT_KEVENT11
+#define	_WANT_FREEBSD11_KEVENT
 #endif
 
 #include <sys/param.h>

@@ -71,7 +71,7 @@ struct kevent {
 	__uint64_t	ext[4];
 };
 
-#if defined(_WANT_KEVENT11)
+#if defined(_WANT_FREEBSD11_KEVENT)
 /* Older structure used in FreeBSD 11.x and older. */
 struct kevent_freebsd11 {
 	__uintptr_t	ident;		/* identifier for this event */
