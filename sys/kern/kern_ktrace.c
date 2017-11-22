@@ -744,7 +744,7 @@ ktrcsw(int out, int user, const char *wmesg)
 }
 
 void
-ktrstruct(const char *name, void *data, size_t datalen)
+ktrstruct(const char *name, const void *data, size_t datalen)
 {
 	struct ktr_request *req;
 	char *buf;
@@ -767,7 +767,7 @@ ktrstruct(const char *name, void *data, size_t datalen)
 }
 
 void
-ktrstructarray(const char *name, enum uio_seg seg, void *data,
+ktrstructarray(const char *name, enum uio_seg seg, const void *data,
     int num_items, size_t struct_size)
 {
 	struct ktr_request *req;
