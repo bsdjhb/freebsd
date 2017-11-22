@@ -1768,8 +1768,12 @@ print_arg(struct syscall_args *sc, unsigned long *args, long *retval,
 			fputc('{', fp);
 			for (i = 0; i < numevents; i++) {
 				fputc(' ', fp);
-				memcpy(&ke, &ke11[i],
-				    sizeof(struct kevent_freebsd11));
+				ke.ident = ke11[i].ident;
+				ke.filter = ke11[i].filter;
+				ke.flags = ke11[i].flags;
+				ke.fflags = ke11[i].fflags;
+				ke.data = ke11[i].data;
+				ke.udata = ke11[i].udata;
 				print_kevent(fp, &ke);
 			}
 			fputs(" }", fp);

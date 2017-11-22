@@ -2113,6 +2113,7 @@ ktrkevent(struct kevent *kev)
 void
 ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 {
+	struct kevent_freebsd11 kev11;
 	struct kevent kev;
 	char *name, *data;
 	size_t namelen, datalen;
@@ -2150,8 +2151,14 @@ ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 		} else if (strcmp(name, "kevent_freebsd11") == 0) {
 			if (ksa->struct_size != sizeof(struct kevent_freebsd11))
 				goto bad_size;
+			memcpy(&kev11, data, sizeof(struct kevent_freebsd11));
 			memset(&kev, 0, sizeof(struct kevent));
-			memcpy(&kev, data, sizeof(struct kevent_freebsd11));
+			kev.ident = kev11.ident;
+			kev.filter = kev11.filter;
+			kev.flags = kev11.flags;
+			kev.fflags = kev11.fflags;
+			kev.data = kev11.data;
+			kev.udata = kev11.udata;
 			ktrkevent(&kev);
 		} else {
 			printf("<unknown structure> }\n");
