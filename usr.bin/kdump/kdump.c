@@ -44,6 +44,9 @@ static char sccsid[] = "@(#)kdump.c	8.1 (Berkeley) 6/6/93";
 __FBSDID("$FreeBSD$");
 
 #define _WANT_KERNEL_ERRNO
+#ifdef __LP64__
+#define	_WANT_KEVENT32
+#endif
 #define	_WANT_FREEBSD11_KEVENT
 #include <sys/param.h>
 #include <sys/capsicum.h>
@@ -2113,7 +2116,6 @@ ktrkevent(struct kevent *kev)
 void
 ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 {
-	struct kevent_freebsd11 kev11;
 	struct kevent kev;
 	char *name, *data;
 	size_t namelen, datalen;
@@ -2144,15 +2146,17 @@ ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 		else
 			first = false;
 		if (strcmp(name, "kevent") == 0) {
-			if (ksa->struct_size != sizeof(struct kevent))
+			if (ksa->struct_size != sizeof(kev))
 				goto bad_size;
-			memcpy(&kev, data, sizeof(struct kevent));
+			memcpy(&kev, data, sizeof(kev));
 			ktrkevent(&kev);
 		} else if (strcmp(name, "kevent_freebsd11") == 0) {
-			if (ksa->struct_size != sizeof(struct kevent_freebsd11))
+			struct kevent_freebsd11 kev11;
+
+			if (ksa->struct_size != sizeof(kev11))
 				goto bad_size;
-			memcpy(&kev11, data, sizeof(struct kevent_freebsd11));
-			memset(&kev, 0, sizeof(struct kevent));
+			memcpy(&kev11, data, sizeof(kev11));
+			memset(&kev, 0, sizeof(kev));
 			kev.ident = kev11.ident;
 			kev.filter = kev11.filter;
 			kev.flags = kev11.flags;
@@ -2160,6 +2164,40 @@ ktrstructarray(struct ktr_struct_array *ksa, size_t buflen)
 			kev.data = kev11.data;
 			kev.udata = kev11.udata;
 			ktrkevent(&kev);
+#ifdef _WANT_KEVENT32
+		} else if (strcmp(name, "kevent32") == 0) {
+			struct kevent32 kev32;
+
+			if (ksa->struct_size != sizeof(kev32))
+				goto bad_size;
+			memcpy(&kev32, data, sizeof(kev32));
+			memset(&kev, 0, sizeof(kev));
+			kev.ident = kev32.ident;
+			kev.filter = kev32.filter;
+			kev.flags = kev32.flags;
+			kev.fflags = kev32.fflags;
+#if BYTE_ORDER == BIG_ENDIAN
+			kev.data = kev32.data2 | ((int64_t)kev32.data1 << 32);
+#else
+			kev.data = kev32.data1 | ((int64_t)kev32.data2 << 32);
+#endif
+			kev.udata = (void *)(uintptr_t)kev32.udata;
+			ktrkevent(&kev);
+		} else if (strcmp(name, "kevent32_freebsd11") == 0) {
+			struct kevent32_freebsd11 kev32;
+
+			if (ksa->struct_size != sizeof(kev32))
+				goto bad_size;
+			memcpy(&kev32, data, sizeof(kev32));
+			memset(&kev, 0, sizeof(kev));
+			kev.ident = kev32.ident;
+			kev.filter = kev32.filter;
+			kev.flags = kev32.flags;
+			kev.fflags = kev32.fflags;
+			kev.data = kev32.data;
+			kev.udata = (void *)(uintptr_t)kev32.udata;
+			ktrkevent(&kev);
+#endif
 		} else {
 			printf("<unknown structure> }\n");
 			return;
