@@ -944,6 +944,9 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
     struct kevent_copyops *k_ops, const char *struct_name)
 {
 	struct timespec ts, *tsp;
+#ifdef KTRACE
+	struct kevent *eventlist = uap->eventlist;
+#endif
 	int error;
 
 	if (uap->timeout != NULL) {
@@ -965,7 +968,7 @@ kern_kevent_generic(struct thread *td, struct g_kevent_args *uap,
 
 #ifdef KTRACE
 	if (error == 0 && KTRPOINT(td, KTR_STRUCT_ARRAY))
-		ktrstructarray(struct_name, UIO_USERSPACE, uap->eventlist,
+		ktrstructarray(struct_name, UIO_USERSPACE, eventlist,
 		    td->td_retval[0], k_ops->kevent_size);
 #endif
 
