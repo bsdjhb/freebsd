@@ -2576,12 +2576,7 @@ vmx_dr_enter_guest(struct vmxctx *vmxctx)
 {
 	register_t rflags;
 
-	/* Save host debug registers. */
-	vmxctx->host_dr0 = rdr0();
-	vmxctx->host_dr1 = rdr1();
-	vmxctx->host_dr2 = rdr2();
-	vmxctx->host_dr3 = rdr3();
-	vmxctx->host_dr6 = rdr6();
+	/* Save host control debug registers. */
 	vmxctx->host_dr7 = rdr7();
 	vmxctx->host_debugctl = rdmsr(MSR_DEBUGCTLMSR);
 
@@ -2602,6 +2597,13 @@ vmx_dr_enter_guest(struct vmxctx *vmxctx)
 	rflags = read_rflags();
 	vmxctx->host_tf = rflags & PSL_T;
 	write_rflags(rflags & ~PSL_T);
+
+	/* Save host debug registers. */
+	vmxctx->host_dr0 = rdr0();
+	vmxctx->host_dr1 = rdr1();
+	vmxctx->host_dr2 = rdr2();
+	vmxctx->host_dr3 = rdr3();
+	vmxctx->host_dr6 = rdr6();
 
 	/* Restore guest debug registers. */
 	load_dr0(vmxctx->guest_dr0);

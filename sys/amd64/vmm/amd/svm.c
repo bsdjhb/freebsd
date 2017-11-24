@@ -1905,12 +1905,7 @@ static __inline void
 svm_dr_enter_guest(struct svm_regctx *gctx)
 {
 
-	/* Save host debug registers. */
-	gctx->host_dr0 = rdr0();
-	gctx->host_dr1 = rdr1();
-	gctx->host_dr2 = rdr2();
-	gctx->host_dr3 = rdr3();
-	gctx->host_dr6 = rdr6();
+	/* Save host control debug registers. */
 	gctx->host_dr7 = rdr7();
 	gctx->host_debugctl = rdmsr(MSR_DEBUGCTLMSR);
 
@@ -1922,6 +1917,13 @@ svm_dr_enter_guest(struct svm_regctx *gctx)
 	 */
 	load_dr7(0);
 	wrmsr(MSR_DEBUGCTLMSR, 0);
+
+	/* Save host debug registers. */
+	gctx->host_dr0 = rdr0();
+	gctx->host_dr1 = rdr1();
+	gctx->host_dr2 = rdr2();
+	gctx->host_dr3 = rdr3();
+	gctx->host_dr6 = rdr6();
 
 	/* Restore guest debug registers. */
 	load_dr0(gctx->sctx_dr0);
