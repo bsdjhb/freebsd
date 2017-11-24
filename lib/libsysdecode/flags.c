@@ -585,8 +585,8 @@ sysdecode_kevent_fflags(FILE *fp, short filter, int fflags, int base)
 		 * NOTE_TRIGGER is always an input event.
 		 */
 		if (ctrl != NOTE_FFNOP || fflags & NOTE_TRIGGER) {
-			fputs(lookup_value(kevent_user_ffctrl, ctrl), fp);
-			fprintf(fp, "|%#x", data);
+			fprintf(fp, "%s|%#x",
+			    lookup_value(kevent_user_ffctrl, ctrl), data);
 		} else {
 			print_integer(fp, data, base);
 		}
