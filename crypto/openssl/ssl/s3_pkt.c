@@ -508,8 +508,12 @@ static int ssl3_get_record(SSL *s)
     }
     }
 #ifdef TLS_DEBUG
+#ifdef CHSSL_OFFLOAD
     printf("\n dec %d host enc:%d mac:%d enc_err:%d\n",
 	   rr->length,SSL_enc_host(s),SSL_mac_host(s),enc_err);
+#else
+    printf("\n dec %d\n", rr->length);
+#endif
     {
         unsigned int z;
         for (z = 0; z < rr->length; z++)
