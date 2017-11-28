@@ -1228,6 +1228,9 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 				else
 					SOCKBUF_UNLOCK(sb);
 				SOCKBUF_UNLOCK_ASSERT(sb);
+				CTR3(KTR_CXGBE,
+			    "%s: tid %d failed to alloc IV space len %d",
+				    __func__, toep->tid, iv_len);
 				return;
 			}
 		} else
