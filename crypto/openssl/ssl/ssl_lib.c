@@ -745,7 +745,7 @@ int SSL_set_fd(SSL *s, int fd)
     }
     BIO_set_fd(bio, fd, BIO_NOCLOSE);
     SSL_set_bio(s, bio, bio);
-    printf("SSL_set_fd: fd:%d bio_fd:%d BIO:%p:%p:%p\n",fd,bio->num,bio,s->wbio,s->rbio);	
+    //printf("SSL_set_fd: fd:%d bio_fd:%d BIO:%p:%p:%p\n",fd,bio->num,bio,s->wbio,s->rbio);	
     ret = 1;
  err:
     return (ret);
