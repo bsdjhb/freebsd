@@ -445,7 +445,7 @@ static int ssl3_get_record(SSL *s)
         i = rr->length;
         n = ssl3_read_n(s, i, i, 1);
         if (n <= 0) {
-	    printf("%s n:%d \n",__func__,n);
+	    //printf("%s n:%d \n",__func__,n);
             return (n);         /* error or non-blocking io */
 	}
         /*
