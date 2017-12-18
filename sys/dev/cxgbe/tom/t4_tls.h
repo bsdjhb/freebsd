@@ -147,6 +147,12 @@ struct tls_key_context {
 /* Get returns int of enabled (1) / disabled (0). */
 #define	TCP_TLSOM_GET_TLS_TOM		(TCP_VENDOR + 1)
 
+enum {
+	TLS_TOM_NONE = 0,
+	TLS_TOM_TXONLY,
+	TLS_TOM_BOTH
+};
+
 /* Set with no value. */
 #define	TCP_TLSOM_CLR_TLS_TOM		(TCP_VENDOR + 2)
 

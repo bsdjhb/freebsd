@@ -358,7 +358,7 @@ static int ssl3_get_record(SSL *s)
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
     #define SSL3_RT_CHERROR 127
-    if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
+    if (SSL_ofld_vers(s) && SSL_ofld_rx(s) && (*(p) == SSL3_RT_CHERROR)) {
         s->rstate = SSL_ST_READ_ERROR;
     } else
 #endif
@@ -366,7 +366,8 @@ static int ssl3_get_record(SSL *s)
 
 	if (s->msg_callback
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
-            && (SSL_ofld_vers(s) && (s->rstate != SSL_ST_READ_ERROR))
+            && (SSL_ofld_vers(s) && SSL_ofld_rx(s)
+		&& (s->rstate != SSL_ST_READ_ERROR))
 #endif
         )
             s->msg_callback(0, 0, SSL3_RT_HEADER, p, 5, s,
@@ -423,7 +424,7 @@ static int ssl3_get_record(SSL *s)
     }
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
-    if (SSL_Chelsio_ofld(s)) {
+    if (SSL_Chelsio_ofld(s) && SSL_ofld_rx(s)) {
         if (s->rstate == SSL_ST_READ_ERROR) {
             i = rr->length;
             n = ssl3_read_n(s, i, i, 1);
@@ -490,7 +491,7 @@ static int ssl3_get_record(SSL *s)
     rr->data = rr->input;
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
-    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_ofld_rx(s)))
 #endif
     {
     enc_err = s->method->ssl3_enc->enc(s, 0);
@@ -528,7 +529,7 @@ static int ssl3_get_record(SSL *s)
 	(EVP_MD_CTX_md(s->read_hash) != NULL)
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
 	&&
-	!(SSL_mac_offload(s) && SSL_ofld_vers(s))
+	!(SSL_mac_offload(s) && SSL_ofld_vers(s) && SSL_ofld_rx(s))
 #endif
        ) {
         /* s->read_hash != NULL => mac_size != -1 */
@@ -1794,10 +1795,11 @@ int ssl3_do_change_cipher_spec(SSL *s)
      */
     if (s->state & SSL_ST_CONNECT) {
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
-        if (SSL_ofld_rx(s))
+	if (SSL_ofld_rx(s)) {
             chssl_program_hwkey_context(s, KEY_WRITE_RX, SSL_ST_CONNECT);
-        if (SSL_clr_quiesce(s))
-            chssl_clear_tom(s);
+	    if (SSL_clr_quiesce(s))
+		chssl_clear_tom(s);
+	}
 #endif
         sender = s->method->ssl3_enc->server_finished_label;
         slen = s->method->ssl3_enc->server_finished_label_len;

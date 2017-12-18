@@ -779,14 +779,19 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	case SOPT_GET:
 		switch (sopt->sopt_name) {
 		case TCP_TLSOM_GET_TLS_TOM:
-			/* TLS TX is permitted on any TOE socket. */
-			optval = 0;
+			/*
+			 * TLS TX is permitted on any TOE socket, but
+			 * TLS RX requires a TLS ULP mode.
+			 */
+			optval = TLS_TOM_NONE;
 			if (can_tls_offload(td_adapter(toep->td))) {
 				switch (toep->ulp_mode) {
 				case ULP_MODE_NONE:
 				case ULP_MODE_TCPDDP:
+					optval = TLS_TOM_TXONLY;
+					break;
 				case ULP_MODE_TLS:
-					optval = 1;
+					optval = TLS_TOM_BOTH;
 					break;
 				}
 			}

@@ -507,7 +507,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     rr->data = rr->input;
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
-    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s)))
+    if (!(SSL_enc_offload(s) && SSL_ofld_vers(s) && SSL_ofld_rx(s)))
     {
 #endif
     enc_err = s->method->ssl3_enc->enc(s, 0);
@@ -540,7 +540,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
     if ((sess != NULL) &&
         (s->enc_read_ctx != NULL) && (EVP_MD_CTX_md(s->read_hash) != NULL)
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
-        && !(SSL_mac_offload(s) && SSL_ofld_vers(s))
+        && !(SSL_mac_offload(s) && SSL_ofld_vers(s) && SSL_ofld_rx(s))
 #endif
 	) {
         /* s->read_hash != NULL => mac_size != -1 */
@@ -700,7 +700,7 @@ int dtls1_get_record(SSL *s)
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
         #define SSL3_RT_CHERROR 127
-	if (SSL_ofld_vers(s) && (*(p) == SSL3_RT_CHERROR)) {
+	if (SSL_ofld_vers(s) && SSL_ofld_rx(s) && (*(p) == SSL3_RT_CHERROR)) {
 		s->rstate = SSL_ST_READ_ERROR;
 	}
 	else
@@ -755,7 +755,7 @@ int dtls1_get_record(SSL *s)
     }
 
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_DTLS)
-    if (SSL_Chelsio_ofld(s)) {
+    if (SSL_Chelsio_ofld(s) && SSL_ofld_rx(s)) {
 	    if (s->rstate == SSL_ST_READ_ERROR) {
 		    i = rr->length;
 		    n = ssl3_read_n(s, i, i, 1);

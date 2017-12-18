@@ -151,16 +151,27 @@ int ssl_tls_offload(SSL *s)
 
 #ifdef __linux__
     ret = ioctl(s->chssl->sock_fd, IOCTL_TLSOM_GET_TLS_TOM, &mode);
+    if (!ret && mode)
+        s->chssl->ofld_rx_enable = s->chssl->ofld_tx_enable = TLS_OFLD_TRUE;
+    else
+        s->chssl->ofld_rx_enable = s->chssl->ofld_tx_enable = TLS_OFLD_FALSE;
 #else
     optlen = sizeof(mode);
     ret = getsockopt(s->chssl->sock_fd, IPPROTO_TCP, TCP_TLSOM_GET_TLS_TOM,
 	&mode, &optlen);
+    s->chssl->ofld_rx_enable = s->chssl->ofld_tx_enable = TLS_OFLD_FALSE;
+    if (ret == 0) {
+        switch (mode) {
+        case TLS_TOM_BOTH:
+            s->chssl->ofld_rx_enable = TLS_OFLD_TRUE;
+            /* FALLTHROUGH */
+        case TLS_TOM_TXONLY:
+            s->chssl->ofld_tx_enable = TLS_OFLD_TRUE;
+            break;
+        }
+    }
 #endif
 
-    if (!ret && mode)
-        s->chssl->ofld_enable = TLS_OFLD_TRUE;
-    else
-        s->chssl->ofld_enable = TLS_OFLD_FALSE;
     return mode;
 }
 
@@ -172,13 +183,13 @@ int SSL_ofld_vers(const SSL *s)
 
 int SSL_ofld(const SSL *s)
 {
-    return(SSL_ofld_vers(s) && s->chssl && s->chssl->ofld_enable);
+    return(SSL_ofld_vers(s) && s->chssl && s->chssl->ofld_tx_enable);
 }
 
 #ifdef CHSSL_TLS_RX
 int SSL_ofld_rx(const SSL *s)
 {
-    return(s->chssl && s->chssl->ofld_enable);
+    return(s->chssl && s->chssl->ofld_rx_enable);
 }
 #endif
 
@@ -201,23 +212,23 @@ int SSL_Tx_keys(const SSL *s)
 
 int SSL_enc(const SSL *s)
 {
-    return(s->chssl && s->chssl->ofld_enable && s->chssl->ofld_enc);
+    return(s->chssl && s->chssl->ofld_tx_enable && s->chssl->ofld_enc);
 }
 
 int SSL_mac(const SSL *s)
 {
-    return(s->chssl && s->chssl->ofld_enable && s->chssl->ofld_mac);
+    return(s->chssl && s->chssl->ofld_tx_enable && s->chssl->ofld_mac);
 }
 
 int SSL_Chelsio_ofld(const SSL *s)
 {
-    return (SSL_ofld(s) && SSL_enc(s) && SSL_mac(s));
+    return (SSL_ofld(s) && SSL_ofld_rx(s) && SSL_enc(s) && SSL_mac(s));
 }
 
 #ifdef CHSSL_TLS_RX
 int SSL_clr_quiesce(const SSL *s)
 {
-    return (s->chssl && (s->chssl->key_state == KEY_SPACE_NOTAVL));
+    return (SSL_ofld_rx(s) && (s->chssl->key_state == KEY_SPACE_NOTAVL));
 }
 #endif
 
@@ -620,7 +631,8 @@ void chssl_program_hwkey_context(SSL *s, int rw, int state)
         /* Clear quiesce after CCS receive */
         if (rw == KEY_WRITE_RX) {
             ret = chssl_clear_tom(s);
-            s->chssl->ofld_enable = TLS_OFLD_FALSE;
+            s->chssl->ofld_rx_enable = TLS_OFLD_FALSE;
+            s->chssl->ofld_tx_enable = TLS_OFLD_FALSE;
         }
 #endif
 	goto end;
@@ -639,7 +651,8 @@ void chssl_program_hwkey_context(SSL *s, int rw, int state)
         else
             s->chssl->rx_keys_copied = 1;
     } else {
-        s->chssl->ofld_enable = TLS_OFLD_FALSE;
+        s->chssl->ofld_rx_enable = TLS_OFLD_FALSE;
+        s->chssl->ofld_tx_enable = TLS_OFLD_FALSE;
         s->chssl->key_state = KEY_SPACE_NOTAVL;
     }
 

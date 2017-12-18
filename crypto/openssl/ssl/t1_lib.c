@@ -4055,7 +4055,8 @@ int tls1_process_heartbeat(SSL *s)
         }
     }
 #if defined(CHSSL_OFFLOAD) && defined(CHSSL_TLS_RX)
-    chssl_clear_quies(s);
+    if (SSL_ofld_rx(s))
+	chssl_clear_quies(s);
 #endif
 
     return 0;

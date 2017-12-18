@@ -1427,7 +1427,8 @@ enum {
 struct ch_ssl_st {
     int  nl_fd;
     int  sock_fd; 	
-    char ofld_enable;
+    char ofld_tx_enable;
+    char ofld_rx_enable;
     char ofld_enc;
     char ofld_mac;
     char key_state;
