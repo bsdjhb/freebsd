@@ -1352,6 +1352,9 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		}
 		toep->txsd_avail--;
 
+		atomic_add_long(&toep->vi->pi->tx_tls_records, 1);
+		atomic_add_long(&toep->vi->pi->tx_tls_octets, plen);
+
 #if 0
 		device_printf(sc->dev, "submitting TLS record %d:%#x\n",
 		    thdr.type, tls_size);
