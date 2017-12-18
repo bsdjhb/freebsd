@@ -253,6 +253,9 @@ int ssl3_accept(SSL *s)
     for (;;) {
         state = s->state;
 
+#ifdef TLS_DEBUG
+	fprintf(stderr, "%s: state %d\n", __func__, state);
+#endif
         switch (s->state) {
         case SSL_ST_RENEGOTIATE:
             s->renegotiate = 1;
