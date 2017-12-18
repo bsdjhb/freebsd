@@ -1108,8 +1108,15 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		space = max_imm_tls_space(tx_credits);
 		wr_len = sizeof(struct fw_tlstx_data_wr) +
 		    sizeof(struct cpl_tx_tls_sfo) + key_size(toep);
-		if (wr_len + CIPHER_BLOCK_SIZE + 1 > space)
+		if (wr_len + CIPHER_BLOCK_SIZE + 1 > space) {
+#ifdef VERBOSE_TRACES
+			CTR5(KTR_CXGBE,
+			    "%s: tid %d tx_credits %d min_wr %d space %d",
+			    __func__, toep->tid, tx_credits, wr_len +
+			    CIPHER_BLOCK_SIZE + 1, space);
+#endif
 			return;
+		}
 
 		SOCKBUF_LOCK(sb);
 		sowwakeup = drop;
@@ -1140,6 +1147,10 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 			 * for now until more data is added to the
 			 * socket buffer.
 			 */
+#ifdef VERBOSE_TRACES
+			CTR4(KTR_CXGBE, "%s: tid %d sbavail %d sb_off %d",
+			    __func__, toep->tid, sbavail(sb), tls_ofld->sb_off);
+#endif
 			if (sowwakeup)
 				sowwakeup_locked(so);
 			else
@@ -1163,6 +1174,12 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 			 * for now until more data is added to the
 			 * socket buffer.
 			 */
+#ifdef VERBOSE_TRACES
+			CTR5(KTR_CXGBE,
+			    "%s: tid %d sbavail %d sb_off %d plen %d",
+			    __func__, toep->tid, sbavail(sb), tls_ofld->sb_off,
+			    plen);
+#endif
 			if (sowwakeup)
 				sowwakeup_locked(so);
 			else
