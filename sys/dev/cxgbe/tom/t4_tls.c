@@ -572,7 +572,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 		toep->txsd_pidx = 0;
 	toep->txsd_avail--;
 
-#if 1
+#if 0
 	device_printf(sc->dev, "submitting TLS key for addr %#x\n", keyid);
 	hexdump(kwr, len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
 #endif
@@ -1008,7 +1008,7 @@ write_tlstx_sgl(void *dst, struct mbuf *start, int skip, int plen,
 	    __func__, nsegs, start, iv_buffer));
 }
 
-#if 1
+#if 0
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <vm/vm_param.h>
@@ -1335,7 +1335,7 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		}
 		toep->txsd_avail--;
 
-#if 1
+#if 0
 		device_printf(sc->dev, "submitting TLS record %d:%#x\n",
 		    thdr.type, tls_size);
 		hexdump(txwr, wr_len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
