@@ -77,6 +77,6 @@
 
 #endif
 
-#define FUSE_LINK_MAX                      LONG_MAX
+#define FUSE_LINK_MAX                      UINT32_MAX
 
 #endif /* _FUSE_PARAM_H_ */
