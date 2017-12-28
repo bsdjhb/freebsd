@@ -915,6 +915,9 @@ vmx_vminit(struct vm *vm, pmap_t pmap)
 			exc_bitmap = 1 << IDT_MC;
 		error += vmwrite(VMCS_EXCEPTION_BITMAP, exc_bitmap);
 
+		vmx->ctx[i].guest_dr6 = 0xffff0ff0;
+		error += vmwrite(VMCS_GUEST_DR7, 0x400);
+
 		if (virtual_interrupt_delivery) {
 			error += vmwrite(VMCS_APIC_ACCESS, APIC_ACCESS_ADDRESS);
 			error += vmwrite(VMCS_VIRTUAL_APIC,
