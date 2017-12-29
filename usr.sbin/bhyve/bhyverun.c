@@ -806,6 +806,7 @@ main(int argc, char *argv[])
 	int c, error, dbg_port, gdb_port, err, bvmcons;
 	int max_vcpus, mptgen, memflags;
 	int rtc_localtime;
+	bool gdb_stop;
 	struct vmctx *ctx;
 	uint64_t rip;
 	size_t memsize;
@@ -815,6 +816,7 @@ main(int argc, char *argv[])
 	progname = basename(argv[0]);
 	dbg_port = 0;
 	gdb_port = 0;
+	gdb_stop = false;
 	guest_ncpus = 1;
 	memsize = 256 * MB;
 	mptgen = 1;
@@ -849,6 +851,10 @@ main(int argc, char *argv[])
 			dbg_port = atoi(optarg);
 			break;
 		case 'G':
+			if (optarg[0] == 'w') {
+				gdb_stop = true;
+				optarg++;
+			}
 			gdb_port = atoi(optarg);
 			break;
 		case 'l':
@@ -967,7 +973,7 @@ main(int argc, char *argv[])
 		init_dbgport(dbg_port);
 
 	if (gdb_port != 0)
-		init_gdb(ctx, gdb_port, false);
+		init_gdb(ctx, gdb_port, gdb_stop);
 
 	if (bvmcons)
 		init_bvmcons();

@@ -582,7 +582,20 @@ void
 gdb_cpu_add(int vcpu)
 {
 
-	CPU_SET_ATOMIC(vcpu, &vcpus_active);
+	debug("$vCPU %d starting\n", vcpu);
+	pthread_mutex_lock(&gdb_lock);
+	CPU_SET(vcpu, &vcpus_active);
+
+	/*
+	 * If a vcpu is added while vcpus are stopped, suspend the new
+	 * vcpu so that it will pop back out with a debug exit before
+	 * executing the first instruction.
+	 */
+	if (!CPU_EMPTY(&vcpus_suspended)) {
+		CPU_SET(vcpu, &vcpus_suspended);
+		vm_suspend_cpu(ctx, vcpu);
+	}
+	pthread_mutex_unlock(&gdb_lock);
 }
 
 static void
@@ -1171,8 +1184,16 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 	if (listen(s, 1) < 0)
 		err(1, "gdb socket listen");
 
-	if (wait)
-		new_connection(s, EVF_READ, (void *)(uintptr_t)1);
+	if (wait) {
+		/*
+		 * Set vcpu 0 in vcpus_suspended.  This will trigger the
+		 * logic in gdb_cpu_add() to suspend the first vcpu before
+		 * it starts execution.  The vcpu will remain suspended
+		 * until a debugger connects.
+		 */
+		CPU_SET(0, &vcpus_suspended);
+		first_stop = true;
+	}
 
 	flags = fcntl(s, F_GETFL);
 	if (fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
