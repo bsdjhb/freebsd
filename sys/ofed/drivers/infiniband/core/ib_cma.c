@@ -651,7 +651,7 @@ static inline int cma_validate_port(struct ib_device *device, u8 port,
 				    const struct rdma_dev_addr *dev_addr)
 {
 	const int dev_type = dev_addr->dev_type;
-	if_t ndev;
+	if_t ndev = NULL;
 	int ret = -ENODEV;
 
 	if ((dev_type == ARPHRD_INFINIBAND) && !rdma_protocol_ib(device, port))
@@ -662,8 +662,9 @@ static inline int cma_validate_port(struct ib_device *device, u8 port,
 
 	if (dev_type == ARPHRD_ETHER && rdma_protocol_roce(device, port)) {
 		ndev = dev_get_by_index(dev_addr->net, dev_addr->bound_dev_if);
+		if (!ndev)
+			return ret;
 	} else {
-		ndev = NULL;
 		gid_type = IB_GID_TYPE_IB;
 	}
 
