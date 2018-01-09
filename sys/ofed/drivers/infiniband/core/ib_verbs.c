@@ -1332,9 +1332,6 @@ static int ib_resolve_eth_dmac(struct ib_device *device,
  	if (!rdma_is_port_valid(device, rdma_ah_get_port_num(ah_attr)))
 		return -EINVAL;
 
-	if (ah_attr->type != RDMA_AH_ATTR_TYPE_ROCE)
-		return 0;
-
 	grh = rdma_ah_retrieve_grh(ah_attr);
 
 	if (rdma_is_multicast_addr((struct in6_addr *)ah_attr->grh.dgid.raw)) {
@@ -1392,7 +1389,7 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 	 * users have to provide already resolved rdma_ah_attr's
 	 */
 	if (udata && (attr_mask & IB_QP_AV) &&
-	    rdma_protocol_roce(qp->device, port) &&
+	    attr->ah_attr.type == RDMA_AH_ATTR_TYPE_ROCE &&
 	    is_qp_type_connected(qp)) {
 		ret = ib_resolve_eth_dmac(qp->device, &attr->ah_attr);
 		if (ret)
