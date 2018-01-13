@@ -216,7 +216,7 @@ __elfN(obj_loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	for (i = 0; i < hdr->e_shnum; i++)
 		shdr[i].sh_addr = 0;
 	for (i = 0; i < hdr->e_shnum; i++) {
-		if (shdr[i].sh_size == 0)
+		if (shdr[i].sh_size == 0 || (shdr[i].sh_flags & SHF_ALLOC) == 0)
 			continue;
 		switch (shdr[i].sh_type) {
 		case SHT_PROGBITS:
