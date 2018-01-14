@@ -2180,14 +2180,14 @@ static void __ib_drain_sq(struct ib_qp *qp)
 	};
 	int ret;
 
-	sdrain.cqe.done = ib_drain_qp_done;
-	init_completion(&sdrain.done);
-
 	ret = ib_modify_qp(qp, &attr, IB_QP_STATE);
 	if (ret) {
 		WARN_ONCE(ret, "failed to drain send queue: %d\n", ret);
 		return;
 	}
+
+	sdrain.cqe.done = ib_drain_qp_done;
+	init_completion(&sdrain.done);
 
 	ret = ib_post_send(qp, &swr.wr, &bad_swr);
 	if (ret) {
@@ -2214,15 +2214,15 @@ static void __ib_drain_rq(struct ib_qp *qp)
 	const struct ib_recv_wr *bad_rwr;
 	int ret;
 
-	rwr.wr_cqe = &rdrain.cqe;
-	rdrain.cqe.done = ib_drain_qp_done;
-	init_completion(&rdrain.done);
-
 	ret = ib_modify_qp(qp, &attr, IB_QP_STATE);
 	if (ret) {
 		WARN_ONCE(ret, "failed to drain recv queue: %d\n", ret);
 		return;
 	}
+
+	rwr.wr_cqe = &rdrain.cqe;
+	rdrain.cqe.done = ib_drain_qp_done;
+	init_completion(&rdrain.done);
 
 	ret = ib_post_recv(qp, &rwr, &bad_rwr);
 	if (ret) {
