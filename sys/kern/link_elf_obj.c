@@ -262,6 +262,8 @@ link_elf_link_preload(linker_class_t cls, const char *filename,
 #ifdef __amd64__
 		case SHT_X86_64_UNWIND:
 #endif
+			if (shdr[i].sh_addr == 0)
+				break;
 			ef->nprogtab++;
 			break;
 		case SHT_SYMTAB:
@@ -335,6 +337,8 @@ link_elf_link_preload(linker_class_t cls, const char *filename,
 #ifdef __amd64__
 		case SHT_X86_64_UNWIND:
 #endif
+			if (shdr[i].sh_addr == 0)
+				break;
 			ef->progtab[pb].addr = (void *)shdr[i].sh_addr;
 			if (shdr[i].sh_type == SHT_PROGBITS)
 				ef->progtab[pb].name = "<<PROGBITS>>";
