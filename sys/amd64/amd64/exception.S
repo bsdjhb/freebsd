@@ -754,24 +754,7 @@ mchk_fromuserspace:
 	cmpq	$~0,%rax
 	je	1f
 	movq	%rax,%cr3
-1:	movq	PCPU(CURPCB),%rdi
-	testq	%rdi,%rdi
-	jz	3f
-	orl	$PCB_FULL_IRET,PCB_FLAGS(%rdi)
-	testb	$CPUID_STDEXT_FSGSBASE,cpu_stdext_feature(%rip)
-	jz	3f
-	cmpw	$KUF32SEL,TF_FS(%rsp)
-	jne	2f
-	rdfsbase %rax
-	movq	%rax,PCB_FSBASE(%rdi)
-2:	cmpw	$KUG32SEL,TF_GS(%rsp)
-	jne	3f
-	movl	$MSR_KGSBASE,%ecx
-	rdmsr
-	shlq	$32,%rdx
-	orq	%rdx,%rax
-	movq	%rax,PCB_GSBASE(%rdi)
-3:
+1:
 /* Note: this label is also used by ddb and gdb: */
 mchk_calltrap:
 	FAKE_MCOUNT(TF_RIP(%rsp))
