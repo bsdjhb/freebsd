@@ -254,6 +254,8 @@ fbsdrun_start_thread(void *param)
 	snprintf(tname, sizeof(tname), "vcpu %d", vcpu);
 	pthread_set_name_np(mtp->mt_thr, tname);
 
+	gdb_cpu_add(vcpu);
+
 	vm_loop(mtp->mt_ctx, vcpu, vmexit[vcpu].rip);
 
 	/* not reached */
@@ -279,8 +281,6 @@ fbsdrun_addcpu(struct vmctx *ctx, int fromcpu, int newcpu, uint64_t rip)
 		err(EX_OSERR, "could not activate CPU %d", newcpu);
 
 	CPU_SET_ATOMIC(newcpu, &cpumask);
-
-	gdb_cpu_add(newcpu);
 
 	/*
 	 * Set up the vmexit struct to allow execution to start

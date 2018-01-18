@@ -43,6 +43,7 @@ static cpuset_t vcpus_active, vcpus_suspended, vcpus_waiting;
 static pthread_mutex_t gdb_lock;
 static pthread_cond_t idle_vcpus;
 static bool stop_pending, first_stop;
+static int stepping_vcpu, stopped_vcpu;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -551,7 +552,7 @@ send_ok(void)
 {
 
 	start_packet();
-	append_packet_data("OK", strlen("OK"));
+	append_string("OK");
 	finish_packet();
 }
 
@@ -573,9 +574,53 @@ report_stop(void)
 {
 
 	start_packet();
-	append_char('S');
+	if (stopped_vcpu == -1)
+		append_char('S');
+	else
+		append_char('T');
 	append_byte(GDB_SIGNAL_TRAP);
+	if (stopped_vcpu != -1) {
+		append_string("thread:");
+		append_integer(stopped_vcpu + 1);
+		append_char(';');
+	}
+	stopped_vcpu = -1;
 	finish_packet();
+}
+
+static void
+gdb_finish_suspend_vcpus(void)
+{
+
+	if (first_stop) {
+		first_stop = false;
+		stopped_vcpu = -1;
+	} else if (response_pending())
+		stop_pending = true;
+	else {
+		report_stop();
+		send_pending_data(cur_fd);
+	}
+}
+
+static void
+_gdb_cpu_suspend(int vcpu, bool report_stop)
+{
+
+	debug("$vCPU %d suspending\n", vcpu);
+	CPU_SET(vcpu, &vcpus_waiting);
+	debug("1: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
+	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
+	if (report_stop && CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
+		gdb_finish_suspend_vcpus();
+	debug("2: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
+	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
+	while (CPU_ISSET(vcpu, &vcpus_suspended) && vcpu != stepping_vcpu)
+		pthread_cond_wait(&idle_vcpus, &gdb_lock);
+	debug("3: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
+	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
+	CPU_CLR(vcpu, &vcpus_waiting);
+	debug("$vCPU %d resuming\n", vcpu);
 }
 
 void
@@ -593,46 +638,35 @@ gdb_cpu_add(int vcpu)
 	 */
 	if (!CPU_EMPTY(&vcpus_suspended)) {
 		CPU_SET(vcpu, &vcpus_suspended);
-		vm_suspend_cpu(ctx, vcpu);
+		_gdb_cpu_suspend(vcpu, false);
 	}
 	pthread_mutex_unlock(&gdb_lock);
-}
-
-static void
-gdb_finish_suspend_vcpus(void)
-{
-
-	if (first_stop)
-		first_stop = false;
-	else if (response_pending())
-		stop_pending = true;
-	else {
-		report_stop();
-		send_pending_data(cur_fd);
-	}
 }
 
 void
 gdb_cpu_suspend(int vcpu)
 {
 
-	debug("$vCPU %d suspending\n", vcpu);
 	pthread_mutex_lock(&gdb_lock);
-	CPU_SET(vcpu, &vcpus_waiting);
-	if (CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
-		gdb_finish_suspend_vcpus();
-	while (CPU_ISSET(vcpu, &vcpus_suspended))
-		pthread_cond_wait(&idle_vcpus, &gdb_lock);
-	CPU_CLR(vcpu, &vcpus_waiting);
+	_gdb_cpu_suspend(vcpu, true);
 	pthread_mutex_unlock(&gdb_lock);
-	debug("$vCPU %d resuming\n", vcpu);
 }
 
 void
 gdb_cpu_mtrap(int vcpu)
 {
 
-	gdb_cpu_suspend(vcpu);
+	debug("$vCPU %d MTRAP\n", vcpu);
+	pthread_mutex_lock(&gdb_lock);
+	if (vcpu == stepping_vcpu) {
+		stepping_vcpu = -1;
+		vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 0);
+		vm_suspend_cpu(ctx, vcpu);
+		assert(stopped_vcpu == -1);
+		stopped_vcpu = vcpu;
+		_gdb_cpu_suspend(vcpu, true);
+	}
+	pthread_mutex_unlock(&gdb_lock);
 }
 
 static void
@@ -640,6 +674,7 @@ gdb_suspend_vcpus(void)
 {
 
 	assert(pthread_mutex_isowned_np(&gdb_lock));
+	debug("suspending all CPUs\n");
 	vcpus_suspended = vcpus_active;
 	vm_suspend_cpu(ctx, -1);
 	if (CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
@@ -656,12 +691,32 @@ gdb_suspend_pending(void)
 }
 #endif
 
+static bool
+gdb_step_vcpu(int vcpu)
+{
+	int error, val;
+
+	debug("$vCPU %d step\n", vcpu);
+	error = vm_get_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, &val);
+	if (error < 0) {
+		debug("failed to get MTRAP\n");
+		return (false);
+	}
+	error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
+	debug("set MTRAP 1 returned %d\n", error);
+	vm_resume_cpu(ctx, vcpu);
+	stepping_vcpu = vcpu;
+	pthread_cond_broadcast(&idle_vcpus);
+	return (true);
+}
+
 static void
 gdb_resume_vcpus(void)
 {
 
 	assert(pthread_mutex_isowned_np(&gdb_lock));
 	vm_resume_cpu(ctx, -1);
+	debug("resuming all CPUs\n");
 	CPU_ZERO(&vcpus_suspended);
 	pthread_cond_broadcast(&idle_vcpus);
 }
@@ -897,7 +952,7 @@ handle_command(const uint8_t *data, size_t len)
 	case 'H': {
 		int tid;
 
-		if (data[1] != 'g') {
+		if (data[1] != 'g' && data[1] != 'c') {
 			send_error(EINVAL);
 			break;
 		}
@@ -938,6 +993,18 @@ handle_command(const uint8_t *data, size_t len)
 	}
 	case 'q':
 		gdb_query(data, len);
+		break;
+	case 's':
+		if (len != 1) {
+			send_error(EINVAL);
+			break;
+		}
+
+		/* Don't send a reply until a stop occurs. */
+		if (!gdb_step_vcpu(cur_vcpu)) {
+			send_error(EOPNOTSUPP);
+			break;
+		}
 		break;
 	case '?':
 		/* XXX: Only if stopped? */
@@ -1145,6 +1212,8 @@ new_connection(int fd, enum ev_type event, void *arg)
 
 	cur_fd = s;
 	cur_vcpu = 0;
+	stepping_vcpu = -1;
+	stopped_vcpu = -1;
 	stop_pending = false;
 
 	/* Break on attach. */
@@ -1191,8 +1260,10 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 		 * it starts execution.  The vcpu will remain suspended
 		 * until a debugger connects.
 		 */
+		stepping_vcpu = -1;
+		stopped_vcpu = -1;
 		CPU_SET(0, &vcpus_suspended);
-		first_stop = true;
+		debug("suspending CPU 0: %lx\n", vcpus_suspended.__bits[0]);
 	}
 
 	flags = fcntl(s, F_GETFL);
