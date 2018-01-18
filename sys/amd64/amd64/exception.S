@@ -662,9 +662,8 @@ outofnmi:
 	cli
 nocallchain:
 #endif
-	testl	%ebx,%ebx
+	testl	%ebx,%ebx	/* %ebx == 0 => return to userland */
 	jnz	doreti_exit
-nmi_kernelexit:
 	/*
 	 * Put back the preserved MSR_GSBASE value.
 	 */
@@ -674,7 +673,6 @@ nmi_kernelexit:
 	shrq	$32,%rdx
 	wrmsr
 	movq	%r13,%cr3
-nmi_restoreregs:
 	RESTORE_REGS
 	addq	$TF_RIP,%rsp
 	jmp	doreti_iret
@@ -761,9 +759,8 @@ mchk_calltrap:
 	movq	%rsp,%rdi
 	call	mca_intr
 	MEXITCOUNT
-	testl	%ebx,%ebx
+	testl	%ebx,%ebx	/* %ebx == 0 => return to userland */
 	jnz	doreti_exit
-mchk_kernelexit:
 	/*
 	 * Put back the preserved MSR_GSBASE value.
 	 */
@@ -773,7 +770,6 @@ mchk_kernelexit:
 	shrq	$32,%rdx
 	wrmsr
 	movq	%r13,%cr3
-mchk_restoreregs:
 	RESTORE_REGS
 	addq	$TF_RIP,%rsp
 	jmp	doreti_iret
