@@ -29,6 +29,9 @@ CFLAGS+=	-I${LCRYPTO_SRC}/crypto
 SRCS+=	ssl_tom.c
 
 CFLAGS+=	-DCHSSL_OFFLOAD -I${SRCTOP}/sys
+.if defined(CHSSL_TLS_RX)
+CFLAGS+=	-DCHSSL_TLS_RX
+.endif
 .endif
 
 .include <bsd.lib.mk>
