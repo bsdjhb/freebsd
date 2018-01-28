@@ -849,6 +849,7 @@ dofault:
 			if (td->td_md.md_ss_addr != va ||
 			    instr != MIPS_BREAK_SSTEP) {
 				i = SIGTRAP;
+				ucode = TRAP_BRKPT;
 				addr = trapframe->pc;
 				break;
 			}
@@ -860,6 +861,7 @@ dofault:
 			 */
 			addr = trapframe->pc;
 			i = SIGTRAP;
+			ucode = TRAP_TRACE;
 			break;
 		}
 
@@ -874,6 +876,7 @@ dofault:
 				va += sizeof(int);
 			printf("watch exception @ %p\n", (void *)va);
 			i = SIGTRAP;
+			ucode = TRAP_BRKPT;
 			addr = va;
 			break;
 		}
