@@ -507,8 +507,8 @@ vmcb_init(struct svm_softc *sc, int vcpu, uint64_t iopm_base_pa,
 	    PAT_VALUE(7, PAT_UNCACHEABLE);
 
 	/* Set up DR6/7 to power-on state */
-	state->dr6 = 0xffff0ff0;
-	state->dr7 = 0x400;
+	state->dr6 = DBREG_DR6_RESERVED1;
+	state->dr7 = DBREG_DR7_RESERVED1;
 }
 
 /*
