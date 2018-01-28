@@ -872,7 +872,7 @@ dofault:
 				va += sizeof(int);
 			printf("watch exception @ %p\n", (void *)va);
 			i = SIGTRAP;
-			ucode = TRAP_BRKPT;
+			ucode = TRAP_HWBKPT;
 			addr = va;
 			break;
 		}

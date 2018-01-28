@@ -335,7 +335,6 @@ trap(struct trapframe *frame)
 			enable_intr();
 user_trctrap_out:
 			signo = SIGTRAP;
-			ucode = TRAP_TRACE;
 			dr6 = rdr6();
 			if ((dr6 & DBREG_DR6_BS) != 0) {
 				PROC_LOCK(td->td_proc);
@@ -344,7 +343,9 @@ user_trctrap_out:
 					td->td_dbgflags &= ~TDB_STEP;
 				}
 				PROC_UNLOCK(td->td_proc);
-			}
+				ucode = TRAP_TRACE;
+			} else if (dr6 & DBREG_DR6_BMASK)
+				ucode = TRAP_HWBKPT;
 			break;
 
 		case T_ARITHTRAP:	/* arithmetic trap */

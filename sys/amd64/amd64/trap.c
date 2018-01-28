@@ -283,7 +283,6 @@ trap(struct trapframe *frame)
 		case T_TRCTRAP:		/* debug exception */
 			enable_intr();
 			signo = SIGTRAP;
-			ucode = TRAP_TRACE;
 			dr6 = rdr6();
 			if ((dr6 & DBREG_DR6_BS) != 0) {
 				PROC_LOCK(td->td_proc);
@@ -291,8 +290,10 @@ trap(struct trapframe *frame)
 					td->td_frame->tf_rflags &= ~PSL_T;
 					td->td_dbgflags &= ~TDB_STEP;
 				}
+				ucode = TRAP_TRACE;
 				PROC_UNLOCK(td->td_proc);
-			}
+			} else if (dr6 & DBREG_DR6_BMASK)
+				ucode = TRAP_HWBKPT;
 			break;
 
 		case T_ARITHTRAP:	/* arithmetic trap */
