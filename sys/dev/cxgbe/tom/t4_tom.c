@@ -627,28 +627,30 @@ select_ntuple(struct vi_info *vi, struct l2t_entry *e)
 }
 
 static int
-is_tls_sock(struct socket *so)
+is_tls_sock(struct socket *so, struct adapter *sc)
 {
-#ifdef TLS_RX
 	struct inpcb *inp = sotoinpcb(so);
-	static int tls_ports[] = { 443 };  /* XXX: Tunable? */
-	int i;
+	int i, rc;
 
 	/* XXX: Eventually add a SO_WANT_TLS socket option perhaps? */
-	for (i = 0; i < nitems(tls_ports); i++) {
-		if (inp->inp_lport == htons(tls_ports[i]) ||
-		    inp->inp_fport == htons(tls_ports[i]))
-			return (1);
+	rc = 0;
+	ADAPTER_LOCK(sc);
+	for (i = 0; i < sc->tt.num_tls_rx_ports; i++) {
+		if (inp->inp_lport == htons(sc->tt.tls_rx_ports[i]) ||
+		    inp->inp_fport == htons(sc->tt.tls_rx_ports[i])) {
+			rc = 1;
+			break;
+		}
 	}
-#endif
-	return (0);
+	ADAPTER_UNLOCK(sc);
+	return (rc);
 }
 
 int
 select_ulp_mode(struct socket *so, struct adapter *sc)
 {
 
-	if (can_tls_offload(sc) && is_tls_sock(so))
+	if (can_tls_offload(sc) && is_tls_sock(so, sc))
 		return (ULP_MODE_TLS);
 	else if (sc->tt.ddp && (so->so_options & SO_NO_DDP) == 0)
 		return (ULP_MODE_TCPDDP);
