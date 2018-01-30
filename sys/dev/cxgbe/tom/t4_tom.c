@@ -1249,6 +1249,7 @@ t4_tom_mod_load(void)
 	t4_init_cpl_io_handlers();
 
 	t4_ddp_mod_load();
+	t4_tls_mod_load();
 
 	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
 	if (tcp_protosw == NULL)
@@ -1301,6 +1302,7 @@ t4_tom_mod_unload(void)
 		taskqueue_cancel_timeout(taskqueue_thread, &clip_task, NULL);
 	}
 
+	t4_tls_mod_unload();
 	t4_ddp_mod_unload();
 
 	t4_uninit_connect_cpl_handlers();

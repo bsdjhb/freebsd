@@ -53,6 +53,13 @@ __FBSDID("$FreeBSD$");
  *   + TLS handling in chelsio_sendpage / chelsio_sendmsg will move to
  *     t4_push_frames, and state won't be cached in mbuf
  * - how to receive TLS data?
+ *   - need to use DDP to a single buffer (how to size buffer?)
+ *   - chelsio_recvmsg vs chelsio_tlsv4_recvmsg:
+ *     - DDP handling only in non-TLS
+ *     - checking 'rstate' in tls_ofld only in TLS case
+ *       TLS_RCV_ST_READ_BODY => copy data into socket buffer
+ *       otherwise, read TLS header?  (TLS header returned to reader it seems)
+ *     - CPL_RX_TLS_CMP handler (new_rx_tls_cmp in cpl_io.c)
  * - handshake timer?
  */
 
@@ -1361,5 +1368,47 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 #endif
 		t4_l2t_send(sc, wr, toep->l2te);
 	}
+}
+
+static int
+do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
+{
+	struct adapter *sc = iq->adapter;
+	const struct cpl_rx_tls_cmp *cpl; /* = (const void *)(rss + 1);*/
+
+	if (m != NULL) {
+		device_printf(sc->dev, "RX_TLS_CMP in mbuf\n");
+		cpl = mtod(m, const void *);
+	} else {
+		device_printf(sc->dev, "RX_TLS_CMP in iq\n");
+		cpl = (const void *)(rss + 1);
+	}
+
+	unsigned int tid = GET_TID(cpl);
+	struct toepcb *toep = lookup_tid(sc, tid);
+
+#if 0
+	KASSERT(m == NULL, ("%s: wasn't expecting payload", __func__));
+#endif
+	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
+	KASSERT(!(toep->flags & TPF_SYNQE),
+	    ("%s: toep %p claims to be a synq entry", __func__, toep));
+
+	panic("RX_TLS_CMP, iq %p, rss %p, mbuf %p, cpl %p", iq, rss, m, cpl);
+}
+
+int
+t4_tls_mod_load(void)
+{
+
+	t4_register_cpl_handler(CPL_RX_TLS_CMP, do_rx_tls_cmp);
+	return (0);
+}
+
+void
+t4_tls_mod_unload(void)
+{
+
+	t4_register_cpl_handler(CPL_RX_TLS_CMP, NULL);
 }
 #endif	/* TCP_OFFLOAD */
