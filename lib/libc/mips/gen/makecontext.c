@@ -91,21 +91,21 @@ __makecontext(ucontext_t *ucp, void (*func)(void), int argc, ...)
 #if defined(__mips_o32) || defined(__mips_o64)
 	/* Up to the first four arguments are passed in $a0-3. */
 	for (i = 0; i < argc && i < 4; i++)
-		/* LINTED register_t is safe */
-		mc->mc_regs[A0 + i] = va_arg(ap, register_t);
+		/* LINTED int is safe */
+		mc->mc_regs[A0 + i] = va_arg(ap, int);
 	/* Skip over the $a0-3 gap. */
 	sp += 4;
 #endif
 #if defined(__mips_n32) || defined(__mips_n64)
 	/* Up to the first 8 arguments are passed in $a0-7. */
 	for (i = 0; i < argc && i < 8; i++)
-		/* LINTED register_t is safe */
-		mc->mc_regs[A0 + i] = va_arg(ap, register_t);
+		/* LINTED int is safe */
+		mc->mc_regs[A0 + i] = va_arg(ap, int);
 #endif
 	/* Pass remaining arguments on the stack. */
 	for (; i < argc; i++)
-		/* LINTED register_t is safe */
-		*sp++ = va_arg(ap, register_t);
+		/* LINTED int is safe */
+		*sp++ = va_arg(ap, int);
 	va_end(ap);
 }
 
