@@ -8315,7 +8315,7 @@ sysctl_tls_rx_ports(SYSCTL_HANDLER_ARGS)
 		} else {
 			for (i = 0; i < new_count; i++) {
 				if (new_ports[i] < 1 ||
-				    new_ports[i] > IPPROTO_MAX) {
+				    new_ports[i] > IPPORT_MAX) {
 					rc = EINVAL;
 					goto err;
 				}
