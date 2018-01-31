@@ -1370,37 +1370,110 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 	}
 }
 
+/*
+ * For TLS data we place received mbufs received via CPL_TLS_DATA into
+ * an mbufq in the TLS offload state.  When CPL_RX_TLS_CMP is
+ * received, the completed PDUs are placed into the socket receive
+ * buffer.
+ *
+ * The TLS code reuses the ulp_pdu_reclaimq to hold the pending mbufs.
+ */
+static int
+do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
+{
+	struct adapter *sc = iq->adapter;
+	const struct cpl_tls_data *cpl = mtod(m, const void *);
+	unsigned int tid = GET_TID(cpl);
+	struct toepcb *toep = lookup_tid(sc, tid);
+	struct inpcb *inp = toep->inp;
+	int len;
+
+	/* XXX: Should this match do_rx_data instead? */
+	KASSERT(!(toep->flags & TPF_SYNQE),
+	    ("%s: toep %p claims to be a synq entry", __func__, toep));
+
+	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
+
+	/* strip off CPL header */
+	m_adj(m, sizeof(*cpl));
+	len = m->m_pkthdr.len;
+
+	KASSERT(len == G_CPL_TLS_DATA_LENGTH(be32toh(cpl->length_pkd)),
+	    ("%s: payload length mismatch", __func__));
+
+	INP_WLOCK(inp);
+	if (inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) {
+		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
+		    __func__, tid, len, inp->inp_flags);
+		INP_WUNLOCK(inp);
+		m_freem(m);
+		return (0);
+	}
+
+	if (mbufq_enqueue(&toep->ulp_pdu_reclaimq, m)) {
+#ifdef INVARIANTS
+		panic("Failed to queue TLS data packet");
+#else
+		printf("%s: Failed to queue TLS data packet\n");
+		INP_WUNLOCK(inp);
+		m_freem(m);
+		return (0);
+#endif
+	}
+
+	CTR4(KTR_CXGBE, "%s: tid %u len %d seq %u", __func__, tid, len,
+	    be32toh(cpl->seq));
+
+	INP_WUNLOCK(inp);
+	return (0);
+}
+
 static int
 do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 {
 	struct adapter *sc = iq->adapter;
-	const struct cpl_rx_tls_cmp *cpl; /* = (const void *)(rss + 1);*/
-
-	if (m != NULL) {
-		device_printf(sc->dev, "RX_TLS_CMP in mbuf\n");
-		cpl = mtod(m, const void *);
-	} else {
-		device_printf(sc->dev, "RX_TLS_CMP in iq\n");
-		cpl = (const void *)(rss + 1);
-	}
-
+	const struct cpl_rx_tls_cmp *cpl = mtod(m, const void *);
 	unsigned int tid = GET_TID(cpl);
 	struct toepcb *toep = lookup_tid(sc, tid);
+	struct inpcb *inp = toep->inp;
+	int len, pdu_length;
 
-#if 0
-	KASSERT(m == NULL, ("%s: wasn't expecting payload", __func__));
-#endif
 	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
 	KASSERT(!(toep->flags & TPF_SYNQE),
 	    ("%s: toep %p claims to be a synq entry", __func__, toep));
 
+	/* strip off CPL header */
+	m_adj(m, sizeof(*cpl));
+	len = m->m_pkthdr.len;
+
+	KASSERT(len == G_CPL_RX_TLS_CMP_LENGTH(be32toh(cpl->pdulength_length)),
+	    ("%s: payload length mismatch", __func__));
+
+	INP_WLOCK(inp);
+	if (inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) {
+		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
+		    __func__, tid, len, inp->inp_flags);
+		INP_WUNLOCK(inp);
+		m_freem(m);
+		return (0);
+	}
+
+	pdu_length = G_CPL_RX_TLS_CMP_PDULENGTH(be32toh(cpl->pdulength_length));
+
+	CTR5(KTR_CXGBE, "%s: tid %u PDU len %d len %d seq %u", __func__,
+	    tid, pdu_length, length, be32toh(cpl->seq));
+
 	panic("RX_TLS_CMP, iq %p, rss %p, mbuf %p, cpl %p", iq, rss, m, cpl);
+
+	INP_WUNLOCK(inp);
+	return (0);
 }
 
 int
 t4_tls_mod_load(void)
 {
 
+	t4_register_cpl_handler(CPL_TLS_DATA, do_tls_data);
 	t4_register_cpl_handler(CPL_RX_TLS_CMP, do_rx_tls_cmp);
 	return (0);
 }
@@ -1409,6 +1482,7 @@ void
 t4_tls_mod_unload(void)
 {
 
+	t4_register_cpl_handler(CPL_TLS_DATA, NULL);
 	t4_register_cpl_handler(CPL_RX_TLS_CMP, NULL);
 }
 #endif	/* TCP_OFFLOAD */
