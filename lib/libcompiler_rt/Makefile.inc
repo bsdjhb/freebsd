@@ -167,9 +167,12 @@ SRCF+=		trunctfdf2
 SRCF+=		trunctfsf2
 .endif
 
-# These are already shipped by libc.a on some architectures.
-.if ${MACHINE_CPUARCH} != "arm" && ${MACHINE_CPUARCH} != "mips" && \
-    ${MACHINE_CPUARCH} != "riscv"
+# These are provided via the softfloat support in libc.a on some
+# architectures.
+.if !((${MACHINE_CPUARCH} == "arm" && \
+	(${MACHINE_ARCH:Marmv[67]*} == "" || (defined(CPUTYPE) && ${CPUTYPE:M*soft*}))) || \
+    (${MACHINE_CPUARCH} == "mips" && ${MACHINE_ARCH:Mmips*hf} == "") || \
+    (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
 SRCF+=		adddf3
 SRCF+=		addsf3
 SRCF+=		divdf3
