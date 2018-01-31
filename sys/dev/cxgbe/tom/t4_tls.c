@@ -1461,7 +1461,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	pdu_length = G_CPL_RX_TLS_CMP_PDULENGTH(be32toh(cpl->pdulength_length));
 
 	CTR5(KTR_CXGBE, "%s: tid %u PDU len %d len %d seq %u", __func__,
-	    tid, pdu_length, length, be32toh(cpl->seq));
+	    tid, pdu_length, len, be32toh(cpl->seq));
 
 	panic("RX_TLS_CMP, iq %p, rss %p, mbuf %p, cpl %p", iq, rss, m, cpl);
 
