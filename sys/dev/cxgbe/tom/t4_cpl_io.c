@@ -427,7 +427,7 @@ make_established(struct toepcb *toep, uint32_t snd_isn, uint32_t rcv_isn,
 	soisconnected(so);
 }
 
-static int
+int
 send_rx_credits(struct adapter *sc, struct toepcb *toep, int credits)
 {
 	struct wrqe *wr;

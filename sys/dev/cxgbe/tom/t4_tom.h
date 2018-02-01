@@ -386,6 +386,7 @@ void t4_uninit_cpl_io_handlers(void);
 void send_abort_rpl(struct adapter *, struct sge_wrq *, int , int);
 void send_flowc_wr(struct toepcb *, struct flowc_tx_params *);
 void send_reset(struct adapter *, struct toepcb *, uint32_t);
+int send_rx_credits(struct adapter *, struct toepcb *, int);
 void make_established(struct toepcb *, uint32_t, uint32_t, uint16_t);
 int t4_close_conn(struct adapter *, struct toepcb *);
 void t4_rcvd(struct toedev *, struct tcpcb *);

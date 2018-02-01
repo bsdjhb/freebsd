@@ -530,6 +530,55 @@ struct tls_hdr {
 	__be16 length;
 } __packed;
 
+struct tlsrx_hdr_pkt {
+	__u8   type;
+	__be16 version;
+	__be16 length;
+
+	__be64 tls_seq;
+	__be16 reserved1;
+	__u8   res_to_mac_error;
+} __packed;
+
+/* res_to_mac_error fields */
+#define S_TLSRX_HDR_PKT_INTERNAL_ERROR   4
+#define M_TLSRX_HDR_PKT_INTERNAL_ERROR   0x1
+#define V_TLSRX_HDR_PKT_INTERNAL_ERROR(x) \
+	((x) << S_TLSRX_HDR_PKT_INTERNAL_ERROR)
+#define G_TLSRX_HDR_PKT_INTERNAL_ERROR(x) \
+(((x) >> S_TLSRX_HDR_PKT_INTERNAL_ERROR) & M_TLSRX_HDR_PKT_INTERNAL_ERROR)
+#define F_TLSRX_HDR_PKT_INTERNAL_ERROR   V_TLSRX_HDR_PKT_INTERNAL_ERROR(1U)
+
+#define S_TLSRX_HDR_PKT_SPP_ERROR        3
+#define M_TLSRX_HDR_PKT_SPP_ERROR        0x1
+#define V_TLSRX_HDR_PKT_SPP_ERROR(x)     ((x) << S_TLSRX_HDR_PKT_SPP_ERROR)
+#define G_TLSRX_HDR_PKT_SPP_ERROR(x)     \
+(((x) >> S_TLSRX_HDR_PKT_SPP_ERROR) & M_TLSRX_HDR_PKT_SPP_ERROR)
+#define F_TLSRX_HDR_PKT_SPP_ERROR        V_TLSRX_HDR_PKT_SPP_ERROR(1U)
+
+#define S_TLSRX_HDR_PKT_CCDX_ERROR       2
+#define M_TLSRX_HDR_PKT_CCDX_ERROR       0x1
+#define V_TLSRX_HDR_PKT_CCDX_ERROR(x)    ((x) << S_TLSRX_HDR_PKT_CCDX_ERROR)
+#define G_TLSRX_HDR_PKT_CCDX_ERROR(x)    \
+(((x) >> S_TLSRX_HDR_PKT_CCDX_ERROR) & M_TLSRX_HDR_PKT_CCDX_ERROR)
+#define F_TLSRX_HDR_PKT_CCDX_ERROR       V_TLSRX_HDR_PKT_CCDX_ERROR(1U)
+
+#define S_TLSRX_HDR_PKT_PAD_ERROR        1
+#define M_TLSRX_HDR_PKT_PAD_ERROR        0x1
+#define V_TLSRX_HDR_PKT_PAD_ERROR(x)     ((x) << S_TLSRX_HDR_PKT_PAD_ERROR)
+#define G_TLSRX_HDR_PKT_PAD_ERROR(x)     \
+(((x) >> S_TLSRX_HDR_PKT_PAD_ERROR) & M_TLSRX_HDR_PKT_PAD_ERROR)
+#define F_TLSRX_HDR_PKT_PAD_ERROR        V_TLSRX_HDR_PKT_PAD_ERROR(1U)
+
+#define S_TLSRX_HDR_PKT_MAC_ERROR        0
+#define M_TLSRX_HDR_PKT_MAC_ERROR        0x1
+#define V_TLSRX_HDR_PKT_MAC_ERROR(x)     ((x) << S_TLSRX_HDR_PKT_MAC_ERROR)
+#define G_TLSRX_HDR_PKT_MAC_ERROR(x)     \
+(((x) >> S_TLSRX_HDR_PKT_MAC_ERROR) & M_TLSRX_HDR_PKT_MAC_ERROR)
+#define F_TLSRX_HDR_PKT_MAC_ERROR        V_TLSRX_HDR_PKT_MAC_ERROR(1U)
+
+#define M_TLSRX_HDR_PKT_ERROR		0x1F
+
 #endif /* _KERNEL */
 
 #endif /* !__T4_TLS_H__ */

@@ -63,6 +63,12 @@ __FBSDID("$FreeBSD$");
  * - handshake timer?
  */
 
+/*
+ * The TCP sequence number of a CPL_TLS_DATA mbuf is saved here while
+ * the mbuf is in the ulp_pdu_reclaimq.
+ */
+#define	tls_tcp_seq	PH_loc.thirtytwo[0]
+   
 static void
 t4_set_tls_tcb_field(struct toepcb *toep, uint16_t word, uint64_t mask,
     uint64_t val)
@@ -1386,6 +1392,7 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	unsigned int tid = GET_TID(cpl);
 	struct toepcb *toep = lookup_tid(sc, tid);
 	struct inpcb *inp = toep->inp;
+	struct tcpcb *tp;
 	int len;
 
 	/* XXX: Should this match do_rx_data instead? */
@@ -1410,6 +1417,9 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		return (0);
 	}
 
+	/* Save TCP sequence number. */
+	m->m_pkthdr.tls_tcp_seq = be32toh(cpl->seq);
+
 	if (mbufq_enqueue(&toep->ulp_pdu_reclaimq, m)) {
 #ifdef INVARIANTS
 		panic("Failed to queue TLS data packet");
@@ -1420,6 +1430,9 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		return (0);
 #endif
 	}
+
+	tp = intotcpcb(inp);
+	tp->t_rcvtime = ticks;
 
 	CTR4(KTR_CXGBE, "%s: tid %u len %d seq %u", __func__, tid, len,
 	    be32toh(cpl->seq));
@@ -1433,9 +1446,14 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 {
 	struct adapter *sc = iq->adapter;
 	const struct cpl_rx_tls_cmp *cpl = mtod(m, const void *);
+	struct tlsrx_hdr_pkt *tls_hdr_pkt;
 	unsigned int tid = GET_TID(cpl);
 	struct toepcb *toep = lookup_tid(sc, tid);
 	struct inpcb *inp = toep->inp;
+	struct tcpcb *tp;
+	struct socket *so;
+	struct sockbuf *sb;
+	struct mbuf *tls_data;
 	int len, pdu_length;
 
 	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
@@ -1460,12 +1478,128 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	pdu_length = G_CPL_RX_TLS_CMP_PDULENGTH(be32toh(cpl->pdulength_length));
 
-	CTR5(KTR_CXGBE, "%s: tid %u PDU len %d len %d seq %u", __func__,
-	    tid, pdu_length, len, be32toh(cpl->seq));
+	tp = intotcpcb(inp);
 
-	panic("RX_TLS_CMP, iq %p, rss %p, mbuf %p, cpl %p", iq, rss, m, cpl);
+	CTR6(KTR_CXGBE, "%s: tid %u PDU len %d len %d seq %u, rcv_nxt %u",
+	    __func__, tid, pdu_length, len, be32toh(cpl->seq), tp->rcv_nxt);
+
+	tp->rcv_nxt += pdu_length;
+	KASSERT(tp->rcv_wnd < pdu_length,
+	    ("%s: negative window size", __func__));
+
+	tp->rcv_wnd -= pdu_length;
+
+	/* XXX: Not sure what to do about urgent data. */
+
+	/*
+	 * The payload of this CPL is the TLS header followed by
+	 * additional fields.
+	 */
+	KASSERT(m->m_len >= sizeof(*tls_hdr_pkt),
+	    ("%s: payload too small", __func__));
+	tls_hdr_pkt = mtod(m, void *);
+
+	/*
+	 * Only the TLS header is sent to OpenSSL, so report errors by
+	 * altering the record type.
+	 */
+	if ((tls_hdr_pkt->res_to_mac_error & M_TLSRX_HDR_PKT_ERROR) != 0)
+		tls_hdr_pkt->type = CONTENT_TYPE_ERROR;
+
+	/* Trim this CPL's mbuf to only include the TLS header. */
+	KASSERT(m->m_len == len && m->m_next == NULL,
+	    ("%s: CPL spans multiple mbufs", __func__));
+	m->m_len = TLS_HEADER_LENGTH;
+	m->m_pkthdr.len = TLS_HEADER_LENGTH;
+
+	tls_data = mbufq_dequeue(&toep->ulp_pdu_reclaimq);
+	if (tls_data != NULL) {
+		KASSERT(cpl->seq == tls_data->m_pkthdr.tls_tcp_seq,
+		    ("%s: sequence mismatch", __func__));
+
+		/*
+		 * Update the TLS header length to be the length of
+		 * the payload data.
+		 */
+		tls_hdr_pkt->length = htobe16(tls_data->m_pkthdr.len);
+
+		m->m_next = tls_data;
+		m->m_pkthdr.len += tls_data->m_len;
+	}
+
+	so = inp_inpcbtosocket(inp);
+	sb = &so->so_rcv;
+	SOCKBUF_LOCK(sb);
+
+	if (__predict_false(sb->sb_state & SBS_CANTRCVMORE)) {
+		CTR3(KTR_CXGBE, "%s: tid %u, excess rx (%d bytes)",
+		    __func__, tid, pdu_length);
+		m_freem(m);
+		SOCKBUF_UNLOCK(sb);
+		INP_WUNLOCK(inp);
+
+		CURVNET_SET(toep->vnet);
+		INP_INFO_RLOCK(&V_tcbinfo);
+		INP_WLOCK(inp);
+		tp = tcp_drop(tp, ECONNRESET);
+		if (tp)
+			INP_WUNLOCK(inp);
+		INP_INFO_RUNLOCK(&V_tcbinfo);
+		CURVNET_RESTORE();
+
+		return (0);
+	}
+
+	/*
+	 * Some of the accounting here is rather janky as the TCP sequence
+	 * numbers and receive window need to factor in the raw data stream
+	 * with expanded PDUs whereas the socket buffer contains the
+	 * "cooked" PDUs with stripped trailers, etc.
+	 *
+	 * XXX: I'm sure some of this probably isn't quite right.
+	 */
+
+	/* receive buffer autosize */
+	MPASS(toep->vnet == so->so_vnet);
+	CURVNET_SET(toep->vnet);
+	if (sb->sb_flags & SB_AUTOSIZE &&
+	    V_tcp_do_autorcvbuf &&
+	    sb->sb_hiwat < V_tcp_autorcvbuf_max &&
+	    pdu_length > (sbspace(sb) / 8 * 7)) {
+		unsigned int hiwat = sb->sb_hiwat;
+		unsigned int newsize = min(hiwat + V_tcp_autorcvbuf_inc,
+		    V_tcp_autorcvbuf_max);
+
+		if (!sbreserve_locked(sb, newsize, so, NULL))
+			sb->sb_flags &= ~SB_AUTOSIZE;
+		else
+			toep->rx_credits += newsize - hiwat;
+	}
+
+	/*
+	 * Probably sbused is not what we want here, at least for adjusting
+	 * rcv_wnd and rcv_adv.
+	 */
+	KASSERT(toep->sb_cc >= sbused(sb),
+	    ("%s: sb %p has more data (%d) than last time (%d).",
+	    __func__, sb, sbused(sb), toep->sb_cc));
+	toep->rx_credits += toep->sb_cc - sbused(sb);
+	sbappendstream_locked(sb, m, 0);
+	toep->sb_cc = sbused(sb);
+	if (toep->rx_credits > 0 && toep->sb_cc + tp->rcv_wnd < sb->sb_lowat) {
+		int credits;
+
+		credits = send_rx_credits(sc, toep, toep->rx_credits);
+		toep->rx_credits -= credits;
+		tp->rcv_wnd += credits;
+		tp->rcv_adv += credits;
+	}
+	
+	sorwakeup_locked(so);
+	SOCKBUF_UNLOCK_ASSERT(sb);
 
 	INP_WUNLOCK(inp);
+	CURVNET_RESTORE();
 	return (0);
 }
 
