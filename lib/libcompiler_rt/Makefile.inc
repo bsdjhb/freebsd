@@ -171,7 +171,7 @@ SRCF+=		trunctfsf2
 # architectures.
 .if !((${MACHINE_CPUARCH} == "arm" && \
 	(${MACHINE_ARCH:Marmv[67]*} == "" || (defined(CPUTYPE) && ${CPUTYPE:M*soft*}))) || \
-    (${MACHINE_CPUARCH} == "mips" && ${MACHINE_ARCH:Mmips*hf} == "") || \
+    (${MACHINE_ARCH} == "mips" || ${MACHINE_ARCH} == "mipsel") || \
     (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
 SRCF+=		adddf3
 SRCF+=		addsf3

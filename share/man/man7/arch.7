@@ -106,8 +106,6 @@ architectures, the final release.
 .It mipsn32     Ta 9.0
 .It mips64      Ta 9.0
 .It mips64el    Ta 9.0
-.It mips64elhf  Ta 12.0
-.It mips64hf    Ta 12.0
 .It pc98        Ta 2.2   Ta 11.x
 .It powerpc     Ta 6.0
 .It powerpcspe  Ta 12.0
@@ -199,13 +197,11 @@ Machine-dependent type sizes:
 .It i386        Ta 4 Ta 12 Ta 4
 .It mips        Ta 4 Ta  8 Ta 8
 .It mipsel      Ta 4 Ta  8 Ta 8
-.It mipselhf    Ta 4 Ta  8 Ta 8
 .It mipshf      Ta 4 Ta  8 Ta 8
+.It mipselhf    Ta 4 Ta  8 Ta 8
 .It mipsn32     Ta 4 Ta  8 Ta 8
 .It mips64      Ta 8 Ta  8 Ta 8
 .It mips64el    Ta 8 Ta  8 Ta 8
-.It mips64elhf  Ta 8 Ta  8 Ta 8
-.It mips64hf    Ta 8 Ta  8 Ta 8
 .It powerpc     Ta 4 Ta  8 Ta 8
 .It powerpcspe  Ta 4 Ta  8 Ta 8
 .It powerpc64   Ta 8 Ta  8 Ta 8
@@ -233,8 +229,6 @@ is 8 bytes on all supported architectures except i386.
 .It mipsn32     Ta big    Ta   signed
 .It mips64      Ta big    Ta   signed
 .It mips64el    Ta little Ta   signed
-.It mips64elhf  Ta little Ta   signed
-.It mips64hf    Ta big    Ta   signed
 .It powerpc     Ta big    Ta unsigned
 .It powerpcspe  Ta big    Ta unsigned
 .It powerpc64   Ta big    Ta unsigned
@@ -259,8 +253,6 @@ is 8 bytes on all supported architectures except i386.
 .It mipsn32     Ta 4K
 .It mips64      Ta 4K
 .It mips64el    Ta 4K
-.It mips64elhf  Ta 4K
-.It mips64hf    Ta 4K
 .It powerpc     Ta 4K
 .It powerpcspe  Ta 4K
 .It powerpc64   Ta 4K
@@ -282,11 +274,9 @@ is 8 bytes on all supported architectures except i386.
 .It mipsel      Ta soft Ta identical to double
 .It mipselhf    Ta hard Ta identical to double
 .It mipshf      Ta hard Ta identical to double
-.It mipsn32     Ta soft Ta identical to double
-.It mips64      Ta soft Ta identical to double
-.It mips64el    Ta soft Ta identical to double
-.It mips64elhf  Ta hard Ta identical to double
-.It mips64hf    Ta hard Ta identical to double
+.It mipsn32     Ta hard(2) Ta identical to double
+.It mips64      Ta hard(2) Ta identical to double
+.It mips64el    Ta hard(2) Ta identical to double
 .It powerpc     Ta hard Ta hard, double precision
 .It powerpcspe  Ta hard Ta hard, double precision
 .It powerpc64   Ta hard Ta hard, double precision
@@ -299,6 +289,9 @@ is 8 bytes on all supported architectures except i386.
 .Fx 11.0 ,
 armv6 used the softfp ABI even though it supported only processors
 with a floating point unit.
+(2) Prior to
+.Fx 12.0 ,
+mipsn32 and mips64* used the soft-float ABI.
 .Ss Predefined Macros
 The compiler provides a number of predefined macros.
 Some of these provide architecture-specific details and are explained below.
@@ -338,8 +331,6 @@ Architecture-specific macros:
 .It mipsn32     Ta Dv __mips__, Dv __MIPSEB__, Dv __mips_n32
 .It mips64      Ta Dv __mips__, Dv __MIPSEB__, Dv __mips_n64
 .It mips64el    Ta Dv __mips__, Dv __mips_n64
-.It mips64elhf  Ta Dv __mips__, Dv __mips_n64
-.It mips64hf    Ta Dv __mips__, Dv __MIPSEB__, Dv __mips_n64
 .It powerpc     Ta Dv __powerpc__
 .It powerpcspe  Ta Dv __powerpc__, Dv __SPE__
 .It powerpc64   Ta Dv __powerpc__, Dv __powerpc64__
@@ -405,9 +396,9 @@ uniquely define the ABI (e.g., MIPS' n32 ABI).
 It, along with
 .Dv MACHINE ,
 defines the ABI used by the system.
-For example, the MIPS CPU processor family supports 9 different
+For example, the MIPS CPU processor family supports 7 different
 combinations encoding pointer size, endian and hard versus soft float (for
-8 combinations) as well as N32 (which only ever had one variation of
+6 combinations) as well as N32 (which only ever had one variation of
 all these).
 Generally, the plain CPU name specifies the most common (or at least
 first) variant of the CPU.

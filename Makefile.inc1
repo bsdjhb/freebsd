@@ -424,14 +424,10 @@ KNOWN_ARCHES?=	aarch64/arm64 \
 		mips \
 		mipsel/mips \
 		mips64el/mips \
-		mipsn32el/mips \
 		mips64/mips \
 		mipsn32/mips \
 		mipshf/mips \
 		mipselhf/mips \
-		mipsn32hf/mips \
-		mips64elhf/mips \
-		mips64hf/mips \
 		powerpc \
 		powerpc64/powerpc \
 		powerpcspe/powerpc \

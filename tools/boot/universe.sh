@@ -7,7 +7,7 @@
 # value, and there's a few others we just don't support.
 #
 #	mips/mipsel mips/mips mips/mips64el mips/mips64 mips/mipsn32 \
-#	mips/mipselhf mips/mipshf mips/mips64elhf mips/mips64hf \
+#	mips/mipselhf mips/mipshf \
 #	powerpc/powerpc powerpc/powerpc64 powerpc/powerpcspe \
 #	riscv/riscv64 riscv/riscv64sf
 #

@@ -330,10 +330,10 @@ AFLAGS+= -mabi=32
 CFLAGS+= -mabi=32
 LDFLAGS+= -mabi=32
 . endif
-. if ${MACHINE_ARCH:Mmips*hf}
-CFLAGS += -mhard-float
-. else
+. if ${MACHINE_ARCH} == "mips" || ${MACHINE_ARCH} == "mipsel"
 CFLAGS += -msoft-float
+. else
+CFLAGS += -mhard-float
 . endif
 .endif
 
