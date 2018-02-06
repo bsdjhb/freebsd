@@ -212,9 +212,10 @@ CROSS_BINUTILS_PREFIX?=${CROSS_TOOLCHAIN_PREFIX}
 .if !empty(BROKEN_OPTIONS:MBINUTILS_BOOTSTRAP) && \
     ${MK_LLD_BOOTSTRAP} == "no" && \
     !defined(CROSS_BINUTILS_PREFIX)
-CROSS_BINUTILS_PREFIX=/usr/local/${TARGET_ARCH}-freebsd/bin/
+BINUTILS_ARCH=${TARGET_ARCH:C/mips.*/mips/}
+CROSS_BINUTILS_PREFIX=/usr/local/${BINUTILS_ARCH}-freebsd/bin/
 .if !exists(${CROSS_BINUTILS_PREFIX})
-.error In-tree binutils does not support the ${TARGET_ARCH} architecture. Install the ${TARGET_ARCH}-binutils port or package or set CROSS_BINUTILS_PREFIX.
+.error In-tree binutils does not support the ${TARGET_ARCH} architecture. Install the ${BINUTILS_ARCH}-binutils port or package or set CROSS_BINUTILS_PREFIX.
 .endif
 .endif
 .endif
