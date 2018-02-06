@@ -175,6 +175,8 @@ SRCF+=		trunctfsf2
     (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
 SRCF+=		adddf3
 SRCF+=		addsf3
+SRCF+=		comparedf2
+SRCF+=		comparesf2
 SRCF+=		divdf3
 SRCF+=		divsf3
 SRCF+=		extendsfdf2
@@ -187,11 +189,6 @@ SRCF+=		mulsf3
 SRCF+=		subdf3
 SRCF+=		subsf3
 SRCF+=		truncdfsf2
-.endif
-
-.if ${MACHINE_CPUARCH} != "arm" && ${MACHINE_CPUARCH} != "mips"
-SRCF+=		comparedf2
-SRCF+=		comparesf2
 .endif
 
 # FreeBSD-specific atomic intrinsics.
