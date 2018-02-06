@@ -1484,7 +1484,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	    __func__, tid, pdu_length, len, be32toh(cpl->seq), tp->rcv_nxt);
 
 	tp->rcv_nxt += pdu_length;
-	KASSERT(tp->rcv_wnd < pdu_length,
+	KASSERT(tp->rcv_wnd >= pdu_length,
 	    ("%s: negative window size", __func__));
 
 	tp->rcv_wnd -= pdu_length;
