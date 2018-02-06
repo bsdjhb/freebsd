@@ -1514,7 +1514,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	tls_data = mbufq_dequeue(&toep->ulp_pdu_reclaimq);
 	if (tls_data != NULL) {
-		KASSERT(cpl->seq == tls_data->m_pkthdr.tls_tcp_seq,
+		KASSERT(be32toh(cpl->seq) == tls_data->m_pkthdr.tls_tcp_seq,
 		    ("%s: sequence mismatch", __func__));
 
 		/*
