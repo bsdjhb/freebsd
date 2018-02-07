@@ -24,6 +24,8 @@ SRCF+=		clzsi2
 SRCF+=		clzti2
 SRCF+=		cmpdi2
 SRCF+=		cmpti2
+SRCF+=		comparedf2
+SRCF+=		comparesf2
 SRCF+=		ctzdi2
 SRCF+=		ctzsi2
 SRCF+=		ctzti2
@@ -175,8 +177,6 @@ SRCF+=		trunctfsf2
     (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
 SRCF+=		adddf3
 SRCF+=		addsf3
-SRCF+=		comparedf2
-SRCF+=		comparesf2
 SRCF+=		divdf3
 SRCF+=		divsf3
 SRCF+=		extendsfdf2

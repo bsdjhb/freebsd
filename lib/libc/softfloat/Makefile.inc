@@ -18,10 +18,6 @@ SRCS+=		fpgetround.c fpsetround.c fpgetmask.c fpsetmask.c \
 		fpgetsticky.c
 .endif
 
-SRCS+=		eqsf2.c nesf2.c gtsf2.c gesf2.c ltsf2.c lesf2.c negsf2.c \
-		eqdf2.c nedf2.c gtdf2.c gedf2.c ltdf2.c ledf2.c negdf2.c \
-		unordsf2.c unorddf2.c
-
 .if defined(SOFTFLOAT_128)
 CFLAGS+=	-DFLOAT128
 SRCS+=		eqtf2.c netf2.c gttf2.c getf2.c lttf2.c letf2.c negtf2.c
