@@ -438,6 +438,7 @@ void tls_free_kmap(struct tom_data *);
 int tls_init_kmap(struct adapter *, struct tom_data *);
 void tls_init_toep(struct toepcb *);
 int tls_rx_key(struct toepcb *);
+void tls_stop_handshake_timer(struct toepcb *);
 int tls_tx_key(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
 

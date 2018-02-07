@@ -160,6 +160,11 @@ enum {
 #define	TCP_TLSOM_CLR_QUIES		(TCP_VENDOR + 3)
 
 #ifdef _KERNEL
+/* Timeouts for handshake timer in seconds. */
+#define TLS_SRV_HELLO_DONE		9
+#define TLS_SRV_HELLO_RD_TM		5
+#define TLS_SRV_HELLO_BKOFF_TM		15
+
 #define CONTENT_TYPE_CCS		20
 #define CONTENT_TYPE_ALERT		21
 #define CONTENT_TYPE_HANDSHAKE		22
@@ -270,6 +275,7 @@ struct tls_ofld_info {
 	unsigned short pdus_per_ulp;
 	struct tls_scmd scmd0;
 	u_int sb_off;
+	struct callout handshake_timer;
 };
 
 struct tls_key_req {

@@ -142,6 +142,10 @@ do_act_establish(struct sge_iq *iq, const struct rss_header *rss,
 	}
 
 	make_established(toep, cpl->snd_isn, cpl->rcv_isn, cpl->tcp_opt);
+
+	if (toep->ulp_mode == ULP_MODE_TLS)
+		tls_establish(toep);
+
 done:
 	INP_WUNLOCK(inp);
 	CURVNET_RESTORE();
