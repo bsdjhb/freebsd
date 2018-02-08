@@ -68,7 +68,7 @@ __FBSDID("$FreeBSD$");
  * the mbuf is in the ulp_pdu_reclaimq.
  */
 #define	tls_tcp_seq	PH_loc.thirtytwo[0]
-   
+
 static void
 t4_set_tls_tcb_field(struct toepcb *toep, uint16_t word, uint64_t mask,
     uint64_t val)
@@ -176,7 +176,7 @@ tls_expansion_size(struct toepcb *toep, int data_len, int full_pdus_only,
 					*pdus_per_ulp = 1;
 				expn_size = (*pdus_per_ulp) * exp_per_pdu;
 				break;
-			}	
+			}
 			if ((last_frag_size = data_len % max_frag_size) > 0) {
 				frag_count += 1;
 				expn_size += exp_per_pdu;
@@ -200,7 +200,7 @@ tls_expansion_size(struct toepcb *toep, int data_len, int full_pdus_only,
 					hdr_len + CIPHER_BLOCK_SIZE;
 				expn_size = frag_count * exp_per_pdu;
 			}
-			if (full_pdus_only) { 
+			if (full_pdus_only) {
 				*pdus_per_ulp = data_len / (exp_per_pdu +
 					max_frag_size);
 				if (*pdus_per_ulp > 32)
@@ -489,8 +489,8 @@ clear_tls_keyid(struct toepcb *toep)
 static int
 get_keyid(struct tls_ofld_info *tls_ofld, unsigned int ops)
 {
-	return (ops & KEY_WRITE_RX ? tls_ofld->rx_key_addr : 
-		((ops & KEY_WRITE_TX) ? tls_ofld->rx_key_addr : -1)); 
+	return (ops & KEY_WRITE_RX ? tls_ofld->rx_key_addr :
+		((ops & KEY_WRITE_TX) ? tls_ofld->rx_key_addr : -1));
 }
 
 static int
@@ -498,7 +498,7 @@ get_tp_plen_max(struct tls_ofld_info *tls_ofld)
 {
 	int plen = ((min(3*4096, TP_TX_PG_SZ))/1448) * 1448;
 
-	return (tls_ofld->k_ctx.frag_size <= 8192 ? plen : FC_TP_PLEN_MAX);	
+	return (tls_ofld->k_ctx.frag_size <= 8192 ? plen : FC_TP_PLEN_MAX);
 }
 
 /* Send request to get the key-id */
@@ -554,7 +554,7 @@ tls_program_key_id(struct toepcb *toep, struct tls_key_context *k_ctx)
 	kwr->kaddr = htobe32(V_ULP_MEMIO_ADDR(keyid >> 5));
 
 	/* sub command */
-	kwr->sc_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));	
+	kwr->sc_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));
 	kwr->sc_len = htobe32(kctxlen);
 
 	/* XXX: This assumes that kwrlen == sizeof(*kwr). */
@@ -996,7 +996,7 @@ write_tlstx_sgl(void *dst, struct mbuf *start, int skip, int plen,
 		rc = sglist_append(&sg, iv_buffer, iv_len);
 		if (__predict_false(rc != 0))
 			panic("%s: sglist_append %d", __func__, rc);
-		
+
 		for (j = 0; j < sg.sg_nseg; i++, j++) {
 			if (i < 0) {
 				usgl->len0 = htobe32(segs[j].ss_len);
@@ -1573,7 +1573,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	toep->rx_credits += pdu_overhead;
 	tp->rcv_wnd += pdu_overhead;
 	tp->rcv_adv += pdu_overhead;
-	
+
 	/* receive buffer autosize */
 	MPASS(toep->vnet == so->so_vnet);
 	CURVNET_SET(toep->vnet);
@@ -1609,7 +1609,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		tp->rcv_wnd += credits;
 		tp->rcv_adv += credits;
 	}
-	
+
 	sorwakeup_locked(so);
 	SOCKBUF_UNLOCK_ASSERT(sb);
 
