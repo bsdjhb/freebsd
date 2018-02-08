@@ -1434,8 +1434,10 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	tp = intotcpcb(inp);
 	tp->t_rcvtime = ticks;
 
+#ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %u len %d seq %u", __func__, tid, len,
 	    be32toh(cpl->seq));
+#endif
 
 	INP_WUNLOCK(inp);
 	return (0);
@@ -1454,7 +1456,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct socket *so;
 	struct sockbuf *sb;
 	struct mbuf *tls_data;
-	int len, pdu_length;
+	int len, pdu_length, pdu_overhead, sb_length;
 
 	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
 	KASSERT(!(toep->flags & TPF_SYNQE),
@@ -1480,8 +1482,10 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	tp = intotcpcb(inp);
 
+#ifdef VERBOSE_TRACES
 	CTR6(KTR_CXGBE, "%s: tid %u PDU len %d len %d seq %u, rcv_nxt %u",
 	    __func__, tid, pdu_length, len, be32toh(cpl->seq), tp->rcv_nxt);
+#endif
 
 	tp->rcv_nxt += pdu_length;
 	KASSERT(tp->rcv_wnd >= pdu_length,
@@ -1551,21 +1555,32 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 
 	/*
-	 * Some of the accounting here is rather janky as the TCP sequence
-	 * numbers and receive window need to factor in the raw data stream
-	 * with expanded PDUs whereas the socket buffer contains the
-	 * "cooked" PDUs with stripped trailers, etc.
+	 * Not all of the bytes on the wire are included in the socket
+	 * buffer (e.g. the MAC of the TLS record).  However, those
+	 * bytes are included in the TCP sequence space.  To handle
+	 * this, compute the delta for this TLS record in
+	 * 'pdu_overhead' and treat those bytes as having already been
+	 * "read" by the application for the purposes of expanding the
+	 * window.  The meat of the TLS record passed to the
+	 * application ('sb_length') will still not be counted as
+	 * "read" until userland actually reads the bytes.
 	 *
-	 * XXX: I'm sure some of this probably isn't quite right.
+	 * XXX: Some of the calculations below are probably still not
+	 * really correct.
 	 */
-
+	sb_length = m->m_pkthdr.len;
+	pdu_overhead = pdu_length - sb_length;
+	toep->rx_credits += pdu_overhead;
+	tp->rcv_wnd += pdu_overhead;
+	tp->rcv_adv += pdu_overhead;
+	
 	/* receive buffer autosize */
 	MPASS(toep->vnet == so->so_vnet);
 	CURVNET_SET(toep->vnet);
 	if (sb->sb_flags & SB_AUTOSIZE &&
 	    V_tcp_do_autorcvbuf &&
 	    sb->sb_hiwat < V_tcp_autorcvbuf_max &&
-	    pdu_length > (sbspace(sb) / 8 * 7)) {
+	    sb_length > (sbspace(sb) / 8 * 7)) {
 		unsigned int hiwat = sb->sb_hiwat;
 		unsigned int newsize = min(hiwat + V_tcp_autorcvbuf_inc,
 		    V_tcp_autorcvbuf_max);
@@ -1576,16 +1591,16 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			toep->rx_credits += newsize - hiwat;
 	}
 
-	/*
-	 * Probably sbused is not what we want here, at least for adjusting
-	 * rcv_wnd and rcv_adv.
-	 */
 	KASSERT(toep->sb_cc >= sbused(sb),
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
 	toep->rx_credits += toep->sb_cc - sbused(sb);
 	sbappendstream_locked(sb, m, 0);
 	toep->sb_cc = sbused(sb);
+#ifdef VERBOSE_TRACES
+	CTR5(KTR_CXGBE, "%s: tid %u PDU overhead %d rx_credits %u rcv_wnd %u",
+	    __func__, tid, pdu_overhead, toep->rx_credits, tp->rcv_wnd);
+#endif
 	if (toep->rx_credits > 0 && toep->sb_cc + tp->rcv_wnd < sb->sb_lowat) {
 		int credits;
 
