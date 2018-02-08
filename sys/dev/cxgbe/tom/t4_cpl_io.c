@@ -117,6 +117,8 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 		nparams = 8;
 	else
 		nparams = 6;
+	if (toep->ulp_mode == ULP_MODE_TLS)
+		nparams++;
 	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
 		nparams++;
 
@@ -166,6 +168,8 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 
 		CTR2(KTR_CXGBE, "%s: tid %u", __func__, toep->tid);
 	}
+	if (toep->ulp_mode == ULP_MODE_TLS)
+		FLOWC_PARAM(ULP_MODE, toep->ulp_mode);
 	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
 		FLOWC_PARAM(TXDATAPLEN_MAX, toep->tls.fcplenmax);
 #undef FLOWC_PARAM
