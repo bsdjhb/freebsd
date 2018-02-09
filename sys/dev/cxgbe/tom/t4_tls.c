@@ -833,13 +833,17 @@ tls_init_toep(struct toepcb *toep)
 	tls_ofld->rx_key_addr = -1;
 	tls_ofld->tx_key_addr = -1;
 	if (toep->ulp_mode == ULP_MODE_TLS) {
-		/* Enable PDU extraction. */
-		CTR2(KTR_CXGBE, "%s: tid %d setting TLS_ENABLE", __func__,
-		    toep->tid);
-		t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
-		    V_TCB_ULP_RAW(M_TCB_ULP_RAW),
-		    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
 	}
+}
+
+void
+tls_establish(struct toepcb *toep)
+{
+
+	/* Enable PDU extraction. */
+	CTR2(KTR_CXGBE, "%s: tid %d setting TLS_ENABLE", __func__, toep->tid);
+	t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW, V_TCB_ULP_RAW(M_TCB_ULP_RAW),
+	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
 }
 
 void

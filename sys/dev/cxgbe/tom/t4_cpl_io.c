@@ -428,6 +428,9 @@ make_established(struct toepcb *toep, uint32_t snd_isn, uint32_t rcv_isn,
 	ftxp.mss = tp->t_maxseg;
 	send_flowc_wr(toep, &ftxp);
 
+	if (toep->ulp_mode == ULP_MODE_TLS)
+		tls_establish(toep);
+
 	soisconnected(so);
 }
 
