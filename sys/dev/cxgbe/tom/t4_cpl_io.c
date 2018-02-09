@@ -478,7 +478,8 @@ t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 	if (toep->rx_credits > 0 &&
 	    (tp->rcv_wnd <= 32 * 1024 || toep->rx_credits >= 64 * 1024 ||
 	    (toep->rx_credits >= 16 * 1024 && tp->rcv_wnd <= 128 * 1024) ||
-	    toep->sb_cc + tp->rcv_wnd < sb->sb_lowat)) {
+	    toep->sb_cc + tp->rcv_wnd < sb->sb_lowat ||
+	    toep->flags & TPF_FORCE_CREDITS)) {
 
 		credits = send_rx_credits(sc, toep, toep->rx_credits);
 		toep->rx_credits -= credits;

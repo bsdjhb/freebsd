@@ -607,6 +607,8 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	/* XXX: Stop handshake timer. */
 
+	toep->flags &= ~TPF_FORCE_CREDITS;
+
 	CTR4(KTR_CXGBE, "%s: tid %d %s proto_ver %#x", __func__, toep->tid,
 	    G_KEY_GET_LOC(uk_ctx->l_p_key) == KEY_WRITE_RX ? "KEY_WRITE_RX" :
 	    "KEY_WRITE_TX", uk_ctx->proto_ver);
@@ -844,6 +846,7 @@ tls_establish(struct toepcb *toep)
 	CTR2(KTR_CXGBE, "%s: tid %d setting TLS_ENABLE", __func__, toep->tid);
 	t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW, V_TCB_ULP_RAW(M_TCB_ULP_RAW),
 	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
+	toep->flags |= TPF_FORCE_CREDITS;
 }
 
 void

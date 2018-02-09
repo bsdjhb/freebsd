@@ -73,6 +73,7 @@ enum {
 	TPF_SYNQE_EXPANDED = (1 << 11),	/* toepcb ready, tid context updated */
 	TPF_SYNQE_HAS_L2TE = (1 << 12),	/* we've replied to PASS_ACCEPT_REQ */
 	TPF_SYNQE_TLS      = (1 << 13), /* ulp_mode TLS in toepcb */
+	TPF_FORCE_CREDITS  = (1 << 13), /* always send credits */
 };
 
 enum {
