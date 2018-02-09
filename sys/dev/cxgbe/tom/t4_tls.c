@@ -131,6 +131,7 @@ tls_clr_ofld_mode(struct toepcb *toep)
 
 	/* Operate in PDU extraction mode only. */
 	t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
+	    /* XXX: Should this be M_TCB_ULP_RAW to clear other bits? */
 	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)),
 	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
 	t4_clear_rx_quiesce(toep);
@@ -831,6 +832,12 @@ tls_init_toep(struct toepcb *toep)
 	tls_ofld->key_location = TLS_SFO_WR_CONTEXTLOC_DDR;
 	tls_ofld->rx_key_addr = -1;
 	tls_ofld->tx_key_addr = -1;
+	if (toep->ulp_mode == ULP_MODE_TLS) {
+		/* Enable PDU extraction. */
+		t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
+		    V_TCB_ULP_RAW(M_TCB_ULP_RAW),
+		    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
+	}
 }
 
 void
