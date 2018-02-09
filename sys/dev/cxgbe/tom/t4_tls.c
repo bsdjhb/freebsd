@@ -1706,7 +1706,7 @@ int
 t4_tls_mod_load(void)
 {
 
-	mtx_init(&handshake_lock, "t4tls handshake", NULL, MTX_DEF);
+	mtx_init(&tls_handshake_lock, "t4tls handshake", NULL, MTX_DEF);
 	t4_register_cpl_handler(CPL_TLS_DATA, do_tls_data);
 	t4_register_cpl_handler(CPL_RX_TLS_CMP, do_rx_tls_cmp);
 	return (0);
@@ -1718,6 +1718,6 @@ t4_tls_mod_unload(void)
 
 	t4_register_cpl_handler(CPL_TLS_DATA, NULL);
 	t4_register_cpl_handler(CPL_RX_TLS_CMP, NULL);
-	mtx_destroy(&handshake_lock);
+	mtx_destroy(&tls_handshake_lock);
 }
 #endif	/* TCP_OFFLOAD */
