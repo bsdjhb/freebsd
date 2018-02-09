@@ -753,6 +753,8 @@ static void
 tls_send_handshake_ack(void *arg)
 {
 	struct toepcb *toep = arg;
+	struct tls_ofld_info *tls_ofld = &toep->tls;
+	struct adapter *sc = td_adapter(toep->td);
 	struct wrqe *wr;
 	struct cpl_rx_data_ack *req;
 
@@ -898,7 +900,7 @@ tls_init_toep(struct toepcb *toep)
 	tls_ofld->tx_key_addr = -1;
 	if (toep->ulp_mode == ULP_MODE_TLS)
 		callout_init_mtx(&tls_ofld->handshake_timer,
-		    &tls_handshake_lock);
+		    &tls_handshake_lock, 0);
 }
 
 void
