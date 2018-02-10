@@ -762,13 +762,12 @@ tls_send_handshake_ack(void *arg)
 	 * XXX: Does not have the t4_get_tcb() checks to refine the
 	 * workaround.
 	 */
+	callout_schedule(&tls_ofld->handshake_timer, TLS_SRV_HELLO_RD_TM * hz);
 
+	CTR2(KTR_CXGBE, "%s: tid %d sending RX_DATA_ACK", __func__, toep->tid);
 	wr = alloc_wrqe(sizeof(*req), toep->ctrlq);
-	if (wr == NULL) {
-		callout_schedule(&tls_ofld->handshake_timer,
-		    TLS_SRV_HELLO_RD_TM * hz);
+	if (wr == NULL)
 		return;
-	}
 	req = wrtod(wr);
 
 	INIT_TP_WR_MIT_CPL(req, CPL_RX_DATA_ACK, toep->tid);
