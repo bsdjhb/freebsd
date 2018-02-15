@@ -5852,7 +5852,13 @@ cxgbe_sysctls(struct port_info *pi)
 	    "# of TLS records transmitted");
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "tx_tls_octets",
 	    CTLFLAG_RD, &pi->tx_tls_octets,
-	    "# of payload octets in TLS records");
+	    "# of payload octets in transmitted TLS records");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_tls_records",
+	    CTLFLAG_RD, &pi->rx_tls_records,
+	    "# of TLS records received");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_tls_octets",
+	    CTLFLAG_RD, &pi->rx_tls_octets,
+	    "# of payload octets in received TLS records");
 }
 
 static int

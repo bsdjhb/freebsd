@@ -1493,6 +1493,8 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	m_adj(m, sizeof(*cpl));
 	len = m->m_pkthdr.len;
 
+	atomic_add_long(&toep->vi->pi->rx_tls_octets, len);
+
 	KASSERT(len == G_CPL_TLS_DATA_LENGTH(be32toh(cpl->length_pkd)),
 	    ("%s: payload length mismatch", __func__));
 
@@ -1553,6 +1555,8 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	/* strip off CPL header */
 	m_adj(m, sizeof(*cpl));
 	len = m->m_pkthdr.len;
+
+	atomic_add_long(&toep->vi->pi->rx_tls_records, 1);
 
 	KASSERT(len == G_CPL_RX_TLS_CMP_LENGTH(be32toh(cpl->pdulength_length)),
 	    ("%s: payload length mismatch", __func__));
