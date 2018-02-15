@@ -139,8 +139,7 @@ tls_clr_ofld_mode(struct toepcb *toep)
 
 	/* Operate in PDU extraction mode only. */
 	t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
-	    /* XXX: Should this be M_TCB_ULP_RAW to clear other bits? */
-	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)),
+	    V_TCB_ULP_RAW(M_TCB_ULP_RAW),
 	    V_TCB_ULP_RAW(V_TF_TLS_ENABLE(1)));
 	t4_clear_rx_quiesce(toep);
 }
