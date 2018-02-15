@@ -455,6 +455,26 @@ send_rx_credits(struct adapter *sc, struct toepcb *toep, int credits)
 	return (credits);
 }
 
+static void
+send_rx_modulate(struct adapter *sc, struct toepcb *toep)
+{
+	struct wrqe *wr;
+	struct cpl_rx_data_ack *req;
+
+	wr = alloc_wrqe(sizeof(*req), toep->ctrlq);
+	if (wr == NULL)
+		return;
+	req = wrtod(wr);
+
+#ifdef VERBOSE_TRACES
+	CTR2(KTR_CXGBE, "%s: tid %d", __func__, toep->tid);
+#endif
+	INIT_TP_WR_MIT_CPL(req, CPL_RX_DATA_ACK, toep->tid);
+	req->credit_dack = htobe32(F_RX_MODULATE_RX);
+
+	t4_wrq_tx(sc, wr);
+}
+
 void
 t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 {
@@ -478,14 +498,14 @@ t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 	if (toep->rx_credits > 0 &&
 	    (tp->rcv_wnd <= 32 * 1024 || toep->rx_credits >= 64 * 1024 ||
 	    (toep->rx_credits >= 16 * 1024 && tp->rcv_wnd <= 128 * 1024) ||
-	    toep->sb_cc + tp->rcv_wnd < sb->sb_lowat ||
-	    toep->flags & TPF_FORCE_CREDITS)) {
+	    toep->sb_cc + tp->rcv_wnd < sb->sb_lowat)) {
 
 		credits = send_rx_credits(sc, toep, toep->rx_credits);
 		toep->rx_credits -= credits;
 		tp->rcv_wnd += credits;
 		tp->rcv_adv += credits;
-	}
+	} else if (toep->flags & TPF_FORCE_CREDITS)
+		send_rx_modulate(sc, toep);
 }
 
 void
