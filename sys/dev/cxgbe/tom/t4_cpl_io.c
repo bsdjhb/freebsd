@@ -119,7 +119,7 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 		nparams = 6;
 	if (toep->ulp_mode == ULP_MODE_TLS)
 		nparams++;
-	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
+	if (toep->tls.fcplenmax != 0)
 		nparams++;
 
 	flowclen = sizeof(*flowc) + nparams * sizeof(struct fw_flowc_mnemval);
@@ -170,7 +170,7 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 	}
 	if (toep->ulp_mode == ULP_MODE_TLS)
 		FLOWC_PARAM(ULP_MODE, toep->ulp_mode);
-	if (is_tls_offload(toep) && toep->tls.fcplenmax != 0)
+	if (toep->tls.fcplenmax != 0)
 		FLOWC_PARAM(TXDATAPLEN_MAX, toep->tls.fcplenmax);
 #undef FLOWC_PARAM
 
