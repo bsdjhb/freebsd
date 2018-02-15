@@ -445,6 +445,9 @@ send_rx_credits(struct adapter *sc, struct toepcb *toep, int credits)
 		return (0);
 	req = wrtod(wr);
 
+#ifdef VERBOSE_TRACES
+	CTR3(KTR_CXGBE, "%s: tid %d credits %d", __func__, toep->tid, credits);
+#endif
 	INIT_TP_WR_MIT_CPL(req, CPL_RX_DATA_ACK, toep->tid);
 	req->credit_dack = htobe32(dack | V_RX_CREDITS(credits));
 
