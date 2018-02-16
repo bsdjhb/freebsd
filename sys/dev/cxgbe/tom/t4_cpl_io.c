@@ -492,8 +492,18 @@ t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 	    ("%s: sb %p has more data (%d) than last time (%d).",
 	    __func__, sb, sbused(sb), toep->sb_cc));
 
-	toep->rx_credits += toep->sb_cc - sbused(sb);
+	credits = toep->sb_cc - sbused(sb);
 	toep->sb_cc = sbused(sb);
+	if (toep->ulp_mode == ULP_MODE_TLS) {
+		if (toep->tls.rcv_over >= credits) {
+			toep->tls.rcv_over -= credits;
+			credits = 0;
+		} else {
+			credits -= toep->tls.rcv_over;
+			toep->tls.rcv_over = 0;
+		}
+	}
+	toep->rx_credits += credits;
 
 	if (toep->rx_credits > 0 &&
 	    (tp->rcv_wnd <= 32 * 1024 || toep->rx_credits >= 64 * 1024 ||
