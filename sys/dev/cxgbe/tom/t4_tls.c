@@ -1514,7 +1514,7 @@ do_tls_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 #ifdef INVARIANTS
 		panic("Failed to queue TLS data packet");
 #else
-		printf("%s: Failed to queue TLS data packet\n");
+		printf("%s: Failed to queue TLS data packet\n", __func__);
 		INP_WUNLOCK(inp);
 		m_freem(m);
 		return (0);
