@@ -724,7 +724,7 @@ int rdma_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 
 	return ah->device->modify_ah ?
 		ah->device->modify_ah(ah, ah_attr) :
-		-ENOSYS;
+		-EOPNOTSUPP;
 }
 EXPORT_SYMBOL(rdma_modify_ah);
 
@@ -732,7 +732,7 @@ int rdma_query_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
 	return ah->device->query_ah ?
 		ah->device->query_ah(ah, ah_attr) :
-		-ENOSYS;
+		-EOPNOTSUPP;
 }
 EXPORT_SYMBOL(rdma_query_ah);
 
@@ -803,7 +803,7 @@ int ib_modify_srq(struct ib_srq *srq,
 {
 	return srq->device->modify_srq ?
 		srq->device->modify_srq(srq, srq_attr, srq_attr_mask, NULL) :
-		-ENOSYS;
+		-EOPNOTSUPP;
 }
 EXPORT_SYMBOL(ib_modify_srq);
 
@@ -811,7 +811,7 @@ int ib_query_srq(struct ib_srq *srq,
 		 struct ib_srq_attr *srq_attr)
 {
 	return srq->device->query_srq ?
-		srq->device->query_srq(srq, srq_attr) : -ENOSYS;
+		srq->device->query_srq(srq, srq_attr) : -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(ib_query_srq);
 
@@ -1455,7 +1455,7 @@ int ib_query_qp(struct ib_qp *qp,
 {
 	return qp->device->query_qp ?
 		qp->device->query_qp(qp->real_qp, qp_attr, qp_attr_mask, qp_init_attr) :
-		-ENOSYS;
+		-EOPNOTSUPP;
 }
 EXPORT_SYMBOL(ib_query_qp);
 
@@ -1581,7 +1581,7 @@ EXPORT_SYMBOL(__ib_create_cq);
 int rdma_set_cq_moderation(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 {
 	return cq->device->modify_cq ?
-		cq->device->modify_cq(cq, cq_count, cq_period) : -ENOSYS;
+		cq->device->modify_cq(cq, cq_count, cq_period) : -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(rdma_set_cq_moderation);
 
@@ -1599,7 +1599,7 @@ EXPORT_SYMBOL(ib_destroy_cq_user);
 int ib_resize_cq(struct ib_cq *cq, int cqe)
 {
 	return cq->device->resize_cq ?
-		cq->device->resize_cq(cq, cqe, NULL) : -ENOSYS;
+		cq->device->resize_cq(cq, cqe, NULL) : -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(ib_resize_cq);
 
@@ -1679,7 +1679,7 @@ struct ib_fmr *ib_alloc_fmr(struct ib_pd *pd,
 	struct ib_fmr *fmr;
 
 	if (!pd->device->alloc_fmr)
-		return ERR_PTR(-ENOSYS);
+		return ERR_PTR(-EOPNOTSUPP);
 
 	fmr = pd->device->alloc_fmr(pd, mr_access_flags, fmr_attr);
 	if (!IS_ERR(fmr)) {
@@ -1763,7 +1763,7 @@ int ib_attach_mcast(struct ib_qp *qp, union ib_gid *gid, u16 lid)
 	int ret;
 
 	if (!qp->device->attach_mcast)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	if (!rdma_is_multicast_addr((struct in6_addr *)gid->raw) ||
 	    qp->qp_type != IB_QPT_UD || !is_valid_mcast_lid(qp, lid))
@@ -1781,7 +1781,7 @@ int ib_detach_mcast(struct ib_qp *qp, union ib_gid *gid, u16 lid)
 	int ret;
 
 	if (!qp->device->detach_mcast)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	if (!rdma_is_multicast_addr((struct in6_addr *)gid->raw) ||
 	    qp->qp_type != IB_QPT_UD || !is_valid_mcast_lid(qp, lid))
@@ -1854,7 +1854,7 @@ struct ib_wq *ib_create_wq(struct ib_pd *pd,
 	struct ib_wq *wq;
 
 	if (!pd->device->create_wq)
-		return ERR_PTR(-ENOSYS);
+		return ERR_PTR(-EOPNOTSUPP);
 
 	wq = pd->device->create_wq(pd, wq_attr, NULL);
 	if (!IS_ERR(wq)) {
@@ -1908,7 +1908,7 @@ int ib_modify_wq(struct ib_wq *wq, struct ib_wq_attr *wq_attr,
 	int err;
 
 	if (!wq->device->modify_wq)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	err = wq->device->modify_wq(wq, wq_attr, wq_attr_mask, NULL);
 	return err;
@@ -1933,7 +1933,7 @@ struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
 	u32 table_size;
 
 	if (!device->create_rwq_ind_table)
-		return ERR_PTR(-ENOSYS);
+		return ERR_PTR(-EOPNOTSUPP);
 
 	table_size = (1 << init_attr->log_ind_tbl_size);
 	rwq_ind_table = device->create_rwq_ind_table(device,
@@ -1981,7 +1981,7 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 		       struct ib_mr_status *mr_status)
 {
 	return mr->device->check_mr_status ?
-		mr->device->check_mr_status(mr, check_mask, mr_status) : -ENOSYS;
+		mr->device->check_mr_status(mr, check_mask, mr_status) : -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(ib_check_mr_status);
 
@@ -1989,7 +1989,7 @@ int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
 			 int state)
 {
 	if (!device->set_vf_link_state)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	return device->set_vf_link_state(device, vf, port, state);
 }
@@ -1999,7 +1999,7 @@ int ib_get_vf_config(struct ib_device *device, int vf, u8 port,
 		     struct ifla_vf_info *info)
 {
 	if (!device->get_vf_config)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	return device->get_vf_config(device, vf, port, info);
 }
@@ -2009,7 +2009,7 @@ int ib_get_vf_stats(struct ib_device *device, int vf, u8 port,
 		    struct ifla_vf_stats *stats)
 {
 	if (!device->get_vf_stats)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	return device->get_vf_stats(device, vf, port, stats);
 }
@@ -2019,7 +2019,7 @@ int ib_set_vf_guid(struct ib_device *device, int vf, u8 port, u64 guid,
 		   int type)
 {
 	if (!device->set_vf_guid)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	return device->set_vf_guid(device, vf, port, guid, type);
 }
@@ -2054,7 +2054,7 @@ int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size)
 {
 	if (unlikely(!mr->device->map_mr_sg))
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	mr->page_size = page_size;
 
