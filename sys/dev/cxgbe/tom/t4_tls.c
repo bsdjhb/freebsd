@@ -47,23 +47,6 @@ __FBSDID("$FreeBSD$");
 #include "tom/t4_tom.h"
 
 /*
- * TODO:
- * + socket options
- * + transmit TLS records via CPL_TX_TLS_SFO
- *   + TLS handling in chelsio_sendpage / chelsio_sendmsg will move to
- *     t4_push_frames, and state won't be cached in mbuf
- * - how to receive TLS data?
- *   - need to use DDP to a single buffer (how to size buffer?)
- *   - chelsio_recvmsg vs chelsio_tlsv4_recvmsg:
- *     - DDP handling only in non-TLS
- *     - checking 'rstate' in tls_ofld only in TLS case
- *       TLS_RCV_ST_READ_BODY => copy data into socket buffer
- *       otherwise, read TLS header?  (TLS header returned to reader it seems)
- *     - CPL_RX_TLS_CMP handler (new_rx_tls_cmp in cpl_io.c)
- * - handshake timer?
- */
-
-/*
  * The TCP sequence number of a CPL_TLS_DATA mbuf is saved here while
  * the mbuf is in the ulp_pdu_reclaimq.
  */
@@ -1280,14 +1263,6 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		shove = (sbavail(sb) == tls_ofld->sb_off + plen) &&
 		    !(tp->t_flags & TF_MORETOCOME);
 
-#if 0
-		if (sbused(sb) > sb->sb_hiwat * 5 / 8 &&
-		    toep->plen_nocompl + plen >= sb->sb_hiwat / 4)
-			compl = 1;
-		else
-			compl = 0;
-#endif
-
 		if (sb->sb_flags & SB_AUTOSIZE &&
 		    V_tcp_do_autosndbuf &&
 		    sb->sb_hiwat < V_tcp_autosndbuf_max &&
@@ -1403,19 +1378,6 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 			("%s: not enough credits", __func__));
 
 		toep->tx_credits -= credits;
-#if 0
-		toep->tx_nocompl += credits;
-		toep->plen_nocompl += plen;
-		if (toep->tx_credits <= toep->tx_total * 3 / 8 &&
-		    toep->tx_nocompl >= toep->tx_total / 4)
-			compl = 1;
-
-		if (compl || toep->ulp_mode == ULP_MODE_RDMA) {
-			txwr->op_to_immdlen |= htobe32(F_FW_WR_COMPL);
-			toep->tx_nocompl = 0;
-			toep->plen_nocompl = 0;
-		}
-#endif
 
 		tp->snd_nxt += plen;
 		tp->snd_max += plen;
