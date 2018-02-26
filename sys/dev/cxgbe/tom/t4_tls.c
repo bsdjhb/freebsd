@@ -752,8 +752,6 @@ tls_send_handshake_ack(void *arg)
 	struct toepcb *toep = arg;
 	struct tls_ofld_info *tls_ofld = &toep->tls;
 	struct adapter *sc = td_adapter(toep->td);
-	struct wrqe *wr;
-	struct cpl_rx_data_ack *req;
 
 	/*
 	 * XXX: Does not have the t4_get_tcb() checks to refine the
@@ -762,15 +760,7 @@ tls_send_handshake_ack(void *arg)
 	callout_schedule(&tls_ofld->handshake_timer, TLS_SRV_HELLO_RD_TM * hz);
 
 	CTR2(KTR_CXGBE, "%s: tid %d sending RX_DATA_ACK", __func__, toep->tid);
-	wr = alloc_wrqe(sizeof(*req), toep->ctrlq);
-	if (wr == NULL)
-		return;
-	req = wrtod(wr);
-
-	INIT_TP_WR_MIT_CPL(req, CPL_RX_DATA_ACK, toep->tid);
-	req->credit_dack = htobe32(F_RX_MODULATE_RX);
-
-	t4_wrq_tx(sc, wr);
+	send_rx_modulate(sc, toep);
 }
 
 static void

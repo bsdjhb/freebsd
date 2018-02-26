@@ -455,7 +455,7 @@ send_rx_credits(struct adapter *sc, struct toepcb *toep, int credits)
 	return (credits);
 }
 
-static void
+void
 send_rx_modulate(struct adapter *sc, struct toepcb *toep)
 {
 	struct wrqe *wr;
