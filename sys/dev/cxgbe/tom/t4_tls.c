@@ -820,7 +820,7 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			break;
 		case TCP_TLSOM_CLR_TLS_TOM:
 			if (toep->ulp_mode == ULP_MODE_TLS) {
-				CTR2(KTR_CXGBE, "%s: CLR_TLS_TOM tid %d",
+				CTR2(KTR_CXGBE, "%s: tid %d CLR_TLS_TOM",
 				    __func__, toep->tid);
 				tls_clr_ofld_mode(toep);
 			} else
@@ -829,7 +829,7 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			break;
 		case TCP_TLSOM_CLR_QUIES:
 			if (toep->ulp_mode == ULP_MODE_TLS) {
-				CTR2(KTR_CXGBE, "%s: CLR_QUIES tid %d",
+				CTR2(KTR_CXGBE, "%s: tid %d CLR_QUIES",
 				    __func__, toep->tid);
 				tls_clr_quiesce(toep);
 			} else
@@ -861,7 +861,7 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 					break;
 				}
 			}
-			CTR3(KTR_CXGBE, "%s: GET_TLS_TOM tid %d = %d",
+			CTR3(KTR_CXGBE, "%s: tid %d GET_TLS_TOM = %d",
 			    __func__, toep->tid, optval);
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof(optval));
