@@ -1059,6 +1059,7 @@ calc_opt2p(struct adapter *sc, struct port_info *pi, int rxqid,
 	if (ulp_mode == ULP_MODE_TLS) {
 		opt2 |= F_RX_FC_VALID;
 		opt2 &= ~V_RX_COALESCE(M_RX_COALESCE);
+		opt2 |= F_RX_FC_DISABLE;
 	}
 
 	return htobe32(opt2);
