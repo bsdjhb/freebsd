@@ -432,7 +432,7 @@ void insert_ddp_data(struct toepcb *, uint32_t);
 /* t4_tls.c */
 int t4_ctloutput_tls(struct socket *, struct sockopt *);
 void t4_push_tls_records(struct adapter *, struct toepcb *, int);
-int t4_tls_mod_load(void);
+void t4_tls_mod_load(void);
 void t4_tls_mod_unload(void);
 void tls_establish(struct toepcb *);
 void tls_free_kmap(struct tom_data *);
