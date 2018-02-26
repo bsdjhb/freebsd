@@ -198,11 +198,8 @@ free_toepcb(struct toepcb *toep)
 	KASSERT(!(toep->flags & TPF_CPL_PENDING),
 	    ("%s: CPL pending", __func__));
 
-	switch (toep->ulp_mode) {
-	case ULP_MODE_TCPDDP:
+	if (toep->ulp_mode == ULP_MODE_TCPDDP)
 		ddp_uninit_toep(toep);
-		break;
-	}
 	tls_uninit_toep(toep);
 	free(toep, M_CXGBE);
 }
@@ -379,8 +376,6 @@ t4_pcb_detach(struct toedev *tod __unused, struct tcpcb *tp)
 
 /*
  * setsockopt handler.
- *
- * XXX: This should possibly be merged into t4_ctloutput_tom?
  */
 static void
 t4_ctloutput(struct toedev *tod, struct tcpcb *tp, int dir, int name)
