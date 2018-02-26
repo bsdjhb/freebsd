@@ -174,6 +174,8 @@ send_flowc_wr(struct toepcb *toep, struct flowc_tx_params *ftxp)
 		FLOWC_PARAM(TXDATAPLEN_MAX, toep->tls.fcplenmax);
 #undef FLOWC_PARAM
 
+	KASSERT(paramidx == nparams, ("nparams mismatch"));
+
 	txsd->tx_credits = howmany(flowclen, 16);
 	txsd->plen = 0;
 	KASSERT(toep->tx_credits >= txsd->tx_credits && toep->txsd_avail > 0,
