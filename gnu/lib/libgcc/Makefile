@@ -140,6 +140,9 @@ LIB2FUNCS_EXTRA+= floatdisf.c floatundidf.c
 LIB2FUNCS_EXTRA+= fixsfdi.c floatundisf.c
 LIB2FUNCS_EXTRA+= fixdfdi.c fixunssfsi.c
 .endif
+# Some compilers generate soft-float functions libgcc_s is missing
+LIBADD+=	compiler_rt
+.endif
 .endif
 
 .if ${TARGET_ARCH} == "powerpc" || ${TARGET_ARCH} == "powerpcspe"
