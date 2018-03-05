@@ -50,10 +50,13 @@ LIB32CPUFLAGS=  -target mips-unknown-freebsd12.0
 .endif
 .endif
 LIB32CPUFLAGS+= -mabi=32
-LIB32WMAKEENV=	MACHINE=mips MACHINE_ARCH=mips
+# XXX: Do we want to support mipshf as an option?
+LIB32WMAKEENV=	MACHINE=mips
 .if ${TARGET_ARCH:Mmips64el*} != ""
+LIB32WMAKEENV+= MACHINE_ARCH=mipsel
 LIB32WMAKEFLAGS= LD="${XLD} -m elf32ltsmip_fbsd"
 .else
+LIB32WMAKEENV+= MACHINE_ARCH=mips
 LIB32WMAKEFLAGS= LD="${XLD} -m elf32btsmip_fbsd"
 .endif
 LIB32WMAKEFLAGS+= OBJCOPY="${XOBJCOPY}"
