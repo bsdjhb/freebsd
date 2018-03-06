@@ -368,8 +368,8 @@ static void chssl_compute_ipad_opad_512(unsigned char *key,
 				 int k)
 {
     int i;
-    char ipad_512[SHA512_BLOCK] = {0};
-    char opad_512[SHA512_BLOCK] = {0};
+    unsigned char ipad_512[SHA512_BLOCK] = {0};
+    unsigned char opad_512[SHA512_BLOCK] = {0};
 
     for(i = 0; i < SHA512_BLOCK; i++) {
         if (i < k) {
@@ -686,7 +686,7 @@ int chssl_clear_tom(const SSL *s)
 
 int chssl_process_cherror(SSL *s)
 {
-    const char *buf = &(s->s3->rbuf.buf[0]);
+    const char *buf = (const char *)&(s->s3->rbuf.buf[0]);
     unsigned int err = atoi(buf);
 
     switch (err) {
