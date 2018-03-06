@@ -69,6 +69,8 @@
 # endif
 
 #ifdef CHSSL_OFFLOAD
+#include <arpa/inet.h>
+
 #define uint64_t unsigned long long
 #define htonll(data) ( \
     (((uint64_t)(data) >> 56) & 0x00000000000000FF) | \
