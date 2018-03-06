@@ -662,7 +662,7 @@ static int dtls1_process_record(SSL *s, DTLS1_BITMAP *bitmap)
 int dtls1_get_record(SSL *s)
 {
     int ssl_major, ssl_minor;
-    int i, n, al;
+    int i, n;
     SSL3_RECORD *rr;
     unsigned char *p = NULL;
     unsigned short version;
@@ -761,7 +761,7 @@ int dtls1_get_record(SSL *s)
 		    n = ssl3_read_n(s, i, i, 1);
 		    s->rstate = SSL_ST_READ_HEADER;
 		    if (n<=0) return n;
-		    al = chssl_process_cherror(s);
+		    chssl_process_cherror(s);
 		    printf("%s rstate SSL_ST_READ_ERROR \n",__func__);
 		    goto again;
 	    }
