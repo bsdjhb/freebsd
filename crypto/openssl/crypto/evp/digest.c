@@ -185,11 +185,7 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
         } else
             /* Ask if an ENGINE is reserved for this job */
             impl = ENGINE_get_digest_engine(type->type);
-        if (impl
-#ifdef CHSSL_OFFLOAD
-            && !ctx->is_chssl
-#endif
-           ) {
+        if (impl) {
             /* There's an ENGINE for this job ... (apparently) */
             const EVP_MD *d = ENGINE_get_digest(impl, type->type);
             if (!d) {
@@ -367,26 +363,6 @@ int EVP_Digest(const void *data, size_t count,
 
     return ret;
 }
-
-#ifdef CHSSL_OFFLOAD
-int CHSSL_EVP_Digest(const void *data, size_t count,
-                    unsigned char *md, unsigned int *size,
-                    const EVP_MD *type, ENGINE *impl)
-{
-    EVP_MD_CTX ctx;
-    int ret;
-
-    EVP_MD_CTX_init(&ctx);
-    ctx.is_chssl = 1;
-    EVP_MD_CTX_set_flags(&ctx,EVP_MD_CTX_FLAG_ONESHOT);
-    ret=EVP_DigestInit_ex(&ctx, type, impl)
-                    && EVP_DigestUpdate(&ctx, data, count)
-                    && EVP_DigestFinal_ex(&ctx, md, size);
-    EVP_MD_CTX_cleanup(&ctx);
-
-    return ret;
-}
-#endif
 
 void EVP_MD_CTX_destroy(EVP_MD_CTX *ctx)
 {

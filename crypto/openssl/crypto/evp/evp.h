@@ -270,9 +270,6 @@ struct env_md_ctx_st {
     ENGINE *engine;             /* functional reference if 'digest' is
                                  * ENGINE-provided */
     unsigned long flags;
-#ifdef CHSSL_OFFLOAD
-    unsigned short is_chssl;
-#endif
     void *md_data;
     /* Public key context for sign/verify */
     EVP_PKEY_CTX *pctx;
@@ -600,11 +597,6 @@ int EVP_DigestFinal_ex(EVP_MD_CTX *ctx, unsigned char *md, unsigned int *s);
 int EVP_Digest(const void *data, size_t count,
                unsigned char *md, unsigned int *size, const EVP_MD *type,
                ENGINE *impl);
-#ifdef CHSSL_OFFLOAD
-int  CHSSL_EVP_Digest(const void *data, size_t count,
-                unsigned char *md, unsigned int *size, const EVP_MD *type,
-                ENGINE *impl);
-#endif
 
 int EVP_MD_CTX_copy(EVP_MD_CTX *out, const EVP_MD_CTX *in);
 int EVP_DigestInit(EVP_MD_CTX *ctx, const EVP_MD *type);

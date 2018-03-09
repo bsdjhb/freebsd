@@ -134,6 +134,7 @@
 #include <netinet/in.h>
 #include "ssl_tom.h"
 #include <sys/uio.h>
+#include <openssl/sha.h>
 
 #ifdef CHSSL_OFFLOAD
 int ssl_tls_offload(SSL *s)
@@ -231,6 +232,53 @@ int SSL_clr_quiesce(const SSL *s)
     return (SSL_ofld_rx(s) && (s->chssl->key_state == KEY_SPACE_NOTAVL));
 }
 #endif
+
+int CHSSL_EVP_Digest(const void *data,
+		     void *md, const EVP_MD *m)
+{
+    int ret = 1, i;
+
+   if (m->type == NID_sha1){
+	SHA_CTX sha1ctx;
+	unsigned int *temp = md;
+
+	SHA1_Init(&sha1ctx);
+	SHA1_Update(&sha1ctx, data, SHA_CBLOCK);
+	temp[0] = htonl(sha1ctx.h0);
+	temp[1] = htonl(sha1ctx.h1);
+	temp[2] = htonl(sha1ctx.h2);
+	temp[3] = htonl(sha1ctx.h3);
+	temp[4] = htonl(sha1ctx.h4);
+   } else if (m->type == NID_sha256) {
+	SHA256_CTX sha256ctx;
+	SHA256_Init(&sha256ctx);
+	SHA256_Update(&sha256ctx, data, SHA256_CBLOCK);
+
+	for (i = 0; i < SHA256_DIGEST_LENGTH / 4; i++)
+		*((unsigned int *)md + i) = htonl(sha256ctx.h[i]);
+   } else if (m->type == NID_sha384) {
+	   SHA512_CTX sha384ctx;
+
+	   SHA384_Init(&sha384ctx);
+	   SHA384_Update(&sha384ctx, data, SHA512_BLOCK);
+
+	   for (i = 0; i < SHA512_DIGEST_LENGTH / 8; i++)
+		*((unsigned long long *)md + i) =
+			   htobe64(sha384ctx.h[i]);
+
+   } else if (m->type == NID_sha512) {
+	   SHA512_CTX sha512ctx;
+
+	   SHA512_Init(&sha512ctx);
+	   SHA512_Update(&sha512ctx, data, SHA512_BLOCK);
+
+	   for (i = 0; i < SHA512_DIGEST_LENGTH / 8; i++)
+		*((unsigned long long *)md + i) =
+			   htobe64(sha512ctx.h[i]);
+   }
+
+    return ret;
+}
 
 /* 
  * Determine HW capability for Digest and Cipher Offload 
@@ -338,62 +386,21 @@ static unsigned char get_cipher_mode(SSL *s)
 static void chssl_compute_ipad_opad(unsigned char *key,
 				 unsigned char *ipad,
 				 unsigned char *opad,
-				 int k)
+				 int k, const EVP_MD *m)
 {
-    int i;
+    int i, blksize;
+    char iblock[SHA512_BLOCK] = {0};
+    char oblock[SHA512_BLOCK] = {0};
 
-    if(k < MAX_MAC_KSZ) {
-        for(i=k; i < MAX_MAC_KSZ; i++) {
-            ipad[i] = 0x0;
-            opad[i] = 0x0;
-        }
+    blksize = m->block_size;
+    memset (iblock + k, 0x36, blksize - k);
+    memset (oblock + k, 0x5c, blksize - k);
+    for(i = 0; i < k; i++) {
+        iblock[i] = key[i] ^ 0x36;
+        oblock[i] = key[i] ^ 0x5c;
     }
-    for(i=0; i < MAX_MAC_KSZ; i++) {
-        ipad[i] = key[i] ^ 0x36;
-        opad[i] = key[i] ^ 0x5c;
-    }
-
-    if(k == SHA_DIGEST_LENGTH) {
-        CHSSL_EVP_Digest(ipad, MAX_MAC_KSZ, ipad, NULL, EVP_sha1(), NULL);
-        CHSSL_EVP_Digest(opad, MAX_MAC_KSZ, opad, NULL, EVP_sha1(), NULL);
-    } else if (k == SHA256_DIGEST_LENGTH) {
-        CHSSL_EVP_Digest(ipad, MAX_MAC_KSZ, ipad, NULL, EVP_sha256(), NULL);
-        CHSSL_EVP_Digest(opad, MAX_MAC_KSZ, opad, NULL, EVP_sha256(), NULL);
-    }
-}
-
-static void chssl_compute_ipad_opad_512(unsigned char *key,
-				 unsigned char *ipad,
-				 unsigned char *opad,
-				 int k)
-{
-    int i;
-    unsigned char ipad_512[SHA512_BLOCK] = {0};
-    unsigned char opad_512[SHA512_BLOCK] = {0};
-
-    for(i = 0; i < SHA512_BLOCK; i++) {
-        if (i < k) {
-            ipad_512[i] = key[i] ^ 0x36;
-            opad_512[i] = key[i] ^ 0x5c;
-        } else {
-            ipad_512[i] = 0x36;
-            opad_512[i] = 0x5c;
-        } 
-    }
-
-    if(k == SHA384_DIGEST_LENGTH) {
-        CHSSL_EVP_Digest(ipad_512, SHA512_BLOCK, ipad_512, NULL,
-                         EVP_sha384(), NULL);
-        CHSSL_EVP_Digest(opad_512, SHA512_BLOCK, opad_512, NULL,
-                         EVP_sha384(), NULL);
-    } else if (k == SHA512_DIGEST_LENGTH) {
-        CHSSL_EVP_Digest(ipad_512, SHA512_BLOCK, ipad_512, NULL,
-                         EVP_sha512(), NULL);
-        CHSSL_EVP_Digest(opad_512, SHA512_BLOCK, opad_512, NULL,
-                         EVP_sha512(), NULL);
-    }
-    memcpy(ipad, ipad_512, MAX_MAC_KSZ);
-    memcpy(opad, opad_512, MAX_MAC_KSZ);
+    CHSSL_EVP_Digest(iblock, ipad, m);
+    CHSSL_EVP_Digest(oblock, opad, m);
 }
 
 static void chssl_compute_cipher_key(unsigned char *key,
@@ -422,7 +429,6 @@ static int ssl_key_context(SSL *s, int rw, int state)
 {
     const EVP_CIPHER *c;
     const EVP_MD *m;
-    const SSL_CIPHER *sc;
     unsigned int  mac_key_size = 0, cipher_key_size, iv_size;
     unsigned char *key;
     unsigned char s_ipad_hash[MAX_MAC_KSZ]= {0x0}; /* blk sz for hashing */
@@ -448,7 +454,6 @@ static int ssl_key_context(SSL *s, int rw, int state)
 
     c = s->s3->tmp.new_sym_enc;
     m = s->s3->tmp.new_hash;
-    sc = s->s3->tmp.new_cipher;
     kctx->l_p_key = rw;
 
     if (s->new_session)
@@ -490,19 +495,12 @@ static int ssl_key_context(SSL *s, int rw, int state)
     key += iv_size;
     memcpy(s_iv, key, iv_size);
 
-    if (s->chssl->ofld_mac) {
-        /* IPAD/OPAD for SHA384/512 calculated over 128B block */   
-        if (mac_key_size >= SHA384_DIGEST_LENGTH) {
-            chssl_compute_ipad_opad_512(c_mac_key, c_ipad_hash,
-                                    c_opad_hash, mac_key_size);
-            chssl_compute_ipad_opad_512(s_mac_key, s_ipad_hash,
-                                    s_opad_hash, mac_key_size);
-        } else {
+    if (s->chssl->ofld_mac && (EVP_CIPHER_mode(c) != EVP_CIPH_GCM_MODE)) {
+        /* IPAD/OPAD for SHA384/512 calculated over 128B block */
             chssl_compute_ipad_opad(c_mac_key, c_ipad_hash,
-                                    c_opad_hash, mac_key_size);
+                                    c_opad_hash, mac_key_size, m);
             chssl_compute_ipad_opad(s_mac_key, s_ipad_hash,
-                                    s_opad_hash, mac_key_size);
-        }
+                                    s_opad_hash, mac_key_size, m);
     }
 
     if (state == SSL_ST_ACCEPT) {

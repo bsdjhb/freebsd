@@ -98,21 +98,6 @@ enum {
 #define V_KEY_GET_LOC(x)        ((x) << S_KEY_GET_LOC)
 #define G_KEY_GET_LOC(s)        (((x) >> S_KEY_GET_LOC) & M_KEY_GET_LOC)
 
-/* XXX: Not used. */
-enum {
-    CHSSL_OFLDMODE_NONE,
-    CHSSL_OFLDMODE_ALLIN_HOST,
-    CHSSL_OFLDMODE_ALLIN_CARD,
-    CHSSL_OFLDMODE_MACIN_HOST,
-    CHSSL_OFLDMODE_FRAGMENTATIONIN_HOST,
-};
-
-/* XXX: Not used. */
-enum {
-    CHSSL_HOST_FRAGMENT,
-    CHSSL_CARD_FRAGMENT,
-};
-
 struct tls_ofld_state {
     unsigned char enc_mode;
     unsigned char mac_mode;
@@ -162,12 +147,6 @@ struct tls_key_context {
     unsigned short rsv;
 };
 #endif
-
-/* XXX: Not used. */
-struct tls_key_location {
-    unsigned int sock_fd;
-    unsigned int key_location;
-};
 
 struct ch_ssl_st *chssl_new(SSL *s);
 struct ch_ssl_st *chssl_free(SSL *s);
