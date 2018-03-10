@@ -128,6 +128,7 @@
 #endif
 #ifdef __FreeBSD__
 #include <netinet/tcp.h>
+#include <sys/endian.h>
 #endif
 #include "ssl_locl.h"
 #include <openssl/ssl.h>
