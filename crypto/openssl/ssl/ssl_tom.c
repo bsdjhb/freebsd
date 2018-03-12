@@ -455,6 +455,19 @@ static int ssl_key_context(SSL *s, int rw, int state)
 
     c = s->s3->tmp.new_sym_enc;
     m = s->s3->tmp.new_hash;
+    if (s->chssl->ofld_mac && (EVP_CIPHER_mode(c) != EVP_CIPH_GCM_MODE) &&
+	m == NULL) {
+	    switch(s->s3->tmp.new_cipher->algorithm_mac) {
+	    case SSL_SHA1:
+		    m = EVP_sha1();
+		    break;
+	    case SSL_SHA256:
+		    m = EVP_sha256();
+		    break;
+	    case SSL_SHA384:
+		    m = EVP_sha384();
+	    }
+    }
     kctx->l_p_key = rw;
 
     if (s->new_session)
