@@ -1,7 +1,9 @@
 /*-
- * Copyright (c) 2017 Chelsio Communications, Inc.
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
+ * Copyright (c) 2017-2018 Chelsio Communications, Inc.
  * All rights reserved.
- * Written by: John Baldwin <np@FreeBSD.org>
+ * Written by: John Baldwin <jhb@FreeBSD.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
