@@ -1670,21 +1670,12 @@ static bool cma_match_private_data(struct rdma_id_private *id_priv,
 	return true;
 }
 
-static bool cma_protocol_roce_dev_port(struct ib_device *device, int port_num)
-{
-	enum rdma_link_layer ll = rdma_port_get_link_layer(device, port_num);
-	enum rdma_transport_type transport =
-		rdma_node_get_transport(device->node_type);
-
-	return ll == IB_LINK_LAYER_ETHERNET && transport == RDMA_TRANSPORT_IB;
-}
-
 static bool cma_protocol_roce(const struct rdma_cm_id *id)
 {
 	struct ib_device *device = id->device;
 	const int port_num = id->port_num ?: rdma_start_port(device);
 
-	return cma_protocol_roce_dev_port(device, port_num);
+	return rdma_protocol_roce(device, port_num);
 }
 
 static bool cma_match_net_dev(const struct rdma_cm_id *id,
@@ -1704,8 +1695,8 @@ static bool cma_match_net_dev(const struct rdma_cm_id *id,
 			return false;
 		}
 		/* This request is an AF_IB request or a RoCE request */
-		return addr->src_addr.ss_family == AF_IB ||
-		    cma_protocol_roce_dev_port(id->device, port_num);
+		return (addr->src_addr.ss_family == AF_IB ||
+		    rdma_protocol_roce(id->device, port_num));
 	}
 
 	return !addr->dev_addr.bound_dev_if ||
@@ -1765,6 +1756,10 @@ static struct rdma_id_private *cma_id_from_event(struct ib_cm_id *cm_id,
 	if (IS_ERR(*net_dev)) {
 		if (PTR_ERR(*net_dev) == -EAFNOSUPPORT) {
 			/* Assuming the protocol is AF_IB */
+			*net_dev = NULL;
+		} else if (rdma_protocol_roce(req.device, req.port)) {
+			/* TODO find the net dev matching the request parameters
+			 * through the RoCE GID table */
 			*net_dev = NULL;
 		} else {
 			return ERR_CAST(*net_dev);
