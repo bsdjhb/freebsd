@@ -807,6 +807,9 @@ roce_resolve_route_from_path(struct ib_device *device, u8 port_num,
 	union rdma_sockaddr sgid_addr, dgid_addr;
 	int ret;
 
+	if (rec->roce.route_resolved)
+		return 0;
+
 	if (!device->get_netdev)
 		return -EOPNOTSUPP;
 
@@ -846,6 +849,8 @@ roce_resolve_route_from_path(struct ib_device *device, u8 port_num,
 		dev_put(ndev);
 done:
 	dev_put(idev);
+	if (!ret)
+		rec->roce.route_resolved = true;
 	return ret;
 }
 
