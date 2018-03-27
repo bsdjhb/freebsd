@@ -5,6 +5,9 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#ifndef WITHOUT_CAPSICUM
+#include <sys/capsicum.h>
+#endif
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -13,6 +16,9 @@ __FBSDID("$FreeBSD$");
 #include <machine/vmm.h>
 #include <netinet/in.h>
 #include <assert.h>
+#ifndef WITHOUT_CAPSICUM
+#include <capsicum_helpers.h>
+#endif
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -124,7 +130,7 @@ const int gdb_regsize[] = {
 #include <stdio.h>
 
 static void __printflike(1, 2)
-debug(const char *fmt, ...) 
+debug(const char *fmt, ...)
 {
 	static FILE *logfile;
 	va_list ap;
@@ -133,6 +139,13 @@ debug(const char *fmt, ...)
 		logfile = fopen("/tmp/bhyve_gdb.log", "w");
 		if (logfile == NULL)
 			return;
+#ifndef WITHOUT_CAPSICUM
+		if (caph_limit_stream(fileno(logfile), CAPH_WRITE) == -1) {
+			fclose(logfile);
+			logfile = NULL;
+			return;
+		}
+#endif
 		setlinebuf(logfile);
 	}
 	va_start(ap, fmt);
@@ -230,7 +243,7 @@ io_buffer_head(struct io_buffer *io)
 
 	return (io->data + io->start);
 }
-	
+
 static uint8_t *
 io_buffer_tail(struct io_buffer *io)
 {
@@ -1225,6 +1238,9 @@ new_connection(int fd, enum ev_type event, void *arg)
 void
 init_gdb(struct vmctx *_ctx, int sport, bool wait)
 {
+#ifndef WITHOUT_CAPSICUM
+	cap_rights_t rights;
+#endif
 	struct sockaddr_in sin;
 	int error, flags, s;
 
@@ -1270,5 +1286,11 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 	if (fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
 		err(1, "Failed to mark gdb socket non-blocking");
 
+#ifndef WITHOUT_CAPSICUM
+	cap_rights_init(&rights, CAP_ACCEPT, CAP_EVENT, CAP_READ, CAP_WRITE,
+	    CAP_SETSOCKOPT);
+	if (cap_rights_limit(s, &rights) == -1 && errno != ENOSYS)
+		errx(EX_OSERR, "Unable to apply rights for sandbox");
+#endif
 	mevent_add(s, EVF_READ, new_connection, NULL);
 }

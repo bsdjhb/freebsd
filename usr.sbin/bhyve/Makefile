@@ -8,7 +8,6 @@ PROG=	bhyve
 PACKAGE=	bhyve
 
 DEBUG_FLAGS= -g -O0
-CFLAGS+= -DWITHOUT_CAPSICUM
 
 MAN=	bhyve.8
 
