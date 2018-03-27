@@ -647,16 +647,10 @@ _gdb_cpu_suspend(int vcpu, bool report_stop)
 
 	debug("$vCPU %d suspending\n", vcpu);
 	CPU_SET(vcpu, &vcpus_waiting);
-	debug("1: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
-	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
 	if (report_stop && CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
 		gdb_finish_suspend_vcpus();
-	debug("2: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
-	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
 	while (CPU_ISSET(vcpu, &vcpus_suspended) && vcpu != stepping_vcpu)
 		pthread_cond_wait(&idle_vcpus, &gdb_lock);
-	debug("3: waiting CPUs: %lx suspended CPUs: %lx, stepping %d\n",
-	    vcpus_waiting.__bits[0], vcpus_suspended.__bits[0], stepping_vcpu);
 	CPU_CLR(vcpu, &vcpus_waiting);
 	debug("$vCPU %d resuming\n", vcpu);
 }
@@ -736,12 +730,9 @@ gdb_step_vcpu(int vcpu)
 
 	debug("$vCPU %d step\n", vcpu);
 	error = vm_get_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, &val);
-	if (error < 0) {
-		debug("failed to get MTRAP\n");
+	if (error < 0)
 		return (false);
-	}
 	error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
-	debug("set MTRAP 1 returned %d\n", error);
 	vm_resume_cpu(ctx, vcpu);
 	stepping_vcpu = vcpu;
 	pthread_cond_broadcast(&idle_vcpus);
@@ -1304,7 +1295,6 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 		stepping_vcpu = -1;
 		stopped_vcpu = -1;
 		CPU_SET(0, &vcpus_suspended);
-		debug("suspending CPU 0: %lx\n", vcpus_suspended.__bits[0]);
 	}
 
 	flags = fcntl(s, F_GETFL);
