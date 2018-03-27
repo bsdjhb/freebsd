@@ -159,8 +159,8 @@ guest_paging_info(int vcpu, struct vm_guest_paging *paging)
 
 	/*
 	 * For the debugger, always pretend to be the kernel (CPL 0),
-	 * and if long-mode is enabled, always parse addreses as if in
-	 * 64-bit mode.
+	 * and if long-mode is enabled, always parse addresses as if
+	 * in 64-bit mode.
 	 */
 	paging->cr3 = regs[1];
 	paging->cpl = 0;
