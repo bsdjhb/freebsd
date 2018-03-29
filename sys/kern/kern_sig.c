@@ -106,7 +106,7 @@ static int	killpg1(struct thread *td, int sig, int pgid, int all,
 		    ksiginfo_t *ksi);
 static int	issignal(struct thread *td);
 static int	sigprop(int sig);
-static void	tdsigwakeup(struct thread *, int, sig_t, int);
+static void	tdsigwakeup(struct thread *, int, sig_t, int, ksiginfo_t *);
 static int	sig_suspend_threads(struct thread *, struct proc *, int);
 static int	filt_sigattach(struct knote *kn);
 static void	filt_sigdetach(struct knote *kn);
@@ -2193,6 +2193,7 @@ tdsendsignal(struct proc *p, struct thread *td, int sig, ksiginfo_t *ksi)
 	ret = sigqueue_add(sigqueue, sig, ksi);
 	if (ret != 0)
 		return (ret);
+
 	signotify(td);
 	/*
 	 * Defer further processing for signals which are held,
@@ -2320,7 +2321,7 @@ tdsendsignal(struct proc *p, struct thread *td, int sig, ksiginfo_t *ksi)
 		 */
 	} else if (p->p_state == PRS_NORMAL) {
 		if (p->p_flag & P_TRACED || action == SIG_CATCH) {
-			tdsigwakeup(td, sig, action, intrval);
+			tdsigwakeup(td, sig, action, intrval, ksi);
 			goto out;
 		}
 
@@ -2361,7 +2362,7 @@ tdsendsignal(struct proc *p, struct thread *td, int sig, ksiginfo_t *ksi)
 	 * running threads.
 	 */
 runfast:
-	tdsigwakeup(td, sig, action, intrval);
+	tdsigwakeup(td, sig, action, intrval, ksi);
 	PROC_SLOCK(p);
 	thread_unsuspend(p);
 	PROC_SUNLOCK(p);
@@ -2377,7 +2378,8 @@ out:
  * out of any sleep it may be in etc.
  */
 static void
-tdsigwakeup(struct thread *td, int sig, sig_t action, int intrval)
+tdsigwakeup(struct thread *td, int sig, sig_t action, int intrval,
+    ksiginfo_t *ksi)
 {
 	struct proc *p = td->td_proc;
 	int prop;
@@ -2431,6 +2433,18 @@ tdsigwakeup(struct thread *td, int sig, sig_t action, int intrval)
 		if ((prop & SIGPROP_STOP) != 0 && (td->td_flags & (TDF_SBDRY |
 		    TDF_SERESTART | TDF_SEINTR)) == TDF_SBDRY)
 			goto out;
+
+		/*
+		 * Let a debugger intercept a user-initiated signal in
+		 * a traced process before awakening a thread.  In
+		 * particular, if the debugger cancels the signal then
+		 * this avoids a disruptive sleepq_abort() which can
+		 * trigger spurious EINTR errors.
+		 */
+		if (p->p_flags & P_TRACED) {
+			if (ptrace_early_signal(td, sig, ksi))
+			    goto out;
+		}
 
 		/*
 		 * Give low priority threads a better chance to run.
@@ -2523,7 +2537,8 @@ ptracestop(struct thread *td, int sig, ksiginfo_t *si)
 
 	td->td_xsig = sig;
 
-	if (si == NULL || (si->ksi_flags & KSI_PTRACE) == 0) {
+	if (si == NULL ||
+	    (si->ksi_flags & (KSI_PTRACE | KSI_PTRACE_SEEN)) == 0) {
 		td->td_dbgflags |= TDB_XSIG;
 		CTR4(KTR_PTRACE, "ptracestop: tid %d (pid %d) flags %#x sig %d",
 		    td->td_tid, p->p_pid, td->td_dbgflags, sig);
@@ -2619,6 +2634,16 @@ stopme:
 
 	return (td->td_xsig);
 }
+
+/*
+ * A variant of ptracestop() used to vet user-initiated signals before
+ * awakening a sleeping thread.  Unlike ptracestop(), this function
+ * executes in the context of the sending thread.
+ * XXX: This is a very bad idea.  We shouldn't block, say, kill(1) because
+ * the thing it is killing is hung in ptrace().  Perhaps we need to rework
+ * the ptrace signal reporting in this case to be an async state machine
+ * instead.
+ */
 
 static void
 reschedule_signals(struct proc *p, sigset_t block, int flags)
