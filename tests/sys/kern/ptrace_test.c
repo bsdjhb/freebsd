@@ -3767,6 +3767,110 @@ ATF_TC_BODY(ptrace__PT_CONTINUE_different_thread, tc)
 }
 #endif
 
+static void
+wait_for_sleep(pid_t pid)
+{
+
+	/*
+	 * Wait for the thread in a single-threaded process to enter
+	 * the sleeping state..  This is kind of gross, but there is
+	 * not a better way.
+	 */
+	for (;;) {
+		struct kinfo_proc kp;
+		size_t len;
+		int mib[4];
+
+		mib[0] = CTL_KERN;
+		mib[1] = KERN_PROC;
+		mib[2] = KERN_PROC_PID;
+		mib[3] = pid;
+		len = sizeof(kp);
+		ATF_REQUIRE(sysctl(mib, nitems(mib), &kp, &len, NULL, 0) == 0);
+		if (kp.ki_stat == SSLEEP)
+			break;
+
+		usleep(5000);
+	}
+}
+
+/*
+ * Check that discarding a signal doesn't trigger a spurious EINTR
+ * failure.
+ */
+ATF_TC_WITHOUT_HEAD(ptrace__spurious_EINTR_from_discarded_signal);
+ATF_TC_BODY(ptrace__spurious_EINTR_from_discarded_signal, tc)
+{
+	struct ptrace_lwpinfo pl;
+	pid_t fpid, wpid;
+	int events, status;
+
+	ATF_REQUIRE((fpid = fork()) != -1);
+	if (fpid == 0) {
+		trace_me();
+		CHILD_REQUIRE(usleep(1000 * 1000) == 0);
+		_exit(1);
+	}
+
+	/* The first wait() should report the stop from SIGSTOP. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGSTOP);
+
+	/* Continue the child ignoring the SIGSTOP. */
+	ATF_REQUIRE(ptrace(PT_TO_SCE, fpid, (caddr_t)1, 0) == 0);
+
+	/* Wait until we have entered SYS_nanosleep. */
+	for (;;) {
+		wpid = waitpid(fpid, &status, 0);
+		ATF_REQUIRE(wpid == fpid);
+		ATF_REQUIRE(WIFSTOPPED(status));
+		ATF_REQUIRE(WSTOPSIG(status) == SIGTRAP);
+
+		ATF_REQUIRE(ptrace(PT_LWPINFO, wpid, (caddr_t)&pl,
+		    sizeof(pl)) != -1);
+
+		if ((pl.pl_flags & PL_FLAG_SCE) != 0 &&
+		    pl.pl_syscall_code == SYS_nanosleep)
+			break;
+
+		ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+	}
+
+	/* Disable system call events. */
+	ATF_REQUIRE(ptrace(PT_GET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+	events &= ~PTRACE_SCE;
+	ATF_REQUIRE(ptrace(PT_SET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	wait_for_sleep(fpid);
+
+	/* Send a signal. */
+	kill(fpid, SIGTERM);
+
+	/* Should report an event for the signal. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGTERM);
+
+	/* Discard the signal. */
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	/* The last event should be for the child process's exit. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(WIFEXITED(status));
+	ATF_REQUIRE(WEXITSTATUS(status) == 1);
+
+	wpid = wait(&status);
+	ATF_REQUIRE(wpid == -1);
+	ATF_REQUIRE(errno == ECHILD);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -3826,6 +3930,7 @@ ATF_TP_ADD_TCS(tp)
 #if defined(HAVE_BREAKPOINT) && defined(SKIP_BREAK)
 	ATF_TP_ADD_TC(tp, ptrace__PT_CONTINUE_different_thread);
 #endif
+	ATF_TP_ADD_TC(tp, ptrace__spurious_EINTR_from_discarded_signal);
 
 	return (atf_no_error());
 }
