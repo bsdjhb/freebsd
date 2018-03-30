@@ -290,11 +290,11 @@ struct mbuf {
 	};
 };
 
-struct vm_page;
+struct socket;
 
 #define	MBUF_PEXT_HDR_LEN	32
 #define	MBUF_PEXT_TRAIL_LEN	64
-#define MBUF_PEXT_MAX_PGS	(144 / sizeof(vm_paddr_t))
+#define MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
 
 #define MBUF_PEXT_MAX_BYTES	(		\
     MBUF_PEXT_MAX_PGS * PAGE_SIZE +  MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN)
@@ -318,10 +318,10 @@ struct mbuf_ext_pgs {
 	uint32_t	pad;			/* align pgs to 8b */
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pgs */
 	char		hdr[MBUF_PEXT_HDR_LEN];		/* TLS hdr */
+	struct socket	*so;
 	union {
 		char	trail[MBUF_PEXT_TRAIL_LEN];	/* TLS trailer */
 		struct {
-			void	*so;
 			void	*mbuf;
 			uint64_t seqno;
 			STAILQ_ENTRY(mbuf_ext_pgs)	stailq;
