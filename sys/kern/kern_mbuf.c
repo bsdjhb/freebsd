@@ -45,8 +45,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <sys/protosw.h>
+#include <sys/refcount.h>
 #include <sys/sf_buf.h>
 #include <sys/smp.h>
+#include <sys/socketvar.h>
 #include <sys/sysctl.h>
 
 #include <vm/vm.h>
@@ -1101,6 +1103,7 @@ mb_alloc_ext_pgs(int how, bool pkthdr, m_ext_free_t ext_free)
 	ext_pgs->last_pg_len = 0;
 	ext_pgs->hdr_len = 0;
 	ext_pgs->trail_len = 0;
+	ext_pgs->so = NULL;
 	m->m_data = NULL;
 	m->m_flags |= (M_EXT | M_RDONLY | M_NOMAP);
 	m->m_ext.ext_type = EXT_PGS;
@@ -1177,11 +1180,23 @@ mb_free_ext(struct mbuf *m)
 			uma_zfree(zone_jumbo16, m->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);
 			break;
-		case EXT_PGS:
+		case EXT_PGS: {
+			struct mbuf_ext_pgs *pgs;
+
 			mref->m_ext.ext_free(mref);
+			pgs = (struct mbuf_ext_pgs *)mref->m_ext.ext_buf;
+			if (pgs->so != NULL) {
+				/*
+				 * XXX: LOR?  If so, will have to
+				 * defer the actual cleanup to a task.
+				 */
+				SOCK_LOCK(pgs->so);
+				sorele(pgs->so);
+			}
 			uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);
 			break;
+		}
 		case EXT_SFBUF:
 		case EXT_NET_DRV:
 		case EXT_MOD_TYPE:
