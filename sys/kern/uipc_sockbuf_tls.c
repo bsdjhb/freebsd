@@ -573,16 +573,17 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 }
 
 int
-sbtls_frame(struct mbuf **top, struct sbtls_info *tls, int *enq_cnt,
+sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
     uint8_t record_type)
 {
 	struct tls_record_layer *tlshdr;
+	struct sbtls_info *tls;
 	struct mbuf *m;
 	struct mbuf_ext_pgs *pgs;
 	uint16_t tls_len;
 	int maxlen;
 
-
+	tls = so->so_snd.sb_tls_info;
 	maxlen = tls->sb_params.sb_maxlen;
 	*enq_cnt = 0;
 	for (m = *top; m != NULL; m = m->m_next) {
@@ -644,10 +645,12 @@ sbtls_frame(struct mbuf **top, struct sbtls_info *tls, int *enq_cnt,
 		}
 		m->m_len += pgs->hdr_len + pgs->trail_len;
 
-		/* mark mbuf not-ready, to be cleared when encrypted */
-		m->m_flags |= M_NOTREADY;
-		pgs->nrdy = pgs->npgs;
-		*enq_cnt += pgs->npgs;
+		if (!(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
+			/* mark mbuf not-ready, to be cleared when encrypted */
+			m->m_flags |= M_NOTREADY;
+			pgs->nrdy = pgs->npgs;
+			*enq_cnt += pgs->npgs;
+		}
 	}
 	return (0);
 }

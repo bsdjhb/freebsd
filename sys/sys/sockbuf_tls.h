@@ -51,6 +51,7 @@ struct tls_record_layer {
 #define	SB_TLS_CRY_INI		0x0002  /* state being initialized */
 #define	SB_TLS_RECV_SIDE	0x0004	/* rx (decrypt/decapsulate) */
 #define	SB_TLS_SEND_SIDE	0x0008	/* tx (encrypt/encapsulate) */
+#define	SB_TLS_IFNET		0x0010	/* crypto performed at ifnet layer. */
 
 /*
  * Alert protoocol
@@ -214,7 +215,7 @@ sbtlsdestroy(struct sockbuf *sb)
 }
 
 static inline int
-sbtls_frame(struct mbuf **m, struct sbtls_info *tls, int *enqueue_cnt,
+sbtls_frame(struct mbuf **m, struct socket *so, int *enqueue_cnt,
     uint8_t record_type)
 {
 	return (ENOTSUP);
@@ -238,7 +239,7 @@ void sbtlsdestroy(struct sockbuf *sb);
 struct sbtls_info *sbtls_init_sb_tls(struct socket *so,
     struct tls_so_enable *en, size_t cipher_len);
 void sbtls_free_tls(struct sbtls_info *tls);
-int sbtls_frame(struct mbuf **m, struct sbtls_info *tls, int *enqueue_cnt,
+int sbtls_frame(struct mbuf **m, struct socket *so, int *enqueue_cnt,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);

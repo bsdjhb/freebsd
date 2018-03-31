@@ -921,6 +921,8 @@ _mb_unmapped_to_ext(struct mbuf *m)
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = (void *)m->m_ext.ext_buf;
 	len = m->m_len;
+	KASSERT(ext_pgs->so == NULL, ("%s: can't convert SB_TLS_IFNET mbuf %p",
+	    __func__, m));
 
 	/* See if this is the mbuf that holds the embedded refcount. */
 	if (m->m_ext.ext_flags & EXT_FLAG_EMBREF) {

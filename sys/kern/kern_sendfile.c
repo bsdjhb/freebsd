@@ -338,7 +338,8 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 		m = sfio->m;
 		mb_free_notready(m, sfio->npages);
 	} else {
-		if (so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) {
+		if ((so->so_snd.sb_tls_flags &
+		    (SB_TLS_ACTIVE | SB_TLS_IFNET)) == SB_TLS_ACTIVE) {
 			/*
 			 * I/O operation is complete, but we still
 			 * need to encrypt.  We cannot do this in the
@@ -1016,7 +1017,7 @@ prepend_header:
 
 		CURVNET_SET(so->so_vnet);
 		if (tls != NULL) {
-			error = sbtls_frame(&m, tls, &tls_enq_cnt,
+			error = sbtls_frame(&m, so, &tls_enq_cnt,
 			    TLS_RLTYPE_APP);
 			if (error != 0)
 				goto done;
@@ -1029,8 +1030,10 @@ prepend_header:
 			 * PRUS_NOTREADY flag.
 			 */
 			free(sfio, M_TEMP);
-			if (tls != NULL) {
+			if (tls != NULL)
 				soref(so);
+			if (tls != NULL &&
+			    !(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, PRUS_NOTREADY, m, NULL, NULL, td);
 				sbtls_enqueue(m, so, tls_enq_cnt);

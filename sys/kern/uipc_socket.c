@@ -1448,12 +1448,13 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
 	bool tls_control = false;
 
+	tls_pruflag = 0;
 	if ((so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) != 0) {
 		tls = so->so_snd.sb_tls_info;
-		tls_pruflag = PRUS_NOTREADY;
+		if (!(so->so_snd.sb_tls_flags & SB_TLS_IFNET))
+			tls_pruflag = PRUS_NOTREADY;
 	}  else {
 		tls = NULL;
-		tls_pruflag = 0;
 	}
 
 	if (uio != NULL)
@@ -1583,7 +1584,7 @@ restart:
 					    ((flags & MSG_EOR) ? M_EOR : 0));
 					if (top != NULL) {
 						error = sbtls_frame(&top,
-						    tls, &tls_enq_cnt,
+						    so, &tls_enq_cnt,
 						    tls_rtype);
 						if (error) {
 							m_freem(top);
@@ -1649,7 +1650,8 @@ restart:
 				SOCK_UNLOCK(so);
 			}
 
-			if (tls != NULL) {
+			if (tls != NULL &&
+			    !(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
 				/*
 				 * Note that error is intentionally
 				 * ignored.
