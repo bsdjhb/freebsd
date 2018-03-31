@@ -1638,9 +1638,6 @@ restart:
 
 			pru_flag |= tls_pruflag;
 
-			if (tls != NULL)
-				soref(so);
-
 			error = (*so->so_proto->pr_usrreqs->pru_send)(so,
 			    pru_flag, top, addr, control, td);
 

@@ -345,13 +345,8 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 			 * need to encrypt.  We cannot do this in the
 			 * interrupt thread of the disk controller, so
 			 * forward the mbufs to a different thread.
-			 *
-			 * Note that the socket was referenced by
-			 * sendfile, and we're inheriting that ref,
-			 * so we do not need to do an soref() here.
 			 */
 			sbtls_enqueue(sfio->m, so, sfio->npages);
-			goto out_with_ref;
 		} else
 			(void )(so->so_proto->pr_usrreqs->pru_ready)(so,
 			    sfio->m, sfio->npages);
@@ -359,7 +354,6 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 	SOCK_LOCK(so);
 	sorele(so);
-out_with_ref:
 	CURVNET_RESTORE();
 	free(sfio, M_TEMP);
 }
@@ -1030,8 +1024,6 @@ prepend_header:
 			 * PRUS_NOTREADY flag.
 			 */
 			free(sfio, M_TEMP);
-			if (tls != NULL)
-				soref(so);
 			if (tls != NULL &&
 			    !(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
