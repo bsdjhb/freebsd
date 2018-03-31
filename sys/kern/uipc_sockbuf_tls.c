@@ -610,6 +610,11 @@ sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
 
 
 		pgs = (void *)m->m_ext.ext_buf;
+
+		/* save a pointer to the socket */
+		pgs->so = so;
+		soref(so);
+
 		tlshdr = (void *)pgs->hdr;
 		tlshdr->tls_vmajor =  tls->sb_params.sb_tls_vmajor;
 		tlshdr->tls_vminor =  tls->sb_params.sb_tls_vminor;
@@ -676,9 +681,6 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	pgs = (void *)m->m_ext.ext_buf;
 	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
-
-	/* save a pointer to the socket */
-	pgs->so = so;
 
 	wq = &sbtls_wq[tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
