@@ -103,8 +103,11 @@ enum ib_gid_type {
 
 #define ROCE_V2_UDP_DPORT      4791
 struct ib_gid_attr {
-	enum ib_gid_type	gid_type;
 	if_t ndev;
+	struct ib_device	*device;
+	enum ib_gid_type	gid_type;
+	u16			index;
+	u8			port_num;
 };
 
 enum rdma_node_type {
