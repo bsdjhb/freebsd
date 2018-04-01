@@ -1407,28 +1407,6 @@ ib_unregister_device_put(struct ib_device *device)
 }
 
 /**
- * irdma_query_gid_roce - Query port GID for Roce
- * @ibdev: device pointer from stack
- * @port: port number
- * @index: Entry index
- * @gid: Global ID
- */
-int
-irdma_query_gid_roce(struct ib_device *ibdev, u8 port, int index,
-		     union ib_gid *gid)
-{
-	int ret;
-
-	ret = ib_get_cached_gid(ibdev, port, index, gid, NULL);
-	if (ret == -EAGAIN) {
-		memcpy(gid, &zgid, sizeof(*gid));
-		return 0;
-	}
-
-	return ret;
-}
-
-/**
  * irdma_modify_port - modify port attributes
  * @ibdev: device pointer from stack
  * @port: port number for query
