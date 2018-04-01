@@ -238,9 +238,9 @@ int irdma_alloc_ucontext(struct ib_ucontext *uctx, struct ib_udata *udata);
 void irdma_dealloc_ucontext(struct ib_ucontext *context);
 int irdma_alloc_pd(struct ib_pd *pd, struct ib_udata *udata);
 void irdma_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
-int irdma_add_gid(struct ib_device *, u8, unsigned int, const union ib_gid *,
+int irdma_add_gid(const union ib_gid *,
 		  const struct ib_gid_attr *, void **);
-int irdma_del_gid(struct ib_device *, u8, unsigned int, void **);
+int irdma_del_gid(const struct ib_gid_attr *, void **);
 struct ib_device *ib_device_get_by_netdev(struct ifnet *ndev, int driver_id);
 void ib_device_put(struct ib_device *device);
 void ib_unregister_device_put(struct ib_device *device);
