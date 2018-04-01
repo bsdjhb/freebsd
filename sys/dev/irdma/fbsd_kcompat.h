@@ -151,8 +151,6 @@ int irdma_iw_port_immutable(struct ib_device *ibdev, u8 port_num,
 			    struct ib_port_immutable *immutable);
 int irdma_query_gid(struct ib_device *ibdev, u8 port, int index,
 		    union ib_gid *gid);
-int irdma_query_gid_roce(struct ib_device *ibdev, u8 port, int index,
-			 union ib_gid *gid);
 int irdma_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
 		     u16 *pkey);
 int irdma_query_port(struct ib_device *ibdev, u8 port,
