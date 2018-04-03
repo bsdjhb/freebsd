@@ -169,7 +169,6 @@ static struct ib_client cma_client = {
 };
 
 static struct ib_sa_client sa_client;
-static struct rdma_addr_client addr_client;
 static LIST_HEAD(dev_list);
 static LIST_HEAD(listen_any_list);
 static DEFINE_MUTEX(lock);
@@ -3180,7 +3179,7 @@ int rdma_resolve_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
 			if (ret)
 				goto err;
 
-			ret = rdma_resolve_ip(&addr_client, cma_src_addr(id_priv),
+			ret = rdma_resolve_ip(cma_src_addr(id_priv),
 					      dst_addr, &id->route.addr.dev_addr,
 					      timeout_ms, addr_handler, id_priv);
 		}
@@ -4739,7 +4738,6 @@ static int __init cma_init(void)
 		return -ENOMEM;
 
 	ib_sa_register_client(&sa_client);
-	rdma_addr_register_client(&addr_client);
 
 	ret = ib_register_client(&cma_client);
 	if (ret)
@@ -4750,7 +4748,6 @@ static int __init cma_init(void)
 	return 0;
 
 err:
-	rdma_addr_unregister_client(&addr_client);
 	ib_sa_unregister_client(&sa_client);
 	destroy_workqueue(cma_wq);
 	return ret;
@@ -4760,7 +4757,6 @@ static void __exit cma_cleanup(void)
 {
 	cma_configfs_exit();
 	ib_unregister_client(&cma_client);
-	rdma_addr_unregister_client(&addr_client);
 	ib_sa_unregister_client(&sa_client);
 	destroy_workqueue(cma_wq);
 }
