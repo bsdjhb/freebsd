@@ -2442,6 +2442,11 @@ tdsigwakeup(struct thread *td, int sig, sig_t action, int intrval,
 		 * trigger spurious EINTR errors.
 		 */
 		if (p->p_flags & P_TRACED) {
+			/*
+			 * - suspend thread
+			 * - set p_xthread or place on a queue of some sort
+			 *   if p_xthread is already set
+			 */
 			if (ptrace_early_signal(td, sig, ksi))
 			    goto out;
 		}
