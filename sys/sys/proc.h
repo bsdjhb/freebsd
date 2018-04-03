@@ -241,6 +241,7 @@ struct thread {
 	TAILQ_ENTRY(thread) td_slpq;	/* (t) Sleep queue. */
 	TAILQ_ENTRY(thread) td_lockq;	/* (t) Lock queue. */
 	LIST_ENTRY(thread) td_hash;	/* (d) Hash chain. */
+	STAILQ_ENTRY(thread) td_trapq;	/* (c) Trap queue. */
 	struct cpuset	*td_cpuset;	/* (t) CPU affinity mask. */
 	struct domainset_ref td_domain;	/* (a) NUMA policy */
 	struct seltd	*td_sel;	/* Select queue/channel. */
@@ -630,7 +631,7 @@ struct proc {
 	struct kaioinfo	*p_aioinfo;	/* (y) ASYNC I/O info. */
 	struct thread	*p_singlethread;/* (c + j) If single threading this is it */
 	int		p_suspcount;	/* (j) Num threads in suspended mode. */
-	struct thread	*p_xthread;	/* (c) Trap thread */
+	STAILQ_HEAD(, thread) *p_xthreads; /* (c) Trap threads */
 	int		p_boundary_count;/* (j) Num threads at user boundary */
 	int		p_pendingcnt;	/* how many signals are pending */
 	struct itimers	*p_itimers;	/* (c) POSIX interval timers. */
