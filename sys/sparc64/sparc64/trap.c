@@ -53,7 +53,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/systm.h>
 #include <sys/pcpu.h>
-#include <sys/pioctl.h>
 #include <sys/ptrace.h>
 #include <sys/proc.h>
 #include <sys/smp.h>
