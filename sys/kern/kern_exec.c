@@ -910,12 +910,6 @@ exec_fail_dealloc:
 				td->td_dbgflags |= TDB_EXEC;
 			PROC_UNLOCK(p);
 		}
-
-		/*
-		 * Stop the process here if its stop event mask has
-		 * the S_EXEC bit set.
-		 */
-		STOPEVENT(p, S_EXEC, 0);
 	} else {
 exec_fail:
 		/* we're done here, clear P_INEXEC */

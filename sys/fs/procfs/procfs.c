@@ -177,8 +177,6 @@ procfs_init(PFS_INIT_ARGS)
 	    NULL, procfs_notsystem, NULL, PFS_RD);
 	node = pfs_create_file(dir, "mem", procfs_doprocmem,
 	    procfs_attr, procfs_candebug, NULL, PFS_RDWR|PFS_RAW);
-	node->pn_ioctl = procfs_ioctl;
-	node->pn_close = procfs_close;
 	pfs_create_file(dir, "note", procfs_doprocnote,
 	    procfs_attr, procfs_candebug, NULL, PFS_WR);
 	pfs_create_file(dir, "notepg", procfs_doprocnote,

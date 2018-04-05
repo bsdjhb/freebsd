@@ -2151,8 +2151,6 @@ setsugid(struct proc *p)
 
 	PROC_LOCK_ASSERT(p, MA_OWNED);
 	p->p_flag |= P_SUGID;
-	if (!(p->p_pfsflags & PF_ISUGID))
-		p->p_stops = 0;
 }
 
 /*-
