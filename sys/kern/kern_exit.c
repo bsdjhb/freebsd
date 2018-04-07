@@ -499,6 +499,7 @@ exit1(struct thread *td, int rval, int signo)
 				tdt->td_dbgflags &= ~(TDB_SUSPEND | TDB_XSIG |
 				    TDB_FSTP);
 			}
+			TAILQ_INIT(&q->p_xthreads);
 			kern_psignal(q, SIGKILL);
 		}
 		PROC_UNLOCK(q);
@@ -526,7 +527,7 @@ exit1(struct thread *td, int rval, int signo)
 
 	/* Save exit status. */
 	PROC_LOCK(p);
-	KASSERT(STAILQ_EMPTY(&p->p_xthreads), ("exit: pending debug traps"));
+	KASSERT(TAILQ_EMPTY(&p->p_xthreads), ("exit: pending debug traps"));
 
 #ifdef KDTRACE_HOOKS
 	/*
@@ -1238,8 +1239,8 @@ loop_locked:
 			    "wait: returning trapped pid %d status %#x "
 			    "(xstat %d) xthread %d",
 			    p->p_pid, W_STOPCODE(p->p_xsig), p->p_xsig,
-			    STAILQ_EMPTY(&p->p_xthreads) ? -1 :
-			    STAILQ_FIRST(&p->p_xthreads)->td_tid);
+			    TAILQ_EMPTY(&p->p_xthreads) ? -1 :
+			    TAILQ_FIRST(&p->p_xthreads)->td_tid);
 				report_alive_proc(td, p, siginfo, status,
 				    options, CLD_TRAPPED);
 				return (0);

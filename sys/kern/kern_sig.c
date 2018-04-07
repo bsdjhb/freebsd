@@ -2527,6 +2527,19 @@ ptracestop(struct thread *td, int sig, ksiginfo_t *si)
 		td->td_dbgflags |= TDB_XSIG;
 		CTR4(KTR_PTRACE, "ptracestop: tid %d (pid %d) flags %#x sig %d",
 		    td->td_tid, p->p_pid, td->td_dbgflags, sig);
+
+		/*
+		 * Ensure that right after attach, the thread which
+		 * was decided to become the leader of attach is
+		 * reported first to the waiter.
+		 */
+		if (td->td_dbgflags & TDB_FSTP) {
+			TAILQ_INSERT_HEAD(&p->p_xthreads, td, td_trapq);
+			td->td_dbgflags &= ~TDB_FSTP;
+			p->p_flag2 &= ~P2_PTRACE_FSTP;
+		} else
+			TAILQ_INSERT_TAIL(&p->p_xthreads, td, td_trapq);
+
 		PROC_SLOCK(p);
 		while ((p->p_flag & P_TRACED) && (td->td_dbgflags & TDB_XSIG)) {
 			if (P_KILLED(p)) {
@@ -2537,6 +2550,7 @@ ptracestop(struct thread *td, int sig, ksiginfo_t *si)
 				 * received the SIGKILL, but this thread was
 				 * unsuspended first.
 				 */
+				TAILQ_REMOVE(&p->p_xthreads, td, td_trapq);
 				td->td_dbgflags &= ~TDB_XSIG;
 				td->td_xsig = SIGKILL;
 				p->p_ptevents = 0;
@@ -2548,27 +2562,21 @@ ptracestop(struct thread *td, int sig, ksiginfo_t *si)
 				 * Ignore ptrace stops except for thread exit
 				 * events when the process exits.
 				 */
+				TAILQ_REMOVE(&p->p_xthreads, td, td_trapq);
 				td->td_dbgflags &= ~TDB_XSIG;
 				PROC_SUNLOCK(p);
 				return (0);
 			}
 
 			/*
-			 * Make wait(2) work.  Ensure that right after the
-			 * attach, the thread which was decided to become the
-			 * leader of attach gets reported to the waiter.
-			 * Otherwise, just avoid overwriting another thread's
-			 * assignment to p_xthread.  If another thread has
-			 * already set p_xthread, the current thread will get
-			 * a chance to report itself upon the next iteration.
+			 * If this thread is the head of the p_xthreads queue
+			 * and we aren't waiting for the attach leader to
+			 * arrive still, suspend the other threads in this
+			 * process.
 			 */
-			if ((td->td_dbgflags & TDB_FSTP) != 0 ||
-			    ((p->p_flag2 & P2_PTRACE_FSTP) == 0 &&
-			    p->p_xthread == NULL)) {
+			if (td == TAILQ_FIRST(&p->p_xthreads) &&
+			    (p->p_flag2 & P2_PTRACE_FSTP) == 0) {
 				p->p_xsig = sig;
-				p->p_xthread = td;
-				td->td_dbgflags &= ~TDB_FSTP;
-				p->p_flag2 &= ~P2_PTRACE_FSTP;
 				p->p_flag |= P_STOPPED_SIG | P_STOPPED_TRACE;
 				sig_suspend_threads(td, p, 0);
 			}
@@ -2578,8 +2586,6 @@ ptracestop(struct thread *td, int sig, ksiginfo_t *si)
 			}
 stopme:
 			thread_suspend_switch(td, p);
-			if (p->p_xthread == td)
-				p->p_xthread = NULL;
 			if (!(p->p_flag & P_TRACED))
 				break;
 			if (td->td_dbgflags & TDB_SUSPEND) {

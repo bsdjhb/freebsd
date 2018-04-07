@@ -783,8 +783,9 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 
 	if (tid == 0) {
 		if ((p->p_flag & P_STOPPED_TRACE) != 0) {
-			KASSERT(p->p_xthread != NULL, ("NULL p_xthread"));
-			td2 = p->p_xthread;
+			KASSERT(!TAILQ_EMPTY(&p->p_xthreads),
+			    ("no pending debug traps"));
+			td2 = TAILQ_FIRST(&p->p_xthreads);
 		} else {
 			td2 = FIRST_THREAD_IN_PROC(p);
 		}
@@ -924,7 +925,7 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 
 		sx_xunlock(&proctree_lock);
 		proctree_locked = 0;
-		MPASS(p->p_xthread == NULL);
+		MPASS(TAILQ_EMPTY(&p->p_xthreads));
 		MPASS((p->p_flag & P_STOPPED_TRACE) == 0);
 
 		/*
@@ -957,6 +958,17 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 		CTR2(KTR_PTRACE, "PT_SUSPEND: tid %d (pid %d)", td2->td_tid,
 		    p->p_pid);
 		td2->td_dbgflags |= TDB_SUSPEND;
+
+		/*
+		 * Defer reporting this thread's event until it is
+		 * later resumed via PT_RESUME.  However, if this
+		 * thread is currently reporting its event, leave it
+		 * in place so its event can be reaped when continuing
+		 * the process.
+		 */
+		if (td2->td_dbgflags & TDB_XSIG &&
+		    td2 != TAILQ_FIRST(&p->p_xthreads))
+			TAILQ_REMOVE(&p->p_xthreads, td2, td_trapq);
 		thread_lock(td2);
 		td2->td_flags |= TDF_NEEDSUSPCHK;
 		thread_unlock(td2);
@@ -966,6 +978,8 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 		CTR2(KTR_PTRACE, "PT_RESUME: tid %d (pid %d)", td2->td_tid,
 		    p->p_pid);
 		td2->td_dbgflags &= ~TDB_SUSPEND;
+		if (td2->td_dbgflags & TDB_XSIG)
+			TAILQ_INSERT_TAIL(&p->p_xthreads, td2, td_trapq);
 		break;
 
 	case PT_FOLLOW_FORK:
@@ -1105,6 +1119,7 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 			 * as an orphan of the debugger.
 			 */
 			p->p_flag &= ~(P_TRACED | P_WAITED);
+			TAILQ_INIT(&p->p_xthreads);
 			if (p->p_oppid != p->p_pptr->p_pid) {
 				PROC_LOCK(p->p_pptr);
 				sigqueue_take(p->p_ksi);
@@ -1148,17 +1163,18 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 		MPASS(proctree_locked == 0);
 		
 		/* 
-		 * Clear the pending event for the thread that just
-		 * reported its event (p_xthread).  This may not be
-		 * the thread passed to PT_CONTINUE, PT_STEP, etc. if
-		 * the debugger is resuming a different thread.
+		 * Clear the first pending thread event.  This may not
+		 * be the thread passed to PT_CONTINUE, PT_STEP,
+		 * etc. if the debugger is resuming a different
+		 * thread.
 		 *
 		 * Deliver any pending signal via the reporting thread.
 		 */
-		MPASS(p->p_xthread != NULL);
-		p->p_xthread->td_dbgflags &= ~TDB_XSIG;
-		p->p_xthread->td_xsig = data;
-		p->p_xthread = NULL;
+		td2 = TAILQ_FIRST(&p->p_xthreads);
+		MPASS(td2 != NULL);
+		TAILQ_REMOVE(&p->p_xthreads, td2, td_trapq);
+		td2->td_dbgflags &= ~TDB_XSIG;
+		td2->td_xsig = data;
 		p->p_xsig = data;
 
 		/*
