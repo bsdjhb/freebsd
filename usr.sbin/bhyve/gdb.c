@@ -151,7 +151,7 @@ const int gdb_regsize[] = {
 	4
 };
 
-#if 1
+#ifdef GDB_LOG
 #include <stdarg.h>
 #include <stdio.h>
 
