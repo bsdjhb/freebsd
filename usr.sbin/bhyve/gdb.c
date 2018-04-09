@@ -714,16 +714,6 @@ gdb_suspend_vcpus(void)
 		gdb_finish_suspend_vcpus();
 }
 
-#if 0
-static bool
-gdb_suspend_pending(void)
-{
-
-	assert(pthread_mutex_isowned_np(&gdb_lock));
-	return (CPU_CMP(&vcpus_waiting, &vcpus_suspended) != 0);
-}
-#endif
-
 static bool
 gdb_step_vcpu(int vcpu)
 {
