@@ -1252,12 +1252,25 @@ new_connection(int fd, enum ev_type event, void *arg)
 	pthread_mutex_unlock(&gdb_lock);
 }
 
+#ifndef WITHOUT_CAPSICUM
+void
+limit_gdb_socket(int s)
+{
+	cap_rights_t rights;
+	unsigned long ioctls[] = { FIONREAD };
+
+	cap_rights_init(&rights, CAP_ACCEPT, CAP_EVENT, CAP_READ, CAP_WRITE,
+	    CAP_SETSOCKOPT, CAP_IOCTL);
+	if (cap_rights_limit(s, &rights) == -1 && errno != ENOSYS)
+		errx(EX_OSERR, "Unable to apply rights for sandbox");
+	if (cap_ioctls_limit(s, ioctls, nitems(ioctls)) == -1 && errno != ENOSYS)
+		errx(EX_OSERR, "Unable to apply rights for sandbox");
+}
+#endif
+
 void
 init_gdb(struct vmctx *_ctx, int sport, bool wait)
 {
-#ifndef WITHOUT_CAPSICUM
-	cap_rights_t rights;
-#endif
 	struct sockaddr_in sin;
 	int error, flags, s;
 
@@ -1303,10 +1316,7 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 		err(1, "Failed to mark gdb socket non-blocking");
 
 #ifndef WITHOUT_CAPSICUM
-	cap_rights_init(&rights, CAP_ACCEPT, CAP_EVENT, CAP_READ, CAP_WRITE,
-	    CAP_SETSOCKOPT);
-	if (cap_rights_limit(s, &rights) == -1 && errno != ENOSYS)
-		errx(EX_OSERR, "Unable to apply rights for sandbox");
+	limit_gdb_socket(s);
 #endif
 	mevent_add(s, EVF_READ, new_connection, NULL);
 }
