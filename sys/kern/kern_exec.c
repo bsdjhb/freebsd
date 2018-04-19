@@ -1539,8 +1539,8 @@ exec_copyout_strings(struct image_params *imgp)
 		 * Allocate room on the stack for the ELF auxargs
 		 * array.  It has up to AT_COUNT entries.
 		 */
-		vectp = (char **)((char *)vectp - AT_COUNT *
-		    sizeof(Elf_Auxinfo));
+		vectp -= howmany(AT_COUNT * sizeof(Elf_Auxinfo),
+		    sizeof(*vectp));
 	}
 
 	/*

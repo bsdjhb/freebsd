@@ -799,8 +799,8 @@ linux_copyout_strings(struct image_params *imgp)
 		 * Allocate room on the stack for the ELF auxargs
 		 * array.  It has LINUX_AT_COUNT entries.
 		 */
-		vectp = (uint32_t *)((char *)vectp - LINUX_AT_COUNT *
-		    sizeof(Elf32_Auxinfo));
+		vectp -= howmany(LINUX_AT_COUNT * sizeof(Elf32_Auxinfo),
+		    sizeof(*vectp));
 	}
 
 	/*
