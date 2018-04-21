@@ -82,6 +82,10 @@ __FBSDID("$FreeBSD$");
 #define RX_COPY_THRESHOLD MINCLSIZE
 #endif
 
+/* Internal mbuf flags stored in PH_loc.eight[1]. */
+#define	MC_NOMAP		0x01
+#define	MC_RAW_WR		0x02
+
 /*
  * Ethernet frames are DMA'd at this byte offset into the freelist buffer.
  * 0-7 are valid values.
@@ -270,6 +274,7 @@ static inline u_int txpkt_len16(u_int, u_int);
 static inline u_int txpkt_vm_len16(u_int, u_int);
 static inline u_int txpkts0_len16(u_int);
 static inline u_int txpkts1_len16(void);
+static u_int write_raw_wr(struct sge_txq *, void *, struct mbuf *, u_int);
 static u_int write_txpkt_wr(struct sge_txq *, struct fw_eth_tx_pkt_wr *,
     struct mbuf *, u_int);
 static u_int write_txpkt_vm_wr(struct adapter *, struct sge_txq *,
@@ -2194,6 +2199,22 @@ set_mbuf_nsegs(struct mbuf *m, uint8_t nsegs)
 }
 
 static inline int
+mbuf_cflags(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return (m->m_pkthdr.PH_loc.eight[4]);
+}
+
+static inline void
+set_mbuf_cflags(struct mbuf *m, uint8_t flags)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_loc.eight[4] = flags;
+}
+
+static inline int
 mbuf_len16(struct mbuf *m)
 {
 	int n;
@@ -2274,20 +2295,29 @@ needs_eo(struct mbuf *m)
 }
 #endif
 
-static inline int
-mbuf_nomap(struct mbuf *m)
+/*
+ * Try to allocate an mbuf to contain a raw work request.  To make it
+ * easy to construct the work request, don't allocate a chain but a
+ * single mbuf.
+ */
+struct mbuf *
+alloc_wr_mbuf(int len, int how)
 {
+	struct mbuf *m;
 
-	M_ASSERTPKTHDR(m);
-	return (m->m_pkthdr.PH_loc.eight[4]);
-}
-
-static inline void
-set_mbuf_nomap(struct mbuf *m, uint8_t nomap)
-{
-
-	M_ASSERTPKTHDR(m);
-	m->m_pkthdr.PH_loc.eight[4] = nomap;
+	if (len <= MHLEN)
+		m = m_gethdr(how, MT_DATA);
+	else if (len <= MCLBYTES)
+		m = m_getcl(how, MT_DATA, M_PKTHDR);
+	else
+		m = NULL;
+	if (m == NULL)
+		return (NULL);
+	m->m_pkthdr.len = len;
+	m->m_len = len;
+	set_mbuf_cflags(m, MC_RAW_WR);
+	set_mbuf_len16(m, howmany(len, 16));
+	return (m);
 }
 
 static inline int
@@ -2450,7 +2480,7 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
  * routine to return 0 if skip accounts for all the contents of the mbuf chain.
  */
 static inline int
-count_mbuf_nsegs(struct mbuf *m, int skip, int *ext_pgs)
+count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 {
 	vm_paddr_t lastb, next;
 	vm_offset_t va;
@@ -2473,7 +2503,7 @@ count_mbuf_nsegs(struct mbuf *m, int skip, int *ext_pgs)
 		}
 		
 		if ((m->m_flags & M_NOMAP) != 0) {
-			*ext_pgs = 1;
+			*cflags |= MC_NOMAP;
 			nsegs += count_mbuf_ext_pgs(m, skip, &lastb);
 			skip = 0;
 			continue;
@@ -2500,14 +2530,16 @@ int
 parse_pkt(struct adapter *sc, struct mbuf **mp)
 {
 	struct mbuf *m0 = *mp, *m;
-	int rc, nsegs, defragged = 0, offset, ext_pgs = 0;
+	int rc, nsegs, defragged = 0, offset;
 	struct ether_header *eh;
 	void *l3hdr;
 #if defined(INET) || defined(INET6)
 	struct tcphdr *tcp;
 #endif
 	uint16_t eh_type;
+	uint8_t cflags;
 
+	cflags = 0;
 	M_ASSERTPKTHDR(m0);
 	if (__predict_false(m0->m_pkthdr.len < ETHER_HDR_LEN)) {
 		rc = EINVAL;
@@ -2523,7 +2555,7 @@ restart:
 	 */
 	M_ASSERTPKTHDR(m0);
 	MPASS(m0->m_pkthdr.len > 0);
-	nsegs = count_mbuf_nsegs(m0, 0, &ext_pgs);
+	nsegs = count_mbuf_nsegs(m0, 0, &cflags);
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
 			rc = EFBIG;
@@ -2534,7 +2566,7 @@ restart:
 	}
 
 	if (__predict_false(nsegs > 2 && m0->m_pkthdr.len <= MHLEN &&
-	    !ext_pgs)) {
+	    !(cflags & MC_NOMAP))) {
 		m0 = m_pullup(m0, m0->m_pkthdr.len);
 		if (m0 == NULL) {
 			/* Should have left well enough alone. */
@@ -2545,7 +2577,7 @@ restart:
 		goto restart;
 	}
 	set_mbuf_nsegs(m0, nsegs);
-	set_mbuf_nomap(m0, ext_pgs);
+	set_mbuf_cflags(m0, cflags);
 	if (sc->flags & IS_VF)
 		set_mbuf_len16(m0, txpkt_vm_len16(nsegs, needs_tso(m0)));
 	else
@@ -2787,7 +2819,7 @@ cannot_use_txpkts(struct mbuf *m)
 {
 	/* maybe put a GL limit too, to avoid silliness? */
 
-	return (needs_tso(m));
+	return (needs_tso(m) || (mbuf_cflags(m) & MC_RAW_WR) != 0);
 }
 
 static inline int
@@ -2892,6 +2924,10 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			n = write_txpkts_wr(txq, wr, m0, &txp, available);
 			total += txp.npkt;
 			remaining -= txp.npkt;
+		} else if (mbuf_cflags(m0) & MC_RAW_WR) {
+			total++;
+			remaining--;
+			n = write_raw_wr(txq, (void *)wr, m0, available);
 		} else {
 			total++;
 			remaining--;
@@ -4087,6 +4123,8 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "txpkts1_pkts",
 	    CTLFLAG_RD, &txq->txpkts1_pkts,
 	    "# of frames tx'd using type1 txpkts work requests");
+	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "raw_wrs", CTLFLAG_RD,
+	    &txq->raw_wrs, "# of raw work requests (non-packets)");
 
 	SYSCTL_ADD_COUNTER_U64(&vi->ctx, children, OID_AUTO, "r_enqueues",
 	    CTLFLAG_RD, &txq->r->enqueues,
@@ -4634,6 +4672,39 @@ write_txpkt_vm_wr(struct adapter *sc, struct sge_txq *txq,
 }
 
 /*
+ * Write a raw WR to the hardware descriptors, update the software
+ * descriptor, and advance the pidx.  It is guaranteed that enough
+ * descriptors are available.
+ *
+ * The return value is the # of hardware descriptors used.
+ */
+static u_int
+write_raw_wr(struct sge_txq *txq, void *wr, struct mbuf *m0, u_int available)
+{
+	struct sge_eq *eq = &txq->eq;
+	struct tx_sdesc *txsd;
+	struct mbuf *m;
+	caddr_t dst;
+	int len16, ndesc;
+
+	len16 = mbuf_len16(m0);
+	ndesc = howmany(len16, EQ_ESIZE / 16);
+	MPASS(ndesc <= available);
+
+	dst = wr;
+	for (m = m0; m != NULL; m = m->m_next)
+		copy_to_txd(eq, mtod(m, caddr_t), &dst, m->m_len);
+
+	txq->raw_wrs++;
+
+	txsd = &txq->sdesc[eq->pidx];
+	txsd->m = m0;
+	txsd->desc_used = ndesc;
+
+	return (ndesc);
+}
+
+/*
  * Write a txpkt WR for this packet to the hardware descriptors, update the
  * software descriptor, and advance the pidx.  It is guaranteed that enough
  * descriptors are available.
@@ -4662,7 +4733,7 @@ write_txpkt_wr(struct sge_txq *txq, struct fw_eth_tx_pkt_wr *wr,
 	ctrl = sizeof(struct cpl_tx_pkt_core);
 	if (needs_tso(m0))
 		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
-	else if (mbuf_nomap(m0) == 0 && pktlen <= imm_payload(2) &&
+	else if (!(mbuf_cflags(m0) & MC_NOMAP) && pktlen <= imm_payload(2) &&
 	    available >= 2) {
 		/* Immediate data.  Recalculate len16 and set nsegs to 0. */
 		ctrl += pktlen;
