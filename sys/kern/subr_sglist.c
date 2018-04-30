@@ -219,6 +219,72 @@ sglist_count_vmpages(vm_page_t *m, size_t pgoff, size_t len)
 }
 
 /*
+ * Determine the number of scatter/gather list elements needed to
+ * describe a TLS buffer.
+ */
+int
+sglist_count_ext_pgs(struct mbuf_ext_pgs *ext_pgs, size_t off, size_t len)
+{
+	vm_paddr_t nextaddr, paddr;
+	size_t seglen, segoff;
+	int i, nsegs, pglen, pgoff;
+
+	if (len == 0)
+		return (0);
+
+	nsegs = 0;
+	if (ext_pgs->hdr_len != 0) {
+		if (off >= ext_pgs->hdr_len) {
+			off -= ext_pgs->hdr_len;
+		} else {
+			seglen = ext_pgs->hdr_len - off;
+			segoff = off;
+			seglen = MIN(seglen, len);
+			off = 0;
+			len -= seglen;
+			nsegs += sglist_count(&ext_pgs->hdr[segoff], seglen);
+		}
+	}
+	nextaddr = 0;
+	pgoff = ext_pgs->first_pg_off;
+	for (i = 0; i < ext_pgs->npgs && len > 0; i++) {
+		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
+		}
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
+		seglen = MIN(seglen, len);
+		len -= seglen;
+		paddr = ext_pgs->pa[i] + segoff;
+		if (paddr != nextaddr)
+			nsegs++;
+		nextaddr = paddr + seglen;
+	};
+	if (len) {
+		seglen = MIN(len, ext_pgs->trail_len - off);
+		len -= seglen;
+		nsegs += sglist_count(&ext_pgs->trail[off], seglen);
+	}
+	KASSERT(len == 0, ("len != 0"));
+	return (nsegs);
+}
+
+int
+sglist_count_mb_ext_pgs(struct mbuf *m)
+{
+	struct mbuf_ext_pgs *ext_pgs;
+
+	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
+	MBUF_EXT_PGS_ASSERT(m);
+	ext_pgs = (void *)m->m_ext.ext_buf;
+	return (sglist_count_ext_pgs(ext_pgs, mtod(m, vm_offset_t), m->m_len));
+}
+
+/*
  * Allocate a scatter/gather list along with 'nsegs' segments.  The
  * 'mflags' parameters are the same as passed to malloc(9).  The caller
  * should use sglist_free() to free this list.
@@ -319,34 +385,22 @@ sglist_append_phys(struct sglist *sg, vm_paddr_t paddr, size_t len)
 	return (error);
 }
 
-static inline
 int
-sglist_append_mb_ext_pgs(struct sglist *sg, struct mbuf *m)
+sglist_append_ext_pgs(struct sglist *sg, struct mbuf_ext_pgs *ext_pgs,
+    size_t off, size_t len)
 {
-	struct mbuf_ext_pgs *ext_pgs;
-	uintptr_t off, segoff;
+	size_t seglen, segoff;
 	vm_paddr_t paddr;
-	int len, seglen, error, pgoff, pglen, i;
+	int error, i, pglen, pgoff;
 
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
-	MBUF_EXT_PGS_ASSERT(m);
-	ext_pgs = (void *)m->m_ext.ext_buf;
-	len = m->m_len;
 	error = 0;
-
-	/* somebody may have removed data from the front;
-	 * so skip ahead until we find the start
-	 */
-	off = mtod(m, vm_offset_t);
-
 	if (ext_pgs->hdr_len != 0) {
 		if (off >= ext_pgs->hdr_len) {
 			off -= ext_pgs->hdr_len;
 		} else {
 			seglen = ext_pgs->hdr_len - off;
 			segoff = off;
-			seglen = min (seglen, len);
+			seglen = MIN(seglen, len);
 			off = 0;
 			len -= seglen;
 			error = sglist_append(sg,
@@ -356,34 +410,41 @@ sglist_append_mb_ext_pgs(struct sglist *sg, struct mbuf *m)
 	pgoff = ext_pgs->first_pg_off;
 	for (i = 0; i < ext_pgs->npgs && error == 0 && len > 0; i++) {
 		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off != 0) {
-			if (off >= pglen) {
-				off -= pglen;
-				pgoff = 0;
-				continue;
-			} else {
-				seglen = pglen - off;
-				segoff = pgoff + off;
-				off = 0;
-			}
-		} else {
-			seglen = pglen;
-			segoff = pgoff;
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
 		}
-		seglen = min(seglen, len);
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
+		seglen = MIN(seglen, len);
 		len -= seglen;
 		paddr = ext_pgs->pa[i] + segoff;
 		error = sglist_append_phys(sg, paddr, seglen);
 		pgoff = 0;
 	};
-	if (len) {
-		seglen = min(len, ext_pgs->trail_len - off);
+	if (error == 0 && len > 0) {
+		seglen = MIN(len, ext_pgs->trail_len - off);
 		len -= seglen;
 		error = sglist_append(sg,
 		    &ext_pgs->trail[off], seglen);
 	}
-	KASSERT(len == 0, ("len != 0"));
+	if (error == 0)
+		KASSERT(len == 0, ("len != 0"));
 	return (error);
+}
+
+int
+sglist_append_mb_ext_pgs(struct sglist *sg, struct mbuf *m)
+{
+	struct mbuf_ext_pgs *ext_pgs;
+
+	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
+	MBUF_EXT_PGS_ASSERT(m);
+	ext_pgs = (void *)m->m_ext.ext_buf;
+	return (sglist_append_ext_pgs(sg, ext_pgs, mtod(m, vm_offset_t),
+	    m->m_len));
 }
 
 /*
