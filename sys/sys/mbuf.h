@@ -333,6 +333,7 @@ static inline int
 mbuf_ext_pg_len(struct mbuf_ext_pgs *ext_pgs, int pidx, int pgoff)
 {
 	if (pidx == ext_pgs->npgs - 1) {
+		KASSERT(pgoff == 0, ("last page with non-zero offset"));
 		return (ext_pgs->last_pg_len);
 	} else {
 		return (PAGE_SIZE - pgoff);
