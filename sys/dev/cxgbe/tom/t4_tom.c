@@ -160,6 +160,7 @@ alloc_toepcb(struct vi_info *vi, int txqid, int rxqid, int flags)
 	toep->txsd_pidx = 0;
 	toep->txsd_cidx = 0;
 	aiotx_init_toep(toep);
+	tls_init_toep(toep);
 
 	return (toep);
 }
@@ -706,7 +707,6 @@ set_ulp_mode(struct toepcb *toep, int ulp_mode)
 	CTR4(KTR_CXGBE, "%s: toep %p (tid %d) ulp_mode %d",
 	    __func__, toep, toep->tid, ulp_mode);
 	toep->ulp_mode = ulp_mode;
-	tls_init_toep(toep);
 	if (toep->ulp_mode == ULP_MODE_TCPDDP)
 		ddp_init_toep(toep);
 }

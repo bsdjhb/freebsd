@@ -35,6 +35,7 @@
 
 #include <sys/kernel.h>
 #include <sys/bus.h>
+#include <sys/counter.h>
 #include <sys/rman.h>
 #include <sys/types.h>
 #include <sys/lock.h>
@@ -158,6 +159,7 @@ enum {
 	ADAP_ERR	= (1 << 5),
 	BUF_PACKING_OK	= (1 << 6),
 	IS_VF		= (1 << 7),
+	KERN_TLS_OK	= (1 << 8),
 
 	CXGBE_BUSY	= (1 << 9),
 
@@ -306,6 +308,14 @@ struct port_info {
 	u_long	tx_tls_octets;
 	u_long	rx_tls_records;
 	u_long	rx_tls_octets;
+	counter_u64_t kern_tls_records;
+	counter_u64_t kern_tls_short;
+	counter_u64_t kern_tls_partial;
+	counter_u64_t kern_tls_full;
+	counter_u64_t kern_tls_octets;
+	counter_u64_t kern_tls_waste;
+	counter_u64_t kern_tls_options;
+	counter_u64_t kern_tls_header;
 
 	struct callout tick;
 };
@@ -579,9 +589,13 @@ struct sge_txq {
 	uint64_t txpkts1_wrs;	/* # of type1 coalesced tx work requests */
 	uint64_t txpkts0_pkts;	/* # of frames in type0 coalesced tx WRs */
 	uint64_t txpkts1_pkts;	/* # of frames in type1 coalesced tx WRs */
+	uint64_t tls_wrs;	/* # of TLS work requests */
 	uint64_t raw_wrs;	/* # of raw work requests (alloc_wr_mbuf) */
 
 	/* stats for not-that-common events */
+
+	/* Optional scratch space for constructing work requests. */
+	uint8_t ss[SGE_MAX_WR_LEN];
 } __aligned(CACHE_LINE_SIZE);
 
 /* rxq: SGE ingress queue + SGE free list + miscellaneous items */
@@ -838,6 +852,7 @@ struct adapter {
 	struct smt_data *smt;	/* Source MAC Table */
 	struct tid_info tids;
 	vmem_t *key_map;
+	struct tls_tunables tlst;
 
 	uint8_t doorbells;
 	int offload_map;	/* ports with IFCAP_TOE enabled */
@@ -893,6 +908,30 @@ struct adapter {
 	const char *last_op;
 	const void *last_op_thr;
 	int last_op_flags;
+
+	struct callout sbtls_tick;
+};
+
+/* XXX: Probably move to a different header later. */
+struct t6_sbtls_cipher;
+typedef int (*parse_tls_pkt_t)(struct t6_sbtls_cipher *, struct mbuf *, int *,
+    int *);
+typedef int (*write_tls_wr_t)(struct t6_sbtls_cipher *, struct sge_txq *,
+    void *, struct mbuf *, u_int, u_int);
+
+struct t6_sbtls_cipher {
+	parse_tls_pkt_t parse_pkt;
+	write_tls_wr_t write_tls_wr;
+	struct adapter *sc;
+	struct toepcb *toep;
+	struct sge_txq *txq;
+	struct mbuf *key_wr;
+	uint32_t prev_seq;
+	uint32_t prev_ack;
+	uint16_t prev_win;
+	uint16_t using_timestamps;
+	uint32_t prev_tsecr;
+	uint16_t prev_mss;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)

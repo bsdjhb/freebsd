@@ -1219,6 +1219,10 @@ struct cpl_tx_data {
 #define V_TX_BYPASS(x) ((x) << S_TX_BYPASS)
 #define F_TX_BYPASS    V_TX_BYPASS(1U)
 
+#define S_TX_PUSH    22
+#define V_TX_PUSH(x) ((x) << S_TX_PUSH)
+#define F_TX_PUSH    V_TX_PUSH(1U)
+
 /* additional tx_data_wr.flags fields */
 #define S_TX_CPU_IDX    0
 #define M_TX_CPU_IDX    0x3F

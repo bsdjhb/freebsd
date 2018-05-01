@@ -33,6 +33,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_ddb.h"
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_ratelimit.h"
 #include "opt_rss.h"
 
@@ -65,6 +66,9 @@ __FBSDID("$FreeBSD$");
 #endif
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#ifdef KERN_TLS
+#include <netinet/tcp_seq.h>
+#endif
 #if defined(__i386__) || defined(__amd64__)
 #include <machine/md_var.h>
 #include <machine/cputypes.h>
@@ -568,6 +572,14 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, cop_managed_offloading, CTLFLAG_RDTUN,
     "COP (Connection Offload Policy) controls all TOE offload");
 #endif
 
+#ifdef KERN_TLS
+/*
+ * This enables KERN_TLS for all adapters if set.
+ */
+static int t4_kern_tls = 0;
+TUNABLE_INT("hw.cxgbe.kern_tls", &t4_kern_tls);
+#endif
+
 /* Functions used by VIs to obtain unique MAC addresses for each VI. */
 static int vi_mac_funcs[] = {
 	FW_VI_FUNC_ETH,
@@ -998,6 +1010,8 @@ t4_attach(device_t dev)
 
 	sc->policy = NULL;
 	rw_init(&sc->policy_lock, "connection offload policy");
+
+	callout_init(&sc->sbtls_tick, 1);
 
 	rc = t4_map_bars_0_and_4(sc);
 	if (rc != 0)
@@ -1574,6 +1588,7 @@ t4_detach_common(device_t dev)
 		mtx_destroy(&sc->sc_lock);
 	}
 
+	callout_drain(&sc->sbtls_tick);
 	callout_drain(&sc->sfl_callout);
 	if (mtx_initialized(&sc->tids.ftid_lock)) {
 		mtx_destroy(&sc->tids.ftid_lock);
@@ -1728,6 +1743,14 @@ cxgbe_attach(device_t dev)
 	struct vi_info *vi;
 	int i, rc;
 
+	pi->kern_tls_records = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_short = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_partial = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_full = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_octets = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_waste = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_options = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_header = counter_u64_alloc(M_WAITOK);
 	callout_init_mtx(&pi->tick, &pi->pi_lock, 0);
 
 	rc = cxgbe_vi_attach(dev, &pi->vi[0]);
@@ -1795,6 +1818,14 @@ cxgbe_detach(device_t dev)
 	cxgbe_vi_detach(&pi->vi[0]);
 	callout_drain(&pi->tick);
 	ifmedia_removeall(&pi->media);
+	counter_u64_free(pi->kern_tls_records);
+	counter_u64_free(pi->kern_tls_short);
+	counter_u64_free(pi->kern_tls_partial);
+	counter_u64_free(pi->kern_tls_full);
+	counter_u64_free(pi->kern_tls_octets);
+	counter_u64_free(pi->kern_tls_waste);
+	counter_u64_free(pi->kern_tls_options);
+	counter_u64_free(pi->kern_tls_header);
 
 	end_synchronized_op(sc, 0);
 
@@ -4420,6 +4451,55 @@ get_params__post_init(struct adapter *sc)
 	return (rc);
 }
 
+#ifdef KERN_TLS
+static void
+sbtls_tick(void *arg)
+{
+	struct adapter *sc;
+	uint32_t tstamp;
+
+	sc = arg;
+
+	tstamp = tcp_ts_getticks();
+	t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
+	t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
+	
+	callout_schedule_sbt(&sc->sbtls_tick, SBT_1MS, 0, C_HARDCLOCK);
+}
+
+static void
+t4_enable_kern_tls(struct adapter *sc)
+{
+	uint32_t m, v;
+
+	m = F_ENABLECBYP;
+	v = F_ENABLECBYP;
+	t4_set_reg_field(sc, A_TP_PARA_REG6, m, v);
+
+	m = F_CPL_FLAGS_UPDATE_EN | F_SEQ_UPDATE_EN;
+	v = F_CPL_FLAGS_UPDATE_EN | F_SEQ_UPDATE_EN;
+	t4_set_reg_field(sc, A_ULP_TX_CONFIG, m, v);
+
+	m = F_NICMODE;
+	v = F_NICMODE;
+	t4_set_reg_field(sc, A_TP_IN_CONFIG, m, v);
+
+	m = F_LOOKUPEVERYPKT;
+	v = 0;
+	t4_set_reg_field(sc, A_TP_INGRESS_CONFIG, m, v);
+
+	m = F_TXDEFERENABLE | F_DISABLEWINDOWPSH | F_DISABLESEPPSHFLAG;
+	v = F_DISABLEWINDOWPSH;
+	t4_set_reg_field(sc, A_TP_PC_CONFIG, m, v);
+
+	m = V_TIMESTAMPRESOLUTION(M_TIMESTAMPRESOLUTION);
+	v = V_TIMESTAMPRESOLUTION(0x1f);
+	t4_set_reg_field(sc, A_TP_TIMER_RESOLUTION, m, v);
+
+	sc->flags |= KERN_TLS_OK;
+}
+#endif
+
 static int
 set_params__post_init(struct adapter *sc)
 {
@@ -4498,6 +4578,11 @@ set_params__post_init(struct adapter *sc)
 			    M_TIMERBACKOFFINDEX0 << shift, v << shift);
 		}
 	}
+#endif
+
+#ifdef KERN_TLS
+	if (t4_kern_tls != 0 && sc->cryptocaps & FW_CAPS_CONFIG_TLSKEYS)
+		t4_enable_kern_tls(sc);
 #endif
 	return (0);
 }
@@ -5343,6 +5428,11 @@ adapter_full_init(struct adapter *sc)
 
 	if (!(sc->flags & IS_VF))
 		t4_intr_enable(sc);
+#ifdef KERN_TLS
+	if (sc->flags & KERN_TLS_OK)
+		callout_reset_sbt(&sc->sbtls_tick, SBT_1MS, 0, sbtls_tick, sc,
+		    C_HARDCLOCK);
+#endif
 	sc->flags |= FULL_INIT_DONE;
 done:
 	if (rc != 0)
@@ -6210,6 +6300,28 @@ t4_sysctls(struct adapter *sc)
 		    sysctl_wcwr_stats, "A", "write combined work requests");
 	}
 
+#ifdef KERN_TLS
+	if (sc->flags & KERN_TLS_OK) {
+
+		/*
+		 * dev.t4nex.0.tls.
+		 */
+		oid = SYSCTL_ADD_NODE(ctx, c0, OID_AUTO, "tls", CTLFLAG_RD,
+		    NULL, "KERN_TLS parameters");
+		children = SYSCTL_CHILDREN(oid);
+
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "enable", CTLFLAG_RW,
+		    &sc->tlst.enable, 0, "Enable TLS offload");
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "inline_keys",
+		    CTLFLAG_RW, &sc->tlst.inline_keys, 0, "Always pass TLS "
+		    "keys in work requests (1) or attempt to store TLS keys "
+		    "in card memory.");
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "combo_wrs",
+		    CTLFLAG_RW, &sc->tlst.combo_wrs, 0, "Attempt to combine "
+		    "TCB field updates with TLS record work requests.");
+	}
+#endif
+
 #ifdef TCP_OFFLOAD
 	if (is_offload(sc)) {
 		int i;
@@ -6673,16 +6785,45 @@ cxgbe_sysctls(struct port_info *pi)
 
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "tx_tls_records",
 	    CTLFLAG_RD, &pi->tx_tls_records,
-	    "# of TLS records transmitted");
+	    "# of TOE TLS records transmitted");
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "tx_tls_octets",
 	    CTLFLAG_RD, &pi->tx_tls_octets,
-	    "# of payload octets in transmitted TLS records");
+	    "# of payload octets in transmitted TOE TLS records");
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_tls_records",
 	    CTLFLAG_RD, &pi->rx_tls_records,
-	    "# of TLS records received");
+	    "# of TOE TLS records received");
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_tls_octets",
 	    CTLFLAG_RD, &pi->rx_tls_octets,
-	    "# of payload octets in received TLS records");
+	    "# of payload octets in received TOE TLS records");
+
+#ifdef KERN_TLS
+	if (sc->flags & KERN_TLS_OK) {
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_records", CTLFLAG_RD, &pi->kern_tls_records,
+		    "# of NIC TLS records transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_short", CTLFLAG_RD, &pi->kern_tls_short,
+		    "# of short NIC TLS records transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_partial", CTLFLAG_RD, &pi->kern_tls_partial,
+		    "# of partial NIC TLS records transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_full", CTLFLAG_RD, &pi->kern_tls_full,
+		    "# of full NIC TLS records transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_octets", CTLFLAG_RD, &pi->kern_tls_octets,
+		    "# of payload octets in transmitted NIC TLS records");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_waste", CTLFLAG_RD, &pi->kern_tls_waste,
+		    "# of octets DMAd but not transmitted in NIC TLS records");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_options", CTLFLAG_RD, &pi->kern_tls_options,
+		    "# of NIC TLS options-only packets transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_header", CTLFLAG_RD, &pi->kern_tls_header,
+		    "# of NIC TLS header-only packets transmitted");
+	}
+#endif
 }
 
 static int

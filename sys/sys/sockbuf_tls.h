@@ -154,6 +154,7 @@ struct tls_kern_params {
 #define SBTLS_T_TYPE_OCFW		1	/* Open Crypto Framework */
 #define SBTLS_T_TYPE_BSSL		2	/* Boring SSL */
 #define SBTLS_T_TYPE_INTELISA_GCM	3	/* Intel ISA AES GCM */
+#define	SBTLS_T_TYPE_CHELSIO		4
 
 #define SBTLS_INTELISA_AEAD_TAGLEN	16
 #define SBTLS_INTELISA_CBC_TAGLEN	16

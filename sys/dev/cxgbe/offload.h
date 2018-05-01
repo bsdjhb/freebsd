@@ -231,10 +231,18 @@ struct tom_tunables {
 	int tx_zcopy;
 	int cop_managed_offloading;
 };
+
 /* iWARP driver tunables */
 struct iw_tunables {
 	int wc_en;
 };
+
+struct tls_tunables {
+	int enable;
+	int inline_keys;
+	int combo_wrs;
+};
+
 #ifdef TCP_OFFLOAD
 int t4_register_uld(struct uld_info *);
 int t4_unregister_uld(struct uld_info *);

@@ -47,6 +47,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/sglist.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
+#include <sys/sockbuf_tls.h>
+#include <sys/socketvar.h>
 #include <sys/counter.h>
 #include <net/bpf.h>
 #include <net/ethernet.h>
@@ -85,6 +87,7 @@ __FBSDID("$FreeBSD$");
 /* Internal mbuf flags stored in PH_loc.eight[1]. */
 #define	MC_NOMAP		0x01
 #define	MC_RAW_WR		0x02
+#define	MC_TLS			0x04
 
 /*
  * Ethernet frames are DMA'd at this byte offset into the freelist buffer.
@@ -2246,7 +2249,8 @@ mbuf_len16(struct mbuf *m)
 
 	M_ASSERTPKTHDR(m);
 	n = m->m_pkthdr.PH_loc.eight[0];
-	MPASS(n > 0 && n <= SGE_MAX_WR_LEN / 16);
+	if (!(mbuf_cflags(m) & MC_TLS))
+		MPASS(n > 0 && n <= SGE_MAX_WR_LEN / 16);
 
 	return (n);
 }
@@ -2425,6 +2429,38 @@ m_advance(struct mbuf **pm, int *poffset, int len)
 	return ((void *)p);
 }
 
+static inline bool
+is_tls_mbuf(struct mbuf *m)
+{
+	struct mbuf_ext_pgs *ext_pgs;
+
+	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
+	MBUF_EXT_PGS_ASSERT(m);
+	ext_pgs = (void *)m->m_ext.ext_buf;
+	MPASS(ext_pgs->so == NULL ||
+	    ext_pgs->so->so_snd.sb_tls_flags & SB_TLS_IFNET);
+	return (ext_pgs->so != NULL);
+}
+
+static inline struct t6_sbtls_cipher *
+tls_mbuf_cipher(struct mbuf *m)
+{
+	struct mbuf_ext_pgs *ext_pgs;
+
+	while (m != NULL) {
+		if (m->m_flags & M_NOMAP) {
+			/* for now, all unmapped mbufs are assumed to be EXT_PGS */
+			MBUF_EXT_PGS_ASSERT(m);
+			ext_pgs = (void *)m->m_ext.ext_buf;
+			MPASS(ext_pgs->so != NULL);
+			MPASS(ext_pgs->so->so_snd.sb_tls_flags & SB_TLS_IFNET);
+			return (ext_pgs->so->so_snd.sb_tls_info->cipher);
+		}
+		m = m->m_next;
+	}
+	return (NULL);
+}
+
 static inline int
 count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
 {
@@ -2505,7 +2541,8 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
  * routine to return 0 if skip accounts for all the contents of the mbuf chain.
  */
 static inline int
-count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
+count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags,
+    struct t6_sbtls_cipher **cipherp)
 {
 	vm_paddr_t lastb, next;
 	vm_offset_t va;
@@ -2529,6 +2566,15 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 
 		if ((m->m_flags & M_NOMAP) != 0) {
 			*cflags |= MC_NOMAP;
+			if (is_tls_mbuf(m)) {
+				if (*cflags & MC_TLS) {
+					MPASS(*cipherp == tls_mbuf_cipher(m));
+				} else {
+					MPASS(*cipherp == NULL);
+					*cflags |= MC_TLS;
+					*cipherp = tls_mbuf_cipher(m);
+				}
+			}
 			nsegs += count_mbuf_ext_pgs(m, skip, &lastb);
 			skip = 0;
 			continue;
@@ -2561,6 +2607,7 @@ parse_pkt(struct adapter *sc, struct mbuf **mp)
 #if defined(INET) || defined(INET6)
 	struct tcphdr *tcp;
 #endif
+	struct t6_sbtls_cipher *cipher;
 	uint16_t eh_type;
 	uint8_t cflags;
 
@@ -2580,7 +2627,19 @@ restart:
 	 */
 	M_ASSERTPKTHDR(m0);
 	MPASS(m0->m_pkthdr.len > 0);
-	nsegs = count_mbuf_nsegs(m0, 0, &cflags);
+	cipher = NULL;
+	nsegs = count_mbuf_nsegs(m0, 0, &cflags, &cipher);
+	if (cflags & MC_TLS) {
+		int len16;
+
+		set_mbuf_cflags(m0, cflags);
+		rc = cipher->parse_pkt(cipher, m0, &nsegs, &len16);
+		if (rc != 0)
+			goto fail;
+		set_mbuf_nsegs(m0, nsegs);
+		set_mbuf_len16(m0, len16);
+		return (0);
+	}
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
 			rc = EFBIG;
@@ -2847,7 +2906,7 @@ cannot_use_txpkts(struct mbuf *m)
 {
 	/* maybe put a GL limit too, to avoid silliness? */
 
-	return (needs_tso(m) || (mbuf_cflags(m) & MC_RAW_WR) != 0);
+	return (needs_tso(m) || (mbuf_cflags(m) & (MC_RAW_WR | MC_TLS)) != 0);
 }
 
 static inline int
@@ -2922,7 +2981,8 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 		M_ASSERTPKTHDR(m0);
 		MPASS(m0->m_nextpkt == NULL);
 
-		if (available < SGE_MAX_WR_NDESC) {
+		if (available < howmany(mbuf_len16(m0), EQ_ESIZE / 16)) {
+			MPASS(howmany(mbuf_len16(m0), EQ_ESIZE / 16) <= 64);
 			available += reclaim_tx_descs(txq, 64);
 			if (available < howmany(mbuf_len16(m0), EQ_ESIZE / 16))
 				break;	/* out of descriptors */
@@ -2933,7 +2993,16 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			next_cidx = 0;
 
 		wr = (void *)&eq->desc[eq->pidx];
-		if (sc->flags & IS_VF) {
+		if (mbuf_cflags(m0) & MC_TLS) {
+			struct t6_sbtls_cipher *cipher;
+
+			total++;
+			remaining--;
+			ETHER_BPF_MTAP(ifp, m0);
+			cipher = tls_mbuf_cipher(m0);
+			n = cipher->write_tls_wr(cipher, txq, (void *)wr, m0,
+			    mbuf_nsegs(m0), available);
+		} else if (sc->flags & IS_VF) {
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
@@ -2977,7 +3046,9 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			ETHER_BPF_MTAP(ifp, m0);
 			n = write_txpkt_wr(txq, (void *)wr, m0, available);
 		}
-		MPASS(n >= 1 && n <= available && n <= SGE_MAX_WR_NDESC);
+		MPASS(n >= 1 && n <= available);
+		if (!(mbuf_cflags(m0) & MC_TLS))		
+			MPASS(n <= SGE_MAX_WR_NDESC);
 
 		available -= n;
 		dbdiff += n;
@@ -4190,6 +4261,8 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "txpkts1_pkts",
 	    CTLFLAG_RD, &txq->txpkts1_pkts,
 	    "# of frames tx'd using type1 txpkts work requests");
+	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "tls_wrs", CTLFLAG_RD,
+	    &txq->tls_wrs, "# of TLS work requests (TLS records)");
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "raw_wrs", CTLFLAG_RD,
 	    &txq->raw_wrs, "# of raw work requests (non-packets)");
 

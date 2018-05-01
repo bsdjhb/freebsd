@@ -82,6 +82,8 @@ do_act_establish(struct sge_iq *iq, const struct rss_header *rss,
 
 	KASSERT(m == NULL, ("%s: wasn't expecting payload", __func__));
 	KASSERT(toep->tid == atid, ("%s: toep tid/atid mismatch", __func__));
+	KASSERT((toep->flags & TPF_KERN_TLS) == 0, ("%s: KERN_TLS pcb",
+	    __func__));
 
 	CTR3(KTR_CXGBE, "%s: atid %u, tid %u", __func__, atid, tid);
 	free_atid(sc, atid);
@@ -151,6 +153,11 @@ do_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
 	KASSERT(toep->tid == atid, ("%s: toep tid/atid mismatch", __func__));
 
 	CTR3(KTR_CXGBE, "%s: atid %u, status %u ", __func__, atid, status);
+
+	if (toep->flags & TPF_KERN_TLS) {
+		sbtls_act_open_rpl(sc, toep, status, cpl);
+		return (0);
+	}
 
 	/* Ignore negative advice */
 	if (negative_advice(status))
@@ -344,6 +351,8 @@ t4_connect(struct toedev *tod, struct socket *so, struct rtentry *rt,
 	} else if (rt_ifp->if_type == IFT_IEEE8023ADLAG)
 		DONT_OFFLOAD_ACTIVE_OPEN(ENOSYS); /* XXX: implement lagg+TOE */
 	else
+		DONT_OFFLOAD_ACTIVE_OPEN(ENOTSUP);
+	if (sc->flags & KERN_TLS_OK)
 		DONT_OFFLOAD_ACTIVE_OPEN(ENOTSUP);
 
 	rw_rlock(&sc->policy_lock);
