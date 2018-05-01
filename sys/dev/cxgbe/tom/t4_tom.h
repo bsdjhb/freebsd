@@ -74,6 +74,7 @@ enum {
 	TPF_SYNQE_HAS_L2TE = (1 << 12),	/* we've replied to PASS_ACCEPT_REQ */
 	TPF_SYNQE_TLS      = (1 << 13), /* ulp_mode TLS in toepcb */
 	TPF_FORCE_CREDITS  = (1 << 14), /* always send credits */
+	TPF_KERN_TLS       = (1 << 15), /* KERN_TLS dummy connection */
 };
 
 enum {
@@ -354,6 +355,8 @@ void t4_uninit_connect_cpl_handlers(void);
 int t4_connect(struct toedev *, struct socket *, struct rtentry *,
     struct sockaddr *);
 void act_open_failure_cleanup(struct adapter *, u_int, u_int);
+int alloc_atid(struct adapter *, void *);
+void free_atid(struct adapter *, int);
 
 /* t4_listen.c */
 void t4_init_listen_cpl_handlers(void);
@@ -433,5 +436,7 @@ int tls_rx_key(struct toepcb *);
 void tls_stop_handshake_timer(struct toepcb *);
 int tls_tx_key(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
+void sbtls_act_open_rpl(struct adapter *, struct toepcb *, u_int,
+    const struct cpl_act_open_rpl *);
 
 #endif
