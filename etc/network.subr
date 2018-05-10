@@ -1245,6 +1245,24 @@ ifscript_down()
 	fi
 }
 
+# child_wlans if
+#       Outputs list of child wlan devices for the $if interface.
+#
+child_wlans()
+{
+	local wlans
+
+	wlans=`get_if_var $1 wlans_IF`
+	info "initial wlans for $1: \"$wlans\""
+	if [ -z "$wlans" ]; then
+		wlans="$1"
+	elif [ "$wlans" = "NONE" ]; then
+		wlans=
+	fi
+	info "final wlans for $1: \"$wlans\""
+	echo "$wlans"
+}
+
 # wlan_up
 #	Create IEEE802.11 interfaces.
 #
@@ -1254,9 +1272,11 @@ wlan_up()
 	_list=
 	_iflist=$*
 
+	info "wlan_up:" "$@"
+
 	# Parse wlans_$parent="$child ..."
 	for parent in `set | sed -nE 's/wlans_([a-z]+[0-9]+)=.*/\1/p'`; do
-		child_wlans=`get_if_var $parent wlans_IF`
+		child_wlans=`child_wlans $parent`
 		for child in ${child_wlans}; do
 			create_args="wlandev $parent `get_if_var $child create_args_IF`"
 			debug_flags="`get_if_var $child wlandebug_IF`"
@@ -1264,8 +1284,7 @@ wlan_up()
 			""|$child|$child\ *|*\ $child\ *|*\ $child)	;;
 			*)	continue ;;
 			esac
-			# Skip if ${child} already exists.
-			if ${IFCONFIG_CMD} $child > /dev/null 2>&1; then
+			if ifexists $child; then
 				continue
 			fi
 			if expr $child : 'wlan[0-9][0-9]*$' >/dev/null 2>&1; then
@@ -1298,7 +1317,7 @@ wlan_down()
 
 	# Parse wlans_$parent="$child ..."
 	for parent in `set | sed -nE 's/wlans_([a-z]+[0-9]+)=.*/\1/p'`; do
-		child_wlans=`get_if_var $parent wlans_IF`
+		child_wlans=`child_wlans $parent`
 		for child in ${child_wlans}; do
 			case $_iflist in
 			""|$child|$child\ *|*\ $child\ *|*\ $child)	;;
@@ -1479,11 +1498,15 @@ childif_create()
 	ifn=$1
 
 	# Create wireless interfaces
-	child_wlans=`get_if_var $ifn wlans_IF`
+	child_wlans=`child_wlans $ifn`
 
 	for child in ${child_wlans}; do
 		create_args="wlandev $ifn `get_if_var $child create_args_IF`"
 		debug_flags="`get_if_var $child wlandebug_IF`"
+
+		if ifexists $child; then
+			continue
+		fi
 
 		if expr $child : 'wlan[0-9][0-9]*$' >/dev/null 2>&1; then
 			${IFCONFIG_CMD} $child create ${create_args} && cfg=0
@@ -1539,7 +1562,7 @@ childif_destroy()
 	local cfg child child_vlans child_wlans ifn
 	cfg=1
 
-	child_wlans=`get_if_var $ifn wlans_IF`
+	child_wlans=`child_wlans $ifn`
 	for child in ${child_wlans}; do
 		if ! ifexists $child; then
 			continue

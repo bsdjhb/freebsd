@@ -119,7 +119,7 @@ pccard_ether_restart()
 
 pccard_ether_startchildren()
 {
-	for child in `get_if_var $ifn wlans_IF`; do
+	for child in `child_wlans $ifn`; do
 		if ifexists $child; then
 			continue
 		fi
@@ -129,7 +129,7 @@ pccard_ether_startchildren()
 
 pccard_ether_stopchildren()
 {
-	for child in `get_if_var $ifn wlans_IF`; do
+	for child in `child_wlans $ifn`; do
 		/etc/rc.d/netif quietstop $child
 	done
 }
