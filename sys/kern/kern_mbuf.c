@@ -50,6 +50,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
+#include <sys/taskqueue.h>
+
+#include <net/vnet.h>
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -283,6 +286,10 @@ uma_zone_t	zone_jumbo9;
 uma_zone_t	zone_jumbo16;
 uma_zone_t	zone_extpgs;
 
+static struct mtx extpgs_free_lock;
+static struct task extpgs_free_task;
+static STAILQ_HEAD(, mbuf_ext_pgs) extpgs_free_list;
+
 /*
  * Local prototypes.
  */
@@ -295,6 +302,7 @@ static int	mb_zinit_pack(void *, int, int);
 static void	mb_zfini_pack(void *, int);
 static void	mb_reclaim(uma_zone_t, int);
 static void    *mbuf_jumbo_alloc(uma_zone_t, vm_size_t, int, uint8_t *, int);
+static void	mb_extpgs_deferred_free(void *, int);
 
 /* Ensure that MSIZE is a power of 2. */
 CTASSERT((((MSIZE - 1) ^ MSIZE) + 1) >> 1 == MSIZE);
@@ -384,6 +392,10 @@ mbuf_init(void *dummy)
 	zone_extpgs = uma_zcreate(MBUF_EXTPGS_MEM_NAME,
 	    sizeof (struct mbuf_ext_pgs),
 	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE, 0);
+	mtx_init(&extpgs_free_lock, "extpgs free", NULL, MTX_DEF);
+	STAILQ_INIT(&extpgs_free_list);
+	TASK_INIT(&extpgs_free_task, 0, mb_extpgs_deferred_free, NULL);
+
 	/*
 	 * Hook event handler for low-memory situation, used to
 	 * drain protocols and push data back to the caches (UMA
@@ -1117,6 +1129,33 @@ mb_alloc_ext_pgs(int how, bool pkthdr, m_ext_free_t ext_free)
 	return (m);
 }
 
+static void
+mb_extpgs_deferred_free(void *context, int pending)
+{
+	STAILQ_HEAD(, mbuf_ext_pgs) head;
+	struct mbuf_ext_pgs *pgs, *n;
+	struct socket *so;
+
+	mtx_lock(&extpgs_free_lock);
+	while (!STAILQ_EMPTY(&extpgs_free_list)) {
+		STAILQ_INIT(&head);
+		STAILQ_CONCAT(&head, &extpgs_free_list);
+		mtx_unlock(&extpgs_free_lock);
+
+		STAILQ_FOREACH_SAFE(pgs, &head, stailq, n) {
+			so = pgs->so;
+			CURVNET_SET(so->so_vnet);
+			SOCK_LOCK(so);
+			sorele(so);
+			CURVNET_RESTORE();
+			uma_zfree(zone_extpgs, pgs);
+		}
+
+		mtx_lock(&extpgs_free_lock);
+	}
+	mtx_unlock(&extpgs_free_lock);
+}
+
 /*
  * Clean up after mbufs with M_EXT storage attached to them if the
  * reference count hits 1.
@@ -1188,14 +1227,14 @@ mb_free_ext(struct mbuf *m)
 			mref->m_ext.ext_free(mref);
 			pgs = (struct mbuf_ext_pgs *)mref->m_ext.ext_buf;
 			if (pgs->so != NULL) {
-				/*
-				 * XXX: LOR?  If so, will have to
-				 * defer the actual cleanup to a task.
-				 */
-				SOCK_LOCK(pgs->so);
-				sorele(pgs->so);
-			}
-			uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
+				mtx_lock(&extpgs_free_lock);
+				STAILQ_INSERT_TAIL(&extpgs_free_list, pgs,
+				    stailq);
+				mtx_unlock(&extpgs_free_lock);
+				taskqueue_enqueue(taskqueue_thread,
+				    &extpgs_free_task);
+			} else
+				uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);
 			break;
 		}
