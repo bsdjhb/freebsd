@@ -957,6 +957,14 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 	case PT_SUSPEND:
 		CTR2(KTR_PTRACE, "PT_SUSPEND: tid %d (pid %d)", td2->td_tid,
 		    p->p_pid);
+
+		/*
+		 * If this thread is already suspended there is
+		 * nothing to do, and in particular the thread is
+		 * already not present on the p->p_xthreads queue.
+		 */
+		if (td2->td_dbgflags & TDB_SUSPEND)
+			break;
 		td2->td_dbgflags |= TDB_SUSPEND;
 
 		/*
