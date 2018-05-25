@@ -1650,6 +1650,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 }
 
 #ifdef KERN_TLS
+#ifdef INVARIANTS
 SYSCTL_NODE(_debug, OID_AUTO, t6tls, CTLFLAG_RD, 0, "T6 TLS");
 
 static char tls_key[MAX_CIPHER_KSZ];
@@ -1671,6 +1672,7 @@ SYSCTL_OPAQUE(_debug_t6tls, OID_AUTO, record, CTLFLAG_RD, tls_record,
 static int tls_record_len;
 SYSCTL_INT(_debug_t6tls, OID_AUTO, record_len, CTLFLAG_RD, &tls_record_len, 0,
     "Last record length");
+#endif
 
 static struct protosw *tcp_protosw;
 
@@ -2237,7 +2239,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 #endif
 	}
 
-#if 1
+#ifdef INVARIANTS
 	memcpy(tls_key, tls->sb_params.crypt, tls->sb_params.crypt_key_len);
 	tls_key_len = tls->sb_params.crypt_key_len;
 	memcpy(tls_iv, tls->sb_params.iv, SALT_SIZE);
@@ -3000,7 +3002,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	}
 	write_gl_to_txd(txq, dst);
 
-#if 1
+#ifdef INVARIANTS
 	{
 		int i, off, pgoff;
 
