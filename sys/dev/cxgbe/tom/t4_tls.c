@@ -1650,30 +1650,6 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 }
 
 #ifdef KERN_TLS
-#ifdef INVARIANTS
-SYSCTL_NODE(_debug, OID_AUTO, t6tls, CTLFLAG_RD, 0, "T6 TLS");
-
-static char tls_key[MAX_CIPHER_KSZ];
-SYSCTL_OPAQUE(_debug_t6tls, OID_AUTO, key, CTLFLAG_RD, tls_key, sizeof(tls_key),
-    "S", "Last cipher key");
-
-static int tls_key_len;
-SYSCTL_INT(_debug_t6tls, OID_AUTO, key_len, CTLFLAG_RD, &tls_key_len, 0,
-    "Last cipher key length");
-
-static char tls_iv[SALT_SIZE];
-SYSCTL_OPAQUE(_debug_t6tls, OID_AUTO, iv, CTLFLAG_RD, tls_iv, sizeof(tls_iv),
-    "S", "Last IV (salt)");
-
-static char tls_record[16384];
-SYSCTL_OPAQUE(_debug_t6tls, OID_AUTO, record, CTLFLAG_RD, tls_record,
-    sizeof(tls_record), "S", "Last plaintext record ommitting trailer");
-
-static int tls_record_len;
-SYSCTL_INT(_debug_t6tls, OID_AUTO, record_len, CTLFLAG_RD, &tls_record_len, 0,
-    "Last record length");
-#endif
-
 static struct protosw *tcp_protosw;
 
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
@@ -2238,12 +2214,6 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 		 */
 #endif
 	}
-
-#ifdef INVARIANTS
-	memcpy(tls_key, tls->sb_params.crypt, tls->sb_params.crypt_key_len);
-	tls_key_len = tls->sb_params.crypt_key_len;
-	memcpy(tls_iv, tls->sb_params.iv, SALT_SIZE);
-#endif
 
 	if (tls_ofld->key_location == TLS_SFO_WR_CONTEXTLOC_IMMEDIATE)
 		return;
@@ -3001,33 +2971,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 #endif
 	}
 	write_gl_to_txd(txq, dst);
-
-#ifdef INVARIANTS
-	{
-		int i, off, pgoff;
-
-		memcpy(tls_record, hdr, ext_pgs->hdr_len);
-		off = ext_pgs->hdr_len;
-		pgoff = ext_pgs->first_pg_off;
-		for (i = 0; i < ext_pgs->npgs; i++)
-		{
-			int pglen, tocopy;
-
-			pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-			tocopy = pglen;
-			if (tocopy > sizeof(tls_record) - off)
-				tocopy = sizeof(tls_record) - off;
-			memcpy(tls_record + off,
-			    (void *)(uintptr_t)(PHYS_TO_DMAP(ext_pgs->pa[i]) + pgoff),
-			    tocopy);
-			pgoff = 0;
-			off += tocopy;
-			if (off == sizeof(tls_record))
-				break;
-		}
-		tls_record_len = off;
-	}
-#endif
 
 	ndesc += howmany(wr_len, EQ_ESIZE);
 	MPASS(ndesc <= available);
