@@ -71,10 +71,18 @@
 	.globl	_rtld_bind_start
 	.type	_rtld_bind_start,@function
 _rtld_bind_start:
+	.cfi_startproc
 	pushf				# Save eflags
+	.cfi_adjust_cfa_offset 4
 	pushl	%eax			# Save %eax
+	.cfi_adjust_cfa_offset 4
+	.cfi_offset	%eax,-16
 	pushl	%edx			# Save %edx
+	.cfi_adjust_cfa_offset 4
+	.cfi_offset	%edx,-20
 	pushl	%ecx			# Save %ecx
+	.cfi_adjust_cfa_offset 4
+	.cfi_offset	%ecx,-24
 	pushl	20(%esp)		# Copy reloff argument
 	pushl	20(%esp)		# Copy obj argument
 
@@ -84,10 +92,18 @@ _rtld_bind_start:
 	addl	$8,%esp			# Discard binder arguments
 	movl	%eax,20(%esp)		# Store target over obj argument
 	popl	%ecx			# Restore %ecx
+	.cfi_adjust_cfa_offset -4
+	.cfi_restore	%ecx
 	popl	%edx			# Restore %edx
+	.cfi_adjust_cfa_offset -4
+	.cfi_restore	%edx
 	popl	%eax			# Restore %eax
+	.cfi_adjust_cfa_offset -4
+	.cfi_restore	%eax
 	popf				# Restore eflags
+	.cfi_adjust_cfa_offset -4
 	leal	4(%esp),%esp		# Discard reloff, do not change eflags
+	.cfi_adjust_cfa_offset -4
 	ret				# "Return" to target address
 
 	.section .note.GNU-stack,"",%progbits
