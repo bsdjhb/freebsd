@@ -71,25 +71,29 @@
 	.globl	_rtld_bind_start
 	.type	_rtld_bind_start,@function
 _rtld_bind_start:
-	.cfi_startproc
+	.cfi_startproc simple
 	pushf				# Save eflags
 	.cfi_adjust_cfa_offset 4
+	.cfi_rel_offset	%eflags,0
 	pushl	%eax			# Save %eax
 	.cfi_adjust_cfa_offset 4
-	.cfi_offset	%eax,-16
+	.cfi_rel_offset	%eax,0
 	pushl	%edx			# Save %edx
 	.cfi_adjust_cfa_offset 4
-	.cfi_offset	%edx,-20
+	.cfi_rel_offset	%edx,0
 	pushl	%ecx			# Save %ecx
 	.cfi_adjust_cfa_offset 4
-	.cfi_offset	%ecx,-24
+	.cfi_rel_offset	%ecx,0
 	pushl	20(%esp)		# Copy reloff argument
+	.cfi_adjust_cfa_offset 4
 	pushl	20(%esp)		# Copy obj argument
+	.cfi_adjust_cfa_offset 4
 
 	call	_rtld_bind		# Transfer control to the binder
 	/* Now %eax contains the entry point of the function being called. */
 
 	addl	$8,%esp			# Discard binder arguments
+	.cfi_adjust_cfa_offset -8
 	movl	%eax,20(%esp)		# Store target over obj argument
 	popl	%ecx			# Restore %ecx
 	.cfi_adjust_cfa_offset -4
@@ -102,8 +106,10 @@ _rtld_bind_start:
 	.cfi_restore	%eax
 	popf				# Restore eflags
 	.cfi_adjust_cfa_offset -4
+	.cfi_restore	%eflags
 	leal	4(%esp),%esp		# Discard reloff, do not change eflags
 	.cfi_adjust_cfa_offset -4
 	ret				# "Return" to target address
+	.cfi_endproc
 
 	.section .note.GNU-stack,"",%progbits
