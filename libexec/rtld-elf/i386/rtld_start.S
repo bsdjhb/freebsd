@@ -26,6 +26,7 @@
  */
 
 	.text
+	.cfi_sections .debug_frame
 	.align	4
 	.globl	.rtld_start
 	.type	.rtld_start,@function
@@ -72,6 +73,7 @@
 	.type	_rtld_bind_start,@function
 _rtld_bind_start:
 	.cfi_startproc simple
+	.cfi_adjust_cfa_offset 8
 	pushf				# Save eflags
 	.cfi_adjust_cfa_offset 4
 	.cfi_rel_offset	%eflags,0
