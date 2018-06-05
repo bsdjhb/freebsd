@@ -508,8 +508,7 @@ int bnxt_re_del_gid(const struct ib_gid_attr *attr, void **context)
 	return rc;
 }
 
-int bnxt_re_add_gid(const union ib_gid *gid,
-		    const struct ib_gid_attr *attr, void **context)
+int bnxt_re_add_gid(const struct ib_gid_attr *attr, void **context)
 {
 	int rc;
 	u32 tbl_idx = 0;
@@ -520,11 +519,12 @@ int bnxt_re_add_gid(const union ib_gid *gid,
 	if ((attr->ndev) && is_vlan_dev(attr->ndev))
 		vlan_id = vlan_dev_vlan_id(attr->ndev);
 
-	rc = bnxt_qplib_add_sgid(sgid_tbl, gid,
+	rc = bnxt_qplib_add_sgid(sgid_tbl, &attr->gid,
 				 rdev->dev_addr,
 				 vlan_id, true, &tbl_idx);
 	if (rc == -EALREADY) {
-		dev_dbg(rdev_to_dev(rdev), "GID %pI6 is already present\n", gid);
+		dev_dbg(rdev_to_dev(rdev), "GID %pI6 is already present\n",
+		        &attr->gid);
 		ctx_tbl = sgid_tbl->ctx;
 		if (!ctx_tbl[tbl_idx]) {
 			ctx = kmalloc(sizeof(*ctx), GFP_KERNEL);

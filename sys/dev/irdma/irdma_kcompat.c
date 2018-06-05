@@ -77,8 +77,7 @@ irdma_get_dev_fw_str(struct ib_device *dev,
 }
 
 int
-irdma_add_gid(const union ib_gid *gid,
-	      const struct ib_gid_attr *attr,
+irdma_add_gid(const struct ib_gid_attr *attr,
 	      void **context)
 {
 	return 0;
