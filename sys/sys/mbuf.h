@@ -684,6 +684,7 @@ extern uma_zone_t	zone_pack;
 extern uma_zone_t	zone_jumbop;
 extern uma_zone_t	zone_jumbo9;
 extern uma_zone_t	zone_jumbo16;
+extern uma_zone_t	zone_extpgs;
 
 void		 mb_dupcl(struct mbuf *, struct mbuf *);
 void		 mb_free_ext(struct mbuf *);

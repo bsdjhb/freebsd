@@ -227,6 +227,11 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 }
 
 static inline void
+sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
+{
+}
+
+static inline void
 sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 }
@@ -243,7 +248,7 @@ int sbtls_frame(struct mbuf **m, struct socket *so, int *enqueue_cnt,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
-
+void sbtls_enqueue_to_free(void *arg);
 
 #endif /* KERN_TLS */
 #endif /* _KERNEL */

@@ -662,6 +662,30 @@ sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
 
 
 void
+sbtls_enqueue_to_free(void *arg)
+{
+	struct mbuf_ext_pgs *pgs = arg;
+	struct socket *so = pgs->so;
+	struct sbtls_info *tls = so->so_snd.sb_tls_info;
+	struct sbtls_wq *wq;
+	int running;
+
+
+	pgs->mbuf = NULL; /* mark it to free */
+	if (tls != NULL) {
+		wq = &sbtls_wq[tls->sb_tsk_instance];
+	} else {
+		wq = &sbtls_wq[sbtls_get_cpu(so)];
+	}
+	mtx_lock(&wq->mtx);
+	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
+	running = wq->running;
+	mtx_unlock(&wq->mtx);
+	if (!running)
+		wakeup(wq);
+}
+
+void
 sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 	struct sbtls_info *tls = so->so_snd.sb_tls_info;
@@ -945,7 +969,10 @@ retry_page:
 			so->so_proto->pr_usrreqs->pru_abort(so);
 			so->so_error = EIO;
 			mb_free_notready(top, page_count);
-			goto drop;
+			CURVNET_SET(so->so_vnet);
+			SOCK_LOCK(so);
+			sorele(so);
+			return;
 		}
 		if (!is_anon) {
 			/* Free the old pages that backed the mbuf */
@@ -970,10 +997,9 @@ retry_page:
 	}
 	CURVNET_SET(so->so_vnet);
 	(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
-	CURVNET_RESTORE();
-drop:
 	SOCK_LOCK(so);
 	sorele(so);
+	CURVNET_RESTORE();
 }
 
 static void
@@ -981,6 +1007,7 @@ sbtls_work_thread(void *ctx)
 {
 	struct sbtls_wq *wq = ctx;
 	struct mbuf_ext_pgs *p, *n;
+	struct socket *so;
 
 
 	STAILQ_INIT(&wq->head);
@@ -997,12 +1024,22 @@ sbtls_work_thread(void *ctx)
 			/* pull the entire list off */
 			STAILQ_INIT(&wq->head);
 			mtx_unlock(&wq->mtx);
-			/* encrypt each mbuf chain on the list */
+			/* encrypt or free each TLS record on the list */
 			while (p != NULL) {
 				n = STAILQ_NEXT(p, stailq);
 				STAILQ_NEXT(p, stailq) = NULL;
-				sbtls_encrypt(p);
-				counter_u64_add(sbtls_cnt_on, -1);
+				if (p->mbuf != NULL) {
+					sbtls_encrypt(p);
+					counter_u64_add(sbtls_cnt_on, -1);
+				} else {
+					/* records w/null mbuf are freed */
+					so = p->so;
+					CURVNET_SET(so->so_vnet);
+					SOCK_LOCK(so);
+					sorele(so);
+					CURVNET_RESTORE();
+					uma_zfree(zone_extpgs, p);
+				}
 				p = n;
 			}
 			mtx_lock(&wq->mtx);
