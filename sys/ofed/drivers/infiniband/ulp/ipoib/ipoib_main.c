@@ -1012,9 +1012,9 @@ ipoib_add_port(const char *format, struct ib_device *hca, u8 port)
 	priv->broadcastaddr[8] = priv->pkey >> 8;
 	priv->broadcastaddr[9] = priv->pkey & 0xff;
 
-	result = ib_query_gid(hca, port, 0, &priv->local_gid, NULL);
+	result = rdma_query_gid(hca, port, 0, &priv->local_gid);
 	if (result) {
-		printk(KERN_WARNING "%s: ib_query_gid port %d failed (ret = %d)\n",
+		printk(KERN_WARNING "%s: rdma_query_gid port %d failed (ret = %d)\n",
 		       hca->name, port, result);
 		goto device_init_failed;
 	}
