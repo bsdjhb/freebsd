@@ -416,12 +416,11 @@ static int set_roce_addr(struct ib_device *device, u8 port_num,
 	return mlx5_cmd_exec(dev->mdev, in, sizeof(in), out, sizeof(out));
 }
 
-static int mlx5_ib_add_gid(const union ib_gid *gid,
-			   const struct ib_gid_attr *attr,
+static int mlx5_ib_add_gid(const struct ib_gid_attr *attr,
 			   __always_unused void **context)
 {
-	return set_roce_addr(attr->device, attr->port_num, attr->index, gid,
-			     attr);
+	return set_roce_addr(attr->device, attr->port_num, attr->index,
+			     &attr->gid, attr);
 }
 
 static int mlx5_ib_del_gid(const struct ib_gid_attr *attr,
