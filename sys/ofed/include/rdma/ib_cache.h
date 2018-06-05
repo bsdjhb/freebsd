@@ -56,6 +56,8 @@ int ib_get_cached_gid(struct ib_device    *device,
 		      int                  index,
 		      union ib_gid        *gid,
 		      struct ib_gid_attr  *attr);
+int rdma_query_gid(struct ib_device *device, u8 port_num, int index,
+		   union ib_gid *gid);
 
 int ib_find_cached_gid(struct ib_device *device,
 		       const union ib_gid *gid,
@@ -63,6 +65,10 @@ int ib_find_cached_gid(struct ib_device *device,
 		       if_t              ndev,
 		       u8               *port_num,
 		       u16              *index);
+const struct ib_gid_attr *rdma_find_gid(struct ib_device *device,
+					const union ib_gid *gid,
+					enum ib_gid_type gid_type,
+					if_t ndev);
 
 int ib_find_cached_gid_by_port(struct ib_device *device,
 			       const union ib_gid *gid,
@@ -70,6 +76,11 @@ int ib_find_cached_gid_by_port(struct ib_device *device,
 			       u8               port_num,
 			       if_t             ndev,
 			       u16              *index);
+const struct ib_gid_attr *rdma_find_gid_by_port(struct ib_device *ib_dev,
+						const union ib_gid *gid,
+						enum ib_gid_type gid_type,
+						u8 port,
+						if_t ndev);
 
 int ib_find_gid_by_filter(struct ib_device *device,
 			  const union ib_gid *gid,
@@ -78,6 +89,12 @@ int ib_find_gid_by_filter(struct ib_device *device,
 					 const struct ib_gid_attr *,
 					 void *),
 			  void *context, u16 *index);
+const struct ib_gid_attr *rdma_find_gid_by_filter(
+	struct ib_device *device, const union ib_gid *gid, u8 port_num,
+	bool (*filter)(const union ib_gid *gid, const struct ib_gid_attr *,
+		       void *),
+	void *context);
+
 /**
  * ib_get_cached_pkey - Returns a cached PKey table entry
  * @device: The device to query.
