@@ -890,7 +890,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	vm_page_t pg;
-	int off, len, npages, page_count, error, i, wire_adj;
+	int off, len, npages, page_count, error, i, wire_adj, recs;
 	bool is_anon;
 	bool boring = false;
 
@@ -900,7 +900,6 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 		panic("so = NULL, top = %p, pgs = %p\n",
 		    top, pgs);
 	}
-	pgs->so = NULL;
 	pgs->mbuf = NULL;
 	tls = so->so_snd.sb_tls_info;
 	npages = 0;
@@ -910,9 +909,10 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	 *  one at a time
 	 */
 	page_count = pgs->enc_cnt;
-	for (m = top; m != NULL && npages != page_count; m = m->m_next) {
+	for (recs = 0, m = top; m != NULL && npages != page_count;
+	     m = m->m_next, recs++) {
 		pgs = (void *)m->m_ext.ext_buf;
-
+		pgs->so = NULL;
 
 		KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 			(M_NOMAP | M_NOTREADY)),
@@ -970,9 +970,8 @@ retry_page:
 			so->so_error = EIO;
 			mb_free_notready(top, page_count);
 			CURVNET_SET(so->so_vnet);
-			SOCK_LOCK(so);
-			sorele(so);
-			return;
+			recs++;
+			goto drop;
 		}
 		if (!is_anon) {
 			/* Free the old pages that backed the mbuf */
@@ -994,11 +993,22 @@ retry_page:
 			npages -= pgs_removed;
 			page_count -= pgs_removed;
 		}
+
 	}
+
 	CURVNET_SET(so->so_vnet);
 	(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
-	SOCK_LOCK(so);
-	sorele(so);
+
+	/*
+	 * drop a reference to each TLS record.. It would be nice
+	 * if we could drop all the refences at once, under a single
+	 * SOCK_LOCK(), rather than repeatedly banging the lock
+	 */
+drop:
+	for (; recs != 0; recs--) {
+		SOCK_LOCK(so);
+		sorele(so);
+	}
 	CURVNET_RESTORE();
 }
 
