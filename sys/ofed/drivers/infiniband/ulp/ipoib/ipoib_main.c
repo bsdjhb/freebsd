@@ -798,8 +798,9 @@ ipoib_dev_init(struct ipoib_dev_priv *priv, struct ib_device *ca, int port)
 {
 
 	/* Allocate RX/TX "rings" to hold queued mbs */
-	priv->rx_ring =	kzalloc(ipoib_recvq_size * sizeof *priv->rx_ring,
-				GFP_KERNEL);
+	priv->rx_ring =	kcalloc(ipoib_recvq_size,
+				       sizeof(*priv->rx_ring),
+				       GFP_KERNEL);
 	if (!priv->rx_ring)
 		goto out;
 
