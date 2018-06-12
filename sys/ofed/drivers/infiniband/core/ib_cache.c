@@ -1249,8 +1249,9 @@ int ib_cache_setup_one(struct ib_device *device)
 	rwlock_init(&device->cache.lock);
 
 	device->cache.ports =
-		kzalloc(sizeof(*device->cache.ports) *
-			(rdma_end_port(device) - rdma_start_port(device) + 1), GFP_KERNEL);
+		kcalloc(rdma_end_port(device) - rdma_start_port(device) + 1,
+			sizeof(*device->cache.ports),
+			GFP_KERNEL);
 	if (!device->cache.ports)
 		return -ENOMEM;
 
