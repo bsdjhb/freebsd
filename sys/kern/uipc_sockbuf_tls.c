@@ -967,9 +967,6 @@ retry_page:
 		if (error) {
 			/* WTF can we do..? */
 			counter_u64_add(sbtls_offload_failed_crypto, 1);
-			so->so_proto->pr_usrreqs->pru_abort(so);
-			so->so_error = EIO;
-			mb_free_notready(top, page_count);
 			recs++;
 			break;
 		}
@@ -997,8 +994,13 @@ retry_page:
 	}
 
 	CURVNET_SET(so->so_vnet);
-	if (error == 0)
+	if (error == 0) {
 		(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
+	} else {
+		so->so_proto->pr_usrreqs->pru_abort(so);
+		so->so_error = EIO;
+		mb_free_notready(top, page_count);
+	}
 
 	/*
 	 * Drop a reference to each TLS record.  It would be nice if
