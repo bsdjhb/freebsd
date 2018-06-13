@@ -2471,7 +2471,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 			break;
 		if (wr_len > SGE_MAX_WR_LEN || nsegs > TX_SGL_SEGS)
 			return (EFBIG);
-		tot_len += wr_len;
+		tot_len += roundup2(wr_len, EQ_ESIZE);
 
 		/*
 		 * Store 'nsegs' for the first TLS record in the
@@ -2488,7 +2488,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * Include room for up to 4 CPL_SET_TCB_FIELD requests before
 	 * the first TLS work request.
 	 */
-	tot_len += 4 * roundup2(sizeof(struct cpl_set_tcb_field), 16);
+	tot_len += 4 * roundup2(sizeof(struct cpl_set_tcb_field), EQ_ESIZE);
 
 	*len16p = tot_len / 16;
 #ifdef VERBOSE_TRACES
