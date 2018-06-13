@@ -909,6 +909,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	 *  one at a time
 	 */
 	page_count = pgs->enc_cnt;
+	error = 0;
 	for (recs = 0, m = top; m != NULL && npages != page_count;
 	     m = m->m_next, recs++) {
 		pgs = (void *)m->m_ext.ext_buf;
@@ -969,9 +970,8 @@ retry_page:
 			so->so_proto->pr_usrreqs->pru_abort(so);
 			so->so_error = EIO;
 			mb_free_notready(top, page_count);
-			CURVNET_SET(so->so_vnet);
 			recs++;
-			goto drop;
+			break;
 		}
 		if (!is_anon) {
 			/* Free the old pages that backed the mbuf */
@@ -997,14 +997,14 @@ retry_page:
 	}
 
 	CURVNET_SET(so->so_vnet);
-	(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
+	if (error == 0)
+		(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
 
 	/*
-	 * drop a reference to each TLS record.. It would be nice
-	 * if we could drop all the refences at once, under a single
-	 * SOCK_LOCK(), rather than repeatedly banging the lock
+	 * Drop a reference to each TLS record.  It would be nice if
+	 * we could drop all the references at once, under a single
+	 * SOCK_LOCK(), rather than repeatedly banging the lock.
 	 */
-drop:
 	for (; recs != 0; recs--) {
 		SOCK_LOCK(so);
 		sorele(so);
