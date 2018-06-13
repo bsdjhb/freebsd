@@ -2678,8 +2678,20 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * m_data to set TX_MAX to the first byte in the TCP sequence
 	 * space the host actually wants us to send and set
 	 * SND_UNA_RAW to 0.
+	 *
+	 * If the host sends us back to back requests that span the
+	 * trailer of a single TLS record (first request ends "in" the
+	 * trailer and second request starts at the next byte but
+	 * still "in" the trailer), the initial bytes of the trailer
+	 * that the first request drops will not be retransmitted.  If
+	 * the host uses the same requests when retransmitting the
+	 * connection will hang.  To handle this, always transmit the
+	 * full trailer for a request that begins "in" the trailer
+	 * (the second request in the example above).  This should
+	 * also help to avoid retransmits for the common case.
 	 */
-	tx_max = tcp_seqno + mtod(m_tls, vm_offset_t);
+	tx_max = tcp_seqno + MIN(mtod(m_tls, vm_offset_t),
+	    ext_pgs->hdr_len + ntohs(inhdr->tls_length));
 
 	/* Update TCB fields. */
 	if (first_wr || cipher->prev_seq != tx_max) {
