@@ -488,6 +488,19 @@ static void rdma_unfill_sgid_attr(struct rdma_ah_attr *ah_attr,
 	rdma_destroy_ah_attr(ah_attr);
 }
 
+static const struct ib_gid_attr *
+rdma_update_sgid_attr(struct rdma_ah_attr *ah_attr,
+		      const struct ib_gid_attr *old_attr)
+{
+	if (old_attr)
+		rdma_put_gid_attr(old_attr);
+	if (ah_attr->ah_flags & IB_AH_GRH) {
+		rdma_hold_gid_attr(ah_attr->grh.sgid_attr);
+		return ah_attr->grh.sgid_attr;
+	}
+	return NULL;
+}
+
 static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
 				     struct rdma_ah_attr *ah_attr,
 				     u32 flags,
@@ -511,6 +524,7 @@ static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
 	ah->device = device;
 	ah->pd = pd;
 	ah->type = ah_attr->type;
+	ah->sgid_attr = rdma_update_sgid_attr(ah_attr, NULL);
 
 	ret = device->create_ah(ah, ah_attr, flags, udata);
 	if (ret) {
@@ -926,6 +940,7 @@ int rdma_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 		ah->device->modify_ah(ah, ah_attr) :
 		-EOPNOTSUPP;
 
+	ah->sgid_attr = rdma_update_sgid_attr(ah_attr, ah->sgid_attr);
 	rdma_unfill_sgid_attr(ah_attr, old_sgid_attr);
 	return ret;
 }
@@ -943,6 +958,7 @@ EXPORT_SYMBOL(rdma_query_ah);
 
 int rdma_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata)
 {
+	const struct ib_gid_attr *sgid_attr = ah->sgid_attr;
 	struct ib_pd *pd;
 
 	might_sleep_if(flags & RDMA_DESTROY_AH_SLEEPABLE);
@@ -950,6 +966,8 @@ int rdma_destroy_ah_user(struct ib_ah *ah, u32 flags, struct ib_udata *udata)
 	pd = ah->pd;
 	ah->device->destroy_ah(ah, flags);
 	atomic_dec(&pd->usecnt);
+	if (sgid_attr)
+		rdma_put_gid_attr(sgid_attr);
 
 	kfree(ah);
 	return 0;
@@ -1584,6 +1602,13 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 			return ret;
 	}
 	if (attr_mask & IB_QP_ALT_PATH) {
+		/*
+		 * FIXME: This does not track the migration state, so if the
+		 * user loads a new alternate path after the HW has migrated
+		 * from primary->alternate we will keep the wrong
+		 * references. This is OK for IB because the reference
+		 * counting does not serve any functional purpose.
+		 */
 		ret = rdma_fill_sgid_attr(qp->device, &attr->alt_ah_attr,
 					  &old_sgid_attr_alt_av);
 		if (ret)
@@ -1635,6 +1660,13 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 
 	if (attr_mask & IB_QP_PORT)
 		qp->port = attr->port_num;
+	if (attr_mask & IB_QP_AV)
+		qp->av_sgid_attr =
+			rdma_update_sgid_attr(&attr->ah_attr, qp->av_sgid_attr);
+	if (attr_mask & IB_QP_ALT_PATH)
+		qp->alt_path_sgid_attr = rdma_update_sgid_attr(
+			&attr->alt_ah_attr, qp->alt_path_sgid_attr);
+
 out:
 	if (attr_mask & IB_QP_ALT_PATH)
 		rdma_unfill_sgid_attr(&attr->alt_ah_attr, old_sgid_attr_alt_av);
@@ -1734,6 +1766,8 @@ static int __ib_destroy_shared_qp(struct ib_qp *qp)
 
 int ib_destroy_qp_user(struct ib_qp *qp, struct ib_udata *udata)
 {
+	const struct ib_gid_attr *alt_path_sgid_attr = qp->alt_path_sgid_attr;
+	const struct ib_gid_attr *av_sgid_attr = qp->av_sgid_attr;
 	struct ib_pd *pd;
 	struct ib_cq *scq, *rcq;
 	struct ib_srq *srq;
@@ -1754,6 +1788,10 @@ int ib_destroy_qp_user(struct ib_qp *qp, struct ib_udata *udata)
 
 	ret = qp->device->destroy_qp(qp, udata);
 	if (!ret) {
+		if (alt_path_sgid_attr)
+			rdma_put_gid_attr(alt_path_sgid_attr);
+		if (av_sgid_attr)
+			rdma_put_gid_attr(av_sgid_attr);
 		if (pd)
 			atomic_dec(&pd->usecnt);
 		if (scq)
