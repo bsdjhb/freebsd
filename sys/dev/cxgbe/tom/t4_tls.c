@@ -52,9 +52,6 @@ __FBSDID("$FreeBSD$");
 #ifdef KERN_TLS
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform.h>
-#include <vm/vm.h> /* XXX */
-#include <vm/pmap.h> /* XXX */
-#include <vm/vm_param.h> /* XXX */
 #endif
 
 #ifdef TCP_OFFLOAD
