@@ -3035,6 +3035,12 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
 		    nsegs, available - totdesc, tcp_seqno, pidx);
 		totdesc += ndesc;
+#ifdef VERBOSE_TRACES
+		CTR6(KTR_CXGBE,
+		    "%s: tid %d advance txq %u pidx %u cidx %u by %u desc",
+		    __func__, cipher->toep->tid, eq->cntxt_id, pidx,
+		    eq->cidx, ndesc);
+#endif
 		IDXINCR(pidx, ndesc, eq->sidx);
 
 		/*
@@ -3042,7 +3048,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 * that safely wrapped around the end of the ring.
 		 */
 #ifdef VERBOSE_TRACES
-		CTR5(KTR_CXGBE, "%s: tid %d advance %p(%d) by %u desc",
+		CTR5(KTR_CXGBE, "%s: tid %d advance %p(%u) by %u desc",
 		    __func__, cipher->toep->tid, dst, eq->cntxt_id, ndesc);
 #endif
 		dst = (char *)dst + (ndesc * EQ_ESIZE);
