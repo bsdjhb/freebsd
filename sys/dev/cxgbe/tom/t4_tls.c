@@ -3042,8 +3042,8 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 * that safely wrapped around the end of the ring.
 		 */
 #ifdef VERBOSE_TRACES
-		CTR4(KTR_CXGBE, "%s: tid %d advance %p by %u desc", __func__,
-		    cipher->toep->tid, dst, ndesc);
+		CTR5(KTR_CXGBE, "%s: tid %d advance %p(%d) by %u desc",
+		    __func__, cipher->toep->tid, dst, eq->cntxt_id, ndesc);
 #endif
 		dst = (char *)dst + (ndesc * EQ_ESIZE);
 		if (dst >= end)
