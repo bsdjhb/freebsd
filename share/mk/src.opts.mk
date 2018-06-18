@@ -317,6 +317,10 @@ __DEFAULT_NO_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_IS_CC LLD
 .if ${__T} == "aarch64" || ${__T:Mriscv*} != ""
 BROKEN_OPTIONS+=BINUTILS BINUTILS_BOOTSTRAP GCC GCC_BOOTSTRAP GDB
 .endif
+# clang on MIPS requires external binutils
+.if ${COMPILER_FEATURES:Mc++11} && ${__TT} == "mips"
+BROKEN_OPTIONS+=BINUTILS_BOOTSTRAP
+.endif
 .if ${__T:Mriscv*} != ""
 BROKEN_OPTIONS+=OFED
 .endif
