@@ -2428,7 +2428,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		return (EINVAL);
 	}
 	m->m_pkthdr.l3hlen = ip->ip_hl * 4;
-	if (m->m_len <= m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
+	if (m->m_len < m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
 	    sizeof(*tcp)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short (2)",
 		    __func__, cipher->toep->tid);
