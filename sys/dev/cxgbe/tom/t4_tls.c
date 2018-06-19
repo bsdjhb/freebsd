@@ -1782,7 +1782,8 @@ write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
 	struct cpl_set_tcb_field *cpl;
 
 	cpl = dst;
-	INIT_TP_WR_MIT_CPL(cpl, CPL_SET_TCB_FIELD, toep->tid);
+	INIT_TP_WR(cpl, 0);
+	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_SET_TCB_FIELD, toep->tid));
 	cpl->reply_ctrl = htobe16(F_NO_REPLY);
 	cpl->word_cookie = htobe16(V_WORD(word));
 	cpl->mask = htobe64(mask);
@@ -2228,8 +2229,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 
 	kwr->wr_hi = htobe32(V_FW_WR_OP(FW_ULPTX_WR) |
 	    F_FW_WR_ATOMIC);
-	kwr->wr_mid = htobe32(V_FW_WR_LEN16(DIV_ROUND_UP(len, 16)) |
-	    V_FW_WR_FLOWID(toep->tid));
+	kwr->wr_mid = htobe32(V_FW_WR_LEN16(DIV_ROUND_UP(len, 16)));
 	kwr->protocol = get_proto_ver(k_ctx->proto_ver);
 	kwr->mfs = htons(k_ctx->frag_size);
 	kwr->reneg_to_write_rx = k_ctx->l_p_key;
