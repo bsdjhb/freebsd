@@ -3716,7 +3716,8 @@ t4_enable_kern_tls(struct adapter *sc)
 	 * the TCB, not sure if this is actually required or just a
 	 * debugging aid.
 	 */
-	m = M_RDTHRESHOLD | F_WRTHRTHRESHEN | M_WRTHRTHRESH;
+	m = V_RDTHRESHOLD(M_RDTHRESHOLD) | F_WRTHRTHRESHEN |
+	    V_WRTHRTHRESH(M_WRTHRTHRESH);
 	v = V_RDTHRESHOLD(1) | F_WRTHRTHRESHEN | V_WRTHRTHRESH(0x10);
 	t4_set_reg_field(sc, A_TP_CMM_CONFIG, m, v);
 
@@ -3724,7 +3725,7 @@ t4_enable_kern_tls(struct adapter *sc)
 	 * XXX: Was this also just a debugging aid used to distinguish
 	 * offload packets from tunnel packets?
 	 */
-	m = M_IPTTL;
+	m = V_IPTTL(M_IPTTL);
 	v = V_IPTTL(63);
 	t4_set_reg_field(sc, A_TP_GLOBAL_CONFIG, m, v);
 
