@@ -2389,6 +2389,44 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls, int *nsegsp)
 	return (wr_len);
 }
 
+/*
+ * See if we have any TCP options requiring a dedicated options-only
+ * packet.
+ */
+static int
+sbtls_has_tcp_options(struct tcphdr *tcp)
+{
+	u_char *cp;
+	int cnt, opt, optlen;
+
+	cp = (u_char *)(tcp + 1);
+	cnt = tcp->th_off * 4 - sizeof(struct tcphdr);
+	for (; cnt > 0; cnt -= optlen, cp += optlen) {
+		opt = cp[0];
+		if (opt == TCPOPT_EOL)
+			break;
+		if (opt == TCPOPT_NOP)
+			optlen = 1;
+		else {
+			if (cnt < 2)
+				break;
+			optlen = cp[1];
+			if (optlen < 2 || optlen > cnt)
+				break;
+		}
+		switch (opt) {
+		case TCPOPT_NOP:
+#if 0
+		case TCPOPT_TIMESTAMP:
+#endif
+			break;
+		default:
+			return (1);
+		}
+	}
+	return (0);
+}
+
 static int
 sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
     int *len16p)
@@ -2437,8 +2475,6 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	tcp = (struct tcphdr *)((char *)ip + m->m_pkthdr.l3hlen);
 	m->m_pkthdr.l4hlen = tcp->th_off * 4;
 
-	/* XXX: Reject unsupported TCP options? */
-
 	/* Bail if there is TCP payload before the TLS record. */
 	if (m->m_len != m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
 	    m->m_pkthdr.l4hlen) {
@@ -2453,11 +2489,28 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	MPASS(m->m_next != NULL);
 	MPASS(m->m_next->m_flags & M_NOMAP);
 
+	tot_len = 0;
+
+	/*
+	 * See if we have any TCP options requiring a dedicated options-only	
+	 * packet.
+	 */
+	if (sbtls_has_tcp_options(tcp)) {
+		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
+		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
+		if (wr_len > SGE_MAX_WR_LEN) {
+			CTR3(KTR_CXGBE,
+			    "%s: tid %d options-only packet too long (len %d)",
+			    __func__, cipher->toep->tid, m->m_len);
+			return (EINVAL);
+		}
+		tot_len += roundup2(wr_len, EQ_ESIZE);
+	}
+
 	/*
 	 * Each of the remaining mbufs in the chain should reference a
 	 * TLS record.
 	 */
-	tot_len = 0;
 	*nsegsp = 0;
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
@@ -2610,6 +2663,96 @@ write_gl_to_txd(struct sge_txq *txq, caddr_t to)
 	}
 
 	MPASS((((uintptr_t)flitp) & 0xf) == 0);
+}
+
+static inline void
+copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
+{
+
+	MPASS((uintptr_t)(*to) >= (uintptr_t)&eq->desc[0]);
+	MPASS((uintptr_t)(*to) < (uintptr_t)&eq->desc[eq->sidx]);
+
+	if (__predict_true((uintptr_t)(*to) + len <=
+	    (uintptr_t)&eq->desc[eq->sidx])) {
+		bcopy(from, *to, len);
+		(*to) += len;
+	} else {
+		int portion = (uintptr_t)&eq->desc[eq->sidx] - (uintptr_t)(*to);
+
+		bcopy(from, *to, portion);
+		from += portion;
+		portion = len - portion;	/* remaining */
+		bcopy(from, (void *)eq->desc, portion);
+		(*to) = (caddr_t)eq->desc + portion;
+	}
+}
+
+static int
+sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
+    u_int available, u_int pidx)
+{
+	struct tx_sdesc *txsd;
+	struct fw_eth_tx_pkt_wr *wr;
+	struct cpl_tx_pkt_core *cpl;
+	uint32_t ctrl;
+	uint64_t ctrl1;
+	int len16, ndesc, pktlen;
+	struct ip *ip, newip;
+	caddr_t out;
+
+	TXQ_LOCK_ASSERT_OWNED(txq);
+	M_ASSERTPKTHDR(m);
+
+	wr = dst;
+	pktlen = m->m_len;
+	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
+	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
+	ndesc = howmany(len16, EQ_ESIZE / 16);
+	MPASS(ndesc <= available);
+
+	/* Firmware work request header */
+	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
+	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
+
+	ctrl = V_FW_WR_LEN16(len16);
+	wr->equiq_to_len16 = htobe32(ctrl);
+	wr->r3 = 0;
+
+	cpl = (void *)(wr + 1);
+
+	/* Checksum offload */
+	ctrl1 = 0;
+	txq->txcsum++;
+
+	/* CPL header */
+	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->pack = 0;
+	cpl->len = htobe16(pktlen);
+	cpl->ctrl1 = htobe64(ctrl1);
+
+	out = (void *)(cpl + 1);
+
+	/* Copy over Ethernet header. */
+	copy_to_txd(&txq->eq, mtod(m, caddr_t), &out, m->m_pkthdr.l2hlen);
+
+	/* Fixup length in IP header and copy out. */
+	ip = (void *)(mtod(m, caddr_t) + m->m_pkthdr.l2hlen);
+	newip = *ip;
+	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
+	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+
+	/* Copy rest of packet. */
+	copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out, pktlen -
+	    (m->m_pkthdr.l2hlen + sizeof(*ip)));
+	txq->imm_wrs++;
+
+	txq->txpkt_wrs++;
+
+	txsd = &txq->sdesc[pidx];
+	txsd->m = NULL;
+	txsd->desc_used = ndesc;
+
+	return (ndesc);
 }
 
 _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
@@ -3013,6 +3156,27 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	end = &eq->desc[eq->sidx];
 	pidx = eq->pidx;
 
+	if (sbtls_has_tcp_options(tcp)) {
+		ndesc = sbtls_write_tcp_options(txq, dst, m, available, pidx);
+		totdesc += ndesc;
+		IDXINCR(pidx, ndesc, eq->sidx);
+#ifdef VERBOSE_TRACES
+		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP options packet", __func__,
+		    cipher->toep->tid);
+#endif
+
+		/*
+		 * NB: This does not use txq_advance() to handle a WR
+		 * that safely wrapped around the end of the ring.
+		 */
+		dst = (char *)dst + (ndesc * EQ_ESIZE);
+		if (dst >= end)
+			dst = (char *)start + ((char *)dst - (char *)end);
+		KASSERT(dst >= start && dst < end,
+		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
+		    ndesc, start, end));
+	}
+		
 	/*
 	 * Iterate over each TLS record constructing a work request
 	 * for that record.
