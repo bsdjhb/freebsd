@@ -1706,6 +1706,9 @@ static int
 send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
     struct socket *so, struct toepcb *toep)
 {
+#ifdef TIMESTAMPS
+	struct tcpcb *tp = so_sototcpcb(so);
+#endif
 	struct cpl_t6_act_open_req *cpl6;
 	struct cpl_act_open_req *cpl;
 	struct inpcb *inp;
@@ -1743,6 +1746,10 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	cpl6->params = select_ntuple(vi, toep->l2te);
 
 	options = V_TX_QUEUE(sc->params.tp.tx_modq[vi->pi->tx_chan]);
+#ifdef TIMESTAMPS
+	if (tp->t_flags & TF_REQ_TSTMP)
+		options |= F_TSTAMPS_EN;
+#endif
 	cpl->opt2 = htobe32(options);
 
 #ifdef notsure
@@ -2427,6 +2434,38 @@ sbtls_has_tcp_options(struct tcphdr *tcp)
 	return (0);
 }
 
+#ifdef TIMESTAMPS
+/*
+ * Find the TCP timestamp option.
+ */
+static void *
+sbtls_find_tcp_timestamps(struct tcphdr *tcp)
+{
+	u_char *cp;
+	int cnt, opt, optlen;
+
+	cp = (u_char *)(tcp + 1);
+	cnt = tcp->th_off * 4 - sizeof(struct tcphdr);
+	for (; cnt > 0; cnt -= optlen, cp += optlen) {
+		opt = cp[0];
+		if (opt == TCPOPT_EOL)
+			break;
+		if (opt == TCPOPT_NOP)
+			optlen = 1;
+		else {
+			if (cnt < 2)
+				break;
+			optlen = cp[1];
+			if (optlen < 2 || optlen > cnt)
+				break;
+		}
+		if (opt == TCPOPT_TIMESTAMP && optlen == TCPOLEN_TIMESTAMP)
+			return (cp + 2);
+	}
+	return (NULL);
+}
+#endif
+
 static int
 sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
     int *len16p)
@@ -2542,6 +2581,16 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * the first TLS work request.
 	 */
 	tot_len += 4 * roundup2(sizeof(struct cpl_set_tcb_field), EQ_ESIZE);
+
+#ifdef TIMESTAMPS
+	/*
+	 * If timestamps are present, reserve 2 more requests for
+	 * setting the timestamp fields.
+	 */
+	if (sbtls_find_tcp_timestamps(tcp))
+		tot_len += 2 * roundup2(sizeof(struct cpl_set_tcb_field),
+		    EQ_ESIZE);
+#endif
 
 	*len16p = tot_len / 16;
 #ifdef VERBOSE_TRACES
@@ -2756,6 +2805,49 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 
 	return (ndesc);
 }
+
+#ifdef TIMESTAMPS
+static int
+sbtls_write_timestamps(struct toepcb *toep, struct sge_txq *txq, void *dst,
+    uint32_t *tsopt, u_int available, u_int pidx)
+{
+	struct sge_eq *eq = &txq->eq;
+	struct tx_sdesc *txsd;
+	uint32_t tstamp;
+	int ndesc;
+
+	TXQ_LOCK_ASSERT_OWNED(txq);
+
+	ndesc = 2;
+	MPASS(ndesc <= available);
+
+	memcpy(&tstamp, &tsopt[0], sizeof(tstamp));
+	tstamp = ntohl(tstamp);
+	write_set_tcb_field(toep, dst, W_TCB_TIMESTAMP_OFFSET, 
+	    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
+	    V_TCB_TIMESTAMP_OFFSET(tstamp >> 28));
+	dst = txq_advance(txq, dst, EQ_ESIZE);
+	txq->raw_wrs++;
+	txsd = &txq->sdesc[pidx];
+	txsd->m = NULL;
+	txsd->desc_used = 1;
+	IDXINCR(pidx, 1, eq->sidx);
+
+	memcpy(&tstamp, &tsopt[1], sizeof(tstamp));
+	tstamp = ntohl(tstamp);
+	write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
+	    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
+	    V_TCB_T_RTSEQ_RECENT(tstamp));
+	dst = txq_advance(txq, dst, EQ_ESIZE);
+	txq->raw_wrs++;
+	txsd = &txq->sdesc[pidx];
+	txsd->m = NULL;
+	txsd->desc_used = 1;
+	IDXINCR(pidx, 1, eq->sidx);
+
+	return (ndesc);
+}
+#endif
 
 _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
     "CPL_SET_TCB_FIELD must be smaller than a single TX descriptor");
@@ -3150,6 +3242,9 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct mbuf *m_tls;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
+#ifdef TIMESTAMPS
+	void *tsopt;
+#endif
 
 	totdesc = 0;
 	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
@@ -3178,6 +3273,31 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
 		    ndesc, start, end));
 	}
+
+#ifdef TIMESTAMPS
+	tsopt = sbtls_find_tcp_timestamps(tcp);
+	if (tsopt != NULL) {
+		ndesc = sbtls_write_timestamps(cipher->toep, txq, dst, tsopt,
+		    available, pidx);
+		totdesc += ndesc;
+		IDXINCR(pidx, ndesc, eq->sidx);
+#ifdef VERBOSE_TRACES
+		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP timestamp fields",
+		    __func__, cipher->toep->tid);
+#endif
+
+		/*
+		 * NB: This does not use txq_advance() to handle a WR
+		 * that safely wrapped around the end of the ring.
+		 */
+		dst = (char *)dst + (ndesc * EQ_ESIZE);
+		if (dst >= end)
+			dst = (char *)start + ((char *)dst - (char *)end);
+		KASSERT(dst >= start && dst < end,
+		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
+		    ndesc, start, end));
+	}
+#endif
 		
 	/*
 	 * Iterate over each TLS record constructing a work request
