@@ -2741,6 +2741,8 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
 	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
 
+	/* XXX: Should we filter out FIN and PSH flags? */
+
 	/* Copy rest of packet. */
 	copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out, pktlen -
 	    (m->m_pkthdr.l2hlen + sizeof(*ip)));
