@@ -209,7 +209,7 @@ static void schedule_free_gid(struct kref *kref)
 	queue_work(ib_wq, &entry->del_work);
 }
 
-static void free_gid_entry(struct ib_gid_table_entry *entry)
+static void free_gid_entry_locked(struct ib_gid_table_entry *entry)
 {
 	struct ib_device *device = entry->attr.device;
 	u8 port_num = entry->attr.port_num;
@@ -219,10 +219,10 @@ static void free_gid_entry(struct ib_gid_table_entry *entry)
 		 device->name, port_num, entry->attr.index,
 		 entry->attr.gid.raw);
 
-	mutex_lock(&table->lock);
 	if (rdma_cap_roce_gid_table(device, port_num) &&
 	    entry->state != GID_TABLE_ENTRY_INVALID)
 		device->del_gid(&entry->attr, &entry->context);
+
 	write_lock_irq(&table->rwlock);
 
 	/*
@@ -235,11 +235,18 @@ static void free_gid_entry(struct ib_gid_table_entry *entry)
 		table->data_vec[entry->attr.index] = NULL;
 	/* Now this index is ready to be allocated */
 	write_unlock_irq(&table->rwlock);
-	mutex_unlock(&table->lock);
 
 	if (entry->attr.ndev)
 		dev_put(entry->attr.ndev);
 	kfree(entry);
+}
+
+static void free_gid_entry(struct kref *kref)
+{
+	struct ib_gid_table_entry *entry =
+			container_of(kref, struct ib_gid_table_entry, kref);
+
+	free_gid_entry_locked(entry);
 }
 
 /**
@@ -254,7 +261,13 @@ static void free_gid_work(struct work_struct *work)
 {
 	struct ib_gid_table_entry *entry =
 		container_of(work, struct ib_gid_table_entry, del_work);
-	free_gid_entry(entry);
+	struct ib_device *device = entry->attr.device;
+	u8 port_num = entry->attr.port_num;
+	struct ib_gid_table *table = rdma_gid_table(device, port_num);
+
+	mutex_lock(&table->lock);
+	free_gid_entry_locked(entry);
+	mutex_unlock(&table->lock);
 }
 
 static struct ib_gid_table_entry *
@@ -297,6 +310,11 @@ static void get_gid_entry(struct ib_gid_table_entry *entry)
 static void put_gid_entry(struct ib_gid_table_entry *entry)
 {
 	kref_put(&entry->kref, schedule_free_gid);
+}
+
+static void put_gid_entry_locked(struct ib_gid_table_entry *entry)
+{
+	kref_put(&entry->kref, free_gid_entry);
 }
 
 static int add_roce_gid(struct ib_gid_table_entry *entry)
@@ -401,7 +419,7 @@ static void del_gid(struct ib_device *ib_dev, u8 port,
 		table->data_vec[ix] = NULL;
 	write_unlock_irq(&table->rwlock);
 
-	put_gid_entry(entry);
+	put_gid_entry_locked(entry);
 }
 
 /* rwlock should be read locked, or lock should be held */
