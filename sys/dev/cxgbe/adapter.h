@@ -33,6 +33,8 @@
 #ifndef __T4_ADAPTER_H__
 #define __T4_ADAPTER_H__
 
+#define TIMESTAMPS
+
 #include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/rman.h>
@@ -869,6 +871,8 @@ struct adapter {
 	const char *last_op;
 	const void *last_op_thr;
 	int last_op_flags;
+
+	uint32_t prev_tsval;
 };
 
 /* XXX: Probably move to a different header later. */
@@ -888,6 +892,7 @@ struct t6_sbtls_cipher {
 	uint32_t prev_seq;
 	uint32_t prev_ack;
 	uint16_t prev_win;
+	uint32_t prev_tsecr;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)

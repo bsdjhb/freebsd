@@ -56,6 +56,9 @@ __FBSDID("$FreeBSD$");
 
 #ifdef TCP_OFFLOAD
 #include "common/common.h"
+#ifdef KERN_TLS
+#include "common/t4_regs.h"
+#endif
 #include "common/t4_tcb.h"
 #include "tom/t4_tom_l2t.h"
 #include "tom/t4_tom.h"
@@ -2423,7 +2426,7 @@ sbtls_has_tcp_options(struct tcphdr *tcp)
 		}
 		switch (opt) {
 		case TCPOPT_NOP:
-#if 0
+#ifdef TIMESTAMPS
 		case TCPOPT_TIMESTAMP:
 #endif
 			break;
@@ -2531,7 +2534,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	tot_len = 0;
 
 	/*
-	 * See if we have any TCP options requiring a dedicated options-only	
+	 * See if we have any TCP options requiring a dedicated options-only
 	 * packet.
 	 */
 	if (sbtls_has_tcp_options(tcp)) {
@@ -2584,11 +2587,11 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 
 #ifdef TIMESTAMPS
 	/*
-	 * If timestamps are present, reserve 2 more requests for
-	 * setting the timestamp fields.
+	 * If timestamps are present, reserve 1 more request for
+	 * setting the echoed timestamp.
 	 */
 	if (sbtls_find_tcp_timestamps(tcp))
-		tot_len += 2 * roundup2(sizeof(struct cpl_set_tcb_field),
+		tot_len += roundup2(sizeof(struct cpl_set_tcb_field),
 		    EQ_ESIZE);
 #endif
 
@@ -2808,9 +2811,11 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 
 #ifdef TIMESTAMPS
 static int
-sbtls_write_timestamps(struct toepcb *toep, struct sge_txq *txq, void *dst,
-    uint32_t *tsopt, u_int available, u_int pidx)
+sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+    void *dst, uint32_t *tsopt, u_int available, u_int pidx)
 {
+	struct adapter *sc = cipher->sc;
+	struct toepcb *toep = cipher->toep;
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
 	uint32_t tstamp;
@@ -2818,32 +2823,46 @@ sbtls_write_timestamps(struct toepcb *toep, struct sge_txq *txq, void *dst,
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
 
-	ndesc = 2;
-	MPASS(ndesc <= available);
+	ndesc = 0;
+	MPASS(1 <= available);
 
 	memcpy(&tstamp, &tsopt[0], sizeof(tstamp));
 	tstamp = ntohl(tstamp);
-	write_set_tcb_field(toep, dst, W_TCB_TIMESTAMP_OFFSET, 
-	    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
-	    V_TCB_TIMESTAMP_OFFSET(tstamp >> 28));
-	dst = txq_advance(txq, dst, EQ_ESIZE);
-	txq->raw_wrs++;
-	txsd = &txq->sdesc[pidx];
-	txsd->m = NULL;
-	txsd->desc_used = 1;
-	IDXINCR(pidx, 1, eq->sidx);
+	if (tstamp != sc->prev_tsval) {
+		/* XXX: Not quite the right lock, but should be ok. */
+		mtx_lock(&sc->reg_lock);
+		if (tstamp != sc->prev_tsval) {
+#ifdef VERBOSE_TRACES
+			CTR3(KTR_CXGBE, "%s: tid %d set TP time to %u",
+			    __func__, cipher->toep->tid, tstamp);
+#endif
+			t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
+			t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
+			sc->prev_tsval = tstamp;
+		}
+		mtx_unlock(&sc->reg_lock);
+	}
 
 	memcpy(&tstamp, &tsopt[1], sizeof(tstamp));
 	tstamp = ntohl(tstamp);
-	write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
-	    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
-	    V_TCB_T_RTSEQ_RECENT(tstamp));
-	dst = txq_advance(txq, dst, EQ_ESIZE);
-	txq->raw_wrs++;
-	txsd = &txq->sdesc[pidx];
-	txsd->m = NULL;
-	txsd->desc_used = 1;
-	IDXINCR(pidx, 1, eq->sidx);
+	if (cipher->prev_tsecr != tstamp) {
+#ifdef VERBOSE_TRACES
+		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
+		    __func__, cipher->toep->tid);
+#endif
+		write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
+		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
+		    V_TCB_T_RTSEQ_RECENT(tstamp));
+		dst = txq_advance(txq, dst, EQ_ESIZE);
+		ndesc++;
+		txq->raw_wrs++;
+		txsd = &txq->sdesc[pidx];
+		txsd->m = NULL;
+		txsd->desc_used = 1;
+		IDXINCR(pidx, 1, eq->sidx);
+
+		cipher->prev_tsecr = tstamp;
+	}
 
 	return (ndesc);
 }
@@ -3281,14 +3300,10 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 #ifdef TIMESTAMPS
 	tsopt = sbtls_find_tcp_timestamps(tcp);
 	if (tsopt != NULL) {
-		ndesc = sbtls_write_timestamps(cipher->toep, txq, dst, tsopt,
+		ndesc = sbtls_write_timestamps(cipher, txq, dst, tsopt,
 		    available, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
-#ifdef VERBOSE_TRACES
-		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP timestamp fields",
-		    __func__, cipher->toep->tid);
-#endif
 
 		/*
 		 * NB: This does not use txq_advance() to handle a WR
