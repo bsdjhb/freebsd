@@ -3731,7 +3731,7 @@ t4_enable_kern_tls(struct adapter *sc)
 
 #ifdef TIMESTAMPS
 	m = V_TIMESTAMPRESOLUTION(M_TIMESTAMPRESOLUTION);
-	v = V_TIMESTAMPRESOLUTION(0xff);
+	v = V_TIMESTAMPRESOLUTION(0x1f);
 	t4_set_reg_field(sc, A_TP_TIMER_RESOLUTION, m, v);
 #endif
 
