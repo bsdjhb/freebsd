@@ -3707,8 +3707,8 @@ t4_enable_kern_tls(struct adapter *sc)
 	v = 0;
 	t4_set_reg_field(sc, A_TP_INGRESS_CONFIG, m, v);
 
-	m = F_TXDEFERENABLE;
-	v = 0;
+	m = F_TXDEFERENABLE | F_DISABLEWINDOWPSH | F_DISABLESEPPSHFLAG;
+	v = F_DISABLEWINDOWPSH;
 	t4_set_reg_field(sc, A_TP_PC_CONFIG, m, v);
 
 	/*

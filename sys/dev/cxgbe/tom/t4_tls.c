@@ -3186,6 +3186,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tx_data->len = htobe32(V_TX_DATA_MSS(mss) | V_TX_LENGTH(tlen));
 	tx_data->rsvd = htobe32(tcp_seqno);
 	tx_data->flags = htobe32(F_TX_BYPASS);
+	if (m_tls->m_next == NULL && tcp->th_flags & TH_PUSH)
+		tx_data->flags |= htobe32(F_TX_PUSH | F_TX_SHOVE);
 
 	/* Populate the TLS header */
 	hdr = txq_advance(txq, tx_data, sizeof(*tx_data));
