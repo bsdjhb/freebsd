@@ -2338,9 +2338,11 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	if (mlen <= ext_pgs->hdr_len)
 		return (0);
 
+#ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d short TLS record (%u vs %u)",
 	    __func__, cipher->toep->tid, mlen, ext_pgs->hdr_len + plen +
 	    ext_pgs->trail_len);
+#endif
 	return (mlen);
 }
 
