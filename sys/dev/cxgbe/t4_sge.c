@@ -2534,6 +2534,21 @@ discard_tx(struct sge_eq *eq)
 	return ((eq->flags & (EQ_ENABLED | EQ_QFLUSH)) != EQ_ENABLED);
 }
 
+static inline int
+wr_can_update_eq(struct fw_eth_tx_pkts_wr *wr)
+{
+
+	switch (G_FW_WR_OP(be32toh(wr->op_pkd))) {
+	case FW_ULPTX_WR:
+	case FW_ETH_TX_PKT_WR:
+	case FW_ETH_TX_PKTS_WR:
+	case FW_ETH_TX_PKT_VM_WR:
+		return (1);
+	default:
+		return (0);
+	}
+}
+
 /*
  * r->items[cidx] to r->items[pidx], with a wraparound at r->size, are ready to
  * be consumed.  Return the actual number consumed.  0 indicates a stall.
@@ -2657,14 +2672,17 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 		dbdiff += n;
 		IDXINCR(eq->pidx, n, eq->sidx);
 
-		if (total_available_tx_desc(eq) < eq->sidx / 4 &&
-		    atomic_cmpset_int(&eq->equiq, 0, 1)) {
-			wr->equiq_to_len16 |= htobe32(F_FW_WR_EQUIQ |
-			    F_FW_WR_EQUEQ);
-			eq->equeqidx = eq->pidx;
-		} else if (IDXDIFF(eq->pidx, eq->equeqidx, eq->sidx) >= 32) {
-			wr->equiq_to_len16 |= htobe32(F_FW_WR_EQUEQ);
-			eq->equeqidx = eq->pidx;
+		if (wr_can_update_eq(wr)) {
+			if (total_available_tx_desc(eq) < eq->sidx / 4 &&
+			    atomic_cmpset_int(&eq->equiq, 0, 1)) {
+				wr->equiq_to_len16 |= htobe32(F_FW_WR_EQUIQ |
+				    F_FW_WR_EQUEQ);
+				eq->equeqidx = eq->pidx;
+			} else if (IDXDIFF(eq->pidx, eq->equeqidx, eq->sidx) >=
+			    32) {
+				wr->equiq_to_len16 |= htobe32(F_FW_WR_EQUEQ);
+				eq->equeqidx = eq->pidx;
+			}
 		}
 
 		if (dbdiff >= 16 && remaining >= 4) {
