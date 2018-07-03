@@ -3753,11 +3753,9 @@ t4_enable_kern_tls(struct adapter *sc)
 	v = V_IPTTL(63);
 	t4_set_reg_field(sc, A_TP_GLOBAL_CONFIG, m, v);
 
-#ifdef TIMESTAMPS
 	m = V_TIMESTAMPRESOLUTION(M_TIMESTAMPRESOLUTION);
 	v = V_TIMESTAMPRESOLUTION(0x1f);
 	t4_set_reg_field(sc, A_TP_TIMER_RESOLUTION, m, v);
-#endif
 
 	sc->flags |= KERN_TLS_OK;
 }

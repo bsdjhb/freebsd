@@ -1709,9 +1709,7 @@ static int
 send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
     struct socket *so, struct toepcb *toep)
 {
-#ifdef TIMESTAMPS
 	struct tcpcb *tp = so_sototcpcb(so);
-#endif
 	struct cpl_t6_act_open_req *cpl6;
 	struct cpl_act_open_req *cpl;
 	struct inpcb *inp;
@@ -1749,10 +1747,8 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	cpl6->params = select_ntuple(vi, toep->l2te);
 
 	options = V_TX_QUEUE(sc->params.tp.tx_modq[vi->pi->tx_chan]);
-#ifdef TIMESTAMPS
 	if (tp->t_flags & TF_REQ_TSTMP)
 		options |= F_TSTAMPS_EN;
-#endif
 	cpl->opt2 = htobe32(options);
 
 #ifdef notsure
@@ -2428,9 +2424,7 @@ sbtls_has_tcp_options(struct tcphdr *tcp)
 		}
 		switch (opt) {
 		case TCPOPT_NOP:
-#ifdef TIMESTAMPS
 		case TCPOPT_TIMESTAMP:
-#endif
 			break;
 		default:
 			return (1);
@@ -2439,7 +2433,6 @@ sbtls_has_tcp_options(struct tcphdr *tcp)
 	return (0);
 }
 
-#ifdef TIMESTAMPS
 /*
  * Find the TCP timestamp option.
  */
@@ -2469,7 +2462,6 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 	}
 	return (NULL);
 }
-#endif
 
 static int
 sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
@@ -2587,7 +2579,6 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 */
 	tot_len += 4 * roundup2(sizeof(struct cpl_set_tcb_field), EQ_ESIZE);
 
-#ifdef TIMESTAMPS
 	/*
 	 * If timestamps are present, reserve 1 more request for
 	 * setting the echoed timestamp.
@@ -2595,7 +2586,6 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	if (sbtls_find_tcp_timestamps(tcp))
 		tot_len += roundup2(sizeof(struct cpl_set_tcb_field),
 		    EQ_ESIZE);
-#endif
 
 	*len16p = tot_len / 16;
 #ifdef VERBOSE_TRACES
@@ -2811,7 +2801,6 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 	return (ndesc);
 }
 
-#ifdef TIMESTAMPS
 static int
 sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, uint32_t *tsopt, u_int available, u_int pidx)
@@ -2850,7 +2839,6 @@ sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	return (ndesc);
 }
-#endif
 
 _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
     "CPL_SET_TCB_FIELD must be smaller than a single TX descriptor");
@@ -3251,9 +3239,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct mbuf *m_tls;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
-#ifdef TIMESTAMPS
 	void *tsopt;
-#endif
 
 	totdesc = 0;
 	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
@@ -3283,7 +3269,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    ndesc, start, end));
 	}
 
-#ifdef TIMESTAMPS
 	tsopt = sbtls_find_tcp_timestamps(tcp);
 	if (tsopt != NULL) {
 		ndesc = sbtls_write_timestamps(cipher, txq, dst, tsopt,
@@ -3302,7 +3287,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
 		    ndesc, start, end));
 	}
-#endif
 		
 	/*
 	 * Iterate over each TLS record constructing a work request

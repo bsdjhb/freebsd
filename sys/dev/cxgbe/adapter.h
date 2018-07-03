@@ -33,8 +33,6 @@
 #ifndef __T4_ADAPTER_H__
 #define __T4_ADAPTER_H__
 
-#define TIMESTAMPS
-
 #include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/rman.h>
