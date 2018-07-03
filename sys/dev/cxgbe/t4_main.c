@@ -63,6 +63,9 @@ __FBSDID("$FreeBSD$");
 #ifdef RSS
 #include <net/rss_config.h>
 #endif
+#ifdef KERN_TLS
+#include <netinet/tcp_seq.h>
+#endif
 #if defined(__i386__) || defined(__amd64__)
 #include <machine/md_var.h>
 #include <machine/cputypes.h>
@@ -906,6 +909,8 @@ t4_attach(device_t dev)
 
 	mtx_init(&sc->reg_lock, "indirect register access", 0, MTX_DEF);
 
+	callout_init(&sc->sbtls_tick, 1);
+
 	rc = t4_map_bars_0_and_4(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
@@ -1404,6 +1409,7 @@ t4_detach_common(device_t dev)
 		mtx_destroy(&sc->sc_lock);
 	}
 
+	callout_drain(&sc->sbtls_tick);
 	callout_drain(&sc->sfl_callout);
 	if (mtx_initialized(&sc->tids.ftid_lock))
 		mtx_destroy(&sc->tids.ftid_lock);
@@ -3687,6 +3693,24 @@ get_params__post_init(struct adapter *sc)
 
 #ifdef KERN_TLS
 static void
+sbtls_tick(void *arg)
+{
+	struct adapter *sc;
+	uint32_t tstamp;
+
+	sc = arg;
+
+	tstamp = tcp_ts_getticks();
+#ifdef VERBOSE_TRACES
+	CTR2(KTR_CXGBE, "%s: set TP time to %u", __func__, tstamp);
+#endif
+	t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
+	t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
+	
+	callout_schedule_sbt(&sc->sbtls_tick, SBT_1MS, 0, C_HARDCLOCK);
+}
+
+static void
 t4_enable_kern_tls(struct adapter *sc)
 {
 	uint32_t m, v;
@@ -4608,6 +4632,11 @@ adapter_full_init(struct adapter *sc)
 
 	if (!(sc->flags & IS_VF))
 		t4_intr_enable(sc);
+#ifdef KERN_TLS
+	if (sc->flags & KERN_TLS_OK)
+		callout_reset_sbt(&sc->sbtls_tick, SBT_1MS, 0, sbtls_tick, sc,
+		    C_HARDCLOCK);
+#endif
 	sc->flags |= FULL_INIT_DONE;
 done:
 	if (rc != 0)

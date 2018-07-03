@@ -2816,7 +2816,6 @@ static int
 sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, uint32_t *tsopt, u_int available, u_int pidx)
 {
-	struct adapter *sc = cipher->sc;
 	struct toepcb *toep = cipher->toep;
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -2827,23 +2826,6 @@ sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	ndesc = 0;
 	MPASS(1 <= available);
-
-	memcpy(&tstamp, &tsopt[0], sizeof(tstamp));
-	tstamp = ntohl(tstamp);
-	if (tstamp != sc->prev_tsval) {
-		/* XXX: Not quite the right lock, but should be ok. */
-		mtx_lock(&sc->reg_lock);
-		if (tstamp != sc->prev_tsval) {
-#ifdef VERBOSE_TRACES
-			CTR3(KTR_CXGBE, "%s: tid %d set TP time to %u",
-			    __func__, cipher->toep->tid, tstamp);
-#endif
-			t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
-			t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
-			sc->prev_tsval = tstamp;
-		}
-		mtx_unlock(&sc->reg_lock);
-	}
 
 	memcpy(&tstamp, &tsopt[1], sizeof(tstamp));
 	tstamp = ntohl(tstamp);

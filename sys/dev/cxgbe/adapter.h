@@ -872,7 +872,7 @@ struct adapter {
 	const void *last_op_thr;
 	int last_op_flags;
 
-	uint32_t prev_tsval;
+	struct callout sbtls_tick;
 };
 
 /* XXX: Probably move to a different header later. */

@@ -2019,8 +2019,17 @@ syncookie_generate(struct syncache_head *sch, struct syncache *sc)
 
 	/* Randomize the timestamp. */
 	if (sc->sc_flags & SCF_TIMESTAMP) {
+#if 0
 		sc->sc_ts = arc4random();
 		sc->sc_tsoff = sc->sc_ts - tcp_ts_getticks();
+#else
+		/*
+		 * XXX: Force an offset of 0 for now.  Can possibly
+		 * choose 4 upper bits later.
+		 */
+		sc->sc_ts = tcp_ts_getticks();
+		sc->sc_tsoff = 0;
+#endif
 	}
 
 	TCPSTAT_INC(tcps_sc_sendcookie);
