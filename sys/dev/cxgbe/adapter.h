@@ -890,6 +890,7 @@ struct t6_sbtls_cipher {
 	uint32_t prev_seq;
 	uint32_t prev_ack;
 	uint16_t prev_win;
+	uint16_t using_timestamps;
 	uint32_t prev_tsecr;
 };
 

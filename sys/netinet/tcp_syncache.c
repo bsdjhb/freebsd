@@ -2024,11 +2024,11 @@ syncookie_generate(struct syncache_head *sch, struct syncache *sc)
 		sc->sc_tsoff = sc->sc_ts - tcp_ts_getticks();
 #else
 		/*
-		 * XXX: Force an offset of 0 for now.  Can possibly
-		 * choose 4 upper bits later.
+		 * The T6 TP only permits an offset in the upper 4
+		 * bits of the timestamp field.
 		 */
-		sc->sc_ts = tcp_ts_getticks();
-		sc->sc_tsoff = 0;
+		sc->sc_tsoff = arc4random() & 0xf0000000;
+		sc->sc_ts = tcp_ts_getticks() + sc->sc_tsoff;
 #endif
 	}
 

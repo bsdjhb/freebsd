@@ -1831,6 +1831,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	struct ifnet *ifp;
 	struct rtentry *rt;
 	struct inpcb *inp;
+	struct tcpcb *tp;
 	struct sge_txq *txq;
 	int error, keyid, len, proto_ver;
 	bool using_atid;
@@ -1903,6 +1904,12 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	rt = inp->inp_route.ro_rt;
 	if (rt == NULL || rt->rt_ifp == NULL)
 		return (ENXIO);
+
+	tp = inp->inp_ppcb;
+	if (tp->t_flags & TF_REQ_TSTMP) {
+		if ((tp->ts_offset & 0xfffffff) != 0)
+			return (EINVAL);
+	}
 
 	/* XXX: Gross */
 	ifp = rt->rt_ifp;
@@ -2018,6 +2025,14 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	if (error)
 		goto failed;
 
+	if (tp->t_flags & TF_REQ_TSTMP) {
+		error = sbtls_set_tcb_field(toep, txq, W_TCB_TIMESTAMP_OFFSET,
+		    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
+		    V_TCB_TIMESTAMP_OFFSET(tp->ts_offset >> 28));
+		if (error)
+			goto failed;
+	}
+
 	/*
 	 * Preallocate a work request mbuf to hold the work request
 	 * that programs the transmit key.  The work request isn't
@@ -2049,6 +2064,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	cipher->toep = toep;
 	cipher->txq = txq;
 	cipher->key_wr = key_wr;
+	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
 
 	k_ctx = &tls_ofld->k_ctx;
 	init_sbtls_k_ctx(k_ctx, en, tls);
@@ -2583,7 +2599,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * If timestamps are present, reserve 1 more request for
 	 * setting the echoed timestamp.
 	 */
-	if (sbtls_find_tcp_timestamps(tcp))
+	if (cipher->using_timestamps)
 		tot_len += roundup2(sizeof(struct cpl_set_tcb_field),
 		    EQ_ESIZE);
 
