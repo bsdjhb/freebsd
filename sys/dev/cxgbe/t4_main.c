@@ -3701,9 +3701,6 @@ sbtls_tick(void *arg)
 	sc = arg;
 
 	tstamp = tcp_ts_getticks();
-#ifdef VERBOSE_TRACES
-	CTR2(KTR_CXGBE, "%s: set TP time to %u", __func__, tstamp);
-#endif
 	t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
 	t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
 	
