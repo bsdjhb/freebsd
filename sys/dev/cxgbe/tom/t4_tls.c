@@ -1770,9 +1770,11 @@ sbtls_act_open_rpl(struct adapter *sc, struct toepcb *toep, u_int status,
 	struct inpcb *inp = toep->inp;
 
 	free_atid(sc, toep->tid);
-	if (status == 0)
+	if (status == 0) {
 		toep->tid = GET_TID(cpl);
-	else
+		insert_tid(sc, toep->tid, toep,
+		    toep->inp->inp_vflag & INP_IPV6 ? 2 : 1);
+	} else
 		toep->tid = -1;
 
 	INP_WLOCK(inp);
