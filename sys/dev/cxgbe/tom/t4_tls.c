@@ -2866,7 +2866,8 @@ _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
 static int
 sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
-    u_int nsegs, u_int available, tcp_seq tcp_seqno, u_int pidx)
+    u_int nsegs, u_int available, tcp_seq tcp_seqno, u_int pidx,
+    struct mbuf ***txsd_mpp)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -3238,10 +3239,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	txq->tls_wrs++;
 
 	txsd = &txq->sdesc[pidx];
-	if (m_tls->m_next == NULL)
-		txsd->m = m;
-	else
-		txsd->m = NULL;
+	*txsd_mpp = &txsd->m;
+	txsd->m = NULL;
 	txsd->desc_used = howmany(wr_len, EQ_ESIZE);
 
 	return (ndesc);
@@ -3254,11 +3253,12 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct sge_eq *eq = &txq->eq;
 	void *end, *start;
 	struct tcphdr *tcp;
-	struct mbuf *m_tls;
+	struct mbuf *m_tls, **txsd_mp;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
 	void *tsopt;
 
+	txsd_mp = NULL;
 	totdesc = 0;
 	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
@@ -3326,7 +3326,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		}
 
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
-		    nsegs, available - totdesc, tcp_seqno, pidx);
+		    nsegs, available - totdesc, tcp_seqno, pidx, &txsd_mp);
 		totdesc += ndesc;
 #ifdef VERBOSE_TRACES
 		CTR6(KTR_CXGBE,
@@ -3357,6 +3357,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 */
 		nsegs = 0;
 	}
+	*txsd_mp = m;
 
 	MPASS(totdesc <= available);
 	return (totdesc);
