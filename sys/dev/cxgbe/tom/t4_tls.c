@@ -2760,6 +2760,7 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 	uint64_t ctrl1;
 	int len16, ndesc, pktlen;
 	struct ip *ip, newip;
+	struct tcphdr *tcp, newtcp;
 	caddr_t out;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
@@ -2802,12 +2803,18 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 	newip = *ip;
 	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
 	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+	if (m->m_pkthdr.l3hlen > sizeof(*ip))
+		copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+		    m->m_pkthdr.l3hlen - sizeof(*ip));
 
-	/* XXX: Should we filter out FIN and PSH flags? */
+	/* Clear PUSH and FIN in the TCP header if present. */
+	tcp = (void *)((char *)ip + m->m_pkthdr.l3hlen);
+	newtcp = *tcp;
+	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
 
 	/* Copy rest of packet. */
-	copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out, pktlen -
-	    (m->m_pkthdr.l2hlen + sizeof(*ip)));
+	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, pktlen -
+	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
 	txq->imm_wrs++;
 
 	txq->txpkt_wrs++;
