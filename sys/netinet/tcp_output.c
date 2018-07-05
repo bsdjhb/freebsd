@@ -55,6 +55,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #ifdef KERN_TLS
+#include <sys/ktr.h>
 #include <sys/sockbuf_tls.h>
 #endif
 #include <sys/sysctl.h>
