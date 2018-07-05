@@ -2873,8 +2873,7 @@ _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
 static int
 sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
-    u_int nsegs, u_int available, tcp_seq tcp_seqno, u_int pidx,
-    struct mbuf ***txsd_mpp)
+    u_int nsegs, u_int available, tcp_seq tcp_seqno, u_int pidx)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -2893,7 +2892,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, ndesc, plen, tlen, wr_len;
 	u_int real_tls_hdr_len, tx_max;
-	bool first_wr;
+	bool first_wr, last_wr;
 
 	ndesc = 0;
 	toep = cipher->toep;
@@ -2915,6 +2914,19 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		return (0);
 	if (tlen < plen)
 		plen = tlen;
+
+	/*
+	 * This is the last work request for a given TLS mbuf chain if
+	 * it is either the last mbuf in the chain or if the next mbuf
+	 * only transmits the header or less such that
+	 * sbtls_tcp_payload_length() returns 0 to skip it entirely.
+	 *
+	 * NB: ext_pgs is from the "wrong" mbuf, but all ext_pgs for a
+	 * given connection should have identical TLS header lengths.
+	 */
+	last_wr = m_tls->m_next == NULL ||
+	    (m_tls->m_next->m_len <= ext_pgs->hdr_len &&
+	    sbtls_tcp_payload_length(cipher, m_tls->m_next) == 0);
 
 	/*
 	 * The host stack may ask us to not send part of the start of
@@ -3184,7 +3196,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tx_data->len = htobe32(V_TX_DATA_MSS(mss) | V_TX_LENGTH(tlen));
 	tx_data->rsvd = htobe32(tcp_seqno);
 	tx_data->flags = htobe32(F_TX_BYPASS);
-	if (m_tls->m_next == NULL && tcp->th_flags & TH_PUSH)
+	if (last_wr && tcp->th_flags & TH_PUSH)
 		tx_data->flags |= htobe32(F_TX_PUSH | F_TX_SHOVE);
 
 	/* Populate the TLS header */
@@ -3246,8 +3258,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	txq->tls_wrs++;
 
 	txsd = &txq->sdesc[pidx];
-	*txsd_mpp = &txsd->m;
-	txsd->m = NULL;
+	if (last_wr)
+		txsd->m = m;
+	else
+		txsd->m = NULL;
 	txsd->desc_used = howmany(wr_len, EQ_ESIZE);
 
 	return (ndesc);
@@ -3260,12 +3274,11 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct sge_eq *eq = &txq->eq;
 	void *end, *start;
 	struct tcphdr *tcp;
-	struct mbuf *m_tls, **txsd_mp;
+	struct mbuf *m_tls;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
 	void *tsopt;
 
-	txsd_mp = NULL;
 	totdesc = 0;
 	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
@@ -3333,7 +3346,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		}
 
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
-		    nsegs, available - totdesc, tcp_seqno, pidx, &txsd_mp);
+		    nsegs, available - totdesc, tcp_seqno, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 
@@ -3354,7 +3367,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 */
 		nsegs = 0;
 	}
-	*txsd_mp = m;
 
 	MPASS(totdesc <= available);
 	return (totdesc);
