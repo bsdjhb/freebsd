@@ -2546,22 +2546,6 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	tot_len = 0;
 
 	/*
-	 * See if we have any TCP options requiring a dedicated options-only
-	 * packet.
-	 */
-	if (sbtls_has_tcp_options(tcp)) {
-		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
-		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
-		if (wr_len > SGE_MAX_WR_LEN) {
-			CTR3(KTR_CXGBE,
-			    "%s: tid %d options-only packet too long (len %d)",
-			    __func__, cipher->toep->tid, m->m_len);
-			return (EINVAL);
-		}
-		tot_len += roundup2(wr_len, EQ_ESIZE);
-	}
-
-	/*
 	 * Each of the remaining mbufs in the chain should reference a
 	 * TLS record.
 	 */
@@ -2590,6 +2574,22 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 
 	if (tot_len == 0)
 		return (EAGAIN);
+
+	/*
+	 * See if we have any TCP options requiring a dedicated options-only
+	 * packet.
+	 */
+	if (sbtls_has_tcp_options(tcp)) {
+		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
+		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
+		if (wr_len > SGE_MAX_WR_LEN) {
+			CTR3(KTR_CXGBE,
+			    "%s: tid %d options-only packet too long (len %d)",
+			    __func__, cipher->toep->tid, m->m_len);
+			return (EINVAL);
+		}
+		tot_len += roundup2(wr_len, EQ_ESIZE);
+	}
 
 	/*
 	 * Include room for up to 4 CPL_SET_TCB_FIELD requests before
