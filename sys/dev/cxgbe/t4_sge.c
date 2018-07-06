@@ -2308,11 +2308,8 @@ restart:
 
 		set_mbuf_cflags(m0, cflags);
 		rc = cipher->parse_pkt(cipher, m0, &nsegs, &len16);
-		if (rc != 0) {
-			if (rc == EAGAIN)
-				rc = 0;
+		if (rc != 0)
 			goto fail;
-		}
 		set_mbuf_nsegs(m0, nsegs);
 		set_mbuf_len16(m0, len16);
 		return (0);
