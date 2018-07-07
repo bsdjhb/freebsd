@@ -1189,8 +1189,11 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 		MPASS(td2 != NULL);
 		TAILQ_REMOVE(&p->p_xthreads, td2, td_trapq);
 		td2->td_dbgflags &= ~TDB_XSIG;
-		td2->td_xsig = data;
 		p->p_xsig = data;
+		if (td2->td_dbgflags & TDB_XSIG_QUEUED)
+			ptrace_dequeue_signal(td2, data);
+		else
+			td2->td_xsig = data;
 		MPASS(req != PT_DETACH || TAILQ_EMPTY(&p->p_xthreads));
 
 		/*
