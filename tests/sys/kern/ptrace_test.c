@@ -3871,6 +3871,173 @@ ATF_TC_BODY(ptrace__spurious_EINTR_from_discarded_signal, tc)
 	ATF_REQUIRE(errno == ECHILD);
 }
 
+/*
+ * Check that detach doesn't discard a queued signal.
+ */
+ATF_TC_WITHOUT_HEAD(ptrace__detach_queued_signal);
+ATF_TC_BODY(ptrace__detach_queued_signal, tc)
+{
+	struct ptrace_lwpinfo pl;
+	pid_t fpid, wpid;
+	int events, status;
+
+	ATF_REQUIRE((fpid = fork()) != -1);
+	if (fpid == 0) {
+		trace_me();
+		CHILD_REQUIRE(usleep(1000 * 1000) == 0);
+		_exit(1);
+	}
+
+	/* The first wait() should report the stop from SIGSTOP. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGSTOP);
+
+	/* Continue the child ignoring the SIGSTOP. */
+	ATF_REQUIRE(ptrace(PT_TO_SCE, fpid, (caddr_t)1, 0) == 0);
+
+	/* Wait until we have entered SYS_nanosleep. */
+	for (;;) {
+		wpid = waitpid(fpid, &status, 0);
+		ATF_REQUIRE(wpid == fpid);
+		ATF_REQUIRE(WIFSTOPPED(status));
+		ATF_REQUIRE(WSTOPSIG(status) == SIGTRAP);
+
+		ATF_REQUIRE(ptrace(PT_LWPINFO, wpid, (caddr_t)&pl,
+		    sizeof(pl)) != -1);
+
+		if ((pl.pl_flags & PL_FLAG_SCE) != 0 &&
+		    pl.pl_syscall_code == SYS_nanosleep)
+			break;
+
+		ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+	}
+
+	/* Disable system call events. */
+	ATF_REQUIRE(ptrace(PT_GET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+	events &= ~PTRACE_SCE;
+	ATF_REQUIRE(ptrace(PT_SET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	wait_for_sleep(fpid);
+
+	/* Send a signal. */
+	kill(fpid, SIGTERM);
+
+	/* Should report an event for the signal. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGTERM);
+
+	/* Detach. */
+	ATF_REQUIRE(ptrace(PT_DETACH, fpid, NULL, 0) == 0);
+
+	/*
+	 * The last event should be for the child process's exit due
+	 * to the signal.
+	 */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(WIFSIGNALED(status));
+	ATF_REQUIRE(WTERMSIG(status) == SIGTERM);
+
+	wpid = wait(&status);
+	ATF_REQUIRE(wpid == -1);
+	ATF_REQUIRE(errno == ECHILD);
+}
+
+/*
+ * Check that multiple queued signals are reported correctly.
+ */
+ATF_TC_WITHOUT_HEAD(ptrace__multiple_queued_signals);
+ATF_TC_BODY(ptrace__multiple_queued_signals, tc)
+{
+	struct ptrace_lwpinfo pl;
+	pid_t fpid, wpid;
+	int events, status;
+
+	ATF_REQUIRE((fpid = fork()) != -1);
+	if (fpid == 0) {
+		trace_me();
+		CHILD_REQUIRE(usleep(1000 * 1000) == 0);
+		_exit(1);
+	}
+
+	/* The first wait() should report the stop from SIGSTOP. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGSTOP);
+
+	/* Continue the child ignoring the SIGSTOP. */
+	ATF_REQUIRE(ptrace(PT_TO_SCE, fpid, (caddr_t)1, 0) == 0);
+
+	/* Wait until we have entered SYS_nanosleep. */
+	for (;;) {
+		wpid = waitpid(fpid, &status, 0);
+		ATF_REQUIRE(wpid == fpid);
+		ATF_REQUIRE(WIFSTOPPED(status));
+		ATF_REQUIRE(WSTOPSIG(status) == SIGTRAP);
+
+		ATF_REQUIRE(ptrace(PT_LWPINFO, wpid, (caddr_t)&pl,
+		    sizeof(pl)) != -1);
+
+		if ((pl.pl_flags & PL_FLAG_SCE) != 0 &&
+		    pl.pl_syscall_code == SYS_nanosleep)
+			break;
+
+		ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+	}
+
+	/* Disable system call events. */
+	ATF_REQUIRE(ptrace(PT_GET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+	events &= ~PTRACE_SCE;
+	ATF_REQUIRE(ptrace(PT_SET_EVENT_MASK, fpid, (caddr_t)&events,
+	    sizeof(events)) == 0);
+
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	wait_for_sleep(fpid);
+
+	/* Send a signal. */
+	kill(fpid, SIGTERM);
+
+	/* Send a second signal. */
+	kill(fpid, SIGQUIT);
+
+	/* Should report an event for the first signal. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGTERM);
+
+	/* Discard the signal. */
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	/* Should report an event for the second signal. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(wpid == fpid);
+	ATF_REQUIRE(WIFSTOPPED(status));
+	ATF_REQUIRE(WSTOPSIG(status) == SIGQUIT);
+
+	/* Discard the signal. */
+	ATF_REQUIRE(ptrace(PT_CONTINUE, fpid, (caddr_t)1, 0) == 0);
+
+	/* The last event should be for the child process's exit. */
+	wpid = waitpid(fpid, &status, 0);
+	ATF_REQUIRE(WIFEXITED(status));
+	ATF_REQUIRE(WEXITSTATUS(status) == 1);
+
+	wpid = wait(&status);
+	ATF_REQUIRE(wpid == -1);
+	ATF_REQUIRE(errno == ECHILD);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -3931,6 +4098,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, ptrace__PT_CONTINUE_different_thread);
 #endif
 	ATF_TP_ADD_TC(tp, ptrace__spurious_EINTR_from_discarded_signal);
+	ATF_TP_ADD_TC(tp, ptrace__detach_queued_signal);
+	ATF_TP_ADD_TC(tp, ptrace__multiple_queued_signals);
 
 	return (atf_no_error());
 }
