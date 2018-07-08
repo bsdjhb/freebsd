@@ -1159,6 +1159,8 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 					TAILQ_REMOVE(&p->p_xthreads, td3,
 					    td_trapq);
 				td3->td_dbgflags &= ~(TDB_XSIG | TDB_SUSPEND);
+				if ((td3->td_dbgflags & TDB_XSIG_QUEUED) != 0)
+					ptrace_dequeue_signal(td3, td3->td_xsig);
 			}
 
 			if ((p->p_flag2 & P2_PTRACE_FSTP) != 0) {
