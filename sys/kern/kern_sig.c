@@ -2764,7 +2764,6 @@ ptrace_dequeue_signal(struct thread *td, int sig)
 			wakeup_swapper = sleepq_abort(td, intrval);
 		thread_unlock(td);
 		sigqueue_set_ptrace(sigqueue, sig);
-		break;
 	} else {
 		/* Discard the signal. */
 		sigqueue_delete(sigqueue, sig);
