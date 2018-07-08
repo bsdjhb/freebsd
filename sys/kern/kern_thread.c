@@ -1124,7 +1124,8 @@ thread_unsuspend(struct proc *p)
 	if (!P_SHOULDSTOP(p)) {
                 FOREACH_THREAD_IN_PROC(p, td) {
 			thread_lock(td);
-			if (TD_IS_SUSPENDED(td)) {
+			if (TD_IS_SUSPENDED(td) &&
+			    ((td->td_dbflags & TDB_XSIG_QUEUED) == 0)) {
 				wakeup_swapper |= thread_unsuspend_one(td, p,
 				    true);
 			}
