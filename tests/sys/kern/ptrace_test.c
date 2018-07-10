@@ -3935,7 +3935,7 @@ ATF_TC_BODY(ptrace__detach_queued_signal, tc)
 	ATF_REQUIRE(WSTOPSIG(status) == SIGTERM);
 
 	/* Detach. */
-	ATF_REQUIRE(ptrace(PT_DETACH, fpid, NULL, 0) == 0);
+	ATF_REQUIRE(ptrace(PT_DETACH, fpid, NULL, SIGTERM) == 0);
 
 	/*
 	 * The last event should be for the child process's exit due
