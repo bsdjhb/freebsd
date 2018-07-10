@@ -2750,8 +2750,8 @@ copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
 }
 
 static int
-sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
-    u_int available, u_int pidx)
+sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+    void *dst, struct mbuf *m, u_int available, u_int pidx)
 {
 	struct tx_sdesc *txsd;
 	struct fw_eth_tx_pkt_wr *wr;
@@ -2818,6 +2818,8 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 	txq->imm_wrs++;
 
 	txq->txpkt_wrs++;
+
+	atomic_add_long(&cipher->toep->vi->pi->kern_tls_options, 1);
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = NULL;
@@ -3114,6 +3116,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		sec_pdu->ivgen_hdrlen = htobe32(
 		    toep->tls.scmd0_short.ivgen_hdrlen |
 		    V_SCMD_HDR_LEN(ext_pgs->hdr_len));
+
+		atomic_add_long(&toep->vi->pi->kern_tls_short, 1);
 	} else {
 		/*
 		 * AAD is TLS header.  IV is after AAD.  The cipher region
@@ -3143,6 +3147,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 		sec_pdu->seqno_numivs = toep->tls.scmd0.seqno_numivs;
 		sec_pdu->ivgen_hdrlen = toep->tls.scmd0.ivgen_hdrlen;
+
+		if (mtod(m_tls, vm_offset_t) == 0)
+			atomic_add_long(&toep->vi->pi->kern_tls_full, 1);
+		else
+			atomic_add_long(&toep->vi->pi->kern_tls_partial, 1);
 	}
 	sec_pdu->op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
@@ -3257,6 +3266,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	MPASS(ndesc <= available);
 	txq->tls_wrs++;
 
+	atomic_add_long(&toep->vi->pi->kern_tls_records, 1);
+	atomic_add_long(&toep->vi->pi->kern_tls_octets, tlen);
+
 	txsd = &txq->sdesc[pidx];
 	if (last_wr)
 		txsd->m = m;
@@ -3287,7 +3299,8 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	pidx = eq->pidx;
 
 	if (sbtls_has_tcp_options(tcp)) {
-		ndesc = sbtls_write_tcp_options(txq, dst, m, available, pidx);
+		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
+		    pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 #ifdef VERBOSE_TRACES
