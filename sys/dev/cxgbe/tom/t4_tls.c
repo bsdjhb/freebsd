@@ -3267,7 +3267,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	txq->tls_wrs++;
 
 	atomic_add_long(&toep->vi->pi->kern_tls_records, 1);
-	atomic_add_long(&toep->vi->pi->kern_tls_octets, tlen);
+	atomic_add_long(&toep->vi->pi->kern_tls_octets, tlen -
+	    mtod(m_tls, vm_offset_t));
 	if (mtod(m_tls, vm_offset_t) != 0)
 		atomic_add_long(&toep->vi->pi->kern_tls_waste,
 		    mtod(m_tls, vm_offset_t));
