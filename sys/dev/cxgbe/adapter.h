@@ -302,12 +302,13 @@ struct port_info {
 	u_long	tx_tls_octets;
 	u_long	rx_tls_records;
 	u_long	rx_tls_octets;
-	u_long	kern_tls_records;
-	u_long	kern_tls_octets;
 	u_long	kern_tls_options;
+	u_long	kern_tls_records;
 	u_long	kern_tls_short;
 	u_long	kern_tls_partial;
 	u_long	kern_tls_full;
+	u_long	kern_tls_octets;
+	u_long	kern_tls_waste;
 
 	struct callout tick;
 };

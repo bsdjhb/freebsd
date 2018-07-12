@@ -5946,12 +5946,6 @@ cxgbe_sysctls(struct port_info *pi)
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_records",
 	    CTLFLAG_RD, &pi->kern_tls_records,
 	    "# of NIC TLS records transmitted");
-	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_octets",
-	    CTLFLAG_RD, &pi->kern_tls_octets,
-	    "# of payload octets in transmitted NIC TLS records");
-	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_options",
-	    CTLFLAG_RD, &pi->kern_tls_options,
-	    "# of NIC TLS options-only packets transmitted");
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_short",
 	    CTLFLAG_RD, &pi->kern_tls_short,
 	    "# of short NIC TLS records transmitted");
@@ -5961,6 +5955,15 @@ cxgbe_sysctls(struct port_info *pi)
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_full",
 	    CTLFLAG_RD, &pi->kern_tls_full,
 	    "# of full NIC TLS records transmitted");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_octets",
+	    CTLFLAG_RD, &pi->kern_tls_octets,
+	    "# of payload octets in transmitted NIC TLS records");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_waste",
+	    CTLFLAG_RD, &pi->kern_tls_waste,
+	    "# of octets DMAd but not transmitted in NIC TLS records");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "kern_tls_options",
+	    CTLFLAG_RD, &pi->kern_tls_options,
+	    "# of NIC TLS options-only packets transmitted");
 }
 
 static int
