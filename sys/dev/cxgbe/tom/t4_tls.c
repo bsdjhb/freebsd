@@ -2819,7 +2819,7 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	txq->txpkt_wrs++;
 
-	atomic_add_long(&cipher->toep->vi->pi->kern_tls_options, 1);
+	counter_u64_add(cipher->toep->vi->pi->kern_tls_options, 1);
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = NULL;
@@ -3117,7 +3117,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    toep->tls.scmd0_short.ivgen_hdrlen |
 		    V_SCMD_HDR_LEN(ext_pgs->hdr_len));
 
-		atomic_add_long(&toep->vi->pi->kern_tls_short, 1);
+		counter_u64_add(toep->vi->pi->kern_tls_short, 1);
 	} else {
 		/*
 		 * AAD is TLS header.  IV is after AAD.  The cipher region
@@ -3149,9 +3149,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		sec_pdu->ivgen_hdrlen = toep->tls.scmd0.ivgen_hdrlen;
 
 		if (mtod(m_tls, vm_offset_t) == 0)
-			atomic_add_long(&toep->vi->pi->kern_tls_full, 1);
+			counter_u64_add(toep->vi->pi->kern_tls_full, 1);
 		else
-			atomic_add_long(&toep->vi->pi->kern_tls_partial, 1);
+			counter_u64_add(toep->vi->pi->kern_tls_partial, 1);
 	}
 	sec_pdu->op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
@@ -3266,11 +3266,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	MPASS(ndesc <= available);
 	txq->tls_wrs++;
 
-	atomic_add_long(&toep->vi->pi->kern_tls_records, 1);
-	atomic_add_long(&toep->vi->pi->kern_tls_octets, tlen -
+	counter_u64_add(toep->vi->pi->kern_tls_records, 1);
+	counter_u64_add(toep->vi->pi->kern_tls_octets, tlen -
 	    mtod(m_tls, vm_offset_t));
 	if (mtod(m_tls, vm_offset_t) != 0)
-		atomic_add_long(&toep->vi->pi->kern_tls_waste,
+		counter_u64_add(toep->vi->pi->kern_tls_waste,
 		    mtod(m_tls, vm_offset_t));
 
 	txsd = &txq->sdesc[pidx];

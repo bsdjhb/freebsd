@@ -35,6 +35,7 @@
 
 #include <sys/kernel.h>
 #include <sys/bus.h>
+#include <sys/counter.h>
 #include <sys/rman.h>
 #include <sys/types.h>
 #include <sys/lock.h>
@@ -302,13 +303,13 @@ struct port_info {
 	u_long	tx_tls_octets;
 	u_long	rx_tls_records;
 	u_long	rx_tls_octets;
-	u_long	kern_tls_options;
-	u_long	kern_tls_records;
-	u_long	kern_tls_short;
-	u_long	kern_tls_partial;
-	u_long	kern_tls_full;
-	u_long	kern_tls_octets;
-	u_long	kern_tls_waste;
+	counter_u64_t kern_tls_records;
+	counter_u64_t kern_tls_short;
+	counter_u64_t kern_tls_partial;
+	counter_u64_t kern_tls_full;
+	counter_u64_t kern_tls_octets;
+	counter_u64_t kern_tls_waste;
+	counter_u64_t kern_tls_options;
 
 	struct callout tick;
 };
