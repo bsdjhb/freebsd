@@ -211,6 +211,7 @@ struct socket {
 
 #define	SOCK_MTX(so)		&(so)->so_lock
 #define	SOCK_LOCK(so)		mtx_lock(&(so)->so_lock)
+#define	SOCK_TRYLOCK(so)	mtx_trylock(&(so)->so_lock)
 #define	SOCK_OWNED(so)		mtx_owned(&(so)->so_lock)
 #define	SOCK_UNLOCK(so)		mtx_unlock(&(so)->so_lock)
 #define	SOCK_LOCK_ASSERT(so)	mtx_assert(&(so)->so_lock, MA_OWNED)

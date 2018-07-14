@@ -1193,12 +1193,21 @@ mb_free_ext(struct mbuf *m)
 		case EXT_PGS: {
 #ifdef KERN_TLS
 			struct mbuf_ext_pgs *pgs;
+			struct socket *so;
 
 			mref->m_ext.ext_free(mref);
 			pgs = (struct mbuf_ext_pgs *)mref->m_ext.ext_buf;
-			if (pgs->so != NULL)
-				sbtls_enqueue_to_free(pgs);
-			else
+			so = pgs->so;
+			if (so != NULL) {
+				CURVNET_SET(so->so_vnet);
+				if (!SOCK_OWNED(so) && SOCK_TRYLOCK(so)) {
+					sorele(so);
+					uma_zfree(zone_extpgs, pgs);
+				} else {
+					sbtls_enqueue_to_free(pgs);
+				}
+				CURVNET_RESTORE();
+			} else
 #endif
 				uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);
