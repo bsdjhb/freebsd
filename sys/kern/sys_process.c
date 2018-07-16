@@ -1191,6 +1191,7 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 		td2->td_dbgflags &= ~TDB_XSIG;
 		td2->td_xsig = data;
 		p->p_xsig = data;
+		MPASS(req != PT_DETACH || TAILQ_EMPTY(&p->p_xthreads));
 
 		/*
 		 * P_WKILLED is insurance that a PT_KILL/SIGKILL
