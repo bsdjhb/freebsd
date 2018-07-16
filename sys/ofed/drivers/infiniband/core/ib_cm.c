@@ -1717,7 +1717,7 @@ static void cm_format_req_event(struct cm_work *work,
 	param->retry_count = cm_req_get_retry_count(req_msg);
 	param->rnr_retry_count = cm_req_get_rnr_retry_count(req_msg);
 	param->srq = cm_req_get_srq(req_msg);
-	param->ppath_sgid_index = cm_id_priv->av.ah_attr.grh.sgid_index;
+	param->ppath_sgid_attr = cm_id_priv->av.ah_attr.grh.sgid_attr;
 	work->cm_event.private_data = &req_msg->private_data;
 }
 
@@ -3509,7 +3509,7 @@ static void cm_format_sidr_req_event(struct cm_work *work,
 	param->service_id = sidr_req_msg->service_id;
 	param->bth_pkey = cm_get_bth_pkey(work);
 	param->port = work->port->port_num;
-	param->sgid_index = rx_cm_id->av.ah_attr.grh.sgid_index;
+	param->sgid_attr = rx_cm_id->av.ah_attr.grh.sgid_attr;
 	work->cm_event.private_data = &sidr_req_msg->private_data;
 }
 
