@@ -607,6 +607,7 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	PGRP_UNLOCK(p1->p_pgrp);
 	LIST_INIT(&p2->p_children);
 	LIST_INIT(&p2->p_orphans);
+	TAILQ_INIT(&p2->p_xthreads);
 
 	callout_init_mtx(&p2->p_itcallout, &p2->p_mtx, 0);
 
