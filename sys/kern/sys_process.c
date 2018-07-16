@@ -1127,7 +1127,6 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 			 * as an orphan of the debugger.
 			 */
 			p->p_flag &= ~(P_TRACED | P_WAITED);
-			TAILQ_INIT(&p->p_xthreads);
 			if (p->p_oppid != p->p_pptr->p_pid) {
 				PROC_LOCK(p->p_pptr);
 				sigqueue_take(p->p_ksi);
@@ -1149,9 +1148,17 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 				if ((td3->td_dbgflags & TDB_FSTP) != 0) {
 					sigqueue_delete(&td3->td_sigqueue,
 					    SIGSTOP);
+					td3->td_dbgflags &= ~TDB_FSTP;
 				}
-				td3->td_dbgflags &= ~(TDB_XSIG | TDB_FSTP |
-				    TDB_SUSPEND);
+				if (td3 == TAILQ_FIRST(&p->p_xthreads)) {
+					/* This thread is handled below. */
+					continue;
+				}
+				if ((td3->td_dbgflags & (TDB_XSIG |
+				    TDB_SUSPEND)) == TDB_XSIG)
+					TAILQ_REMOVE(&p->p_xthreads, td3,
+					    td_trapq);
+				td3->td_dbgflags &= ~(TDB_XSIG | TDB_SUSPEND);
 			}
 
 			if ((p->p_flag2 & P2_PTRACE_FSTP) != 0) {
