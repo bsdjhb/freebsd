@@ -1692,9 +1692,8 @@ static bool cma_match_net_dev(const struct rdma_cm_id *id,
 				return true;
 			return false;
 		}
-		/* This request is an AF_IB request or a RoCE request */
-		return (addr->src_addr.ss_family == AF_IB ||
-		    rdma_protocol_roce(id->device, port_num));
+		/* This request is an AF_IB request */
+		return (addr->src_addr.ss_family == AF_IB);
 	}
 
 	return !addr->dev_addr.bound_dev_if ||
