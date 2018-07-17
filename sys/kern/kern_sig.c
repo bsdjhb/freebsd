@@ -2667,6 +2667,7 @@ ptrace_queue_signal(struct thread *td, int sig, int *wakeup_swapper)
 
 	p = td->td_proc;
 	PROC_LOCK_ASSERT(p, MA_OWNED);
+	PROC_SLOCK_ASSERT(p, MA_OWNED);
 	THREAD_LOCK_ASSERT(td, MA_OWNED);
 	MPASS(p->p_flag & P_TRACED);
 
@@ -2716,12 +2717,22 @@ ptrace_queue_signal(struct thread *td, int sig, int *wakeup_swapper)
 	    (p->p_flag2 & P2_PTRACE_FSTP) == 0) {
 		p->p_xsig = sig;
 		p->p_flag |= P_STOPPED_SIG | P_STOPPED_TRACE;
+		thread_unlock(td);
 		*wakeup_swapper = sig_suspend_threads(td, p, 1);
 		KASSERT(p->p_numthreads == p->p_suspcount,
 		    ("not all threads suspended"));
-		thread_unlock(td);
 		thread_stopped(p);
 		thread_lock(td);
+	} else {
+		td->td_flags |= TDF_ASTPENDING | TDF_NEEDSUSPCHK;
+		if (TD_IS_SLEEPING(td)) {
+			if (td->td_flags & TDF_SBDRY)
+				panic(
+			    "ptrace_queue_signal: receiving thread %p has SBDRY",
+				    td);
+			if (!TD_IS_SUSPENDED(td))
+				thread_suspend_one(td);
+		}
 	}
 	return (true);
 }
