@@ -916,7 +916,7 @@ thread_suspend_check_needed(void)
 	p = td->td_proc;
 	PROC_LOCK_ASSERT(p, MA_OWNED);
 	return (P_SHOULDSTOP(p) || ((p->p_flag & P_TRACED) != 0 &&
-	    (td->td_dbgflags & TDB_SUSPEND) != 0));
+	    (td->td_dbgflags & (TDB_SUSPEND | TDB_XSIG_QUEUED)) != 0));
 }
 
 /*
