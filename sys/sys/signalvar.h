@@ -374,6 +374,7 @@ void	pgsigio(struct sigio **sigiop, int sig, int checkctty);
 void	pgsignal(struct pgrp *pgrp, int sig, int checkctty, ksiginfo_t *ksi);
 int	postsig(int sig);
 void	kern_psignal(struct proc *p, int sig);
+void	ptrace_dequeue_signal(struct thread *td, int sig);
 int	ptracestop(struct thread *td, int sig, ksiginfo_t *si);
 void	sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *retmask);
 struct sigacts *sigacts_alloc(void);

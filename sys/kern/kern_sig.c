@@ -105,6 +105,8 @@ static int	coredump(struct thread *);
 static int	killpg1(struct thread *td, int sig, int pgid, int all,
 		    ksiginfo_t *ksi);
 static int	issignal(struct thread *td);
+static bool	ptrace_queue_signal(struct thread *td, int sig,
+		    int *wakeup_swapper);
 static int	sigprop(int sig);
 static void	tdsigwakeup(struct thread *, int, sig_t, int);
 static int	sig_suspend_threads(struct thread *, struct proc *, int);
@@ -436,12 +438,10 @@ out_set_bit:
 static void
 sigqueue_set_ptrace(sigqueue_t *sq, int signo)
 {
-	struct proc *p = sq->sq_proc;
 	struct ksiginfo *ksi;
-	int ret = 0;
 
 	KASSERT(sq->sq_flags & SQ_INIT, ("sigqueue not inited"));
-	KASSERT(SIGISMEMBER(&sq->sq_signals, signo), ("signal not queued"));
+	KASSERT(SIGISMEMBER(sq->sq_signals, signo), ("signal not queued"));
 
 	SIGADDSET(sq->sq_ptrace, signo);
 	TAILQ_FOREACH(ksi, &sq->sq_list, ksi_link) {
@@ -2329,7 +2329,7 @@ tdsendsignal(struct proc *p, struct thread *td, int sig, ksiginfo_t *ksi)
 		PROC_SLOCK(p);
 		thread_lock(td);
 		if (TD_ON_SLEEPQ(td) && (td->td_flags & TDF_SINTR) &&
-		    !ptrace_queue_signal(td, sig, &ksi, &wakeup_swapper))
+		    !ptrace_queue_signal(td, sig, &wakeup_swapper))
 			wakeup_swapper = sleepq_abort(td, intrval);
 		thread_unlock(td);
 		PROC_SUNLOCK(p);
@@ -2461,7 +2461,7 @@ tdsigwakeup(struct thread *td, int sig, sig_t action, int intrval)
 		 * this avoids a disruptive sleepq_abort() which can
 		 * trigger spurious EINTR errors.
 		 */
-		if (p->p_flags & P_TRACED &&
+		if (p->p_flag & P_TRACED &&
 		    ptrace_queue_signal(td, sig, &wakeup_swapper))
 			goto out;
 
@@ -2668,7 +2668,7 @@ ptrace_queue_signal(struct thread *td, int sig, int *wakeup_swapper)
 	p = td->td_proc;
 	PROC_LOCK_ASSERT(p, MA_OWNED);
 	THREAD_LOCK_ASSERT(td, MA_OWNED);
-	MPAS(p->p_flag & P_TRACED);
+	MPASS(p->p_flag & P_TRACED);
 
 	/*
 	 * Only queue async signals for traced processes.  If this process
@@ -2688,7 +2688,7 @@ ptrace_queue_signal(struct thread *td, int sig, int *wakeup_swapper)
 		 * A thread in ptracestop() would not have TDF_SINTR set,
 		 * so we shouldn't be here with only TDB_XSIG set.
 		 */
-		MPASS(tdb->tdb_flags & TDB_XSIG_QUEUED);
+		MPASS(td->td_dbgflags & TDB_XSIG_QUEUED);
 		return (true);
 	}
 
@@ -2696,9 +2696,9 @@ ptrace_queue_signal(struct thread *td, int sig, int *wakeup_swapper)
 	 * Place the receiving thread on the tracing event queue.
 	 */
 	td->td_xsig = sig;
-	td->td_dbflags |= TDB_XSIG | TDB_XSIG_QUEUED;
+	td->td_dbgflags |= TDB_XSIG | TDB_XSIG_QUEUED;
 	CTR4(KTR_PTRACE, "ptrace_queue_signal: tid %d (pid %d) flags %#x sig %d",
-	    td->td_tid, p->p_pid, td->td_dbflags, sig);
+	    td->td_tid, p->p_pid, td->td_dbgflags, sig);
 
 	if (td->td_dbgflags & TDB_FSTP) {
 		TAILQ_INSERT_HEAD(&p->p_xthreads, td, td_trapq);
@@ -2746,7 +2746,7 @@ ptrace_dequeue_signal(struct thread *td, int sig)
 
 	td->td_dbgflags &= ~TDB_XSIG_QUEUED;
 	wakeup_swapper = 0;
-	if (SIGISMEMBER(&td->td_sigqueue->sq_signals, sig))
+	if (SIGISMEMBER(td->td_sigqueue.sq_signals, sig))
 		sigqueue = &td->td_sigqueue;
 	else
 		sigqueue = &p->p_sigqueue;
@@ -2755,7 +2755,7 @@ ptrace_dequeue_signal(struct thread *td, int sig)
 		 * Awaken the thread now that the
 		 * debugger has passed the signal.
 		 */
-		if (SIGISMEMBER(p->p_sigacts->ps_sigintr, data))
+		if (SIGISMEMBER(p->p_sigacts->ps_sigintr, sig))
 			intrval = EINTR;
 		else
 			intrval = ERESTART;
@@ -2774,8 +2774,7 @@ ptrace_dequeue_signal(struct thread *td, int sig)
 		ksiginfo_init(&ksi);
 		ksi.ksi_signo = sig;
 		ksi.ksi_flags |= KSI_PTRACE;
-		prop = sigprop(sig);
-		td2 = sigtd(p, sig, prop);
+		td2 = sigtd(p, sig, sigprop(sig));
 		tdsendsignal(p, td2, sig, &ksi);
 	}
 	if (wakeup_swapper)
