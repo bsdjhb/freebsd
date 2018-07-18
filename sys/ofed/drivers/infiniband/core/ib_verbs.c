@@ -2438,7 +2438,6 @@ static void __ib_drain_sq(struct ib_qp *qp)
 	struct ib_cq *cq = qp->send_cq;
 	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	struct ib_drain_cqe sdrain;
-	const struct ib_send_wr *bad_swr;
 	struct ib_rdma_wr swr = {
 		.wr = {
 			.opcode	= IB_WR_RDMA_WRITE,
@@ -2456,7 +2455,7 @@ static void __ib_drain_sq(struct ib_qp *qp)
 	sdrain.cqe.done = ib_drain_qp_done;
 	init_completion(&sdrain.done);
 
-	ret = ib_post_send(qp, &swr.wr, &bad_swr);
+	ret = ib_post_send(qp, &swr.wr, NULL);
 	if (ret) {
 		WARN_ONCE(ret, "failed to drain send queue: %d\n", ret);
 		return;
@@ -2478,7 +2477,6 @@ static void __ib_drain_rq(struct ib_qp *qp)
 	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	struct ib_drain_cqe rdrain;
 	struct ib_recv_wr rwr = {};
-	const struct ib_recv_wr *bad_rwr;
 	int ret;
 
 	ret = ib_modify_qp(qp, &attr, IB_QP_STATE);
@@ -2491,7 +2489,7 @@ static void __ib_drain_rq(struct ib_qp *qp)
 	rdrain.cqe.done = ib_drain_qp_done;
 	init_completion(&rdrain.done);
 
-	ret = ib_post_recv(qp, &rwr, &bad_rwr);
+	ret = ib_post_recv(qp, &rwr, NULL);
 	if (ret) {
 		WARN_ONCE(ret, "failed to drain recv queue: %d\n", ret);
 		return;
