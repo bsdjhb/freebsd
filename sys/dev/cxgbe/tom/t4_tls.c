@@ -2952,7 +2952,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
-	u_int imm_len, mss, ndesc, offset, plen, tlen, wr_len;
+	u_int imm_len, mss, ndesc, offset, plen, tlen, twr_len, wr_len;
 	u_int real_tls_hdr_len, tx_max, fields;
 	bool first_wr, last_wr;
 	char scratch_buffer[roundup2(LEN__SET_TCB_FIELD_ULP, 16)];
@@ -3122,67 +3122,78 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		cipher->prev_win = ntohs(tcp->th_win);
 	}
 
-	/*
-	 * If any field updates were required, populate the
-	 * FW_ULTPX_WR work request header and update 'wr' to point to
-	 * the location of the FW_ULTPX_WR header for the TLS work
-	 * request.
-	 */
-	if (fields != 0) {
-		wr_len = sizeof(*wr) +
-		    fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
-		wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
-		    V_FW_WR_LEN16(wr_len / 16));
-		wr->cookie = 0;
-		ndesc = howmany(wr_len, EQ_ESIZE);
-		MPASS(ndesc <= available);
-
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = ndesc;
-		IDXINCR(pidx, ndesc, eq->sidx);
-
-		/*
-		 * NB: This does not use txq_advance() since the WR
-		 * might have wrapped around the end of the ring.
-		 */
-		dst = (void *)&eq->desc[pidx];
-	}
-
 	/* Recalculate 'nsegs' if cached value is not available. */
 	if (nsegs == 0)
 		nsegs = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len +
 		    offset, plen - (ext_pgs->hdr_len + offset));
 
-	/* Calculate the size of the work request. */
-	wr_len = sbtls_base_wr_size(cipher->toep);
+	/* Calculate the size of the TLS work request. */
+	twr_len = sbtls_base_wr_size(cipher->toep);
 
 	imm_len = 0;
 	if (offset == 0)
 		imm_len += ext_pgs->hdr_len;
 	if (plen == tlen)
 		imm_len += CIPHER_BLOCK_SIZE;
-	wr_len += roundup2(imm_len, 16);
-	wr_len += sbtls_sgl_size(nsegs);
+	twr_len += roundup2(imm_len, 16);
+	twr_len += sbtls_sgl_size(nsegs);
+
+	/*
+	 * If any field updates were required, determine if they can
+	 * be included in the TLS work request.  If not, use the
+	 * FW_ULPTX_WR work request header at 'wr' as a dedicated work
+	 * request for the field updates and start a new work request
+	 * for the TLS work request afterward.
+	 */
+	if (fields != 0) {
+		wr_len = fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+		if (twr_len + wr_len <= SGE_MAX_WR_LEN &&
+		    cipher->sc->tlst.combo_wrs) {
+			wr_len += twr_len;
+			txpkt = (void *)field_req;
+		} else {
+			wr_len += sizeof(*wr);
+			wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
+			wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
+			    V_FW_WR_LEN16(wr_len / 16));
+			wr->cookie = 0;
+			ndesc = howmany(wr_len, EQ_ESIZE);
+			MPASS(ndesc <= available);
+
+			txq->raw_wrs++;
+			txsd = &txq->sdesc[pidx];
+			txsd->m = NULL;
+			txsd->desc_used = ndesc;
+			IDXINCR(pidx, ndesc, eq->sidx);
+
+			/*
+			 * NB: This does not use txq_advance() since the WR
+			 * might have wrapped around the end of the ring.
+			 */
+			wr_len = twr_len;
+			wr = (void *)&eq->desc[pidx];
+			txpkt = txq_advance(txq, wr, sizeof(*wr));
+		}
+	} else {
+		wr_len = twr_len;
+		txpkt = (void *)field_req;
+	}
+
 	wr_len = roundup2(wr_len, 16);
 	MPASS(ndesc + howmany(wr_len, EQ_ESIZE) <= available);
 
 	/* FW_ULPTX_WR */
-	wr = dst;
 	wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
 	wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
 	    V_FW_WR_LEN16(wr_len / 16));
 	wr->cookie = 0;
 
 	/* ULP_TXPKT */
-	txpkt = txq_advance(txq, wr, sizeof(*wr));
 	txpkt->cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
 	    V_ULP_TXPKT_DATAMODIFY(0) |
 	    V_ULP_TXPKT_CHANNELID(toep->vi->pi->port_id) | V_ULP_TXPKT_DEST(0) |
 	    V_ULP_TXPKT_FID(txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
-	txpkt->len = htobe32((wr_len - sizeof(*wr)) / 16);
+	txpkt->len = htobe32(howmany(twr_len - sizeof(*wr), 16));
 
 	/* ULPTX_IDATA sub-command */
 	idata = txq_advance(txq, txpkt, sizeof(*txpkt));
