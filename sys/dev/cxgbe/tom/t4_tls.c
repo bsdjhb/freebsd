@@ -2921,45 +2921,6 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	return (ndesc);
 }
 
-static int
-sbtls_write_timestamps(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, uint32_t *tsopt, u_int available, u_int pidx)
-{
-	struct toepcb *toep = cipher->toep;
-	struct sge_eq *eq = &txq->eq;
-	struct tx_sdesc *txsd;
-	uint32_t tstamp;
-	int ndesc;
-
-	TXQ_LOCK_ASSERT_OWNED(txq);
-
-	ndesc = 0;
-	MPASS(1 <= available);
-
-	memcpy(&tstamp, &tsopt[1], sizeof(tstamp));
-	tstamp = ntohl(tstamp);
-	if (cipher->prev_tsecr != tstamp) {
-#ifdef VERBOSE_TRACES
-		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
-		    __func__, cipher->toep->tid);
-#endif
-		write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
-		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
-		    V_TCB_T_RTSEQ_RECENT(tstamp));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
-
-		cipher->prev_tsecr = tstamp;
-	}
-
-	return (ndesc);
-}
-
 _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
     "CPL_SET_TCB_FIELD must be smaller than a single TX descriptor");
 _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
@@ -2968,7 +2929,8 @@ _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
 static int
 sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
-    u_int nsegs, u_int available, tcp_seq tcp_seqno, u_int pidx)
+    u_int nsegs, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
+    u_int pidx)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -3062,6 +3024,25 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	    ext_pgs->hdr_len + ntohs(inhdr->tls_length));
 
 	/* Update TCB fields. */
+	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
+#ifdef VERBOSE_TRACES
+		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
+		    __func__, cipher->toep->tid);
+#endif
+		write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
+		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
+		    V_TCB_T_RTSEQ_RECENT(ntohl(tsopt[1])));
+		dst = txq_advance(txq, dst, EQ_ESIZE);
+		ndesc++;
+		txq->raw_wrs++;
+		txsd = &txq->sdesc[pidx];
+		txsd->m = NULL;
+		txsd->desc_used = 1;
+		IDXINCR(pidx, 1, eq->sidx);
+
+		cipher->prev_tsecr = ntohl(tsopt[1]);
+	}
+		
 	if (first_wr || cipher->prev_seq != tx_max) {
 		KASSERT(nsegs != 0,
 		    ("trying to set TX_MAX for subsequent TLS WR"));
@@ -3445,25 +3426,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    ndesc, start, end));
 	}
 
-	tsopt = sbtls_find_tcp_timestamps(tcp);
-	if (tsopt != NULL) {
-		ndesc = sbtls_write_timestamps(cipher, txq, dst, tsopt,
-		    available, pidx);
-		totdesc += ndesc;
-		IDXINCR(pidx, ndesc, eq->sidx);
-
-		/*
-		 * NB: This does not use txq_advance() to handle a WR
-		 * that safely wrapped around the end of the ring.
-		 */
-		dst = (char *)dst + (ndesc * EQ_ESIZE);
-		if (dst >= end)
-			dst = (char *)start + ((char *)dst - (char *)end);
-		KASSERT(dst >= start && dst < end,
-		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
-		    ndesc, start, end));
-	}
-		
 	/*
 	 * Iterate over each TLS record constructing a work request
 	 * for that record.
@@ -3475,16 +3437,19 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 * Determine the initial TCP sequence number for this
 		 * record.
 		 */
+		tsopt = NULL;
 		if (m_tls == m->m_next) {
 			tcp_seqno = ntohl(tcp->th_seq) -
 			    mtod(m_tls, vm_offset_t);
+			if (cipher->using_timestamps)
+				tsopt = sbtls_find_tcp_timestamps(tcp);
 		} else {
 			MPASS(mtod(m_tls, vm_offset_t) == 0);
 			tcp_seqno = cipher->prev_seq;
 		}
 
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
-		    nsegs, available - totdesc, tcp_seqno, pidx);
+		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 
