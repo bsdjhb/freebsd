@@ -1825,23 +1825,6 @@ write_set_tcb_field_ulp(struct toepcb *toep, void *dst, struct sge_txq *txq,
 	idata->len = htobe32(0);
 }
 
-#if 0
-static void
-write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
-    uint64_t mask, uint64_t val)
-{
-	struct cpl_set_tcb_field *cpl;
-
-	cpl = dst;
-	INIT_TP_WR(cpl, 0);
-	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_SET_TCB_FIELD, toep->tid));
-	cpl->reply_ctrl = htobe16(F_NO_REPLY);
-	cpl->word_cookie = htobe16(V_WORD(word));
-	cpl->mask = htobe64(mask);
-	cpl->val = htobe64(val);
-}
-#endif
-
 static int
 sbtls_set_tcb_fields(struct toepcb *toep, struct tcpcb *tp, struct sge_txq *txq)
 {
