@@ -1825,6 +1825,7 @@ write_set_tcb_field_ulp(struct toepcb *toep, void *dst, struct sge_txq *txq,
 	idata->len = htobe32(0);
 }
 
+#if 0
 static void
 write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
     uint64_t mask, uint64_t val)
@@ -1839,6 +1840,7 @@ write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
 	cpl->mask = htobe64(mask);
 	cpl->val = htobe64(val);
 }
+#endif
 
 static int
 sbtls_set_tcb_fields(struct toepcb *toep, struct tcpcb *tp, struct sge_txq *txq)
@@ -2685,18 +2687,21 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	}
 
 	/*
-	 * Include room for up to 4 CPL_SET_TCB_FIELD requests before
-	 * the first TLS work request.
+	 * Include room for a ULPTX work request including up to 4
+	 * CPL_SET_TCB_FIELD commands before the first TLS work
+	 * request.
 	 */
-	tot_len += 4 * roundup2(sizeof(struct cpl_set_tcb_field), EQ_ESIZE);
+	wr_len = sizeof(struct fw_ulptx_wr) +
+	    4 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	/*
-	 * If timestamps are present, reserve 1 more request for
+	 * If timestamps are present, reserve 1 more command for
 	 * setting the echoed timestamp.
 	 */
 	if (cipher->using_timestamps)
-		tot_len += roundup2(sizeof(struct cpl_set_tcb_field),
-		    EQ_ESIZE);
+		wr_len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+
+	tot_len += roundup2(wr_len, EQ_ESIZE);
 
 	*len16p = tot_len / 16;
 #ifdef VERBOSE_TRACES
@@ -2943,13 +2948,14 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	struct cpl_tx_data *tx_data;
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr, *inhdr;
-	char *iv;
+	char *iv, *field_req;
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, ndesc, offset, plen, tlen, wr_len;
-	u_int real_tls_hdr_len, tx_max;
+	u_int real_tls_hdr_len, tx_max, fields;
 	bool first_wr, last_wr;
+	char scratch_buffer[roundup2(LEN__SET_TCB_FIELD_ULP, 16)];
 
 	ndesc = 0;
 	toep = cipher->toep;
@@ -3023,22 +3029,28 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tx_max = tcp_seqno + MIN(mtod(m_tls, vm_offset_t),
 	    ext_pgs->hdr_len + ntohs(inhdr->tls_length));
 
-	/* Update TCB fields. */
+	/*
+	 * Update TCB fields.  Reserve space for the FW_UPTX_WR header
+	 * but don't populate it until we know how many field updates
+	 * are required.
+	 */
+	wr = dst;
+	field_req = txq_advance(txq, wr, sizeof(*wr));
+	fields = 0;
 	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
+		KASSERT(nsegs != 0,
+		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
 		    __func__, cipher->toep->tid);
 #endif
-		write_set_tcb_field(toep, dst, W_TCB_T_RTSEQ_RECENT, 
+		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
+		    W_TCB_T_RTSEQ_RECENT,
 		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
 		    V_TCB_T_RTSEQ_RECENT(ntohl(tsopt[1])));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
+		copy_to_txd(&txq->eq, scratch_buffer, &field_req,
+		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		fields++;
 
 		cipher->prev_tsecr = ntohl(tsopt[1]);
 	}
@@ -3051,15 +3063,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    "%s: tid %d setting TX_MAX to %u (tcp_seqno %u)",
 		    __func__, toep->tid, tx_max, tcp_seqno);
 #endif
-		write_set_tcb_field(toep, dst, W_TCB_TX_MAX,
+		write_set_tcb_field_ulp(toep, scratch_buffer, txq, W_TCB_TX_MAX,
 		    V_TCB_TX_MAX(M_TCB_TX_MAX), V_TCB_TX_MAX(tx_max));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
+		copy_to_txd(&txq->eq, scratch_buffer, &field_req,
+		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		fields++;
 	}
 
 	/*
@@ -3074,15 +3082,12 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR2(KTR_CXGBE, "%s: tid %d clearing SND_UNA_RAW", __func__,
 		    toep->tid);
 #endif
-		write_set_tcb_field(toep, dst, W_TCB_SND_UNA_RAW,
-		    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW), V_TCB_SND_UNA_RAW(0));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
+		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
+		    W_TCB_SND_UNA_RAW, V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
+		    V_TCB_SND_UNA_RAW(0));
+		copy_to_txd(&txq->eq, scratch_buffer, &field_req,
+		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		fields++;
 	}
 
 	/*
@@ -3094,16 +3099,12 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_NXT for subsequent TLS WR"));
-		write_set_tcb_field(toep, dst, W_TCB_RCV_NXT,
-		    V_TCB_RCV_NXT(M_TCB_RCV_NXT),
+		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
+		    W_TCB_RCV_NXT, V_TCB_RCV_NXT(M_TCB_RCV_NXT),
 		    V_TCB_RCV_NXT(ntohl(tcp->th_ack)));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
-		txq->raw_wrs++;
-		txsd = &txq->sdesc[pidx];
-		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
+		copy_to_txd(&txq->eq, scratch_buffer, &field_req,
+		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		fields++;
 
 		cipher->prev_ack = ntohl(tcp->th_ack);
 	}
@@ -3111,18 +3112,43 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
-		write_set_tcb_field(toep, dst, W_TCB_RCV_WND,
-		    V_TCB_RCV_WND(M_TCB_RCV_WND),
+		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
+		    W_TCB_RCV_WND, V_TCB_RCV_WND(M_TCB_RCV_WND),
 		    V_TCB_RCV_WND(ntohs(tcp->th_win)));
-		dst = txq_advance(txq, dst, EQ_ESIZE);
-		ndesc++;
+		copy_to_txd(&txq->eq, scratch_buffer, &field_req,
+		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		fields++;
+
+		cipher->prev_win = ntohs(tcp->th_win);
+	}
+
+	/*
+	 * If any field updates were required, populate the
+	 * FW_ULTPX_WR work request header and update 'wr' to point to
+	 * the location of the FW_ULTPX_WR header for the TLS work
+	 * request.
+	 */
+	if (fields != 0) {
+		wr_len = sizeof(*wr) +
+		    fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+		wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
+		wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
+		    V_FW_WR_LEN16(wr_len / 16));
+		wr->cookie = 0;
+		ndesc = howmany(wr_len, EQ_ESIZE);
+		MPASS(ndesc <= available);
+
 		txq->raw_wrs++;
 		txsd = &txq->sdesc[pidx];
 		txsd->m = NULL;
-		txsd->desc_used = 1;
-		IDXINCR(pidx, 1, eq->sidx);
+		txsd->desc_used = ndesc;
+		IDXINCR(pidx, ndesc, eq->sidx);
 
-		cipher->prev_win = ntohs(tcp->th_win);
+		/*
+		 * NB: This does not use txq_advance() since the WR
+		 * might have wrapped around the end of the ring.
+		 */
+		dst = (void *)&eq->desc[pidx];
 	}
 
 	/* Recalculate 'nsegs' if cached value is not available. */
