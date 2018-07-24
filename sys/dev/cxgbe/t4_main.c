@@ -5505,6 +5505,9 @@ t4_sysctls(struct adapter *sc)
 		    CTLFLAG_RW, &sc->tlst.inline_keys, 0, "Always pass TLS "
 		    "keys in work requests (1) or attempt to store TLS keys "
 		    "in card memory.");
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "combo_wrs",
+		    CTLFLAG_RW, &sc->tlst.combo_wrs, 0, "Attempt to combine "
+		    "TCB field updates with TLS record work requests.");
 	}
 #endif
 
