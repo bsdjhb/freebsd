@@ -1783,6 +1783,48 @@ sbtls_act_open_rpl(struct adapter *sc, struct toepcb *toep, u_int status,
 	INP_WUNLOCK(inp);
 }
 
+/* SET_TCB_FIELD sent as a ULP command looks like this */
+#define LEN__SET_TCB_FIELD_ULP (sizeof(struct ulp_txpkt) + \
+    sizeof(struct ulptx_idata) + sizeof(struct cpl_set_tcb_field_core))
+
+_Static_assert((LEN__SET_TCB_FIELD_ULP + sizeof(struct ulptx_idata)) % 16 == 0,
+    "CPL_SET_TCB_FIELD ULP command not 16-byte aligned");
+
+static void
+write_set_tcb_field_ulp(struct toepcb *toep, void *dst, struct sge_txq *txq,
+    uint16_t word, uint64_t mask, uint64_t val)
+{
+	struct ulp_txpkt *txpkt;
+	struct ulptx_idata *idata;
+	struct cpl_set_tcb_field_core *cpl;
+
+	/* ULP_TXPKT */
+	txpkt = dst;
+	txpkt->cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
+	    V_ULP_TXPKT_DATAMODIFY(0) |
+	    V_ULP_TXPKT_CHANNELID(toep->vi->pi->port_id) | V_ULP_TXPKT_DEST(0) |
+	    V_ULP_TXPKT_FID(txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
+	txpkt->len = htobe32(howmany(LEN__SET_TCB_FIELD_ULP, 16));
+
+	/* ULPTX_IDATA sub-command */
+	idata = (struct ulptx_idata *)(txpkt + 1);
+	idata->cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));
+	idata->len = htobe32(sizeof(*cpl));
+
+	/* CPL_SET_TCB_FIELD */
+	cpl = (struct cpl_set_tcb_field_core *)(idata + 1);
+	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_SET_TCB_FIELD, toep->tid));
+	cpl->reply_ctrl = htobe16(F_NO_REPLY);
+	cpl->word_cookie = htobe16(V_WORD(word));
+	cpl->mask = htobe64(mask);
+	cpl->val = htobe64(val);
+
+	/* ULPTX_NOOP */
+	idata = (struct ulptx_idata *)(cpl + 1);
+	idata->cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_NOOP));
+	idata->len = htobe32(0);
+}
+
 static void
 write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
     uint64_t mask, uint64_t val)
@@ -1799,17 +1841,55 @@ write_set_tcb_field(struct toepcb *toep, void *dst, uint16_t word,
 }
 
 static int
-sbtls_set_tcb_field(struct toepcb *toep, struct sge_txq *txq, uint16_t word,
-    uint64_t mask, uint64_t val)
+sbtls_set_tcb_fields(struct toepcb *toep, struct tcpcb *tp, struct sge_txq *txq)
 {
+	struct fw_ulptx_wr *wr;
 	struct mbuf *m;
+	char *dst;
 	void *items[1];
-	int error;
+	int error, len;
 
-	m = alloc_wr_mbuf(sizeof(struct cpl_set_tcb_field), M_NOWAIT);
+	len = sizeof(*wr) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+	if (tp->t_flags & TF_REQ_TSTMP)
+		len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+	m = alloc_wr_mbuf(len, M_NOWAIT);
 	if (m == NULL)
 		return (ENOMEM);
-	write_set_tcb_field(toep, mtod(m, void *), word, mask, val);
+
+	/* FW_ULPTX_WR */
+	wr = mtod(m, void *);
+	wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
+	wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
+	    V_FW_WR_LEN16(len / 16));
+	wr->cookie = 0;
+	dst = (char *)(wr + 1);
+
+        /* Clear TF_NON_OFFLOAD and set TF_CORE_BYPASS */
+	write_set_tcb_field_ulp(toep, dst, txq, W_TCB_T_FLAGS,
+	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1) | V_TF_NON_OFFLOAD(1)),
+	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1)));
+	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+
+	/* Clear the SND_UNA_RAW, SND_NXT_RAW, and SND_MAX_RAW offsets. */
+	write_set_tcb_field_ulp(toep, dst, txq, W_TCB_SND_UNA_RAW,
+	    V_TCB_SND_NXT_RAW(M_TCB_SND_NXT_RAW) |
+	    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
+	    V_TCB_SND_NXT_RAW(0) | V_TCB_SND_UNA_RAW(0));
+	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+
+	write_set_tcb_field_ulp(toep, dst, txq, W_TCB_SND_MAX_RAW,
+	    V_TCB_SND_MAX_RAW(M_TCB_SND_MAX_RAW), V_TCB_SND_MAX_RAW(0));
+	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+
+	if (tp->t_flags & TF_REQ_TSTMP) {
+		write_set_tcb_field_ulp(toep, dst, txq, W_TCB_TIMESTAMP_OFFSET,
+		    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
+		    V_TCB_TIMESTAMP_OFFSET(tp->ts_offset >> 28));
+		dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+	}
+
+	KASSERT(dst - (char *)wr == len, ("%s: length mismatch", __func__));
+
 	items[0] = m;
 	error = mp_ring_enqueue(txq->r, items, 1, 1);
 	if (error)
@@ -2008,32 +2088,9 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 		txq += ((inp->inp_flowid % (vi->ntxq - vi->rsrv_noflowq)) +
 		    vi->rsrv_noflowq);
 
-	/* Clear TF_NON_OFFLOAD and set TF_CORE_BYPASS */
-	error = sbtls_set_tcb_field(toep, txq, W_TCB_T_FLAGS,
-	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1) | V_TF_NON_OFFLOAD(1)),
-	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1)));
+	error = sbtls_set_tcb_fields(toep, tp, txq);
 	if (error)
 		goto failed;
-
-	/* Clear the SND_UNA_RAW, SND_NXT_RAW, and SND_MAX_RAW offsets. */
-	error = sbtls_set_tcb_field(toep, txq, W_TCB_SND_UNA_RAW,
-	    V_TCB_SND_NXT_RAW(M_TCB_SND_NXT_RAW) |
-	    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
-	    V_TCB_SND_NXT_RAW(0) | V_TCB_SND_UNA_RAW(0));
-	if (error)
-		goto failed;
-	error = sbtls_set_tcb_field(toep, txq, W_TCB_SND_MAX_RAW,
-	    V_TCB_SND_MAX_RAW(M_TCB_SND_MAX_RAW), V_TCB_SND_MAX_RAW(0));
-	if (error)
-		goto failed;
-
-	if (tp->t_flags & TF_REQ_TSTMP) {
-		error = sbtls_set_tcb_field(toep, txq, W_TCB_TIMESTAMP_OFFSET,
-		    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
-		    V_TCB_TIMESTAMP_OFFSET(tp->ts_offset >> 28));
-		if (error)
-			goto failed;
-	}
 
 	/*
 	 * Preallocate a work request mbuf to hold the work request
