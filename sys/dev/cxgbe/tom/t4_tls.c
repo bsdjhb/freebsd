@@ -2360,6 +2360,36 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	return (mlen);
 }
 
+/*
+ * For a "short" TLS record, determine the offset into the TLS record
+ * payload to send.  This offset does not include the TLS header, but
+ * a non-zero offset implies that a header will not be sent.
+ */
+static u_int
+sbtls_payload_offset(struct toepcb *toep, struct mbuf *m_tls)
+{
+	struct mbuf_ext_pgs *ext_pgs;
+#ifdef INVARIANTS
+	struct tls_record_layer *hdr;
+	u_int plen, mlen;
+#endif
+
+	MBUF_EXT_PGS_ASSERT(m_tls);
+	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+#ifdef INVARIANTS
+	hdr = (void *)ext_pgs->hdr;
+	plen = ntohs(hdr->tls_length);
+	mlen = mtod(m_tls, vm_offset_t) + m_tls->m_len;
+	MPASS(mlen < ext_pgs->hdr_len + plen + ext_pgs->trail_len);
+#endif
+	if (mtod(m_tls, vm_offset_t) <= ext_pgs->hdr_len)
+		return (0);
+	if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
+		return (rounddown(mtod(m_tls, vm_offset_t) - ext_pgs->hdr_len,
+		    CIPHER_BLOCK_SIZE));
+	return (0);
+}
+
 static u_int
 sbtls_sgl_size(u_int nsegs)
 {
@@ -2378,7 +2408,7 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls, int *nsegsp)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
-	u_int imm_len, plen, wr_len, tlen;
+	u_int imm_len, offset, plen, wr_len, tlen;
 
 	/*
 	 * Determine the size of the TLS record payload to send
@@ -2391,24 +2421,30 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls, int *nsegsp)
 	ext_pgs = (void *)m_tls->m_ext.ext_buf;
 	hdr = (void *)ext_pgs->hdr;
 	plen = ext_pgs->hdr_len + ntohs(hdr->tls_length);
-	if (tlen < plen)
+	if (tlen < plen) {
 		plen = tlen;
+		offset = sbtls_payload_offset(cipher->toep, m_tls);
+	} else
+		offset = 0;
 
 	/* Calculate the size of the work request. */
 	wr_len = sbtls_base_wr_size(cipher->toep);
 
 	/*
-	 * TLS header as immediate data followed by a raw AES IV
-	 * if this is a "short" TLS record.
+	 * Full records and short records with an offset of 0 include
+	 * the TLS header as immediate data.  Short records include a
+	 * raw AES IV as immediate data.
 	 */
-	imm_len = ext_pgs->hdr_len;
+	imm_len = 0;
+	if (offset == 0)
+		imm_len += ext_pgs->hdr_len;
 	if (plen == tlen)
 		imm_len += CIPHER_BLOCK_SIZE;
 	wr_len += roundup2(imm_len, 16);
 
 	/* TLS record payload via DSGL. */
-	*nsegsp = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len,
-	    plen - ext_pgs->hdr_len);
+	*nsegsp = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len + offset,
+	    plen - (ext_pgs->hdr_len + offset));
 	wr_len += sbtls_sgl_size(*nsegsp);
 
 	wr_len = roundup2(wr_len, 16);
@@ -2892,7 +2928,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
-	u_int imm_len, mss, ndesc, plen, tlen, wr_len;
+	u_int imm_len, mss, ndesc, offset, plen, tlen, wr_len;
 	u_int real_tls_hdr_len, tx_max;
 	bool first_wr, last_wr;
 
@@ -2914,8 +2950,15 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tlen = sbtls_tcp_payload_length(cipher, m_tls);
 	if (tlen == 0)
 		return (0);
-	if (tlen < plen)
+	if (tlen < plen) {
 		plen = tlen;
+		offset = sbtls_payload_offset(cipher->toep, m_tls);
+#ifdef VERBOSE_TRACES
+		CTR4(KTR_CXGBE, "%s: tid %d short TLS record %u with offset %u",
+		    __func__, cipher->toep->tid, (u_int)ext_pgs->seqno, offset);
+#endif
+	} else
+		offset = 0;
 
 	/*
 	 * This is the last work request for a given TLS mbuf chain if
@@ -3046,13 +3089,15 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Recalculate 'nsegs' if cached value is not available. */
 	if (nsegs == 0)
-		nsegs = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len,
-		    plen - ext_pgs->hdr_len);
+		nsegs = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len +
+		    offset, plen - (ext_pgs->hdr_len + offset));
 
 	/* Calculate the size of the work request. */
 	wr_len = sbtls_base_wr_size(cipher->toep);
 
-	imm_len = ext_pgs->hdr_len;
+	imm_len = 0;
+	if (offset == 0)
+		imm_len += ext_pgs->hdr_len;
 	if (plen == tlen)
 		imm_len += CIPHER_BLOCK_SIZE;
 	wr_len += roundup2(imm_len, 16);
@@ -3108,14 +3153,15 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		auth_insert = 0;
 		cipher_start = CIPHER_BLOCK_SIZE + 1;
 		cipher_stop = 0;
-		
-		sec_pdu->pldlen = htobe32(16 + plen - ext_pgs->hdr_len);
+
+		sec_pdu->pldlen = htobe32(16 + plen -
+		    (ext_pgs->hdr_len + offset));
 
 		/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 		sec_pdu->seqno_numivs = toep->tls.scmd0_short.seqno_numivs;
 		sec_pdu->ivgen_hdrlen = htobe32(
 		    toep->tls.scmd0_short.ivgen_hdrlen |
-		    V_SCMD_HDR_LEN(ext_pgs->hdr_len));
+		    V_SCMD_HDR_LEN(offset == 0 ? ext_pgs->hdr_len : 0));
 
 		counter_u64_add(toep->vi->pi->kern_tls_short, 1);
 	} else {
@@ -3202,36 +3248,48 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	else
 		mss = toep->vi->ifp->if_mtu -
 		    (m->m_pkthdr.l3hlen + m->m_pkthdr.l4hlen);
-	tx_data->len = htobe32(V_TX_DATA_MSS(mss) | V_TX_LENGTH(tlen));
-	tx_data->rsvd = htobe32(tcp_seqno);
+	if (offset == 0) {
+		tx_data->len = htobe32(V_TX_DATA_MSS(mss) | V_TX_LENGTH(tlen));
+		tx_data->rsvd = htobe32(tcp_seqno);
+	} else {
+		tx_data->len = htobe32(V_TX_DATA_MSS(mss) |
+		    V_TX_LENGTH(tlen - (ext_pgs->hdr_len + offset)));
+		tx_data->rsvd = htobe32(tcp_seqno + ext_pgs->hdr_len + offset);
+	}
 	tx_data->flags = htobe32(F_TX_BYPASS);
 	if (last_wr && tcp->th_flags & TH_PUSH)
 		tx_data->flags |= htobe32(F_TX_PUSH | F_TX_SHOVE);
 
 	/* Populate the TLS header */
-	hdr = txq_advance(txq, tx_data, sizeof(*tx_data));
-	hdr->tls_type = inhdr->tls_type;
-	hdr->tls_vmajor = inhdr->tls_vmajor;
-	hdr->tls_vminor = inhdr->tls_vminor;
-	hdr->tls_length = htons(real_tls_hdr_len);
-	if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
-		*(uint64_t *)(hdr + 1) = htobe64(ext_pgs->seqno);
+	dst = txq_advance(txq, tx_data, sizeof(*tx_data));
+	if (offset == 0) {
+		hdr = dst;
+		hdr->tls_type = inhdr->tls_type;
+		hdr->tls_vmajor = inhdr->tls_vmajor;
+		hdr->tls_vminor = inhdr->tls_vminor;
+		hdr->tls_length = htons(real_tls_hdr_len);
+		if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
+			*(uint64_t *)(hdr + 1) = htobe64(ext_pgs->seqno);
 #ifdef notyet
-	else
-		/* XXX: Have to generate and append IV here. */
-		/*
-		 * XXX: This is fraught with peril for retransmits as
-		 * we need to always use the same IV for the same TLS
-		 * record.  Probably for CBC the IV will need to be
-		 * generated when the TLS record is created at the
-		 * socket layer.
-		 */
-		XXX;
+		else
+			/* XXX: Have to generate and append IV here. */
+			/*
+			 * XXX: This is fraught with peril for retransmits as
+			 * we need to always use the same IV for the same TLS
+			 * record.  Probably for CBC the IV will need to be
+			 * generated when the TLS record is created at the
+			 * socket layer.
+			 */
+			XXX;
 #endif
+	}
 
 	/* AES IV for a short record. */
 	if (plen == tlen) {
-		iv = (char *)hdr + ext_pgs->hdr_len;
+		if (offset == 0)
+			iv = (char *)dst + ext_pgs->hdr_len;
+		else
+			iv = dst;
 		if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE) {
 			if (toep->tls.key_location ==
 			    TLS_SFO_WR_CONTEXTLOC_IMMEDIATE) {
@@ -3242,8 +3300,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			} else
 				memcpy(iv, toep->tls.k_ctx.tx.salt, SALT_SIZE);
 			*(uint64_t *)(iv + 4) = htobe64(ext_pgs->seqno);
-			memset(iv + 12, 0, 3);
-			iv[15] = 2;
+			*(uint32_t *)(iv + 12) = htobe32(2 +
+			    offset / CIPHER_BLOCK_SIZE);
 		}
 #ifdef notyet
 		else
@@ -3252,10 +3310,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	}
 
 	/* SGL for record payload */
-	dst = txq_advance(txq, hdr, roundup2(imm_len, 16));
+	dst = txq_advance(txq, dst, roundup2(imm_len, 16));
 	sglist_reset(txq->gl);
-	if (sglist_append_ext_pgs(txq->gl, ext_pgs, ext_pgs->hdr_len,
-	    plen - ext_pgs->hdr_len) != 0) {
+	if (sglist_append_ext_pgs(txq->gl, ext_pgs, ext_pgs->hdr_len + offset,
+	    plen - (ext_pgs->hdr_len + offset)) != 0) {
 #ifdef INVARIANTS
 		panic("%s: failed to append sglist", __func__);
 #endif
@@ -3269,9 +3327,15 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	counter_u64_add(toep->vi->pi->kern_tls_records, 1);
 	counter_u64_add(toep->vi->pi->kern_tls_octets, tlen -
 	    mtod(m_tls, vm_offset_t));
-	if (mtod(m_tls, vm_offset_t) != 0)
-		counter_u64_add(toep->vi->pi->kern_tls_waste,
-		    mtod(m_tls, vm_offset_t));
+	if (mtod(m_tls, vm_offset_t) != 0) {
+		if (offset == 0)
+			counter_u64_add(toep->vi->pi->kern_tls_waste,
+			    mtod(m_tls, vm_offset_t));
+		else
+			counter_u64_add(toep->vi->pi->kern_tls_waste,
+			    mtod(m_tls, vm_offset_t) -
+			    (ext_pgs->hdr_len + offset));
+	}
 
 	txsd = &txq->sdesc[pidx];
 	if (last_wr)
