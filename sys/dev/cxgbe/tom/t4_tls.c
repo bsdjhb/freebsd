@@ -2819,6 +2819,8 @@ copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
 	    (uintptr_t)&eq->desc[eq->sidx])) {
 		bcopy(from, *to, len);
 		(*to) += len;
+		if ((uintptr_t)(*to) == (uintptr_t)&eq->desc[eq->sidx])
+			(*to) = (caddr_t)eq->desc;
 	} else {
 		int portion = (uintptr_t)&eq->desc[eq->sidx] - (uintptr_t)(*to);
 
