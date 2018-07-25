@@ -3199,7 +3199,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	idata->len = htobe32(idata->len);
 
 	/* CPL_TX_SEC_PDU */
-	sec_pdu = txq_advance(txq, idata, sizeof(*idata));
+	_Static_assert(sizeof(*sec_pdu) <= sizeof(scratch_buffer),
+	    "CPL_TX_SEC_PDU larger than scratch buffer");
+	out = txq_advance(txq, idata, sizeof(*idata));
+	sec_pdu = (struct cpl_tx_sec_pdu *)scratch_buffer;
 
 	/*
 	 * For short records, AAD is counted as header data in SCMD0,
@@ -3278,8 +3281,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* XXX: Ok to reuse TLS sequence number? */
 	sec_pdu->scmd1 = htobe64(ext_pgs->seqno);
 
+	copy_to_txd(&txq->eq, (caddr_t)sec_pdu, &out, sizeof(*sec_pdu));
+	dst = out;
+
 	/* Key context */
-	dst = txq_advance(txq, sec_pdu, sizeof(*sec_pdu));
 	if (toep->tls.key_location == TLS_SFO_WR_CONTEXTLOC_IMMEDIATE) {
 		out = dst;
 		copy_to_txd(&txq->eq, (caddr_t)&toep->tls.k_ctx.tx, &out,
