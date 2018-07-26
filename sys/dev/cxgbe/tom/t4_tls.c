@@ -3372,7 +3372,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
     struct mbuf *m, u_int nsegs, u_int available)
 {
 	struct sge_eq *eq = &txq->eq;
-	void *end, *start;
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
 	tcp_seq tcp_seqno;
@@ -3382,8 +3381,6 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	totdesc = 0;
 	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
-	start = &eq->desc[0];
-	end = &eq->desc[eq->sidx];
 	pidx = eq->pidx;
 
 	if (sbtls_has_tcp_options(tcp)) {
@@ -3391,21 +3388,11 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
+		dst = &eq->desc[pidx];
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP options packet", __func__,
 		    cipher->toep->tid);
 #endif
-
-		/*
-		 * NB: This does not use txq_advance() to handle a WR
-		 * that safely wrapped around the end of the ring.
-		 */
-		dst = (char *)dst + (ndesc * EQ_ESIZE);
-		if (dst >= end)
-			dst = (char *)start + ((char *)dst - (char *)end);
-		KASSERT(dst >= start && dst < end,
-		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
-		    ndesc, start, end));
 	}
 
 	/*
@@ -3434,17 +3421,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
-
-		/*
-		 * NB: This does not use txq_advance() to handle a WR
-		 * that safely wrapped around the end of the ring.
-		 */
-		dst = (char *)dst + (ndesc * EQ_ESIZE);
-		if (dst >= end)
-			dst = (char *)start + ((char *)dst - (char *)end);
-		KASSERT(dst >= start && dst < end,
-		    ("%s: dst %p ndesc %u start %p end %p", __func__, dst,
-		    ndesc, start, end));
+		dst = &eq->desc[pidx];
 
 		/*
 		 * The value of nsegs from the header mbuf's metadata
