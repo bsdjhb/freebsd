@@ -2694,81 +2694,28 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	return (0);
 }
 
-static void *
-txq_advance(struct sge_txq *txq, void *wr, u_int len)
-{
-	struct sge_eq *eq = &txq->eq;
-	uintptr_t ptr = (uintptr_t)wr;
-	uintptr_t start = (uintptr_t)&eq->desc[0];
-	uintptr_t end = (uintptr_t)&eq->desc[eq->sidx];
-
-	MPASS(ptr >= start);
-	MPASS(ptr < end);
-	KASSERT(ptr + len <= end, ("%s: previous item overran txq", __func__));
-
-	if (__predict_true(ptr + len < end))
-		return ((void *)(ptr + len));
-	else
-		return ((void *)start);
-}
-
-static __be64
-get_flit(struct sglist_seg *segs, int nsegs, int idx)
-{
-	int i = (idx / 3) * 2;
-
-	switch (idx % 3) {
-	case 0: {
-		uint64_t rc;
-
-		rc = (uint64_t)segs[i].ss_len << 32;
-		if (i + 1 < nsegs)
-			rc |= (uint64_t)(segs[i + 1].ss_len);
-
-		return (htobe64(rc));
-	}
-	case 1:
-		return (htobe64(segs[i].ss_paddr));
-	case 2:
-		return (htobe64(segs[i + 1].ss_paddr));
-	}
-
-	return (0);
-}
-
 /*
  * If the SGL ends on an address that is not 16 byte aligned, this function will
  * add a 0 filled flit at the end.
  */
 static void
-write_gl_to_txd(struct sge_txq *txq, caddr_t to)
+write_gl_to_buf(struct sglist *gl, caddr_t to)
 {
-	struct sge_eq *eq = &txq->eq;
-	struct sglist *gl = txq->gl;
 	struct sglist_seg *seg;
-	__be64 *flitp, *wrap;
+	__be64 *flitp;
 	struct ulptx_sgl *usgl;
 	int i, nflits, nsegs;
 
 	KASSERT(((uintptr_t)to & 0xf) == 0,
 	    ("%s: SGL must start at a 16 byte boundary: %p", __func__, to));
-	MPASS((uintptr_t)to >= (uintptr_t)&eq->desc[0]);
-	MPASS((uintptr_t)to < (uintptr_t)&eq->desc[eq->sidx]);
 
 	nsegs = gl->sg_nseg;
 	MPASS(nsegs > 0);
 
 	nflits = (3 * (nsegs - 1)) / 2 + ((nsegs - 1) & 1) + 2;
 	flitp = (__be64 *)to;
-	wrap = (__be64 *)(&eq->desc[eq->sidx]);
 	seg = &gl->sg_segs[0];
 	usgl = (void *)flitp;
-
-	/*
-	 * We start at a 16 byte boundary somewhere inside the tx descriptor
-	 * ring, so we're at least 16 bytes away from the status page.  There is
-	 * no chance of a wrap around in the middle of usgl (which is 16 bytes).
-	 */
 
 	usgl->cmd_nsge = htobe32(V_ULPTX_CMD(ULP_TX_SC_DSGL) |
 	    V_ULPTX_NSGE(nsegs));
@@ -2776,29 +2723,13 @@ write_gl_to_txd(struct sge_txq *txq, caddr_t to)
 	usgl->addr0 = htobe64(seg->ss_paddr);
 	seg++;
 
-	if ((uintptr_t)(flitp + nflits) <= (uintptr_t)wrap) {
-
-		/* Won't wrap around at all */
-
-		for (i = 0; i < nsegs - 1; i++, seg++) {
-			usgl->sge[i / 2].len[i & 1] = htobe32(seg->ss_len);
-			usgl->sge[i / 2].addr[i & 1] = htobe64(seg->ss_paddr);
-		}
-		if (i & 1)
-			usgl->sge[i / 2].len[1] = htobe32(0);
-		flitp += nflits;
-	} else {
-
-		/* Will wrap somewhere in the rest of the SGL */
-
-		/* 2 flits already written, write the rest flit by flit */
-		flitp = (void *)(usgl + 1);
-		for (i = 0; i < nflits - 2; i++) {
-			if (flitp == wrap)
-				flitp = (void *)eq->desc;
-			*flitp++ = get_flit(seg, nsegs - 1, i);
-		}
+	for (i = 0; i < nsegs - 1; i++, seg++) {
+		usgl->sge[i / 2].len[i & 1] = htobe32(seg->ss_len);
+		usgl->sge[i / 2].addr[i & 1] = htobe64(seg->ss_paddr);
 	}
+	if (i & 1)
+		usgl->sge[i / 2].len[1] = htobe32(0);
+	flitp += nflits;
 
 	if (nflits & 1) {
 		MPASS(((uintptr_t)flitp) & 0xf);
@@ -2933,15 +2864,13 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	struct cpl_tx_data *tx_data;
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr, *inhdr;
-	char *out;
+	char *iv, *out;
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, ndesc, offset, plen, tlen, twr_len, wr_len;
 	u_int real_tls_hdr_len, tx_max, fields;
-	bool first_wr, last_wr;
-	char iv[CIPHER_BLOCK_SIZE];
-	char scratch_buffer[roundup2(LEN__SET_TCB_FIELD_ULP, 16)];
+	bool first_wr, last_wr, using_scratch;
 
 	ndesc = 0;
 	toep = cipher->toep;
@@ -2949,6 +2878,14 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	first_wr = (cipher->prev_seq == 0 && cipher->prev_ack == 0 &&
 	    cipher->prev_win == 0);
+
+	/*
+	 * Use the per-txq scratch pad if near the end of the ring to
+	 * simplify handling of wrap-around.  This uses a simple but
+	 * not quite perfect test of using the scratch buffer if we
+	 * can't fit a maximal work request in without wrapping.
+	 */
+	using_scratch = (eq->sidx - pidx < SGE_MAX_WR_LEN / EQ_ESIZE);
 
 	/* Locate the template TLS header. */
 	MBUF_EXT_PGS_ASSERT(m_tls);
@@ -3020,8 +2957,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * but don't populate it until we know how many field updates
 	 * are required.
 	 */
-	wr = dst;
-	out = txq_advance(txq, wr, sizeof(*wr));
+	if (using_scratch)
+		wr = (void *)txq->ss;
+	else
+		wr = dst;
+	out = (void *)(wr + 1);
 	fields = 0;
 	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
 		KASSERT(nsegs != 0,
@@ -3030,12 +2970,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
 		    __func__, cipher->toep->tid);
 #endif
-		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
-		    W_TCB_T_RTSEQ_RECENT,
+		write_set_tcb_field_ulp(toep, out, txq, W_TCB_T_RTSEQ_RECENT,
 		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
 		    V_TCB_T_RTSEQ_RECENT(ntohl(tsopt[1])));
-		copy_to_txd(&txq->eq, scratch_buffer, &out,
-		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
 		cipher->prev_tsecr = ntohl(tsopt[1]);
@@ -3049,10 +2987,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    "%s: tid %d setting TX_MAX to %u (tcp_seqno %u)",
 		    __func__, toep->tid, tx_max, tcp_seqno);
 #endif
-		write_set_tcb_field_ulp(toep, scratch_buffer, txq, W_TCB_TX_MAX,
+		write_set_tcb_field_ulp(toep, out, txq, W_TCB_TX_MAX,
 		    V_TCB_TX_MAX(M_TCB_TX_MAX), V_TCB_TX_MAX(tx_max));
-		copy_to_txd(&txq->eq, scratch_buffer, &out,
-		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 	}
 
@@ -3068,11 +3005,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR2(KTR_CXGBE, "%s: tid %d clearing SND_UNA_RAW", __func__,
 		    toep->tid);
 #endif
-		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
-		    W_TCB_SND_UNA_RAW, V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
+		write_set_tcb_field_ulp(toep, out, txq, W_TCB_SND_UNA_RAW,
+		    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
 		    V_TCB_SND_UNA_RAW(0));
-		copy_to_txd(&txq->eq, scratch_buffer, &out,
-		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 	}
 
@@ -3085,11 +3021,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_NXT for subsequent TLS WR"));
-		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
-		    W_TCB_RCV_NXT, V_TCB_RCV_NXT(M_TCB_RCV_NXT),
+		write_set_tcb_field_ulp(toep, out, txq, W_TCB_RCV_NXT,
+		    V_TCB_RCV_NXT(M_TCB_RCV_NXT),
 		    V_TCB_RCV_NXT(ntohl(tcp->th_ack)));
-		copy_to_txd(&txq->eq, scratch_buffer, &out,
-		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
 		cipher->prev_ack = ntohl(tcp->th_ack);
@@ -3098,11 +3033,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
-		write_set_tcb_field_ulp(toep, scratch_buffer, txq,
-		    W_TCB_RCV_WND, V_TCB_RCV_WND(M_TCB_RCV_WND),
+		write_set_tcb_field_ulp(toep, out, txq, W_TCB_RCV_WND,
+		    V_TCB_RCV_WND(M_TCB_RCV_WND),
 		    V_TCB_RCV_WND(ntohs(tcp->th_win)));
-		copy_to_txd(&txq->eq, scratch_buffer, &out,
-		    roundup2(LEN__SET_TCB_FIELD_ULP, 16));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
 		cipher->prev_win = ntohs(tcp->th_win);
@@ -3143,6 +3077,16 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
 			    V_FW_WR_LEN16(wr_len / 16));
 			wr->cookie = 0;
+
+			/*
+			 * If we were using scratch space, copy the
+			 * field updates work request to the ring.
+			 */
+			if (using_scratch) {
+				out = dst;
+				copy_to_txd(eq, txq->ss, &out, wr_len);
+			}
+
 			ndesc = howmany(wr_len, EQ_ESIZE);
 			MPASS(ndesc <= available);
 
@@ -3151,14 +3095,22 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			txsd->m = NULL;
 			txsd->desc_used = ndesc;
 			IDXINCR(pidx, ndesc, eq->sidx);
+			dst = &eq->desc[pidx];
 
 			/*
-			 * NB: This does not use txq_advance() since the WR
-			 * might have wrapped around the end of the ring.
+			 * Determine if we should use scratch space
+			 * for the TLS work request based on the
+			 * available space after advancing pidx for
+			 * the field updates work request.
 			 */
 			wr_len = twr_len;
-			wr = (void *)&eq->desc[pidx];
-			txpkt = txq_advance(txq, wr, sizeof(*wr));
+			using_scratch = (eq->sidx - pidx <
+			    howmany(wr_len, EQ_ESIZE));
+			if (using_scratch)
+				wr = (void *)txq->ss;
+			else
+				wr = dst;
+			txpkt = (void *)(wr + 1);
 		}
 	} else {
 		wr_len = twr_len;
@@ -3182,7 +3134,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	txpkt->len = htobe32(howmany(twr_len - sizeof(*wr), 16));
 
 	/* ULPTX_IDATA sub-command */
-	idata = txq_advance(txq, txpkt, sizeof(*txpkt));
+	idata = (void *)(txpkt + 1);
 	idata->cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM) |
 	    V_ULP_TX_SC_MORE(1));
 	idata->len = sizeof(struct cpl_tx_sec_pdu);
@@ -3199,10 +3151,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	idata->len = htobe32(idata->len);
 
 	/* CPL_TX_SEC_PDU */
-	_Static_assert(sizeof(*sec_pdu) <= sizeof(scratch_buffer),
-	    "CPL_TX_SEC_PDU larger than scratch buffer");
-	out = txq_advance(txq, idata, sizeof(*idata));
-	sec_pdu = (struct cpl_tx_sec_pdu *)scratch_buffer;
+	sec_pdu = (void *)(idata + 1);
 
 	/*
 	 * For short records, AAD is counted as header data in SCMD0,
@@ -3281,18 +3230,15 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* XXX: Ok to reuse TLS sequence number? */
 	sec_pdu->scmd1 = htobe64(ext_pgs->seqno);
 
-	copy_to_txd(&txq->eq, (caddr_t)sec_pdu, &out, sizeof(*sec_pdu));
-	dst = out;
-
 	/* Key context */
+	out = (void *)(sec_pdu + 1);
 	if (toep->tls.key_location == TLS_SFO_WR_CONTEXTLOC_IMMEDIATE) {
-		out = dst;
-		copy_to_txd(&txq->eq, (caddr_t)&toep->tls.k_ctx.tx, &out,
+		memcpy(out, &toep->tls.k_ctx.tx,
 		    toep->tls.k_ctx.tx_key_info_size);
-		dst = out;
+		out += toep->tls.k_ctx.tx_key_info_size;
 	} else {
 		/* ULPTX_SC_MEMRD to read key context. */
-		memrd = dst;
+		memrd = (void *)out;
 		memrd->cmd_to_len = htobe32(V_ULPTX_CMD(ULP_TX_SC_MEMRD) |
 		    V_ULP_TX_SC_MORE(1) |
 		    V_ULPTX_LEN16(toep->tls.k_ctx.tx_key_info_size >> 4));
@@ -3304,11 +3250,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    V_ULP_TX_SC_MORE(1));
 		idata->len = htobe32(sizeof(struct cpl_tx_data) + imm_len);
 
-		dst = txq_advance(txq, memrd, sizeof(*memrd) + sizeof(*idata));
+		out = (void *)(idata + 1);
 	}
 
 	/* CPL_TX_DATA */
-	tx_data = dst;
+	tx_data = (void *)out;
 	OPCODE_TID(tx_data) = htonl(MK_OPCODE_TID(CPL_TX_DATA, toep->tid));
 	if (m->m_pkthdr.csum_flags & CSUM_TSO)
 		mss = m->m_pkthdr.tso_segsz;
@@ -3328,10 +3274,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		tx_data->flags |= htobe32(F_TX_PUSH | F_TX_SHOVE);
 
 	/* Populate the TLS header */
-	out = txq_advance(txq, tx_data, sizeof(*tx_data));
+	out = (void *)(tx_data + 1);
 	if (offset == 0) {
-		MPASS(ext_pgs->hdr_len <= sizeof(scratch_buffer));
-		hdr = (struct tls_record_layer *)scratch_buffer;
+		hdr = (void *)out;
 		hdr->tls_type = inhdr->tls_type;
 		hdr->tls_vmajor = inhdr->tls_vmajor;
 		hdr->tls_vminor = inhdr->tls_vminor;
@@ -3350,11 +3295,12 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			 */
 			XXX;
 #endif
-		copy_to_txd(&txq->eq, (caddr_t)hdr, &out, ext_pgs->hdr_len);
+		out += ext_pgs->hdr_len;
 	}
 
 	/* AES IV for a short record. */
 	if (plen == tlen) {
+		iv = out;
 		if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE) {
 			if (toep->tls.key_location ==
 			    TLS_SFO_WR_CONTEXTLOC_IMMEDIATE) {
@@ -3372,14 +3318,12 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		else
 			XXX;
 #endif
-		copy_to_txd(&txq->eq, iv, &out, CIPHER_BLOCK_SIZE);
+		out += CIPHER_BLOCK_SIZE;
 	}
 
 	/* Skip over padding to a 16-byte boundary. */
 	if (imm_len % 16 != 0)
-		dst = txq_advance(txq, out, 16 - (imm_len % 16));
-	else
-		dst = out;
+		out += 16 - (imm_len % 16);
 
 	/* SGL for record payload */
 	sglist_reset(txq->gl);
@@ -3389,7 +3333,12 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		panic("%s: failed to append sglist", __func__);
 #endif
 	}
-	write_gl_to_txd(txq, dst);
+	write_gl_to_buf(txq->gl, out);
+
+	if (using_scratch) {
+		out = dst;
+		copy_to_txd(eq, txq->ss, &out, wr_len);
+	}
 
 	ndesc += howmany(wr_len, EQ_ESIZE);
 	MPASS(ndesc <= available);
