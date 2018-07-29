@@ -641,7 +641,7 @@ static void cma_bind_sgid_attr(struct rdma_id_private *id_priv,
 }
 
 static int cma_acquire_dev(struct rdma_id_private *id_priv,
-			   struct rdma_id_private *listen_id_priv)
+			   const struct rdma_id_private *listen_id_priv)
 {
 	struct rdma_dev_addr *dev_addr = &id_priv->id.route.addr.dev_addr;
 	const struct ib_gid_attr *sgid_attr;
@@ -1143,8 +1143,8 @@ static inline int cma_any_port(const struct sockaddr *addr)
 
 static void cma_save_ib_info(struct sockaddr *src_addr,
 			     struct sockaddr *dst_addr,
-			     struct rdma_cm_id *listen_id,
-			     struct sa_path_rec *path)
+			     const struct rdma_cm_id *listen_id,
+			     const struct sa_path_rec *path)
 {
 	struct sockaddr_ib *listen_ib, *ib;
 
@@ -1310,7 +1310,7 @@ static int sdp_save_ip_info(struct sockaddr *src_addr,
 
 static int cma_save_ip_info(struct sockaddr *src_addr,
 			    struct sockaddr *dst_addr,
-			    struct ib_cm_event *ib_event,
+			    const struct ib_cm_event *ib_event,
 			    __be64 service_id)
 {
 	struct cma_hdr *hdr;
@@ -1344,8 +1344,8 @@ static int cma_save_ip_info(struct sockaddr *src_addr,
 
 static int cma_save_net_info(struct sockaddr *src_addr,
 			     struct sockaddr *dst_addr,
-			     struct rdma_cm_id *listen_id,
-			     struct ib_cm_event *ib_event,
+			     const struct rdma_cm_id *listen_id,
+			     const struct ib_cm_event *ib_event,
 			     sa_family_t sa_family, __be64 service_id)
 {
 	if (sa_family == AF_IB) {
@@ -1549,8 +1549,8 @@ roce_get_net_dev_by_cm_event(const struct ib_cm_event *ib_event)
 	return sgid_attr->ndev;
 }
 
-static if_t cma_get_net_dev(struct ib_cm_event *ib_event,
-					  const struct cma_req_info *req)
+static if_t cma_get_net_dev(const struct ib_cm_event *ib_event,
+			    const struct cma_req_info *req)
 {
 	struct sockaddr_storage listen_addr_storage, src_addr_storage;
 	struct sockaddr *listen_addr = (struct sockaddr *)&listen_addr_storage,
@@ -1738,9 +1738,10 @@ static struct rdma_id_private *cma_find_listener(
 	return ERR_PTR(-EINVAL);
 }
 
-static struct rdma_id_private *cma_id_from_event(struct ib_cm_id *cm_id,
-						 struct ib_cm_event *ib_event,
-						 if_t *net_dev)
+static struct rdma_id_private *
+cma_id_from_event(struct ib_cm_id *cm_id,
+		  const struct ib_cm_event *ib_event,
+		  if_t *net_dev)
 {
 	struct cma_req_info req;
 	struct rdma_bind_list *bind_list;
@@ -1968,7 +1969,7 @@ static int sdp_verify_rep(const struct sdp_hah *data)
 }
 
 static void cma_set_rep_event_data(struct rdma_cm_event *event,
-				   struct ib_cm_rep_event_param *rep_data,
+				   const struct ib_cm_rep_event_param *rep_data,
 				   void *private_data)
 {
 	event->param.conn.private_data = private_data;
@@ -1981,7 +1982,8 @@ static void cma_set_rep_event_data(struct rdma_cm_event *event,
 	event->param.conn.qp_num = rep_data->remote_qpn;
 }
 
-static int cma_ib_handler(struct ib_cm_id *cm_id, struct ib_cm_event *ib_event)
+static int cma_ib_handler(struct ib_cm_id *cm_id,
+			  const struct ib_cm_event *ib_event)
 {
 	struct rdma_id_private *id_priv = cm_id->context;
 	struct rdma_cm_event event;
@@ -2066,9 +2068,10 @@ out:
 	return ret;
 }
 
-static struct rdma_id_private *cma_new_conn_id(struct rdma_cm_id *listen_id,
-					       struct ib_cm_event *ib_event,
-					       if_t net_dev)
+static struct rdma_id_private *
+cma_new_conn_id(const struct rdma_cm_id *listen_id,
+		const struct ib_cm_event *ib_event,
+		if_t net_dev)
 {
 	struct rdma_id_private *id_priv;
 	struct rdma_cm_id *id;
@@ -2127,9 +2130,10 @@ err:
 	return NULL;
 }
 
-static struct rdma_id_private *cma_new_udp_id(struct rdma_cm_id *listen_id,
-					      struct ib_cm_event *ib_event,
-					      if_t net_dev)
+static struct rdma_id_private *
+cma_new_udp_id(const struct rdma_cm_id *listen_id,
+	       const struct ib_cm_event *ib_event,
+	       if_t net_dev)
 {
 	struct rdma_id_private *id_priv;
 	struct rdma_cm_id *id;
@@ -2168,7 +2172,7 @@ err:
 }
 
 static void cma_set_req_event_data(struct rdma_cm_event *event,
-				   struct ib_cm_req_event_param *req_data,
+				   const struct ib_cm_req_event_param *req_data,
 				   void *private_data, int offset)
 {
 	event->param.conn.private_data = (char *)private_data + offset;
@@ -2182,7 +2186,8 @@ static void cma_set_req_event_data(struct rdma_cm_event *event,
 	event->param.conn.qp_num = req_data->remote_qpn;
 }
 
-static int cma_check_req_qp_type(struct rdma_cm_id *id, struct ib_cm_event *ib_event)
+static int cma_check_req_qp_type(const struct rdma_cm_id *id,
+				 const struct ib_cm_event *ib_event)
 {
 	return (((ib_event->event == IB_CM_REQ_RECEIVED) &&
 		 (ib_event->param.req_rcvd.qp_type == id->qp_type)) ||
@@ -2191,7 +2196,8 @@ static int cma_check_req_qp_type(struct rdma_cm_id *id, struct ib_cm_event *ib_e
 		(!id->qp_type));
 }
 
-static int cma_req_handler(struct ib_cm_id *cm_id, struct ib_cm_event *ib_event)
+static int cma_req_handler(struct ib_cm_id *cm_id,
+			   const struct ib_cm_event *ib_event)
 {
 	struct rdma_id_private *listen_id, *conn_id = NULL;
 	struct rdma_cm_event event;
@@ -3719,11 +3725,12 @@ static int cma_format_hdr(void *hdr, struct rdma_id_private *id_priv)
 }
 
 static int cma_sidr_rep_handler(struct ib_cm_id *cm_id,
-				struct ib_cm_event *ib_event)
+				const struct ib_cm_event *ib_event)
 {
 	struct rdma_id_private *id_priv = cm_id->context;
 	struct rdma_cm_event event;
-	struct ib_cm_sidr_rep_event_param *rep = &ib_event->param.sidr_rep_rcvd;
+	const struct ib_cm_sidr_rep_event_param *rep =
+				&ib_event->param.sidr_rep_rcvd;
 	int ret = 0;
 
 	mutex_lock(&id_priv->handler_mutex);
