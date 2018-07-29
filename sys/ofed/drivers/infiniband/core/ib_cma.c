@@ -157,7 +157,7 @@ const void *rdma_consumer_reject_data(struct rdma_cm_id *id,
 }
 EXPORT_SYMBOL(rdma_consumer_reject_data);
 
-static int cma_check_linklocal(struct rdma_dev_addr *, struct sockaddr *);
+static int cma_check_linklocal(struct rdma_dev_addr *, const struct sockaddr *);
 static void cma_add_one(struct ib_device *device);
 static void cma_remove_one(struct ib_device *device, void *client_data);
 static enum rdma_port_space rdma_ps_from_service_id(__be64 service_id);
@@ -1053,7 +1053,7 @@ int rdma_init_qp_attr(struct rdma_cm_id *id, struct ib_qp_attr *qp_attr,
 }
 EXPORT_SYMBOL(rdma_init_qp_attr);
 
-static inline int cma_zero_addr(struct sockaddr *addr)
+static inline int cma_zero_addr(const struct sockaddr *addr)
 {
 	switch (addr->sa_family) {
 	case AF_INET:
@@ -1067,7 +1067,7 @@ static inline int cma_zero_addr(struct sockaddr *addr)
 	}
 }
 
-static inline int cma_loopback_addr(struct sockaddr *addr)
+static inline int cma_loopback_addr(const struct sockaddr *addr)
 {
 	switch (addr->sa_family) {
 #ifdef INET
@@ -1089,7 +1089,7 @@ static inline int cma_loopback_addr(struct sockaddr *addr)
 	}
 }
 
-static inline bool cma_any_addr(struct vnet *vnet, struct sockaddr *addr)
+static inline bool cma_any_addr(struct vnet *vnet, const struct sockaddr *addr)
 {
 	bool ret;
 
@@ -1118,7 +1118,7 @@ static int cma_addr_cmp(struct sockaddr *src, struct sockaddr *dst)
 	}
 }
 
-static __be16 cma_port(struct sockaddr *addr)
+static __be16 cma_port(const struct sockaddr *addr)
 {
 	struct sockaddr_ib *sib;
 
@@ -1136,7 +1136,7 @@ static __be16 cma_port(struct sockaddr *addr)
 	}
 }
 
-static inline int cma_any_port(struct sockaddr *addr)
+static inline int cma_any_port(const struct sockaddr *addr)
 {
 	return !cma_port(addr);
 }
@@ -3130,7 +3130,7 @@ err:
 }
 
 static int cma_bind_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
-			 struct sockaddr *dst_addr)
+			 const struct sockaddr *dst_addr)
 {
 	if (!src_addr || !src_addr->sa_family) {
 		src_addr = (struct sockaddr *) &id->route.addr.src_addr;
@@ -3151,7 +3151,7 @@ static int cma_bind_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
 }
 
 int rdma_resolve_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
-		      struct sockaddr *dst_addr, int timeout_ms)
+		      const struct sockaddr *dst_addr, int timeout_ms)
 {
 	struct rdma_id_private *id_priv;
 	struct vnet *vnet = id->route.addr.dev_addr.net;
@@ -3515,7 +3515,7 @@ static int cma_get_port(struct rdma_id_private *id_priv)
 }
 
 static int cma_check_linklocal(struct rdma_dev_addr *dev_addr,
-			       struct sockaddr *addr)
+			       const struct sockaddr *addr)
 {
 #ifdef INET6
 	struct sockaddr_in6 sin6;
