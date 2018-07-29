@@ -1053,21 +1053,21 @@ int rdma_init_qp_attr(struct rdma_cm_id *id, struct ib_qp_attr *qp_attr,
 }
 EXPORT_SYMBOL(rdma_init_qp_attr);
 
-static inline int cma_zero_addr(const struct sockaddr *addr)
+static inline bool cma_zero_addr(const struct sockaddr *addr)
 {
 	switch (addr->sa_family) {
 	case AF_INET:
 		return ipv4_is_zeronet(((struct sockaddr_in *)addr)->sin_addr.s_addr);
 	case AF_INET6:
-		return ipv6_addr_any(&((struct sockaddr_in6 *) addr)->sin6_addr);
+		return ipv6_addr_any(&((struct sockaddr_in6 *)addr)->sin6_addr);
 	case AF_IB:
-		return ib_addr_any(&((struct sockaddr_ib *) addr)->sib_addr);
+		return ib_addr_any(&((struct sockaddr_ib *)addr)->sib_addr);
 	default:
-		return 0;
+		return false;
 	}
 }
 
-static inline int cma_loopback_addr(const struct sockaddr *addr)
+static inline bool cma_loopback_addr(const struct sockaddr *addr)
 {
 	switch (addr->sa_family) {
 #ifdef INET
@@ -1076,16 +1076,19 @@ static inline int cma_loopback_addr(const struct sockaddr *addr)
 	 * not present if INET is not included.
 	 */
 	case AF_INET:
-		return ipv4_is_loopback(((struct sockaddr_in *) addr)->sin_addr.s_addr);
+		return ipv4_is_loopback(
+			((struct sockaddr_in *)addr)->sin_addr.s_addr);
 #endif
 #ifdef INET6
 	case AF_INET6:
-		return ipv6_addr_loopback(&((struct sockaddr_in6 *) addr)->sin6_addr);
+		return ipv6_addr_loopback(
+			&((struct sockaddr_in6 *)addr)->sin6_addr);
 #endif
 	case AF_IB:
-		return ib_addr_loopback(&((struct sockaddr_ib *) addr)->sib_addr);
+		return ib_addr_loopback(
+			&((struct sockaddr_ib *)addr)->sib_addr);
 	default:
-		return 0;
+		return false;
 	}
 }
 
