@@ -80,7 +80,7 @@ static struct ib_send_wr ipoib_cm_rx_drain_wr = {
 };
 
 static int ipoib_cm_tx_handler(struct ib_cm_id *cm_id,
-			       struct ib_cm_event *event);
+			       const struct ib_cm_event *event);
 
 static void ipoib_cm_dma_unmap_rx(struct ipoib_dev_priv *priv, struct ipoib_cm_rx_buf *rx_req)
 {
@@ -364,7 +364,8 @@ err_free:
 }
 
 static int ipoib_cm_send_rep(struct ipoib_dev_priv *priv, struct ib_cm_id *cm_id,
-			     struct ib_qp *qp, struct ib_cm_req_event_param *req,
+			     struct ib_qp *qp,
+			     const struct ib_cm_req_event_param *req,
 			     unsigned psn)
 {
 	struct ipoib_cm_data data = {};
@@ -383,7 +384,8 @@ static int ipoib_cm_send_rep(struct ipoib_dev_priv *priv, struct ib_cm_id *cm_id
 	return ib_send_cm_rep(cm_id, &rep);
 }
 
-static int ipoib_cm_req_handler(struct ib_cm_id *cm_id, struct ib_cm_event *event)
+static int ipoib_cm_req_handler(struct ib_cm_id *cm_id,
+				const struct ib_cm_event *event)
 {
 	struct ipoib_dev_priv *priv = cm_id->context;
 	struct ipoib_cm_rx *p;
@@ -444,7 +446,7 @@ err_qp:
 }
 
 static int ipoib_cm_rx_handler(struct ib_cm_id *cm_id,
-			       struct ib_cm_event *event)
+			       const struct ib_cm_event *event)
 {
 	struct ipoib_cm_rx *p;
 	struct ipoib_dev_priv *priv;
@@ -835,7 +837,8 @@ void ipoib_cm_dev_stop(struct ipoib_dev_priv *priv)
 	cancel_delayed_work_sync(&priv->cm.stale_task);
 }
 
-static int ipoib_cm_rep_handler(struct ib_cm_id *cm_id, struct ib_cm_event *event)
+static int ipoib_cm_rep_handler(struct ib_cm_id *cm_id,
+				const struct ib_cm_event *event)
 {
 	struct ipoib_cm_tx *p = cm_id->context;
 	struct ipoib_dev_priv *priv = p->priv;
@@ -1101,7 +1104,7 @@ timeout:
 }
 
 static int ipoib_cm_tx_handler(struct ib_cm_id *cm_id,
-			       struct ib_cm_event *event)
+			       const struct ib_cm_event *event)
 {
 	struct ipoib_cm_tx *tx = cm_id->context;
 	struct ipoib_dev_priv *priv = tx->priv;
