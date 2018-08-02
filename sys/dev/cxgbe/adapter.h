@@ -903,6 +903,7 @@ struct t6_sbtls_cipher {
 	uint16_t prev_win;
 	uint16_t using_timestamps;
 	uint32_t prev_tsecr;
+	uint16_t prev_mss;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)

@@ -3256,8 +3256,11 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* CPL_TX_DATA */
 	tx_data = (void *)out;
 	OPCODE_TID(tx_data) = htonl(MK_OPCODE_TID(CPL_TX_DATA, toep->tid));
-	if (m->m_pkthdr.csum_flags & CSUM_TSO)
+	if (m->m_pkthdr.csum_flags & CSUM_TSO) {
 		mss = m->m_pkthdr.tso_segsz;
+		cipher->prev_mss = mss;
+	} else if (cipher->prev_mss != 0)
+		mss = cipher->prev_mss;
 	else
 		mss = toep->vi->ifp->if_mtu -
 		    (m->m_pkthdr.l3hlen + m->m_pkthdr.l4hlen);
