@@ -2403,24 +2403,35 @@ static u_int
 sbtls_payload_offset(struct toepcb *toep, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
-#ifdef INVARIANTS
 	struct tls_record_layer *hdr;
-	u_int plen, mlen;
+	u_int offset, plen;
+#ifdef INVARIANTS
+	u_int mlen;
 #endif
 
 	MBUF_EXT_PGS_ASSERT(m_tls);
 	ext_pgs = (void *)m_tls->m_ext.ext_buf;
-#ifdef INVARIANTS
 	hdr = (void *)ext_pgs->hdr;
 	plen = ntohs(hdr->tls_length);
+#ifdef INVARIANTS
 	mlen = mtod(m_tls, vm_offset_t) + m_tls->m_len;
 	MPASS(mlen < ext_pgs->hdr_len + plen + ext_pgs->trail_len);
 #endif
 	if (mtod(m_tls, vm_offset_t) <= ext_pgs->hdr_len)
 		return (0);
-	if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
-		return (rounddown(mtod(m_tls, vm_offset_t) - ext_pgs->hdr_len,
-		    CIPHER_BLOCK_SIZE));
+	if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE) {
+		/*
+		 * Always send something.  This function is only called
+		 * if we aren't sending the tag at all, but if the
+		 * request starts in the tag then we are in an odd
+		 * state where would effectively send nothing.  Cap
+		 * the offset at the last byte of the record payload
+		 * to send the last cipher block.
+		 */
+		offset = min(mtod(m_tls, vm_offset_t) - ext_pgs->hdr_len,
+		    plen - 1);
+		return (rounddown(offset, CIPHER_BLOCK_SIZE));
+	}
 	return (0);
 }
 
@@ -3095,7 +3106,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * (the second request in the example above).  This should
 	 * also help to avoid retransmits for the common case.
 	 */
-	tx_max = tcp_seqno + MIN(mtod(m_tls, vm_offset_t),
+	tx_max = tcp_seqno + min(mtod(m_tls, vm_offset_t),
 	    ext_pgs->hdr_len + ntohs(hdr->tls_length));
 
 	/*
