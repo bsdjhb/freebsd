@@ -1539,6 +1539,7 @@ cxgbe_attach(device_t dev)
 	pi->kern_tls_octets = counter_u64_alloc(M_WAITOK);
 	pi->kern_tls_waste = counter_u64_alloc(M_WAITOK);
 	pi->kern_tls_options = counter_u64_alloc(M_WAITOK);
+	pi->kern_tls_header = counter_u64_alloc(M_WAITOK);
 	callout_init_mtx(&pi->tick, &pi->pi_lock, 0);
 
 	rc = cxgbe_vi_attach(dev, &pi->vi[0]);
@@ -1616,6 +1617,7 @@ cxgbe_detach(device_t dev)
 	counter_u64_free(pi->kern_tls_octets);
 	counter_u64_free(pi->kern_tls_waste);
 	counter_u64_free(pi->kern_tls_options);
+	counter_u64_free(pi->kern_tls_header);
 
 	end_synchronized_op(sc, 0);
 
@@ -5989,6 +5991,9 @@ cxgbe_sysctls(struct port_info *pi)
 		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
 		    "kern_tls_options", CTLFLAG_RD, &pi->kern_tls_options,
 		    "# of NIC TLS options-only packets transmitted");
+		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
+		    "kern_tls_header", CTLFLAG_RD, &pi->kern_tls_header,
+		    "# of NIC TLS header-only packets transmitted");
 	}
 #endif
 }

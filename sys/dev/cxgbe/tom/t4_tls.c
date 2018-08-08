@@ -2386,14 +2386,6 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	 * length for the block size.
 	 */
 
-	/*
-	 * If the host stack has asked to only send the header or
-	 * less, don't send anything.  Eventually the stack should
-	 * ask to send more at which point we will send actual data.
-	 */
-	if (mlen <= ext_pgs->hdr_len)
-		return (0);
-
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d short TLS record (%u vs %u)",
 	    __func__, cipher->toep->tid, mlen, ext_pgs->hdr_len + plen +
@@ -2446,21 +2438,47 @@ sbtls_sgl_size(u_int nsegs)
 }
 
 static int
-sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls, int *nsegsp)
+sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
+    int *nsegsp)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
 	u_int imm_len, offset, plen, wr_len, tlen;
+
+	MBUF_EXT_PGS_ASSERT(m_tls);
+	ext_pgs = (void *)m_tls->m_ext.ext_buf;
 
 	/*
 	 * Determine the size of the TLS record payload to send
 	 * excluding header and trailer.
 	 */
 	tlen = sbtls_tcp_payload_length(cipher, m_tls);
-	if (tlen == 0)
-		return (0);
-	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	if (tlen <= ext_pgs->hdr_len) {
+		/*
+		 * For requests that only want to send the TLS header,
+		 * send a tunnelled packet as immediate data.
+		 */
+		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
+		    sizeof(struct cpl_tx_pkt_core) +
+		    roundup2(m->m_len + m_tls->m_len, 16);
+		if (wr_len > SGE_MAX_WR_LEN) {
+			CTR3(KTR_CXGBE,
+		    "%s: tid %d TLS header-only packet too long (len %d)",
+			    __func__, cipher->toep->tid, m->m_len +
+			    m_tls->m_len);
+		}
+
+		/* This should always be the last TLS record in a chain. */
+		MPASS(m_tls->m_next == NULL);
+
+		/*
+		 * XXX: Set a bogus 'nsegs' value to avoid tripping an
+		 * assertion in mbuf_nsegs() in t4_sge.c.
+		 */
+		*nsegsp = 1;
+		return (wr_len);
+	}
+
 	hdr = (void *)ext_pgs->hdr;
 	plen = ext_pgs->hdr_len + ntohs(hdr->tls_length);
 	if (tlen < plen) {
@@ -2631,13 +2649,11 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
 
-		wr_len = sbtls_wr_len(cipher, m_tls, &nsegs);
+		wr_len = sbtls_wr_len(cipher, m, m_tls, &nsegs);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d wr_len %d nsegs %d", __func__,
 		    cipher->toep->tid, wr_len, nsegs);
 #endif
-		if (wr_len == 0)
-			break;
 		if (wr_len > SGE_MAX_WR_LEN || nsegs > TX_SGL_SEGS)
 			return (EFBIG);
 		tot_len += roundup2(wr_len, EQ_ESIZE);
@@ -2650,8 +2666,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 			*nsegsp = nsegs;
 	}
 
-	if (tot_len == 0)
-		return (EAGAIN);
+	MPASS(tot_len != 0);
 
 	/*
 	 * See if we have any TCP options requiring a dedicated options-only
@@ -2824,6 +2839,7 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* Clear PUSH and FIN in the TCP header if present. */
 	tcp = (void *)((char *)ip + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
+	newtcp.th_flags &= ~(TH_PUSH | TH_FIN);
 	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
 
 	/* Copy rest of packet. */
@@ -2837,6 +2853,138 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = NULL;
+	txsd->desc_used = ndesc;
+
+	return (ndesc);
+}
+
+static void
+sbtls_populate_tls_header(struct toepcb *toep, struct mbuf_ext_pgs *ext_pgs,
+    void *dst)
+{
+	struct tls_record_layer *hdr, *inhdr;
+	u_int real_tls_hdr_len;
+
+	inhdr = (void *)ext_pgs->hdr;
+	real_tls_hdr_len = ext_pgs->hdr_len + ntohs(inhdr->tls_length) +
+	    ext_pgs->trail_len - TLS_HEADER_LENGTH;
+
+	hdr = dst;
+	hdr->tls_type = inhdr->tls_type;
+	hdr->tls_vmajor = inhdr->tls_vmajor;
+	hdr->tls_vminor = inhdr->tls_vminor;
+	hdr->tls_length = htons(real_tls_hdr_len);
+	if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
+		*(uint64_t *)(hdr + 1) = htobe64(ext_pgs->seqno);
+#ifdef notyet
+	else
+		/* XXX: Have to generate and append IV here. */
+		/*
+		 * XXX: This is fraught with peril for retransmits as
+		 * we need to always use the same IV for the same TLS
+		 * record.  Probably for CBC the IV will need to be
+		 * generated when the TLS record is created at the
+		 * socket layer.
+		 */
+		XXX;
+#endif
+}
+
+static int
+sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+    void *dst, struct mbuf *m, struct mbuf *m_tls, u_int available,
+    tcp_seq tcp_seqno, u_int pidx)
+{
+	struct tx_sdesc *txsd;
+	struct fw_eth_tx_pkt_wr *wr;
+	struct cpl_tx_pkt_core *cpl;
+	uint32_t ctrl;
+	uint64_t ctrl1;
+	int len16, ndesc, pktlen;
+	struct ip *ip, newip;
+	struct tcphdr *tcp, newtcp;
+	struct mbuf_ext_pgs *ext_pgs;
+	caddr_t out;
+
+	TXQ_LOCK_ASSERT_OWNED(txq);
+	M_ASSERTPKTHDR(m);
+
+	/* Locate the template TLS header. */
+	MBUF_EXT_PGS_ASSERT(m_tls);
+	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+
+	/* This should always be the last TLS record in a chain. */
+	MPASS(m_tls->m_next == NULL);
+
+	wr = dst;
+	pktlen = m->m_len + m_tls->m_len;
+	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
+	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
+	ndesc = howmany(len16, EQ_ESIZE / 16);
+	MPASS(ndesc <= available);
+
+	/* Firmware work request header */
+	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
+	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
+
+	ctrl = V_FW_WR_LEN16(len16);
+	wr->equiq_to_len16 = htobe32(ctrl);
+	wr->r3 = 0;
+
+	cpl = (void *)(wr + 1);
+
+	/* Checksum offload */
+	ctrl1 = 0;
+	txq->txcsum++;
+
+	/* CPL header */
+	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->pack = 0;
+	cpl->len = htobe16(pktlen);
+	cpl->ctrl1 = htobe64(ctrl1);
+
+	out = (void *)(cpl + 1);
+
+	/* Copy over Ethernet header. */
+	copy_to_txd(&txq->eq, mtod(m, caddr_t), &out, m->m_pkthdr.l2hlen);
+
+	/* Fixup length in IP header and copy out. */
+	ip = (void *)(mtod(m, caddr_t) + m->m_pkthdr.l2hlen);
+	newip = *ip;
+	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
+	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+	if (m->m_pkthdr.l3hlen > sizeof(*ip))
+		copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+		    m->m_pkthdr.l3hlen - sizeof(*ip));
+
+	/* Set sequence number in TCP header. */
+	tcp = (void *)((char *)ip + m->m_pkthdr.l3hlen);
+	newtcp = *tcp;
+	newtcp.th_seq = htonl(tcp_seqno + mtod(m_tls, vm_offset_t));
+	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
+
+	/* Copy rest of TCP header. */
+	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, m->m_len -
+	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
+
+	/* Populate the TLS header in the scratch space. */
+	sbtls_populate_tls_header(cipher->toep, ext_pgs, txq->ss);
+
+	/* Copy the subset of the TLS header requested. */
+	copy_to_txd(&txq->eq, (char *)txq->ss + mtod(m_tls, vm_offset_t), &out,
+	    m_tls->m_len);
+	txq->imm_wrs++;
+
+	txq->txpkt_wrs++;
+
+#ifdef VERBOSE_TRACES
+	CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
+	    __func__, cipher->toep->tid, (u_int)ext_pgs->seqno);
+#endif
+	counter_u64_add(cipher->toep->vi->pi->kern_tls_header, 1);
+
+	txsd = &txq->sdesc[pidx];
+	txsd->m = m;
 	txsd->desc_used = ndesc;
 
 	return (ndesc);
@@ -2863,13 +3011,13 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	struct cpl_tx_sec_pdu *sec_pdu;
 	struct cpl_tx_data *tx_data;
 	struct mbuf_ext_pgs *ext_pgs;
-	struct tls_record_layer *hdr, *inhdr;
+	struct tls_record_layer *hdr;
 	char *iv, *out;
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, ndesc, offset, plen, tlen, twr_len, wr_len;
-	u_int real_tls_hdr_len, tx_max, fields;
+	u_int tx_max, fields;
 	bool first_wr, last_wr, using_scratch;
 
 	ndesc = 0;
@@ -2890,14 +3038,19 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* Locate the template TLS header. */
 	MBUF_EXT_PGS_ASSERT(m_tls);
 	ext_pgs = (void *)m_tls->m_ext.ext_buf;
-	inhdr = (void *)ext_pgs->hdr;
-	plen = ext_pgs->hdr_len + ntohs(inhdr->tls_length);
-	real_tls_hdr_len = plen + ext_pgs->trail_len - TLS_HEADER_LENGTH;
+	hdr = (void *)ext_pgs->hdr;
+	plen = ext_pgs->hdr_len + ntohs(hdr->tls_length);
 
 	/* Determine how much of the TLS record to send. */
 	tlen = sbtls_tcp_payload_length(cipher, m_tls);
-	if (tlen == 0)
-		return (0);
+	if (tlen <= ext_pgs->hdr_len) {
+		/*
+		 * For requests that only want to send the TLS header,
+		 * send a tunnelled packet as immediate data.
+		 */
+		return (sbtls_write_tunnel_packet(cipher, txq, dst, m, m_tls,
+		    available, tcp_seqno, pidx));
+	}
 	if (tlen < plen) {
 		plen = tlen;
 		offset = sbtls_payload_offset(cipher->toep, m_tls);
@@ -2910,16 +3063,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/*
 	 * This is the last work request for a given TLS mbuf chain if
-	 * it is either the last mbuf in the chain or if the next mbuf
-	 * only transmits the header or less such that
-	 * sbtls_tcp_payload_length() returns 0 to skip it entirely.
-	 *
-	 * NB: ext_pgs is from the "wrong" mbuf, but all ext_pgs for a
-	 * given connection should have identical TLS header lengths.
+	 * it is the last mbuf in the chain.
 	 */
-	last_wr = m_tls->m_next == NULL ||
-	    (m_tls->m_next->m_len <= ext_pgs->hdr_len &&
-	    sbtls_tcp_payload_length(cipher, m_tls->m_next) == 0);
+	last_wr = m_tls->m_next == NULL;
 
 	/*
 	 * The host stack may ask us to not send part of the start of
@@ -2950,7 +3096,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * also help to avoid retransmits for the common case.
 	 */
 	tx_max = tcp_seqno + MIN(mtod(m_tls, vm_offset_t),
-	    ext_pgs->hdr_len + ntohs(inhdr->tls_length));
+	    ext_pgs->hdr_len + ntohs(hdr->tls_length));
 
 	/*
 	 * Update TCB fields.  Reserve space for the FW_UPTX_WR header
@@ -3279,25 +3425,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* Populate the TLS header */
 	out = (void *)(tx_data + 1);
 	if (offset == 0) {
-		hdr = (void *)out;
-		hdr->tls_type = inhdr->tls_type;
-		hdr->tls_vmajor = inhdr->tls_vmajor;
-		hdr->tls_vminor = inhdr->tls_vminor;
-		hdr->tls_length = htons(real_tls_hdr_len);
-		if (toep->tls.k_ctx.state.enc_mode == CH_EVP_CIPH_GCM_MODE)
-			*(uint64_t *)(hdr + 1) = htobe64(ext_pgs->seqno);
-#ifdef notyet
-		else
-			/* XXX: Have to generate and append IV here. */
-			/*
-			 * XXX: This is fraught with peril for retransmits as
-			 * we need to always use the same IV for the same TLS
-			 * record.  Probably for CBC the IV will need to be
-			 * generated when the TLS record is created at the
-			 * socket layer.
-			 */
-			XXX;
-#endif
+		sbtls_populate_tls_header(toep, ext_pgs, out);
 		out += ext_pgs->hdr_len;
 	}
 

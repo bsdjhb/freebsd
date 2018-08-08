@@ -310,6 +310,7 @@ struct port_info {
 	counter_u64_t kern_tls_octets;
 	counter_u64_t kern_tls_waste;
 	counter_u64_t kern_tls_options;
+	counter_u64_t kern_tls_header;
 
 	struct callout tick;
 };
