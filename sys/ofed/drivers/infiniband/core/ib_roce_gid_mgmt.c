@@ -115,23 +115,23 @@ static void update_gid(enum gid_op_type gid_op, struct ib_device *ib_dev,
 	}
 }
 
-static int
+static bool
 roce_gid_match_netdev(struct ib_device *ib_dev, u8 port,
     if_t idev, void *cookie)
 {
 	if_t ndev = (if_t )cookie;
 	if (idev == NULL)
-		return (0);
+		return (false);
 	return (ndev == idev);
 }
 
-static int
+static bool
 roce_gid_match_all(struct ib_device *ib_dev, u8 port,
     if_t idev, void *cookie)
 {
 	if (idev == NULL)
-		return (0);
-	return (1);
+		return (false);
+	return (true);
 }
 
 static int
