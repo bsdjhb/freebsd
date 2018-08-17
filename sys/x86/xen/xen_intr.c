@@ -59,6 +59,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/xen/synch_bitops.h>
 #include <machine/xen/xen-os.h>
 
+#include <xen/xen-os.h>
 #include <xen/hypervisor.h>
 #include <xen/xen_intr.h>
 #include <xen/evtchn/evtchnvar.h>
@@ -71,6 +72,8 @@ __FBSDID("$FreeBSD$");
 #endif
 
 static MALLOC_DEFINE(M_XENINTR, "xen_intr", "Xen Interrupt Services");
+
+static int first_evtchn_irq;
 
 /**
  * Per-cpu event channel processing state.
@@ -276,7 +279,7 @@ xen_intr_find_unused_isrc(enum evtchn_type type)
 		struct xenisrc *isrc;
 		u_int vector;
 
-		vector = FIRST_EVTCHN_INT + isrc_idx;
+		vector = first_evtchn_irq + isrc_idx;
 		isrc = (struct xenisrc *)intr_lookup_source(vector);
 		if (isrc != NULL
 		 && isrc->xi_type == EVTCHN_TYPE_UNBOUND) {
@@ -314,7 +317,7 @@ xen_intr_alloc_isrc(enum evtchn_type type, int vector)
 	}
 
 	if (type != EVTCHN_TYPE_PIRQ) {
-		vector = FIRST_EVTCHN_INT + xen_intr_auto_vector_count;
+		vector = first_evtchn_irq + xen_intr_auto_vector_count;
 		xen_intr_auto_vector_count++;
 	}
 
@@ -473,8 +476,8 @@ xen_intr_isrc(xen_intr_handle_t handle)
 		return (NULL);
 
 	vector = *(int *)handle;
-	KASSERT(vector >= FIRST_EVTCHN_INT &&
-	    vector < (FIRST_EVTCHN_INT + xen_intr_auto_vector_count),
+	KASSERT(vector >= first_evtchn_irq &&
+	    vector < (first_evtchn_irq + xen_intr_auto_vector_count),
 	    ("Xen interrupt vector is out of range"));
 
 	return ((struct xenisrc *)intr_lookup_source(vector));
@@ -666,6 +669,14 @@ xen_intr_init(void *dummy __unused)
 }
 SYSINIT(xen_intr_init, SI_SUB_INTR, SI_ORDER_SECOND, xen_intr_init, NULL);
 
+void
+xen_intr_alloc_irqs(void)
+{
+
+	first_evtchn_irq = num_io_irqs;
+	num_io_irqs += NR_EVENT_CHANNELS;
+}
+
 /*--------------------------- Common PIC Functions ---------------------------*/
 /**
  * Prepare this PIC for system suspension.
@@ -768,7 +779,7 @@ xen_intr_resume(struct pic *unused, bool suspend_cancelled)
 	for (isrc_idx = 0; isrc_idx < xen_intr_auto_vector_count; isrc_idx++) {
 		u_int vector;
 
-		vector = FIRST_EVTCHN_INT + isrc_idx;
+		vector = first_evtchn_irq + isrc_idx;
 		isrc = (struct xenisrc *)intr_lookup_source(vector);
 		if (isrc != NULL) {
 			isrc->xi_port = 0;

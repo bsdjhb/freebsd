@@ -151,6 +151,8 @@ struct pic msi_pic = {
 	.pic_reprogram_pin = NULL,
 };
 
+int first_msi_irq;
+
 #ifdef SMP
 /**
  * Xen hypervisors prior to 4.6.0 do not properly handle updates to
@@ -329,6 +331,10 @@ msi_init(void)
 	}
 #endif
 
+	MPASS(num_io_irqs > 0);
+	first_msi_irq = max(MINIMUM_MSI_INT, num_io_irqs);
+	num_io_irqs = first_msi_irq + NUM_MSI_INTS;
+
 	msi_enabled = 1;
 	intr_register_pic(&msi_pic);
 	mtx_init(&msi_lock, "msi", NULL, MTX_DEF);
@@ -345,7 +351,7 @@ msi_create_source(void)
 		mtx_unlock(&msi_lock);
 		return;
 	}
-	irq = msi_last_irq + FIRST_MSI_INT;
+	irq = msi_last_irq + first_msi_irq;
 	msi_last_irq++;
 	mtx_unlock(&msi_lock);
 
@@ -385,7 +391,7 @@ again:
 
 	/* Try to find 'count' free IRQs. */
 	cnt = 0;
-	for (i = FIRST_MSI_INT; i < FIRST_MSI_INT + NUM_MSI_INTS; i++) {
+	for (i = first_msi_irq; i < first_msi_irq + NUM_MSI_INTS; i++) {
 		msi = (struct msi_intsrc *)intr_lookup_source(i);
 
 		/* End of allocated sources, so break. */
@@ -404,7 +410,7 @@ again:
 	/* Do we need to create some new sources? */
 	if (cnt < count) {
 		/* If we would exceed the max, give up. */
-		if (i + (count - cnt) >= FIRST_MSI_INT + NUM_MSI_INTS) {
+		if (i + (count - cnt) >= first_msi_irq + NUM_MSI_INTS) {
 			mtx_unlock(&msi_lock);
 			free(mirqs, M_MSI);
 			return (ENXIO);
@@ -579,8 +585,8 @@ msi_map(int irq, uint64_t *addr, uint32_t *data)
 
 #ifdef ACPI_DMAR
 	if (!msi->msi_msix) {
-		for (k = msi->msi_count - 1, i = FIRST_MSI_INT; k > 0 &&
-		    i < FIRST_MSI_INT + NUM_MSI_INTS; i++) {
+		for (k = msi->msi_count - 1, i = first_msi_irq; k > 0 &&
+		    i < first_msi_irq + NUM_MSI_INTS; i++) {
 			if (i == msi->msi_irq)
 				continue;
 			msi1 = (struct msi_intsrc *)intr_lookup_source(i);
@@ -630,7 +636,7 @@ again:
 	mtx_lock(&msi_lock);
 
 	/* Find a free IRQ. */
-	for (i = FIRST_MSI_INT; i < FIRST_MSI_INT + NUM_MSI_INTS; i++) {
+	for (i = first_msi_irq; i < first_msi_irq + NUM_MSI_INTS; i++) {
 		msi = (struct msi_intsrc *)intr_lookup_source(i);
 
 		/* End of allocated sources, so break. */
@@ -645,7 +651,7 @@ again:
 	/* Do we need to create a new source? */
 	if (msi == NULL) {
 		/* If we would exceed the max, give up. */
-		if (i + 1 >= FIRST_MSI_INT + NUM_MSI_INTS) {
+		if (i + 1 >= first_msi_irq + NUM_MSI_INTS) {
 			mtx_unlock(&msi_lock);
 			return (ENXIO);
 		}
