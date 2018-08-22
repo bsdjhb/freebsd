@@ -180,14 +180,14 @@ intr_init_sources(void *arg)
 	 * - 1 ??? dummy counter.
 	 * - 2 counters for each I/O interrupt.
 	 * - 1 counter for each CPU for lapic timer.
+	 * - 1 counter for each CPU for the Hyper-V vmbus driver.
 	 * - 8 counters for each CPU for IPI counters for SMP.
 	 */
-	nintrcnt = 1 + num_io_irqs * 2 + mp_ncpus;
+	nintrcnt = 1 + num_io_irqs * 2 + mp_ncpus * 2;
 #ifdef COUNT_IPIS
 	if (mp_ncpus > 1)
 		nintrcnt += 8 * mp_ncpus;
 #endif
-	/* XXX: Need to reserve room for Hyper-V per-CPU counters. */
 	intrcnt = mallocarray(nintrcnt, sizeof(u_long), M_INTR, M_WAITOK |
 	    M_ZERO);
 	intrnames = mallocarray(nintrcnt, MAXCOMLEN + 1, M_INTR, M_WAITOK |
