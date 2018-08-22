@@ -509,7 +509,7 @@ atpic_init(void *dummy __unused)
 		panic("Unable to register ATPICs");
 
 	if (num_io_irqs == 0)
-		num_io_irqs == NUM_ISA_IRQS;
+		num_io_irqs = NUM_ISA_IRQS;
 }
 SYSINIT(atpic_init, SI_SUB_INTR, SI_ORDER_FOURTH, atpic_init, NULL);
 
