@@ -198,12 +198,16 @@ intr_init_sources(void *arg)
 	intrcnt_setname("???", 0);
 	intrcnt_index = 1;
 
-	mtx_lock(&intrpic_lock);
+	/*
+	 * NB: intrpic_lock is not held here to avoid LORs due to
+	 * malloc() in intr_register_source().  However, we are still
+	 * single-threaded at this point in startup so the list of
+	 * PICs shouldn't change.
+	 */
 	TAILQ_FOREACH(pic, &pics, pics) {
 		if (pic->pic_register_sources != NULL)
 			pic->pic_register_sources(pic);
 	}
-	mtx_unlock(&intrpic_lock);
 }
 SYSINIT(intr_init_sources, SI_SUB_INTR, SI_ORDER_FOURTH + 1, intr_init_sources,
     NULL);
