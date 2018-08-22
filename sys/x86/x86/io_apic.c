@@ -763,6 +763,8 @@ ioapic_remap_vector(void *cookie, u_int pin, int vector)
 	io = (struct ioapic *)cookie;
 	if (pin >= io->io_numintr || vector < 0)
 		return (EINVAL);
+	if (io->io_pins[pin].io_irq < 0)
+		return (EINVAL);
 	io->io_pins[pin].io_irq = vector;
 	if (bootverbose)
 		printf("ioapic%u: Routing IRQ %d -> intpin %d\n", io->io_id,
@@ -779,6 +781,8 @@ ioapic_set_bus(void *cookie, u_int pin, int bus_type)
 		return (EINVAL);
 	io = (struct ioapic *)cookie;
 	if (pin >= io->io_numintr)
+		return (EINVAL);
+	if (io->io_pins[pin].io_irq < 0)
 		return (EINVAL);
 	if (io->io_pins[pin].io_bus == bus_type)
 		return (0);
@@ -799,6 +803,8 @@ ioapic_set_nmi(void *cookie, u_int pin)
 		return (EINVAL);
 	if (io->io_pins[pin].io_irq == IRQ_NMI)
 		return (0);
+	if (io->io_pins[pin].io_irq < 0)
+		return (EINVAL);
 	io->io_pins[pin].io_bus = APIC_BUS_UNKNOWN;
 	io->io_pins[pin].io_irq = IRQ_NMI;
 	io->io_pins[pin].io_masked = 0;
@@ -820,6 +826,8 @@ ioapic_set_smi(void *cookie, u_int pin)
 		return (EINVAL);
 	if (io->io_pins[pin].io_irq == IRQ_SMI)
 		return (0);
+	if (io->io_pins[pin].io_irq < 0)
+		return (EINVAL);
 	io->io_pins[pin].io_bus = APIC_BUS_UNKNOWN;
 	io->io_pins[pin].io_irq = IRQ_SMI;
 	io->io_pins[pin].io_masked = 0;
@@ -841,6 +849,8 @@ ioapic_set_extint(void *cookie, u_int pin)
 		return (EINVAL);
 	if (io->io_pins[pin].io_irq == IRQ_EXTINT)
 		return (0);
+	if (io->io_pins[pin].io_irq < 0)
+		return (EINVAL);
 	io->io_pins[pin].io_bus = APIC_BUS_UNKNOWN;
 	io->io_pins[pin].io_irq = IRQ_EXTINT;
 	if (enable_extint)
@@ -864,6 +874,8 @@ ioapic_set_polarity(void *cookie, u_int pin, enum intr_polarity pol)
 	io = (struct ioapic *)cookie;
 	if (pin >= io->io_numintr || pol == INTR_POLARITY_CONFORM)
 		return (EINVAL);
+	if (io->io_pins[pin].io_irq < 0)
+		return (EINVAL);
 	activehi = (pol == INTR_POLARITY_HIGH);
 	if (io->io_pins[pin].io_activehi == activehi)
 		return (0);
@@ -882,6 +894,8 @@ ioapic_set_triggermode(void *cookie, u_int pin, enum intr_trigger trigger)
 
 	io = (struct ioapic *)cookie;
 	if (pin >= io->io_numintr || trigger == INTR_TRIGGER_CONFORM)
+		return (EINVAL);
+	if (io->io_pins[pin].io_irq < 0)
 		return (EINVAL);
 	edgetrigger = (trigger == INTR_TRIGGER_EDGE);
 	if (io->io_pins[pin].io_edgetrigger == edgetrigger)
