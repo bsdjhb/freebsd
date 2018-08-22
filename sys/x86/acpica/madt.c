@@ -428,10 +428,6 @@ madt_parse_apics(ACPI_SUBTABLE_HEADER *entry, void *arg __unused)
 			    apic->Id);
 		if (ioapics[apic->Id].io_apic != NULL)
 			panic("%s: Double APIC ID %u", __func__, apic->Id);
-		/*
-		 * XXX: Check mail archives to see if I can find the dump
-		 * of the weird machine with duplicate I/O APICs.
-		 */
 		ioapics[apic->Id].io_apic = ioapic_create(apic->Address,
 		    apic->Id, apic->GlobalIrqBase);
 		ioapics[apic->Id].io_vector = apic->GlobalIrqBase;
