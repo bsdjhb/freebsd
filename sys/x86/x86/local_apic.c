@@ -849,6 +849,10 @@ native_lapic_intrcnt(void *dummy __unused)
 	struct lapic *la;
 	char buf[MAXCOMLEN + 1];
 
+	/* If there are no APICs, skip this function. */
+	if (lapics == NULL)
+		return;
+
 	STAILQ_FOREACH(pc, &cpuhead, pc_allcpu) {
 		la = &lapics[pc->pc_apic_id];
 		KASSERT(la->la_present, ("missing APIC structure"));
