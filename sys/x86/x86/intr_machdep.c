@@ -171,9 +171,9 @@ intr_init_sources(void *arg)
 
 	MPASS(num_io_irqs > 0);
 
-	interrupt_sources = mallocarray(num_io_irqs, sizeof(struct intsrc),
+	interrupt_sources = mallocarray(num_io_irqs, sizeof(*interrupt_sources),
 	    M_INTR, M_WAITOK | M_ZERO);
-	interrupt_sorted = mallocarray(num_io_irqs, sizeof(struct intsrc),
+	interrupt_sorted = mallocarray(num_io_irqs, sizeof(*interrupt_sorted),
 	    M_INTR, M_WAITOK | M_ZERO);
 
 	/*
@@ -224,7 +224,8 @@ intr_register_source(struct intsrc *isrc)
 
 	KASSERT(intr_pic_registered(isrc->is_pic), ("unregistered PIC"));
 	vector = isrc->is_pic->pic_vector(isrc);
-	KASSERT(vector < num_io_irqs, ("IRQ %d too large", vector));
+	KASSERT(vector < num_io_irqs, ("IRQ %d too large (%u irqs)", vector,
+	    num_io_irqs));
 	if (interrupt_sources[vector] != NULL)
 		return (EEXIST);
 	error = intr_event_create(&isrc->is_event, isrc, 0, vector,
