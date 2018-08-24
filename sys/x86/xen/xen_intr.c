@@ -634,17 +634,13 @@ xen_intr_init(void *dummy __unused)
 	mtx_init(&xen_intr_isrc_lock, "xen-irq-lock", NULL, MTX_DEF);
 
 	/*
-	 * Register interrupt count manually as we aren't
-	 * guaranteed to see a call to xen_intr_assign_cpu()
-	 * before our first interrupt. Also set the per-cpu
-	 * mask of CPU#0 to enable all, since by default
-	 * all event channels are bound to CPU#0.
+	 * Set the per-cpu mask of CPU#0 to enable all, since by default all
+	 * event channels are bound to CPU#0.
 	 */
 	CPU_FOREACH(i) {
 		pcpu = DPCPU_ID_PTR(i, xen_intr_pcpu);
 		memset(pcpu->evtchn_enabled, i == 0 ? ~0 : 0,
 		    sizeof(pcpu->evtchn_enabled));
-		xen_intr_intrcnt_add(i);
 	}
 
 	for (i = 0; i < nitems(s->evtchn_mask); i++)
@@ -668,6 +664,23 @@ xen_intr_init(void *dummy __unused)
 	return (0);
 }
 SYSINIT(xen_intr_init, SI_SUB_INTR, SI_ORDER_SECOND, xen_intr_init, NULL);
+
+static void
+xen_intrcnt_init(void *dummy __unused)
+{
+	unsigned int i;
+
+	if (!xen_domain())
+		return;
+
+	/*
+	 * Register interrupt count manually as we aren't guaranteed to see a
+	 * call to xen_intr_assign_cpu() before our first interrupt.
+	 */
+	CPU_FOREACH(i)
+		xen_intr_intrcnt_add(i);
+}
+SYSINIT(xen_intrcnt_init, SI_SUB_INTR, SI_ORDER_MIDDLE, xen_intrcnt_init, NULL);
 
 void
 xen_intr_alloc_irqs(void)
@@ -883,7 +896,6 @@ xen_intr_assign_cpu(struct intsrc *base_isrc, u_int apic_id)
 
 	to_cpu = apic_cpuid(apic_id);
 	vcpu_id = pcpu_find(to_cpu)->pc_vcpu_id;
-	xen_intr_intrcnt_add(to_cpu);
 
 	mtx_lock(&xen_intr_isrc_lock);
 	isrc = (struct xenisrc *)base_isrc;
@@ -1284,9 +1296,6 @@ xen_intr_bind_virq(device_t dev, u_int virq, u_int cpu,
 	struct evtchn_bind_virq bind_virq = { .virq = virq, .vcpu = vcpu_id };
 	int error;
 
-	/* Ensure the target CPU is ready to handle evtchn interrupts. */
-	xen_intr_intrcnt_add(cpu);
-
 	isrc = NULL;
 	error = HYPERVISOR_event_channel_op(EVTCHNOP_bind_virq, &bind_virq);
 	if (error != 0) {
@@ -1348,9 +1357,6 @@ xen_intr_alloc_and_bind_ipi(u_int cpu, driver_filter_t filter,
 	/* Same size as the one used by intr_handler->ih_name. */
 	char name[MAXCOMLEN + 1];
 	int error;
-
-	/* Ensure the target CPU is ready to handle evtchn interrupts. */
-	xen_intr_intrcnt_add(cpu);
 
 	isrc = NULL;
 	error = HYPERVISOR_event_channel_op(EVTCHNOP_bind_ipi, &bind_ipi);
