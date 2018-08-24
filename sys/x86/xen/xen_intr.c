@@ -73,7 +73,7 @@ __FBSDID("$FreeBSD$");
 
 static MALLOC_DEFINE(M_XENINTR, "xen_intr", "Xen Interrupt Services");
 
-static int first_evtchn_irq;
+static u_int first_evtchn_irq;
 
 /**
  * Per-cpu event channel processing state.
@@ -190,7 +190,7 @@ struct pic xen_intr_pirq_pic = {
 };
 
 static struct mtx	 xen_intr_isrc_lock;
-static int		 xen_intr_auto_vector_count;
+static u_int		 xen_intr_auto_vector_count;
 static struct xenisrc	*xen_intr_port_to_isrc[NR_EVENT_CHANNELS];
 static u_long		*xen_intr_pirq_eoi_map;
 static boolean_t	 xen_intr_pirq_eoi_map_enabled;

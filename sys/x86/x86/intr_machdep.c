@@ -92,7 +92,7 @@ static struct sx intrsrc_lock;
 static struct mtx intrpic_lock;
 static struct mtx intrcnt_lock;
 static TAILQ_HEAD(pics_head, pic) pics;
-int num_io_irqs;
+u_int num_io_irqs;
 
 #if defined(SMP) && !defined(EARLY_AP_STARTUP)
 static int assign_cpu;
@@ -541,7 +541,7 @@ void
 intr_reprogram(void)
 {
 	struct intsrc *is;
-	int v;
+	u_int v;
 
 	sx_xlock(&intrsrc_lock);
 	for (v = 0; v < num_io_irqs; v++) {
@@ -561,7 +561,8 @@ intr_reprogram(void)
 DB_SHOW_COMMAND(irqs, db_show_irqs)
 {
 	struct intsrc **isrc;
-	int i, verbose;
+	u_int i;
+	int verbose;
 
 	if (strcmp(modif, "v") == 0)
 		verbose = 1;
@@ -676,8 +677,7 @@ static void
 intr_shuffle_irqs(void *arg __unused)
 {
 	struct intsrc *isrc;
-	u_int cpu;
-	int i;
+	u_int cpu, i;
 
 	intr_init_cpus();
 	/* Don't bother on UP. */
@@ -722,8 +722,8 @@ sysctl_hw_intrs(SYSCTL_HANDLER_ARGS)
 {
 	struct sbuf sbuf;
 	struct intsrc *isrc;
+	u_int i;
 	int error;
-	int i;
 
 	error = sysctl_wire_old_buffer(req, 0);
 	if (error != 0)

@@ -49,7 +49,7 @@ __FBSDID("$FreeBSD$");
 #include <xen/xen_msi.h>
 
 static struct mtx msi_lock;
-static int msi_last_irq;
+static u_int msi_last_irq;
 
 void
 xen_msi_init(void)

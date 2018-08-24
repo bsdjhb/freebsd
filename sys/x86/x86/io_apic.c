@@ -144,7 +144,7 @@ struct pic ioapic_template = {
 	.pic_reprogram_pin = ioapic_reprogram_intpin,
 };
 
-static int next_ioapic_base;
+static u_int next_ioapic_base;
 static u_int next_id;
 
 static int enable_extint;

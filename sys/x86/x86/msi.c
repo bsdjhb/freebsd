@@ -120,7 +120,7 @@ struct msi_intsrc {
 	u_int msi_cpu;			/* Local APIC ID. (g) */
 	u_int msi_count:8;		/* Messages in this group. (g) */
 	u_int msi_maxcount:8;		/* Alignment for this group. (g) */
-	int *msi_irqs;			/* Group's IRQ list. (g) */
+	u_int *msi_irqs;		/* Group's IRQ list. (g) */
 	u_int msi_remap_cookie;
 };
 
@@ -151,7 +151,7 @@ struct pic msi_pic = {
 	.pic_reprogram_pin = NULL,
 };
 
-int first_msi_irq;
+u_int first_msi_irq;
 
 #ifdef SMP
 /**
@@ -170,7 +170,7 @@ SYSCTL_INT(_machdep, OID_AUTO, disable_msix_migration, CTLFLAG_RDTUN,
 #endif
 
 static int msi_enabled;
-static int msi_last_irq;
+static u_int msi_last_irq;
 static struct mtx msi_lock;
 
 static void
@@ -369,8 +369,8 @@ int
 msi_alloc(device_t dev, int count, int maxcount, int *irqs)
 {
 	struct msi_intsrc *msi, *fsrc;
-	u_int cpu, domain;
-	int cnt, i, *mirqs, vector;
+	u_int cpu, domain, *mirqs;
+	int cnt, i, vector;
 #ifdef ACPI_DMAR
 	u_int cookies[count];
 	int error;
