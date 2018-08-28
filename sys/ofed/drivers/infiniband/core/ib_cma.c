@@ -3069,13 +3069,11 @@ static void addr_handler(int status, struct sockaddr *src_addr,
 	if (id_priv->id.event_handler(&id_priv->id, &event)) {
 		cma_exch(id_priv, RDMA_CM_DESTROYING);
 		mutex_unlock(&id_priv->handler_mutex);
-		cma_deref_id(id_priv);
 		rdma_destroy_id(&id_priv->id);
 		return;
 	}
 out:
 	mutex_unlock(&id_priv->handler_mutex);
-	cma_deref_id(id_priv);
 }
 
 static int cma_resolve_loopback(struct rdma_id_private *id_priv)
@@ -3195,7 +3193,6 @@ int rdma_resolve_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
 	return 0;
 err:
 	cma_comp_exch(id_priv, RDMA_CM_ADDR_QUERY, RDMA_CM_ADDR_BOUND);
-	cma_deref_id(id_priv);
 	return ret;
 }
 EXPORT_SYMBOL(rdma_resolve_addr);
