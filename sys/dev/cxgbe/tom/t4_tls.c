@@ -448,32 +448,13 @@ prepare_txkey_wr(struct tls_keyctx *kwr, struct tls_key_context *kctx)
 }
 
 /* TLS Key memory management */
-int
-tls_init_kmap(struct adapter *sc, struct tom_data *td)
-{
-
-	td->key_map = vmem_create("T4TLS key map", sc->vres.key.start,
-	    sc->vres.key.size, 8, 0, M_FIRSTFIT | M_NOWAIT);
-	if (td->key_map == NULL)
-		return (ENOMEM);
-	return (0);
-}
-
-void
-tls_free_kmap(struct tom_data *td)
-{
-
-	if (td->key_map != NULL)
-		vmem_destroy(td->key_map);
-}
-
 static int
 get_new_keyid(struct toepcb *toep)
 {
-	struct tom_data *td = toep->td;
+	struct adapter *sc = td_adapter(toep->td);
 	vmem_addr_t addr;
 
-	if (vmem_alloc(td->key_map, TLS_KEY_CONTEXT_SZ, M_NOWAIT | M_FIRSTFIT,
+	if (vmem_alloc(sc->key_map, TLS_KEY_CONTEXT_SZ, M_NOWAIT | M_FIRSTFIT,
 	    &addr) != 0)
 		return (-1);
 
@@ -483,10 +464,10 @@ get_new_keyid(struct toepcb *toep)
 static void
 free_keyid(struct toepcb *toep, int keyid)
 {
-	struct tom_data *td = toep->td;
+	struct adapter *sc = td_adapter(toep->td);
 
 	CTR3(KTR_CXGBE, "%s: tid %d key addr %#x", __func__, toep->tid, keyid);
-	vmem_free(td->key_map, keyid, TLS_KEY_CONTEXT_SZ);
+	vmem_free(sc->key_map, keyid, TLS_KEY_CONTEXT_SZ);
 }
 
 static void
