@@ -64,9 +64,7 @@ __FBSDID("$FreeBSD$");
 #include "tom/t4_tom_l2t.h"
 #include "tom/t4_tom.h"
 #include "t4_mp_ring.h"
-#ifdef KERN_TLS
 #include "crypto/t4_crypto.h"
-#endif
 
 /*
  * The TCP sequence number of a CPL_TLS_DATA mbuf is saved here while
