@@ -187,15 +187,30 @@ sbtls_crypto_backend_register(struct sbtls_crypto_backend *be)
 int
 sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *be)
 {
+	struct sbtls_crypto_backend *tmp;
 	int err = 0;
 
+	/*
+	 * Don't error if the backend isn't registered.  This permits
+	 * MOD_UNLOAD handlers to use this function unconditionally.
+	 */
+	rm_wlock(&sbtls_backend_lock);
+	LIST_FOREACH(tmp, &sbtls_backend_head, next) {
+		if (tmp == be)
+			break;
+	}
+	if (tmp == NULL) {
+		rm_wunlock(&sbtls_backend_lock);
+		return (0);
+	}
+
 	if (!sbtls_allow_unload) {
+		rm_wunlock(&sbtls_backend_lock);
 		printf("deregistering crypto method %s is not supported\n",
 		    be->name);
 		return (EBUSY);
 	}
 
-	rm_wlock(&sbtls_backend_lock);
 	if (be->use_count) {
 		err = EBUSY;
 	} else {
