@@ -500,10 +500,10 @@ ccr_hmac(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
-	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
-	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_NOP) |
+	    V_SCMD_PROTO_VERSION(SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_CIPH_MODE(SCMD_CIPH_MODE_NOP) |
 	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
-	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NO_TRUNC));
+	    V_SCMD_HMAC_CTRL(SCMD_HMAC_CTRL_NO_TRUNC));
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_LAST_FRAG(0) |
 	    V_SCMD_MORE_FRAGS(crd->crd_len == 0 ? 1 : 0) | V_SCMD_MAC_ONLY(1));
@@ -667,11 +667,11 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
-	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_PROTO_VERSION(SCMD_PROTO_VERSION_GENERIC) |
 	    V_SCMD_ENC_DEC_CTRL(op_type) |
 	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
-	    V_SCMD_AUTH_MODE(CHCR_SCMD_AUTH_MODE_NOP) |
-	    V_SCMD_HMAC_CTRL(CHCR_SCMD_HMAC_CTRL_NOP) |
+	    V_SCMD_AUTH_MODE(SCMD_AUTH_MODE_NOP) |
+	    V_SCMD_HMAC_CTRL(SCMD_HMAC_CTRL_NOP) |
 	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
@@ -745,12 +745,12 @@ ccr_hmac_ctrl(unsigned int hashsize, unsigned int authsize)
 {
 
 	if (authsize == 10)
-		return (CHCR_SCMD_HMAC_CTRL_TRUNC_RFC4366);
+		return (SCMD_HMAC_CTRL_TRUNC_RFC4366);
 	if (authsize == 12)
-		return (CHCR_SCMD_HMAC_CTRL_IPSEC_96BIT);
+		return (SCMD_HMAC_CTRL_IPSEC_96BIT);
 	if (authsize == hashsize / 2)
-		return (CHCR_SCMD_HMAC_CTRL_DIV2);
-	return (CHCR_SCMD_HMAC_CTRL_NO_TRUNC);
+		return (SCMD_HMAC_CTRL_DIV2);
+	return (SCMD_HMAC_CTRL_NO_TRUNC);
 }
 
 static int
@@ -1003,7 +1003,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	hmac_ctrl = ccr_hmac_ctrl(axf->hashsize, hash_size_in_response);
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
-	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_PROTO_VERSION(SCMD_PROTO_VERSION_GENERIC) |
 	    V_SCMD_ENC_DEC_CTRL(op_type) |
 	    V_SCMD_CIPH_AUTH_SEQ_CTRL(op_type == CHCR_ENCRYPT_OP ? 1 : 0) |
 	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
@@ -1346,11 +1346,11 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	hmac_ctrl = ccr_hmac_ctrl(AES_GMAC_HASH_LEN, hash_size_in_response);
 	crwr->sec_cpl.seqno_numivs = htobe32(
 	    V_SCMD_SEQ_NO_CTRL(0) |
-	    V_SCMD_PROTO_VERSION(CHCR_SCMD_PROTO_VERSION_GENERIC) |
+	    V_SCMD_PROTO_VERSION(SCMD_PROTO_VERSION_GENERIC) |
 	    V_SCMD_ENC_DEC_CTRL(op_type) |
 	    V_SCMD_CIPH_AUTH_SEQ_CTRL(op_type == CHCR_ENCRYPT_OP ? 1 : 0) |
-	    V_SCMD_CIPH_MODE(CHCR_SCMD_CIPHER_MODE_AES_GCM) |
-	    V_SCMD_AUTH_MODE(CHCR_SCMD_AUTH_MODE_GHASH) |
+	    V_SCMD_CIPH_MODE(SCMD_CIPH_MODE_AES_GCM) |
+	    V_SCMD_AUTH_MODE(SCMD_AUTH_MODE_GHASH) |
 	    V_SCMD_HMAC_CTRL(hmac_ctrl) |
 	    V_SCMD_IV_SIZE(iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
@@ -1889,8 +1889,8 @@ ccr_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
 	cipher = NULL;
 	hash = NULL;
 	auth_hash = NULL;
-	auth_mode = CHCR_SCMD_AUTH_MODE_NOP;
-	cipher_mode = CHCR_SCMD_CIPHER_MODE_NOP;
+	auth_mode = SCMD_AUTH_MODE_NOP;
+	cipher_mode = SCMD_CIPH_MODE_NOP;
 	iv_len = 0;
 	mk_size = 0;
 	partial_digest_len = 0;
@@ -1909,25 +1909,25 @@ ccr_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
 			switch (c->cri_alg) {
 			case CRYPTO_SHA1_HMAC:
 				auth_hash = &auth_hash_hmac_sha1;
-				auth_mode = CHCR_SCMD_AUTH_MODE_SHA1;
+				auth_mode = SCMD_AUTH_MODE_SHA1;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_160;
 				partial_digest_len = SHA1_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_256_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_256;
-				auth_mode = CHCR_SCMD_AUTH_MODE_SHA256;
+				auth_mode = SCMD_AUTH_MODE_SHA256;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_256;
 				partial_digest_len = SHA2_256_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_384_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_384;
-				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_384;
+				auth_mode = SCMD_AUTH_MODE_SHA512_384;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 				partial_digest_len = SHA2_512_HASH_LEN;
 				break;
 			case CRYPTO_SHA2_512_HMAC:
 				auth_hash = &auth_hash_hmac_sha2_512;
-				auth_mode = CHCR_SCMD_AUTH_MODE_SHA512_512;
+				auth_mode = SCMD_AUTH_MODE_SHA512_512;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 				partial_digest_len = SHA2_512_HASH_LEN;
 				break;
@@ -1935,7 +1935,7 @@ ccr_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
 			case CRYPTO_AES_192_NIST_GMAC:
 			case CRYPTO_AES_256_NIST_GMAC:
 				gcm_hash = true;
-				auth_mode = CHCR_SCMD_AUTH_MODE_GHASH;
+				auth_mode = SCMD_AUTH_MODE_GHASH;
 				mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_128;
 				break;
 			}
@@ -1949,19 +1949,19 @@ ccr_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
 			cipher = c;
 			switch (c->cri_alg) {
 			case CRYPTO_AES_CBC:
-				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CBC;
+				cipher_mode = SCMD_CIPH_MODE_AES_CBC;
 				iv_len = AES_BLOCK_LEN;
 				break;
 			case CRYPTO_AES_ICM:
-				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CTR;
+				cipher_mode = SCMD_CIPH_MODE_AES_CTR;
 				iv_len = AES_BLOCK_LEN;
 				break;
 			case CRYPTO_AES_NIST_GCM_16:
-				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_GCM;
+				cipher_mode = SCMD_CIPH_MODE_AES_GCM;
 				iv_len = AES_GCM_IV_LEN;
 				break;
 			case CRYPTO_AES_XTS:
-				cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_XTS;
+				cipher_mode = SCMD_CIPH_MODE_AES_XTS;
 				iv_len = AES_BLOCK_LEN;
 				break;
 			}
@@ -1976,7 +1976,7 @@ ccr_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
 			return (EINVAL);
 		}
 	}
-	if (gcm_hash != (cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_GCM))
+	if (gcm_hash != (cipher_mode == SCMD_CIPH_MODE_AES_GCM))
 		return (EINVAL);
 	if (hash == NULL && cipher == NULL)
 		return (EINVAL);

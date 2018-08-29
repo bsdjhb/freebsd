@@ -249,22 +249,6 @@ enum {
 	CH_MK_SIZE_NOP,
 };
 
-#define SCMD_ENCDECCTRL_ENCRYPT 0
-#define SCMD_ENCDECCTRL_DECRYPT 1
-
-#define SCMD_PROTO_VERSION_GENERIC 4
-
-#define SCMD_CIPH_MODE_NOP			0
-#define SCMD_CIPH_MODE_AES_CBC			1
-#define SCMD_CIPH_MODE_AES_GCM			2
-#define SCMD_CIPH_MODE_AES_CTR			3
-#define SCMD_CIPH_MODE_AES_GEN			4
-#define SCMD_CIPH_MODE_AES_CCM			7
-
-#define SCMD_AUTH_MODE_NOP			0
-
-#define SCMD_HMAC_CTRL_NOP			0
-
 struct tls_scmd {
 	__be32 seqno_numivs;
 	__be32 ivgen_hdrlen;
