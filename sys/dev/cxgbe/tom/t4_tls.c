@@ -1722,7 +1722,7 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	INIT_TP_WR(cpl6, 0);
 	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
 	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(toep->tid) |
-	    V_TID_COOKIE(CPL_COOKIE_TOM);
+	    V_TID_COOKIE(CPL_COOKIE_KERN_TLS);
 	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ,
 		qid_atid));
 	inp_4tuple_get(inp, &cpl->local_ip, &cpl->local_port,
@@ -1757,10 +1757,15 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	return (error);
 };
 
-void
-sbtls_act_open_rpl(struct adapter *sc, struct toepcb *toep, u_int status,
-    const struct cpl_act_open_rpl *cpl)
+static int
+sbtls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
+    struct mbuf *m)
 {
+	struct adapter *sc = iq->adapter;
+	const struct cpl_act_open_rpl *cpl = (const void *)(rss + 1);
+	u_int atid = G_TID_TID(G_AOPEN_ATID(be32toh(cpl->atid_status)));
+	u_int status = G_AOPEN_STATUS(be32toh(cpl->atid_status));
+	struct toepcb *toep = lookup_atid(sc, atid);
 	struct inpcb *inp = toep->inp;
 
 	free_atid(sc, toep->tid);
@@ -1775,6 +1780,7 @@ sbtls_act_open_rpl(struct adapter *sc, struct toepcb *toep, u_int status,
 	toep->flags &= ~TPF_CPL_PENDING;
 	wakeup(toep);
 	INP_WUNLOCK(inp);
+	return (0);
 }
 
 /* SET_TCB_FIELD sent as a ULP command looks like this */
@@ -3617,6 +3623,8 @@ t4_tls_mod_load(void)
 	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
 	if (sbtls_crypto_backend_register(&t6tls_backend) != 0)
 		printf("Failed to register Chelsio T6 SBTLS backend\n");
+	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, sbtls_act_open_rpl,
+	    CPL_COOKIE_KERN_TLS);
 #endif
 }
 
@@ -3626,6 +3634,8 @@ t4_tls_mod_unload(void)
 
 #ifdef KERN_TLS
 	sbtls_crypto_backend_deregister(&t6tls_backend);
+	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
+	    CPL_COOKIE_KERN_TLS);
 #endif
 	t4_register_cpl_handler(CPL_TLS_DATA, NULL);
 	t4_register_cpl_handler(CPL_RX_TLS_CMP, NULL);
