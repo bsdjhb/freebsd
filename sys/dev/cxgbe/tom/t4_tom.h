@@ -414,7 +414,5 @@ int tls_rx_key(struct toepcb *);
 void tls_stop_handshake_timer(struct toepcb *);
 int tls_tx_key(struct toepcb *);
 void tls_uninit_toep(struct toepcb *);
-void sbtls_act_open_rpl(struct adapter *, struct toepcb *, u_int,
-    const struct cpl_act_open_rpl *);
 
 #endif

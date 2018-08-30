@@ -154,11 +154,6 @@ do_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
 
 	CTR3(KTR_CXGBE, "%s: atid %u, status %u ", __func__, atid, status);
 
-	if (toep->flags & TPF_KERN_TLS) {
-		sbtls_act_open_rpl(sc, toep, status, cpl);
-		return (0);
-	}
-
 	/* Ignore negative advice */
 	if (negative_advice(status))
 		return (0);
