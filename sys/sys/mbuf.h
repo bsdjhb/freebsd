@@ -329,6 +329,7 @@ struct mbuf_ext_pgs {
 	};
 };
 
+#ifdef _KERNEL
 static inline int
 mbuf_ext_pg_len(struct mbuf_ext_pgs *ext_pgs, int pidx, int pgoff)
 {
@@ -339,6 +340,7 @@ mbuf_ext_pg_len(struct mbuf_ext_pgs *ext_pgs, int pidx, int pgoff)
 		return (PAGE_SIZE - pgoff);
 	}
 }
+#endif
 
 /*
  * mbuf flags of global significance and layer crossing.
