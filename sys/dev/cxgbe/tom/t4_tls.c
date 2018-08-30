@@ -1720,8 +1720,9 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	cpl6 = wrtod(wr);
 	cpl = (struct cpl_act_open_req *)cpl6;
 	INIT_TP_WR(cpl6, 0);
-	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, 0);
-	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(toep->tid);
+	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
+	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(toep->tid) |
+	    V_TID_COOKIE(CPL_COOKIE_TOM);
 	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ,
 		qid_atid));
 	inp_4tuple_get(inp, &cpl->local_ip, &cpl->local_port,
@@ -1986,7 +1987,8 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	    sc->tom_softc == NULL)
 		return (ENXIO);
 
-	toep = alloc_toepcb(vi, -1, -1, M_NOWAIT);
+	toep = alloc_toepcb(vi, vi->first_ofld_txq, vi->first_ofld_rxq,
+	    M_NOWAIT);
 	if (toep == NULL)
 		return (ENOMEM);
 	toep->flags |= TPF_KERN_TLS;

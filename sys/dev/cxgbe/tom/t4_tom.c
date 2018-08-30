@@ -550,7 +550,10 @@ find_best_mtu_idx(struct adapter *sc, struct in_conninfo *inc,
 
 	MPASS(inc != NULL);
 
-	mss = s->mss > 0 ? s->mss : tcp_mssopt(inc);
+	if (s != NULL && s->mss > 0)
+		mss = s->mss;
+	else
+		mss = tcp_mssopt(inc);
 	if (inc->inc_flags & INC_ISIPV6)
 		mtu = mss + sizeof(struct ip6_hdr) + sizeof(struct tcphdr);
 	else
