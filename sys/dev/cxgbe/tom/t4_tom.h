@@ -73,7 +73,6 @@ enum {
 	TPF_SYNQE_HAS_L2TE = (1 << 12),	/* we've replied to PASS_ACCEPT_REQ */
 	TPF_SYNQE_TLS      = (1 << 13), /* ulp_mode TLS in toepcb */
 	TPF_FORCE_CREDITS  = (1 << 14), /* always send credits */
-	TPF_KERN_TLS       = (1 << 15), /* KERN_TLS dummy connection */
 };
 
 enum {
