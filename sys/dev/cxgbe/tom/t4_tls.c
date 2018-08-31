@@ -28,7 +28,9 @@
  */
 
 #include "opt_inet.h"
+#if 0
 #include "opt_kern_tls.h"
+#endif
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
