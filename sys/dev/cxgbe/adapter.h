@@ -923,7 +923,10 @@ struct t6_sbtls_cipher {
 	parse_tls_pkt_t parse_pkt;
 	write_tls_wr_t write_tls_wr;
 	struct adapter *sc;
-	struct toepcb *toep;
+	union {
+		struct tlspcb *tlsp;
+		struct toepcb *toep;
+	};
 	struct sge_txq *txq;
 	struct mbuf *key_wr;
 	uint32_t prev_seq;

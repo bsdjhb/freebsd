@@ -18,9 +18,11 @@ SUBDIR+=	${_tom}
 SUBDIR+=	${_iw_cxgbe}
 SUBDIR+=	${_cxgbei}
 SUBDIR+=	ccr
+SUBDIR+=	${_kern_tls}
 
 .if ${MACHINE_CPUARCH} == "amd64"
 _tom=	tom
+_kern_tls=	kern_tls
 _cxgbei=	cxgbei
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _iw_cxgbe=	iw_cxgbe
@@ -29,6 +31,7 @@ _iw_cxgbe=	iw_cxgbe
 
 .if ${MACHINE_CPUARCH} == "i386"
 _tom=	tom
+_kern_tls=	kern_tls
 .endif
 
 .include <bsd.subdir.mk>
