@@ -189,6 +189,11 @@ struct tlspcb {
 	bool open_pending;
 };
 
+/* XXX: From tom/t4_tom.h, but including that breaks in too much other stuff. */
+int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
+    struct offload_settings *);
+uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
+
 static struct protosw *tcp_protosw;
 
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
@@ -318,64 +323,6 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 	tlsp->frag_size = tls->sb_params.sb_maxlen;
 }
 
-/* XXX: Version of this in tom/t4_tom.c that accepts a third parameter. */
-static int
-find_best_mtu_idx(struct adapter *sc, struct in_conninfo *inc)
-{
-	unsigned short *mtus = &sc->params.mtus[0];
-	int i, mss, mtu;
-
-	MPASS(inc != NULL);
-
-	mss = tcp_mssopt(inc);
-	if (inc->inc_flags & INC_ISIPV6)
-		mtu = mss + sizeof(struct ip6_hdr) + sizeof(struct tcphdr);
-	else
-		mtu = mss + sizeof(struct ip) + sizeof(struct tcphdr);
-
-	for (i = 0; i < NMTUS - 1 && mtus[i + 1] <= mtu; i++)
-		continue;
-
-	return (i);
-}
-
-/* XXX: Copied from tom/t4_tom.c. */
-static uint64_t
-select_ntuple(struct vi_info *vi, struct l2t_entry *e)
-{
-	struct adapter *sc = vi->pi->adapter;
-	struct tp_params *tp = &sc->params.tp;
-	uint16_t viid = vi->viid;
-	uint64_t ntuple = 0;
-
-	/*
-	 * Initialize each of the fields which we care about which are present
-	 * in the Compressed Filter Tuple.
-	 */
-	if (tp->vlan_shift >= 0 && EVL_VLANOFTAG(e->vlan) != CPL_L2T_VLAN_NONE)
-		ntuple |= (uint64_t)(F_FT_VLAN_VLD | e->vlan) << tp->vlan_shift;
-
-	if (tp->port_shift >= 0)
-		ntuple |= (uint64_t)e->lport << tp->port_shift;
-
-	if (tp->protocol_shift >= 0)
-		ntuple |= (uint64_t)IPPROTO_TCP << tp->protocol_shift;
-
-	if (tp->vnic_shift >= 0 && tp->ingress_config & F_VNIC) {
-		uint32_t vf = G_FW_VIID_VIN(viid);
-		uint32_t pf = G_FW_VIID_PFN(viid);
-		uint32_t vld = G_FW_VIID_VIVLD(viid);
-
-		ntuple |= (uint64_t)(V_FT_VNID_ID_VF(vf) | V_FT_VNID_ID_PF(pf) |
-		    V_FT_VNID_ID_VLD(vld)) << tp->vnic_shift;
-	}
-
-	if (is_t4(sc))
-		return (htobe32((uint32_t)ntuple));
-	else
-		return (htobe64(V_FILTER_TUPLE(ntuple)));
-}
-
 static int
 send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
     struct socket *so, struct tlspcb *tlsp, int atid)
@@ -399,7 +346,7 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	cpl6 = wrtod(wr);
 	cpl = (struct cpl_act_open_req *)cpl6;
 	INIT_TP_WR(cpl6, 0);
-	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc);
+	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
 	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(atid) |
 	    V_TID_COOKIE(CPL_COOKIE_KERN_TLS);
 	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ,
