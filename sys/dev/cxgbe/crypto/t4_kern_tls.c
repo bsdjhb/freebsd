@@ -190,6 +190,8 @@ struct tlspcb {
 };
 
 /* XXX: From tom/t4_tom.h, but including that breaks in too much other stuff. */
+void insert_tid(struct adapter *, int, void *, int);
+void remove_tid(struct adapter *, int, int);
 int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
     struct offload_settings *);
 uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
@@ -201,29 +203,7 @@ static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
 static int sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *wr, struct mbuf *m, u_int nsegs, u_int available);
 
-/* XXX: Could move insert_tid and friends from t4_tom.c to t4_main.c instead. */
-static void
-insert_tid(struct adapter *sc, int tid, void *ctx, int ntids)
-{
-	struct tid_info *t = &sc->tids;
-
-	MPASS(tid >= t->tid_base);
-	MPASS(tid - t->tid_base < t->ntids);
-
-	t->tid_tab[tid - t->tid_base] = ctx;
-	atomic_add_int(&t->tids_in_use, ntids);
-}
-
-static void
-remove_tid(struct adapter *sc, int tid, int ntids)
-{
-	struct tid_info *t = &sc->tids;
-
-	t->tid_tab[tid - t->tid_base] = NULL;
-	atomic_subtract_int(&t->tids_in_use, ntids);
-}
-
-/* XXX: These two are in tom/t4_tls.c. */
+/* XXX: There are similar versions of these two in tom/t4_tls.c. */
 static int
 get_new_keyid(struct tlspcb *tlsp)
 {
