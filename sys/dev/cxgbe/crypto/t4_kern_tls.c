@@ -61,8 +61,6 @@ __FBSDID("$FreeBSD$");
 #include "t4_mp_ring.h"
 #include "crypto/t4_crypto.h"
 
-#define MAX_MAC_KSZ		64	/* 512 bits */
-#define MAX_CIPHER_KSZ		32	/* 256 bits */
 #define SALT_SIZE		4
 
 #define GCM_TAG_SIZE			16
