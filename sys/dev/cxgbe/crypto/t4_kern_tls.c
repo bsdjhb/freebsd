@@ -190,8 +190,6 @@ struct tlspcb {
 };
 
 /* XXX: From tom/t4_tom.h, but including that breaks in too much other stuff. */
-void insert_tid(struct adapter *, int, void *, int);
-void remove_tid(struct adapter *, int, int);
 int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
     struct offload_settings *);
 uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
@@ -375,12 +373,8 @@ sbtls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
 	struct inpcb *inp = tlsp->inp;
 
 	free_atid(sc, atid);
-	if (status == 0) {
+	if (status == 0)
 		tlsp->tid = GET_TID(cpl);
-		insert_tid(sc, tlsp->tid, tlsp,
-		    tlsp->inp->inp_vflag & INP_IPV6 ? 2 : 1);
-	} else
-		tlsp->tid = -1;
 
 	INP_WLOCK(inp);
 	tlsp->open_pending = false;
@@ -784,10 +778,8 @@ failed:
 		m_free(key_wr);
 	if (atid >= 0)
 		free_atid(sc, atid);
-	if (tlsp->tid >= 0) {
-		remove_tid(sc, tlsp->tid, 1);
+	if (tlsp->tid >= 0)
 		release_tid(sc, tlsp->tid, tlsp->ctrlq);
-	}
 	if (tlsp->l2te)
 		t4_l2t_release(tlsp->l2te);
 	free_tlspcb(tlsp);
@@ -2200,10 +2192,8 @@ t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
 		m_free(cipher->key_wr);
 	if (tlsp->l2te)
 		t4_l2t_release(tlsp->l2te);
-	if (tlsp->tid >= 0) {
-		remove_tid(sc, tlsp->tid, 1);
+	if (tlsp->tid >= 0)
 		release_tid(sc, tlsp->tid, tlsp->ctrlq);
-	}
 	free_tlspcb(tlsp);
 }
 
