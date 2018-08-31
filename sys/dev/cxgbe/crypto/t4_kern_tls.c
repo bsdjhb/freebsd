@@ -918,7 +918,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	kwr->sc_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));
 	kwr->sc_len = htobe32(kctxlen);
 
-	kctx = (struct tls_keyctx *)((char *)kwr + kwrlen);
+	kctx = (struct tls_keyctx *)(kwr + 1);
 	memcpy(kctx, &tlsp->keyctx, sizeof(*kctx));
 	memset(kctx + 1, 0, kctxlen - sizeof(*kctx));
 
