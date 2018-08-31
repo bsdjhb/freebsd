@@ -70,7 +70,6 @@ enum {
 	TPF_SYNQE	   = (1 << 8),	/* synq_entry, not really a toepcb */
 	TPF_SYNQE_EXPANDED = (1 << 9),	/* toepcb ready, tid context updated */
 	TPF_FORCE_CREDITS  = (1 << 10), /* always send credits */
-	TPF_KERN_TLS       = (1 << 15), /* KERN_TLS dummy connection */
 };
 
 enum {
