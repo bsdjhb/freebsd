@@ -684,7 +684,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	 * gracefully.
 	 */
 	if (!tlsp->inline_key) {
-		len = roundup2(sizeof(struct tls_key_req), 16) +
+		len = sizeof(struct tls_key_req) +
 		    roundup2(sizeof(struct tls_keyctx), 32);
 		key_wr = alloc_wr_mbuf(len, M_NOWAIT);
 		if (key_wr == NULL) {
@@ -891,13 +891,13 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	keyid = tlsp->tx_key_addr;
 
 	/* Populate key work request. */
-	kwrlen = roundup2(sizeof(*kwr), 16);
+	kwrlen = sizeof(*kwr);
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
 	MPASS(cipher->key_wr->m_len == len);
 	kwr = mtod(cipher->key_wr, void *);
-	memset(kwr, 0, kwrlen);
+	memset(kwr, 0, len);
 
 	kwr->wr_hi = htobe32(V_FW_WR_OP(FW_ULPTX_WR) |
 	    F_FW_WR_ATOMIC);
@@ -920,7 +920,6 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 
 	kctx = (struct tls_keyctx *)(kwr + 1);
 	memcpy(kctx, &tlsp->keyctx, sizeof(*kctx));
-	memset(kctx + 1, 0, kctxlen - sizeof(*kctx));
 
 	/*
 	 * Place the key work request in the transmit queue.  It
