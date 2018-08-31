@@ -2090,7 +2090,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	 * gracefully.
 	 */
 	if (tls_ofld->key_location == TLS_SFO_WR_CONTEXTLOC_DDR) {
-		len = roundup2(sizeof(struct tls_key_req), 16) +
+		len = sizeof(struct tls_key_req) +
 		    roundup2(sizeof(struct tls_keyctx), 32);
 		key_wr = alloc_wr_mbuf(len, M_NOWAIT);
 		if (key_wr == NULL) {
@@ -2288,7 +2288,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	keyid = tls_ofld->tx_key_addr;
 
 	/* Populate key work request. */
-	kwrlen = roundup2(sizeof(*kwr), 16);
+	kwrlen = sizeof(*kwr);
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
@@ -2315,7 +2315,6 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	kwr->sc_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));
 	kwr->sc_len = htobe32(kctxlen);
 
-	/* XXX: This assumes that kwrlen == sizeof(*kwr). */
 	kctx = (struct tls_keyctx *)(kwr + 1);
 	memset(kctx, 0, kctxlen);
 
