@@ -337,9 +337,6 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	options |= V_L2T_IDX(tlsp->l2te->idx);
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
-#ifdef notsure
-	options |= V_ACCEPT_MODE(2);
-#endif
 	cpl->opt0 = htobe64(options);
 
 	cpl6->params = select_ntuple(vi, tlsp->l2te);
@@ -349,10 +346,6 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 		options |= F_TSTAMPS_EN;
 	cpl->opt2 = htobe32(options);
 
-#ifdef notsure
-	/* Code from t4_connect */
-	cpl6->iss = htobe32(tp->iss);
-#endif
 	error = t4_l2t_send(sc, wr, tlsp->l2te);
 	if (error == 0)
 		tlsp->open_pending = true;
