@@ -58,6 +58,7 @@ __FBSDID("$FreeBSD$");
 #include "common/t4_regs_values.h"
 #include "common/t4_tcb.h"
 #include "tom/t4_tom_l2t.h"
+#include "t4_clip.h"
 #include "t4_mp_ring.h"
 #include "crypto/t4_crypto.h"
 
@@ -163,6 +164,7 @@ struct tlspcb {
 	struct vi_info *vi;	/* virtual interface */
 	struct sge_wrq *ctrlq;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
+	struct clip_entry *ce;	/* CLIP table entry used by this tid */
 	int tid;		/* Connection identifier */
 
 	bool inline_key;
@@ -192,7 +194,7 @@ int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
     struct offload_settings *);
 uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
 
-static struct protosw *tcp_protosw;
+static struct protosw *tcp_protosw, *tcp6_protosw;
 
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
     int *nsegsp, int *len16p);
@@ -244,7 +246,14 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 static void
 free_tlspcb(struct tlspcb *tlsp)
 {
+	struct adapter *sc = tlsp->vi->pi->adapter;
 
+	if (tlsp->l2te)
+		t4_l2t_release(tlsp->l2te);
+	if (tlsp->tid >= 0)
+		release_tid(sc, tlsp->tid, tlsp->ctrlq);
+	if (tlsp->ce)
+		t4_release_lip(sc, tlsp->ce);
 	if (tlsp->tx_key_addr >= 0)
 		free_keyid(tlsp, tlsp->tx_key_addr);
 	free(tlsp, M_CXGBE);
@@ -300,26 +309,26 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 }
 
 static int
-send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
-    struct socket *so, struct tlspcb *tlsp, int atid)
+sbtls_act_open_cpl_size(bool isipv6)
 {
-	struct tcpcb *tp = so_sototcpcb(so);
+
+	if (isipv6)
+		return (sizeof(struct cpl_t6_act_open_req6));
+	else
+		return (sizeof(struct cpl_t6_act_open_req));
+}
+
+static void
+mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
+    struct tlspcb *tlsp, int atid, void *dst)
+{
+	struct tcpcb *tp = intotcpcb(inp);
 	struct cpl_t6_act_open_req *cpl6;
 	struct cpl_act_open_req *cpl;
-	struct inpcb *inp;
-	struct wrqe *wr;
 	uint64_t options;
-	int error, mtu_idx, qid_atid;
+	int mtu_idx, qid_atid;
 
-	inp = so->so_pcb;
-	tlsp->vnet = so->so_vnet;
-
-	/* XXX: Use start/commit? */
-	wr = alloc_wrqe(sizeof(*cpl6), tlsp->ctrlq);
-	if (wr == NULL)
-		return (ENOMEM);
-
-	cpl6 = wrtod(wr);
+	cpl6 = dst;
 	cpl = (struct cpl_act_open_req *)cpl6;
 	INIT_TP_WR(cpl6, 0);
 	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
@@ -343,6 +352,76 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	if (tp->t_flags & TF_REQ_TSTMP)
 		options |= F_TSTAMPS_EN;
 	cpl->opt2 = htobe32(options);
+}
+
+static void
+mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
+    struct inpcb *inp, struct tlspcb *tlsp, int atid, void *dst)
+{
+	struct tcpcb *tp = intotcpcb(inp);
+	struct cpl_t6_act_open_req6 *cpl6;
+	struct cpl_act_open_req6 *cpl;
+	uint64_t options;
+	int mtu_idx, qid_atid;
+
+	cpl6 = dst;
+	cpl = (struct cpl_act_open_req6 *)cpl6;
+	INIT_TP_WR(cpl6, 0);
+	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
+	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(atid) |
+	    V_TID_COOKIE(CPL_COOKIE_KERN_TLS);
+	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ6,
+		qid_atid));
+	cpl->local_port = inp->inp_lport;
+	cpl->local_ip_hi = *(uint64_t *)&inp->in6p_laddr.s6_addr[0];
+	cpl->local_ip_lo = *(uint64_t *)&inp->in6p_laddr.s6_addr[8];
+	cpl->peer_port = inp->inp_fport;
+	cpl->peer_ip_hi = *(uint64_t *)&inp->in6p_faddr.s6_addr[0];
+	cpl->peer_ip_lo = *(uint64_t *)&inp->in6p_faddr.s6_addr[8];
+
+	options = F_TCAM_BYPASS | V_MSS_IDX(mtu_idx) |
+	    V_ULP_MODE(ULP_MODE_NONE);
+	options |= V_L2T_IDX(tlsp->l2te->idx);
+	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
+	options |= F_NON_OFFLOAD;
+	cpl->opt0 = htobe64(options);
+
+	cpl6->params = select_ntuple(vi, tlsp->l2te);
+
+	options = V_TX_QUEUE(sc->params.tp.tx_modq[vi->pi->tx_chan]);
+	if (tp->t_flags & TF_REQ_TSTMP)
+		options |= F_TSTAMPS_EN;
+	cpl->opt2 = htobe32(options);
+}
+
+static int
+send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
+    struct socket *so, struct tlspcb *tlsp, int atid)
+{
+	struct inpcb *inp;
+	struct wrqe *wr;
+	int error;
+	bool isipv6;
+
+	inp = so->so_pcb;
+	tlsp->vnet = so->so_vnet;
+	isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
+
+	if (isipv6) {
+		tlsp->ce = t4_hold_lip(sc, &inp->in6p_laddr, NULL);
+		if (tlsp->ce == NULL)
+			return (ENOENT);
+	}
+
+	/* XXX: Use start/commit? */
+	wr = alloc_wrqe(sbtls_act_open_cpl_size(isipv6), tlsp->ctrlq);
+	if (wr == NULL)
+		return (ENOMEM);
+
+	if (isipv6)
+		mk_sbtls_act_open_req6(sc, vi, inp, tlsp, atid, wrtod(wr));
+	else
+		mk_sbtls_act_open_req(sc, vi, inp, tlsp, atid, wrtod(wr));
 
 	error = t4_l2t_send(sc, wr, tlsp->l2te);
 	if (error == 0)
@@ -551,11 +630,10 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 
 	/*
 	 * Perform routing lookup to find ifnet.  Reject if it is not
-	 * on a T6 or on a T6 that doesn't support TLS.
-	 *
-	 * XXX: Only IPv4 currently.
+	 * on a T6 or on a T6 that doesn't support TLS.  Also reject
+	 * if it is not using the standard protocol switch (e.g. TOE).
 	 */
-	if (so->so_proto != tcp_protosw)
+	if (so->so_proto != tcp_protosw && so->so_proto != tcp6_protosw)
 		return (EPROTONOSUPPORT);
 	inp = so->so_pcb;
 	INP_WLOCK_ASSERT(inp);
@@ -775,10 +853,6 @@ failed:
 		m_free(key_wr);
 	if (atid >= 0)
 		free_atid(sc, atid);
-	if (tlsp->tid >= 0)
-		release_tid(sc, tlsp->tid, tlsp->ctrlq);
-	if (tlsp->l2te)
-		t4_l2t_release(tlsp->l2te);
 	free_tlspcb(tlsp);
 	return (error);
 }
@@ -957,7 +1031,7 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
 	u_int plen, mlen;
-	
+
 	MBUF_EXT_PGS_ASSERT(m_tls);
 	ext_pgs = (void *)m_tls->m_ext.ext_buf;
 	hdr = (void *)ext_pgs->hdr;
@@ -1735,7 +1809,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 		cipher->prev_tsecr = ntohl(tsopt[1]);
 	}
-		
+
 	if (first_wr || cipher->prev_seq != tx_max) {
 		KASSERT(nsegs != 0,
 		    ("trying to set TX_MAX for subsequent TLS WR"));
@@ -2183,13 +2257,8 @@ t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
 
 	explicit_bzero(&tlsp->keyctx, sizeof(&tlsp->keyctx));
 
-	/* free TID, L3/L4 */
 	if (cipher->key_wr != NULL)
 		m_free(cipher->key_wr);
-	if (tlsp->l2te)
-		t4_l2t_release(tlsp->l2te);
-	if (tlsp->tid >= 0)
-		release_tid(sc, tlsp->tid, tlsp->ctrlq);
 	free_tlspcb(tlsp);
 }
 
@@ -2208,6 +2277,7 @@ t6_sbtls_mod_load(void)
 	int error;
 
 	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
+	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
 	error = sbtls_crypto_backend_register(&t6tls_backend);
 	if (error)
 		return (error);
