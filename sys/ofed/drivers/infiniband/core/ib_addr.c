@@ -45,6 +45,7 @@
 #include <net/route/nhop.h>
 #include <net/netevent.h>
 #include <rdma/ib_addr.h>
+#include <rdma/ib_sa.h>
 #include <rdma/ib.h>
 
 #include <netinet/in_fib.h>
@@ -823,23 +824,43 @@ err:
 }
 EXPORT_SYMBOL(rdma_resolve_ip);
 
-int rdma_resolve_ip_route(struct sockaddr *src_addr,
-			  const struct sockaddr *dst_addr,
-			  struct rdma_dev_addr *addr)
+int roce_resolve_route_from_path(struct sa_path_rec *rec,
+				 const struct ib_gid_attr *attr)
 {
-	struct sockaddr_storage ssrc_addr = {};
-	struct sockaddr *src_in = (struct sockaddr *)&ssrc_addr;
+	union rdma_sockaddr sgid, dgid;
+	struct rdma_dev_addr dev_addr = {};
+	int ret;
 
-	if (src_addr) {
-		if (src_addr->sa_family != dst_addr->sa_family)
-			return -EINVAL;
+	if (rec->roce.route_resolved)
+		return 0;
 
-		memcpy(src_in, src_addr, rdma_addr_size(src_addr));
-	} else {
-		src_in->sa_family = dst_addr->sa_family;
-	}
+	rdma_gid2ip(&sgid._sockaddr, &rec->sgid);
+	rdma_gid2ip(&dgid._sockaddr, &rec->dgid);
 
-	return addr_resolve(src_in, dst_addr, addr);
+	if (sgid._sockaddr.sa_family != dgid._sockaddr.sa_family)
+		return -EINVAL;
+
+	if (!attr || !attr->ndev)
+		return -EINVAL;
+
+	dev_addr.bound_dev_if = if_getindex(attr->ndev);
+	/* TODO: Use net from the ib_gid_attr once it is added to it,
+	 * until than, limit itself to init_net.
+	 */
+	dev_addr.net = &init_net;
+
+	ret = addr_resolve(&sgid._sockaddr, &dgid._sockaddr,
+			   &dev_addr);
+	if (ret)
+		return ret;
+
+	if ((dev_addr.network == RDMA_NETWORK_IPV4 ||
+	     dev_addr.network == RDMA_NETWORK_IPV6) &&
+	    rec->rec_type != SA_PATH_REC_TYPE_ROCE_V2)
+		return -EINVAL;
+
+	rec->roce.route_resolved = true;
+	return 0;
 }
 
 /**
