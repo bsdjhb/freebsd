@@ -30,6 +30,20 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include <sys/types.h>
+#include <sys/ck.h>
+#include <sys/eventhandler.h>
+#include <sys/malloc.h>
+#include <sys/rmlock.h>
+#include <sys/socket.h>
+#include <sys/taskqueue.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <netinet/in.h>
+#include <netinet6/in6_var.h>
+#include <netinet6/scope6_var.h>
+
+#include "common/common.h"
 #include "t4_clip.h"
 
 static int add_lip(struct adapter *, struct in6_addr *);
@@ -163,7 +177,7 @@ update_clip_table(struct adapter *sc)
 	struct rm_priotracker in6_ifa_tracker;
 	struct in6_ifaddr *ia;
 	struct in6_addr *lip, tlip;
-	struct TAILQ_HEAD(clip_entry, ) stale;
+	TAILQ_HEAD(, clip_entry) stale;
 	struct clip_entry *ce, *ce_temp;
 	struct vi_info *vi;
 	int rc, gen, i, j;
