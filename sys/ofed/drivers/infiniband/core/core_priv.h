@@ -195,6 +195,9 @@ int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 void rdma_copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
                            const if_t dev);
 
+struct sa_path_rec;
+int roce_resolve_route_from_path(struct sa_path_rec *rec,
+				 const struct ib_gid_attr *attr);
 
 struct rdma_umap_priv {
 	struct vm_area_struct *vma;
