@@ -624,9 +624,12 @@ static int addr6_resolve(struct sockaddr *src_sock,
 static int addr_resolve_neigh(if_t dev,
 			      const struct sockaddr *dst_in,
 			      u8 *edst,
-			      struct rdma_dev_addr *addr)
+			      struct rdma_dev_addr *addr,
+			      unsigned int ndev_flags)
 {
-	if (if_getflags(dev) & IFF_LOOPBACK) {
+	int ret = 0;
+
+	if (ndev_flags & IFF_LOOPBACK) {
 		/*
 		 * Binding to a loopback device is not allowed. Make
 		 * sure the destination device address is global by
@@ -636,29 +639,49 @@ static int addr_resolve_neigh(if_t dev,
 			addr->bound_dev_if = 0;
 
 		memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
-		return 0;
-	}
-
-	/* If the device doesn't do ARP internally */
-	if (!(if_getflags(dev) & IFF_NOARP)) {
-		memcpy(addr->dst_dev_addr, edst, MAX_ADDR_LEN);
-                return 0;
+	} else {
+		if (!(ndev_flags & IFF_NOARP)) {
+			/* If the device doesn't do ARP internally */
+			memcpy(addr->dst_dev_addr, edst, MAX_ADDR_LEN);
+		}
         }
 
-	return 0;
+	return ret;
 }
 
-static int rdma_set_src_addr(if_t dev,
+static void copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
 			     const struct sockaddr *dst_in,
-			     struct rdma_dev_addr *dev_addr)
+			     if_t ndev)
 {
 	int ret = 0;
 
-	if (if_getflags(dev) & IFF_LOOPBACK)
+	if (if_getflags(ndev) & IFF_LOOPBACK)
 		ret = rdma_translate_ip(dst_in, dev_addr);
 	else
-		rdma_copy_src_l2_addr(dev_addr, dev);
-	return ret;
+		rdma_copy_src_l2_addr(dev_addr, ndev);
+}
+
+static int rdma_set_src_addr_rcu(struct rdma_dev_addr *dev_addr,
+				 unsigned int *ndev_flags,
+				 const struct sockaddr *dst_in,
+				 if_t ndev)
+{
+	*ndev_flags = if_getflags(ndev);
+	/* A physical device must be the RDMA device to use */
+	if (if_getflags(ndev) & IFF_LOOPBACK) {
+		/*
+		 * RDMA (IB/RoCE, iWarp) doesn't run on lo interface or
+		 * loopback IP address. So if route is resolved to loopback
+		 * interface, translate that to a real ndev based on non
+		 * loopback IP address.
+		 */
+		ndev = rdma_find_ndev_for_src_ip_rcu(dev_net(ndev), dst_in);
+		if (!ndev)
+			return -ENODEV;
+	}
+
+	copy_src_l2_addr(dev_addr, dst_in, ndev);
+	return 0;
 }
 
 static int addr_resolve(struct sockaddr *src_in,
@@ -668,6 +691,7 @@ static int addr_resolve(struct sockaddr *src_in,
 	struct epoch_tracker et;
 	if_t ndev = NULL;
 	u8 edst[MAX_ADDR_LEN];
+	unsigned int ndev_flags = 0;
 	int ret;
 
 	if (dst_in->sa_family != src_in->sa_family)
@@ -685,16 +709,16 @@ static int addr_resolve(struct sockaddr *src_in,
 		ret = -EADDRNOTAVAIL;
 		break;
 	}
+	if (ret) {
+		NET_EPOCH_ENTER(et);
+		return ret;
+	}
+	ret = rdma_set_src_addr_rcu(addr, &ndev_flags, dst_in, ndev);
 	NET_EPOCH_EXIT(et);
 
-	/* check for error */
-	if (ret != 0)
-		return ret;
-
 	/* store MAC addresses and check for loopback */
-	ret = rdma_set_src_addr(ndev, dst_in, addr);
 	if (!ret)
-		ret = addr_resolve_neigh(ndev, dst_in, edst, addr);
+		ret = addr_resolve_neigh(ndev, dst_in, edst, addr, ndev_flags);
 
 	/* set belonging VNET, if any */
 	addr->net = dev_net(ndev);
