@@ -241,12 +241,15 @@ static int addr_resolve_multi(u8 *edst, if_t ifp, struct sockaddr *dst_in)
 #endif
 
 #ifdef INET
-static int addr4_resolve(struct sockaddr_in *src_in,
-			 const struct sockaddr_in *dst_in,
+static int addr4_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 u8 *edst,
 			 if_t *ifpp)
 {
+	struct sockaddr_in *src_in = (struct sockaddr_in *)src_sock;
+	const struct sockaddr_in *dst_in =
+			(const struct sockaddr_in *)dst_sock;
 	enum {
 		ADDR_VALID = 0,
 		ADDR_SRC_ANY = 1,
@@ -413,8 +416,8 @@ done:
 	return (-error);
 }
 #else
-static int addr4_resolve(struct sockaddr_in *src_in,
-			 const struct sockaddr_in *dst_in,
+static int addr4_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 u8 *edst,
 			 if_t *ifpp)
@@ -424,12 +427,15 @@ static int addr4_resolve(struct sockaddr_in *src_in,
 #endif
 
 #ifdef INET6
-static int addr6_resolve(struct sockaddr_in6 *src_in,
-			 const struct sockaddr_in6 *dst_in,
+static int addr6_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 u8 *edst,
 			 if_t *ifpp)
 {
+	struct sockaddr_in6 *src_in = (struct sockaddr_in6 *)src_sock;
+	const struct sockaddr_in6 *dst_in =
+				(const struct sockaddr_in6 *)dst_sock;
 	enum {
 		ADDR_VALID = 0,
 		ADDR_SRC_ANY = 1,
@@ -601,8 +607,8 @@ done:
 	return (-error);
 }
 #else
-static int addr6_resolve(struct sockaddr_in6 *src_in,
-			 const struct sockaddr_in6 *dst_in,
+static int addr6_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 u8 *edst,
 			 if_t *ifpp)
@@ -661,14 +667,10 @@ static int addr_resolve(struct sockaddr *src_in,
 	NET_EPOCH_ENTER(et);
 	switch (src_in->sa_family) {
 	case AF_INET:
-		ret = addr4_resolve((struct sockaddr_in *)src_in,
-				    (const struct sockaddr_in *)dst_in,
-				    addr, edst, &ndev);
+		ret = addr4_resolve(src_in, dst_in, addr, edst, &ndev);
 		break;
 	case AF_INET6:
-		ret = addr6_resolve((struct sockaddr_in6 *)src_in,
-				    (const struct sockaddr_in6 *)dst_in, addr,
-				    edst, &ndev);
+		ret = addr6_resolve(src_in, dst_in, addr, edst, &ndev);
 		break;
 	default:
 		ret = -EADDRNOTAVAIL;
