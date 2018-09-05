@@ -623,8 +623,6 @@ static int addr_resolve_neigh(if_t dev,
 			      struct rdma_dev_addr *addr)
 {
 	if (if_getflags(dev) & IFF_LOOPBACK) {
-		int ret;
-
 		/*
 		 * Binding to a loopback device is not allowed. Make
 		 * sure the destination device address is global by
@@ -633,23 +631,30 @@ static int addr_resolve_neigh(if_t dev,
 		if (addr->bound_dev_if == if_getindex(dev))
 			addr->bound_dev_if = 0;
 
-		ret = rdma_translate_ip(dst_in, addr);
-		if (ret == 0) {
-			memcpy(addr->dst_dev_addr, addr->src_dev_addr,
-			       MAX_ADDR_LEN);
-		}
-		return ret;
+		memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
+		return 0;
 	}
 
 	/* If the device doesn't do ARP internally */
 	if (!(if_getflags(dev) & IFF_NOARP)) {
-		rdma_copy_addr(addr, dev, edst);
+		memcpy(addr->dst_dev_addr, edst, MAX_ADDR_LEN);
                 return 0;
         }
 
-	rdma_copy_addr(addr, dev, NULL);
-
 	return 0;
+}
+
+static int rdma_set_src_addr(if_t dev,
+			     const struct sockaddr *dst_in,
+			     struct rdma_dev_addr *dev_addr)
+{
+	int ret = 0;
+
+	if (if_getflags(dev) & IFF_LOOPBACK)
+		ret = rdma_translate_ip(dst_in, dev_addr);
+	else
+		rdma_copy_addr(dev_addr, dev, NULL);
+	return ret;
 }
 
 static int addr_resolve(struct sockaddr *src_in,
@@ -683,7 +688,9 @@ static int addr_resolve(struct sockaddr *src_in,
 		return ret;
 
 	/* store MAC addresses and check for loopback */
-	ret = addr_resolve_neigh(ndev, dst_in, edst, addr);
+	ret = rdma_set_src_addr(ndev, dst_in, addr);
+	if (!ret)
+		ret = addr_resolve_neigh(ndev, dst_in, edst, addr);
 
 	/* set belonging VNET, if any */
 	addr->net = dev_net(ndev);
