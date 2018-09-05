@@ -145,6 +145,33 @@ void rdma_copy_addr(struct rdma_dev_addr *dev_addr,
 }
 EXPORT_SYMBOL(rdma_copy_addr);
 
+static if_t
+rdma_find_ndev_for_src_ip_rcu(struct vnet *net, const struct sockaddr *src_in)
+{
+	if_t dev = NULL;
+	int ret = -EADDRNOTAVAIL;
+
+	switch (src_in->sa_family) {
+#ifdef INET
+	case AF_INET:
+		dev = ip_ifp_find(net,
+			((const struct sockaddr_in *)src_in)->sin_addr.s_addr);
+		if (dev)
+			ret = 0;
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		dev = ip6_ifp_find(net,
+			((const struct sockaddr_in6 *)src_in)->sin6_addr, 0);
+		if (dev)
+			ret = 0;
+		break;
+#endif
+	}
+	return ret ? ERR_PTR(ret) : dev;
+}
+
 int rdma_translate_ip(const struct sockaddr *addr,
 		      struct rdma_dev_addr *dev_addr)
 {
@@ -153,34 +180,22 @@ int rdma_translate_ip(const struct sockaddr *addr,
 
 	if (dev_addr->bound_dev_if) {
 		dev = dev_get_by_index(dev_addr->net, dev_addr->bound_dev_if);
-	} else switch (addr->sa_family) {
-#ifdef INET
-	case AF_INET:
-		dev = ip_ifp_find(dev_addr->net,
-			((const struct sockaddr_in *)addr)->sin_addr.s_addr);
-		break;
-#endif
-#ifdef INET6
-	case AF_INET6:
-		dev = ip6_ifp_find(dev_addr->net,
-			((const struct sockaddr_in6 *)addr)->sin6_addr, 0);
-		break;
-#endif
-	default:
-		dev = NULL;
-		break;
+		if (!dev)
+			return -ENODEV;
+	} else {
+		rcu_read_lock();
+		dev = rdma_find_ndev_for_src_ip_rcu(dev_addr->net, addr);
+		rcu_read_unlock();
+		if (IS_ERR(dev))
+			return PTR_ERR(dev);
 	}
 
-	if (dev != NULL) {
-		/* disallow connections through 127.0.0.1 itself */
-		if (if_getflags(dev) & IFF_LOOPBACK)
-			ret = -EINVAL;
-		else
-			rdma_copy_addr(dev_addr, dev, NULL);
-		dev_put(dev);
-	} else {
-		ret = -ENODEV;
-	}
+	/* disallow connections through 127.0.0.1 itself */
+	if (if_getflags(dev) & IFF_LOOPBACK)
+		ret = -EINVAL;
+	else
+		rdma_copy_addr(dev_addr, dev, NULL);
+	dev_put(dev);
 	return ret;
 }
 EXPORT_SYMBOL(rdma_translate_ip);
