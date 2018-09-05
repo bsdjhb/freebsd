@@ -61,6 +61,7 @@
 #define USE_SOCKETS
 #include "cryptlib.h"
 #include <openssl/bio.h>
+#include <netdb.h>
 
 #ifndef OPENSSL_NO_SOCK
 
@@ -80,9 +81,7 @@ typedef struct bio_connect_st {
     char *param_hostname;
     char *param_port;
     int nbio;
-    unsigned char ip[4];
-    unsigned short port;
-    struct sockaddr_in them;
+    struct addrinfo *info;
     /*
      * int socket; this will be kept in bio->num so that it is compatible
      * with the bss_sock bio
@@ -123,6 +122,7 @@ static BIO_METHOD methods_connectp = {
 
 static int conn_state(BIO *b, BIO_CONNECT *c)
 {
+    struct addrinfo hints;
     int ret = -1, i;
     unsigned long l;
     char *p, *q;
@@ -169,8 +169,10 @@ static int conn_state(BIO *b, BIO_CONNECT *c)
             break;
 
         case BIO_CONN_S_GET_IP:
+#if 0
             if (BIO_get_host_ip(c->param_hostname, &(c->ip[0])) <= 0)
                 goto exit_loop;
+#endif
             c->state = BIO_CONN_S_GET_PORT;
             break;
 
@@ -178,12 +180,16 @@ static int conn_state(BIO *b, BIO_CONNECT *c)
             if (c->param_port == NULL) {
                 /* abort(); */
                 goto exit_loop;
-            } else if (BIO_get_port(c->param_port, &c->port) <= 0)
+            }
+#if 0
+            else if (BIO_get_port(c->param_port, &c->port) <= 0)
                 goto exit_loop;
+#endif
             c->state = BIO_CONN_S_CREATE_SOCKET;
             break;
 
         case BIO_CONN_S_CREATE_SOCKET:
+#if 0
             /* now setup address */
             memset((char *)&c->them, 0, sizeof(c->them));
             c->them.sin_family = AF_INET;
@@ -196,6 +202,29 @@ static int conn_state(BIO *b, BIO_CONNECT *c)
             c->state = BIO_CONN_S_CREATE_SOCKET;
 
             ret = socket(AF_INET, SOCK_STREAM, SOCKET_PROTOCOL);
+#else
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+
+            if (c->info != NULL) {
+                    freeaddrinfo(c->info);
+                    c->info = NULL;
+            }
+            ret = getaddrinfo(c->param_hostname, c->param_port, &hints,
+                              &c->info);
+            if (ret != 0) {
+                    SYSerr(SYS_F_SOCKET, ret);
+                    ERR_add_error_data(6, "host=", c->param_hostname,
+                                       ":", c->param_port,
+                                       ", error=", gai_strerror(ret));
+                    BIOerr(BIO_F_CONN_STATE,
+                           BIO_R_UNABLE_TO_CREATE_SOCKET);
+                    goto exit_loop;
+            }
+            ret = socket(c->info->ai_family, c->info->ai_socktype,
+                         c->info->ai_protocol);
+#endif
             if (ret == INVALID_SOCKET) {
                 SYSerr(SYS_F_SOCKET, get_last_socket_error());
                 ERR_add_error_data(4, "host=", c->param_hostname,
@@ -234,8 +263,12 @@ static int conn_state(BIO *b, BIO_CONNECT *c)
 
         case BIO_CONN_S_CONNECT:
             BIO_clear_retry_flags(b);
+#if 0
             ret = connect(b->num,
                           (struct sockaddr *)&c->them, sizeof(c->them));
+#else
+            ret = connect(b->num, c->info->ai_addr, c->info->ai_addrlen);
+#endif
             b->retry_reason = 0;
             if (ret < 0) {
                 if (BIO_sock_should_retry(ret)) {
@@ -300,12 +333,16 @@ BIO_CONNECT *BIO_CONNECT_new(void)
     ret->param_port = NULL;
     ret->info_callback = NULL;
     ret->nbio = 0;
+#if 0
     ret->ip[0] = 0;
     ret->ip[1] = 0;
     ret->ip[2] = 0;
     ret->ip[3] = 0;
     ret->port = 0;
     memset((char *)&ret->them, 0, sizeof(ret->them));
+#else
+    ret->info = NULL;
+#endif
     return (ret);
 }
 
@@ -318,6 +355,8 @@ void BIO_CONNECT_free(BIO_CONNECT *a)
         OPENSSL_free(a->param_hostname);
     if (a->param_port != NULL)
         OPENSSL_free(a->param_port);
+    if (a->info != NULL)
+        freeaddrinfo(a->info);
     OPENSSL_free(a);
 }
 
@@ -451,14 +490,32 @@ static long conn_ctrl(BIO *b, int cmd, long num, void *ptr)
                     *pptr = data->param_hostname;
                 } else if (num == 1) {
                     *pptr = data->param_port;
-                } else if (num == 2) {
-                    *pptr = (char *)&(data->ip[0]);
+                } else if (num == 2 && data->info != NULL &&
+                           data->info->ai_family == AF_INET) {
+                    struct sockaddr_in *sin;
+
+                    sin = (struct sockaddr_in *)data->info->ai_addr;
+                    *pptr = (char *)&sin->sin_addr;
                 } else {
                     ret = 0;
                 }
             }
             if (num == 3) {
-                ret = data->port;
+                if (data->info != NULL &&
+                    data->info->ai_addr->sa_family == AF_INET) {
+                    struct sockaddr_in *sin;
+
+                    sin = (struct sockaddr_in *)data->info->ai_addr;
+                    ret = ntohs(sin->sin_port);
+                } else if (data->info != NULL &&
+                           data->info->ai_addr->sa_family == AF_INET6) {
+                    struct sockaddr_in6 *sin6;
+
+                    sin6 = (struct sockaddr_in6 *)data->info->ai_addr;
+                    ret = ntohs(sin6->sin6_port);
+                } else {
+                    ret = 0;
+                }
             }
         } else {
             if (pptr != NULL)
@@ -486,7 +543,13 @@ static long conn_ctrl(BIO *b, int cmd, long num, void *ptr)
                 if (data->param_hostname != NULL)
                     OPENSSL_free(data->param_hostname);
                 data->param_hostname = BUF_strdup(buf);
+#if 0
                 memcpy(&(data->ip[0]), ptr, 4);
+#endif
+                if (data->info != NULL) {
+                    freeaddrinfo(data->info);
+                    data->info = NULL;
+                }
             } else if (num == 3) {
                 char buf[DECIMAL_SIZE(int) + 1];
 
@@ -494,7 +557,13 @@ static long conn_ctrl(BIO *b, int cmd, long num, void *ptr)
                 if (data->param_port != NULL)
                     OPENSSL_free(data->param_port);
                 data->param_port = BUF_strdup(buf);
+#if 0
                 data->port = *(int *)ptr;
+#endif
+                if (data->info != NULL) {
+                    freeaddrinfo(data->info);
+                    data->info = NULL;
+                }
             }
         }
         break;
