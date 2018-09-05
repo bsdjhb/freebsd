@@ -2640,6 +2640,7 @@ restart:
 		set_mbuf_len16(m0, len16);
 		return (0);
 	}
+	MPASS(cipher == NULL);
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
 			rc = EFBIG;
@@ -2748,8 +2749,9 @@ restart:
 		immhdrs = m0->m_pkthdr.l2hlen + m0->m_pkthdr.l3hlen +
 		    m0->m_pkthdr.l4hlen;
 		cflags = 0;
-		nsegs = count_mbuf_nsegs(m0, immhdrs, &cflags);
+		nsegs = count_mbuf_nsegs(m0, immhdrs, &cflags, &cipher);
 		MPASS(cflags == mbuf_cflags(m0));
+		MPASS(cipher == NULL);
 		set_mbuf_eo_nsegs(m0, nsegs);
 		set_mbuf_eo_len16(m0,
 		    txpkt_eo_len16(nsegs, immhdrs, needs_tso(m0)));
