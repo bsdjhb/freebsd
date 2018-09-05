@@ -120,10 +120,6 @@ int rdma_resolve_ip(struct sockaddr *src_addr, const struct sockaddr *dst_addr,
 
 void rdma_addr_cancel(struct rdma_dev_addr *addr);
 
-void rdma_copy_addr(struct rdma_dev_addr *dev_addr,
-		    const if_t dev,
-		    const unsigned char *dst_dev_addr);
-
 int rdma_addr_size(const struct sockaddr *addr);
 int rdma_addr_size_in6(struct sockaddr_in6 *addr);
 int rdma_addr_size_kss(struct sockaddr_storage *addr);
