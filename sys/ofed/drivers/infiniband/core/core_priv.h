@@ -192,6 +192,9 @@ int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 				 const union ib_gid *dgid,
 				 u8 *dmac, if_t ndev,
 				 int *hoplimit);
+void rdma_copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+                           const if_t dev);
+
 
 struct rdma_umap_priv {
 	struct vm_area_struct *vma;
