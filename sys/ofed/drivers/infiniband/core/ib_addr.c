@@ -113,9 +113,17 @@ rdma_copy_addr_sub(u8 *dst, const u8 *src, unsigned min, unsigned max)
 	memset(dst + min, 0, max - min);
 }
 
-void rdma_copy_addr(struct rdma_dev_addr *dev_addr,
-		    const if_t dev,
-		    const unsigned char *dst_dev_addr)
+/**
+ * rdma_copy_src_l2_addr - Copy netdevice source addresses
+ * @dev_addr:	Destination address pointer where to copy the addresses
+ * @dev:	Netdevice whose source addresses to copy
+ *
+ * rdma_copy_src_l2_addr() copies source addresses from the specified netdevice.
+ * This includes unicast address, broadcast address, device type and
+ * interface index.
+ */
+void rdma_copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+			   const if_t dev)
 {
 	int dev_type = if_gettype(dev);
 
@@ -137,13 +145,9 @@ void rdma_copy_addr(struct rdma_dev_addr *dev_addr,
 			   if_getaddrlen(dev), MAX_ADDR_LEN);
 	rdma_copy_addr_sub(dev_addr->broadcast, if_getbroadcastaddr(dev),
 			   if_getaddrlen(dev), MAX_ADDR_LEN);
-	if (dst_dev_addr != NULL) {
-		rdma_copy_addr_sub(dev_addr->dst_dev_addr, dst_dev_addr,
-				   if_getaddrlen(dev), MAX_ADDR_LEN);
-	}
 	dev_addr->bound_dev_if = if_getindex(dev);
 }
-EXPORT_SYMBOL(rdma_copy_addr);
+EXPORT_SYMBOL(rdma_copy_src_l2_addr);
 
 static if_t
 rdma_find_ndev_for_src_ip_rcu(struct vnet *net, const struct sockaddr *src_in)
@@ -194,7 +198,7 @@ int rdma_translate_ip(const struct sockaddr *addr,
 	if (if_getflags(dev) & IFF_LOOPBACK)
 		ret = -EINVAL;
 	else
-		rdma_copy_addr(dev_addr, dev, NULL);
+		rdma_copy_src_l2_addr(dev_addr, dev);
 	dev_put(dev);
 	return ret;
 }
@@ -653,7 +657,7 @@ static int rdma_set_src_addr(if_t dev,
 	if (if_getflags(dev) & IFF_LOOPBACK)
 		ret = rdma_translate_ip(dst_in, dev_addr);
 	else
-		rdma_copy_addr(dev_addr, dev, NULL);
+		rdma_copy_src_l2_addr(dev_addr, dev);
 	return ret;
 }
 
