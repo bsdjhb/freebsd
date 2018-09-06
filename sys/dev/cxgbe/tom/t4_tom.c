@@ -787,7 +787,6 @@ free_tid_tabs(struct tid_info *t)
 {
 
 	free_tid_tab(t);
-	free_atid_tab(t);
 	free_stid_tab(t);
 }
 
@@ -797,10 +796,6 @@ alloc_tid_tabs(struct tid_info *t)
 	int rc;
 
 	rc = alloc_tid_tab(t, M_NOWAIT);
-	if (rc != 0)
-		goto failed;
-
-	rc = alloc_atid_tab(t, M_NOWAIT);
 	if (rc != 0)
 		goto failed;
 
