@@ -657,18 +657,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	if (!(sc->flags & KERN_TLS_OK) || !sc->tlst.enable)
 		return (ENXIO);
 
-	if (__predict_false(sc->tids.atid_tab == NULL)) {
-		error = begin_synchronized_op(sc, vi, SLEEP_OK | INTR_OK,
-		    "t6sbtls");
-		if (error)
-			return (error);
-		if (sc->tids.atid_tab == NULL)
-			error = alloc_atid_tab(&sc->tids, M_WAITOK);
-		end_synchronized_op(sc, 0);
-		if (error)
-			return (error);
-	}
-
 	tlsp = alloc_tlspcb(vi, M_NOWAIT);
 	if (tlsp == NULL)
 		return (ENOMEM);
