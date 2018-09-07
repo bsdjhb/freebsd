@@ -189,10 +189,6 @@ struct tlspcb {
 	bool open_pending;
 };
 
-/* XXX: From tom/t4_tom.h, but including that breaks in too much other stuff. */
-int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
-    struct offload_settings *);
-
 static struct protosw *tcp_protosw, *tcp6_protosw;
 
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
@@ -325,12 +321,11 @@ mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
 	struct cpl_t6_act_open_req *cpl6;
 	struct cpl_act_open_req *cpl;
 	uint64_t options;
-	int mtu_idx, qid_atid;
+	int qid_atid;
 
 	cpl6 = dst;
 	cpl = (struct cpl_act_open_req *)cpl6;
 	INIT_TP_WR(cpl6, 0);
-	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
 	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(atid) |
 	    V_TID_COOKIE(CPL_COOKIE_KERN_TLS);
 	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ,
@@ -338,8 +333,7 @@ mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
 	inp_4tuple_get(inp, &cpl->local_ip, &cpl->local_port,
 	    &cpl->peer_ip, &cpl->peer_port);
 
-	options = F_TCAM_BYPASS | V_MSS_IDX(mtu_idx) |
-	    V_ULP_MODE(ULP_MODE_NONE);
+	options = F_TCAM_BYPASS | V_ULP_MODE(ULP_MODE_NONE);
 	options |= V_L2T_IDX(tlsp->l2te->idx);
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
@@ -359,12 +353,11 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 	struct cpl_t6_act_open_req6 *cpl6;
 	struct cpl_act_open_req6 *cpl;
 	uint64_t options;
-	int mtu_idx, qid_atid;
+	int qid_atid;
 
 	cpl6 = dst;
 	cpl = (struct cpl_act_open_req6 *)cpl6;
 	INIT_TP_WR(cpl6, 0);
-	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, NULL);
 	qid_atid = V_TID_QID(sc->sge.fwq.abs_id) | V_TID_TID(atid) |
 	    V_TID_COOKIE(CPL_COOKIE_KERN_TLS);
 	OPCODE_TID(cpl) = htobe32(MK_OPCODE_TID(CPL_ACT_OPEN_REQ6,
@@ -376,8 +369,7 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 	cpl->peer_ip_hi = *(uint64_t *)&inp->in6p_faddr.s6_addr[0];
 	cpl->peer_ip_lo = *(uint64_t *)&inp->in6p_faddr.s6_addr[8];
 
-	options = F_TCAM_BYPASS | V_MSS_IDX(mtu_idx) |
-	    V_ULP_MODE(ULP_MODE_NONE);
+	options = F_TCAM_BYPASS | V_ULP_MODE(ULP_MODE_NONE);
 	options |= V_L2T_IDX(tlsp->l2te->idx);
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
