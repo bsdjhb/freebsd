@@ -558,7 +558,10 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	struct t6_sbtls_cipher *cipher;
 	struct sbtls_info *tls;
 	struct mbuf *key_wr;
-	struct sockaddr_in sin;
+	union {
+		struct sockaddr_in sin;
+		struct sockaddr_in6 sin6;
+	} sa;
 	struct sockaddr *nam;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
@@ -670,13 +673,20 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 
 	if (rt->rt_flags & RTF_GATEWAY)
 		nam = rt->rt_gateway;
-	else {
-		nam = (struct sockaddr *)&sin;
-		bzero(&sin, sizeof(sin));
-		sin.sin_len = sizeof(sin);
-		sin.sin_family = AF_INET;
-		sin.sin_port = inp->inp_inc.inc_ie.ie_fport;
-		sin.sin_addr = inp->inp_inc.inc_ie.ie_faddr;
+	else if (so->so_proto == tcp_protosw) {
+		nam = (struct sockaddr *)&sa.sin;
+		memset(&sa.sin, 0, sizeof(sa.sin));
+		sa.sin.sin_len = sizeof(sa.sin);
+		sa.sin.sin_family = AF_INET;
+		sa.sin.sin_port = inp->inp_inc.inc_ie.ie_fport;
+		sa.sin.sin_addr = inp->inp_inc.inc_ie.ie_faddr;
+	} else {
+		nam = (struct sockaddr *)&sa.sin6;
+		memset(&sa.sin6, 0, sizeof(sa.sin6));
+		sa.sin6.sin6_len = sizeof(sa.sin6);
+		sa.sin6.sin6_family = AF_INET6;
+		sa.sin6.sin6_port = inp->inp_inc.inc_ie.ie_fport;
+		sa.sin6.sin6_addr = inp->inp_inc.inc_ie.ie6_faddr;
 	}
 	tlsp->l2te = t4_l2t_get(vi->pi, ifp, nam);
 	if (tlsp->l2te == NULL) {
