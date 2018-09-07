@@ -57,7 +57,7 @@ __FBSDID("$FreeBSD$");
 #include "common/t4_regs.h"
 #include "common/t4_regs_values.h"
 #include "common/t4_tcb.h"
-#include "tom/t4_tom_l2t.h"
+#include "t4_l2t.h"
 #include "t4_clip.h"
 #include "t4_mp_ring.h"
 #include "crypto/t4_crypto.h"
@@ -334,7 +334,6 @@ mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
 	    &cpl->peer_ip, &cpl->peer_port);
 
 	options = F_TCAM_BYPASS | V_ULP_MODE(ULP_MODE_NONE);
-	options |= V_L2T_IDX(tlsp->l2te->idx);
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
 	cpl->opt0 = htobe64(options);
@@ -370,7 +369,6 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 	cpl->peer_ip_lo = *(uint64_t *)&inp->in6p_faddr.s6_addr[8];
 
 	options = F_TCAM_BYPASS | V_ULP_MODE(ULP_MODE_NONE);
-	options |= V_L2T_IDX(tlsp->l2te->idx);
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
 	cpl->opt0 = htobe64(options);
@@ -387,7 +385,6 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 {
 	struct inpcb *inp;
 	struct wrqe *wr;
-	int error;
 	bool isipv6;
 
 	inp = so->so_pcb;
@@ -410,12 +407,9 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	else
 		mk_sbtls_act_open_req(sc, vi, inp, tlsp, atid, wrtod(wr));
 
-	error = t4_l2t_send(sc, wr, tlsp->l2te);
-	if (error == 0)
-		tlsp->open_pending = true;
-	else
-		free_wrqe(wr);
-	return (error);
+	tlsp->open_pending = true;
+	t4_wrq_tx(sc, wr);
+	return (0);
 };
 
 static int
@@ -545,11 +539,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	struct t6_sbtls_cipher *cipher;
 	struct sbtls_info *tls;
 	struct mbuf *key_wr;
-	union {
-		struct sockaddr_in sin;
-		struct sockaddr_in6 sin6;
-	} sa;
-	struct sockaddr *nam;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
@@ -654,29 +643,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	key_wr = NULL;
 	atid = alloc_atid(sc, tlsp);
 	if (atid < 0) {
-		error = ENOMEM;
-		goto failed;
-	}
-
-	if (rt->rt_flags & RTF_GATEWAY)
-		nam = rt->rt_gateway;
-	else if (so->so_proto == tcp_protosw) {
-		nam = (struct sockaddr *)&sa.sin;
-		memset(&sa.sin, 0, sizeof(sa.sin));
-		sa.sin.sin_len = sizeof(sa.sin);
-		sa.sin.sin_family = AF_INET;
-		sa.sin.sin_port = inp->inp_inc.inc_ie.ie_fport;
-		sa.sin.sin_addr = inp->inp_inc.inc_ie.ie_faddr;
-	} else {
-		nam = (struct sockaddr *)&sa.sin6;
-		memset(&sa.sin6, 0, sizeof(sa.sin6));
-		sa.sin6.sin6_len = sizeof(sa.sin6);
-		sa.sin6.sin6_family = AF_INET6;
-		sa.sin6.sin6_port = inp->inp_inc.inc_ie.ie_fport;
-		sa.sin6.sin6_addr = inp->inp_inc.inc_ie.ie6_faddr;
-	}
-	tlsp->l2te = t4_l2t_get(vi->pi, ifp, nam);
-	if (tlsp->l2te == NULL) {
 		error = ENOMEM;
 		goto failed;
 	}
@@ -1366,13 +1332,16 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		tot_len += roundup2(wr_len, EQ_ESIZE);
 	}
 
+	/* Include room for a TP work request to program an L2T entry. */
+	tot_len++;
+
 	/*
-	 * Include room for a ULPTX work request including up to 4
+	 * Include room for a ULPTX work request including up to 5
 	 * CPL_SET_TCB_FIELD commands before the first TLS work
 	 * request.
 	 */
 	wr_len = sizeof(struct fw_ulptx_wr) +
-	    4 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+	    5 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	/*
 	 * If timestamps are present, reserve 1 more command for
@@ -1703,7 +1672,7 @@ static int
 sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
     u_int nsegs, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
-    u_int pidx)
+    u_int pidx, bool set_l2t_idx)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -1803,7 +1772,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	    ext_pgs->hdr_len + ntohs(hdr->tls_length));
 
 	/*
-	 * Update TCB fields.  Reserve space for the FW_UPTX_WR header
+	 * Update TCB fields.  Reserve space for the FW_ULPTX_WR header
 	 * but don't populate it until we know how many field updates
 	 * are required.
 	 */
@@ -1813,6 +1782,18 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		wr = dst;
 	out = (void *)(wr + 1);
 	fields = 0;
+	if (set_l2t_idx) {
+		KASSERT(nsegs != 0,
+		    ("trying to set L2T_IX for subsequent TLS WR"));
+#ifdef VERBOSE_TRACES
+		CTR3(KTR_CXGBE, "%s: tid %d set L2T_IX to %d", __func__,
+		    tlsp->tid, tlsp->l2te->idx);
+#endif
+		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_L2T_IX,
+		    V_TCB_L2T_IX(M_TCB_L2T_IX), V_TCB_L2T_IX(tlsp->l2te->idx));
+		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+		fields++;
+	}		
 	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
 		KASSERT(nsegs != 0,
 		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
@@ -2199,16 +2180,22 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
     struct mbuf *m, u_int nsegs, u_int available)
 {
 	struct sge_eq *eq = &txq->eq;
+	struct tx_sdesc *txsd;
+	struct tlspcb *tlsp;
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
+	struct ether_header *eh;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
+	bool set_l2t_idx;
 	void *tsopt;
 
 	totdesc = 0;
-	tcp = (struct tcphdr *)(mtod(m, char *) + m->m_pkthdr.l2hlen +
+	eh = mtod(m, struct ether_header *);
+	tcp = (struct tcphdr *)((char *)eh + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
 	pidx = eq->pidx;
+	tlsp = cipher->tlsp;
 
 	if (sbtls_has_tcp_options(tcp)) {
 		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
@@ -2218,8 +2205,35 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		dst = &eq->desc[pidx];
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP options packet", __func__,
-		    cipher->tlsp->tid);
+		    tlsp->tid);
 #endif
+	}
+
+	/*
+	 * Allocate a new L2T entry if necessary.  This may write out
+	 * a work request to the txq.
+	 */
+	set_l2t_idx = false;
+	if (tlsp->l2te == NULL ||
+	    memcmp(tlsp->l2te->dmac, eh->ether_dhost, ETHER_ADDR_LEN) != 0) {
+		set_l2t_idx = true;
+		if (tlsp->l2te)
+			t4_l2t_release(tlsp->l2te);
+		tlsp->l2te = t4_l2t_alloc_tls(cipher->sc, txq, dst, &ndesc,
+		    0, tlsp->vi->pi->lport, eh->ether_dhost);
+		if (tlsp->l2te == NULL)
+			CXGBE_UNIMPLEMENTED("failed to allocate TLS L2TE");
+		if (ndesc != 0) {
+			MPASS(ndesc <= available - totdesc);
+
+			txq->raw_wrs++;
+			txsd = &txq->sdesc[pidx];
+			txsd->m = NULL;
+			txsd->desc_used = ndesc;
+			totdesc += ndesc;
+			IDXINCR(pidx, ndesc, eq->sidx);
+			dst = &eq->desc[pidx];
+		}
 	}
 
 	/*
@@ -2245,7 +2259,8 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		}
 
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
-		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx);
+		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx,
+		    set_l2t_idx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 		dst = &eq->desc[pidx];
@@ -2255,6 +2270,9 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 * is only valid for the first TLS record.
 		 */
 		nsegs = 0;
+
+		/* Only need to set the L2T index once. */
+		set_l2t_idx = false;
 	}
 
 	MPASS(totdesc <= available);
@@ -2350,5 +2368,4 @@ static moduledata_t t6_sbtls_moddata = {
 
 MODULE_VERSION(t6_sbtls, 1);
 MODULE_DEPEND(t6_sbtls, t6nex, 1, 1, 1);
-MODULE_DEPEND(t6_sbtls, t4_tom, 1, 1, 1);
 DECLARE_MODULE(t6_sbtls, t6_sbtls_moddata, SI_SUB_EXEC, SI_ORDER_ANY);
