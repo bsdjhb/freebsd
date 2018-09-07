@@ -160,7 +160,6 @@ alloc_toepcb(struct vi_info *vi, int txqid, int rxqid, int flags)
 	toep->txsd_pidx = 0;
 	toep->txsd_cidx = 0;
 	aiotx_init_toep(toep);
-	tls_init_toep(toep);
 
 	return (toep);
 }
@@ -550,10 +549,7 @@ find_best_mtu_idx(struct adapter *sc, struct in_conninfo *inc,
 
 	MPASS(inc != NULL);
 
-	if (s != NULL && s->mss > 0)
-		mss = s->mss;
-	else
-		mss = tcp_mssopt(inc);
+	mss = s->mss > 0 ? s->mss : tcp_mssopt(inc);
 	if (inc->inc_flags & INC_ISIPV6)
 		mtu = mss + sizeof(struct ip6_hdr) + sizeof(struct tcphdr);
 	else
@@ -710,6 +706,7 @@ set_ulp_mode(struct toepcb *toep, int ulp_mode)
 	CTR4(KTR_CXGBE, "%s: toep %p (tid %d) ulp_mode %d",
 	    __func__, toep, toep->tid, ulp_mode);
 	toep->ulp_mode = ulp_mode;
+	tls_init_toep(toep);
 	if (toep->ulp_mode == ULP_MODE_TCPDDP)
 		ddp_init_toep(toep);
 }
