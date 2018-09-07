@@ -1266,6 +1266,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 {
 	struct ether_header *eh;
 	struct ip *ip;
+	struct ip6_hdr *ip6;
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
 	int nsegs;
@@ -1284,21 +1285,32 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		return (EINVAL);
 	}
 	eh = mtod(m, struct ether_header *);
-	if (ntohs(eh->ether_type) != ETHERTYPE_IP) {
-		CTR2(KTR_CXGBE, "%s: tid %d mbuf not ETHERTYPE_IP", __func__,
-		    cipher->tlsp->tid);
+	if (ntohs(eh->ether_type) != ETHERTYPE_IP &&
+	    ntohs(eh->ether_type) != ETHERTYPE_IPV6) {
+		CTR2(KTR_CXGBE, "%s: tid %d mbuf not ETHERTYPE_IP{,V6}",
+		    __func__, cipher->tlsp->tid);
 		return (EINVAL);
 	}
 	m->m_pkthdr.l2hlen = sizeof(*eh);
 
 	/* XXX: Reject unsupported IP options? */
-	ip = (struct ip *)(eh + 1);
-	if (ip->ip_p != IPPROTO_TCP) {
-		CTR2(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP", __func__,
-		    cipher->tlsp->tid);
-		return (EINVAL);
+	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
+		ip = (struct ip *)(eh + 1);
+		if (ip->ip_p != IPPROTO_TCP) {
+			CTR2(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP",
+			    __func__, cipher->tlsp->tid);
+			return (EINVAL);
+		}
+		m->m_pkthdr.l3hlen = ip->ip_hl * 4;
+	} else {
+		ip6 = (struct ip6_hdr *)(eh + 1);
+		if (ip6->ip6_nxt != IPPROTO_TCP) {
+			CTR3(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP (%u)",
+			    __func__, cipher->tlsp->tid, ip6->ip6_nxt);
+			return (EINVAL);
+		}
+		m->m_pkthdr.l3hlen = sizeof(struct ip6_hdr);
 	}
-	m->m_pkthdr.l3hlen = ip->ip_hl * 4;
 	if (m->m_len < m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
 	    sizeof(*tcp)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short (2)",
@@ -1471,7 +1483,9 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	uint32_t ctrl;
 	uint64_t ctrl1;
 	int len16, ndesc, pktlen;
+	struct ether_header *eh;
 	struct ip *ip, newip;
+	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
 	caddr_t out;
 
@@ -1508,19 +1522,28 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	out = (void *)(cpl + 1);
 
 	/* Copy over Ethernet header. */
-	copy_to_txd(&txq->eq, mtod(m, caddr_t), &out, m->m_pkthdr.l2hlen);
+	eh = mtod(m, struct ether_header *);
+	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
 
 	/* Fixup length in IP header and copy out. */
-	ip = (void *)(mtod(m, caddr_t) + m->m_pkthdr.l2hlen);
-	newip = *ip;
-	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
-	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
-	if (m->m_pkthdr.l3hlen > sizeof(*ip))
-		copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
-		    m->m_pkthdr.l3hlen - sizeof(*ip));
+	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
+		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip = *ip;
+		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		if (m->m_pkthdr.l3hlen > sizeof(*ip))
+			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			    m->m_pkthdr.l3hlen - sizeof(*ip));
+	} else {
+		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip6 = *ip6;
+		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
+	}
 
 	/* Clear PUSH and FIN in the TCP header if present. */
-	tcp = (void *)((char *)ip + m->m_pkthdr.l3hlen);
+	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
 	newtcp.th_flags &= ~(TH_PUSH | TH_FIN);
 	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
@@ -1584,7 +1607,9 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	uint32_t ctrl;
 	uint64_t ctrl1;
 	int len16, ndesc, pktlen;
+	struct ether_header *eh;
 	struct ip *ip, newip;
+	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
 	struct mbuf_ext_pgs *ext_pgs;
 	caddr_t out;
@@ -1629,19 +1654,28 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	out = (void *)(cpl + 1);
 
 	/* Copy over Ethernet header. */
-	copy_to_txd(&txq->eq, mtod(m, caddr_t), &out, m->m_pkthdr.l2hlen);
+	eh = mtod(m, struct ether_header *);
+	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
 
 	/* Fixup length in IP header and copy out. */
-	ip = (void *)(mtod(m, caddr_t) + m->m_pkthdr.l2hlen);
-	newip = *ip;
-	newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
-	copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
-	if (m->m_pkthdr.l3hlen > sizeof(*ip))
-		copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
-		    m->m_pkthdr.l3hlen - sizeof(*ip));
+	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
+		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip = *ip;
+		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		if (m->m_pkthdr.l3hlen > sizeof(*ip))
+			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			    m->m_pkthdr.l3hlen - sizeof(*ip));
+	} else {
+		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip6 = *ip6;
+		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
+	}
 
 	/* Set sequence number in TCP header. */
-	tcp = (void *)((char *)ip + m->m_pkthdr.l3hlen);
+	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
 	newtcp.th_seq = htonl(tcp_seqno + mtod(m_tls, vm_offset_t));
 	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
