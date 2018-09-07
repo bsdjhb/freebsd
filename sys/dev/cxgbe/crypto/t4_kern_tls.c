@@ -1317,7 +1317,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		    __func__, cipher->tlsp->tid);
 		return (EINVAL);
 	}
-	tcp = (struct tcphdr *)((char *)ip + m->m_pkthdr.l3hlen);
+	tcp = (struct tcphdr *)((char *)(eh + 1) + m->m_pkthdr.l3hlen);
 	m->m_pkthdr.l4hlen = tcp->th_off * 4;
 
 	/* Bail if there is TCP payload before the TLS record. */
