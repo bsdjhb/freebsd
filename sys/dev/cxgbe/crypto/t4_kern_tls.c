@@ -192,7 +192,6 @@ struct tlspcb {
 /* XXX: From tom/t4_tom.h, but including that breaks in too much other stuff. */
 int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
     struct offload_settings *);
-uint64_t select_ntuple(struct vi_info *, struct l2t_entry *);
 
 static struct protosw *tcp_protosw, *tcp6_protosw;
 
@@ -346,8 +345,6 @@ mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
 	options |= F_NON_OFFLOAD;
 	cpl->opt0 = htobe64(options);
 
-	cpl6->params = select_ntuple(vi, tlsp->l2te);
-
 	options = V_TX_QUEUE(sc->params.tp.tx_modq[vi->pi->tx_chan]);
 	if (tp->t_flags & TF_REQ_TSTMP)
 		options |= F_TSTAMPS_EN;
@@ -385,8 +382,6 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 	options |= V_SMAC_SEL(vi->smt_idx) | V_TX_CHAN(vi->pi->tx_chan);
 	options |= F_NON_OFFLOAD;
 	cpl->opt0 = htobe64(options);
-
-	cpl6->params = select_ntuple(vi, tlsp->l2te);
 
 	options = V_TX_QUEUE(sc->params.tp.tx_modq[vi->pi->tx_chan]);
 	if (tp->t_flags & TF_REQ_TSTMP)
