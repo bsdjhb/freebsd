@@ -35,6 +35,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/eventhandler.h>
 #include <sys/malloc.h>
 #include <sys/rmlock.h>
+#include <sys/sbuf.h>
 #include <sys/socket.h>
 #include <sys/taskqueue.h>
 #include <net/if.h>
@@ -326,6 +327,41 @@ t4_tom_ifaddr_event(void *arg __unused, struct ifnet *ifp)
 
 	atomic_add_rel_int(&in6_ifaddr_gen, 1);
 	taskqueue_enqueue_timeout(taskqueue_thread, &clip_task, -hz / 4);
+}
+
+int
+sysctl_clip(SYSCTL_HANDLER_ARGS)
+{
+	struct adapter *sc = arg1;
+	struct clip_entry *ce;
+	struct sbuf *sb;
+	int rc, header = 0;
+	char ip[INET6_ADDRSTRLEN];
+
+	rc = sysctl_wire_old_buffer(req, 0);
+	if (rc != 0)
+		return (rc);
+
+	sb = sbuf_new_for_sysctl(NULL, NULL, 4096, req);
+	if (sb == NULL)
+		return (ENOMEM);
+
+	mtx_lock(&sc->clip_table_lock);
+	TAILQ_FOREACH(ce, &sc->clip_table, link) {
+		if (header == 0) {
+			sbuf_printf(sb, "%-40s %-5s", "IP address", "Users");
+			header = 1;
+		}
+		inet_ntop(AF_INET6, &ce->lip, &ip[0], sizeof(ip));
+
+		sbuf_printf(sb, "\n%-40s %5u", ip, ce->refcount);
+	}
+	mtx_unlock(&sc->clip_table_lock);
+
+	rc = sbuf_finish(sb);
+	sbuf_delete(sb);
+
+	return (rc);
 }
 
 void

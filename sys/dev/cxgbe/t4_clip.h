@@ -46,4 +46,6 @@ struct clip_entry *t4_hold_lip(struct adapter *, struct in6_addr *,
     struct clip_entry *);
 void t4_release_lip(struct adapter *, struct clip_entry *);
 
+int sysctl_clip(SYSCTL_HANDLER_ARGS);
+
 #endif	/* __T4_CLIP_H */
