@@ -80,6 +80,7 @@ LIST_HEAD(sbtls_backend_head, sbtls_crypto_backend) sbtls_backend_head =
     LIST_HEAD_INITIALIZER(sbtls_backend_head);
 static uma_zone_t zone_tlssock;
 static int sbtls_number_threads;
+static int sbtls_maxlen = 16384;
 
 SYSCTL_DECL(_kern_ipc);
 
@@ -96,6 +97,9 @@ SYSCTL_INT(_kern_ipc_tls, OID_AUTO, allow_unload, CTLFLAG_RDTUN,
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, bind_threads, CTLFLAG_RDTUN,
     &sbtls_bind_threads, 0,
     "Bind crypto threads to cores or domains at boot");
+
+SYSCTL_INT(_kern_ipc_tls, OID_AUTO, maxlen, CTLFLAG_RWTUN,
+    &sbtls_maxlen, 0, "Maximum TLS record size");
 
 SYSCTL_INT(_kern_ipc_tls_stats, OID_AUTO, threads, CTLFLAG_RD,
     &sbtls_number_threads, 0,
@@ -369,6 +373,8 @@ sbtls_init_sb_tls(struct socket *so, struct tls_so_enable *en, size_t size)
 		}
 		tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
 	}
+	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
+		tls->sb_params.sb_maxlen = sbtls_maxlen;
 	counter_u64_add(sbtls_offload_active, 1);
 	return (tls);
 }
