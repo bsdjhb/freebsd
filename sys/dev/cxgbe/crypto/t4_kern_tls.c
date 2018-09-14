@@ -2308,13 +2308,20 @@ struct sbtls_crypto_backend t6tls_backend = {
 	.clean_cipher = t6_sbtls_clean_cipher
 };
 
+static void
+t6_sbtls_proto_init(void *dummy __unused)
+{
+
+	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
+	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
+}
+SYSINIT(t6_sbtls, SI_SUB_PROTO_END, SI_ORDER_ANY, t6_sbtls_proto_init, NULL);
+
 static int
 t6_sbtls_mod_load(void)
 {
 	int error;
 
-	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
-	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
 	error = sbtls_crypto_backend_register(&t6tls_backend);
 	if (error)
 		return (error);
