@@ -578,6 +578,15 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, cop_managed_offloading, CTLFLAG_RDTUN,
  */
 static int t4_kern_tls = 0;
 TUNABLE_INT("hw.cxgbe.kern_tls", &t4_kern_tls);
+
+static int t4_tls_enable = 0;
+TUNABLE_INT("hw.cxgbe.tls.enable", &t4_tls_enable);
+
+static int t4_tls_inline_keys = 0;
+TUNABLE_INT("hw.cxgbe.tls.inline_keys", &t4_tls_inline_keys);
+
+static int t4_tls_combo_wrs = 0;
+TUNABLE_INT("hw.cxgbe.tls.combo_wrs", &t4_tls_combo_wrs);
 #endif
 
 /* Functions used by VIs to obtain unique MAC addresses for each VI. */
@@ -4503,6 +4512,10 @@ t4_enable_kern_tls(struct adapter *sc)
 	t4_set_reg_field(sc, A_TP_TIMER_RESOLUTION, m, v);
 
 	sc->flags |= KERN_TLS_OK;
+
+	sc->tlst.enable = t4_tls_enable;
+	sc->tlst.inline_keys = t4_tls_inline_keys;
+	sc->tlst.combo_wrs = t4_tls_combo_wrs;
 }
 #endif
 
