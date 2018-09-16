@@ -253,6 +253,18 @@ int ib_init_ucontext(struct uverbs_attr_bundle *attrs)
 	if (ret)
 		goto err_uncharge;
 
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	ucontext->per_mm.umem_tree = RB_ROOT_CACHED;
+	init_rwsem(&ucontext->per_mm.umem_rwsem);
+	ucontext->per_mm.odp_mrs_count = 0;
+	INIT_LIST_HEAD(&ucontext->per_mm.no_private_counters);
+	ucontext->per_mm.context = ucontext;
+
+	if (!(ib_dev->attrs.device_cap_flags & IB_DEVICE_ON_DEMAND_PAGING))
+		ucontext->invalidate_range = NULL;
+
+#endif
+
 	/*
 	 * Make sure that ib_uverbs_get_ucontext() sees the pointer update
 	 * only after all writes to setup the ucontext have completed
