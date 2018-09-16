@@ -109,31 +109,36 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	if (priv_check(curthread, PRIV_VM_MLOCK) != 0)
 		return ERR_PTR(-EPERM);
 
-	umem = kzalloc(sizeof *umem, GFP_KERNEL);
-	if (!umem)
-		return ERR_PTR(-ENOMEM);
+	if (access & IB_ACCESS_ON_DEMAND) {
+		umem = kzalloc(sizeof(struct ib_umem_odp), GFP_KERNEL);
+		if (!umem)
+			return ERR_PTR(-ENOMEM);
+		umem->odp_data = to_ib_umem_odp(umem);
+	} else {
+		umem = kzalloc(sizeof(*umem), GFP_KERNEL);
+		if (!umem)
+			return ERR_PTR(-ENOMEM);
+	}
 
 	umem->context    = context;
 	umem->length     = size;
 	umem->address    = addr;
 	umem->page_shift = PAGE_SHIFT;
 	umem->writable   = ib_access_writable(access);
+	umem->owning_mm = mm = current->mm;
+	mmgrab(mm);
 
 	if (access & IB_ACCESS_ON_DEMAND) {
-		ret = ib_umem_odp_get(context, umem, access);
+		ret = ib_umem_odp_get(to_ib_umem_odp(umem), access);
 		if (ret)
 			goto umem_kfree;
 		return umem;
 	}
 
-	umem->owning_mm = mm = current->mm;
-	mmgrab(mm);
-	umem->odp_data = NULL;
-
 	page_list = (struct page **) __get_free_page(GFP_KERNEL);
 	if (!page_list) {
 		ret = -ENOMEM;
-		goto umem_kfree_drop;
+		goto umem_kfree;
 	}
 
 	vma_list = (struct vm_area_struct **) __get_free_page(GFP_KERNEL);
@@ -208,12 +213,11 @@ out:
 	if (vma_list)
 		free_page((unsigned long) vma_list);
 	free_page((unsigned long) page_list);
-umem_kfree_drop:
-	if (ret)
-		mmdrop(umem->owning_mm);
 umem_kfree:
-	if (ret)
+	if (ret) {
+		mmdrop(umem->owning_mm);
 		kfree(umem);
+	}
 	return ret ? ERR_PTR(ret) : umem;
 }
 EXPORT_SYMBOL(ib_umem_get);
@@ -221,7 +225,10 @@ EXPORT_SYMBOL(ib_umem_get);
 static void __ib_umem_release_tail(struct ib_umem *umem)
 {
 	mmdrop(umem->owning_mm);
-	kfree(umem);
+	if (umem->odp_data)
+		kfree(to_ib_umem_odp(umem));
+	else
+		kfree(umem);
 }
 
 static void ib_umem_release_defer(struct work_struct *work)
@@ -246,6 +253,7 @@ void ib_umem_release(struct ib_umem *umem)
 
 	if (umem->odp_data) {
 		ib_umem_odp_release(to_ib_umem_odp(umem));
+		__ib_umem_release_tail(umem);
 		return;
 	}
 
