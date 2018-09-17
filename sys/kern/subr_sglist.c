@@ -263,6 +263,7 @@ sglist_count_ext_pgs(struct mbuf_ext_pgs *ext_pgs, size_t off, size_t len)
 		if (paddr != nextaddr)
 			nsegs++;
 		nextaddr = paddr + seglen;
+		pgoff = 0;
 	};
 	if (len) {
 		seglen = MIN(len, ext_pgs->trail_len - off);
