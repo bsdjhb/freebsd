@@ -1632,6 +1632,7 @@ retry_page:
 			pgs->npgs++;
 		}
 		pgs->last_pg_len = length - PAGE_SIZE * (pgs->npgs - 1);
+		MBUF_EXT_PGS_ASSERT_SANITY(pgs);
 		vm_wire_add(wire_adj);
 		wire_adj = 0;
 		total -= length;

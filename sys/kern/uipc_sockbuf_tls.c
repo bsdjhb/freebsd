@@ -898,6 +898,7 @@ sbtls_boring_fixup(struct sbtls_info *tls, struct sockbuf *sb,
 			}
 		}
 	}
+	MBUF_EXT_PGS_ASSERT_SANITY(pgs);
 }
 
 static __noinline void
