@@ -793,10 +793,6 @@ sbtls_boring_fixup(struct sbtls_info *tls, struct sockbuf *sb,
 			 */
 
 			SOCKBUF_LOCK(sb);
-			if (sb->sb_state & SBS_CANTSENDMORE) {
-				SOCKBUF_UNLOCK(sb);
-				return;
-			}
 			mb_ext_pgs_downgrade(m);
 			sb->sb_mbcnt -= PAGE_SIZE;
 			SOCKBUF_UNLOCK(sb);
@@ -816,10 +812,6 @@ sbtls_boring_fixup(struct sbtls_info *tls, struct sockbuf *sb,
 			if (pgs->last_pg_len == 0) {
 				/* last segment entirely removed */
 				SOCKBUF_LOCK(sb);
-				if (sb->sb_state & SBS_CANTSENDMORE) {
-					SOCKBUF_UNLOCK(sb);
-					return;
-				}
 				*pgcnt = *pgcnt + 1;
 				pg = PHYS_TO_VM_PAGE(pgs->pa[i]);
 				pg->flags &= ~PG_ZERO;
@@ -850,10 +842,6 @@ sbtls_boring_fixup(struct sbtls_info *tls, struct sockbuf *sb,
 			if (iov->iov_len == 0) {
 				/* first segment entirely removed */
 				SOCKBUF_LOCK(sb);
-				if (sb->sb_state & SBS_CANTSENDMORE) {
-					SOCKBUF_UNLOCK(sb);
-					return;
-				}
 				*pgcnt = *pgcnt + 1;
 				pg = PHYS_TO_VM_PAGE(pgs->pa[i]);
 				pg->flags &= ~PG_ZERO;
