@@ -906,6 +906,7 @@ retry_space:
 				ext_pgs->npgs++;
 				xfs = xfsize(i, npages, off, space);
 				ext_pgs->last_pg_len = xfs;
+				MBUF_EXT_PGS_ASSERT_SANITY(ext_pgs);
 				m0->m_len += xfs;
 				m0->m_ext.ext_size += PAGE_SIZE;
 

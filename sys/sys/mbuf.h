@@ -341,6 +341,15 @@ mbuf_ext_pg_len(struct mbuf_ext_pgs *ext_pgs, int pidx, int pgoff)
 		return (PAGE_SIZE - pgoff);
 	}
 }
+
+#ifdef INVARIANT_SUPPORT
+void	mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs);
+#endif
+#ifdef INVARIANTS
+#define	MBUF_EXT_PGS_ASSERT_SANITY(ext_pgs)	mb_ext_pgs_check((ext_pgs))
+#else
+#define	MBUF_EXT_PGS_ASSERT_SANITY(ext_pgs)
+#endif
 #endif
 
 /*
