@@ -651,9 +651,9 @@ static int addr_resolve_neigh(if_t dev,
 	return ret;
 }
 
-static void copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
-			     const struct sockaddr *dst_in,
-			     if_t ndev)
+static int copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+			    const struct sockaddr *dst_in,
+			    if_t ndev)
 {
 	int ret = 0;
 
@@ -661,6 +661,8 @@ static void copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
 		ret = rdma_translate_ip(dst_in, dev_addr);
 	else
 		rdma_copy_src_l2_addr(dev_addr, ndev);
+
+	return ret;
 }
 
 static int rdma_set_src_addr_rcu(struct rdma_dev_addr *dev_addr,
@@ -682,8 +684,7 @@ static int rdma_set_src_addr_rcu(struct rdma_dev_addr *dev_addr,
 			return -ENODEV;
 	}
 
-	copy_src_l2_addr(dev_addr, dst_in, ndev);
-	return 0;
+	return copy_src_l2_addr(dev_addr, dst_in, ndev);
 }
 
 static int set_addr_netns_by_gid_rcu(struct rdma_dev_addr *addr)
