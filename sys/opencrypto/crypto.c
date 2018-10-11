@@ -94,6 +94,9 @@ struct crypto_session {
 	void *softc;
 	uint32_t hid;
 	uint32_t capabilities;
+#ifdef INVARIANTS
+	struct crypto_session_params csp;
+#endif
 };
 
 SDT_PROVIDER_DEFINE(opencrypto);
@@ -516,6 +519,197 @@ again:
 	return best;
 }
 
+#ifdef INVARIANTS
+static bool
+alg_is_compression(int alg)
+{
+
+	if (csp->csp_cipher_alg == CRYPTO_DEFLATE_COMP)
+		return (true);
+	return (false);
+}
+
+static bool
+alg_is_cipher(int alg)
+{
+
+	if (csp->csp_cipher_alg >= CRYPTO_DES_CBC &&
+	    csp->csp_cipher_alg <= CRYPTO_SKIPJACK_CBC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_AES_CBC &&
+	    csp->csp_cipher_alg <= CRYPTO_ARC4)
+		return (true);
+	if (csp->csp_cipher_alg == CRYPTO_NULL_CBC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_CAMELLIA_CBC &&
+	    csp->csp_cipher_alg <= CRYPTO_AES_ICM)
+		return (true);
+	/* XXX: CRYPTO_AES_NIST_GMAC? */
+	if (csp->csp_cipher_alg == CRYPTO_CHACHA20)
+		return (true);
+	return (false);
+}
+
+static bool
+alg_is_digest(int alg)
+{
+
+	if (csp->csp_cipher_alg >= CRYPTO_MD5_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA1_KPDK)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_MD5 &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA1)
+		return (true);
+	if (csp->csp_cipher_alg == CRYPTO_NULL_HMAC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_AES_128_NIST_GMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_BLAKE2S)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_SHA2_224_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_POLY1305)
+		return (true);
+	return (false);
+}
+
+static bool
+alg_is_keyed_digest(int alg)
+{
+
+	if (csp->csp_cipher_alg >= CRYPTO_MD5_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA1_KPDK)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+		return (true);
+	if (csp->csp_cipher_alg >= CRYPTO_AES_128_NIST_GMAC &&
+	    csp->csp_cipher_alg <= CRYPTO_AES_256_NIST_GMAC)
+		return (true);
+	if (csp->csp_cipher_alg == CRYPTO_SHA2_224_HMAC)
+		return (true);
+	if (csp->csp_cipher_alg == CRYPTO_POLY1305)
+		return (true);
+	return (false);
+}
+
+static bool
+alg_is_aead(int alg)
+{
+
+	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
+		return (true);
+	return (false);
+}
+
+/* Various sanity checks on crypto session parameters. */
+static void
+csp_sanity(struct crypto_session_params *csp)
+{
+
+	KASSERT((csp->csp_flags & ~CSP_IV_VALID) == 0,
+	    ("invalid session flags %x", csp->csp_flags));
+	switch (csp->csp_mode) {
+	case CSP_MODE_COMPRESS:
+		KASSERT(alg_is_compression(csp->csp_cipher_alg),
+		    ("invalid compression algorithm %d", csp->csp_cipher_alg));
+		KASSERT(csp->csp_flags == 0,
+		    ("invalid session flags %x", csp->csp_flags));
+		KASSERT(csp->csp_cipher_klen == 0 &&
+		    csp->csp_cipher_key == NULL &&
+		    csp->csp_cipher_ivlen == 0 &&
+		    csp->csp_auth_alg == 0 &&
+		    csp->csp_auth_klen == 0 &&
+		    csp->csp_auth_key == NULL &&
+		    csp->csp_auth_mlen == 0,
+		    ("invalid parameters for compression session"));
+		break;
+	case CSP_MODE_CIPHER:
+		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
+		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
+		/* XXX: Multiple of NBBY? */
+		KASSERT(csp->csp_cipher_klen > 0,
+		    ("zero length encryption key"));
+		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(csp->csp_auth_alg == 0 &&
+		    csp->csp_auth_klen == 0 &&
+		    csp->csp_auth_key == NULL &&
+		    csp->csp_auth_mlen == 0,
+		    ("non-empty auth parameters for cipher session"));
+		break;
+	case CSP_MODE_DIGEST:
+		KASSERT(csp->csp_cipher_alg == 0 &&
+		    csp->csp_cipher_klen == 0 &&
+		    csp->csp_cipher_key == NULL &&
+		    csp->csp_cipher_ivlen == 0,
+		    ("non-empty encryption parameters for digest session"));
+		KASSERT(alg_is_digest(csp->csp_auth_alg),
+		    ("invalid digest algorithm %d", csp->csp_auth_alg));
+		if (alg_is_keyed_digest(csp->csp_auth_alg)) {
+			KASSERT(csp->csp_auth_klen > 0,
+			    ("zero length authentication key"));
+		} else {
+			KASSERT(csp->csp_auth_klen == 0 &&
+			    csp->csp_auth_key == NULL,
+			    ("authentication key for non-keyed digest"));
+		}
+		/* XXX? */
+		KASSERT(csp->csp_auth_mlen >= 0 &&
+		    csp->csp_auth_mlen <= HASH_MAX_LEN,
+		    ("invalid digest length: %d", csp->csp_auth_mlen));
+		break;
+	case CSP_MODE_AEAD:
+		KASSERT(alg_is_aead(csp->csp_cipher_alg),
+		    ("invalid AEAD algorithm %d", csp->csp_cipher_alg));
+		KASSERT(csp->csp_cipher_klen > 0,
+		    ("zero length encryption key"));
+		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(csp->csp_auth_alg == 0 &&
+		    csp->csp_auth_klen == 0 &&
+		    csp->csp_auth_key == NULL,
+		    ("non-empty auth parameters for AEAD session"));
+		/* XXX? */
+		KASSERT(csp->csp_auth_mlen >= 0 &&
+		    csp->csp_auth_mlen <= HASH_MAX_LEN,
+		    ("invalid digest length: %d", csp->csp_auth_mlen));
+		break;
+	case CSP_MODE_ETA:
+		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
+		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
+		KASSERT(csp->csp_cipher_klen > 0,
+		    ("zero length encryption key"));
+		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(alg_is_digest(csp->csp_auth_alg),
+		    ("invalid digest algorithm %d", csp->csp_auth_alg));
+		if (alg_is_keyed_digest(csp->csp_auth_alg)) {
+			KASSERT(csp->csp_auth_klen > 0,
+			    ("zero length authentication key"));
+		} else {
+			KASSERT(csp->csp_auth_klen == 0 &&
+			    csp->csp_auth_key == NULL,
+			    ("authentication key for non-keyed digest"));
+		}
+		/* XXX? */
+		KASSERT(csp->csp_auth_mlen >= 0 &&
+		    csp->csp_auth_mlen <= HASH_MAX_LEN,
+		    ("invalid digest length: %d", csp->csp_auth_mlen));
+		break;
+	default:
+		panic("invalid session mode %d", csp->csp_mode);
+	}
+}
+#endif
+
 /*
  * Create a new session.  The crid argument specifies a crypto
  * driver to use or constraints on a driver to select (hardware
@@ -523,7 +717,8 @@ again:
  * must be capable of the requested crypto algorithms.
  */
 int
-crypto_newsession(crypto_session_t *cses, struct cryptoini *cri, int crid)
+crypto_newsession(crypto_session_t *cses, struct crypto_session_params *csp,
+    int crid)
 {
 	crypto_session_t res;
 	void *softc_mem;
@@ -531,6 +726,10 @@ crypto_newsession(crypto_session_t *cses, struct cryptoini *cri, int crid)
 	u_int32_t hid;
 	size_t softc_size;
 	int err;
+
+#ifdef INVARIANTS
+	csp_sanity(csp);
+#endif
 
 restart:
 	res = NULL;
@@ -593,6 +792,9 @@ restart:
 
 	res->capabilities = cap->cc_flags & 0xff000000;
 	res->hid = hid;
+#ifdef INVARIANTS
+	res->csp = *csp;
+#endif
 	*cses = res;
 
 out:
@@ -951,6 +1153,85 @@ crypto_unblock(u_int32_t driverid, int what)
 	return err;
 }
 
+#ifdef INVARIANTS
+/* Various sanity checks on crypto requests. */
+static void
+crp_sanity(struct cryptop *crp)
+{
+	struct crypto_session_params *csp;
+
+	csp = &crp->crp_session->csp;
+
+	KASSERT(crp->crp_ilen >= 0, ("incoming crp with -ve input length"));
+	KASSERT(crp->crp_etype == 0, ("incoming crp with error"));
+	KASSERT(!(crp->crp_flags & CRYPTO_F_DONE),
+	    ("incoming crp already done"));
+	KASSERT(crp->crp_flags &
+	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE) !=
+	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE),
+	    ("crp with both IV_SEPARATE and IV_GENERATE set"));
+	KASSERT(crp->crp_op == CRYPTO_OP_ENCRYPT ||
+	    crp->crp_op == CRYPTO_OP_DECRYPT ||
+	    crp->crp_op == CRYPTO_OP_COMPUTE_DIGEST ||
+	    crp->crp_op == CRYPTO_OP_VERIFY_DIGEST ||
+	    crp->crp_op == CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+	    crp->crp_op == CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+	    crp->crp_op == CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST_DIGEST,
+	    ("invalid crypto op %x", crp->crp_op));
+	KASSERT((crp->crp_flags & CRYPTO_F_IV_GENERATE) == 0 ||
+	    crp->crp_op == CRYPTO_OP_ENCRYPT ||
+	    crp->crp_op == CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST,
+	    ("IV_GENERATE set for non-encryption operation %x", crp->crp_op));
+	KASSERT(crp->crp_buf_type >= CRYPTO_BUF_CONTIG &&
+	    crp->crp_buf_type <= CRYPTO_BUF_MBUF,
+	    ("invalid crp buffer type %d", crp->crp_buf_type));
+	if (csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA) {
+		KASSERT(crp->crp_aad_start == 0 ||
+		    crp->crp_aad_start < crp->crp_ilen,
+		    ("invalid AAD start"));
+		KASSERT(crp->crp_aad_length != 0 || crp->crp_aad_start == 0,
+		    ("AAD with zero length and non-zero start"));
+		KASSERT(crp->crp_aad_length == 0 ||
+		    crp->crp_aad_start + crp->crp_aad_length <= crp->crp_ilen,
+		    ("AAD outside input length"));
+	} else {
+		KASSERT(crp->crp_aad_start == 0 && crp->crp_aad_length == 0,
+		    ("AAD region in request not supporting AAD"));
+	}
+	if (csp->csp_cipher_ivlen == 0) {
+		KASSERT((crp->crp_flags &
+		    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE)) == 0
+		    ("IV_GENERATE or IV_SEPARATE set when IV isn't used"));
+		KASSERT(crp->crp_iv_start == 0,
+		    ("crp_iv_start set when IV isn't used"));
+	} else if (crp->crp_flags & CRYPTO_F_IV_SEPARATE) {
+		KASSERT(crp->crp_iv_start == 0,
+		    ("IV_SEPARATE used with non-zero IV start"));
+	} else {
+		KASSERT(crp->crp_iv_start < crp->crp_ilen,
+		    ("invalid IV start"));
+		KASSERT(crp->crp_iv_start + csp->csp_cipher_ivlen <=
+		    crp->crp_ilen, ("IV outside input length"));
+	}
+	KASSERT(crp->crp_payload_start == 0 ||
+	    crp->crp_payload_start < crp->crp_ilen,
+	    ("invalid payload start"));
+	KASSERT(crp->crp_payload_start + crp->crp_payload_length <=
+	    crp->crp_ilen, ("payload outside input length"));
+	KASSERT(crp->crp_digest_start == 0 ||
+	    crp->crp_digest_start < crp->crp_uilen,
+	    ("invalid digest start"));
+	/* XXX: For the mlen == 0 case this check isn't perfect. */
+	KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <= crp->crp_ilen,
+	    ("digest outside input length"));
+	KASSERT(crp->crp_cipher_key == NULL || csp->csp_cipher_klen != 0,
+	    ("new cipher key with zero key length"));
+	KASSERT(crp->crp_auth_key == NULL || csp->csp_auth_klen != 0,
+	    ("new auth key with zero key length"));
+	KASSERT(crp->crp_callback != NULL, ("incoming crp without callback"));
+}
+#endif
+
 /*
  * Add a crypto request to a queue, to be processed by the kernel thread.
  */
@@ -960,6 +1241,10 @@ crypto_dispatch(struct cryptop *crp)
 	struct cryptocap *cap;
 	u_int32_t hid;
 	int result;
+
+#ifdef INVARIANTS
+	crp_sanity(crp);
+#endif
 
 	cryptostats.cs_ops++;
 
