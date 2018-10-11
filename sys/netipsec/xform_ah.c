@@ -678,9 +678,7 @@ ah_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	}
 
 	/* Crypto operation descriptor. */
-#if 0
 	crp->crp_ilen = m->m_pkthdr.len; /* Total input length. */
-#endif
 	crp->crp_op = CRYPTO_OP_COMPUTE_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIFSYNC;
 	if (V_async_crypto)
@@ -1058,9 +1056,7 @@ ah_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	}
 
 	/* Crypto operation descriptor. */
-#if 0
 	crp->crp_ilen = m->m_pkthdr.len; /* Total input length. */
-#endif
 	crp->crp_op = CRYPTO_OP_COMPUTE_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIFSYNC;
 	if (V_async_crypto)

@@ -390,10 +390,11 @@ struct crypto_session_params {
 	int		csp_mode;	/* Type of operations to perform. */
 
 #define	CSP_MODE_NONE		0
-#define	CSP_MODE_CIPHER		1	/* Encrypt/decrypt. */
-#define	CSP_MODE_DIGEST		2	/* Compute/verify digest. */
-#define	CSP_MODE_AEAD		3	/* Combined auth/encryption. */
-#define	CSP_MODE_ETA		4	/* IPSec style encrypt-then-auth */
+#define	CSP_MODE_COMPRESS	1	/* Compression/decompression. */
+#define	CSP_MODE_CIPHER		2	/* Encrypt/decrypt. */
+#define	CSP_MODE_DIGEST		3	/* Compute/verify digest. */
+#define	CSP_MODE_AEAD		4	/* Combined auth/encryption. */
+#define	CSP_MODE_ETA		5	/* IPSec style encrypt-then-auth */
 
 	int		csp_flags;
 
@@ -457,10 +458,8 @@ struct cryptop {
 	struct task	crp_task;
 
 	crypto_session_t crp_session;	/* Session */
-#if 0
 	int		crp_ilen;	/* Input data total length */
 	int		crp_olen;	/* Result total length */
-#endif
 
 	int		crp_etype;	/*
 					 * Error type (zero means no error).
