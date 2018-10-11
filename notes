@@ -1,0 +1,12 @@
+The goal of this branch is to simplify the data structures used to describe
+session and crypto op parameters.
+
+- replace linked/list of cryptoini for session init with a structure
+  - explicit IV length?
+- replace linked/list of cryptodesc with members in struct cryptop
+  - maybe require data to always be laid out as
+    AAD || IV (if not sideband) || DATA || TAG/MAC
+  - generate IV if needed in common code, not drivers
+- add flag for hash verify rather than hash compute
+- change copyto/copyback to operate on the crp instead of the fields
+- permit separate in/out buffers?
