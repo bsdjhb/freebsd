@@ -386,6 +386,33 @@ struct cryptostats {
 #define CRYPTDEB(...)	do { } while (0)
 #endif
 
+struct crypto_session_params {
+	int		csp_mode;	/* Type of operations to perform. */
+
+#define	CSP_MODE_NONE		0
+#define	CSP_MODE_CIPHER		1	/* Encrypt/decrypt. */
+#define	CSP_MODE_DIGEST		2	/* Compute/verify digest. */
+#define	CSP_MODE_AEAD		3	/* Combined auth/encryption. */
+#define	CSP_MODE_ETA		4	/* IPSec style encrypt-then-auth */
+
+	int		csp_flags;
+
+#define	CSP_IV_VALID		0x0001
+
+	int		csp_cipher_alg;
+	int		csp_cipher_klen; /* Key length in bits. */
+	void		*csp_cipher_key;
+	int		csp_cipher_ivlen; /* IV length in bytes. */
+	uint8_t		csp_iv[EALG_MAX_BLOCK_LEN];
+
+	int		csp_auth_alg;
+	int		csp_auth_klen;	/* Key length in bits. */
+	void		*csp_auth_key;
+	int		csp_auth_mlen;	/* Number of digest bytes to use.
+					   0 means all. */
+};
+
+#if 0
 /* Standard initialization structure beginning */
 struct cryptoini {
 	int		cri_alg;	/* Algorithm to use */
@@ -421,6 +448,7 @@ struct cryptodesc {
 
 	struct cryptodesc *crd_next;
 };
+#endif
 
 /* Structure describing complete operation */
 struct cryptop {
@@ -429,8 +457,10 @@ struct cryptop {
 	struct task	crp_task;
 
 	crypto_session_t crp_session;	/* Session */
+#if 0
 	int		crp_ilen;	/* Input data total length */
 	int		crp_olen;	/* Result total length */
+#endif
 
 	int		crp_etype;	/*
 					 * Error type (zero means no error).
@@ -444,8 +474,10 @@ struct cryptop {
 					 */
 	int		crp_flags;
 
+#if 0
 #define	CRYPTO_F_IMBUF		0x0001	/* Input/output are mbuf chains */
 #define	CRYPTO_F_IOV		0x0002	/* Input/output are uio */
+#endif
 #define	CRYPTO_F_BATCH		0x0008	/* Batch op if possible */
 #define	CRYPTO_F_CBIMM		0x0010	/* Do callback immediately */
 #define	CRYPTO_F_DONE		0x0020	/* Operation completed */
@@ -458,14 +490,36 @@ struct cryptop {
 					 * order there are submitted. Applied only
 					 * if CRYPTO_F_ASYNC flags is set
 					 */
+#define	CRYPTO_F_IV_SEPARATE	0x0200	/* Use crp_iv[] as IV. */
+#define	CRYPTO_F_IV_GENERATE	0x0400	/* Generate a random IV. */
+
+	int		crp_op;
 
 	union {
 		caddr_t		crp_buf;	/* Data to be processed */
 		struct mbuf	*crp_mbuf;
 		struct uio	*crp_uio;
 	};
-	void *		crp_opaque;	/* Opaque pointer, passed along */
+	int		crp_buf_type;	/* Which union member describes data. */
+
+	int		crp_aad_start;	/* Location of AAD. */
+	int		crp_aad_length;	/* 0 => no AAD. */
+	int		crp_iv_start;	/* Location of IV.  IV length is from
+					 * the session.
+					 */
+	int		crp_payload_start; /* Location of ciphertext. */
+	int		crp_payload_length;
+	int		crp_digest_start; /* Location of MAC/tag.  Length is
+					   * from the session.
+					   */
+
+	void		*crp_cipher_key; /* New cipher key if non-NULL. */
+	void		*crp_auth_key;	/* New auth key if non-NULL. */
+
+	void		*crp_opaque;	/* Opaque pointer, passed along */
+#if 0
 	struct cryptodesc *crp_desc;	/* Linked list of processing descriptors */
+#endif
 
 	int (*crp_callback)(struct cryptop *); /* Callback function */
 
@@ -490,6 +544,9 @@ struct cryptop {
 
 #define	CRYPTO_OP_DECRYPT	0x0
 #define	CRYPTO_OP_ENCRYPT	0x1
+#define	CRYPTO_OP_COMPUTE_DIGEST	CRYPTO_OP_ENCRYPT
+#define	CRYPTO_OP_VERIFY_DIGEST		CRYPTO_OP_DECRYPT
+
 
 /*
  * Hints passed to process methods.
@@ -515,7 +572,7 @@ void *crypto_get_driver_session(crypto_session_t crypto_session);
 
 MALLOC_DECLARE(M_CRYPTO_DATA);
 
-extern	int crypto_newsession(crypto_session_t *cses, struct cryptoini *cri, int hard);
+extern	int crypto_newsession(crypto_session_t *cses, struct crypto_session_params *params, int hard);
 extern	void crypto_freesession(crypto_session_t cses);
 #define	CRYPTOCAP_F_HARDWARE	CRYPTO_FLAG_HARDWARE
 #define	CRYPTOCAP_F_SOFTWARE	CRYPTO_FLAG_SOFTWARE
@@ -540,7 +597,7 @@ extern	void crypto_kdone(struct cryptkop *);
 extern	int crypto_getfeat(int *);
 
 extern	void crypto_freereq(struct cryptop *crp);
-extern	struct cryptop *crypto_getreq(int num);
+extern	struct cryptop *crypto_getreq(void);
 
 extern	int crypto_usercrypto;		/* userland may do crypto requests */
 extern	int crypto_userasymcrypto;	/* userland may do asym crypto reqs */
@@ -564,12 +621,18 @@ struct iovec;
 extern	int crypto_mbuftoiov(struct mbuf *mbuf, struct iovec **iovptr,
 	    int *cnt, int *allocated);
 
+#if 0
 extern	void crypto_copyback(int flags, caddr_t buf, int off, int size,
 	    c_caddr_t in);
 extern	void crypto_copydata(int flags, caddr_t buf, int off, int size,
 	    caddr_t out);
+#endif
 extern	int crypto_apply(int flags, caddr_t buf, int off, int len,
 	    int (*f)(void *, void *, u_int), void *arg);
+
+void	crypto_copyto(struct cryptop *crp, int off, int size,
+	    const void *src);
+void	crypto_copyfrom(struct cryptop *crp, int off, int size, void *dst);
 
 extern void *crypto_contiguous_subsegment(int, void *, size_t, size_t);
 
