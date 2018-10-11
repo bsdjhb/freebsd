@@ -6,7 +6,29 @@ session and crypto op parameters.
 - replace linked/list of cryptodesc with members in struct cryptop
   - maybe require data to always be laid out as
     AAD || IV (if not sideband) || DATA || TAG/MAC
+    (had to scrap this due to IPsec AH and permit arbitrary IV and
+     digest offsets)
   - generate IV if needed in common code, not drivers
 - add flag for hash verify rather than hash compute
 - change copyto/copyback to operate on the crp instead of the fields
 - permit separate in/out buffers?
+
+- need to ensure crypto_getreq() zeroes the crp (it does)
+- change for AEAD:
+  - previously with AES+HMAC crda covered all of data to auth, now
+    need to hash AAD region + payload.  If IV needs to be hashed,
+    AAD should cover IV.
+
+- Notes on IVs:
+ - CRYPTO_F_IV_GENERATE (encrypt only)
+   - generate full IV and start at crp_iv_start before encryption
+ - CRYPTO_F_IV_SEPARATE (both, cannot use with GENERATE)
+   - IV is in crp_iv, crp_iv_start should be ignored
+ - neither flag
+   - full IV is in data stream at crp_iv_start
+
+- AES-GCM now uses CIPHER_MODE_AEAD which ignores most of csp_auth_*
+  except for csp_auth_mlen
+
+- Eventually retire 3 separate GMAC algs and repurpose NIST_GMAC as a single
+  MAC?
