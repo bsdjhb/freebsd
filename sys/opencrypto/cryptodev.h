@@ -491,7 +491,7 @@ struct cryptop {
 					 * if CRYPTO_F_ASYNC flags is set
 					 */
 #define	CRYPTO_F_IV_SEPARATE	0x0200	/* Use crp_iv[] as IV. */
-#define	CRYPTO_F_IV_GENERATE	0x0400	/* Generate a random IV. */
+#define	CRYPTO_F_IV_GENERATE	0x0400	/* Generate a random IV and store. */
 
 	int		crp_op;
 
@@ -512,6 +512,8 @@ struct cryptop {
 	int		crp_digest_start; /* Location of MAC/tag.  Length is
 					   * from the session.
 					   */
+
+	uint8_t		crp_iv[EALG_MAX_BLOCK_LEN]; /* IV if IV_SEPARATE. */
 
 	void		*crp_cipher_key; /* New cipher key if non-NULL. */
 	void		*crp_auth_key;	/* New auth key if non-NULL. */
