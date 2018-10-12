@@ -601,7 +601,7 @@ csp_sanity(const struct crypto_session_params *csp)
 		    ("invalid session flags %x", csp->csp_flags));
 		KASSERT(csp->csp_cipher_klen == 0 &&
 		    csp->csp_cipher_key == NULL &&
-		    csp->csp_cipher_ivlen == 0 &&
+		    csp->csp_ivlen == 0 &&
 		    csp->csp_auth_alg == 0 &&
 		    csp->csp_auth_klen == 0 &&
 		    csp->csp_auth_key == NULL &&
@@ -614,9 +614,9 @@ csp_sanity(const struct crypto_session_params *csp)
 		/* XXX: Multiple of NBBY? */
 		KASSERT(csp->csp_cipher_klen > 0,
 		    ("zero length encryption key"));
-		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
-		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(csp->csp_auth_alg == 0 &&
 		    csp->csp_auth_klen == 0 &&
 		    csp->csp_auth_key == NULL &&
@@ -626,9 +626,13 @@ csp_sanity(const struct crypto_session_params *csp)
 	case CSP_MODE_DIGEST:
 		KASSERT(csp->csp_cipher_alg == 0 &&
 		    csp->csp_cipher_klen == 0 &&
-		    csp->csp_cipher_key == NULL &&
-		    csp->csp_cipher_ivlen == 0,
+		    csp->csp_cipher_key == NULL 
+		    csp->csp_ivlen == 0,
 		    ("non-empty encryption parameters for digest session"));
+		/* IV is optional for digests (e.g. GMAC). */
+		KASSERT(csp->csp_ivlen >= 0, ("-ve length IV"));
+		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(alg_is_digest(csp->csp_auth_alg),
 		    ("invalid digest algorithm %d", csp->csp_auth_alg));
 		if (alg_is_keyed_digest(csp->csp_auth_alg)) {
@@ -649,9 +653,9 @@ csp_sanity(const struct crypto_session_params *csp)
 		    ("invalid AEAD algorithm %d", csp->csp_cipher_alg));
 		KASSERT(csp->csp_cipher_klen > 0,
 		    ("zero length encryption key"));
-		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
-		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(csp->csp_auth_alg == 0 &&
 		    csp->csp_auth_klen == 0 &&
 		    csp->csp_auth_key == NULL,
@@ -666,9 +670,9 @@ csp_sanity(const struct crypto_session_params *csp)
 		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
 		KASSERT(csp->csp_cipher_klen > 0,
 		    ("zero length encryption key"));
-		KASSERT(csp->csp_cipher_ivlen > 0, ("zero length IV"));
-		KASSERT(csp->csp_cipher_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_cipher_ivlen));
+		KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
+		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(alg_is_digest(csp->csp_auth_alg),
 		    ("invalid digest algorithm %d", csp->csp_auth_alg));
 		if (alg_is_keyed_digest(csp->csp_auth_alg)) {
@@ -1204,7 +1208,7 @@ crp_sanity(struct cryptop *crp)
 		KASSERT(crp->crp_aad_start == 0 && crp->crp_aad_length == 0,
 		    ("AAD region in request not supporting AAD"));
 	}
-	if (csp->csp_cipher_ivlen == 0) {
+	if (csp->csp_ivlen == 0) {
 		KASSERT((crp->crp_flags &
 		    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE)) == 0,
 		    ("IV_GENERATE or IV_SEPARATE set when IV isn't used"));
@@ -1216,8 +1220,8 @@ crp_sanity(struct cryptop *crp)
 	} else {
 		KASSERT(crp->crp_iv_start < crp->crp_ilen,
 		    ("invalid IV start"));
-		KASSERT(crp->crp_iv_start + csp->csp_cipher_ivlen <=
-		    crp->crp_ilen, ("IV outside input length"));
+		KASSERT(crp->crp_iv_start + csp->csp_ivlen <= crp->crp_ilen,
+		    ("IV outside input length"));
 	}
 	KASSERT(crp->crp_payload_start == 0 ||
 	    crp->crp_payload_start < crp->crp_ilen,
@@ -1251,6 +1255,8 @@ crypto_dispatch(struct cryptop *crp)
 #ifdef INVARIANTS
 	crp_sanity(crp);
 #endif
+
+	/* TODO: Handle CRYPTO_F_IV_GENERATE so drivers don't have to. */
 
 	cryptostats.cs_ops++;
 

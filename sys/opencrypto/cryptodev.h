@@ -400,11 +400,14 @@ struct crypto_session_params {
 
 #define	CSP_IV_VALID		0x0001
 
+	int		csp_ivlen;	 /* IV length in bytes. */
+
 	int		csp_cipher_alg;
 	int		csp_cipher_klen; /* Key length in bits. */
 	void		*csp_cipher_key;
-	int		csp_cipher_ivlen; /* IV length in bytes. */
+#if 0
 	uint8_t		csp_iv[EALG_MAX_BLOCK_LEN];
+#endif
 
 	int		csp_auth_alg;
 	int		csp_auth_klen;	/* Key length in bits. */
