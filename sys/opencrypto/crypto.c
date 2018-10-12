@@ -1164,6 +1164,12 @@ crp_sanity(struct cryptop *crp)
 		    ("invalid digest op %x", crp->crp_op));
 		break;
 	case CSP_MODE_AEAD:
+		KASSERT(crp->crp_op ==
+		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
+		    crp->crp_op ==
+		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
+		    ("invalid AEAD op %x", crp->crp_op));
+		break;
 	case CSP_MODE_ETA:
 		KASSERT(crp->crp_op ==
 		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
@@ -1171,7 +1177,7 @@ crp_sanity(struct cryptop *crp)
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
 		    crp->crp_op ==
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
-		    ("invalid combined op %x", crp->crp_op));
+		    ("invalid ETA op %x", crp->crp_op));
 		break;
 	}
 	KASSERT((crp->crp_flags & CRYPTO_F_IV_GENERATE) == 0 ||
