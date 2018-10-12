@@ -32,3 +32,6 @@ session and crypto op parameters.
 
 - Eventually retire 3 separate GMAC algs and repurpose NIST_GMAC as a single
   MAC?
+
+- Maybe retire driver HIDs with 'struct cryptocap' pointers instead?  We
+  could just use a TAILQ instead of an array
