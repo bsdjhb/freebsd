@@ -612,6 +612,11 @@ extern	int crypto_devallowsoft;	/* only use hardware crypto */
  *
  * XXX these don't really belong here; but for now they're
  *     kept apart from the rest of the system.
+ *
+ * Similar to m_copyback/data, *_copyback copy data from the 'src'
+ * buffer into the crypto request's data buffer while *_copydata copy
+ * data from the crypto request's data buffer into the the 'dst'
+ * buffer.
  */
 struct uio;
 extern	void cuio_copydata(struct uio* uio, int off, int len, caddr_t cp);
@@ -625,18 +630,11 @@ struct iovec;
 extern	int crypto_mbuftoiov(struct mbuf *mbuf, struct iovec **iovptr,
 	    int *cnt, int *allocated);
 
-#if 0
-extern	void crypto_copyback(int flags, caddr_t buf, int off, int size,
-	    c_caddr_t in);
-extern	void crypto_copydata(int flags, caddr_t buf, int off, int size,
-	    caddr_t out);
-#endif
-extern	int crypto_apply(int flags, caddr_t buf, int off, int len,
-	    int (*f)(void *, void *, u_int), void *arg);
-
-void	crypto_copyto(struct cryptop *crp, int off, int size,
+void	crypto_copyback(struct cryptop *crp, int off, int size,
 	    const void *src);
-void	crypto_copyfrom(struct cryptop *crp, int off, int size, void *dst);
+void	crypto_copydata(struct cryptop *crp, int off, int size, void *dst);
+int	crypto_apply(struct cryptop *crp, int off, int len,
+	    int (*f)(void *, void *, u_int), void *arg);
 
 extern void *crypto_contiguous_subsegment(int, void *, size_t, size_t);
 

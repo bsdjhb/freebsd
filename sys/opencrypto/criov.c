@@ -157,41 +157,62 @@ cuio_apply(struct uio *uio, int off, int len, int (*f)(void *, void *, u_int),
 }
 
 void
-crypto_copyback(int flags, caddr_t buf, int off, int size, c_caddr_t in)
+crypto_copyback(struct cryptop *crp, int off, int size, const void *src)
 {
 
-	if ((flags & CRYPTO_F_IMBUF) != 0)
-		m_copyback((struct mbuf *)buf, off, size, in);
-	else if ((flags & CRYPTO_F_IOV) != 0)
-		cuio_copyback((struct uio *)buf, off, size, in);
-	else
-		bcopy(in, buf + off, size);
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		m_copyback(crp->crp_mbuf, off, size, src);
+		break;
+	case CRYPTO_BUF_IOV:
+		cuio_copyback(crp->crp_uio, off, size, src);
+		break;
+	case CRYPTO_BUF_CONTIG:
+		bcopy(src, crp->crp_buf + off, size);
+		break;
+	default:
+		panic("invalid crp buf type %d", crp->crp_buf_type);
+	}
 }
 
 void
-crypto_copydata(int flags, caddr_t buf, int off, int size, caddr_t out)
+crypto_copydata(struct cryptop *crp, int off, int size, void *dst)
 {
 
-	if ((flags & CRYPTO_F_IMBUF) != 0)
-		m_copydata((struct mbuf *)buf, off, size, out);
-	else if ((flags & CRYPTO_F_IOV) != 0)
-		cuio_copydata((struct uio *)buf, off, size, out);
-	else
-		bcopy(buf + off, out, size);
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		m_copydata(crp->crp_mbuf, off, size, dst);
+		break;
+	case CRYPTO_BUF_IOV:
+		cuio_copydata(crp->crp_uio, off, size, dst);
+		break;
+	case CRYPTO_BUF_CONTIG:
+		bcopy(crp->crp_buf + off, dst, size);
+		break;
+	default:
+		panic("invalid crp buf type %d", crp->crp_buf_type);
+	}
 }
 
 int
-crypto_apply(int flags, caddr_t buf, int off, int len,
+crypto_apply(struct cryptop *crp, int off, int len,
     int (*f)(void *, void *, u_int), void *arg)
 {
 	int error;
 
-	if ((flags & CRYPTO_F_IMBUF) != 0)
-		error = m_apply((struct mbuf *)buf, off, len, f, arg);
-	else if ((flags & CRYPTO_F_IOV) != 0)
-		error = cuio_apply((struct uio *)buf, off, len, f, arg);
-	else
-		error = (*f)(arg, buf + off, len);
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		error = m_apply(crp->crp_mbuf, off, len, f, arg);
+		break;
+	case CRYPTO_BUF_IOV:
+		error = cuio_apply(crp->crp_uio, off, len, f, arg);
+		break;
+	case CRYPTO_BUF_CONTIG:
+		error = (*f)(arg, crp->crp_buf + off, len);
+		break;
+	default:
+		panic("invalid crp buf type %d", crp->crp_buf_type);
+	}
 	return (error);
 }
 
