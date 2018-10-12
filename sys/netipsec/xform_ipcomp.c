@@ -156,7 +156,7 @@ static int
 ipcomp_init(struct secasvar *sav, struct xformsw *xsp)
 {
 	const struct comp_algo *tcomp;
-	struct cryptoini cric;
+	struct crypto_session_params csp;
 
 	/* NB: algorithm really comes in alg_enc and not alg_comp! */
 	tcomp = comp_algorithm_lookup(sav->alg_enc);
@@ -170,10 +170,11 @@ ipcomp_init(struct secasvar *sav, struct xformsw *xsp)
 	sav->tdb_compalgxform = tcomp;
 
 	/* Initialize crypto session */
-	bzero(&cric, sizeof (cric));
-	cric.cri_alg = sav->tdb_compalgxform->type;
+	memset(&csp, 0, sizeof(csp));
+	csp.csp_mode = CSP_MODE_COMPRESS;
+	csp.csp_cipher_alg = sav->tdb_compalgxform->type;
 
-	return crypto_newsession(&sav->tdb_cryptoid, &cric, V_crypto_support);
+	return crypto_newsession(&sav->tdb_cryptoid, &csp, V_crypto_support);
 }
 
 /*
@@ -195,7 +196,6 @@ static int
 ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 {
 	struct xform_data *xd;
-	struct cryptodesc *crdc;
 	struct cryptop *crp;
 	struct ipcomp *ipcomp;
 	caddr_t addr;
@@ -223,7 +223,7 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	}
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(1);
+	crp = crypto_getreq();
 	if (crp == NULL) {
 		DPRINTF(("%s: no crypto descriptors\n", __func__));
 		IPCOMPSTAT_INC(ipcomps_crypto);
@@ -237,22 +237,19 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 		crypto_freereq(crp);
 		goto bad;
 	}
-	crdc = crp->crp_desc;
-
-	crdc->crd_skip = skip + hlen;
-	crdc->crd_len = m->m_pkthdr.len - (skip + hlen);
-	crdc->crd_inject = skip;
 
 	/* Decompression operation */
-	crdc->crd_alg = sav->tdb_compalgxform->type;
-
+	crp->crp_op = CRYPTO_OP_DECOMPRESS;
+	crp->crp_payload_start = skip + hlen;
+	crp->crp_payload_length = m->m_pkthdr.len - (skip + hlen);
 
 	/* Crypto operation descriptor */
 	crp->crp_ilen = m->m_pkthdr.len - (skip + hlen);
-	crp->crp_flags = CRYPTO_F_IMBUF | CRYPTO_F_CBIFSYNC;
-	crp->crp_buf = (caddr_t) m;
+	crp->crp_flags = CRYPTO_F_CBIFSYNC;
+	crp->crp_mbuf = m;
+	crp->crp_buf_type = CRYPTO_BUF_MBUF;
 	crp->crp_callback = ipcomp_input_cb;
-	crp->crp_opaque = (caddr_t) xd;
+	crp->crp_opaque = xd;
 
 	/* These are passed as-is to the callback */
 	xd->sav = sav;
@@ -288,8 +285,8 @@ ipcomp_input_cb(struct cryptop *crp)
 	int skip, protoff;
 	uint8_t nproto;
 
-	m = (struct mbuf *) crp->crp_buf;
-	xd = (struct xform_data *) crp->crp_opaque;
+	m = crp->crp_mbuf;
+	xd = crp->crp_opaque;
 	CURVNET_SET(xd->vnet);
 	sav = xd->sav;
 	skip = xd->skip;
@@ -396,7 +393,6 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 {
 	IPSEC_DEBUG_DECLARE(char buf[IPSEC_ADDRSTRLEN]);
 	const struct comp_algo *ipcompx;
-	struct cryptodesc *crdc;
 	struct cryptop *crp;
 	struct xform_data *xd;
 	int error, ralen, maxpacketsize;
@@ -468,23 +464,18 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	/* Ok now, we can pass to the crypto processing. */
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(1);
+	crp = crypto_getreq();
 	if (crp == NULL) {
 		IPCOMPSTAT_INC(ipcomps_crypto);
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",__func__));
 		error = ENOBUFS;
 		goto bad;
 	}
-	crdc = crp->crp_desc;
 
 	/* Compression descriptor */
-	crdc->crd_skip = skip;
-	crdc->crd_len = ralen;
-	crdc->crd_flags = CRD_F_COMP;
-	crdc->crd_inject = skip;
-
-	/* Compression operation */
-	crdc->crd_alg = ipcompx->type;
+	crp->crp_op = CRYPTO_OP_COMPRESS;
+	crp->crp_payload_start = skip;
+	crp->crp_payload_length = ralen;
 
 	/* IPsec-specific opaque crypto info */
 	xd =  malloc(sizeof(struct xform_data), M_XDATA, M_NOWAIT | M_ZERO);
@@ -505,10 +496,11 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 
 	/* Crypto operation descriptor */
 	crp->crp_ilen = m->m_pkthdr.len;	/* Total input length */
-	crp->crp_flags = CRYPTO_F_IMBUF | CRYPTO_F_CBIFSYNC;
-	crp->crp_buf = (caddr_t) m;
+	crp->crp_flags = CRYPTO_F_CBIFSYNC;
+	crp->crp_mbuf = m;
+	crp->crp_buf_type = CRYPTO_BUF_MBUF;
 	crp->crp_callback = ipcomp_output_cb;
-	crp->crp_opaque = (caddr_t) xd;
+	crp->crp_opaque = xd;
 
 	SECASVAR_LOCK(sav);
 	crp->crp_session = xd->cryptoid = sav->tdb_cryptoid;
@@ -538,8 +530,8 @@ ipcomp_output_cb(struct cryptop *crp)
 	u_int idx;
 	int error, skip, protoff;
 
-	m = (struct mbuf *) crp->crp_buf;
-	xd = (struct xform_data *) crp->crp_opaque;
+	m = crp->crp_mbuf;
+	xd = crp->crp_opaque;
 	CURVNET_SET(xd->vnet);
 	idx = xd->idx;
 	sp = xd->sp;
