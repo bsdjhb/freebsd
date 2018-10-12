@@ -860,6 +860,7 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 
 	if (esph) {
 		/* Authentication descriptor. */
+		crp->crp_op |= CRYPTO_OP_COMPUTE_DIGEST;
 		crp->crp_aad_start = skip;
 		if (SAV_ISGCM(sav))
 			crp->crp_aad_length = 8; /* RFC4106 5, SPI + SN */
