@@ -1170,14 +1170,33 @@ crp_sanity(struct cryptop *crp)
 	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE) !=
 	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE),
 	    ("crp with both IV_SEPARATE and IV_GENERATE set"));
-	KASSERT(crp->crp_op == CRYPTO_OP_ENCRYPT ||
-	    crp->crp_op == CRYPTO_OP_DECRYPT ||
-	    crp->crp_op == CRYPTO_OP_COMPUTE_DIGEST ||
-	    crp->crp_op == CRYPTO_OP_VERIFY_DIGEST ||
-	    crp->crp_op == CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
-	    crp->crp_op == CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
-	    crp->crp_op == CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST_DIGEST,
-	    ("invalid crypto op %x", crp->crp_op));
+	switch (csp->csp_mode) {
+	case CSP_MODE_COMPRESS:
+		KASSERT(crp->crp_op == CRYPTO_OP_COMPRESS ||
+		    crp->crp_op == CRYPTO_OP_DECOMPRESS,
+		    ("invalid compression op %x", crp->crp_op));
+		break;
+	case CSP_MODE_CIPHER:
+		KASSERT(crp->crp_op == CRYPTO_OP_ENCRYPT ||
+		    crp->crp_op == CRYPTO_OP_DECRYPT,
+		    ("invalid cipher op %x", crp->crp_op));
+		break;
+	case CSP_MODE_DIGEST:
+		KASSERT(crp->crp_op == CRYPTO_OP_COMPUTE_DIGEST ||
+		    crp->crp_op == CRYPTO_OP_VERIFY_DIGEST,
+		    ("invalid digest op %x", crp->crp_op));
+		break;
+	case CSP_MODE_AEAD:
+	case CSP_MODE_ETA:
+		KASSERT(crp->crp_op ==
+		    CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+		    crp->crp_op ==
+		    CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+		    crp->crp_op ==
+		    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST_DIGEST,
+		    ("invalid combined op %x", crp->crp_op));
+		break;
+	}
 	KASSERT((crp->crp_flags & CRYPTO_F_IV_GENERATE) == 0 ||
 	    crp->crp_op == CRYPTO_OP_ENCRYPT ||
 	    crp->crp_op == CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST,
