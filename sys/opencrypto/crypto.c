@@ -94,9 +94,7 @@ struct crypto_session {
 	void *softc;
 	uint32_t hid;
 	uint32_t capabilities;
-#ifdef INVARIANTS
 	struct crypto_session_params csp;
-#endif
 };
 
 SDT_PROVIDER_DEFINE(opencrypto);
@@ -195,7 +193,6 @@ SYSCTL_INT(_kern, OID_AUTO, crypto_workers_num, CTLFLAG_RDTUN,
 	   "Number of crypto workers used to dispatch crypto jobs");
 
 static	uma_zone_t cryptop_zone;
-static	uma_zone_t cryptodesc_zone;
 static	uma_zone_t cryptoses_zone;
 
 int	crypto_userasymcrypto = 1;	/* userland may do asym crypto reqs */
@@ -276,15 +273,11 @@ crypto_init(void)
 	cryptop_zone = uma_zcreate("cryptop", sizeof (struct cryptop),
 				    0, 0, 0, 0,
 				    UMA_ALIGN_PTR, UMA_ZONE_ZINIT);
-	cryptodesc_zone = uma_zcreate("cryptodesc", sizeof (struct cryptodesc),
-				    0, 0, 0, 0,
-				    UMA_ALIGN_PTR, UMA_ZONE_ZINIT);
 	cryptoses_zone = uma_zcreate("crypto_session",
 	    sizeof(struct crypto_session), NULL, NULL, NULL, NULL,
 	    UMA_ALIGN_PTR, UMA_ZONE_ZINIT);
 
-	if (cryptodesc_zone == NULL || cryptop_zone == NULL ||
-	    cryptoses_zone == NULL) {
+	if (cryptop_zone == NULL || cryptoses_zone == NULL) {
 		printf("crypto_init: cannot setup crypto zones\n");
 		error = ENOMEM;
 		goto bad;
@@ -408,8 +401,6 @@ crypto_destroy(void)
 
 	if (cryptoses_zone != NULL)
 		uma_zdestroy(cryptoses_zone);
-	if (cryptodesc_zone != NULL)
-		uma_zdestroy(cryptodesc_zone);
 	if (cryptop_zone != NULL)
 		uma_zdestroy(cryptop_zone);
 	mtx_destroy(&crypto_q_mtx);
@@ -448,19 +439,20 @@ crypto_checkdriver(u_int32_t hid)
 }
 
 /*
- * Compare a driver's list of supported algorithms against another
- * list; return non-zero if all algorithms are supported.
+ * Compare a driver's list of supported algorithms against the
+ * algorithms requested for a session.  Return true if all algorithms
+ * are supported.
  */
-static int
-driver_suitable(const struct cryptocap *cap, const struct cryptoini *cri)
+static bool
+driver_suitable(const struct cryptocap *cap,
+    const struct crypto_session_params *csp)
 {
-	const struct cryptoini *cr;
 
-	/* See if all the algorithms are supported. */
-	for (cr = cri; cr; cr = cr->cri_next)
-		if (cap->cc_alg[cr->cri_alg] == 0)
-			return 0;
-	return 1;
+	if (cap->cc_alg[csp->csp_cipher_alg] == 0)
+		return (false);
+	if (csp->csp_auth_alg != 0 && cap->cc_alg[csp->csp_auth_alg] == 0)
+		return (false);
+	return (true);
 }
 
 /*
@@ -475,7 +467,7 @@ driver_suitable(const struct cryptocap *cap, const struct cryptoini *cri)
  * XXX another story altogether).
  */
 static struct cryptocap *
-crypto_select_driver(const struct cryptoini *cri, int flags)
+crypto_select_driver(const struct crypto_session_params *csp, int flags)
 {
 	struct cryptocap *cap, *best;
 	int match, hid;
@@ -504,7 +496,7 @@ again:
 			continue;
 
 		/* verify all the algorithms are supported. */
-		if (driver_suitable(cap, cri)) {
+		if (driver_suitable(cap, csp)) {
 			if (best == NULL ||
 			    cap->cc_sessions < best->cc_sessions)
 				best = cap;
@@ -524,7 +516,7 @@ static bool
 alg_is_compression(int alg)
 {
 
-	if (csp->csp_cipher_alg == CRYPTO_DEFLATE_COMP)
+	if (alg == CRYPTO_DEFLATE_COMP)
 		return (true);
 	return (false);
 }
@@ -533,19 +525,16 @@ static bool
 alg_is_cipher(int alg)
 {
 
-	if (csp->csp_cipher_alg >= CRYPTO_DES_CBC &&
-	    csp->csp_cipher_alg <= CRYPTO_SKIPJACK_CBC)
+	if (alg >= CRYPTO_DES_CBC && alg <= CRYPTO_SKIPJACK_CBC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_AES_CBC &&
-	    csp->csp_cipher_alg <= CRYPTO_ARC4)
+	if (alg >= CRYPTO_AES_CBC && alg <= CRYPTO_ARC4)
 		return (true);
-	if (csp->csp_cipher_alg == CRYPTO_NULL_CBC)
+	if (alg == CRYPTO_NULL_CBC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_CAMELLIA_CBC &&
-	    csp->csp_cipher_alg <= CRYPTO_AES_ICM)
+	if (alg >= CRYPTO_CAMELLIA_CBC && alg <= CRYPTO_AES_ICM)
 		return (true);
 	/* XXX: CRYPTO_AES_NIST_GMAC? */
-	if (csp->csp_cipher_alg == CRYPTO_CHACHA20)
+	if (alg == CRYPTO_CHACHA20)
 		return (true);
 	return (false);
 }
@@ -554,25 +543,19 @@ static bool
 alg_is_digest(int alg)
 {
 
-	if (csp->csp_cipher_alg >= CRYPTO_MD5_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA1_KPDK)
+	if (alg >= CRYPTO_MD5_HMAC && alg <= CRYPTO_SHA1_KPDK)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_MD5 &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA1)
+	if (alg >= CRYPTO_MD5 && alg <= CRYPTO_SHA1)
 		return (true);
-	if (csp->csp_cipher_alg == CRYPTO_NULL_HMAC)
+	if (alg == CRYPTO_NULL_HMAC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+	if (alg >= CRYPTO_SHA2_256_HMAC && alg <= CRYPTO_SHA2_512_HMAC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+	if (alg >= CRYPTO_SHA2_256_HMAC && alg <= CRYPTO_SHA2_512_HMAC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_AES_128_NIST_GMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_BLAKE2S)
+	if (alg >= CRYPTO_AES_128_NIST_GMAC && alg <= CRYPTO_BLAKE2S)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_SHA2_224_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_POLY1305)
+	if (alg >= CRYPTO_SHA2_224_HMAC && alg <= CRYPTO_POLY1305)
 		return (true);
 	return (false);
 }
@@ -581,18 +564,15 @@ static bool
 alg_is_keyed_digest(int alg)
 {
 
-	if (csp->csp_cipher_alg >= CRYPTO_MD5_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA1_KPDK)
+	if (alg >= CRYPTO_MD5_HMAC && alg <= CRYPTO_SHA1_KPDK)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_SHA2_256_HMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_SHA2_512_HMAC)
+	if (alg >= CRYPTO_SHA2_256_HMAC && alg <= CRYPTO_SHA2_512_HMAC)
 		return (true);
-	if (csp->csp_cipher_alg >= CRYPTO_AES_128_NIST_GMAC &&
-	    csp->csp_cipher_alg <= CRYPTO_AES_256_NIST_GMAC)
+	if (alg >= CRYPTO_AES_128_NIST_GMAC && alg <= CRYPTO_AES_256_NIST_GMAC)
 		return (true);
-	if (csp->csp_cipher_alg == CRYPTO_SHA2_224_HMAC)
+	if (alg == CRYPTO_SHA2_224_HMAC)
 		return (true);
-	if (csp->csp_cipher_alg == CRYPTO_POLY1305)
+	if (alg == CRYPTO_POLY1305)
 		return (true);
 	return (false);
 }
@@ -601,14 +581,14 @@ static bool
 alg_is_aead(int alg)
 {
 
-	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
+	if (alg == CRYPTO_AES_NIST_GCM_16)
 		return (true);
 	return (false);
 }
 
 /* Various sanity checks on crypto session parameters. */
 static void
-csp_sanity(struct crypto_session_params *csp)
+csp_sanity(const struct crypto_session_params *csp)
 {
 
 	KASSERT((csp->csp_flags & ~CSP_IV_VALID) == 0,
@@ -717,8 +697,8 @@ csp_sanity(struct crypto_session_params *csp)
  * must be capable of the requested crypto algorithms.
  */
 int
-crypto_newsession(crypto_session_t *cses, struct crypto_session_params *csp,
-    int crid)
+crypto_newsession(crypto_session_t *cses,
+    const struct crypto_session_params *csp, int crid)
 {
 	crypto_session_t res;
 	void *softc_mem;
@@ -741,13 +721,13 @@ restart:
 		 * Use specified driver; verify it is capable.
 		 */
 		cap = crypto_checkdriver(crid);
-		if (cap != NULL && !driver_suitable(cap, cri))
+		if (cap != NULL && !driver_suitable(cap, csp))
 			cap = NULL;
 	} else {
 		/*
 		 * No requested driver; select based on crid flags.
 		 */
-		cap = crypto_select_driver(cri, crid);
+		cap = crypto_select_driver(csp, crid);
 		/*
 		 * if NULL then can't do everything in one session.
 		 * XXX Fix this. We need to inject a "virtual" session
@@ -784,7 +764,7 @@ restart:
 	}
 
 	/* Call the driver initialization routine. */
-	err = CRYPTODEV_NEWSESSION(cap->cc_dev, res, cri);
+	err = CRYPTODEV_NEWSESSION(cap->cc_dev, res, csp);
 	if (err != 0) {
 		CRYPTDEB("dev newsession failed: %d", err);
 		goto out;
@@ -1160,16 +1140,13 @@ crp_sanity(struct cryptop *crp)
 {
 	struct crypto_session_params *csp;
 
-	csp = &crp->crp_session->csp;
-
+	KASSERT(crp->crp_session != NULL, ("incoming crp without a session"));
 	KASSERT(crp->crp_ilen >= 0, ("incoming crp with -ve input length"));
 	KASSERT(crp->crp_etype == 0, ("incoming crp with error"));
 	KASSERT(!(crp->crp_flags & CRYPTO_F_DONE),
 	    ("incoming crp already done"));
-	KASSERT(crp->crp_flags &
-	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE) !=
-	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE),
-	    ("crp with both IV_SEPARATE and IV_GENERATE set"));
+
+	csp = &crp->crp_session->csp;
 	switch (csp->csp_mode) {
 	case CSP_MODE_COMPRESS:
 		KASSERT(crp->crp_op == CRYPTO_OP_COMPRESS ||
@@ -1189,18 +1166,22 @@ crp_sanity(struct cryptop *crp)
 	case CSP_MODE_AEAD:
 	case CSP_MODE_ETA:
 		KASSERT(crp->crp_op ==
-		    CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
 		    crp->crp_op ==
-		    CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST ||
+		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
 		    crp->crp_op ==
-		    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST_DIGEST,
+		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid combined op %x", crp->crp_op));
 		break;
 	}
 	KASSERT((crp->crp_flags & CRYPTO_F_IV_GENERATE) == 0 ||
 	    crp->crp_op == CRYPTO_OP_ENCRYPT ||
-	    crp->crp_op == CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST,
+	    crp->crp_op == (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST),
 	    ("IV_GENERATE set for non-encryption operation %x", crp->crp_op));
+	KASSERT((crp->crp_flags &
+	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE)) !=
+	    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE),
+	    ("crp with both IV_SEPARATE and IV_GENERATE set"));
 	KASSERT(crp->crp_buf_type >= CRYPTO_BUF_CONTIG &&
 	    crp->crp_buf_type <= CRYPTO_BUF_MBUF,
 	    ("invalid crp buffer type %d", crp->crp_buf_type));
@@ -1219,7 +1200,7 @@ crp_sanity(struct cryptop *crp)
 	}
 	if (csp->csp_cipher_ivlen == 0) {
 		KASSERT((crp->crp_flags &
-		    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE)) == 0
+		    (CRYPTO_F_IV_SEPARATE | CRYPTO_F_IV_GENERATE)) == 0,
 		    ("IV_GENERATE or IV_SEPARATE set when IV isn't used"));
 		KASSERT(crp->crp_iv_start == 0,
 		    ("crp_iv_start set when IV isn't used"));
@@ -1238,7 +1219,7 @@ crp_sanity(struct cryptop *crp)
 	KASSERT(crp->crp_payload_start + crp->crp_payload_length <=
 	    crp->crp_ilen, ("payload outside input length"));
 	KASSERT(crp->crp_digest_start == 0 ||
-	    crp->crp_digest_start < crp->crp_uilen,
+	    crp->crp_digest_start < crp->crp_ilen,
 	    ("invalid digest start"));
 	/* XXX: For the mlen == 0 case this check isn't perfect. */
 	KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <= crp->crp_ilen,
@@ -1530,14 +1511,15 @@ crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint)
 	KASSERT(crp != NULL, ("%s: crp == NULL", __func__));
 	KASSERT(crp->crp_callback != NULL,
 	    ("%s: crp->crp_callback == NULL", __func__));
-	KASSERT(crp->crp_desc != NULL, ("%s: crp->crp_desc == NULL", __func__));
+	KASSERT(crp->crp_session != NULL,
+	    ("%s: crp->crp_session == NULL", __func__));
 
 #ifdef CRYPTO_TIMING
 	if (crypto_timing)
 		crypto_tstat(&cryptostats.cs_invoke, &crp->crp_tstamp);
 #endif
 	if (cap->cc_flags & CRYPTOCAP_F_CLEANUP) {
-		struct cryptodesc *crd;
+		struct crypto_session_params csp;
 		crypto_session_t nses;
 
 		/*
@@ -1547,13 +1529,21 @@ crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint)
 		 * XXX: What if there are more already queued requests for this
 		 *      session?
 		 */
+		csp = crp->crp_session->csp;
 		crypto_freesession(crp->crp_session);
 
-		for (crd = crp->crp_desc; crd->crd_next; crd = crd->crd_next)
-			crd->CRD_INI.cri_next = &(crd->crd_next->CRD_INI);
-
-		/* XXX propagate flags from initial session? */
-		if (crypto_newsession(&nses, &(crp->crp_desc->CRD_INI),
+		/*
+		 * XXX: Key pointers may no longer be valid.  If we
+		 * really want to support this we need to define the
+		 * KPI such that 'csp' is required to be valid for the
+		 * duration of a session by the caller perhaps.
+		 *
+		 * XXX: If the keys have been changed this will reuse
+		 * the old keys.  This probably suggests making
+		 * rekeying more explicit and updating the key
+		 * pointers in 'csp' when the keys change.
+		 */
+		if (crypto_newsession(&nses, &csp,
 		    CRYPTOCAP_F_HARDWARE | CRYPTOCAP_F_SOFTWARE) == 0)
 			crp->crp_session = nses;
 
@@ -1568,13 +1558,9 @@ crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint)
 	}
 }
 
-/*
- * Release a set of crypto descriptors.
- */
 void
 crypto_freereq(struct cryptop *crp)
 {
-	struct cryptodesc *crd;
 
 	if (crp == NULL)
 		return;
@@ -1604,36 +1590,14 @@ crypto_freereq(struct cryptop *crp)
 	}
 #endif
 
-	while ((crd = crp->crp_desc) != NULL) {
-		crp->crp_desc = crd->crd_next;
-		uma_zfree(cryptodesc_zone, crd);
-	}
 	uma_zfree(cryptop_zone, crp);
 }
 
-/*
- * Acquire a set of crypto descriptors.
- */
 struct cryptop *
-crypto_getreq(int num)
+crypto_getreq(void)
 {
-	struct cryptodesc *crd;
-	struct cryptop *crp;
 
-	crp = uma_zalloc(cryptop_zone, M_NOWAIT|M_ZERO);
-	if (crp != NULL) {
-		while (num--) {
-			crd = uma_zalloc(cryptodesc_zone, M_NOWAIT|M_ZERO);
-			if (crd == NULL) {
-				crypto_freereq(crp);
-				return NULL;
-			}
-
-			crd->crd_next = crp->crp_desc;
-			crp->crp_desc = crd;
-		}
-	}
-	return crp;
+	return (uma_zalloc(cryptop_zone, M_NOWAIT | M_ZERO));
 }
 
 /*
@@ -2060,7 +2024,7 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 
 	db_printf("%4s %8s %4s %4s %4s %4s %8s %8s\n",
 	    "HID", "Caps", "Ilen", "Olen", "Etype", "Flags",
-	    "Desc", "Callback");
+	    "Device", "Callback");
 	TAILQ_FOREACH(crp, &crp_q, crp_next) {
 		db_printf("%4u %08x %4u %4u %4u %04x %8p %8p\n"
 		    , (int) crypto_ses2hid(crp->crp_session)
@@ -2068,7 +2032,7 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 		    , crp->crp_ilen, crp->crp_olen
 		    , crp->crp_etype
 		    , crp->crp_flags
-		    , crp->crp_desc
+		    , device_get_nameunit(crp->crp_session->parent)
 		    , crp->crp_callback
 		);
 	}

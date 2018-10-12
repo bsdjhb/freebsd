@@ -576,7 +576,8 @@ void *crypto_get_driver_session(crypto_session_t crypto_session);
 
 MALLOC_DECLARE(M_CRYPTO_DATA);
 
-extern	int crypto_newsession(crypto_session_t *cses, struct crypto_session_params *params, int hard);
+extern	int crypto_newsession(crypto_session_t *cses,
+    const struct crypto_session_params *params, int hard);
 extern	void crypto_freesession(crypto_session_t cses);
 #define	CRYPTOCAP_F_HARDWARE	CRYPTO_FLAG_HARDWARE
 #define	CRYPTOCAP_F_SOFTWARE	CRYPTO_FLAG_SOFTWARE

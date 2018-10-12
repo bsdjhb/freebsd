@@ -41,14 +41,14 @@ CODE {
 
 /**
  * Crypto driver method to initialize a new session object with the given
- * initialization parameters (cryptoini).  The driver's session memory object
- * is already allocated and zeroed, like driver softcs.  It is accessed with
- * crypto_get_driver_session().
+ * initialization parameters (crypto_session_params).  The driver's session
+ * memory object is already allocated and zeroed, like driver softcs.  It is
+ * accessed with crypto_get_driver_session().
  */
 METHOD int newsession {
 	device_t	dev;
 	crypto_session_t crypto_session;
-	struct cryptoini *cri;
+	const struct crypto_session_params *csp;
 };
 
 /**
