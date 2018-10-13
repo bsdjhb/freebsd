@@ -21,7 +21,7 @@ session and crypto op parameters.
 
 - Notes on IVs:
  - CRYPTO_F_IV_GENERATE (encrypt only)
-   - generate full IV and start at crp_iv_start before encryption
+   - generate full IV and copy to crp_iv_start before encryption
  - CRYPTO_F_IV_SEPARATE (both, cannot use with GENERATE)
    - IV is in crp_iv, crp_iv_start should be ignored
  - neither flag
@@ -35,3 +35,12 @@ session and crypto op parameters.
 
 - Maybe retire driver HIDs with 'struct cryptocap' pointers instead?  We
   could just use a TAILQ instead of an array
+
+- Separate session operation to rekey instead of implicit rekeying?
+  Implicit klen is not really great for auth, for example
+
+- XXX: Need to think about how to define GMAC in the new world order.  I
+  think it should be CSP_MODE_DIGEST, but with csp_cipher_ivlen set?
+
+- Yes, GMAC is CSP_MODE_DIGEST with payload area describing data to hash.
+  It uses csp_ivlen.
