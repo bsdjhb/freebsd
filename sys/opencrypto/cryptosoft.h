@@ -26,41 +26,32 @@
 #define _CRYPTO_CRYPTOSOFT_H_
 
 /* Software session entry */
-struct swcr_data {
-	int		sw_alg;		/* Algorithm */
-	union {
-		struct {
-			u_int8_t	 *SW_ictx;
-			u_int8_t	 *SW_octx;
-			u_int16_t	 SW_klen;
-			u_int16_t	 SW_mlen;
-			struct auth_hash *SW_axf;
-		} SWCR_AUTH;
-		struct {
-			u_int8_t	 *SW_kschedule;
-			struct enc_xform *SW_exf;
-		} SWCR_ENC;
-		struct {
-			u_int32_t	 SW_size;
-			struct comp_algo *SW_cxf;
-		} SWCR_COMP;
-	} SWCR_UN;
+struct swcr_auth {
+	uint8_t		*sw_ictx;
+	uint8_t		*sw_octx;
+	struct auth_hash *sw_axf;
+	uint16_t	sw_klen;
+	uint16_t	sw_mlen;
+	uint16_t	sw_octx_len;
+};
 
-#define sw_ictx		SWCR_UN.SWCR_AUTH.SW_ictx
-#define sw_octx		SWCR_UN.SWCR_AUTH.SW_octx
-#define sw_klen		SWCR_UN.SWCR_AUTH.SW_klen
-#define sw_mlen		SWCR_UN.SWCR_AUTH.SW_mlen
-#define sw_axf		SWCR_UN.SWCR_AUTH.SW_axf
-#define sw_kschedule	SWCR_UN.SWCR_ENC.SW_kschedule
-#define sw_exf		SWCR_UN.SWCR_ENC.SW_exf
-#define sw_size		SWCR_UN.SWCR_COMP.SW_size
-#define sw_cxf		SWCR_UN.SWCR_COMP.SW_cxf
+struct swcr_encdec {
+	uint8_t		*sw_kschedule;
+	struct enc_xform *sw_exf;
+	uint16_t	sw_klen;
+};
+
+struct swcr_compdec {
+	struct comp_algo *sw_cxf;
 };
 
 struct swcr_session {
 	struct mtx	swcr_lock;
-	struct swcr_data swcr_algorithms[2];
-	unsigned swcr_nalgs;
+	int	(*swcr_process)(struct swcr_session *, struct cryptop *);
+
+	struct swcr_auth swcr_auth;
+	struct swcr_encdec swcr_encdec;
+	struct swcr_compdec swcr_compdec;
 };
 
 #ifdef _KERNEL
