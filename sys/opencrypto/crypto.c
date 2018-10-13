@@ -626,8 +626,7 @@ csp_sanity(const struct crypto_session_params *csp)
 	case CSP_MODE_DIGEST:
 		KASSERT(csp->csp_cipher_alg == 0 &&
 		    csp->csp_cipher_klen == 0 &&
-		    csp->csp_cipher_key == NULL 
-		    csp->csp_ivlen == 0,
+		    csp->csp_cipher_key == NULL,
 		    ("non-empty encryption parameters for digest session"));
 		/* IV is optional for digests (e.g. GMAC). */
 		KASSERT(csp->csp_ivlen >= 0, ("-ve length IV"));
