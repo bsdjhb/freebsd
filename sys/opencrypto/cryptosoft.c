@@ -834,6 +834,26 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 }
 
 /*
+ * Apply a cipher and a digest to perform EtA.
+ */
+static int
+swcr_eta(struct swcr_session *ses, struct cryptop *crp)
+{
+	int error;
+
+	if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
+		error = swcr_encdec(ses, crp);
+		if (error == 0)
+			error = swcr_authcompute(ses, crp);
+	} else {
+		error = swcr_authcompute(ses, crp);
+		if (error == 0)
+			error = swcr_encdec(ses, crp);
+	}
+	return (error);
+}
+
+/*
  * Apply a compression/decompression algorithm
  */
 static int
@@ -1362,7 +1382,36 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		}
 		break;
 	case CSP_MODE_ETA:
-		panic("TODO");
+		/* AEAD algorithms cannot be used for EtA. */
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+			error = EINVAL;
+			break;
+		}
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_AES_NIST_GMAC:
+		case CRYPTO_AES_128_NIST_GMAC:
+		case CRYPTO_AES_192_NIST_GMAC:
+		case CRYPTO_AES_256_NIST_GMAC:
+			error = EINVAL;
+			break;
+		}
+		if (error)
+			break;
+
+		error = swcr_setup_auth(ses, csp);
+		if (error)
+			break;
+		if (csp->csp_cipher_alg == CRYPTO_NULL_CBC) {
+			/* Effectively degrade to digest mode. */
+			ses->swcr_process = swcr_authcompute;
+			break;
+		}
+
+		error = swcr_setup_encdec(ses, csp);
+		if (error == 0)
+			ses->swcr_process = swcr_eta;
+		break;
 	default:
 		error = EINVAL;
 	}
