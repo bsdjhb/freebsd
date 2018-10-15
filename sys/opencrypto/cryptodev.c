@@ -51,7 +51,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/file.h>
 #include <sys/filedesc.h>
 #include <sys/errno.h>
-#include <sys/uio.h>
 #include <sys/random.h>
 #include <sys/conf.h>
 #include <sys/kernel.h>
@@ -281,8 +280,7 @@ struct csession {
 struct cryptop_data {
 	struct csession *cse;
 
-	struct iovec	iovec[1];
-	struct uio	uio;
+	char		*buf;
 	bool		done;
 };
 
@@ -799,20 +797,11 @@ static struct cryptop_data *
 cod_alloc(struct csession *cse, size_t len, struct thread *td)
 {
 	struct cryptop_data *cod;
-	struct uio *uio;
 
 	cod = malloc(sizeof(struct cryptop_data), M_XDATA, M_WAITOK | M_ZERO);
 
 	cod->cse = cse;
-	uio = &cod->uio;
-	uio->uio_iov = cod->iovec;
-	uio->uio_iovcnt = 1;
-	uio->uio_resid = len;
-	uio->uio_segflg = UIO_SYSSPACE;
-	uio->uio_rw = UIO_WRITE;
-	uio->uio_td = td;
-	uio->uio_iov[0].iov_len = len;
-	uio->uio_iov[0].iov_base = malloc(len, M_XDATA, M_WAITOK);
+	cod->buf = malloc(len, M_XDATA, M_WAITOK);
 	return (cod);
 }
 
@@ -820,7 +809,7 @@ static void
 cod_free(struct cryptop_data *cod)
 {
 
-	free(cod->uio.uio_iov[0].iov_base, M_XDATA);
+	free(cod->buf, M_XDATA);
 	free(cod, M_XDATA);
 }
 
@@ -915,8 +904,8 @@ cryptodev_op(
 		goto bail;
 	}
 
-	if ((error = copyin(cop->src, cod->uio.uio_iov[0].iov_base,
-	    cop->len))) {
+	error = copyin(cop->src, cod->buf, cop->len);
+	if (error) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
 	}
@@ -937,8 +926,8 @@ cryptodev_op(
 
 	crp->crp_ilen = cop->len + cse->hashsize;
 	crp->crp_flags = CRYPTO_F_CBIMM | (cop->flags & COP_F_BATCH);
-	crp->crp_uio = &cod->uio;
-	crp->crp_buf_type = CRYPTO_BUF_IOV;
+	crp->crp_buf = cod->buf;
+	crp->crp_buf_type = CRYPTO_BUF_CONTIG;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_session = cse->cses;
 	crp->crp_opaque = cod;
@@ -994,18 +983,20 @@ again:
 		goto bail;
 	}
 
-	if (cop->dst &&
-	    (error = copyout(cod->uio.uio_iov[0].iov_base, cop->dst,
-	    cop->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+	if (cop->dst != NULL) {
+		error = copyout(cod->buf, cop->dst, cop->len);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
-	if (cop->mac &&
-	    (error = copyout((caddr_t)cod->uio.uio_iov[0].iov_base + cop->len,
-	    cop->mac, cse->hashsize))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+	if (cop->mac != NULL) {
+		error = copyout(cod->buf + cop->len, cop->mac, cse->hashsize);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
 bail:
@@ -1060,16 +1051,16 @@ cryptodev_aead(
 		goto bail;
 	}
 
-	if ((error = copyin(caead->aad, cod->uio.uio_iov[0].iov_base,
-	    caead->aadlen))) {
+	error = copyin(caead->aad, cod->buf, caead->aadlen);
+	if (error) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
 	}
 	crp->crp_aad_start = 0;
 	crp->crp_aad_length = caead->aadlen;
 
-	if ((error = copyin(caead->src, (char *)cod->uio.uio_iov[0].iov_base +
-	    caead->aadlen, caead->len))) {
+	error = copyin(caead->src, cod->buf + caead->aadlen, caead->len);
+	if (error) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
 	}
@@ -1084,8 +1075,8 @@ cryptodev_aead(
 
 	crp->crp_ilen = caead->aadlen + caead->len + cse->hashsize;
 	crp->crp_flags = CRYPTO_F_CBIMM | (caead->flags & COP_F_BATCH);
-	crp->crp_uio = &cod->uio;
-	crp->crp_buf_type = CRYPTO_BUF_IOV;
+	crp->crp_buf = cod->buf;
+	crp->crp_buf_type = CRYPTO_BUF_CONTIG;
 	crp->crp_callback = cryptodev_cb;
 	crp->crp_session = cse->cses;
 	crp->crp_opaque = cod;
@@ -1109,8 +1100,8 @@ cryptodev_aead(
 		crp->crp_payload_length -= cse->ivsize;
 	}
 
-	error = copyin(caead->tag, (caddr_t)cod->uio.uio_iov[0].iov_base +
-	    caead->len + caead->aadlen, cse->hashsize);
+	error = copyin(caead->tag, cod->buf + caead->len + caead->aadlen,
+	    cse->hashsize);
 	if (error) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
@@ -1148,15 +1139,17 @@ again:
 		goto bail;
 	}
 
-	if (caead->dst && (error = copyout(
-	    (caddr_t)cod->uio.uio_iov[0].iov_base + caead->aadlen, caead->dst,
-	    caead->len))) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
+	if (caead->dst != NULL) {
+		error = copyout(cod->buf + caead->aadlen, caead->dst,
+		    caead->len);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
 	}
 
-	error = copyout((caddr_t)cod->uio.uio_iov[0].iov_base +
-	    caead->aadlen + caead->len, caead->tag, cse->hashsize);
+	error = copyout(cod->buf + caead->aadlen + caead->len, caead->tag,
+	    cse->hashsize);
 	if (error) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
