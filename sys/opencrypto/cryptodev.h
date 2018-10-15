@@ -405,9 +405,6 @@ struct crypto_session_params {
 	int		csp_cipher_alg;
 	int		csp_cipher_klen; /* Key length in bits. */
 	void		*csp_cipher_key;
-#if 0
-	uint8_t		csp_iv[EALG_MAX_BLOCK_LEN];
-#endif
 
 	int		csp_auth_alg;
 	int		csp_auth_klen;	/* Key length in bits. */
