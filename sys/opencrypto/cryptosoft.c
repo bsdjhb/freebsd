@@ -1304,11 +1304,7 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 	struct swcr_session *ses;
 	struct swcr_encdec *swe;
 	struct swcr_auth *swa;
-	struct auth_hash *axf;
-	struct enc_xform *txf;
 	struct comp_algo *cxf;
-	size_t i;
-	int len;
 	int error;
 
 	ses = crypto_get_driver_session(cses);
