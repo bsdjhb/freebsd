@@ -38,7 +38,6 @@ struct swcr_auth {
 struct swcr_encdec {
 	uint8_t		*sw_kschedule;
 	struct enc_xform *sw_exf;
-	uint16_t	sw_klen;
 };
 
 struct swcr_compdec {

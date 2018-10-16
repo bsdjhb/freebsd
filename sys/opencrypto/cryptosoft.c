@@ -126,7 +126,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 			exf->zerokey(&(sw->sw_kschedule));
 
 		error = exf->setkey(&sw->sw_kschedule,
-		    crp->crp_cipher_key, sw->sw_klen / 8);
+		    crp->crp_cipher_key, crp->crp_cipher_klen / 8);
 		if (error)
 			return (error);
 	}
@@ -368,7 +368,8 @@ swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw, u_char *key,
 		 */
 		u_char buf[SHA1_RESULTLEN];
 
-		sw->sw_klen = klen;
+		if (klen != sw->sw_octx_len)
+			return (EINVAL);
 		bcopy(key, sw->sw_octx, klen);
 		axf->Init(sw->sw_ictx);
 		axf->Update(sw->sw_ictx, key, klen);
@@ -414,7 +415,8 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 	axf = sw->sw_axf;
 
 	if (crp->crp_auth_key != NULL) {
-		err = swcr_authprepare(axf, sw, crp->crp_auth_key, sw->sw_klen);
+		err = swcr_authprepare(axf, sw, crp->crp_auth_key,
+		    crp->crp_auth_klen);
 		if (err != 0)
 			return err;
 	}
@@ -464,7 +466,7 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 		 * and let Final() do the proper, natural "algofill"
 		 * padding.
 		 */
-		axf->Update(&ctx, sw->sw_octx, sw->sw_klen);
+		axf->Update(&ctx, sw->sw_octx, sw->sw_octx_len);
 		axf->Final(aalg, &ctx);
 		break;
 
@@ -1064,7 +1066,6 @@ swcr_setup_encdec(struct swcr_session *ses,
 			return (error);
 	}
 	swe->sw_exf = txf;
-	swe->sw_klen = csp->csp_cipher_klen;
 	return (0);
 }
 
@@ -1083,7 +1084,6 @@ swcr_setup_auth(struct swcr_session *ses,
 		return (EINVAL);
 
 	swa->sw_axf = axf;
-	swa->sw_klen = csp->csp_auth_klen;
 	swa->sw_mlen = csp->csp_auth_mlen;
 	swa->sw_ictx = malloc(axf->ctxsize, M_CRYPTO_DATA, M_NOWAIT);
 	if (swa->sw_ictx == NULL)
@@ -1254,7 +1254,6 @@ swcr_setup_gcm(struct swcr_session *ses,
 			return (error);
 	}
 	swe->sw_exf = txf;
-	swe->sw_klen = csp->csp_cipher_klen;
 
 	return (0);
 }
