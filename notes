@@ -44,3 +44,13 @@ session and crypto op parameters.
 
 - Yes, GMAC is CSP_MODE_DIGEST with payload area describing data to hash.
   It uses csp_ivlen.
+
+- Maybe change crp_cipher_key to not change session key but only the
+  specific operation?
+
+- Need to figure out what to do about accelerated software vs plain
+  software
+  - maybe need "priority" and a "session probe/test" instead of just
+    "newsession"
+
+- Kill the UIO usage in cryptodev.c, it's silly (done)
