@@ -54,3 +54,6 @@ session and crypto op parameters.
     "newsession"
 
 - Kill the UIO usage in cryptodev.c, it's silly (done)
+
+- GCM IV length is kind of busted, perhaps need IV length as part of crp
+  instead of csp?
