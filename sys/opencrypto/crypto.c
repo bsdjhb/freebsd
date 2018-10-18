@@ -1191,6 +1191,9 @@ crp_sanity(struct cryptop *crp)
 		    crp->crp_op ==
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid AEAD op %x", crp->crp_op));
+		if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
+			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
+			    ("GCM without a separate IV"));
 		break;
 	case CSP_MODE_ETA:
 		KASSERT(crp->crp_op ==
