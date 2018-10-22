@@ -7,9 +7,10 @@ CXGBE=	${SRCTOP}/sys/dev/cxgbe
 
 KMOD=	t4_kern_tls
 SRCS=	opt_kern_tls.h
+SRCS+=	bus_if.h
+SRCS+=	device_if.h
 SRCS+=	t4_kern_tls.c
 
 CFLAGS+= -I${CXGBE}
 
 .include <bsd.kmod.mk>
-
