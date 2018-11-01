@@ -112,3 +112,18 @@ DELAY(int n)
 	init_ops.early_delay(n);
 	TSEXIT();
 }
+
+void
+cpu_lock_delay(void)
+{
+
+	/*
+	 * Use TSC to wait for a usec if present, otherwise fall back
+	 * to reading from port 0x84.  We can't call into timecounters
+	 * for this delay since timecounters might use spin locks.
+	 */
+	if (tsc_freq != 0)
+		delay_tsc(1);
+	else
+		inb(0x84);
+}
