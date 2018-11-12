@@ -4294,6 +4294,9 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
 		    "kern_tls_header", CTLFLAG_RD, &txq->kern_tls_header,
 		    "# of NIC TLS header-only packets transmitted");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_fin", CTLFLAG_RD, &txq->kern_tls_fin,
+		    "# of NIC TLS records with FIN set");
 	}
 #endif
 	

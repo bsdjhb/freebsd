@@ -592,11 +592,12 @@ struct sge_txq {
 	uint64_t kern_tls_waste;
 	uint64_t kern_tls_options;
 	uint64_t kern_tls_header;
+	uint64_t kern_tls_fin;
 
 	/* stats for not-that-common events */
 
 	/* Optional scratch space for constructing work requests. */
-	uint8_t ss[SGE_MAX_WR_LEN];
+	uint8_t ss[SGE_MAX_WR_LEN] __aligned(16);
 } __aligned(CACHE_LINE_SIZE);
 
 /* rxq: SGE ingress queue + SGE free list + miscellaneous items */

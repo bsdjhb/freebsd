@@ -10224,6 +10224,7 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 					txq->kern_tls_waste = 0;
 					txq->kern_tls_options = 0;
 					txq->kern_tls_header = 0;
+					txq->kern_tls_fin = 0;
 					mp_ring_reset_stats(txq->r);
 				}
 
