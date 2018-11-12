@@ -1735,10 +1735,31 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		offset = 0;
 
 	/*
-	 * This is the last work request for a given TLS mbuf chain if
-	 * it is the last mbuf in the chain.
+	 * If this TLS record chain has requested FIN but the last
+	 * work request is a short request, clear the FIN.  We aren't
+	 * going to send all the data bytes in a short request, so we
+	 * can't send the FIN.  On the other hand, this really
+	 * shouldn't happen.  Add a counter just in case.  If we find
+	 * we have to handle this then I'm not sure what we can do
+	 * other than send the FIN "early" by disabling this check.
+	 *
+	 * This clears the FIN so that sbtls_write_wr() won't call
+	 * sbtls_write_tcp_fin() in addition to forcing last_wr true
+	 * below.
 	 */
-	last_wr = m_tls->m_next == NULL;
+	if (plen == tlen && m_tls->m_next == NULL &&
+	    (tcp->th_flags & TH_FIN) != 0) {
+		txq->kern_tls_fin_short++;
+		tcp->th_flags &= ~TH_FIN;
+	}
+
+	/*
+	 * This is the last work request for a given TLS mbuf chain if
+	 * it is the last mbuf in the chain and FIN is not set.  If
+	 * FIN is set, then sbtls_write_tcp_fin() will write out the
+	 * last work request.
+	 */
+	last_wr = m_tls->m_next == NULL && (tcp->th_flags & TH_FIN) == 0;
 
 	/*
 	 * The host stack may ask us to not send part of the start of
@@ -2173,6 +2194,97 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 }
 
 static int
+sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+    void *dst, struct mbuf *m, u_int available, tcp_seq tcp_seqno, u_int pidx)
+{
+	struct tx_sdesc *txsd;
+	struct fw_eth_tx_pkt_wr *wr;
+	struct cpl_tx_pkt_core *cpl;
+	uint32_t ctrl;
+	uint64_t ctrl1;
+	int len16, ndesc, pktlen;
+	struct ether_header *eh;
+	struct ip *ip, newip;
+	struct ip6_hdr *ip6, newip6;
+	struct tcphdr *tcp, newtcp;
+	caddr_t out;
+
+	TXQ_LOCK_ASSERT_OWNED(txq);
+	M_ASSERTPKTHDR(m);
+
+	wr = dst;
+	pktlen = m->m_len;
+	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
+	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
+	ndesc = howmany(len16, EQ_ESIZE / 16);
+	MPASS(ndesc <= available);
+
+	/* Firmware work request header */
+	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
+	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
+
+	ctrl = V_FW_WR_LEN16(len16);
+	wr->equiq_to_len16 = htobe32(ctrl);
+	wr->r3 = 0;
+
+	cpl = (void *)(wr + 1);
+
+	/* Checksum offload */
+	ctrl1 = 0;
+	txq->txcsum++;
+
+	/* CPL header */
+	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->pack = 0;
+	cpl->len = htobe16(pktlen);
+	cpl->ctrl1 = htobe64(ctrl1);
+
+	out = (void *)(cpl + 1);
+
+	/* Copy over Ethernet header. */
+	eh = mtod(m, struct ether_header *);
+	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
+
+	/* Fixup length in IP header and copy out. */
+	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
+		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip = *ip;
+		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		if (m->m_pkthdr.l3hlen > sizeof(*ip))
+			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			    m->m_pkthdr.l3hlen - sizeof(*ip));
+	} else {
+		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
+		newip6 = *ip6;
+		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
+		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
+	}
+
+	/* Set sequence number in TCP header. */
+	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
+	newtcp = *tcp;
+	newtcp.th_seq = htonl(tcp_seqno);
+	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
+
+	/* Copy rest of packet. */
+	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, pktlen -
+	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
+	txq->imm_wrs++;
+
+	txq->txpkt_wrs++;
+
+	txq->kern_tls_fin++;
+
+	txsd = &txq->sdesc[pidx];
+	txsd->m = m;
+	txsd->desc_used = ndesc;
+
+	return (ndesc);
+}
+
+static int
 sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
     struct mbuf *m, u_int nsegs, u_int available)
 {
@@ -2272,8 +2384,20 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		set_l2t_idx = false;
 	}
 
-	if (tcp->th_flags & TH_FIN)
-		txq->kern_tls_fin++;
+	if (tcp->th_flags & TH_FIN) {
+		/*
+		 * If the TCP header for this chain has FIN sent, then
+		 * explicitly send a packet with an empty payload that
+		 * has FIN set.  This will also have PUSH set if
+		 * requested.  This assumes we sent at lesat one TLS
+		 * record work request and uses the TCP sequence
+		 * number after that reqeust as the seqeuence number
+		 * for the FIN packet.
+		 */
+		ndesc = sbtls_write_tcp_fin(cipher, txq, dst, m, available,
+		    cipher->prev_seq, pidx);
+		totdesc += ndesc;
+	}
 
 	MPASS(totdesc <= available);
 	return (totdesc);
