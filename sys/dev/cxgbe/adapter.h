@@ -308,14 +308,6 @@ struct port_info {
 	u_long	tx_tls_octets;
 	u_long	rx_tls_records;
 	u_long	rx_tls_octets;
-	counter_u64_t kern_tls_records;
-	counter_u64_t kern_tls_short;
-	counter_u64_t kern_tls_partial;
-	counter_u64_t kern_tls_full;
-	counter_u64_t kern_tls_octets;
-	counter_u64_t kern_tls_waste;
-	counter_u64_t kern_tls_options;
-	counter_u64_t kern_tls_header;
 
 	struct callout tick;
 };
@@ -591,6 +583,15 @@ struct sge_txq {
 	uint64_t txpkts1_pkts;	/* # of frames in type1 coalesced tx WRs */
 	uint64_t tls_wrs;	/* # of TLS work requests */
 	uint64_t raw_wrs;	/* # of raw work requests (alloc_wr_mbuf) */
+
+	uint64_t kern_tls_records;
+	uint64_t kern_tls_short;
+	uint64_t kern_tls_partial;
+	uint64_t kern_tls_full;
+	uint64_t kern_tls_octets;
+	uint64_t kern_tls_waste;
+	uint64_t kern_tls_options;
+	uint64_t kern_tls_header;
 
 	/* stats for not-that-common events */
 

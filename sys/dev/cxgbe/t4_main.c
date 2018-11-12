@@ -1755,14 +1755,6 @@ cxgbe_attach(device_t dev)
 	struct vi_info *vi;
 	int i, rc;
 
-	pi->kern_tls_records = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_short = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_partial = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_full = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_octets = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_waste = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_options = counter_u64_alloc(M_WAITOK);
-	pi->kern_tls_header = counter_u64_alloc(M_WAITOK);
 	callout_init_mtx(&pi->tick, &pi->pi_lock, 0);
 
 	rc = cxgbe_vi_attach(dev, &pi->vi[0]);
@@ -1830,14 +1822,6 @@ cxgbe_detach(device_t dev)
 	cxgbe_vi_detach(&pi->vi[0]);
 	callout_drain(&pi->tick);
 	ifmedia_removeall(&pi->media);
-	counter_u64_free(pi->kern_tls_records);
-	counter_u64_free(pi->kern_tls_short);
-	counter_u64_free(pi->kern_tls_partial);
-	counter_u64_free(pi->kern_tls_full);
-	counter_u64_free(pi->kern_tls_octets);
-	counter_u64_free(pi->kern_tls_waste);
-	counter_u64_free(pi->kern_tls_options);
-	counter_u64_free(pi->kern_tls_header);
 
 	end_synchronized_op(sc, 0);
 
@@ -6815,35 +6799,6 @@ cxgbe_sysctls(struct port_info *pi)
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_tls_octets",
 	    CTLFLAG_RD, &pi->rx_tls_octets,
 	    "# of payload octets in received TOE TLS records");
-
-#ifdef KERN_TLS
-	if (sc->flags & KERN_TLS_OK) {
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_records", CTLFLAG_RD, &pi->kern_tls_records,
-		    "# of NIC TLS records transmitted");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_short", CTLFLAG_RD, &pi->kern_tls_short,
-		    "# of short NIC TLS records transmitted");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_partial", CTLFLAG_RD, &pi->kern_tls_partial,
-		    "# of partial NIC TLS records transmitted");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_full", CTLFLAG_RD, &pi->kern_tls_full,
-		    "# of full NIC TLS records transmitted");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_octets", CTLFLAG_RD, &pi->kern_tls_octets,
-		    "# of payload octets in transmitted NIC TLS records");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_waste", CTLFLAG_RD, &pi->kern_tls_waste,
-		    "# of octets DMAd but not transmitted in NIC TLS records");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_options", CTLFLAG_RD, &pi->kern_tls_options,
-		    "# of NIC TLS options-only packets transmitted");
-		SYSCTL_ADD_COUNTER_U64(ctx, children, OID_AUTO,
-		    "kern_tls_header", CTLFLAG_RD, &pi->kern_tls_header,
-		    "# of NIC TLS header-only packets transmitted");
-	}
-#endif
 }
 
 static int
@@ -10261,6 +10216,14 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 					txq->txpkts0_pkts = 0;
 					txq->txpkts1_pkts = 0;
 					txq->raw_wrs = 0;
+					txq->kern_tls_records = 0;
+					txq->kern_tls_short = 0;
+					txq->kern_tls_partial = 0;
+					txq->kern_tls_full = 0;
+					txq->kern_tls_octets = 0;
+					txq->kern_tls_waste = 0;
+					txq->kern_tls_options = 0;
+					txq->kern_tls_header = 0;
 					mp_ring_reset_stats(txq->r);
 				}
 
