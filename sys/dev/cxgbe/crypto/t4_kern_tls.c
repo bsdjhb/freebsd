@@ -1511,7 +1511,7 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	txq->txpkt_wrs++;
 
-	counter_u64_add(cipher->tlsp->vi->pi->kern_tls_options, 1);
+	txq->kern_tls_options++;
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = NULL;
@@ -1654,7 +1654,7 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
 	    __func__, cipher->tlsp->tid, (u_int)ext_pgs->seqno);
 #endif
-	counter_u64_add(cipher->tlsp->vi->pi->kern_tls_header, 1);
+	txq->kern_tls_header++;
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = m;
@@ -2007,7 +2007,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    tlsp->scmd0_short.ivgen_hdrlen |
 		    V_SCMD_HDR_LEN(offset == 0 ? ext_pgs->hdr_len : 0));
 
-		counter_u64_add(tlsp->vi->pi->kern_tls_short, 1);
+		txq->kern_tls_short++;
 	} else {
 		/*
 		 * AAD is TLS header.  IV is after AAD.  The cipher region
@@ -2039,9 +2039,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		sec_pdu->ivgen_hdrlen = tlsp->scmd0.ivgen_hdrlen;
 
 		if (mtod(m_tls, vm_offset_t) == 0)
-			counter_u64_add(tlsp->vi->pi->kern_tls_full, 1);
+			txq->kern_tls_full++;
 		else
-			counter_u64_add(tlsp->vi->pi->kern_tls_partial, 1);
+			txq->kern_tls_partial++;
 	}
 	sec_pdu->op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
@@ -2152,17 +2152,14 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	MPASS(ndesc <= available);
 	txq->tls_wrs++;
 
-	counter_u64_add(tlsp->vi->pi->kern_tls_records, 1);
-	counter_u64_add(tlsp->vi->pi->kern_tls_octets, tlen -
-	    mtod(m_tls, vm_offset_t));
+	txq->kern_tls_records++;
+	txq->kern_tls_octets += tlen - mtod(m_tls, vm_offset_t);
 	if (mtod(m_tls, vm_offset_t) != 0) {
 		if (offset == 0)
-			counter_u64_add(tlsp->vi->pi->kern_tls_waste,
-			    mtod(m_tls, vm_offset_t));
+			txq->kern_tls_waste += mtod(m_tls, vm_offset_t);
 		else
-			counter_u64_add(tlsp->vi->pi->kern_tls_waste,
-			    mtod(m_tls, vm_offset_t) -
-			    (ext_pgs->hdr_len + offset));
+			txq->kern_tls_waste += mtod(m_tls, vm_offset_t) -
+			    (ext_pgs->hdr_len + offset);
 	}
 
 	txsd = &txq->sdesc[pidx];
