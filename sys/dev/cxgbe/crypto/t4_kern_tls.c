@@ -2272,6 +2272,9 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		set_l2t_idx = false;
 	}
 
+	if (tcp->th_flags & TH_FIN)
+		txq->kern_tls_fin++;
+
 	MPASS(totdesc <= available);
 	return (totdesc);
 }
