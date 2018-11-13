@@ -1333,7 +1333,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	}
 
 	/* Include room for a TP work request to program an L2T entry. */
-	tot_len++;
+	tot_len += EQ_ESIZE;
 
 	/*
 	 * Include room for a ULPTX work request including up to 5
