@@ -1317,12 +1317,28 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	MPASS(tot_len != 0);
 
 	/*
-	 * See if we have any TCP options requiring a dedicated options-only
-	 * packet.
+	 * See if we have any TCP options or a FIN requiring a
+	 * dedicated packet.
+	 *
+	 * A FIN packet may need dummy padding bytes in case the FIN
+	 * is attached to a "short" TLS record.  The extra bytes can
+	 * only be a partial trailer, so allow for a trailer's worth
+	 * of bytes.
 	 */
-	if (sbtls_has_tcp_options(tcp)) {
+	if ((tcp->th_flags & TH_FIN) != 0 || sbtls_has_tcp_options(tcp)) {
+		int padding;
+
+		if ((tcp->th_flags & TH_FIN) != 0) {
+#if 0
+			padding = ext_pgs->trail_len;
+#else
+			padding = GCM_TAG_SIZE;
+#endif
+		} else
+			padding = 0;
 		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
-		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
+		    sizeof(struct cpl_tx_pkt_core) +
+		    roundup2(m->m_len + padding, 16);
 		if (wr_len > SGE_MAX_WR_LEN) {
 			CTR3(KTR_CXGBE,
 			    "%s: tid %d options-only packet too long (len %d)",
@@ -1733,25 +1749,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 #endif
 	} else
 		offset = 0;
-
-	/*
-	 * If this TLS record chain has requested FIN but the last
-	 * work request is a short request, clear the FIN.  We aren't
-	 * going to send all the data bytes in a short request, so we
-	 * can't send the FIN.  On the other hand, this really
-	 * shouldn't happen.  Add a counter just in case.  If we find
-	 * we have to handle this then I'm not sure what we can do
-	 * other than send the FIN "early" by disabling this check.
-	 *
-	 * This clears the FIN so that sbtls_write_wr() won't call
-	 * sbtls_write_tcp_fin() in addition to forcing last_wr true
-	 * below.
-	 */
-	if (plen == tlen && m_tls->m_next == NULL &&
-	    (tcp->th_flags & TH_FIN) != 0) {
-		txq->kern_tls_fin_short++;
-		tcp->th_flags &= ~TH_FIN;
-	}
 
 	/*
 	 * This is the last work request for a given TLS mbuf chain if
@@ -2195,7 +2192,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 static int
 sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int available, tcp_seq tcp_seqno, u_int pidx)
+    void *dst, struct mbuf *m, u_int available, tcp_seq tcp_seqno,
+    u_int padding, u_int pidx)
 {
 	struct tx_sdesc *txsd;
 	struct fw_eth_tx_pkt_wr *wr;
@@ -2208,12 +2206,13 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
 	caddr_t out;
+	static char padding_bytes[GCM_TAG_SIZE];
 
 	TXQ_LOCK_ASSERT_OWNED(txq);
 	M_ASSERTPKTHDR(m);
 
 	wr = dst;
-	pktlen = m->m_len;
+	pktlen = m->m_len + padding;
 	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
 	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
 	ndesc = howmany(len16, EQ_ESIZE / 16);
@@ -2269,13 +2268,22 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
 
 	/* Copy rest of packet. */
-	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, pktlen -
+	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, m->m_len -
 	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
+
+	/* Append padding bytes. */
+	KASSERT(padding <= sizeof(padding_bytes),
+	    ("padding too long: %u vs %zu", padding, sizeof(padding_bytes)));
+	copy_to_txd(&txq->eq, padding_bytes, &out, padding);
+
 	txq->imm_wrs++;
 
 	txq->txpkt_wrs++;
 
-	txq->kern_tls_fin++;
+	if (padding != 0)
+		txq->kern_tls_fin_short++;
+	else
+		txq->kern_tls_fin++;
 
 	txsd = &txq->sdesc[pidx];
 	txsd->m = m;
@@ -2294,7 +2302,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
 	struct ether_header *eh;
-	tcp_seq tcp_seqno;
+	tcp_seq tcp_seqno, fin_seqno;
 	u_int ndesc, pidx, totdesc;
 	bool set_l2t_idx;
 	void *tsopt;
@@ -2305,8 +2313,13 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	    m->m_pkthdr.l3hlen);
 	pidx = eq->pidx;
 	tlsp = cipher->tlsp;
+	fin_seqno = 0;
 
-	if (sbtls_has_tcp_options(tcp)) {
+	/*
+	 * If this TLS record has a FIN, then we will send any
+	 * requested options as part of the FIN packet.
+	 */
+	if ((tcp->th_flags & TH_FIN) == 0 && sbtls_has_tcp_options(tcp)) {
 		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
 		    pidx);
 		totdesc += ndesc;
@@ -2382,20 +2395,33 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 
 		/* Only need to set the L2T index once. */
 		set_l2t_idx = false;
+
+		/*
+		 * Compute the sequence number of a FIN following this
+		 * mbuf.  This could be conditional on m_tls->m_next
+		 * being NULL, but the extra branch is probably more
+		 * work than just doing the math always.
+		 */
+		fin_seqno = tcp_seqno + m_tls->m_len;
 	}
 
 	if (tcp->th_flags & TH_FIN) {
 		/*
 		 * If the TCP header for this chain has FIN sent, then
-		 * explicitly send a packet with an empty payload that
-		 * has FIN set.  This will also have PUSH set if
-		 * requested.  This assumes we sent at lesat one TLS
-		 * record work request and uses the TCP sequence
-		 * number after that reqeust as the seqeuence number
-		 * for the FIN packet.
+		 * explicitly send a packet that has FIN set.  This
+		 * will also have PUSH set if requested.  This assumes
+		 * we sent at least one TLS record work request and
+		 * uses the TCP sequence number after that reqeust as
+		 * the seqeuence number for the FIN packet.  If the
+		 * last TLS record work request was for a short
+		 * request, then we need to send dummy bytes for the
+		 * partial TLS trailer.  In that case, fin_seqno will
+		 * be the sequence number of the FIN itself and
+		 * fin_seqno - cipher->prev_seq gives the number of
+		 * dummy bytes required.
 		 */
 		ndesc = sbtls_write_tcp_fin(cipher, txq, dst, m, available,
-		    cipher->prev_seq, pidx);
+		    cipher->prev_seq, fin_seqno - cipher->prev_seq, pidx);
 		totdesc += ndesc;
 	}
 
