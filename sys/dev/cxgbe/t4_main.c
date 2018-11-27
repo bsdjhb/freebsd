@@ -279,7 +279,7 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, ntxq_vi, CTLFLAG_RDTUN, &t4_ntxq_vi, 0,
 
 #define NRXQ_VI 1
 static int t4_nrxq_vi = -NRXQ_VI;
-SYSCTL_INT(_hw_cxgbe, OID_AUTO, nrxq_vi, CTLFLAG_RDTUN, &t4_nrxq_vi, 0
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, nrxq_vi, CTLFLAG_RDTUN, &t4_nrxq_vi, 0,
     "Number of RX queues per VI");
 
 static int t4_rsrv_noflowq = 0;
@@ -330,7 +330,7 @@ SYSCTL_ULONG(_hw_cxgbe_toe, OID_AUTO, keepalive_interval, CTLFLAG_RDTUN,
 /* 0 means chip/fw default, non-zero number is # of keepalives before abort */
 static int t4_toe_keepalive_count = 0;
 SYSCTL_INT(_hw_cxgbe_toe, OID_AUTO, keepalive_count, CTLFLAG_RDTUN,
-    &t4_toe_keepalive_count, "Number of TOE keepalive probes before abort");
+    &t4_toe_keepalive_count, 0, "Number of TOE keepalive probes before abort");
 
 /* 0 means chip/fw default, non-zero number is value in microseconds */
 static u_long t4_toe_rexmt_min = 0;

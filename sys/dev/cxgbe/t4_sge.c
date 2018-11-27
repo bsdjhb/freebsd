@@ -157,7 +157,7 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, allow_mbufs_in_cluster, CTLFLAG_RDTUN,
  */
 static int largest_rx_cluster = MJUM16BYTES;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, largest_rx_cluster, CTLFLAG_RDTUN,
-    &largest_rx_cluster, "Largest rx cluster (bytes)");
+    &largest_rx_cluster, 0, "Largest rx cluster (bytes)");
 
 /*
  * Size of cluster allocation that's most likely to succeed.  The driver will
@@ -165,7 +165,7 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, largest_rx_cluster, CTLFLAG_RDTUN,
  */
 static int safest_rx_cluster = PAGE_SIZE;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, safest_rx_cluster, CTLFLAG_RDTUN,
-    &safest_rx_cluster, "Safe rx cluster (bytes)");
+    &safest_rx_cluster, 0, "Safe rx cluster (bytes)");
 
 #ifdef RATELIMIT
 /*
