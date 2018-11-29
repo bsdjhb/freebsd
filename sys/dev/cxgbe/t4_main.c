@@ -577,16 +577,25 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, cop_managed_offloading, CTLFLAG_RDTUN,
  * This enables KERN_TLS for all adapters if set.
  */
 static int t4_kern_tls = 0;
-TUNABLE_INT("hw.cxgbe.kern_tls", &t4_kern_tls);
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, kern_tls, CTLFLAG_RDTUN, &t4_kern_tls, 0,
+    "Enable KERN_TLS mode for all supported adapters");
+
+SYSCTL_NODE(_hw_cxgbe, OID_AUTO, tls, CTLFLAG_RD, 0,
+    "cxgbe(4) KERN_TLS parameters");
 
 static int t4_tls_enable = 0;
-TUNABLE_INT("hw.cxgbe.tls.enable", &t4_tls_enable);
+SYSCTL_INT(_hw_cxgbe_tls, OID_AUTO, enable, CTLFLAG_RDTUN, &t4_tls_enable, 0,
+    "Enable TLS offload by default");
 
 static int t4_tls_inline_keys = 0;
-TUNABLE_INT("hw.cxgbe.tls.inline_keys", &t4_tls_inline_keys);
+SYSCTL_INT(_hw_cxgbe_tls, OID_AUTO, inline_keys, CTLFLAG_RDTUN,
+    &t4_tls_inline_keys, 0,
+    "Always pass TLS keys in work requests (1) or attempt to store TLS keys "
+    "in card memory.");
 
 static int t4_tls_combo_wrs = 0;
-TUNABLE_INT("hw.cxgbe.tls.combo_wrs", &t4_tls_combo_wrs);
+SYSCTL_INT(_hw_cxgbe_tls, OID_AUTO, combo_wrs, CTLFLAG_RDTUN, &t4_tls_combo_wrs,
+    0, "Attempt to combine TCB field updates with TLS record work requests.");
 #endif
 
 /* Functions used by VIs to obtain unique MAC addresses for each VI. */
