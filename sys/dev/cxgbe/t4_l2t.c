@@ -145,7 +145,6 @@ find_or_alloc_l2e(struct l2t_data *d, uint16_t vlan, uint8_t port, uint8_t *dmac
 	return (e);
 }
 
-
 static void
 mk_write_l2e(struct adapter *sc, struct l2t_entry *e, int sync, int reply,
     void *dst)
