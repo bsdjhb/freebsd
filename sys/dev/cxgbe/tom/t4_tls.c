@@ -48,8 +48,6 @@ __FBSDID("$FreeBSD$");
 #include "crypto/t4_crypto.h"
 #include "tom/t4_tom_l2t.h"
 #include "tom/t4_tom.h"
-#include "t4_mp_ring.h"
-#include "crypto/t4_crypto.h"
 
 /*
  * The TCP sequence number of a CPL_TLS_DATA mbuf is saved here while
@@ -450,7 +448,6 @@ free_keyid(struct toepcb *toep, int keyid)
 {
 	struct adapter *sc = td_adapter(toep->td);
 
-	CTR3(KTR_CXGBE, "%s: tid %d key addr %#x", __func__, toep->tid, keyid);
 	vmem_free(sc->key_map, keyid, TLS_KEY_CONTEXT_SZ);
 }
 
