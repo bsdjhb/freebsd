@@ -326,8 +326,8 @@ SYSINIT(sbtls, SI_SUB_SMP + 1, SI_ORDER_ANY, sbtls_init, NULL);
 
 
 
-struct sbtls_info *
-sbtls_init_sb_tls(struct socket *so, struct tls_so_enable *en, size_t size)
+struct sbtls_session *
+sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 {
 	static int warn_once = 0;
 	struct sbtls_info *tls;
@@ -343,13 +343,13 @@ sbtls_init_sb_tls(struct socket *so, struct tls_so_enable *en, size_t size)
 		return (NULL);
 	}
 	tls->cipher = cipher;
-	so->so_snd.sb_tls_info = tls;
-	so->so_snd.sb_tls_flags =  SB_TLS_SEND_SIDE | SB_TLS_CRY_INI;
-
+	refcount_init(&tls->refcount, 1);
 
 	/* cache cpu index */
 	tls->sb_tsk_instance = sbtls_get_cpu(so);
 
+	tls->sb_params.crypt_algorithm = en->crypt_algorithm;
+	tls->sb_params.mac_algorthim = en->mac_algorthim;
 	tls->sb_params.sb_tls_vmajor = en->tls_vmajor;
 	tls->sb_params.sb_tls_vminor = en->tls_vminor;
 
@@ -375,6 +375,8 @@ sbtls_init_sb_tls(struct socket *so, struct tls_so_enable *en, size_t size)
 	}
 	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
 		tls->sb_params.sb_maxlen = sbtls_maxlen;
+
+	/* TODO: Set tls_hlen, tls_tlen, and tls_bs. */
 	counter_u64_add(sbtls_offload_active, 1);
 	return (tls);
 }
@@ -392,16 +394,19 @@ sbtls_cleanup(struct sbtls_info *tls)
 		free(cipher, M_TLSSOBUF);
 	}
 	if (tls->sb_params.hmac_key) {
+		/* TODO: explicit_bzero */
 		free(tls->sb_params.hmac_key, M_TLSSOBUF);
 		tls->sb_params.hmac_key = NULL;
 		tls->sb_params.hmac_key_len = 0;
 	}
 	if (tls->sb_params.crypt) {
+		/* TODO: explicit_bzero */
 		free(tls->sb_params.crypt, M_TLSSOBUF);
 		tls->sb_params.crypt = NULL;
 		tls->sb_params.crypt_key_len = 0;
 	}
 	if (tls->sb_params.iv) {
+		/* TODO: explicit_bzero */
 		free(tls->sb_params.iv, M_TLSSOBUF);
 		tls->sb_params.iv = NULL;
 		tls->sb_params.iv_len = 0;
@@ -413,9 +418,8 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 {
 	struct rm_priotracker prio;
 	struct sbtls_crypto_backend *be;
-	struct sbtls_info *tls;
-	int error = 0;
-
+	struct sbtls_session *tls;
+	int error;
 
 	if (sbtls_offload_disable) {
 		return (ENOTSUP);
@@ -438,6 +442,59 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	if (mb_use_ext_pgs == 0)
 		return (ENXIO);
 
+	/* XXX: We could just rely on copyin to fault on NULL. */
+	if ((en->hmac_key_len != 0 && en->hmac_key == NULL) ||
+	    (en->crypt_key_len != 0 && en->crypt_key == NULL) ||
+	    (en->iv_len != 0 && en->iv == NULL))
+		return (EFAULT);
+
+	if (en->hmac_key_len < 0 || en->hmac_key_len > TLS_MAX_PARAM_SIZE)
+		return (EINVAL);
+	if (en->crypt_key_len < 0 || en->crypt_key_len > TLS_MAX_PARAM_SIZE)
+		return (EINVAL);
+	if (en->iv_len < 0 || en->iv_len > TLS_MAX_PARAM_SIZE)
+		return (EINVAL);
+
+	/* All supported algorithms require a cipher key. */
+	if (en->crypt_key_len == 0)
+		return (EINVAL);
+
+	/* Common checks for supported algorithms. */
+	switch (en->crypt_algorithm) {
+	case CRYPTO_AES_NIST_GCM_16:
+		/*
+		 * mac_algorithm isn't used, but permit GMAC values
+		 * for compatibility.
+		 */
+		switch (en->mac_algorithm) {
+		case 0:
+		case CRYPTO_AES_128_NIST_GMAC:
+		case CRYPTO_AES_192_NIST_GMAC:
+		case CRYPTO_AES_256_NIST_GMAC:
+			break;
+		default:
+			return (EINVAL);
+		}
+		if (en->hmac_key_len != 0)
+			return (EINVAL);
+		if (en->iv_len != TLS_AEAD_GCM_LEN)
+			return (EINVAL);
+		break;
+	case CRYPTO_AES_CBC:
+		switch (en->mac_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+		case CRYPTO_SHA2_256_HMAC:
+			break;
+		default:
+			return (EINVAL);
+		}
+		if (en->hmac_key_len == 0)
+			return (EINVAL);
+		/* XXX: Checks on iv_len? */
+	default:
+		return (EINVAL);
+	}
+
 	/*
 	 * Now lets find the algorithms if possible. The idea here is we
 	 * prioritize what to use. 1) Hardware, if we have an offload card
@@ -452,26 +509,27 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 
 	if (sbtls_allow_unload)
 		rm_rlock(&sbtls_backend_lock, &prio);
-
+	tls = NULL;
 	LIST_FOREACH(be, &sbtls_backend_head, next) {
-		if (be->try(so, en, &error) == 0) {
-			so->so_snd.sb_tls_info->be = be;
+		if (be->try(so, en, &tls) == 0)
 			break;
-		}
+		KASSERT(tls == NULL,
+		    ("sbtls backend try failed but created a session"));
 	}
-	if (sbtls_allow_unload) {
-		if (so->so_snd.sb_tls_info != NULL)
+	if (tls != NULL) {
+		if (sbtls_allow_unload)
 			be->use_count++;
-		rm_runlock(&sbtls_backend_lock, &prio);
+		tls->be = be;
+		so->so_snd.sb_tls_info = tls;
+		so->so_snd.sb_tls_flags = SB_TLS_SEND_SIDE | SB_TLS_CRY_INI;
 	}
-	if (so->so_snd.sb_tls_info == NULL)
+	if (sbtls_allow_unload)
+		rm_runlock(&sbtls_backend_lock, &prio);
+	if (tls == NULL)
 		return (ENOTSUP);
 
-	tls = so->so_snd.sb_tls_info;
-
 	/* Now lets get in the keys and such */
-	if (en->hmac_key_len && en->hmac_key &&
-	    (en->hmac_key_len <= TLS_MAX_PARAM_SIZE)) {
+	if (en->hmac_key_len != 0) {
 		tls->sb_params.hmac_key_len = en->hmac_key_len;
 		tls->sb_params.hmac_key = malloc(en->hmac_key_len,
 		    M_TLSSOBUF, M_NOWAIT);
@@ -484,27 +542,24 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		if (error)
 			goto out;
 	}
-	if (en->crypt_key_len && en->crypt &&
-	    (en->crypt_key_len <= TLS_MAX_PARAM_SIZE)) {
-		tls->sb_params.crypt_key_len = en->crypt_key_len;
-		tls->sb_params.crypt = malloc(en->crypt_key_len,
-		    M_TLSSOBUF, M_NOWAIT);
-		if (tls->sb_params.crypt == NULL) {
-			error = ENOMEM;
-			goto out;
-		}
-		error = copyin_nofault(en->crypt, tls->sb_params.crypt,
-		    en->crypt_key_len);
-		if (error)
-			goto out;
+
+	tls->sb_params.crypt_key_len = en->crypt_key_len;
+	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_NOWAIT);
+	if (tls->sb_params.crypt == NULL) {
+		error = ENOMEM;
+		goto out;
 	}
+	error = copyin_nofault(en->crypt, tls->sb_params.crypt,
+	    en->crypt_key_len);
+	if (error)
+		goto out;
+
 	/*
 	 * We allow these to be set as a number to indicate how many random
 	 * bytes to send if iv is present, then its for an AEAD fixed part
 	 * nonce.
 	 */
-	if (en->iv_len && en->iv &&
-	    (en->iv_len <= TLS_MAX_PARAM_SIZE)) {
+	if (en->iv_len != 0) {
 		tls->sb_params.iv = malloc(en->iv_len,
 		    M_TLSSOBUF, M_NOWAIT);
 		tls->sb_params.iv_len = en->iv_len;
@@ -517,10 +572,11 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		if (error)
 			goto out;
 	}
-	tls->be->setup_cipher(tls, &error);
+	error = tls->be->setup_cipher(tls);
 	if (error)
 		goto out;
 
+	/* TODO: This will go away once backends stop setting these. */
 	if (tls->sb_params.sb_tls_hlen > MBUF_PEXT_HDR_LEN ||
 	    tls->sb_params.sb_tls_tlen > MBUF_PEXT_TRAIL_LEN){
 		static int warned = 0;
@@ -536,6 +592,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	}
 
 
+	/* TODO: Possibly defer setting sb_tls_info to here. */
 	so->so_snd.sb_tls_flags &= (~SB_TLS_CRY_INI);
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
 
@@ -549,11 +606,11 @@ out:
 }
 
 void
-sbtls_free_tls(struct sbtls_info *tls)
+sbtls_destroy(struct sbtls_session *tls)
 {
 	struct rm_priotracker prio;
 
-
+	sbtls_cleanup(tls);
 	if (tls->be != NULL && sbtls_allow_unload) {
 		rm_rlock(&sbtls_backend_lock, &prio);
 		tls->be->use_count--;
@@ -567,14 +624,11 @@ sbtlsdestroy(struct sockbuf *sb)
 {
 	struct sbtls_info *tls;
 
-
 	tls = sb->sb_tls_info;
 	sb->sb_tls_info = NULL;
 	sb->sb_tls_flags = 0;
-	if (tls) {
-		sbtls_cleanup(tls);
-		sbtls_free_tls(tls);
-	}
+	if (tls != NULL)
+		sbtls_free(tls);
 }
 
 void
@@ -594,17 +648,15 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 }
 
 int
-sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
+sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
     uint8_t record_type)
 {
 	struct tls_record_layer *tlshdr;
-	struct sbtls_info *tls;
 	struct mbuf *m;
 	struct mbuf_ext_pgs *pgs;
 	uint16_t tls_len;
 	int maxlen;
 
-	tls = so->so_snd.sb_tls_info;
 	maxlen = tls->sb_params.sb_maxlen;
 	*enq_cnt = 0;
 	for (m = *top; m != NULL; m = m->m_next) {
@@ -632,18 +684,20 @@ sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
 
 		pgs = (void *)m->m_ext.ext_buf;
 
-		/* save a pointer to the socket */
-		pgs->so = so;
-		soref(so);
+		/* Save a reference to the session. */
+		pgs->tls = sbtls_hold(tls);
 
 		tlshdr = (void *)pgs->hdr;
-		tlshdr->tls_vmajor =  tls->sb_params.sb_tls_vmajor;
-		tlshdr->tls_vminor =  tls->sb_params.sb_tls_vminor;
+		tlshdr->tls_vmajor = tls->sb_params.sb_tls_vmajor;
+		tlshdr->tls_vminor = tls->sb_params.sb_tls_vminor;
 		tlshdr->tls_type = record_type;
+		/* TODO: Fix length to be real. */
 		tlshdr->tls_length = htons(tls_len);
 
 		pgs->hdr_len = tls->sb_params.sb_tls_hlen;
 		pgs->trail_len = tls->sb_params.sb_tls_tlen;
+
+		/* TODO: Populate full header. */
 
 		/*
 		 * XXX: This should not be conditional on type but
@@ -671,7 +725,7 @@ sbtls_frame(struct mbuf **top, struct socket *so, int *enq_cnt,
 		}
 		m->m_len += pgs->hdr_len + pgs->trail_len;
 
-		if (!(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
+		if (tls->sb_tls_crypt != NULL) {
 			/* mark mbuf not-ready, to be cleared when encrypted */
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
@@ -687,7 +741,7 @@ sbtls_enqueue_to_free(void *arg)
 {
 	struct mbuf_ext_pgs *pgs = arg;
 	struct socket *so = pgs->so;
-	struct sbtls_info *tls = so->so_snd.sb_tls_info;
+	struct sbtls_session *tls = so->so_snd.sb_tls_info;
 	struct sbtls_wq *wq;
 	int running;
 
@@ -707,9 +761,8 @@ sbtls_enqueue_to_free(void *arg)
 }
 
 void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+sbtls_enqueue(struct mbuf *m, struct sbtls_session *tls, int page_count)
 {
-	struct sbtls_info *tls = so->so_snd.sb_tls_info;
 	struct mbuf_ext_pgs *pgs;
 	struct sbtls_wq *wq;
 	int running;
@@ -727,6 +780,12 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
 
+	/*
+	 * Save a pointer to the socket.  The caller is responsible
+	 * for taking an additional reference via soref().
+	 */
+	pgs->so = so;
+	
 	wq = &sbtls_wq[tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
@@ -893,7 +952,7 @@ static __noinline void
 sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 {
 	uint64_t seqno;
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	struct socket *so;
 	struct mbuf *top, *m;
 	vm_paddr_t parray[1+ btoc(TLS_MAX_MSG_SIZE_V10_2)];
@@ -904,14 +963,13 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	bool is_anon;
 	bool boring = false;
 
-	so = pgs->so;
+	tls = pgs->tls;
 	top = pgs->mbuf;
-	if (so == NULL) {
-		panic("so = NULL, top = %p, pgs = %p\n",
+	if (tls == NULL) {
+		panic("tls = NULL, top = %p, pgs = %p\n",
 		    top, pgs);
 	}
 	pgs->mbuf = NULL;
-	tls = so->so_snd.sb_tls_info;
 	npages = 0;
 	boring = (tls->t_type == SBTLS_T_TYPE_BSSL);
 	/*
@@ -923,7 +981,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	for (recs = 0, m = top; m != NULL && npages != page_count;
 	     m = m->m_next, recs++) {
 		pgs = (void *)m->m_ext.ext_buf;
-		pgs->so = NULL;
+		pgs->tls = NULL;
 
 		KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 			(M_NOMAP | M_NOTREADY)),

@@ -136,19 +136,21 @@ struct tls_so_enable {
 	uint8_t tls_vminor;
 };
 
-struct tls_kern_params {
-	uint8_t *hmac_key;
-	uint8_t *crypt;
-	uint8_t *iv;
+struct tls_session_params {
+	const uint8_t *hmac_key;
+	const uint8_t *crypt;
+	const uint8_t *iv;
+	int crypt_algorithm;
+	int mac_algorthim;
 	uint16_t hmac_key_len;
 	uint16_t crypt_key_len;
 	uint16_t iv_len;
 	uint16_t sb_maxlen;
-	uint8_t sb_tls_vmajor;
-	uint8_t sb_tls_vminor;
-	uint8_t sb_tls_hlen;
-	uint8_t sb_tls_tlen;
-	uint8_t sb_tls_bs;
+	uint8_t tls_vmajor;
+	uint8_t tls_vminor;
+	uint8_t tls_hlen;
+	uint8_t tls_tlen;
+	uint8_t tls_bs;
 };
 
 #define SBTLS_T_TYPE_OCFW		1	/* Open Crypto Framework */
@@ -171,27 +173,28 @@ struct iovec;
 
 struct sbtls_crypto_backend {
 	LIST_ENTRY(sbtls_crypto_backend) next;
-	void (*setup_cipher) (struct sbtls_info *tls, int *err);
+	int (*setup_cipher) (struct sbtls_session *tls);
 	int (*try) (struct socket *so,
 	    struct tls_so_enable *en, int *error);
-	void (*clean_cipher) (struct sbtls_info *tls, void *cipher);
+	void (*clean_cipher) (struct sbtls_session *tls, void *cipher);
 	int prio;
 	int api_version;
 	int use_count;                  /* dev testing */
 	const char *name;
 };
 
-struct sbtls_info {
+struct sbtls_session {
 	int	(*sb_tls_crypt)(struct sbtls_info *tls,
 	    struct tls_record_layer *hdr, uint8_t *trailer,
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
 	void *cipher;
-	struct tls_kern_params sb_params;
+	struct tls_session_params sb_params;
 	uint16_t sb_tsk_instance;	/* For task selection */
 	struct sbtls_crypto_backend *be;/* backend crypto impl. */
 	uint8_t t_type; 	 	/* Flags indicating type of encode */
 	uint8_t taglen;                 /* for CBC tag padding */
+	volatile u_int refcount;
 } __aligned(CACHE_LINE_SIZE);
 
 
@@ -216,14 +219,14 @@ sbtlsdestroy(struct sockbuf *sb)
 }
 
 static inline int
-sbtls_frame(struct mbuf **m, struct socket *so, int *enqueue_cnt,
+sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
     uint8_t record_type)
 {
 	return (ENOTSUP);
 }
 
 static inline void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+sbtls_enqueue(struct mbuf *m, struct sbtls_session *tls, int page_count)
 {
 }
 
@@ -236,20 +239,41 @@ static inline void
 sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 }
+
+static inline void
+sbtls_free(struct sbtls_session *tls)
+{
+}
 #else
 
 int sbtls_crypto_backend_register(struct sbtls_crypto_backend *be);
 int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
 int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
 void sbtlsdestroy(struct sockbuf *sb);
+void sbtls_destroy(struct sbtls_session *tls);
 struct sbtls_info *sbtls_init_sb_tls(struct socket *so,
     struct tls_so_enable *en, size_t cipher_len);
-void sbtls_free_tls(struct sbtls_info *tls);
-int sbtls_frame(struct mbuf **m, struct socket *so, int *enqueue_cnt,
+int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
 void sbtls_enqueue_to_free(void *arg);
+
+static inline struct sbtls_session *
+sbtls_hold(struct sbtls_session *tls)
+{
+
+	refcount_acquire(&tls->refcount);
+	return (tls);
+}
+
+static inline void
+sbtls_free(struct sbtls_session *tls)
+{
+
+	if (refcount_release(&tls->refcount))
+		sbtls_destroy(tls);
+}
 
 #endif /* KERN_TLS */
 #endif /* _KERNEL */

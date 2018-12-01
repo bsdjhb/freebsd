@@ -594,7 +594,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	off_t off, sbytes, rem, obj_size;
 	struct mbuf_ext_pgs *ext_pgs;
 	struct mbuf *m0;
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	int use_ext_pgs = 0;
 	int error, softerr, bsize, hdrlen;
 	int ext_pgs_idx, max_pgs, tls_enq_cnt;
@@ -603,6 +603,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	so = NULL;
 	m = mh = NULL;
 	sfs = NULL;
+	tls = NULL;
 	hdrlen = sbytes = 0;
 	softerr = 0;
 
@@ -639,9 +640,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	 */
 	(void)sblock(&so->so_snd, SBL_WAIT | SBL_NOINTR);
 	if (so->so_snd.sb_tls_flags & SB_TLS_ACTIVE)
-		tls = so->so_snd.sb_tls_info;
-	else
-		tls = NULL;
+		tls = sbtls_hold(so->so_snd.sb_tls_info);
 
 	/*
 	 * Loop through the pages of the file, starting with the requested
@@ -1012,7 +1011,7 @@ prepend_header:
 
 		CURVNET_SET(so->so_vnet);
 		if (tls != NULL) {
-			error = sbtls_frame(&m, so, &tls_enq_cnt,
+			error = sbtls_frame(&m, tls, &tls_enq_cnt,
 			    TLS_RLTYPE_APP);
 			if (error != 0)
 				goto done;
@@ -1025,11 +1024,10 @@ prepend_header:
 			 * PRUS_NOTREADY flag.
 			 */
 			free(sfio, M_TEMP);
-			if (tls != NULL &&
-			    !(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
+			if (tls != NULL && tls->sb_tls_crypt != NULL) {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, PRUS_NOTREADY, m, NULL, NULL, td);
-				sbtls_enqueue(m, so, tls_enq_cnt);
+				sbtls_enqueue(m, tls, tls_enq_cnt);
 			} else {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, 0, m, NULL, NULL, td);
@@ -1097,6 +1095,8 @@ out:
 		mtx_destroy(&sfs->mtx);
 		free(sfs, M_TEMP);
 	}
+	if (tls != NULL)
+		sbtls_free(tls);
 
 	if (error == ERESTART)
 		error = EINTR;

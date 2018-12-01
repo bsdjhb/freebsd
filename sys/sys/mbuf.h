@@ -305,7 +305,7 @@ struct socket;
  * byte cacheline
  */
 
-struct mbuf_ext_pgs;
+struct sbtls_session;
 
 struct mbuf_ext_pgs {
 	int16_t		npgs;			/* Number of attached pgs */
@@ -318,10 +318,11 @@ struct mbuf_ext_pgs {
 	uint32_t	pad;			/* align pgs to 8b */
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pgs */
 	char		hdr[MBUF_PEXT_HDR_LEN];		/* TLS hdr */
-	struct socket	*so;
+	struct sbtls_session *tls;
 	union {
 		char	trail[MBUF_PEXT_TRAIL_LEN];	/* TLS trailer */
 		struct {
+			struct socket *so;
 			void	*mbuf;
 			uint64_t seqno;
 			STAILQ_ENTRY(mbuf_ext_pgs)	stailq;

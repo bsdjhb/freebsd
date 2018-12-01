@@ -68,7 +68,7 @@ struct sockaddr;
 struct socket;
 struct thread;
 struct selinfo;
-struct sbtls_info;
+struct sbtls_session;
 
 /*
  * Variables for socket buffering.
@@ -100,7 +100,7 @@ struct	sockbuf {
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
 	uint64_t sb_tls_seqno;	/* TLS seqno */
-	struct	sbtls_info *sb_tls_info; /* TLS state */
+	struct	sbtls_session *sb_tls_info; /* TLS state */
 	u_int	sb_tls_flags;	/* flags used by TLS */
 	short	sb_flags;	/* (a) flags, see below */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */
