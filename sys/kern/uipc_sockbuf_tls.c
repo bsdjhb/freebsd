@@ -511,10 +511,9 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		rm_rlock(&sbtls_backend_lock, &prio);
 	tls = NULL;
 	LIST_FOREACH(be, &sbtls_backend_head, next) {
-		if (be->try(so, en, &tls) == 0)
+		tls = be->try(so, en);
+		if (tls != NULL)
 			break;
-		KASSERT(tls == NULL,
-		    ("sbtls backend try failed but created a session"));
 	}
 	if (tls != NULL) {
 		if (sbtls_allow_unload)
@@ -577,15 +576,15 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		goto out;
 
 	/* TODO: This will go away once backends stop setting these. */
-	if (tls->sb_params.sb_tls_hlen > MBUF_PEXT_HDR_LEN ||
-	    tls->sb_params.sb_tls_tlen > MBUF_PEXT_TRAIL_LEN){
+	if (tls->sb_params.tls_hlen > MBUF_PEXT_HDR_LEN ||
+	    tls->sb_params.tls_tlen > MBUF_PEXT_TRAIL_LEN){
 		static int warned = 0;
 		if (!warned) {
 			warned = 1;
 			printf(" %s: %p exceeded hdr/trl len (%d/%d)\n",
 			    be->name, tls->sb_tls_crypt,
-			    tls->sb_params.sb_tls_hlen,
-			    tls->sb_params.sb_tls_tlen);
+			    tls->sb_params.tls_hlen,
+			    tls->sb_params.tls_tlen);
 		}
 		error = ENXIO;
 		goto out;
@@ -622,7 +621,7 @@ sbtls_destroy(struct sbtls_session *tls)
 void
 sbtlsdestroy(struct sockbuf *sb)
 {
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 
 	tls = sb->sb_tls_info;
 	sb->sb_tls_info = NULL;
@@ -688,14 +687,14 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		pgs->tls = sbtls_hold(tls);
 
 		tlshdr = (void *)pgs->hdr;
-		tlshdr->tls_vmajor = tls->sb_params.sb_tls_vmajor;
-		tlshdr->tls_vminor = tls->sb_params.sb_tls_vminor;
+		tlshdr->tls_vmajor = tls->sb_params.tls_vmajor;
+		tlshdr->tls_vminor = tls->sb_params.tls_vminor;
 		tlshdr->tls_type = record_type;
 		/* TODO: Fix length to be real. */
 		tlshdr->tls_length = htons(tls_len);
 
-		pgs->hdr_len = tls->sb_params.sb_tls_hlen;
-		pgs->trail_len = tls->sb_params.sb_tls_tlen;
+		pgs->hdr_len = tls->sb_params.tls_hlen;
+		pgs->trail_len = tls->sb_params.tls_tlen;
 
 		/* TODO: Populate full header. */
 
@@ -718,8 +717,8 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 			 * padding.
 			 */
 
-			bs = tls->sb_params.sb_tls_bs;
-			delta = (tls_len + tls->sb_params.sb_tls_tlen) &
+			bs = tls->sb_params.tls_bs;
+			delta = (tls_len + tls->sb_params.tls_tlen) &
 			    (bs - 1);
 			pgs->trail_len -= delta;
 		}
@@ -790,7 +789,7 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 }
 
 static void
-sbtls_boring_fixup(struct sbtls_info *tls, struct sockbuf *sb,
+sbtls_boring_fixup(struct sbtls_session *tls, struct sockbuf *sb,
     struct mbuf *m, struct iovec *dst_iov, int *pgcnt)
 {
 	struct mbuf_ext_pgs *pgs;

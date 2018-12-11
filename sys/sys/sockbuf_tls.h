@@ -169,14 +169,14 @@ MALLOC_DECLARE(M_TLSSOBUF);
 
 #define SBTLS_API_VERSION 4
 
-struct sbtls_info;
+struct sbtls_session;
 struct iovec;
 
 struct sbtls_crypto_backend {
 	LIST_ENTRY(sbtls_crypto_backend) next;
+	struct sbtls_session *(*try) (struct socket *so,
+	    struct tls_so_enable *en);
 	int (*setup_cipher) (struct sbtls_session *tls);
-	int (*try) (struct socket *so,
-	    struct tls_so_enable *en, int *error);
 	void (*clean_cipher) (struct sbtls_session *tls, void *cipher);
 	int prio;
 	int api_version;
@@ -185,7 +185,7 @@ struct sbtls_crypto_backend {
 };
 
 struct sbtls_session {
-	int	(*sb_tls_crypt)(struct sbtls_info *tls,
+	int	(*sb_tls_crypt)(struct sbtls_session *tls,
 	    struct tls_record_layer *hdr, uint8_t *trailer,
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
