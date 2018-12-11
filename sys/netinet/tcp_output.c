@@ -185,6 +185,24 @@ cc_after_idle(struct tcpcb *tp)
 		CC_ALGO(tp)->after_idle(tp->ccv);
 }
 
+static inline bool
+mbuf_is_ifnet_tls(struct mbuf *m)
+{
+#ifdef KERN_TLS
+	struct mbuf_ext_pgs *ext_pgs;
+
+	if (m->m_flags & M_NOMAP) {
+		MBUF_EXT_PGS_ASSERT(m);
+		ext_pgs = (void *)m->m_ext.ext_buf;
+		if (ext_pgs->tls != NULL) {
+			MPASS(ext_pgs->tls->sb_tls_crypt == NULL);
+			return (true);
+		}
+	}
+#endif
+	return (false);
+}
+
 /*
  * Tcp output routine: figure out what should be sent and send it.
  */

@@ -1443,15 +1443,15 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	ssize_t resid;
 	int clen = 0, error, dontroute;
 	int atomic = sosendallatonce(so) || top;
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	int pru_flag, tls_pruflag, tls_enq_cnt;
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
 	bool tls_control = false;
 
 	tls_pruflag = 0;
 	if ((so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) != 0) {
-		tls = so->so_snd.sb_tls_info;
-		if (!(so->so_snd.sb_tls_flags & SB_TLS_IFNET))
+		tls = sbtls_hold(so->so_snd.sb_tls_info);
+		if (tls->sb_tls_crypt != NULL)
 			tls_pruflag = PRUS_NOTREADY;
 	}  else {
 		tls = NULL;
@@ -1584,7 +1584,7 @@ restart:
 					    ((flags & MSG_EOR) ? M_EOR : 0));
 					if (top != NULL) {
 						error = sbtls_frame(&top,
-						    so, &tls_enq_cnt,
+						    tls, &tls_enq_cnt,
 						    tls_rtype);
 						if (error) {
 							m_freem(top);
@@ -1647,8 +1647,7 @@ restart:
 				SOCK_UNLOCK(so);
 			}
 
-			if (tls != NULL &&
-			    !(so->so_snd.sb_tls_flags & SB_TLS_IFNET)) {
+			if (tls != NULL && tls->sb_tls_crypt != NULL) {
 				/*
 				 * Note that error is intentionally
 				 * ignored.
@@ -1659,6 +1658,7 @@ restart:
 				 * pru_send() encountered an error and
 				 * did not append them to the sockbuf.
 				 */
+				soref(so);
 				sbtls_enqueue(top, so, tls_enq_cnt);
 			}
 			clen = 0;
@@ -1672,6 +1672,8 @@ restart:
 release:
 	sbunlock(&so->so_snd);
 out:
+	if (tls != NULL)
+		sbtls_free(tls);
 	if (top != NULL)
 		m_freem(top);
 	if (control != NULL)

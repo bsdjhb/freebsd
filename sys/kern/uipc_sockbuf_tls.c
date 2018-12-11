@@ -275,8 +275,8 @@ sbtls_init(void *st __unused)
 	sbtls_wq = malloc(sizeof(*sbtls_wq) * mp_ncpus, M_TLSSOBUF,
 	    M_WAITOK | M_ZERO);
 
-	zone_tlssock = uma_zcreate("sbtls_sockent",
-	    sizeof(struct sbtls_info),
+	zone_tlssock = uma_zcreate("sbtls_session",
+	    sizeof(struct sbtls_session),
 	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE, 0);
 
 	sbtls_ctx = malloc((sizeof(struct thread *) * mp_ncpus),
@@ -330,7 +330,7 @@ struct sbtls_session *
 sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 {
 	static int warn_once = 0;
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	void *cipher;
 
 	tls = uma_zalloc(zone_tlssock, M_NOWAIT | M_ZERO);
@@ -349,12 +349,12 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 	tls->sb_tsk_instance = sbtls_get_cpu(so);
 
 	tls->sb_params.crypt_algorithm = en->crypt_algorithm;
-	tls->sb_params.mac_algorthim = en->mac_algorthim;
-	tls->sb_params.sb_tls_vmajor = en->tls_vmajor;
-	tls->sb_params.sb_tls_vminor = en->tls_vminor;
+	tls->sb_params.mac_algorithm = en->mac_algorithm;
+	tls->sb_params.tls_vmajor = en->tls_vmajor;
+	tls->sb_params.tls_vminor = en->tls_vminor;
 
 	/* Determine max size */
-	if (tls->sb_params.sb_tls_vmajor == TLS_MAJOR_VER_ONE) {
+	if (tls->sb_params.tls_vmajor == TLS_MAJOR_VER_ONE) {
 		/* 
 		 *  note that 1.3 was supposed to go to 64K, but that 
 		 * was shot down
@@ -368,7 +368,7 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 		 */
 		if (warn_once == 0) {
 			printf("Warning saw TLS version major:%d -- unknown size limited to 16k\n",
-			    tls->sb_params.sb_tls_vmajor);
+			    tls->sb_params.tls_vmajor);
 			warn_once = 1;
 		}
 		tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
@@ -382,7 +382,7 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 }
 
 static void
-sbtls_cleanup(struct sbtls_info *tls)
+sbtls_cleanup(struct sbtls_session *tls)
 {
 	void *cipher;
 
@@ -444,7 +444,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 
 	/* XXX: We could just rely on copyin to fault on NULL. */
 	if ((en->hmac_key_len != 0 && en->hmac_key == NULL) ||
-	    (en->crypt_key_len != 0 && en->crypt_key == NULL) ||
+	    (en->crypt_key_len != 0 && en->crypt == NULL) ||
 	    (en->iv_len != 0 && en->iv == NULL))
 		return (EFAULT);
 
@@ -737,21 +737,14 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 
 
 void
-sbtls_enqueue_to_free(void *arg)
+sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 {
-	struct mbuf_ext_pgs *pgs = arg;
-	struct socket *so = pgs->so;
-	struct sbtls_session *tls = so->so_snd.sb_tls_info;
 	struct sbtls_wq *wq;
 	int running;
 
-
-	pgs->mbuf = NULL; /* mark it to free */
-	if (tls != NULL) {
-		wq = &sbtls_wq[tls->sb_tsk_instance];
-	} else {
-		wq = &sbtls_wq[sbtls_get_cpu(so)];
-	}
+	/* Mark it for freeing. */
+	pgs->mbuf = NULL;
+	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
 	running = wq->running;
@@ -761,7 +754,7 @@ sbtls_enqueue_to_free(void *arg)
 }
 
 void
-sbtls_enqueue(struct mbuf *m, struct sbtls_session *tls, int page_count)
+sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 	struct mbuf_ext_pgs *pgs;
 	struct sbtls_wq *wq;
@@ -785,8 +778,8 @@ sbtls_enqueue(struct mbuf *m, struct sbtls_session *tls, int page_count)
 	 * for taking an additional reference via soref().
 	 */
 	pgs->so = so;
-	
-	wq = &sbtls_wq[tls->sb_tsk_instance];
+
+	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
 	running = wq->running;
@@ -959,16 +952,16 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	vm_page_t pg;
-	int off, len, npages, page_count, error, i, wire_adj, recs;
+	int off, len, npages, page_count, error, i, wire_adj;
 	bool is_anon;
 	bool boring = false;
 
+	so = pgs->so;
 	tls = pgs->tls;
 	top = pgs->mbuf;
-	if (tls == NULL) {
-		panic("tls = NULL, top = %p, pgs = %p\n",
-		    top, pgs);
-	}
+	KASSERT(tls != NULL, ("tls = NULL, top = %p, pgs = %p\n", top, pgs));
+	KASSERT(so != NULL, ("so = NULL, top = %p, pgs = %p\n", top, pgs));
+	pgs->so = NULL;
 	pgs->mbuf = NULL;
 	npages = 0;
 	boring = (tls->t_type == SBTLS_T_TYPE_BSSL);
@@ -978,11 +971,12 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	 */
 	page_count = pgs->enc_cnt;
 	error = 0;
-	for (recs = 0, m = top; m != NULL && npages != page_count;
-	     m = m->m_next, recs++) {
+	for (m = top; m != NULL && npages != page_count; m = m->m_next) {
 		pgs = (void *)m->m_ext.ext_buf;
-		pgs->tls = NULL;
 
+		KASSERT(pgs->tls == tls,
+		    ("different TLS sessions in a single mbuf chain: %p vs %p",
+		    tls, pgs->tls));
 		KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 			(M_NOMAP | M_NOTREADY)),
 		    ("%p not unready & nomap mbuf (top = %p)\n", m, top));
@@ -1035,7 +1029,6 @@ retry_page:
 		if (error) {
 			/* WTF can we do..? */
 			counter_u64_add(sbtls_offload_failed_crypto, 1);
-			recs++;
 			break;
 		}
 		if (!is_anon) {
@@ -1059,6 +1052,9 @@ retry_page:
 			page_count -= pgs_removed;
 		}
 
+		/* XXX: Not sure if this is really needed, but can't hurt? */
+		pgs->tls = NULL;
+		sbtls_free(tls);
 	}
 
 	CURVNET_SET(so->so_vnet);
@@ -1070,15 +1066,8 @@ retry_page:
 		mb_free_notready(top, page_count);
 	}
 
-	/*
-	 * Drop a reference to each TLS record.  It would be nice if
-	 * we could drop all the references at once, under a single
-	 * SOCK_LOCK(), rather than repeatedly banging the lock.
-	 */
-	for (; recs != 0; recs--) {
-		SOCK_LOCK(so);
-		sorele(so);
-	}
+	SOCK_LOCK(so);
+	sorele(so);
 	CURVNET_RESTORE();
 }
 
@@ -1087,7 +1076,7 @@ sbtls_work_thread(void *ctx)
 {
 	struct sbtls_wq *wq = ctx;
 	struct mbuf_ext_pgs *p, *n;
-	struct socket *so;
+	struct sbtls_session *tls;
 
 
 	STAILQ_INIT(&wq->head);
@@ -1113,11 +1102,8 @@ sbtls_work_thread(void *ctx)
 					counter_u64_add(sbtls_cnt_on, -1);
 				} else {
 					/* records w/null mbuf are freed */
-					so = p->so;
-					CURVNET_SET(so->so_vnet);
-					SOCK_LOCK(so);
-					sorele(so);
-					CURVNET_RESTORE();
+					tls = p->tls;
+					sbtls_free(tls);
 					uma_zfree(zone_extpgs, p);
 				}
 				p = n;

@@ -929,7 +929,7 @@ _mb_unmapped_to_ext(struct mbuf *m)
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = (void *)m->m_ext.ext_buf;
 	len = m->m_len;
-	KASSERT(ext_pgs->so == NULL, ("%s: can't convert SB_TLS_IFNET mbuf %p",
+	KASSERT(ext_pgs->tls == NULL, ("%s: can't convert TLS mbuf %p",
 	    __func__, m));
 
 	/* See if this is the mbuf that holds the embedded refcount. */
@@ -1113,6 +1113,7 @@ mb_alloc_ext_pgs(int how, bool pkthdr, m_ext_free_t ext_free)
 	ext_pgs->last_pg_len = 0;
 	ext_pgs->hdr_len = 0;
 	ext_pgs->trail_len = 0;
+	ext_pgs->tls = NULL;
 	ext_pgs->so = NULL;
 	m->m_data = NULL;
 	m->m_flags |= (M_EXT | M_RDONLY | M_NOMAP);
@@ -1232,21 +1233,15 @@ mb_free_ext(struct mbuf *m)
 		case EXT_PGS: {
 #ifdef KERN_TLS
 			struct mbuf_ext_pgs *pgs;
-			struct socket *so;
+			struct sbtls_session *tls;
 
 			mref->m_ext.ext_free(mref);
 			pgs = (struct mbuf_ext_pgs *)mref->m_ext.ext_buf;
-			so = pgs->so;
-			if (so != NULL) {
-				CURVNET_SET(so->so_vnet);
-				if (!SOCK_OWNED(so) && SOCK_TRYLOCK(so)) {
-					sorele(so);
-					uma_zfree(zone_extpgs, pgs);
-				} else {
-					sbtls_enqueue_to_free(pgs);
-				}
-				CURVNET_RESTORE();
-			} else
+			tls = pgs->tls;
+			if (tls != NULL &&
+			    !refcount_release_if_not_last(&tls->refcount))
+				sbtls_enqueue_to_free(pgs);
+			else
 #endif
 				uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
 			uma_zfree(zone_mbuf, mref);

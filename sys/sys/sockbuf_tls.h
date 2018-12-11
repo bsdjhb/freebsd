@@ -28,6 +28,7 @@
 #ifndef _SYS_SOCKBUF_TLS_H_
 #define _SYS_SOCKBUF_TLS_H_
 #include <sys/types.h>
+#include <sys/refcount.h>
 
 struct tls_record_layer {
 	uint8_t  tls_type;
@@ -127,7 +128,7 @@ struct tls_so_enable {
 	const uint8_t *crypt;
 	const uint8_t *iv;
 	uint32_t crypt_algorithm; /* e.g. CRYPTO_AES_CBC */
-	uint32_t mac_algorthim;	  /* e.g. CRYPTO_SHA2_256_HMAC */
+	uint32_t mac_algorithm;	  /* e.g. CRYPTO_SHA2_256_HMAC */
 	uint32_t key_size;	  /* Length of the key */
 	int hmac_key_len;
 	int crypt_key_len;
@@ -137,11 +138,11 @@ struct tls_so_enable {
 };
 
 struct tls_session_params {
-	const uint8_t *hmac_key;
-	const uint8_t *crypt;
-	const uint8_t *iv;
+	uint8_t *hmac_key;
+	uint8_t *crypt;
+	uint8_t *iv;
 	int crypt_algorithm;
-	int mac_algorthim;
+	int mac_algorithm;
 	uint16_t hmac_key_len;
 	uint16_t crypt_key_len;
 	uint16_t iv_len;
@@ -226,7 +227,7 @@ sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
 }
 
 static inline void
-sbtls_enqueue(struct mbuf *m, struct sbtls_session *tls, int page_count)
+sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 }
 
@@ -240,10 +241,17 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 }
 
+static inline struct sbtls_session *
+sbtls_hold(struct sbtls_session *tls)
+{
+	return (NULL);
+}
+
 static inline void
 sbtls_free(struct sbtls_session *tls)
 {
 }
+
 #else
 
 int sbtls_crypto_backend_register(struct sbtls_crypto_backend *be);
@@ -251,13 +259,13 @@ int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
 int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
 void sbtlsdestroy(struct sockbuf *sb);
 void sbtls_destroy(struct sbtls_session *tls);
-struct sbtls_info *sbtls_init_sb_tls(struct socket *so,
+struct sbtls_session *sbtls_init_session(struct socket *so,
     struct tls_so_enable *en, size_t cipher_len);
 int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
-void sbtls_enqueue_to_free(void *arg);
+void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
 
 static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)

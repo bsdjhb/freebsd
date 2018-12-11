@@ -670,22 +670,6 @@ void	mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs);
 #define	MBUF_CHECKSLEEP(how)
 #endif
 
-static inline bool
-mbuf_is_ifnet_tls(struct mbuf *m)
-{
-	struct mbuf_ext_pgs *ext_pgs;
-
-	if (m != NULL) {
-		if (m->m_flags & M_NOMAP) {
-			MBUF_EXT_PGS_ASSERT(m);
-			ext_pgs = (void *)m->m_ext.ext_buf;
-			if (ext_pgs->so != NULL)
-				return (true);
-		}
-	}
-	return (false);
-}
-
 /*
  * Network buffer allocation API
  *

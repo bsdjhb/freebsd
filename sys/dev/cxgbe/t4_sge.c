@@ -2437,9 +2437,9 @@ is_tls_mbuf(struct mbuf *m)
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = (void *)m->m_ext.ext_buf;
-	MPASS(ext_pgs->so == NULL ||
-	    ext_pgs->so->so_snd.sb_tls_flags & SB_TLS_IFNET);
-	return (ext_pgs->so != NULL);
+	MPASS(ext_pgs->tls == NULL ||
+	    ext_pgs->tls->sb_tls_crypt == NULL);
+	return (ext_pgs->tls != NULL);
 }
 
 static inline struct t6_sbtls_cipher *
@@ -2452,9 +2452,9 @@ tls_mbuf_cipher(struct mbuf *m)
 			/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 			MBUF_EXT_PGS_ASSERT(m);
 			ext_pgs = (void *)m->m_ext.ext_buf;
-			MPASS(ext_pgs->so != NULL);
-			MPASS(ext_pgs->so->so_snd.sb_tls_flags & SB_TLS_IFNET);
-			return (ext_pgs->so->so_snd.sb_tls_info->cipher);
+			MPASS(ext_pgs->tls != NULL);
+			MPASS(ext_pgs->tls->sb_tls_crypt != NULL);
+			return (ext_pgs->tls->cipher);
 		}
 		m = m->m_next;
 	}
