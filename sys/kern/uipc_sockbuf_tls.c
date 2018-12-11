@@ -511,9 +511,10 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		rm_rlock(&sbtls_backend_lock, &prio);
 	tls = NULL;
 	LIST_FOREACH(be, &sbtls_backend_head, next) {
-		tls = be->try(so, en);
-		if (tls != NULL)
+		if (be->try(so, en, &tls) == 0)
 			break;
+		KASSERT(tls == NULL,
+		    ("sbtls backend try failed but created a session"));
 	}
 	if (tls != NULL) {
 		if (sbtls_allow_unload)

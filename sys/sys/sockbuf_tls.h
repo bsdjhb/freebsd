@@ -174,8 +174,8 @@ struct iovec;
 
 struct sbtls_crypto_backend {
 	LIST_ENTRY(sbtls_crypto_backend) next;
-	struct sbtls_session *(*try) (struct socket *so,
-	    struct tls_so_enable *en);
+	int (*try) (struct socket *so, struct tls_so_enable *en,
+	    struct sbtls_session **tlsp);
 	int (*setup_cipher) (struct sbtls_session *tls);
 	void (*clean_cipher) (struct sbtls_session *tls, void *cipher);
 	int prio;
