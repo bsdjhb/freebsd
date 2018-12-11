@@ -2453,7 +2453,7 @@ tls_mbuf_cipher(struct mbuf *m)
 			MBUF_EXT_PGS_ASSERT(m);
 			ext_pgs = (void *)m->m_ext.ext_buf;
 			MPASS(ext_pgs->tls != NULL);
-			MPASS(ext_pgs->tls->sb_tls_crypt != NULL);
+			MPASS(ext_pgs->tls->sb_tls_crypt == NULL);
 			return (ext_pgs->tls->cipher);
 		}
 		m = m->m_next;
