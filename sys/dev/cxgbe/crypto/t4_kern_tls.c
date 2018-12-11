@@ -255,7 +255,7 @@ free_tlspcb(struct tlspcb *tlsp)
 
 static void
 init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
-    struct sbtls_info *tls)
+    struct sbtls_session *tls)
 {
 	int mac_key_size;
 
@@ -274,7 +274,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
 		tlsp->tx_key_info_size += GMAC_BLOCK_LEN;
 	} else {
-		switch (en->mac_algorthim) {
+		switch (en->mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			mac_key_size = roundup2(SHA1_HASH_LEN, 16);
 			tlsp->auth_mode = SCMD_AUTH_MODE_SHA1;
@@ -532,10 +532,11 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 }
 
 static int
-t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
+t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
+    struct sbtls_session **ptls)
 {
 	struct t6_sbtls_cipher *cipher;
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	struct mbuf *key_wr;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
@@ -564,7 +565,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 		default:
 			return (EINVAL);
 		}
-		switch (en->mac_algorthim) {
+		switch (en->mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
@@ -580,15 +581,15 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 			return (EINVAL);
 		switch (en->key_size) {
 		case 128 / 8:
-			if (en->mac_algorthim != CRYPTO_AES_128_NIST_GMAC)
+			if (en->mac_algorithm != CRYPTO_AES_128_NIST_GMAC)
 				return (EINVAL);
 			break;
 		case 192 / 8:
-			if (en->mac_algorthim != CRYPTO_AES_192_NIST_GMAC)
+			if (en->mac_algorithm != CRYPTO_AES_192_NIST_GMAC)
 				return (EINVAL);
 			break;
 		case 256 / 8:
-			if (en->mac_algorthim != CRYPTO_AES_256_NIST_GMAC)
+			if (en->mac_algorithm != CRYPTO_AES_256_NIST_GMAC)
 				return (EINVAL);
 			break;
 		default:
@@ -717,7 +718,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 		}
 	}
 
-	tls = sbtls_init_sb_tls(so, en, sizeof(struct t6_sbtls_cipher));
+	tls = sbtls_init_session(so, en, sizeof(struct t6_sbtls_cipher));
 	if (tls == NULL) {
 		error = ENOMEM;
 		goto failed;
@@ -781,20 +782,21 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	 * so doing it in the backends just duplicates a lot of code.
 	 */
 	if (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
-		tls->sb_params.sb_tls_hlen = TLS_HEADER_LENGTH +
+		tls->sb_params.tls_hlen = TLS_HEADER_LENGTH +
 		    AEAD_EXPLICIT_DATA_SIZE;
-		tls->sb_params.sb_tls_tlen = GCM_TAG_SIZE;
+		tls->sb_params.tls_tlen = GCM_TAG_SIZE;
 #ifdef notyet
 	} else {
-		tls->sb_params.sb_tls_hlen = TLS_HEADER_LENGTH +
+		tls->sb_params.tls_hlen = TLS_HEADER_LENGTH +
 		    AES_BLOCK_LEN;
 		/* XXX: Padding */
-		tls->sb_params.sb_tls_tlen = tlsp->mac_secret_size;
-		tls->sb_params.sb_tls_bs = AES_BLOCK_LEN;
+		tls->sb_params.tls_tlen = tlsp->mac_secret_size;
+		tls->sb_params.tls_bs = AES_BLOCK_LEN;
 #endif
 	}
 	tls->t_type = SBTLS_T_TYPE_CHELSIO;
 	so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+	*ptls = tls;
 	return (0);
 
 failed:
@@ -818,12 +820,12 @@ init_sbtls_gmac_hash(const char *key, int klen, char *ghash)
 	rijndaelEncrypt(keysched, rounds, zeroes, ghash);
 }
 
-static void
-t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
+static int
+t6_sbtls_setup_cipher(struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher = tls->cipher;
 	struct tlspcb *tlsp = cipher->tlsp;
-	int keyid, kwrlen, kctxlen, len;
+	int error, keyid, kwrlen, kctxlen, len;
 	struct tls_key_req *kwr;
 	struct tls_keyctx *kctx;
 	void *items[1], *key;
@@ -834,8 +836,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 
 	/* Load keys into key context. */
 	if (tls->sb_params.iv == NULL || tls->sb_params.crypt == NULL) {
-		*error = EINVAL;
-		return;
+		return (EINVAL);
 	}
 
 	/*
@@ -906,7 +907,7 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	}
 
 	if (tlsp->inline_key)
-		return;
+		return (0);
 
 	keyid = tlsp->tx_key_addr;
 
@@ -947,11 +948,12 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	 * session.
 	 */
 	items[0] = cipher->key_wr;
-	*error = mp_ring_enqueue(cipher->txq->r, items, 1, 1);
-	if (*error == 0) {
+	error = mp_ring_enqueue(cipher->txq->r, items, 1, 1);
+	if (error == 0) {
 		cipher->key_wr = NULL;
 		CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
 	}
+	return (error);
 }
 
 static u_int
@@ -2395,7 +2397,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 }
 
 static void
-t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
+t6_sbtls_clean_cipher(struct sbtls_session *tls, void *cipher_arg)
 {
 	struct t6_sbtls_cipher *cipher;
 	struct adapter *sc;
