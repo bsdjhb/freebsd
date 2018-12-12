@@ -521,7 +521,6 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 			be->use_count++;
 		tls->be = be;
 		so->so_snd.sb_tls_info = tls;
-		so->so_snd.sb_tls_flags = SB_TLS_SEND_SIDE | SB_TLS_CRY_INI;
 	}
 	if (sbtls_allow_unload)
 		rm_runlock(&sbtls_backend_lock, &prio);
@@ -593,7 +592,6 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 
 
 	/* TODO: Possibly defer setting sb_tls_info to here. */
-	so->so_snd.sb_tls_flags &= (~SB_TLS_CRY_INI);
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
 	if (tls->sb_tls_crypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;

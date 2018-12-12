@@ -49,9 +49,6 @@ struct tls_record_layer {
  * Constants for the Socket Buffer TLS state flags (sb_tls_flags).
  */
 #define	SB_TLS_ACTIVE		0x0001	/* set if SO_CRYPT_TLS is enabled. */
-#define	SB_TLS_CRY_INI		0x0002  /* state being initialized */
-#define	SB_TLS_RECV_SIDE	0x0004	/* rx (decrypt/decapsulate) */
-#define	SB_TLS_SEND_SIDE	0x0008	/* tx (encrypt/encapsulate) */
 #define	SB_TLS_IFNET		0x0010	/* crypto performed at ifnet layer. */
 
 /*
