@@ -86,6 +86,7 @@ struct sf_io {
 	int		npages;
 	struct socket	*so;
 	struct mbuf	*m;
+	struct sbtls_session *tls;
 	vm_page_t	pa[];
 };
 
@@ -317,6 +318,17 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 	if (!refcount_release(&sfio->nios))
 		return;
 
+#ifdef INVARIANTS
+	if ((sfio->m->m_flags & M_EXT) != 0 &&
+	    sfio->m->m_ext.ext_type == EXT_PGS) {
+		struct mbuf_ext_pgs *ext_pgs;
+
+		ext_pgs = (struct mbuf_ext_pgs *)sfio->m->m_ext.ext_buf;
+		KASSERT(sfio->tls == ext_pgs->tls, ("TLS session mismatch"));
+	} else
+		KASSERT(sfio->tls == NULL,
+		    ("non-ext_pgs mbuf with TLS session"));
+#endif
 	CURVNET_SET(so->so_vnet);
 	if (sfio->error) {
 		struct mbuf *m;
@@ -338,8 +350,7 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 		m = sfio->m;
 		mb_free_notready(m, sfio->npages);
 	} else {
-		if ((so->so_snd.sb_tls_flags &
-		    (SB_TLS_ACTIVE | SB_TLS_IFNET)) == SB_TLS_ACTIVE) {
+		if (sfio->tls != NULL && sfio->tls->sb_tls_crypt != NULL) {
 			/*
 			 * I/O operation is complete, but we still
 			 * need to encrypt.  We cannot do this in the
@@ -818,6 +829,13 @@ retry_space:
 		refcount_init(&sfio->nios, 1);
 		sfio->so = so;
 		sfio->error = 0;
+
+		/*
+		 * This doesn't use sbtls_hold() because sfio->m will
+		 * also have a reference on 'tls' that will be valid
+		 * for all of sfio's lifetime.
+		 */
+		sfio->tls = tls;
 
 		nios = sendfile_swapin(obj, sfio, off, space, npages, rhpages,
 		    flags);
