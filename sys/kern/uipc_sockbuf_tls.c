@@ -595,6 +595,8 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	/* TODO: Possibly defer setting sb_tls_info to here. */
 	so->so_snd.sb_tls_flags &= (~SB_TLS_CRY_INI);
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
+	if (tls->sb_tls_crypt == NULL)
+		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
 
 	counter_u64_add(sbtls_offload_total, 1);
 
@@ -760,16 +762,17 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	struct sbtls_wq *wq;
 	int running;
 
-
 	KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 		(M_NOMAP | M_NOTREADY)),
 	    ("%p not unready & nomap mbuf\n", m));
-
 
 	if (page_count == 0)
 		panic("enq_cnt = 0\n");
 
 	pgs = (void *)m->m_ext.ext_buf;
+
+	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
+
 	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
 

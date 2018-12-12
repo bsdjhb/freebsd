@@ -795,7 +795,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 #endif
 	}
 	tls->t_type = SBTLS_T_TYPE_CHELSIO;
-	so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
 	*ptls = tls;
 	return (0);
 
