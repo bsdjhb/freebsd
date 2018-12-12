@@ -394,19 +394,21 @@ sbtls_cleanup(struct sbtls_session *tls)
 		free(cipher, M_TLSSOBUF);
 	}
 	if (tls->sb_params.hmac_key) {
-		/* TODO: explicit_bzero */
+		explicit_bzero(tls->sb_params.hmac_key,
+		    tls->sb_params.hmac_key_len);
 		free(tls->sb_params.hmac_key, M_TLSSOBUF);
 		tls->sb_params.hmac_key = NULL;
 		tls->sb_params.hmac_key_len = 0;
 	}
 	if (tls->sb_params.crypt) {
-		/* TODO: explicit_bzero */
+		explicit_bzero(tls->sb_params.crypt,
+		    tls->sb_params.crypt_key_len);
 		free(tls->sb_params.crypt, M_TLSSOBUF);
 		tls->sb_params.crypt = NULL;
 		tls->sb_params.crypt_key_len = 0;
 	}
 	if (tls->sb_params.iv) {
-		/* TODO: explicit_bzero */
+		explicit_bzero(tls->sb_params.iv, tls->sb_params.iv_len);
 		free(tls->sb_params.iv, M_TLSSOBUF);
 		tls->sb_params.iv = NULL;
 		tls->sb_params.iv_len = 0;
