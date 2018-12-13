@@ -409,6 +409,10 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 		panic("invalid cipher");
 	}
 
+	KASSERT(tls->sb_params.tls_hlen <= MBUF_PEXT_HDR_LEN,
+	    ("TLS header length too long: %d", tls->sb_params.tls_hlen));
+	KASSERT(tls->sb_params.tls_tlen <= MBUF_PEXT_TRAIL_LEN,
+	    ("TLS trailer length too long: %d", tls->sb_params.tls_tlen));
 	counter_u64_add(sbtls_offload_active, 1);
 	return (tls);
 }
@@ -615,22 +619,6 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	error = tls->be->setup_cipher(tls);
 	if (error)
 		goto out;
-
-	/* TODO: This will go away once backends stop setting these. */
-	if (tls->sb_params.tls_hlen > MBUF_PEXT_HDR_LEN ||
-	    tls->sb_params.tls_tlen > MBUF_PEXT_TRAIL_LEN){
-		static int warned = 0;
-		if (!warned) {
-			warned = 1;
-			printf(" %s: %p exceeded hdr/trl len (%d/%d)\n",
-			    be->name, tls->sb_tls_crypt,
-			    tls->sb_params.tls_hlen,
-			    tls->sb_params.tls_tlen);
-		}
-		error = ENXIO;
-		goto out;
-	}
-
 
 	/* TODO: Possibly defer setting sb_tls_info to here. */
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
