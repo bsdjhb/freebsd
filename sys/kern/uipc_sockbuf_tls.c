@@ -403,7 +403,7 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 		default:
 			panic("invalid hmac");
 		}
-		tls->sb_params.tls_bs = 16;
+		tls->sb_params.tls_bs = AES_BLOCK_LEN;
 		break;
 	default:
 		panic("invalid cipher");
