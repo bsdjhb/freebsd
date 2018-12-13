@@ -376,7 +376,39 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
 		tls->sb_params.sb_maxlen = sbtls_maxlen;
 
-	/* TODO: Set tls_hlen, tls_tlen, and tls_bs. */
+	/* Set the header and trailer lengths. */
+	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
+	switch (en->crypt_algorithm) {
+	case CRYPTO_AES_NIST_GCM_16:
+		tls->sb_params.tls_hlen += sizeof(uint64_t);
+		tls->sb_params.tls_tlen = 16;
+		tls->sb_params.tls_bs = 1;
+		break;
+	case CRYPTO_AES_CBC:
+		switch (en->mac_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
+				/* Implicit IV, no nonce. */
+			} else {
+				tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+			}
+			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			    SHA1_HASH_LEN;
+			break;
+		case CRYPTO_SHA2_256_HMAC:
+			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			    SHA2_256_HASH_LEN;
+			break;
+		default:
+			panic("invalid hmac");
+		}
+		tls->sb_params.tls_bs = 16;
+		break;
+	default:
+		panic("invalid cipher");
+	}
+
 	counter_u64_add(sbtls_offload_active, 1);
 	return (tls);
 }
@@ -449,6 +481,13 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	    (en->crypt_key_len != 0 && en->crypt == NULL) ||
 	    (en->iv_len != 0 && en->iv == NULL))
 		return (EFAULT);
+
+	/* Only TLS 1.0 - 1.2 are supported. */
+	if (en->tls_vmajor != TLS_MAJOR_VER_ONE)
+		return (EINVAL);
+	if (en->tls_vminor < TLS_MINOR_VER_ZERO ||
+	    en->tls_vminor > TLS_MINOR_VER_TWO)
+		return (EINVAL);
 
 	if (en->hmac_key_len < 0 || en->hmac_key_len > TLS_MAX_PARAM_SIZE)
 		return (EINVAL);

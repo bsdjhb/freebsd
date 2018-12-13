@@ -776,24 +776,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	if (tlsp->inline_key)
 		tlsp->scmd0_short.ivgen_hdrlen |= V_SCMD_KEY_CTX_INLINE(1);
 
-	/*
-	 * XXX: This should move into sbtls_init_sb_tls().  It has to
-	 * always be the same values regardless of the cipher backend,
-	 * so doing it in the backends just duplicates a lot of code.
-	 */
-	if (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
-		tls->sb_params.tls_hlen = TLS_HEADER_LENGTH +
-		    AEAD_EXPLICIT_DATA_SIZE;
-		tls->sb_params.tls_tlen = GCM_TAG_SIZE;
-#ifdef notyet
-	} else {
-		tls->sb_params.tls_hlen = TLS_HEADER_LENGTH +
-		    AES_BLOCK_LEN;
-		/* XXX: Padding */
-		tls->sb_params.tls_tlen = tlsp->mac_secret_size;
-		tls->sb_params.tls_bs = AES_BLOCK_LEN;
-#endif
-	}
 	tls->t_type = SBTLS_T_TYPE_CHELSIO;
 	*ptls = tls;
 	return (0);
