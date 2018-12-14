@@ -664,7 +664,8 @@ void
 sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf_ext_pgs *pgs;
-
+	struct tls_record_layer *tlshdr;
+	uint64_t seqno;
 
 	for (; m != NULL; m = m->m_next) {
 		if (0 == (m->m_flags & M_NOMAP))
@@ -672,6 +673,17 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 
 		pgs = (void *)m->m_ext.ext_buf;
 		pgs->seqno = sb->sb_tls_seqno;
+
+		/*
+		 * Store the sequence number in the TLS header as the
+		 * nonce for GCM.
+		 */
+		if (pgs->tls->sb_params.crypt_algorithm ==
+		    CRYPTO_AES_NIST_GCM_16) {
+			tlshdr = (void *)pgs->hdr;
+			seqno = htobe64(pgs->seqno);
+			memcpy(tlshdr + 1, &seqno, sizeof(seqno));
+		}
 		sb->sb_tls_seqno++;
 	}
 }
@@ -716,23 +728,9 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		/* Save a reference to the session. */
 		pgs->tls = sbtls_hold(tls);
 
-		tlshdr = (void *)pgs->hdr;
-		tlshdr->tls_vmajor = tls->sb_params.tls_vmajor;
-		tlshdr->tls_vminor = tls->sb_params.tls_vminor;
-		tlshdr->tls_type = record_type;
-		/* TODO: Fix length to be real. */
-		tlshdr->tls_length = htons(tls_len);
-
 		pgs->hdr_len = tls->sb_params.tls_hlen;
 		pgs->trail_len = tls->sb_params.tls_tlen;
-
-		/* TODO: Populate full header. */
-
-		/*
-		 * XXX: This should not be conditional on type but
-		 * conditional on algorithm (== CBC or the like).
-		 */
-		if (tls->t_type == SBTLS_T_TYPE_BSSL) {
+		if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
 			int bs, delta;
 
 			/*
@@ -746,13 +744,28 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 			 * what we're doing here is actually removing
 			 * padding.
 			 */
-
 			bs = tls->sb_params.tls_bs;
 			delta = (tls_len + tls->sb_params.tls_tlen) &
 			    (bs - 1);
 			pgs->trail_len -= delta;
 		}
 		m->m_len += pgs->hdr_len + pgs->trail_len;
+
+		/* Populate the TLS header. */
+		tlshdr = (void *)pgs->hdr;
+		tlshdr->tls_vmajor = tls->sb_params.tls_vmajor;
+		tlshdr->tls_vminor = tls->sb_params.tls_vminor;
+		tlshdr->tls_type = record_type;
+		tlshdr->tls_length = htons(m->m_len - sizeof(*tlshdr));
+
+		/*
+		 * For GCM, the sequence number is stored in the
+		 * header by sbtls_seq().  For CBC, a random nonce is
+		 * inserted for TLS 1.1+.
+		 */
+		if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC &&
+		    tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE)
+			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
 
 		if (tls->sb_tls_crypt != NULL) {
 			/* mark mbuf not-ready, to be cleared when encrypted */
