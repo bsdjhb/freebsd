@@ -552,10 +552,8 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	if (en->key_size != en->crypt_key_len)
 		return (EINVAL);
 	switch (en->crypt_algorithm) {
-#ifdef notyet
 	case CRYPTO_AES_CBC:
-		/* XXX: Not sure if CBC uses a 4 byte IV for TLS? */
-		if (en->iv_len != SALT_SIZE)
+		if (en->iv_len != 0)
 			return (EINVAL);
 		switch (en->key_size) {
 		case 128 / 8:
@@ -575,7 +573,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 			return (EPROTONOSUPPORT);
 		}
 		break;
-#endif
 	case CRYPTO_AES_NIST_GCM_16:
 		if (en->iv_len != SALT_SIZE)
 			return (EINVAL);
@@ -801,17 +798,91 @@ init_sbtls_gmac_hash(const char *key, int klen, char *ghash)
 	rijndaelEncrypt(keysched, rounds, zeroes, ghash);
 }
 
+/* XXX: Should share this with ccr(4) eventually. */
+static void
+sbtls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
+{
+	uint32_t *u32;
+	uint64_t *u64;
+	u_int i;
+
+	u32 = (uint32_t *)dst;
+	u64 = (uint64_t *)dst;
+	switch (cri_alg) {
+	case CRYPTO_SHA1_HMAC:
+		for (i = 0; i < SHA1_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha1ctx.h.b32[i]);
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		for (i = 0; i < SHA2_256_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha256ctx.state[i]);
+		break;
+	case CRYPTO_SHA2_384_HMAC:
+		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
+			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
+		break;
+	case CRYPTO_SHA2_512_HMAC:
+		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
+			u64[i] = htobe64(auth_ctx->sha512ctx.state[i]);
+		break;
+	}
+}
+
+static void
+init_sbtls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
+    char *key, int klen, char *dst)
+{
+	union authctx auth_ctx;
+	char ipad[SHA2_512_BLOCK_LEN], opad[SHA2_512_BLOCK_LEN];
+	u_int i;
+
+	/*
+	 * If the key is larger than the block size, use the digest of
+	 * the key as the key instead.
+	 */
+	klen /= 8;
+	if (klen > axf->blocksize) {
+		axf->Init(&auth_ctx);
+		axf->Update(&auth_ctx, key, klen);
+		axf->Final(ipad, &auth_ctx);
+		klen = axf->hashsize;
+	} else
+		memcpy(ipad, key, klen);
+
+	memset(ipad + klen, 0, axf->blocksize - klen);
+	memcpy(opad, ipad, axf->blocksize);
+
+	for (i = 0; i < axf->blocksize; i++) {
+		ipad[i] ^= HMAC_IPAD_VAL;
+		opad[i] ^= HMAC_OPAD_VAL;
+	}
+
+	/*
+	 * Hash the raw ipad and opad and store the partial results in
+	 * the key context.
+	 */
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, ipad, axf->blocksize);
+	sbtls_copy_partial_hash(dst, axf->type, &auth_ctx);
+
+	dst += roundup2(partial_digest_len, 16);
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, opad, axf->blocksize);
+	sbtls_copy_partial_hash(dst, axf->type, &auth_ctx);
+}
+
 static int
 t6_sbtls_setup_cipher(struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher = tls->cipher;
 	struct tlspcb *tlsp = cipher->tlsp;
+	struct auth_hash *axf;
 	int error, keyid, kwrlen, kctxlen, len;
 	struct tls_key_req *kwr;
 	struct tls_keyctx *kctx;
 	void *items[1], *key;
 	struct tx_keyctx_hdr *khdr;
-	unsigned int ck_size, mk_size;
+	unsigned int ck_size, mk_size, partial_digest_len;
 
 	/* INP_WLOCK_ASSERT(inp); */
 
@@ -843,19 +914,31 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 	default:
 		panic("bad key size");
 	}
+	axf = NULL;
+	partial_digest_len = 0;
 	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM)
 		mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 	else {
 		switch (tlsp->auth_mode) {
 		case SCMD_AUTH_MODE_SHA1:
+			axf = &auth_hash_hmac_sha1;
 			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_160;
+			partial_digest_len = SHA1_HASH_LEN;
 			break;
 		case SCMD_AUTH_MODE_SHA256:
+			axf = &auth_hash_hmac_sha2_256;
 			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_256;
+			partial_digest_len = SHA2_256_HASH_LEN;
 			break;
 		case SCMD_AUTH_MODE_SHA512_384:
-		case SCMD_AUTH_MODE_SHA512_512:
+			axf = &auth_hash_hmac_sha2_384;
 			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
+			partial_digest_len = SHA2_512_HASH_LEN;
+			break;
+		case SCMD_AUTH_MODE_SHA512_512:
+			axf = &auth_hash_hmac_sha2_512;
+			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
+			partial_digest_len = SHA2_512_HASH_LEN;
 			break;
 		default:
 			panic("bad auth mode");
@@ -877,14 +960,10 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 		init_sbtls_gmac_hash(tls->sb_params.crypt,
 		    tls->sb_params.crypt_key_len * 8,
 		    (char *)key + tls->sb_params.crypt_key_len);
-#ifdef notyet
 	} else {
-		/* Generate ipad and opad and append after key. */
-		/*
-		 * XXX: Probably want to share ccr_init_hmac_digest
-		 * here rather than reimplementing.
-		 */
-#endif
+		init_sbtls_hmac_digest(axf, partial_digest_len,
+		    tls->sb_params.hmac_key, tls->sb_params.hmac_key_len * 8,
+		    (char *)key + tls->sb_params.crypt_key_len);
 	}
 
 	if (tlsp->inline_key)
@@ -987,10 +1066,16 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	if (mlen > TLS_HEADER_LENGTH + plen - ext_pgs->trail_len)
 		mlen = TLS_HEADER_LENGTH + plen - ext_pgs->trail_len;
 
+
 	/*
-	 * TODO: For AES-CBC we will want to adjust the ciphertext
-	 * length for the block size.
+	 * For AES-CBC adjust the ciphertext length for the block
+	 * size.
 	 */
+	if (cipher->tlsp->enc_mode == SCMD_CIPH_MODE_AES_CBC &&
+	    mlen > TLS_HEADER_LENGTH) {
+		mlen = TLS_HEADER_LENGTH + rounddown(mlen - TLS_HEADER_LENGTH,
+		    AES_BLOCK_LEN);
+	}
 
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d short TLS record (%u vs %u)",
@@ -2074,11 +2159,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			*(uint64_t *)(iv + 4) = htobe64(ext_pgs->seqno);
 			*(uint32_t *)(iv + 12) = htobe32(2 +
 			    offset / AES_BLOCK_LEN);
-		}
-#ifdef notyet
-		else
-			XXX;
-#endif
+		} else
+			memcpy(iv, hdr + 1, AES_BLOCK_LEN);
 		out += AES_BLOCK_LEN;
 	}
 
