@@ -535,7 +535,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		}
 		if (en->hmac_key_len == 0)
 			return (EINVAL);
-		/* XXX: Checks on iv_len? */
+		/* XXX: Explicitly ignore the supplied IV. */
 	default:
 		return (EINVAL);
 	}

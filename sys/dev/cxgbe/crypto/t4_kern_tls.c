@@ -553,8 +553,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 		return (EINVAL);
 	switch (en->crypt_algorithm) {
 	case CRYPTO_AES_CBC:
-		if (en->iv_len != 0)
-			return (EINVAL);
+		/* XXX: Explicitly ignore any provided IV. */
 		switch (en->key_size) {
 		case 128 / 8:
 		case 192 / 8:
