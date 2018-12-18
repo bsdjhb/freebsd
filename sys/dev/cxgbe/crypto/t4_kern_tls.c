@@ -884,11 +884,6 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 
 	/* INP_WLOCK_ASSERT(inp); */
 
-	/* Load keys into key context. */
-	if (tls->sb_params.iv == NULL || tls->sb_params.crypt == NULL) {
-		return (EINVAL);
-	}
-
 	/*
 	 * Store the salt and keys in the key context.  For
 	 * connections with an inline key, this key context is passed
@@ -951,10 +946,10 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 	if (tlsp->enc_mode != SCMD_CIPH_MODE_AES_GCM)
 		khdr->dualck_to_txvalid |= V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1);
 	khdr->dualck_to_txvalid = htobe16(khdr->dualck_to_txvalid);
-	memcpy(khdr->txsalt, tls->sb_params.iv, SALT_SIZE);
 	key = kctx->keys.edkey;
 	memcpy(key, tls->sb_params.crypt, tls->sb_params.crypt_key_len);
 	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM) {
+		memcpy(khdr->txsalt, tls->sb_params.iv, SALT_SIZE);
 		init_sbtls_gmac_hash(tls->sb_params.crypt,
 		    tls->sb_params.crypt_key_len * 8,
 		    (char *)key + tls->sb_params.crypt_key_len);
