@@ -380,7 +380,7 @@ sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
 	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
 	switch (en->crypt_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
-		tls->sb_params.tls_hlen += sizeof(uint64_t);
+		tls->sb_params.tls_hlen += 8;
 		tls->sb_params.tls_tlen = 16;
 		tls->sb_params.tls_bs = 1;
 		break;
@@ -665,8 +665,6 @@ void
 sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf_ext_pgs *pgs;
-	struct tls_record_layer *tlshdr;
-	uint64_t seqno;
 
 	for (; m != NULL; m = m->m_next) {
 		if (0 == (m->m_flags & M_NOMAP))
@@ -674,17 +672,6 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 
 		pgs = (void *)m->m_ext.ext_buf;
 		pgs->seqno = sb->sb_tls_seqno;
-
-		/*
-		 * Store the sequence number in the TLS header as the
-		 * nonce for GCM.
-		 */
-		if (pgs->tls->sb_params.crypt_algorithm ==
-		    CRYPTO_AES_NIST_GCM_16) {
-			tlshdr = (void *)pgs->hdr;
-			seqno = htobe64(pgs->seqno);
-			memcpy(tlshdr + 1, &seqno, sizeof(seqno));
-		}
 		sb->sb_tls_seqno++;
 	}
 }
@@ -760,13 +747,13 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		tlshdr->tls_length = htons(m->m_len - sizeof(*tlshdr));
 
 		/*
-		 * For GCM, the sequence number is stored in the
-		 * header by sbtls_seq().  For CBC, a random nonce is
-		 * inserted for TLS 1.1+.
+		 * Fill the remainder of the TLS header with a random
+		 * nonce.  For GCM this forms the first 8 bytes of the
+		 * explicit IV.  For CBC in TLS 1.1+ this forms the
+		 * entire IV.
 		 */
-		if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC &&
-		    tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE)
-			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
+		if (pgs->hdr_len > sizeof(*tlshdr))
+			arc4rand(tlshdr + 1, pgs->hdr_len - sizeof(*tlshdr), 0);
 
 		if (tls->sb_tls_crypt != NULL) {
 			/* mark mbuf not-ready, to be cleared when encrypted */
