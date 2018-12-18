@@ -2056,10 +2056,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			auth_stop = 0;
 			auth_insert = 0;
 		} else {
-			/* XXX: This might not be quite right due to padding. */
 			cipher_stop = 0;
 			auth_start = cipher_start;
-			auth_stop = cipher_stop;
+			auth_stop = 0;
 			auth_insert = 0;
 		}
 
