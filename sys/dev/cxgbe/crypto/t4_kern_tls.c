@@ -2321,7 +2321,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		if (tlsp->l2te)
 			t4_l2t_release(tlsp->l2te);
 		tlsp->l2te = t4_l2t_alloc_tls(cipher->sc, txq, dst, &ndesc,
-		    0, tlsp->vi->pi->lport, eh->ether_dhost);
+		    0xfff, tlsp->vi->pi->lport, eh->ether_dhost);
 		if (tlsp->l2te == NULL)
 			CXGBE_UNIMPLEMENTED("failed to allocate TLS L2TE");
 		if (ndesc != 0) {
