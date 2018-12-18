@@ -65,7 +65,6 @@ __FBSDID("$FreeBSD$");
 #define SALT_SIZE		4
 
 #define GCM_TAG_SIZE			16
-#define AEAD_EXPLICIT_DATA_SIZE		8
 #define TLS_HEADER_LENGTH		5
 
 #define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_keyctx), 32)
