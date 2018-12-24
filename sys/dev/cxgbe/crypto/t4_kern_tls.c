@@ -2283,7 +2283,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct ether_header *eh;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
-	bool set_l2t_idx;
+	bool has_fin, set_l2t_idx;
 	void *tsopt;
 
 	totdesc = 0;
@@ -2292,12 +2292,13 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	    m->m_pkthdr.l3hlen);
 	pidx = eq->pidx;
 	tlsp = cipher->tlsp;
+	has_fin = (tcp->th_flags & TH_FIN) != 0;
 
 	/*
 	 * If this TLS record has a FIN, then we will send any
 	 * requested options as part of the FIN packet.
 	 */
-	if ((tcp->th_flags & TH_FIN) == 0 && sbtls_has_tcp_options(tcp)) {
+	if (!has_fin && sbtls_has_tcp_options(tcp)) {
 		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
 		    pidx);
 		totdesc += ndesc;
@@ -2375,7 +2376,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		set_l2t_idx = false;
 	}
 
-	if (tcp->th_flags & TH_FIN) {
+	if (has_fin) {
 		/*
 		 * If the TCP header for this chain has FIN sent, then
 		 * explicitly send a packet that has FIN set.  This
