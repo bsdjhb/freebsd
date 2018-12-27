@@ -9472,6 +9472,39 @@ set_policy:
 	return (0);
 }
 
+static int
+signal_pending(void)
+{
+	struct thread *td;
+	struct proc *p;
+	struct sigacts *ps;
+	int error, sig;
+
+	td = curthread;
+
+	if ((td->td_flags & TDF_NEEDSIGCHK) == 0)
+		return (0);
+
+	p = td->td_proc;
+	PROC_LOCK(p);
+	ps = p->p_sigacts;
+	mtx_lock(&ps->ps_mtx);
+	sig = cursig(td);
+	/*
+	 * XXX: In the driver I don't think -1 can happen, but for a
+	 * more general routine this would need to handle it.
+	 */
+	MPASS(sig != -1);
+	if (sig != 0)
+		error = SIGISMEMBER(ps->ps_sigintr, sig) ?
+		    EINTR : ERESTART;
+	else
+		error = 0;
+	mtx_unlock(&ps->ps_mtx);
+	PROC_UNLOCK(p);
+	return (error);
+}
+
 #define MAX_READ_BUF_SIZE (128 * 1024)
 static int
 read_card_mem(struct adapter *sc, int win, struct t4_mem_range *mr)
@@ -9491,6 +9524,11 @@ read_card_mem(struct adapter *sc, int win, struct t4_mem_range *mr)
 	dst = (void *)mr->data;
 
 	while (remaining) {
+		maybe_yield();
+		rc = signal_pending();
+		if (rc != 0)
+			break;
+		
 		n = min(remaining, MAX_READ_BUF_SIZE);
 		read_via_memwin(sc, 2, addr, buf, n);
 
