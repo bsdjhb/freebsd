@@ -295,6 +295,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 		tlsp->mac_secret_size = en->hmac_key_len;
 		tlsp->iv_size = 8; /* for CBC, iv is 16B, unit of 2B */
 		tlsp->mac_first = 1;
+		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NO_TRUNC;
 		tlsp->tx_key_info_size += mac_key_size * 2;
 	}
 
