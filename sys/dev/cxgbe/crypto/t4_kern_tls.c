@@ -2089,7 +2089,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	    V_CPL_TX_SEC_PDU_AUTHSTOP(auth_stop) |
 	    V_CPL_TX_SEC_PDU_AUTHINSERT(auth_insert));
 
-	/* XXX: Ok to reuse TLS sequence number? */
 	sec_pdu->scmd1 = htobe64(ext_pgs->seqno);
 
 	/* Key context */
