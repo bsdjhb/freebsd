@@ -2156,10 +2156,21 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		out += AES_BLOCK_LEN;
 	}
 
-	/* Skip over padding to a 16-byte boundary. */
 	if (imm_len % 16 != 0) {
-		memset(out, 0, 16 - (imm_len % 16));
-		out += 16 - (imm_len % 16);
+		/* Zero pad to an 8-byte boundary. */
+		memset(out, 0, 8 - (imm_len % 8));
+		out += 8 - (imm_len % 8);
+
+		/*
+		 * Insert a ULP_TX_SC_NOOP if needed so the SGL is
+		 * 16-byte aligned.
+		 */
+		if (imm_len % 16 <= 8) {
+			idata = (void *)out;
+			idata->cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_NOOP));
+			idata->len = htobe32(0);
+			out = (void *)(idata + 1);
+		}
 	}
 
 	/* SGL for record payload */
