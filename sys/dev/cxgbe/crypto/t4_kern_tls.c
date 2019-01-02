@@ -1714,7 +1714,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, ndesc, offset, plen, tlen, twr_len, wr_len;
-	u_int tx_max, fields;
+	u_int fields, tx_max_offset, tx_max;
 	bool first_wr, last_wr, using_scratch;
 
 	ndesc = 0;
@@ -1799,9 +1799,28 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * full trailer for a request that begins "in" the trailer
 	 * (the second request in the example above).  This should
 	 * also help to avoid retransmits for the common case.
+	 *
+	 * A similar condition exists when using CBC for back to back
+	 * requests that span a single AES block.  The first request
+	 * will be truncated to end at the end of the previous AES
+	 * block.  To handle this, always begin transmission at the
+	 * start of the current AES block.
 	 */
-	tx_max = tcp_seqno + min(mtod(m_tls, vm_offset_t),
-	    TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len);
+	tx_max_offset = mtod(m_tls, vm_offset_t);
+	if (tx_max_offset > TLS_HEADER_LENGTH + ntohs(hdr->tls_length) -
+	    ext_pgs->trail_len) {
+		/* Always send the full trailer. */
+		tx_max_offset = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) -
+		    ext_pgs->trail_len;
+	}
+	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_CBC &&
+	    tx_max_offset > TLS_HEADER_LENGTH) {
+		/* Always send all of the first AES block. */
+		tx_max_offset = TLS_HEADER_LENGTH +
+		    rounddown(tx_max_offset - TLS_HEADER_LENGTH,
+		    AES_BLOCK_LEN);
+	}
+	tx_max = tcp_seqno + tx_max_offset;
 
 	/*
 	 * Update TCB fields.  Reserve space for the FW_ULPTX_WR header
