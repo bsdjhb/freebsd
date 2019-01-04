@@ -2138,8 +2138,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	}
 
 	/* Skip over padding to a 16-byte boundary. */
-	if (imm_len % 16 != 0)
+	if (imm_len % 16 != 0) {
+		memset(out, 0, 16 - (imm_len % 16));
 		out += 16 - (imm_len % 16);
+	}
 
 	/* SGL for record payload */
 	sglist_reset(txq->gl);
