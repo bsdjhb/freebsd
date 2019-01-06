@@ -1002,6 +1002,10 @@ thread_suspend_check(int return_instead)
 		 * Assumes that P_SINGLE_EXIT implies P_STOPPED_SINGLE.
 		 */
 		if ((p->p_flag & P_SINGLE_EXIT) && (p->p_singlethread != td)) {
+			if (td->td_dbgflags & (TDB_XSIG_QUEUED | TDB_SUSPEND) ==
+			    TDB_XSIG_QUEUED)
+				TAILQ_REMOVE(&p->p_xthreads, td, td_trapq);
+			td->td_dbgflags &= ~TDB_XSIG_QUEUED;
 			PROC_UNLOCK(p);
 
 			/*
