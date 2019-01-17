@@ -1038,7 +1038,7 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	u_int plen, mlen;
 
 	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	ext_pgs = m_tls->m_ext.ext_pgs;
 	hdr = (void *)ext_pgs->hdr;
 	plen = ntohs(hdr->tls_length);
 
@@ -1094,7 +1094,7 @@ sbtls_payload_offset(struct tlspcb *tlsp, struct mbuf *m_tls)
 #endif
 
 	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	ext_pgs = m_tls->m_ext.ext_pgs;
 	hdr = (void *)ext_pgs->hdr;
 	plen = ntohs(hdr->tls_length);
 #ifdef INVARIANTS
@@ -1141,7 +1141,7 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	u_int imm_len, offset, plen, wr_len, tlen;
 
 	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	ext_pgs = m_tls->m_ext.ext_pgs;
 
 	/*
 	 * Determine the size of the TLS record payload to send
@@ -1602,7 +1602,7 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Locate the template TLS header. */
 	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	ext_pgs = m_tls->m_ext.ext_pgs;
 
 	/* This should always be the last TLS record in a chain. */
 	MPASS(m_tls->m_next == NULL);
@@ -1734,7 +1734,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Locate the TLS header. */
 	MBUF_EXT_PGS_ASSERT(m_tls);
-	ext_pgs = (void *)m_tls->m_ext.ext_buf;
+	ext_pgs = m_tls->m_ext.ext_pgs;
 	hdr = (void *)ext_pgs->hdr;
 	plen = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len;
 

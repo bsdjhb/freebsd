@@ -224,7 +224,15 @@ struct m_ext {
 		volatile u_int	 ext_count;
 		volatile u_int	*ext_cnt;
 	};
-	char		*ext_buf;	/* start of buffer */
+	union {
+		/*
+		 * If ext_type == EXT_PGS, 'ext_pgs' point to a
+		 * structure describing the buffer.  Otherwise,
+		 * 'ext_buf' points to the start of the buffer.
+		 */
+		struct mbuf_ext_pgs *ext_pgs;
+		char		*ext_buf;
+	};
 	uint32_t	 ext_size;	/* size of buffer, for ext_free */
 	uint32_t	 ext_type:8,	/* type of external storage */
 			 ext_flags:24;	/* external storage mbuf flags */

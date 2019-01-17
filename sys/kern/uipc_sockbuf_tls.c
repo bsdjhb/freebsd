@@ -664,14 +664,12 @@ sbtlsdestroy(struct sockbuf *sb)
 void
 sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 {
-	struct mbuf_ext_pgs *pgs;
 
 	for (; m != NULL; m = m->m_next) {
 		if (0 == (m->m_flags & M_NOMAP))
 			panic("tls with normal mbuf\n");
 
-		pgs = (void *)m->m_ext.ext_buf;
-		pgs->seqno = sb->sb_tls_seqno;
+		m->m_ext.ext_pgs->seqno = sb->sb_tls_seqno;
 		sb->sb_tls_seqno++;
 	}
 }
@@ -711,7 +709,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		    ("Can't Frame %p: not nomap mbuf(top = %p)\n", m, *top));
 
 
-		pgs = (void *)m->m_ext.ext_buf;
+		pgs = m->m_ext.ext_pgs;
 
 		/* Save a reference to the session. */
 		pgs->tls = sbtls_hold(tls);
@@ -797,7 +795,7 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	if (page_count == 0)
 		panic("enq_cnt = 0\n");
 
-	pgs = (void *)m->m_ext.ext_buf;
+	pgs = m->m_ext.ext_pgs;
 
 	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
 
@@ -856,7 +854,7 @@ sbtls_boring_fixup(struct sbtls_session *tls, struct sockbuf *sb,
 	 * sb_mbcnt.
 	 */
 
-	pgs = (void *)m->m_ext.ext_buf;
+	pgs = m->m_ext.ext_pgs;
 	tag_delta = tls->taglen - pgs->trail_len;
 	pgs->trail_len += tag_delta;
 	off = pgs->first_pg_off;
@@ -1003,7 +1001,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	page_count = pgs->enc_cnt;
 	error = 0;
 	for (m = top; m != NULL && npages != page_count; m = m->m_next) {
-		pgs = (void *)m->m_ext.ext_buf;
+		pgs = m->m_ext.ext_pgs;
 
 		KASSERT(pgs->tls == tls,
 		    ("different TLS sessions in a single mbuf chain: %p vs %p",

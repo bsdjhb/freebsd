@@ -188,14 +188,12 @@ cc_after_idle(struct tcpcb *tp)
 static inline bool
 mbuf_is_ifnet_tls(struct mbuf *m)
 {
-#ifdef KERN_TLS
-	struct mbuf_ext_pgs *ext_pgs;
 
+#ifdef KERN_TLS
 	if (m->m_flags & M_NOMAP) {
 		MBUF_EXT_PGS_ASSERT(m);
-		ext_pgs = (void *)m->m_ext.ext_buf;
-		if (ext_pgs->tls != NULL) {
-			MPASS(ext_pgs->tls->sb_tls_crypt == NULL);
+		if (m->m_ext.ext_pgs->tls != NULL) {
+			MPASS(m->m_ext.ext_pgs->tls->sb_tls_crypt == NULL);
 			return (true);
 		}
 	}

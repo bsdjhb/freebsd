@@ -842,15 +842,13 @@ mb_reclaim(uma_zone_t zone __unused, int pending __unused)
 void
 mb_free_notready(struct mbuf *m, int count)
 {
-	struct mbuf_ext_pgs *ext_pgs;
 	int i;
 
 	for (i = 0; i < count && m != NULL; i++) {
 		if ((m->m_flags & M_EXT) != 0 &&
 		    m->m_ext.ext_type == EXT_PGS) {
-			ext_pgs = (void *)m->m_ext.ext_buf;
-			ext_pgs->nrdy--;
-			if (ext_pgs->nrdy != 0)
+			m->m_ext.ext_pgs->nrdy--;
+			if (m->m_ext.ext_pgs->nrdy != 0)
 				continue;
 		}
 		m = m_free(m);
@@ -879,7 +877,7 @@ mb_ext_pgs_downgrade(struct mbuf *m)
 	KASSERT((m->m_flags & M_PKTHDR) == 0 && (m->m_flags & M_EXT) &&
 	    m->m_ext.ext_type == EXT_PGS,
             ("%s: m %p !M_EXT or !EXT_PGS or M_PKTHDR", __func__, m));
-	pgs = (void *)m->m_ext.ext_buf;
+	pgs = m->m_ext.ext_pgs;
 
 	/* free the backing page(s) */
 	m->m_ext.ext_free(m);
@@ -927,7 +925,7 @@ _mb_unmapped_to_ext(struct mbuf *m)
 
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
-	ext_pgs = (void *)m->m_ext.ext_buf;
+	ext_pgs = m->m_ext.ext_pgs;
 	len = m->m_len;
 	KASSERT(ext_pgs->tls == NULL, ("%s: can't convert TLS mbuf %p",
 	    __func__, m));
@@ -1120,7 +1118,7 @@ mb_alloc_ext_pgs(int how, bool pkthdr, m_ext_free_t ext_free)
 	m->m_ext.ext_type = EXT_PGS;
 	m->m_ext.ext_flags = EXT_FLAG_EMBREF;
 	m->m_ext.ext_count = 1;
-	m->m_ext.ext_buf = (void *)ext_pgs;
+	m->m_ext.ext_pgs = ext_pgs;
 	m->m_ext.ext_size = 0;
 	m->m_ext.ext_free = ext_free;
 	return (m);
@@ -1236,14 +1234,14 @@ mb_free_ext(struct mbuf *m)
 			struct sbtls_session *tls;
 
 			mref->m_ext.ext_free(mref);
-			pgs = (struct mbuf_ext_pgs *)mref->m_ext.ext_buf;
+			pgs = mref->m_ext.ext_pgs;
 			tls = pgs->tls;
 			if (tls != NULL &&
 			    !refcount_release_if_not_last(&tls->refcount))
 				sbtls_enqueue_to_free(pgs);
 			else
 #endif
-				uma_zfree(zone_extpgs, mref->m_ext.ext_buf);
+				uma_zfree(zone_extpgs, mref->m_ext.ext_pgs);
 			uma_zfree(zone_mbuf, mref);
 			break;
 		}

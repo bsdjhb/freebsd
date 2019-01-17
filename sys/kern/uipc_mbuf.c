@@ -1559,7 +1559,7 @@ mb_free_mext_pgs(struct mbuf *m)
 	KASSERT(m->m_flags & M_EXT && m->m_ext.ext_type == EXT_PGS,
 	    ("%s: m %p !M_EXT or !EXT_PGS", __func__, m));
 
-	ext_pgs = (void *)m->m_ext.ext_buf;
+	ext_pgs = m->m_ext.ext_pgs;
 
 	wire_adj = 0;
 	for (int i = 0; i < ext_pgs->npgs; i++) {
@@ -1610,7 +1610,7 @@ m_uiotombuf_nomap(struct uio *uio, int how, int len, int maxseg, int flags)
 		else
 			prev->m_next = mb;
 		prev = mb;
-		pgs = (void *)mb->m_ext.ext_buf;
+		pgs = mb->m_ext.ext_pgs;
 		needed = length = MIN(maxseg, total);
 		for (i = 0; needed > 0; i++, needed -= PAGE_SIZE) {
 retry_page:
@@ -1723,7 +1723,7 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
-	ext_pgs = (void *)m->m_ext.ext_buf;
+	ext_pgs = m->m_ext.ext_pgs;
 	error = 0;
 
 	/* somebody may have removed data from the front;

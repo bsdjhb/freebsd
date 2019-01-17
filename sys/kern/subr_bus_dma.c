@@ -121,7 +121,7 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 	int len, seglen, error, pgoff, pglen, i;
 
 
-	ext_pgs = (void *)m->m_ext.ext_buf;
+	ext_pgs = m->m_ext.ext_pgs;
 
 
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */

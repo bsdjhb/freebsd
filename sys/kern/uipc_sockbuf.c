@@ -108,11 +108,8 @@ sbready(struct sockbuf *sb, struct mbuf *m, int count)
 		    ("%s: m %p !M_NOTREADY", __func__, m));
 		if ((m->m_flags & M_EXT) != 0 &&
 		    m->m_ext.ext_type == EXT_PGS) {
-			struct mbuf_ext_pgs *ext_pgs;
-
-			ext_pgs = (void *)m->m_ext.ext_buf;
-			ext_pgs->nrdy--;
-			if (ext_pgs->nrdy != 0)
+			m->m_ext.ext_pgs->nrdy--;
+			if (m->m_ext.ext_pgs->nrdy != 0)
 				continue;
 		}
 
