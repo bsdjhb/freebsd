@@ -2167,7 +2167,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		iv = out;
 		if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM) {
 			memcpy(iv, tlsp->keyctx.txhdr.txsalt, SALT_SIZE);
-			*(uint64_t *)(iv + 4) = htobe64(ext_pgs->seqno);
+			memcpy(iv + 4, hdr + 1, 8);
 			*(uint32_t *)(iv + 12) = htobe32(2 +
 			    offset / AES_BLOCK_LEN);
 		} else
