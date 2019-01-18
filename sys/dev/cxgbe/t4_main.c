@@ -1717,6 +1717,7 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 	if (vi->pi->adapter->flags & KERN_TLS_OK) {
 		ifp->if_capabilities |= IFCAP_TXTLS;
 		ifp->if_capenable |= IFCAP_TXTLS;
+		ifp->if_hwassist |= CSUM_TCP_TLS | CSUM_TCP6_TLS;
 	}
 #endif
 
@@ -2026,6 +2027,15 @@ cxgbe_ioctl(struct ifnet *ifp, unsigned long cmd, caddr_t data)
 					rxq->iq.flags &= ~IQ_RX_TIMESTAMP;
 			}
 		}
+
+#ifdef KERN_TLS
+		/*
+		 * As with TSO, we leave CSUM_TCP[6]_TLS enabled and
+		 * only toggle the flag in if_capenable.
+		 */
+		if (mask & IFCAP_TXTLS)
+			ifp->if_capenable ^= (mask & IFCAP_TXTLS);
+#endif
 
 #ifdef VLAN_CAPABILITIES
 		VLAN_CAPABILITIES(ifp);
