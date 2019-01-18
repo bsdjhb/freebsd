@@ -625,11 +625,16 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	ifp = rt->rt_ifp;
 	if (ifp->if_get_counter != cxgbe_get_counter)
 		return (ENXIO);
+
+	if (inp->inp_vflag & INP_IPV6) {
+		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
+			return (ENXIO);
+	} else {
+		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
+			return (ENXIO);
+	}
 	vi = ifp->if_softc;
 	sc = vi->pi->adapter;
-
-	if (!(sc->flags & KERN_TLS_OK) || !sc->tlst.enable)
-		return (ENXIO);
 
 	tlsp = alloc_tlspcb(vi, M_NOWAIT);
 	if (tlsp == NULL)

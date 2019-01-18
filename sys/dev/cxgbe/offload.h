@@ -238,7 +238,6 @@ struct iw_tunables {
 };
 
 struct tls_tunables {
-	int enable;
 	int inline_keys;
 	int combo_wrs;
 };

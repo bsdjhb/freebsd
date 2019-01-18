@@ -583,10 +583,6 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, kern_tls, CTLFLAG_RDTUN, &t4_kern_tls, 0,
 SYSCTL_NODE(_hw_cxgbe, OID_AUTO, tls, CTLFLAG_RD, 0,
     "cxgbe(4) KERN_TLS parameters");
 
-static int t4_tls_enable = 0;
-SYSCTL_INT(_hw_cxgbe_tls, OID_AUTO, enable, CTLFLAG_RDTUN, &t4_tls_enable, 0,
-    "Enable TLS offload by default");
-
 static int t4_tls_inline_keys = 0;
 SYSCTL_INT(_hw_cxgbe_tls, OID_AUTO, inline_keys, CTLFLAG_RDTUN,
     &t4_tls_inline_keys, 0,
@@ -1717,6 +1713,12 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 		ifp->if_hw_tsomaxsegcount = TX_SGL_SEGS_EO_TSO;
 #endif
 	ifp->if_hw_tsomaxsegsize = 65536;
+#ifdef KERN_TLS
+	if (vi->pi->adapter->flags & KERN_TLS_OK) {
+		ifp->if_capabilities |= IFCAP_TXTLS;
+		ifp->if_capenable |= IFCAP_TXTLS;
+	}
+#endif
 
 	ether_ifattach(ifp, vi->hw_addr);
 #ifdef DEV_NETMAP
@@ -4506,7 +4508,6 @@ t4_enable_kern_tls(struct adapter *sc)
 
 	sc->flags |= KERN_TLS_OK;
 
-	sc->tlst.enable = t4_tls_enable;
 	sc->tlst.inline_keys = t4_tls_inline_keys;
 	sc->tlst.combo_wrs = t4_tls_combo_wrs;
 }
@@ -6323,8 +6324,6 @@ t4_sysctls(struct adapter *sc)
 		    NULL, "KERN_TLS parameters");
 		children = SYSCTL_CHILDREN(oid);
 
-		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "enable", CTLFLAG_RW,
-		    &sc->tlst.enable, 0, "Enable TLS offload");
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "inline_keys",
 		    CTLFLAG_RW, &sc->tlst.inline_keys, 0, "Always pass TLS "
 		    "keys in work requests (1) or attempt to store TLS keys "
