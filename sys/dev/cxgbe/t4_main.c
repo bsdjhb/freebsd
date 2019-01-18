@@ -1694,7 +1694,7 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 	ifp->if_capabilities = T4_CAP;
 	ifp->if_capenable = T4_CAP_ENABLE;
 #ifdef TCP_OFFLOAD
-	if (vi->nofldrxq != 0)
+	if (vi->nofldrxq != 0 && (vi->pi->adapter->flags & KERN_TLS_OK) == 0)
 		ifp->if_capabilities |= IFCAP_TOE;
 #endif
 #ifdef RATELIMIT
