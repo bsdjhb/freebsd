@@ -1691,6 +1691,20 @@ vlan_capabilities(struct ifvlan *ifv)
 	ena |= (mena & IFCAP_TXRTLMT);
 #endif
 
+	/*
+	 * If the parent interface can offload encryption and segmentation
+	 * of TLS records over TCP, propagate it's capability to the VLAN
+	 * interface.
+	 *
+	 * All TLS drivers in the tree today can deal with VLANs.  If
+	 * this ever changes, then a new IFCAP_VLAN_TXTLS can be
+	 * defined.
+	 */
+	if (p->if_capabilities & IFCAP_TXTLS)
+		cap |= p->if_capabilities & IFCAP_TXTLS;
+	if (p->if_capenable & IFCAP_TXTLS)
+		ena |= mena & IFCAP_TXTLS;
+
 	ifp->if_capabilities = cap;
 	ifp->if_capenable = ena;
 	ifp->if_hwassist = hwa;
