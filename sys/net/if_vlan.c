@@ -1702,11 +1702,8 @@ vlan_capabilities(struct ifvlan *ifv)
 	 */
 	if (p->if_capabilities & IFCAP_TXTLS)
 		cap |= p->if_capabilities & IFCAP_TXTLS;
-	if (p->if_capenable & IFCAP_TXTLS) {
+	if (p->if_capenable & IFCAP_TXTLS)
 		ena |= mena & IFCAP_TXTLS;
-		if (ena & IFCAP_TXTLS)
-			hwa |= p->if_hwassist & (CSUM_TCP_TLS | CSUM_TCP6_TLS);
-	}
 
 	ifp->if_capabilities = cap;
 	ifp->if_capenable = ena;

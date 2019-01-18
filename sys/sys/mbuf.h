@@ -580,14 +580,12 @@ void	mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs);
 #define	CSUM_IP_SCTP		0x00000008	/* SCTP checksum offload */
 #define	CSUM_IP_TSO		0x00000010	/* TCP segmentation offload */
 #define	CSUM_IP_ISCSI		0x00000020	/* iSCSI checksum offload */
-#define	CSUM_TCP_TLS		0x00000040	/* TLS offload */
 
 #define	CSUM_IP6_UDP		0x00000200	/* UDP checksum offload */
 #define	CSUM_IP6_TCP		0x00000400	/* TCP checksum offload */
 #define	CSUM_IP6_SCTP		0x00000800	/* SCTP checksum offload */
 #define	CSUM_IP6_TSO		0x00001000	/* TCP segmentation offload */
 #define	CSUM_IP6_ISCSI		0x00002000	/* iSCSI checksum offload */
-#define	CSUM_TCP6_TLS		0x00004000	/* TLS offload */
 
 /* Inbound checksum support where the checksum was verified by hardware. */
 #define	CSUM_L3_CALC		0x01000000	/* calculated layer 3 csum */
@@ -603,9 +601,9 @@ void	mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs);
  */
 #define	CSUM_BITS \
     "\20\1CSUM_IP\2CSUM_IP_UDP\3CSUM_IP_TCP\4CSUM_IP_SCTP\5CSUM_IP_TSO" \
-    "\6CSUM_IP_ISCSI\7CSUM_TCP_TLS" \
+    "\6CSUM_IP_ISCSI" \
     "\12CSUM_IP6_UDP\13CSUM_IP6_TCP\14CSUM_IP6_SCTP\15CSUM_IP6_TSO" \
-    "\16CSUM_IP6_ISCSI\17CSUM_TCP6_TLS" \
+    "\16CSUM_IP6_ISCSI" \
     "\31CSUM_L3_CALC\32CSUM_L3_VALID\33CSUM_L4_CALC\34CSUM_L4_VALID" \
     "\35CSUM_L5_CALC\36CSUM_L5_VALID\37CSUM_COALESCED"
 
