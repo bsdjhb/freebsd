@@ -171,10 +171,8 @@ SRCF+=		trunctfsf2
 
 # These are provided via the softfloat support in libc.a on some
 # architectures.
-.if !((${MACHINE_CPUARCH} == "arm" && \
-	(${MACHINE_ARCH:Marmv[67]*} == "" || (defined(CPUTYPE) && ${CPUTYPE:M*soft*}))) || \
-    (${MACHINE_CPUARCH} == "mips" && ${MACHINE_ARCH:Mmips*hf} == "") || \
-    (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
+.include "${SRCTOP}/lib/libc/Makefile.float"
+.if ${SOFTFLOAT} == "no"
 SRCF+=		adddf3
 SRCF+=		addsf3
 SRCF+=		divdf3

@@ -1,0 +1,16 @@
+# $FreeBSD$
+
+# Architectures which use soft-float:
+# - armv4/5
+# - armv6/7 with "soft" in CPUTYPE.
+# - mips without "hf" in MACHINE_ARCH.
+# - riscv without "sf" in MACHINE_ARCH.
+.if ((${MACHINE_CPUARCH} == "arm" && \
+	(${MACHINE_ARCH:Marmv[67]*} == "" || \
+	    (defined(CPUTYPE) && ${CPUTYPE:M*soft*}))) || \
+    (${MACHINE_CPUARCH} == "mips" && ${MACHINE_ARCH:Mmips*hf} == "") || \
+    (${MACHINE_CPUARCH} == "riscv" && ${MACHINE_ARCH:Mriscv*sf} != ""))
+SOFTFLOAT=yes
+.else
+SOFTFLOAT=no
+.endif
