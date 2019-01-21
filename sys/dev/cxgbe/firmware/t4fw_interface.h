@@ -141,6 +141,7 @@ enum fw_wr_opcodes {
 	FW_ISCSI_TX_DATA_WR	= 0x45,
 	FW_PTP_TX_PKT_WR        = 0x46,
 	FW_TLSTX_DATA_WR	= 0x68,
+	FW_TLS_TUNNEL_OFLD_WR	= 0x69,
 	FW_CRYPTO_LOOKASIDE_WR	= 0x6d,
 	FW_COISCSI_TGT_WR	= 0x70,
 	FW_COISCSI_TGT_CONN_WR	= 0x71,
@@ -4049,6 +4050,13 @@ struct fw_crypto_lookaside_wr {
 #define G_FW_CRYPTO_LOOKASIDE_WR_HASH_SIZE(x) \
     (((x) >> S_FW_CRYPTO_LOOKASIDE_WR_HASH_SIZE) & \
      M_FW_CRYPTO_LOOKASIDE_WR_HASH_SIZE)
+
+struct fw_tls_tunnel_ofld_wr {
+	__be32 op_compl;
+	__be32 flowid_len16;
+	__be32 plen;
+	__be32 r4;
+};
 
 /******************************************************************************
  *  C O M M A N D s
