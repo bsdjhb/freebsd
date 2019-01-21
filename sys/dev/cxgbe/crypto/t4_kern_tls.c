@@ -158,6 +158,19 @@ struct tls_keyctx {
 #define KEY_DELETE_RX			0x4
 #define KEY_DELETE_TX			0x8
 
+/*
+ * TODO for TM:
+ * - need parse_pkt to claim packets and queue them in a manual queue?
+ *   (need to see how/what ethofld does here)
+ * - need to configure FLOWC parameters copying from ethofld and modifying
+ *   as annotated
+ * - need to update firmware headers to use new firmware message
+ * - need to modify inline packets to use CPL_TX_PKT with new firmware
+ *   message
+ * - need to figure out if there is an existing "default" class for
+ *   unlimited
+ */
+
 struct tlspcb {
 	struct inpcb *inp;	/* backpointer to host stack's PCB */
 	struct vi_info *vi;	/* virtual interface */
@@ -242,6 +255,7 @@ free_tlspcb(struct tlspcb *tlsp)
 {
 	struct adapter *sc = tlsp->vi->pi->adapter;
 
+	/* Need to set FW_FLOWC_MNEM_EOSTATE = FW_FLOWC_MNEM_EOSTATE_ABORTING */
 	if (tlsp->l2te)
 		t4_l2t_release(tlsp->l2te);
 	if (tlsp->tid >= 0)
@@ -689,11 +703,13 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 		goto failed;
 	}
 
+	/* XXX: Use an offload queue instead. */
 	txq = &sc->sge.txq[vi->first_txq];
 	if (inp->inp_flowtype != M_HASHTYPE_NONE)
 		txq += ((inp->inp_flowid % (vi->ntxq - vi->rsrv_noflowq)) +
 		    vi->rsrv_noflowq);
 
+	/* XXX: Have to send FW_FLOWC_MNEM_EOSTATE = FW_FLOWC_MNEM_EOSTATE_ESTABLISHED */
 	error = sbtls_set_tcb_fields(tlsp, tp, txq);
 	if (error)
 		goto failed;
@@ -2442,6 +2458,8 @@ t6_sbtls_mod_load(void)
 		return (error);
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, sbtls_act_open_rpl,
 	    CPL_COOKIE_KERN_TLS);
+	t4_register_shared_cpl_handler(CPL_FW4_ACK, sbtls_fw4_ack,
+	    CPL_COOKIE_KERN_TLS);
 	return (error);
 }
 
@@ -2455,6 +2473,7 @@ t6_sbtls_mod_unload(void)
 		return (error);
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
 	    CPL_COOKIE_KERN_TLS);
+	t4_register_shared_cpl_handler(CPL_FW4_ACK, NULL, CPL_COOKIE_KERN_TLS);
 	return (error);
 }
 #endif

@@ -251,7 +251,7 @@ static int free_nm_txq(struct vi_info *, struct sge_nm_txq *);
 #endif
 static int ctrl_eq_alloc(struct adapter *, struct sge_eq *);
 static int eth_eq_alloc(struct adapter *, struct vi_info *, struct sge_eq *);
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 static int ofld_eq_alloc(struct adapter *, struct vi_info *, struct sge_eq *);
 #endif
 static int alloc_eq(struct adapter *, struct vi_info *, struct sge_eq *);
@@ -445,6 +445,8 @@ fw4_ack_handler(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	MPASS(m == NULL);
 	if (is_etid(sc, tid))
 		cookie = CPL_COOKIE_ETHOFLD;
+	else if (sc->flags & KERN_TLS_OK)
+		cookie = CPL_COOKIE_KERN_TLS;
 	else
 		cookie = CPL_COOKIE_TOM;
 
@@ -1129,7 +1131,7 @@ t4_setup_vi_queues(struct vi_info *vi)
 #ifdef TCP_OFFLOAD
 	struct sge_ofld_rxq *ofld_rxq;
 #endif
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	struct sge_wrq *ofld_txq;
 #endif
 #ifdef DEV_NETMAP
@@ -1245,7 +1247,7 @@ t4_setup_vi_queues(struct vi_info *vi)
 		if (rc != 0)
 			goto done;
 	}
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	oid = SYSCTL_ADD_NODE(&vi->ctx, children, OID_AUTO, "ofld_txq",
 	    CTLFLAG_RD, NULL, "tx queues for TOE/ETHOFLD");
 	for_each_ofld_txq(vi, i, ofld_txq) {
@@ -1288,7 +1290,7 @@ t4_teardown_vi_queues(struct vi_info *vi)
 	int i;
 	struct sge_rxq *rxq;
 	struct sge_txq *txq;
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	struct port_info *pi = vi->pi;
 	struct adapter *sc = pi->adapter;
 	struct sge_wrq *ofld_txq;
@@ -1327,7 +1329,7 @@ t4_teardown_vi_queues(struct vi_info *vi)
 	for_each_txq(vi, i, txq) {
 		free_txq(vi, txq);
 	}
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	for_each_ofld_txq(vi, i, ofld_txq) {
 		free_wrq(sc, ofld_txq);
 	}
@@ -2612,9 +2614,11 @@ restart:
 		rc = cipher->parse_pkt(cipher, m0, &nsegs, &len16);
 		if (rc != 0)
 			goto fail;
+#if 0
 		set_mbuf_nsegs(m0, nsegs);
 		set_mbuf_len16(m0, len16);
-		return (0);
+#endif
+		return (EJUSTRETURN);
 	}
 	MPASS(cipher == NULL);
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
@@ -3918,7 +3922,7 @@ eth_eq_alloc(struct adapter *sc, struct vi_info *vi, struct sge_eq *eq)
 	return (rc);
 }
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 static int
 ofld_eq_alloc(struct adapter *sc, struct vi_info *vi, struct sge_eq *eq)
 {
@@ -3992,7 +3996,7 @@ alloc_eq(struct adapter *sc, struct vi_info *vi, struct sge_eq *eq)
 		rc = eth_eq_alloc(sc, vi, eq);
 		break;
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	case EQ_OFLD:
 		rc = ofld_eq_alloc(sc, vi, eq);
 		break;
@@ -4047,7 +4051,7 @@ free_eq(struct adapter *sc, struct sge_eq *eq)
 			    eq->cntxt_id);
 			break;
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 		case EQ_OFLD:
 			rc = -t4_ofld_eq_free(sc, sc->mbox, sc->pf, 0,
 			    eq->cntxt_id);
