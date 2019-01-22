@@ -567,6 +567,8 @@ static void quiesce_fl(struct adapter *, struct sge_fl *);
 static int t4_alloc_irq(struct adapter *, struct irq *, int rid,
     driver_intr_t *, void *, char *);
 static int t4_free_irq(struct adapter *, struct irq *);
+static void t4_init_tid_table(struct adapter *);
+static void t4_free_tid_table(struct adapter *);
 static void t4_init_atid_table(struct adapter *);
 static void t4_free_atid_table(struct adapter *);
 static void get_regs(struct adapter *, struct t4_regdump *, uint8_t *);
@@ -1157,6 +1159,7 @@ t4_attach(device_t dev)
 	t4_init_l2t(sc, M_WAITOK);
 	t4_init_smt(sc, M_WAITOK);
 	t4_init_tx_sched(sc);
+	t4_init_tid_table(sc);
 	t4_init_atid_table(sc);
 #ifdef RATELIMIT
 	t4_init_etid_table(sc);
@@ -1447,6 +1450,7 @@ t4_detach_common(device_t dev)
 		t4_free_l2t(sc->l2t);
 	if (sc->smt)
 		t4_free_smt(sc->smt);
+	t4_free_tid_table(sc);
 	t4_free_atid_table(sc);
 #ifdef RATELIMIT
 	t4_free_etid_table(sc);
@@ -2733,6 +2737,71 @@ rw_via_memwin(struct adapter *sc, int idx, uint32_t addr, uint32_t *val,
 	}
 
 	return (0);
+}
+
+static void
+t4_init_tid_table(struct adapter *sc)
+{
+	struct tid_info *t;
+
+	t = &sc->tids;
+	if (t->ntids == 0)
+		return;
+
+	t->tid_tab = malloc(t->ntids * sizeof(*t->tid_tab), M_CXGBE,
+	    M_ZERO | M_WAITOK);
+	t->tids_in_use = 0;
+}
+
+static void
+t4_free_tid_table(struct adapter *sc)
+{
+	struct tid_info *t;
+
+	t = &sc->tids;
+
+	KASSERT(t->tids_in_use == 0,
+	    ("%s: %d tids still in use.", __func__, t->tids_in_use));
+
+	free(t->tid_tab, M_CXGBE);
+	t->tid_tab = NULL;
+}
+
+void
+insert_tid(struct adapter *sc, int tid, void *ctx, int ntids)
+{
+	struct tid_info *t = &sc->tids;
+
+	MPASS(tid >= t->tid_base);
+	MPASS(tid - t->tid_base < t->ntids);
+
+	t->tid_tab[tid - t->tid_base] = ctx;
+	atomic_add_int(&t->tids_in_use, ntids);
+}
+
+void *
+lookup_tid(struct adapter *sc, int tid)
+{
+	struct tid_info *t = &sc->tids;
+
+	return (t->tid_tab[tid - t->tid_base]);
+}
+
+void
+update_tid(struct adapter *sc, int tid, void *ctx)
+{
+	struct tid_info *t = &sc->tids;
+
+	t->tid_tab[tid - t->tid_base] = ctx;
+}
+
+void
+remove_tid(struct adapter *sc, int tid, int ntids)
+{
+	struct tid_info *t = &sc->tids;
+
+	t->tid_tab[tid - t->tid_base] = NULL;
+	atomic_subtract_int(&t->tids_in_use, ntids);
 }
 
 static void

@@ -98,8 +98,6 @@ static struct uld_info tom_uld_info = {
 };
 
 static void release_offload_resources(struct toepcb *);
-static int alloc_tid_tabs(struct tid_info *);
-static void free_tid_tabs(struct tid_info *);
 static void free_tom_data(struct adapter *, struct tom_data *);
 static void reclaim_wr_resources(void *, int);
 
@@ -496,43 +494,6 @@ final_cpl_received(struct toepcb *toep)
 		INP_WUNLOCK(inp);
 }
 
-void
-insert_tid(struct adapter *sc, int tid, void *ctx, int ntids)
-{
-	struct tid_info *t = &sc->tids;
-
-	MPASS(tid >= t->tid_base);
-	MPASS(tid - t->tid_base < t->ntids);
-
-	t->tid_tab[tid - t->tid_base] = ctx;
-	atomic_add_int(&t->tids_in_use, ntids);
-}
-
-void *
-lookup_tid(struct adapter *sc, int tid)
-{
-	struct tid_info *t = &sc->tids;
-
-	return (t->tid_tab[tid - t->tid_base]);
-}
-
-void
-update_tid(struct adapter *sc, int tid, void *ctx)
-{
-	struct tid_info *t = &sc->tids;
-
-	t->tid_tab[tid - t->tid_base] = ctx;
-}
-
-void
-remove_tid(struct adapter *sc, int tid, int ntids)
-{
-	struct tid_info *t = &sc->tids;
-
-	t->tid_tab[tid - t->tid_base] = NULL;
-	atomic_subtract_int(&t->tids_in_use, ntids);
-}
-
 /*
  * What mtu_idx to use, given a 4-tuple.  Note that both s->mss and tcp_mssopt
  * have the MSS that we should advertise in our SYN.  Advertised MSS doesn't
@@ -721,33 +682,6 @@ negative_advice(int status)
 }
 
 static int
-alloc_tid_tab(struct tid_info *t, int flags)
-{
-
-	MPASS(t->ntids > 0);
-	MPASS(t->tid_tab == NULL);
-
-	t->tid_tab = malloc(t->ntids * sizeof(*t->tid_tab), M_CXGBE,
-	    M_ZERO | flags);
-	if (t->tid_tab == NULL)
-		return (ENOMEM);
-	atomic_store_rel_int(&t->tids_in_use, 0);
-
-	return (0);
-}
-
-static void
-free_tid_tab(struct tid_info *t)
-{
-
-	KASSERT(t->tids_in_use == 0,
-	    ("%s: %d tids still in use.", __func__, t->tids_in_use));
-
-	free(t->tid_tab, M_CXGBE);
-	t->tid_tab = NULL;
-}
-
-static int
 alloc_stid_tab(struct tid_info *t, int flags)
 {
 
@@ -780,33 +714,6 @@ free_stid_tab(struct tid_info *t)
 }
 
 static void
-free_tid_tabs(struct tid_info *t)
-{
-
-	free_tid_tab(t);
-	free_stid_tab(t);
-}
-
-static int
-alloc_tid_tabs(struct tid_info *t)
-{
-	int rc;
-
-	rc = alloc_tid_tab(t, M_NOWAIT);
-	if (rc != 0)
-		goto failed;
-
-	rc = alloc_stid_tab(t, M_NOWAIT);
-	if (rc != 0)
-		goto failed;
-
-	return (0);
-failed:
-	free_tid_tabs(t);
-	return (rc);
-}
-
-static void
 free_tom_data(struct adapter *sc, struct tom_data *td)
 {
 
@@ -829,7 +736,7 @@ free_tom_data(struct adapter *sc, struct tom_data *td)
 	if (mtx_initialized(&td->toep_list_lock))
 		mtx_destroy(&td->toep_list_lock);
 
-	free_tid_tabs(&sc->tids);
+	free_stid_tab(&sc->tids);
 	free(td, M_CXGBE);
 }
 
@@ -1080,8 +987,8 @@ t4_tom_activate(struct adapter *sc)
 	STAILQ_INIT(&td->unsent_wr_list);
 	TASK_INIT(&td->reclaim_wr_resources, 0, reclaim_wr_resources, td);
 
-	/* TID tables */
-	rc = alloc_tid_tabs(&sc->tids);
+	/* STID table */
+	rc = alloc_stid_tab(&sc->tids, M_NOWAIT);
 	if (rc != 0)
 		goto done;
 

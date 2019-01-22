@@ -315,10 +315,6 @@ void free_toepcb(struct toepcb *);
 void offload_socket(struct socket *, struct toepcb *);
 void undo_offload_socket(struct socket *);
 void final_cpl_received(struct toepcb *);
-void insert_tid(struct adapter *, int, void *, int);
-void *lookup_tid(struct adapter *, int);
-void update_tid(struct adapter *, int, void *);
-void remove_tid(struct adapter *, int, int);
 int find_best_mtu_idx(struct adapter *, struct in_conninfo *,
     struct offload_settings *);
 u_long select_rcv_wnd(struct socket *);
