@@ -2227,7 +2227,9 @@ mbuf_len16(struct mbuf *m)
 
 	M_ASSERTPKTHDR(m);
 	n = m->m_pkthdr.PH_loc.eight[0];
+#if 0
 	if (!(mbuf_cflags(m) & MC_TLS))
+#endif
 		MPASS(n > 0 && n <= SGE_MAX_WR_LEN / 16);
 
 	return (n);
@@ -2608,10 +2610,12 @@ restart:
 	cipher = NULL;
 	nsegs = count_mbuf_nsegs(m0, 0, &cflags, &cipher);
 	if (cflags & MC_TLS) {
+#if 0
 		int len16;
 
 		set_mbuf_cflags(m0, cflags);
-		rc = cipher->parse_pkt(cipher, m0, &nsegs, &len16);
+#endif
+		rc = cipher->parse_pkt(cipher, m0);
 		if (rc != 0)
 			goto fail;
 #if 0
@@ -2974,6 +2978,7 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			next_cidx = 0;
 
 		wr = (void *)&eq->desc[eq->pidx];
+#if 0
 		if (mbuf_cflags(m0) & MC_TLS) {
 			struct t6_sbtls_cipher *cipher;
 
@@ -2983,7 +2988,9 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			cipher = tls_mbuf_cipher(m0);
 			n = cipher->write_tls_wr(cipher, txq, (void *)wr, m0,
 			    mbuf_nsegs(m0), available);
-		} else if (sc->flags & IS_VF) {
+		} else
+#endif
+		if (sc->flags & IS_VF) {
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
@@ -3028,7 +3035,9 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			n = write_txpkt_wr(txq, (void *)wr, m0, available);
 		}
 		MPASS(n >= 1 && n <= available);
-		if (!(mbuf_cflags(m0) & MC_TLS))		
+#if 0
+		if (!(mbuf_cflags(m0) & MC_TLS))
+#endif
 			MPASS(n <= SGE_MAX_WR_NDESC);
 
 		available -= n;

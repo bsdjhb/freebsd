@@ -160,10 +160,10 @@ struct tls_keyctx {
 
 /*
  * TODO for TM:
- * - need parse_pkt to claim packets and queue them in a manual queue?
+ * + need parse_pkt to claim packets and queue them in a manual queue?
  *   (need to see how/what ethofld does here)
- * - need to configure FLOWC parameters copying from ethofld and modifying
- *   as annotated
+ * + need to configure FLOWC parameters copying from ethofld and modifying
+ *   as annotated (still need to handle teardown)
  * - need to update firmware headers to use new firmware message
  * - need to modify inline packets to use CPL_TX_PKT with new firmware
  *   message
@@ -177,7 +177,18 @@ struct tlspcb {
 	struct sge_wrq *ctrlq;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
 	struct clip_entry *ce;	/* CLIP table entry used by this tid */
+	struct sge_wrq *txq;
 	int tid;		/* Connection identifier */
+
+	struct mtx lock;
+	struct mbufq pending_tx, pending_fwack;
+	int plen;
+	uint16_t iqid;
+	uint8_t tx_total;	/* total tx WR credits (in 16B units) */
+	uint8_t tx_credits;	/* tx WR credits (in 16B units) available */
+	uint8_t tx_nocompl;	/* tx WR credits since last compl request */
+	uint8_t ncompl;		/* # of completions outstanding. */
+	uint8_t nombuf_pending_credits;
 
 	bool inline_key;
 	int tx_key_addr;
@@ -203,10 +214,50 @@ struct tlspcb {
 
 static struct protosw *tcp_protosw, *tcp6_protosw;
 
-static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
-    int *nsegsp, int *len16p);
-static int sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *wr, struct mbuf *m, u_int nsegs, u_int available);
+static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m);
+
+static inline int
+mbuf_nsegs(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	KASSERT(m->m_pkthdr.l5hlen > 0,
+	    ("%s: mbuf %p missing information on # of segments.", __func__, m));
+
+	return (m->m_pkthdr.l5hlen);
+}
+
+static inline void
+set_mbuf_nsegs(struct mbuf *m, uint8_t nsegs)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.l5hlen = nsegs;
+}
+
+static inline int
+mbuf_len16(struct mbuf *m)
+{
+	int n;
+
+	M_ASSERTPKTHDR(m);
+	n = m->m_pkthdr.PH_loc.eight[0];
+	/*
+	 * Cannot assert n <= SGE_MAX_WR_LEN / 16 as the "packet"
+	 * might span multiple work requests.
+	 */
+	MPASS(n > 0);
+
+	return (n);
+}
+
+static inline void
+set_mbuf_len16(struct mbuf *m, uint8_t len16)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_loc.eight[0] = len16;
+}
 
 /* XXX: There are similar versions of these two in tom/t4_tls.c. */
 static int
@@ -231,6 +282,51 @@ free_keyid(struct tlspcb *tlsp, int keyid)
 	vmem_free(sc->key_map, keyid, TLS_KEY_CONTEXT_SZ);
 }
 
+#define	SBTLS_FLOWC_NPARAMS 5
+
+static int
+sbtls_send_flowc_wr(struct tlspcb *tlsp)
+{
+	struct wrq_cookie cookie;
+	struct fw_flowc_wr *flowc;
+	u_int len16, pfvf, wr_len;
+
+	wr_len = roundup2(sizeof(*flowc) + SBTLS_FLOWC_NPARAMS *
+	    sizeof(struct fw_flowc_mnemval), 16);
+	len16 = howmany(wr_len, 16);
+
+	flowc = start_wrq_wr(tlsp->txq, len16, &cookie);
+	if (flowc == NULL)
+		return (ENOMEM);
+
+	memset(flowc, 0, wr_len);
+
+	pfvf = G_FW_VIID_PFN(tlsp->vi->viid) << S_FW_VIID_PFN;
+
+	flowc->op_to_nparams = htobe32(V_FW_WR_OP(FW_FLOWC_WR) |
+	    V_FW_FLOWC_WR_NPARAMS(SBTLS_FLOWC_NPARAMS) | V_FW_WR_COMPL(0));
+	flowc->flowid_len16 = htobe32(V_FW_WR_LEN16(len16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+	flowc->mnemval[0].mnemonic = FW_FLOWC_MNEM_PFNVFN;
+	flowc->mnemval[0].val = htobe32(pfvf);
+	flowc->mnemval[1].mnemonic = FW_FLOWC_MNEM_CH;
+	flowc->mnemval[1].val = htobe32(tlsp->vi->pi->tx_chan);
+	flowc->mnemval[2].mnemonic = FW_FLOWC_MNEM_PORT;
+	flowc->mnemval[2].val = htobe32(tlsp->vi->pi->tx_chan);
+	flowc->mnemval[3].mnemonic = FW_FLOWC_MNEM_IQID;
+	flowc->mnemval[3].val = htobe32(tlsp->iqid);
+	flowc->mnemval[4].mnemonic = FW_FLOWC_MNEM_EOSTATE;
+	flowc->mnemval[4].val = htobe32(FW_FLOWC_MNEM_EOSTATE_ESTABLISHED);
+
+	MPASS(tlsp->tx_credits >= len16);
+	tlsp->tx_credits -= len16;
+	tlsp->nombuf_pending_credits = len16;
+
+	commit_wrq_wr(tlsp->txq, flowc, &cookie);
+
+	return (0);
+}
+
 static struct tlspcb *
 alloc_tlspcb(struct vi_info *vi, int flags)
 {
@@ -246,6 +342,7 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 	tlsp->ctrlq = &sc->sge.ctrlq[pi->port_id];
 	tlsp->tid = -1;
 	tlsp->tx_key_addr = -1;
+	mtx_init(&tlsp->lock, "t6 sbtls", NULL, MTX_DEF);
 
 	return (tlsp);
 }
@@ -255,15 +352,18 @@ free_tlspcb(struct tlspcb *tlsp)
 {
 	struct adapter *sc = tlsp->vi->pi->adapter;
 
-	/* Need to set FW_FLOWC_MNEM_EOSTATE = FW_FLOWC_MNEM_EOSTATE_ABORTING */
 	if (tlsp->l2te)
 		t4_l2t_release(tlsp->l2te);
-	if (tlsp->tid >= 0)
+	if (tlsp->tid >= 0) {
+		/* Need to set FW_FLOWC_MNEM_EOSTATE = FW_FLOWC_MNEM_EOSTATE_ABORTING */
+		remove_tid(sc, tlsp->tid, 1);
 		release_tid(sc, tlsp->tid, tlsp->ctrlq);
+	}
 	if (tlsp->ce)
 		t4_release_lip(sc, tlsp->ce);
 	if (tlsp->tx_key_addr >= 0)
 		free_keyid(tlsp, tlsp->tx_key_addr);
+	mtx_destroy(&tlsp->lock);
 	free(tlsp, M_CXGBE);
 }
 
@@ -454,8 +554,8 @@ _Static_assert((LEN__SET_TCB_FIELD_ULP + sizeof(struct ulptx_idata)) % 16 == 0,
     "CPL_SET_TCB_FIELD ULP command not 16-byte aligned");
 
 static void
-write_set_tcb_field_ulp(struct tlspcb *tlsp, void *dst, struct sge_txq *txq,
-    uint16_t word, uint64_t mask, uint64_t val)
+write_set_tcb_field_ulp(struct tlspcb *tlsp, void *dst, uint16_t word,
+    uint64_t mask, uint64_t val)
 {
 	struct ulp_txpkt *txpkt;
 	struct ulptx_idata *idata;
@@ -466,7 +566,7 @@ write_set_tcb_field_ulp(struct tlspcb *tlsp, void *dst, struct sge_txq *txq,
 	txpkt->cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
 	    V_ULP_TXPKT_DATAMODIFY(0) |
 	    V_ULP_TXPKT_CHANNELID(tlsp->vi->pi->port_id) | V_ULP_TXPKT_DEST(0) |
-	    V_ULP_TXPKT_FID(txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
+	    V_ULP_TXPKT_FID(tlsp->txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
 	txpkt->len = htobe32(howmany(LEN__SET_TCB_FIELD_ULP, 16));
 
 	/* ULPTX_IDATA sub-command */
@@ -489,48 +589,47 @@ write_set_tcb_field_ulp(struct tlspcb *tlsp, void *dst, struct sge_txq *txq,
 }
 
 static int
-sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
+sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp)
 {
-	struct fw_ulptx_wr *wr;
-	struct mbuf *m;
+	struct wrq_cookie cookie;
+	struct fw_tls_tunnel_ofld_wr *wr;
 	char *dst;
-	void *items[1];
-	int error, len;
+	int len;
 
 	len = sizeof(*wr) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 	if (tp->t_flags & TF_REQ_TSTMP)
 		len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-	m = alloc_wr_mbuf(len, M_NOWAIT);
-	if (m == NULL)
+	wr = start_wrq_wr(tlsp->txq, len / 16, &cookie);
+	if (wr == NULL)
 		return (ENOMEM);
 
-	/* FW_ULPTX_WR */
-	wr = mtod(m, void *);
-	wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
-	wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
-	    V_FW_WR_LEN16(len / 16));
-	wr->cookie = 0;
+	/* FW_TLS_TUNNEL_OFLD_WR */
+	memset(wr, 0, len);
+	wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR));
+	wr->flowid_len16 = htobe32(V_FW_WR_LEN16(len / 16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+	wr->plen = 0;
 	dst = (char *)(wr + 1);
 
         /* Clear TF_NON_OFFLOAD and set TF_CORE_BYPASS */
-	write_set_tcb_field_ulp(tlsp, dst, txq, W_TCB_T_FLAGS,
+	write_set_tcb_field_ulp(tlsp, dst, W_TCB_T_FLAGS,
 	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1) | V_TF_NON_OFFLOAD(1)),
 	    V_TCB_T_FLAGS(V_TF_CORE_BYPASS(1)));
 	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	/* Clear the SND_UNA_RAW, SND_NXT_RAW, and SND_MAX_RAW offsets. */
-	write_set_tcb_field_ulp(tlsp, dst, txq, W_TCB_SND_UNA_RAW,
+	write_set_tcb_field_ulp(tlsp, dst, W_TCB_SND_UNA_RAW,
 	    V_TCB_SND_NXT_RAW(M_TCB_SND_NXT_RAW) |
 	    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
 	    V_TCB_SND_NXT_RAW(0) | V_TCB_SND_UNA_RAW(0));
 	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
-	write_set_tcb_field_ulp(tlsp, dst, txq, W_TCB_SND_MAX_RAW,
+	write_set_tcb_field_ulp(tlsp, dst, W_TCB_SND_MAX_RAW,
 	    V_TCB_SND_MAX_RAW(M_TCB_SND_MAX_RAW), V_TCB_SND_MAX_RAW(0));
 	dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	if (tp->t_flags & TF_REQ_TSTMP) {
-		write_set_tcb_field_ulp(tlsp, dst, txq, W_TCB_TIMESTAMP_OFFSET,
+		write_set_tcb_field_ulp(tlsp, dst, W_TCB_TIMESTAMP_OFFSET,
 		    V_TCB_TIMESTAMP_OFFSET(M_TCB_TIMESTAMP_OFFSET),
 		    V_TCB_TIMESTAMP_OFFSET(tp->ts_offset >> 28));
 		dst += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
@@ -538,11 +637,13 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 
 	KASSERT(dst - (char *)wr == len, ("%s: length mismatch", __func__));
 
-	items[0] = m;
-	error = mp_ring_enqueue(txq->r, items, 1, 1);
-	if (error)
-		m_free(m);
-	return (error);
+	MPASS(tlsp->tx_credits >= len / 16);
+	tlsp->tx_credits -= len / 16;
+	tlsp->nombuf_pending_credits += len / 16;
+
+	commit_wrq_wr(tlsp->txq, wr, &cookie);
+
+	return (0);
 }
 
 static int
@@ -550,7 +651,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 {
 	struct t6_sbtls_cipher *cipher;
 	struct sbtls_info *tls;
-	struct mbuf *key_wr;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
@@ -558,8 +658,8 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	struct rtentry *rt;
 	struct inpcb *inp;
 	struct tcpcb *tp;
-	struct sge_txq *txq;
-	int atid, error, keyid, len;
+	u_int rss_hash;
+	int atid, error, keyid;
 
 	/* Sanity check values in *en. */
 	if (en->key_size != en->crypt_key_len)
@@ -652,7 +752,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	if (tlsp == NULL)
 		return (ENOMEM);
 
-	key_wr = NULL;
 	atid = alloc_atid(sc, tlsp);
 	if (atid < 0) {
 		error = ENOMEM;
@@ -703,35 +802,27 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 		goto failed;
 	}
 
-	/* XXX: Use an offload queue instead. */
-	txq = &sc->sge.txq[vi->first_txq];
+	insert_tid(sc, tlsp->tid, tlsp, 1);
 	if (inp->inp_flowtype != M_HASHTYPE_NONE)
-		txq += ((inp->inp_flowid % (vi->ntxq - vi->rsrv_noflowq)) +
-		    vi->rsrv_noflowq);
+		rss_hash = inp->inp_flowid;
+	else
+		rss_hash = arc4random();
+	tlsp->txq = &sc->sge.ofld_txq[vi->first_ofld_txq];
+	tlsp->txq += rss_hash % vi->nofldtxq;
+	tlsp->iqid = vi->rss[rss_hash % vi->rss_size];
+	tlsp->tx_total = sc->params.ofldq_wr_cred;
+	tlsp->tx_credits = tlsp->tx_total;
 
-	/* XXX: Have to send FW_FLOWC_MNEM_EOSTATE = FW_FLOWC_MNEM_EOSTATE_ESTABLISHED */
-	error = sbtls_set_tcb_fields(tlsp, tp, txq);
+	mtx_lock(&tlsp->lock);
+	error = sbtls_send_flowc_wr(tlsp);
+	if (error) {
+		mtx_unlock(&tlsp->lock);
+		goto failed;
+	}
+	error = sbtls_set_tcb_fields(tlsp, tp);
+	mtx_unlock(&tlsp->lock);
 	if (error)
 		goto failed;
-
-	/*
-	 * Preallocate a work request mbuf to hold the work request
-	 * that programs the transmit key.  The work request isn't
-	 * populated until the setup_cipher callback since the keys
-	 * aren't available yet.  However, if that callback fails the
-	 * socket won't fall back to software encryption, so the
-	 * allocation is done here where failure can be handled more
-	 * gracefully.
-	 */
-	if (!tlsp->inline_key) {
-		len = sizeof(struct tls_key_req) +
-		    roundup2(sizeof(struct tls_keyctx), 32);
-		key_wr = alloc_wr_mbuf(len, M_NOWAIT);
-		if (key_wr == NULL) {
-			error = ENOMEM;
-			goto failed;
-		}
-	}
 
 	tls = sbtls_init_sb_tls(so, en, sizeof(struct t6_sbtls_cipher));
 	if (tls == NULL) {
@@ -740,11 +831,14 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	}
 	cipher = tls->cipher;
 	cipher->parse_pkt = sbtls_parse_pkt;
+#if 0
 	cipher->write_tls_wr = sbtls_write_wr;
+#endif
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
+#if 0
 	cipher->txq = txq;
-	cipher->key_wr = key_wr;
+#endif
 	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
 
 	init_sbtls_key_params(tlsp, en, tls);
@@ -814,8 +908,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	return (0);
 
 failed:
-	if (key_wr != NULL)
-		m_free(key_wr);
 	if (atid >= 0)
 		free_atid(sc, atid);
 	free_tlspcb(tlsp);
@@ -839,10 +931,11 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 {
 	struct t6_sbtls_cipher *cipher = tls->cipher;
 	struct tlspcb *tlsp = cipher->tlsp;
+	struct wrq_cookie cookie;
 	int keyid, kwrlen, kctxlen, len;
 	struct tls_key_req *kwr;
 	struct tls_keyctx *kctx;
-	void *items[1], *key;
+	void *key;
 	struct tx_keyctx_hdr *khdr;
 	unsigned int ck_size, mk_size;
 
@@ -931,8 +1024,12 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
-	MPASS(cipher->key_wr->m_len == len);
-	kwr = mtod(cipher->key_wr, void *);
+	kwr = start_wrq_wr(tlsp->txq, DIV_ROUND_UP(len, 16), &cookie);
+	if (kwr == NULL) {
+		*error = ENOMEM;
+		return;
+	}
+
 	memset(kwr, 0, len);
 
 	kwr->wr_hi = htobe32(V_FW_WR_OP(FW_ULPTX_WR) |
@@ -958,16 +1055,12 @@ t6_sbtls_setup_cipher(struct sbtls_info *tls, int *error)
 	memcpy(kctx, &tlsp->keyctx, sizeof(*kctx));
 
 	/*
-	 * Place the key work request in the transmit queue.  It
-	 * should be sent to the NIC before any TLS packets using this
-	 * session.
+	 * Place the key work request in the offload transmit queue.
+	 * It should be sent to the NIC before any TLS packets using
+	 * this session.
 	 */
-	items[0] = cipher->key_wr;
-	*error = mp_ring_enqueue(cipher->txq->r, items, 1, 1);
-	if (*error == 0) {
-		cipher->key_wr = NULL;
-		CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
-	}
+	commit_wrq_wr(tlsp->txq, kwr, &cookie);
+	CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
 }
 
 static u_int
@@ -975,7 +1068,7 @@ sbtls_base_wr_size(struct tlspcb *tlsp)
 {
 	u_int wr_len;
 
-	wr_len = sizeof(struct fw_ulptx_wr);	// 16
+	wr_len = sizeof(struct fw_tls_tunnel_ofld_wr);	// 16
 	wr_len += sizeof(struct ulp_txpkt);	// 8
 	wr_len += sizeof(struct ulptx_idata);	// 8
 	wr_len += sizeof(struct cpl_tx_sec_pdu);// 32
@@ -1228,8 +1321,7 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 }
 
 static int
-sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
-    int *len16p)
+sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 {
 	struct ether_header *eh;
 	struct ip *ip;
@@ -1307,7 +1399,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * Each of the remaining mbufs in the chain should reference a
 	 * TLS record.
 	 */
-	*nsegsp = 0;
+	set_mbuf_nsegs(m, 0);
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
 
@@ -1324,8 +1416,8 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		 * Store 'nsegs' for the first TLS record in the
 		 * header mbuf's metadata.
 		 */
-		if (*nsegsp == 0)
-			*nsegsp = nsegs;
+		if (m_tls == m->m_next)
+			set_mbuf_nsegs(m, nsegs);
 	}
 
 	MPASS(tot_len != 0);
@@ -1366,11 +1458,23 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 
 	tot_len += roundup2(wr_len, EQ_ESIZE);
 
-	*len16p = tot_len / 16;
+	set_mbuf_len16(m, tot_len / 16);
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d len16 %d nsegs %d", __func__,
-	    cipher->tlsp->tid, *len16p, *nsegsp);
+	    cipher->tlsp->tid, mbuf_len16(m), mbuf_nsegs(m));
 #endif
+	mtx_lock(&tlsp->lock);
+	if (tlsp->plen + m->m_pkthdr.len > tls_max_backlog) {
+		mtx_unlock(&tlsp->lock);
+		return (ENOBUFS);
+	}
+
+	mbufq_enqueue(&tlsp->pending_tx, m);
+	tlsp->plen += m->m_pkthdr.len;
+
+	sbtls_tx(tlsp);
+	mtx_unlock(&tlsp->tx);
+
 	return (0);
 }
 
@@ -1709,7 +1813,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	ndesc = 0;
 	tlsp = cipher->tlsp;
+#if 0
 	MPASS(cipher->txq == txq);
+#endif
 
 	first_wr = (cipher->prev_seq == 0 && cipher->prev_ack == 0 &&
 	    cipher->prev_win == 0);
@@ -1811,7 +1917,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR3(KTR_CXGBE, "%s: tid %d set L2T_IX to %d", __func__,
 		    tlsp->tid, tlsp->l2te->idx);
 #endif
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_L2T_IX,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_L2T_IX,
 		    V_TCB_L2T_IX(M_TCB_L2T_IX), V_TCB_L2T_IX(tlsp->l2te->idx));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
@@ -1823,7 +1929,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
 		    __func__, cipher->tlsp->tid);
 #endif
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_T_RTSEQ_RECENT,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_T_RTSEQ_RECENT,
 		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
 		    V_TCB_T_RTSEQ_RECENT(ntohl(tsopt[1])));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
@@ -1840,7 +1946,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    "%s: tid %d setting TX_MAX to %u (tcp_seqno %u)",
 		    __func__, tlsp->tid, tx_max, tcp_seqno);
 #endif
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_TX_MAX,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_TX_MAX,
 		    V_TCB_TX_MAX(M_TCB_TX_MAX), V_TCB_TX_MAX(tx_max));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
@@ -1858,7 +1964,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		CTR2(KTR_CXGBE, "%s: tid %d clearing SND_UNA_RAW", __func__,
 		    tlsp->tid);
 #endif
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_SND_UNA_RAW,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_SND_UNA_RAW,
 		    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
 		    V_TCB_SND_UNA_RAW(0));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
@@ -1874,7 +1980,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_NXT for subsequent TLS WR"));
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_RCV_NXT,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_RCV_NXT,
 		    V_TCB_RCV_NXT(M_TCB_RCV_NXT),
 		    V_TCB_RCV_NXT(ntohl(tcp->th_ack)));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
@@ -1886,7 +1992,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
-		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_RCV_WND,
+		write_set_tcb_field_ulp(tlsp, out, W_TCB_RCV_WND,
 		    V_TCB_RCV_WND(M_TCB_RCV_WND),
 		    V_TCB_RCV_WND(ntohs(tcp->th_win)));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
@@ -2411,6 +2517,104 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 }
 
 static void
+sbtls_tx(struct tlspcb *tlsp)
+{
+	struct mbuf *m;
+	int compl;
+
+	mtx_assert(&tlsp->lock, MA_OWNED);
+	while ((m = mbufq_first(&tlsp->pending_tx)) != NULL) {
+		M_ASSERTPKTHDR(m);
+
+		MPASS(mbuf_len16(m) > 0);
+		if (mbuf_len16(m) > tlsp->tx_credits) {
+			/*
+			 * This should make forward progress once
+			 * FW4_ACK returns more credits.
+			 */
+			MPASS(tlsp->ncompl > 0);
+			return;
+		}
+
+		/*
+		 * NB: These packets are not passed to BPF since they
+		 * contain unencrypted data.
+		 */
+
+		compl = tlsp->ncompl == 0 ||
+		    tlsp->tx_nocompl + mbuf_len16(m) >= tlsp->tx_total / 2;
+		sbtls_write_wr(tlsp, m, compl);
+
+		/*
+		 * NB: Before sbtls_write_wr(), mbuf_len16(m) is an
+		 * overestimate.  sbtls_write_wr() will update
+		 * mbuf_len16() with the final count, so defer
+		 * consuming credits until here.
+		 */
+		tlsp->tx_credits -= mbuf_len16(m);
+		if (compl) {
+			tlsp->ncompl++;
+			tlsp->tx_nocompl = 0;
+		} else
+			tlsp->tx_nocompl += mbuf_len16(m);
+
+		(void) mbufq_dequeue(&tlsp->pending_tx);
+		mbufq_enqueue(&tlsp->pending_fwack, m);
+	}
+}
+
+static int
+sbtls_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0)
+{
+	struct adapter *sc = iq->adapter;
+	const struct cpl_fw4_ack *cpl = (const void *)(rss + 1);
+	struct mbuf *m;
+	u_int tid = G_CPL_FW4_ACK_FLOWID(be32toh(OPCODE_TID(cpl)));
+	struct tlspcb *tlsp;
+	uint8_t credits = cpl->credits;
+
+	tlsp = lookup_tid(sc, tid);
+	mtx_lock(&tlsp->lock);
+	if (__predict_false(tlsp->nombuf_pending_credits != 0)) {
+		MPASS(credits >= tlsp->nombuf_pending_credits);
+		credits -= tlsp->nombuf_pending_credits;
+		tlsp->nombuf_pending_credits = 0;
+	}
+
+	KASSERT(tlsp->ncompl > 0,
+	    ("%s: tid %u (%p) wasn't expecting completion.",
+	    __func__, tid, tlsp));
+	tlsp->ncompl--;
+
+	while (credits > 0) {
+		m = mbufq_dequeue(&tlsp->pending_fwack);
+		/* TODO: Final flush on free? */
+		KASSERT(m != NULL,
+		    ("%s: too many credits (%u, %u)", __func__, cpl->credits,
+		    credits));
+		KASSERT(credits >= mbuf_len16(m),
+		    ("%s: too few credits (%u, %u, %u)", __func__,
+		    cpl->credits, credits, mbuf_len16(m)));
+		credits -= mbuf_len16(m);
+		tlsp->plen -= m->m_pkthdr.len;
+		m_freem(m);
+	}
+
+	tlsp->tx_credits += cpl->credits;
+	MPASS(tlsp->tx_credits <= tlsp->tx_total);
+
+	m = mbufq_first(&tlsp->pending_tx);
+	if (m != NULL && tlsp->tx_credits >= mbuf_len16(m))
+		sbtls_tx(tlsp);
+
+	/* XXX: Handle tag free? */
+
+	mtx_unlock(&tlsp->lock);
+
+	return (0);
+}
+
+static void
 t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
 {
 	struct t6_sbtls_cipher *cipher;
@@ -2425,8 +2629,6 @@ t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
 
 	explicit_bzero(&tlsp->keyctx, sizeof(&tlsp->keyctx));
 
-	if (cipher->key_wr != NULL)
-		m_free(cipher->key_wr);
 	free_tlspcb(tlsp);
 }
 
