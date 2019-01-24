@@ -281,7 +281,7 @@ TUNABLE_INT("hw.cxgbe.nrxq_vi", &t4_nrxq_vi);
 static int t4_rsrv_noflowq = 0;
 TUNABLE_INT("hw.cxgbe.rsrv_noflowq", &t4_rsrv_noflowq);
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 #define NOFLDTXQ 8
 static int t4_nofldtxq = -NOFLDTXQ;
 TUNABLE_INT("hw.cxgbe.nofldtxq", &t4_nofldtxq);
@@ -531,7 +531,7 @@ struct intrs_and_queues {
 	uint16_t nirq;		/* Total # of vectors */
 	uint16_t ntxq;		/* # of NIC txq's for each port */
 	uint16_t nrxq;		/* # of NIC rxq's for each port */
-	uint16_t nofldtxq;	/* # of TOE/ETHOFLD txq's for each port */
+	uint16_t nofldtxq;	/* # of TOE/ETHOFLD/TLS txq's for each port */
 	uint16_t nofldrxq;	/* # of TOE rxq's for each port */
 
 	/* The vcxgbe/vcxl interfaces use these and not the ones above. */
@@ -888,7 +888,7 @@ t4_attach(device_t dev)
 	struct intrs_and_queues iaq;
 	struct sge *s;
 	uint32_t *buf;
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	int ofld_tqidx;
 #endif
 #ifdef TCP_OFFLOAD
@@ -1108,8 +1108,8 @@ t4_attach(device_t dev)
 	s->neq = s->ntxq + s->nrxq;	/* the free list in an rxq is an eq */
 	s->neq += nports;		/* ctrl queues: 1 per port */
 	s->niq = s->nrxq + 1;		/* 1 extra for firmware event queue */
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
-	if (is_offload(sc) || is_ethoffload(sc)) {
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
+	if (is_offload(sc) || is_ethoffload(sc) || sc->flags & KERN_TLS_OK) {
 		s->nofldtxq = nports * iaq.nofldtxq;
 		if (num_vis > 1)
 			s->nofldtxq += nports * (num_vis - 1) * iaq.nofldtxq_vi;
@@ -1177,7 +1177,7 @@ t4_attach(device_t dev)
 	 * tx queues that each port should get.
 	 */
 	rqidx = tqidx = 0;
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	ofld_tqidx = 0;
 #endif
 #ifdef TCP_OFFLOAD
@@ -1214,7 +1214,7 @@ t4_attach(device_t dev)
 			else
 				vi->rsrv_noflowq = 0;
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 			vi->first_ofld_txq = ofld_tqidx;
 			vi->nofldtxq = j == 0 ? iaq.nofldtxq : iaq.nofldtxq_vi;
 			ofld_tqidx += vi->nofldtxq;
@@ -1462,7 +1462,7 @@ t4_detach_common(device_t dev)
 		vmem_destroy(sc->key_map);
 	t4_destroy_clip_table(sc);
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	free(sc->sge.ofld_txq, M_CXGBE);
 #endif
 #ifdef TCP_OFFLOAD
@@ -1605,7 +1605,10 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 #endif
 	sb = sbuf_new_auto();
 	sbuf_printf(sb, "%d txq, %d rxq (NIC)", vi->ntxq, vi->nrxq);
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
+	if (vi->pi->adapter->flags & KERN_TLS_OK)
+		sbuf_printf(sb, "; %d txq (TLS)", vi->nofldtxq);
+	else
 	switch (ifp->if_capabilities & (IFCAP_TOE | IFCAP_TXRTLMT)) {
 	case IFCAP_TOE:
 		sbuf_printf(sb, "; %d txq (TOE)", vi->nofldtxq);
@@ -3156,8 +3159,8 @@ calculate_iaq(struct adapter *sc, struct intrs_and_queues *iaq, int itype,
 	iaq->ntxq_vi = t4_ntxq_vi;
 	iaq->nrxq = t4_nrxq;
 	iaq->nrxq_vi = t4_nrxq_vi;
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
-	if (is_offload(sc) || is_ethoffload(sc)) {
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
+	if (is_offload(sc) || is_ethoffload(sc) || sc->flags & KERN_TLS_OK) {
 		iaq->nofldtxq = t4_nofldtxq;
 		iaq->nofldtxq_vi = t4_nofldtxq_vi;
 	}
@@ -5390,6 +5393,8 @@ vi_full_uninit(struct vi_info *vi)
 	struct sge_txq *txq;
 #ifdef TCP_OFFLOAD
 	struct sge_ofld_rxq *ofld_rxq;
+#endif
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	struct sge_wrq *ofld_txq;
 #endif
 
@@ -5405,7 +5410,7 @@ vi_full_uninit(struct vi_info *vi)
 			quiesce_txq(sc, txq);
 		}
 
-#ifdef TCP_OFFLOAD
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 		for_each_ofld_txq(vi, i, ofld_txq) {
 			quiesce_wrq(sc, ofld_txq);
 		}
@@ -6214,15 +6219,9 @@ vi_sysctls(struct vi_info *vi)
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "nofldrxq", CTLFLAG_RD,
 		    &vi->nofldrxq, 0,
 		    "# of rx queues for offloaded TCP connections");
-		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "nofldtxq", CTLFLAG_RD,
-		    &vi->nofldtxq, 0,
-		    "# of tx queues for offloaded TCP connections");
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "first_ofld_rxq",
 		    CTLFLAG_RD, &vi->first_ofld_rxq, 0,
 		    "index of first TOE rx queue");
-		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "first_ofld_txq",
-		    CTLFLAG_RD, &vi->first_ofld_txq, 0,
-		    "index of first TOE tx queue");
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "holdoff_tmr_idx_ofld",
 		    CTLTYPE_INT | CTLFLAG_RW, vi, 0,
 		    sysctl_holdoff_tmr_idx_ofld, "I",
@@ -6231,6 +6230,16 @@ vi_sysctls(struct vi_info *vi)
 		    CTLTYPE_INT | CTLFLAG_RW, vi, 0,
 		    sysctl_holdoff_pktc_idx_ofld, "I",
 		    "holdoff packet counter index for TOE queues");
+	}
+#endif
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
+	if (vi->nofldtxq != 0) {
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "nofldtxq", CTLFLAG_RD,
+		    &vi->nofldtxq, 0,
+		    "# of tx queues for TOE/ETHOFLD/TLS");
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "first_ofld_txq",
+		    CTLFLAG_RD, &vi->first_ofld_txq, 0,
+		    "index of first TOE/ETHOFLD/TLS tx queue");
 	}
 #endif
 #ifdef DEV_NETMAP
@@ -10233,7 +10242,7 @@ tweak_tunables(void)
 
 	calculate_nqueues(&t4_nrxq_vi, nc, NRXQ_VI);
 
-#if defined(TCP_OFFLOAD) || defined(RATELIMIT)
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	calculate_nqueues(&t4_nofldtxq, nc, NOFLDTXQ);
 	calculate_nqueues(&t4_nofldtxq_vi, nc, NOFLDTXQ_VI);
 #endif

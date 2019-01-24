@@ -1249,7 +1249,7 @@ t4_setup_vi_queues(struct vi_info *vi)
 	}
 #if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 	oid = SYSCTL_ADD_NODE(&vi->ctx, children, OID_AUTO, "ofld_txq",
-	    CTLFLAG_RD, NULL, "tx queues for TOE/ETHOFLD");
+	    CTLFLAG_RD, NULL, "tx queues for TOE/ETHOFLD/TLS");
 	for_each_ofld_txq(vi, i, ofld_txq) {
 		struct sysctl_oid *oid2;
 
