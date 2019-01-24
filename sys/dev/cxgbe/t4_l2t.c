@@ -172,27 +172,28 @@ t4_write_l2e(struct l2t_entry *e, int sync)
  * TLS work requests that will depend on it being written.
  */
 struct l2t_entry *
-t4_l2t_alloc_tls(struct adapter *sc, struct sge_txq *txq, void *dst,
-    int *ndesc, uint16_t vlan, uint8_t port, uint8_t *eth_addr)
+t4_l2t_alloc_tls(struct adapter *sc, struct sge_wrq *wrq, uint16_t vlan,
+    uint8_t port, uint8_t *eth_addr)
 {
+	struct wrq_cookie cookie;
+	struct cpl_l2t_write_req *req;
 	struct l2t_data *d;
 	struct l2t_entry *e;
 	int i;
-
-	TXQ_LOCK_ASSERT_OWNED(txq);
+	bool wlocked;
 
 	d = sc->l2t;
-	*ndesc = 0;
 
+	wlocked = false;
 	rw_rlock(&d->lock);
 
+retry:
 	/* First, try to find an existing entry. */
 	for (i = 0; i < d->l2t_size; i++) {
 		e = &d->l2tab[i];
 		if (e->state != L2T_STATE_TLS)
 			continue;
-		if (e->vlan == vlan && e->lport == port &&
-		    e->wrq == (struct sge_wrq *)txq &&
+		if (e->vlan == vlan && e->lport == port && e->wrq == wrq &&
 		    memcmp(e->dmac, eth_addr, ETHER_ADDR_LEN) == 0) {
 			if (atomic_fetchadd_int(&e->refcnt, 1) == 0) {
 				/*
@@ -208,20 +209,26 @@ t4_l2t_alloc_tls(struct adapter *sc, struct sge_txq *txq, void *dst,
 		}
 	}
 
-	/*
-	 * Don't bother rechecking if the upgrade fails since the txq is
-	 * already locked.
-	 */
-	if (!rw_try_upgrade(&d->lock)) {
+	if (!wlocked && !rw_try_upgrade(&d->lock)) {
 		rw_runlock(&d->lock);
 		rw_wlock(&d->lock);
+		wlocked = true;
+		goto retry;
 	}
 
 	/* Match not found, allocate a new entry. */
 	e = t4_alloc_l2e(d);
 	if (e == NULL) {
 		rw_wunlock(&d->lock);
-		return (e);
+		return (NULL);
+	}
+
+	/* Allocate space for the work request. */
+	req = start_wrq_wr(wrq, howmany(sizeof(*req), 16), &cookie);
+	if (req == NULL) {
+		atomic_add_int(&d->nfree, 1);
+		rw_wunlock(&d->lock);
+		return (NULL);
 	}
 
 	/* Initialize the entry. */
@@ -229,15 +236,15 @@ t4_l2t_alloc_tls(struct adapter *sc, struct sge_txq *txq, void *dst,
 	e->vlan = vlan;
 	e->lport = port;
 	e->iqid = sc->sge.fwq.abs_id;
-	e->wrq = (struct sge_wrq *)txq;
+	e->wrq = wrq;
 	memcpy(e->dmac, eth_addr, ETHER_ADDR_LEN);
 	atomic_store_rel_int(&e->refcnt, 1);
 	rw_wunlock(&d->lock);
 
 	/* Write out the work request. */
-	*ndesc = howmany(sizeof(struct cpl_l2t_write_req), EQ_ESIZE);
-	MPASS(*ndesc == 1);
-	mk_write_l2e(sc, e, 1, 0, dst);
+	mk_write_l2e(sc, e, 1, 0, req);
+
+	commit_wrq_wr(wrq, req, &cookie);
 
 	return (e);
 }
