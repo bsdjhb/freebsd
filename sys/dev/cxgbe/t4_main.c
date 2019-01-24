@@ -9924,6 +9924,7 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 				for_each_ofld_txq(vi, i, wrq) {
 					wrq->tx_wrs_direct = 0;
 					wrq->tx_wrs_copied = 0;
+					wrq->tls_wrs = 0;
 					wrq->kern_tls_records = 0;
 					wrq->kern_tls_short = 0;
 					wrq->kern_tls_partial = 0;

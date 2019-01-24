@@ -576,7 +576,6 @@ struct sge_txq {
 	uint64_t txpkts1_wrs;	/* # of type1 coalesced tx work requests */
 	uint64_t txpkts0_pkts;	/* # of frames in type0 coalesced tx WRs */
 	uint64_t txpkts1_pkts;	/* # of frames in type1 coalesced tx WRs */
-	uint64_t tls_wrs;	/* # of TLS work requests */
 	uint64_t raw_wrs;	/* # of raw work requests (alloc_wr_mbuf) */
 
 	/* stats for not-that-common events */
@@ -661,6 +660,7 @@ struct sge_wrq {
 
 	/* stats for not-that-common events */
 
+	uint64_t tls_wrs;	/* # of TLS work requests */
 	uint64_t kern_tls_records;
 	uint64_t kern_tls_short;
 	uint64_t kern_tls_partial;

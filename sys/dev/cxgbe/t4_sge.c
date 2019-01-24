@@ -4105,6 +4105,9 @@ alloc_wrq(struct adapter *sc, struct vi_info *vi, struct sge_wrq *wrq,
 #ifdef KERN_TLS
 	if (sc->flags & KERN_TLS_OK && vi != NULL) {
 		SYSCTL_ADD_UQUAD(ctx, children, OID_AUTO,
+		    "tls_wrs", CTLFLAG_RD, &wrq->tls_wrs,
+		    "# of NIC TLS work requests (TLS records)");
+		SYSCTL_ADD_UQUAD(ctx, children, OID_AUTO,
 		    "kern_tls_records", CTLFLAG_RD, &wrq->kern_tls_records,
 		    "# of NIC TLS records transmitted");
 		SYSCTL_ADD_UQUAD(ctx, children, OID_AUTO,
@@ -4256,8 +4259,6 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "txpkts1_pkts",
 	    CTLFLAG_RD, &txq->txpkts1_pkts,
 	    "# of frames tx'd using type1 txpkts work requests");
-	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "tls_wrs", CTLFLAG_RD,
-	    &txq->tls_wrs, "# of TLS work requests (TLS records)");
 	SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO, "raw_wrs", CTLFLAG_RD,
 	    &txq->raw_wrs, "# of raw work requests (non-packets)");
 
