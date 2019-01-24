@@ -195,6 +195,8 @@ struct tlspcb {
 	struct tls_scmd scmd0;
 	struct tls_scmd scmd0_short;
 
+	uint32_t cpl_tx_pkt_ctrl0;
+
 	struct tls_keyctx keyctx;
 
 	unsigned char enc_mode;
@@ -215,12 +217,19 @@ struct tlspcb {
 static struct protosw *tcp_protosw, *tcp6_protosw;
 
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m);
+static void sbtls_tx(struct tlspcb *tlsp);
 
+/* Check if the supplied mbuf has an external buffer, or else panic. */
+#define	M_ASSERTEXT(m)							\
+	KASSERT((m) != NULL && (m)->m_flags & M_EXT,			\
+	    ("%s: no mbuf packet header!", __func__))
+
+/* These assume that m_pkthdr is valid for M_EXT mbufs. */
 static inline int
 mbuf_nsegs(struct mbuf *m)
 {
 
-	M_ASSERTPKTHDR(m);
+	M_ASSERTEXT(m);
 	KASSERT(m->m_pkthdr.l5hlen > 0,
 	    ("%s: mbuf %p missing information on # of segments.", __func__, m));
 
@@ -231,7 +240,7 @@ static inline void
 set_mbuf_nsegs(struct mbuf *m, uint8_t nsegs)
 {
 
-	M_ASSERTPKTHDR(m);
+	M_ASSERTEXT(m);
 	m->m_pkthdr.l5hlen = nsegs;
 }
 
@@ -843,6 +852,13 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 
 	init_sbtls_key_params(tlsp, en, tls);
 
+	/* CPL_TX_PKT.ctrl0 field for non-TLS record packets. */
+	tlsp->cpl_tx_pkt_ctrl0 = htobe32(V_TXPKT_OPCODE(CPL_TX_PKT) |
+	    V_TXPKT_INTF(vi->pi->tx_chan) |
+	    V_TXPKT_PF(G_FW_VIID_PFN(vi->viid)) |
+	    V_TXPKT_VF(G_FW_VIID_VIN(vi->viid)) |
+	    V_TXPKT_VF_VLD(G_FW_VIID_VIVLD(vi->viid)));
+
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
 	    V_SCMD_PROTO_VERSION(tlsp->proto_ver) |
@@ -1084,7 +1100,7 @@ sbtls_base_wr_size(struct tlspcb *tlsp)
 
 /* How many bytes of TCP payload to send for a given TLS record. */
 static u_int
-sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
+sbtls_tcp_payload_length(struct tlspcb *tlsp, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
@@ -1120,7 +1136,7 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d short TLS record (%u vs %u)",
-	    __func__, cipher->tlsp->tid, mlen, ext_pgs->hdr_len + plen +
+	    __func__, tlsp->tid, mlen, ext_pgs->hdr_len + plen +
 	    ext_pgs->trail_len);
 #endif
 	return (mlen);
@@ -1181,12 +1197,11 @@ sbtls_sgl_size(u_int nsegs)
 }
 
 static int
-sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
-    int *nsegsp)
+sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
-	u_int imm_len, offset, plen, wr_len, tlen;
+	u_int imm_len, nsegs, offset, plen, wr_len, tlen;
 
 	MBUF_EXT_PGS_ASSERT(m_tls);
 	ext_pgs = (void *)m_tls->m_ext.ext_buf;
@@ -1195,19 +1210,19 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	 * Determine the size of the TLS record payload to send
 	 * excluding header and trailer.
 	 */
-	tlen = sbtls_tcp_payload_length(cipher, m_tls);
+	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
 		 * send a tunnelled packet as immediate data.
 		 */
-		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
+		wr_len = sizeof(struct fw_tls_tunnel_ofld_wr) +
 		    sizeof(struct cpl_tx_pkt_core) +
 		    roundup2(m->m_len + m_tls->m_len, 16);
 		if (wr_len > SGE_MAX_WR_LEN) {
 			CTR3(KTR_CXGBE,
 		    "%s: tid %d TLS header-only packet too long (len %d)",
-			    __func__, cipher->tlsp->tid, m->m_len +
+			    __func__, tlsp->tid, m->m_len +
 			    m_tls->m_len);
 		}
 
@@ -1216,9 +1231,9 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 
 		/*
 		 * XXX: Set a bogus 'nsegs' value to avoid tripping an
-		 * assertion in mbuf_nsegs() in t4_sge.c.
+		 * assertion in mbuf_nsegs().
 		 */
-		*nsegsp = 1;
+		set_mbuf_nsegs(m_tls, 1);
 		return (wr_len);
 	}
 
@@ -1226,12 +1241,12 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	plen = ext_pgs->hdr_len + ntohs(hdr->tls_length);
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(cipher->tlsp, m_tls);
+		offset = sbtls_payload_offset(tlsp, m_tls);
 	} else
 		offset = 0;
 
 	/* Calculate the size of the work request. */
-	wr_len = sbtls_base_wr_size(cipher->tlsp);
+	wr_len = sbtls_base_wr_size(tlsp);
 
 	/*
 	 * Full records and short records with an offset of 0 include
@@ -1246,9 +1261,10 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	wr_len += roundup2(imm_len, 16);
 
 	/* TLS record payload via DSGL. */
-	*nsegsp = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len + offset,
+	nsegs = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len + offset,
 	    plen - (ext_pgs->hdr_len + offset));
-	wr_len += sbtls_sgl_size(*nsegsp);
+	wr_len += sbtls_sgl_size(nsegs);
+	set_mbuf_nsegs(m_tls, nsegs);
 
 	wr_len = roundup2(wr_len, 16);
 	return (wr_len);
@@ -1323,12 +1339,12 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 static int
 sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 {
+	struct tlspcb *tlsp;
 	struct ether_header *eh;
 	struct ip *ip;
 	struct ip6_hdr *ip6;
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
-	int nsegs;
 	u_int wr_len, tot_len;
 
 	/*
@@ -1337,17 +1353,18 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	 * Could perhaps use m_advance() like parse_pkt() if that turns
 	 * out to not be true.
 	 */
+	tlsp = cipher->tlsp;
 	M_ASSERTPKTHDR(m);
 	if (m->m_len <= sizeof(*eh) + sizeof(*ip)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short", __func__,
-		    cipher->tlsp->tid);
+		    tlsp->tid);
 		return (EINVAL);
 	}
 	eh = mtod(m, struct ether_header *);
 	if (ntohs(eh->ether_type) != ETHERTYPE_IP &&
 	    ntohs(eh->ether_type) != ETHERTYPE_IPV6) {
 		CTR2(KTR_CXGBE, "%s: tid %d mbuf not ETHERTYPE_IP{,V6}",
-		    __func__, cipher->tlsp->tid);
+		    __func__, tlsp->tid);
 		return (EINVAL);
 	}
 	m->m_pkthdr.l2hlen = sizeof(*eh);
@@ -1357,7 +1374,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 		ip = (struct ip *)(eh + 1);
 		if (ip->ip_p != IPPROTO_TCP) {
 			CTR2(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP",
-			    __func__, cipher->tlsp->tid);
+			    __func__, tlsp->tid);
 			return (EINVAL);
 		}
 		m->m_pkthdr.l3hlen = ip->ip_hl * 4;
@@ -1365,7 +1382,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 		ip6 = (struct ip6_hdr *)(eh + 1);
 		if (ip6->ip6_nxt != IPPROTO_TCP) {
 			CTR3(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP (%u)",
-			    __func__, cipher->tlsp->tid, ip6->ip6_nxt);
+			    __func__, tlsp->tid, ip6->ip6_nxt);
 			return (EINVAL);
 		}
 		m->m_pkthdr.l3hlen = sizeof(struct ip6_hdr);
@@ -1373,7 +1390,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	if (m->m_len < m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
 	    sizeof(*tcp)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short (2)",
-		    __func__, cipher->tlsp->tid);
+		    __func__, tlsp->tid);
 		return (EINVAL);
 	}
 	tcp = (struct tcphdr *)((char *)(eh + 1) + m->m_pkthdr.l3hlen);
@@ -1384,7 +1401,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	    m->m_pkthdr.l4hlen) {
 		CTR6(KTR_CXGBE,
 		    "%s: tid %d header mbuf bad length (%d + %d + %d != %d)",
-		    __func__, cipher->tlsp->tid, m->m_pkthdr.l2hlen,
+		    __func__, tlsp->tid, m->m_pkthdr.l2hlen,
 		    m->m_pkthdr.l3hlen, m->m_pkthdr.l4hlen, m->m_len);
 		return (EINVAL);
 	}
@@ -1399,25 +1416,17 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	 * Each of the remaining mbufs in the chain should reference a
 	 * TLS record.
 	 */
-	set_mbuf_nsegs(m, 0);
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
 
-		wr_len = sbtls_wr_len(cipher, m, m_tls, &nsegs);
+		wr_len = sbtls_wr_len(tlsp, m, m_tls);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d wr_len %d nsegs %d", __func__,
-		    cipher->tlsp->tid, wr_len, nsegs);
+		    tlsp->tid, wr_len, mbuf_nsegs(m_tls));
 #endif
-		if (wr_len > SGE_MAX_WR_LEN || nsegs > TX_SGL_SEGS)
+		if (wr_len > SGE_MAX_WR_LEN || mbuf_nsegs(m_tls) > TX_SGL_SEGS)
 			return (EFBIG);
-		tot_len += roundup2(wr_len, EQ_ESIZE);
-
-		/*
-		 * Store 'nsegs' for the first TLS record in the
-		 * header mbuf's metadata.
-		 */
-		if (m_tls == m->m_next)
-			set_mbuf_nsegs(m, nsegs);
+		tot_len += roundup2(wr_len, 16);
 	}
 
 	MPASS(tot_len != 0);
@@ -1427,26 +1436,23 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	 * dedicated packet.
 	 */
 	if ((tcp->th_flags & TH_FIN) != 0 || sbtls_has_tcp_options(tcp)) {
-		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
+		wr_len = sizeof(struct fw_tls_tunnel_ofld_wr) +
 		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
 		if (wr_len > SGE_MAX_WR_LEN) {
 			CTR3(KTR_CXGBE,
 			    "%s: tid %d options-only packet too long (len %d)",
-			    __func__, cipher->tlsp->tid, m->m_len);
+			    __func__, tlsp->tid, m->m_len);
 			return (EINVAL);
 		}
-		tot_len += roundup2(wr_len, EQ_ESIZE);
+		tot_len += roundup2(wr_len, 16);
 	}
 
-	/* Include room for a TP work request to program an L2T entry. */
-	tot_len += EQ_ESIZE;
-
 	/*
-	 * Include room for a ULPTX work request including up to 5
+	 * Include room for a work request including up to 5
 	 * CPL_SET_TCB_FIELD commands before the first TLS work
 	 * request.
 	 */
-	wr_len = sizeof(struct fw_ulptx_wr) +
+	wr_len = sizeof(struct fw_tls_tunnel_ofld_wr) +
 	    5 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	/*
@@ -1456,15 +1462,15 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	if (cipher->using_timestamps)
 		wr_len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
-	tot_len += roundup2(wr_len, EQ_ESIZE);
+	tot_len += roundup2(wr_len, 16);
 
 	set_mbuf_len16(m, tot_len / 16);
 #ifdef VERBOSE_TRACES
-	CTR4(KTR_CXGBE, "%s: tid %d len16 %d nsegs %d", __func__,
-	    cipher->tlsp->tid, mbuf_len16(m), mbuf_nsegs(m));
+	CTR4(KTR_CXGBE, "%s: tid %d len16 %d", __func__,
+	    tlsp->tid, mbuf_len16(m));
 #endif
 	mtx_lock(&tlsp->lock);
-	if (tlsp->plen + m->m_pkthdr.len > tls_max_backlog) {
+	if (tlsp->plen + m->m_pkthdr.len > cipher->sc->tlst.max_backlog) {
 		mtx_unlock(&tlsp->lock);
 		return (ENOBUFS);
 	}
@@ -1473,7 +1479,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 	tlsp->plen += m->m_pkthdr.len;
 
 	sbtls_tx(tlsp);
-	mtx_unlock(&tlsp->tx);
+	mtx_unlock(&tlsp->lock);
 
 	return (0);
 }
@@ -1524,71 +1530,54 @@ write_gl_to_buf(struct sglist *gl, caddr_t to)
 }
 
 static inline void
-copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
+copy_to_wr(char **dst, const void *src, int len)
 {
 
-	MPASS((uintptr_t)(*to) >= (uintptr_t)&eq->desc[0]);
-	MPASS((uintptr_t)(*to) < (uintptr_t)&eq->desc[eq->sidx]);
-
-	if (__predict_true((uintptr_t)(*to) + len <=
-	    (uintptr_t)&eq->desc[eq->sidx])) {
-		bcopy(from, *to, len);
-		(*to) += len;
-		if ((uintptr_t)(*to) == (uintptr_t)&eq->desc[eq->sidx])
-			(*to) = (caddr_t)eq->desc;
-	} else {
-		int portion = (uintptr_t)&eq->desc[eq->sidx] - (uintptr_t)(*to);
-
-		bcopy(from, *to, portion);
-		from += portion;
-		portion = len - portion;	/* remaining */
-		bcopy(from, (void *)eq->desc, portion);
-		(*to) = (caddr_t)eq->desc + portion;
-	}
+	memcpy(*dst, src, len);
+	(*dst) += len;
 }
 
 static int
-sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int available, u_int pidx)
+sbtls_write_tcp_options(struct tlspcb *tlsp, struct mbuf *m, u_int available)
 {
-	struct tx_sdesc *txsd;
-	struct fw_eth_tx_pkt_wr *wr;
+	struct wrq_cookie cookie;
+	struct fw_tls_tunnel_ofld_wr *wr;
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;
 	uint64_t ctrl1;
-	int len16, ndesc, pktlen;
+	int len16, pktlen;
 	struct ether_header *eh;
 	struct ip *ip, newip;
 	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
-	caddr_t out;
+	char *out;
 
-	TXQ_LOCK_ASSERT_OWNED(txq);
+	mtx_assert(&tlsp->lock, MA_OWNED);
 	M_ASSERTPKTHDR(m);
 
-	wr = dst;
 	pktlen = m->m_len;
 	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
-	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
-	ndesc = howmany(len16, EQ_ESIZE / 16);
-	MPASS(ndesc <= available);
+	len16 = howmany(sizeof(struct fw_tls_tunnel_ofld_wr) + ctrl, 16);
+	MPASS(len16 <= available);
+
+	wr = start_wrq_wr(tlsp->txq, len16, &cookie);
+	if (wr == NULL)
+		return (-1);
 
 	/* Firmware work request header */
-	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
-	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
-
-	ctrl = V_FW_WR_LEN16(len16);
-	wr->equiq_to_len16 = htobe32(ctrl);
-	wr->r3 = 0;
+	memset(wr, 0, len16 * 16);
+	wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR));
+	wr->flowid_len16 = htobe32(V_FW_WR_LEN16(len16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+	wr->plen = htobe32(pktlen);
 
 	cpl = (void *)(wr + 1);
 
 	/* Checksum offload */
 	ctrl1 = 0;
-	txq->txcsum++;
 
 	/* CPL header */
-	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->ctrl0 = tlsp->cpl_tx_pkt_ctrl0;
 	cpl->pack = 0;
 	cpl->len = htobe16(pktlen);
 	cpl->ctrl1 = htobe64(ctrl1);
@@ -1597,22 +1586,22 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Copy over Ethernet header. */
 	eh = mtod(m, struct ether_header *);
-	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
+	copy_to_wr(&out, eh, m->m_pkthdr.l2hlen);
 
 	/* Fixup length in IP header and copy out. */
 	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
 		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip = *ip;
 		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		copy_to_wr(&out, &newip, sizeof(newip));
 		if (m->m_pkthdr.l3hlen > sizeof(*ip))
-			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			copy_to_wr(&out, ip + 1,
 			    m->m_pkthdr.l3hlen - sizeof(*ip));
 	} else {
 		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip6 = *ip6;
 		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		copy_to_wr(&out, &newip6, sizeof(newip6));
 		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
 	}
 
@@ -1620,22 +1609,19 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
 	newtcp.th_flags &= ~(TH_PUSH | TH_FIN);
-	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
+	copy_to_wr(&out, &newtcp, sizeof(newtcp));
 
 	/* Copy rest of packet. */
-	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, pktlen -
+	copy_to_wr(&out, tcp + 1, pktlen -
 	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
-	txq->imm_wrs++;
 
-	txq->txpkt_wrs++;
+	TXQ_LOCK(tlsp->txq);
+	tlsp->txq->kern_tls_options++;
 
-	txq->kern_tls_options++;
+	commit_wrq_wr_locked(tlsp->txq, wr, &cookie);
+	TXQ_UNLOCK(tlsp->txq);
 
-	txsd = &txq->sdesc[pidx];
-	txsd->m = NULL;
-	txsd->desc_used = ndesc;
-
-	return (ndesc);
+	return (len16);
 }
 
 static void
@@ -1671,24 +1657,24 @@ sbtls_populate_tls_header(struct tlspcb *tlsp, struct mbuf_ext_pgs *ext_pgs,
 }
 
 static int
-sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, struct mbuf *m_tls, u_int available,
-    tcp_seq tcp_seqno, u_int pidx)
+sbtls_write_tunnel_packet(struct tlspcb *tlsp, struct mbuf *m,
+    struct mbuf *m_tls, u_int available, tcp_seq tcp_seqno)
 {
-	struct tx_sdesc *txsd;
-	struct fw_eth_tx_pkt_wr *wr;
+	struct wrq_cookie cookie;
+	struct fw_tls_tunnel_ofld_wr *wr;
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;
 	uint64_t ctrl1;
-	int len16, ndesc, pktlen;
+	int len16, pktlen;
 	struct ether_header *eh;
 	struct ip *ip, newip;
 	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
 	struct mbuf_ext_pgs *ext_pgs;
-	caddr_t out;
+	char *out;
+	char tls_header[32];
 
-	TXQ_LOCK_ASSERT_OWNED(txq);
+	mtx_assert(&tlsp->lock, MA_OWNED);
 	M_ASSERTPKTHDR(m);
 
 	/* Locate the template TLS header. */
@@ -1698,29 +1684,30 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* This should always be the last TLS record in a chain. */
 	MPASS(m_tls->m_next == NULL);
 
-	wr = dst;
 	pktlen = m->m_len + m_tls->m_len;
 	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
-	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
-	ndesc = howmany(len16, EQ_ESIZE / 16);
-	MPASS(ndesc <= available);
+	len16 = howmany(sizeof(struct fw_tls_tunnel_ofld_wr) + ctrl, 16);
+	MPASS(len16 <= available);
+
+	wr = start_wrq_wr(tlsp->txq, len16, &cookie);
+	if (wr == NULL)
+		return (-1);
 
 	/* Firmware work request header */
-	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
-	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
-
-	ctrl = V_FW_WR_LEN16(len16);
-	wr->equiq_to_len16 = htobe32(ctrl);
-	wr->r3 = 0;
+	memset(wr, 0, len16 * 16);
+	wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR) |
+	    F_FW_WR_COMPL);
+	wr->flowid_len16 = htobe32(V_FW_WR_LEN16(len16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+	wr->plen = htobe32(pktlen);
 
 	cpl = (void *)(wr + 1);
 
 	/* Checksum offload */
 	ctrl1 = 0;
-	txq->txcsum++;
 
 	/* CPL header */
-	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->ctrl0 = tlsp->cpl_tx_pkt_ctrl0;
 	cpl->pack = 0;
 	cpl->len = htobe16(pktlen);
 	cpl->ctrl1 = htobe64(ctrl1);
@@ -1729,22 +1716,22 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Copy over Ethernet header. */
 	eh = mtod(m, struct ether_header *);
-	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
+	copy_to_wr(&out, eh, m->m_pkthdr.l2hlen);
 
 	/* Fixup length in IP header and copy out. */
 	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
 		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip = *ip;
 		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		copy_to_wr(&out, &newip, sizeof(newip));
 		if (m->m_pkthdr.l3hlen > sizeof(*ip))
-			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			copy_to_wr(&out, ip + 1,
 			    m->m_pkthdr.l3hlen - sizeof(*ip));
 	} else {
 		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip6 = *ip6;
 		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		copy_to_wr(&out, &newip6, sizeof(newip6));
 		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
 	}
 
@@ -1752,33 +1739,31 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
 	newtcp.th_seq = htonl(tcp_seqno + mtod(m_tls, vm_offset_t));
-	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
+	copy_to_wr(&out, &newtcp, sizeof(newtcp));
 
 	/* Copy rest of TCP header. */
-	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, m->m_len -
+	copy_to_wr(&out, tcp + 1, m->m_len -
 	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
 
-	/* Populate the TLS header in the scratch space. */
-	sbtls_populate_tls_header(cipher->tlsp, ext_pgs, txq->ss);
+	/* Populate the TLS header in the local buffer. */
+	MPASS(ext_pgs->hdr_len <= sizeof(tls_header));
+	sbtls_populate_tls_header(tlsp, ext_pgs, tls_header);
 
 	/* Copy the subset of the TLS header requested. */
-	copy_to_txd(&txq->eq, (char *)txq->ss + mtod(m_tls, vm_offset_t), &out,
+	copy_to_wr(&out, tls_header + mtod(m_tls, vm_offset_t),
 	    m_tls->m_len);
-	txq->imm_wrs++;
-
-	txq->txpkt_wrs++;
 
 #ifdef VERBOSE_TRACES
 	CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
-	    __func__, cipher->tlsp->tid, (u_int)ext_pgs->seqno);
+	    __func__, tlsp->tid, (u_int)ext_pgs->seqno);
 #endif
-	txq->kern_tls_header++;
+	TXQ_LOCK(tlsp->txq);
+	tlsp->txq->kern_tls_header++;
 
-	txsd = &txq->sdesc[pidx];
-	txsd->m = m;
-	txsd->desc_used = ndesc;
+	commit_wrq_wr_locked(tlsp->txq, wr, &cookie);
+	TXQ_UNLOCK(tlsp->txq);
 
-	return (ndesc);
+	return (len16);
 }
 
 _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
@@ -1786,16 +1771,13 @@ _Static_assert(sizeof(struct cpl_set_tcb_field) <= EQ_ESIZE,
 _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
     "SND_NXT_RAW and SND_UNA_RAW are in different words");
 
-static int
-sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
-    u_int nsegs, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
-    u_int pidx, bool set_l2t_idx)
+static bool
+sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
+    struct mbuf *m_tls, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
+    bool set_l2t_idx, int *len16p)
 {
-	struct sge_eq *eq = &txq->eq;
-	struct tx_sdesc *txsd;
-	struct tlspcb *tlsp;
-	struct fw_ulptx_wr *wr;
+	struct wrq_cookie cookie;
+	struct fw_tls_tunnel_ofld_wr *wr;
 	struct ulp_txpkt *txpkt;
 	struct ulptx_sc_memrd *memrd;
 	struct ulptx_idata *idata;
@@ -1807,26 +1789,13 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	u_int aad_start, aad_stop;
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
-	u_int imm_len, mss, ndesc, offset, plen, tlen, twr_len, wr_len;
-	u_int tx_max, fields;
-	bool first_wr, last_wr, using_scratch;
+	u_int imm_len, mss, offset, plen, tlen, twr_len, wr_len;
+	u_int fields, nsegs, tx_max;
+	bool first_wr, last_wr, separate_wr;
 
-	ndesc = 0;
-	tlsp = cipher->tlsp;
-#if 0
-	MPASS(cipher->txq == txq);
-#endif
-
+	*len16p = 0;
 	first_wr = (cipher->prev_seq == 0 && cipher->prev_ack == 0 &&
 	    cipher->prev_win == 0);
-
-	/*
-	 * Use the per-txq scratch pad if near the end of the ring to
-	 * simplify handling of wrap-around.  This uses a simple but
-	 * not quite perfect test of using the scratch buffer if we
-	 * can't fit a maximal work request in without wrapping.
-	 */
-	using_scratch = (eq->sidx - pidx < SGE_MAX_WR_LEN / EQ_ESIZE);
 
 	/* Locate the template TLS header. */
 	MBUF_EXT_PGS_ASSERT(m_tls);
@@ -1835,24 +1804,24 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	plen = ext_pgs->hdr_len + ntohs(hdr->tls_length);
 
 	/* Determine how much of the TLS record to send. */
-	tlen = sbtls_tcp_payload_length(cipher, m_tls);
+	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
 		 * send a tunnelled packet as immediate data.
 		 */
-		return (sbtls_write_tunnel_packet(cipher, txq, dst, m, m_tls,
-		    available, tcp_seqno, pidx));
+		return (sbtls_write_tunnel_packet(tlsp, m, m_tls,
+		    available, tcp_seqno));
 	}
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(cipher->tlsp, m_tls);
+		offset = sbtls_payload_offset(tlsp, m_tls);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d short TLS record %u with offset %u",
-		    __func__, cipher->tlsp->tid, (u_int)ext_pgs->seqno, offset);
+		    __func__, tlsp->tid, (u_int)ext_pgs->seqno, offset);
 #endif
 		if (m_tls->m_next == NULL && (tcp->th_flags & TH_FIN) != 0) {
-			txq->kern_tls_fin_short++;
+			atomic_add_64(&tlsp->txq->kern_tls_fin_short, 1);
 #ifdef INVARIANTS
 			panic("%s: FIN on short TLS record", __func__);
 #endif
@@ -1900,19 +1869,92 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	    ext_pgs->hdr_len + ntohs(hdr->tls_length));
 
 	/*
-	 * Update TCB fields.  Reserve space for the FW_ULPTX_WR header
-	 * but don't populate it until we know how many field updates
-	 * are required.
+	 * Count how many TCB fields we need to update to size the
+	 * work request.
 	 */
-	if (using_scratch)
-		wr = (void *)txq->ss;
-	else
-		wr = dst;
+	fields = 0;
+	if (set_l2t_idx) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to set L2T_IX for subsequent TLS WR"));
+		fields++;
+	}
+	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
+		fields++;
+	}
+	if (first_wr || cipher->prev_seq != tx_max) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to set TX_MAX for subsequent TLS WR"));
+		fields++;
+	}
+	if (cipher->prev_seq != tx_max || mtod(m_tls, vm_offset_t) != 0) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to clear SND_UNA_RAW for subsequent TLS WR"));
+		fields++;
+	}
+	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to set RCV_NXT for subsequent TLS WR"));
+		fields++;
+	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
+		KASSERT(m_tls == m->m_next,
+		    ("trying to set RCV_WND for subsequent TLS WR"));
+		fields++;
+	}
+
+	/* Calculate the size of the TLS work request. */
+	twr_len = sbtls_base_wr_size(tlsp);
+
+	imm_len = 0;
+	if (offset == 0)
+		imm_len += ext_pgs->hdr_len;
+	if (plen == tlen)
+		imm_len += AES_BLOCK_LEN;
+	twr_len += roundup2(imm_len, 16);
+	nsegs = mbuf_nsegs(m_tls);
+	twr_len += sbtls_sgl_size(nsegs);
+	twr_len = roundup2(twr_len, 16);
+
+	/*
+	 * If any field updates were required, determine if they can
+	 * be included in the TLS work request.
+	 */
+	if (fields != 0) {
+		wr_len = fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
+		if (twr_len + wr_len <= SGE_MAX_WR_LEN &&
+		    cipher->sc->tlst.combo_wrs) {
+			separate_wr = false;
+			wr_len += twr_len;
+		} else {
+			separate_wr = true;
+			wr_len += sizeof(*wr);
+		}
+	} else {
+		separate_wr = false;
+		wr_len = twr_len;
+	}
+
+	MPASS(wr_len % 16 == 0);
+	MPASS(wr_len / 16 <= available);
+	MPASS(wr_len <= SGE_MAX_WR_LEN);
+
+	wr = start_wrq_wr(tlsp->txq, wr_len / 16, &cookie);
+	if (wr == NULL)
+		return (false);
+
+	/* FW_TLS_TUNNEL_OFLD_WR */
+	memset(wr, 0, wr_len);
+	wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR) |
+	    V_FW_WR_COMPL((last_wr && !separate_wr) ? 1 : 0));
+	wr->flowid_len16 = htobe32(V_FW_WR_LEN16(wr_len / 16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+
+	/* Update TCB fields. */
 	out = (void *)(wr + 1);
 	fields = 0;
 	if (set_l2t_idx) {
-		KASSERT(nsegs != 0,
-		    ("trying to set L2T_IX for subsequent TLS WR"));
+		MPASS(fields > 0);
 #ifdef VERBOSE_TRACES
 		CTR3(KTR_CXGBE, "%s: tid %d set L2T_IX to %d", __func__,
 		    tlsp->tid, tlsp->l2te->idx);
@@ -1920,11 +1962,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		write_set_tcb_field_ulp(tlsp, out, W_TCB_L2T_IX,
 		    V_TCB_L2T_IX(M_TCB_L2T_IX), V_TCB_L2T_IX(tlsp->l2te->idx));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
-	}		
+		fields--;
+	}
 	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
-		KASSERT(nsegs != 0,
-		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
+		MPASS(fields > 0);
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
 		    __func__, cipher->tlsp->tid);
@@ -1933,14 +1974,13 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
 		    V_TCB_T_RTSEQ_RECENT(ntohl(tsopt[1])));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
+		fields--;
 
 		cipher->prev_tsecr = ntohl(tsopt[1]);
 	}
 
 	if (first_wr || cipher->prev_seq != tx_max) {
-		KASSERT(nsegs != 0,
-		    ("trying to set TX_MAX for subsequent TLS WR"));
+		MPASS(fields > 0);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE,
 		    "%s: tid %d setting TX_MAX to %u (tcp_seqno %u)",
@@ -1949,7 +1989,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		write_set_tcb_field_ulp(tlsp, out, W_TCB_TX_MAX,
 		    V_TCB_TX_MAX(M_TCB_TX_MAX), V_TCB_TX_MAX(tx_max));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
+		fields--;
 	}
 
 	/*
@@ -1958,8 +1998,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * reset SND_UNA_RAW to 0 so that SND_UNA == TX_MAX.
 	 */
 	if (cipher->prev_seq != tx_max || mtod(m_tls, vm_offset_t) != 0) {
-		KASSERT(nsegs != 0,
-		    ("trying to clear SND_UNA_RAW for subsequent TLS WR"));
+		MPASS(fields > 0);
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d clearing SND_UNA_RAW", __func__,
 		    tlsp->tid);
@@ -1968,128 +2007,85 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    V_TCB_SND_UNA_RAW(M_TCB_SND_UNA_RAW),
 		    V_TCB_SND_UNA_RAW(0));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
+		fields--;
 	}
 
-	/*
-	 * Store the expected sequence number of the next byte after
-	 * this record.
-	 */
-	cipher->prev_seq = tcp_seqno + tlen;
-
 	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
-		KASSERT(nsegs != 0,
-		    ("trying to set RCV_NXT for subsequent TLS WR"));
+		MPASS(fields > 0);
 		write_set_tcb_field_ulp(tlsp, out, W_TCB_RCV_NXT,
 		    V_TCB_RCV_NXT(M_TCB_RCV_NXT),
 		    V_TCB_RCV_NXT(ntohl(tcp->th_ack)));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
+		fields--;
 
 		cipher->prev_ack = ntohl(tcp->th_ack);
 	}
 
 	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
-		KASSERT(nsegs != 0,
+		MPASS(fields > 0);
+		KASSERT(m_tls == m->m_next,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
 		write_set_tcb_field_ulp(tlsp, out, W_TCB_RCV_WND,
 		    V_TCB_RCV_WND(M_TCB_RCV_WND),
 		    V_TCB_RCV_WND(ntohs(tcp->th_win)));
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		fields++;
+		fields--;
 
 		cipher->prev_win = ntohs(tcp->th_win);
 	}
 
-	/* Recalculate 'nsegs' if cached value is not available. */
-	if (nsegs == 0)
-		nsegs = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len +
-		    offset, plen - (ext_pgs->hdr_len + offset));
-
-	/* Calculate the size of the TLS work request. */
-	twr_len = sbtls_base_wr_size(cipher->tlsp);
-
-	imm_len = 0;
-	if (offset == 0)
-		imm_len += ext_pgs->hdr_len;
-	if (plen == tlen)
-		imm_len += AES_BLOCK_LEN;
-	twr_len += roundup2(imm_len, 16);
-	twr_len += sbtls_sgl_size(nsegs);
+	KASSERT(fields == 0, ("%s: fields mismatch, %d remaining", __func__,
+	    fields));
 
 	/*
-	 * If any field updates were required, determine if they can
-	 * be included in the TLS work request.  If not, use the
-	 * FW_ULPTX_WR work request header at 'wr' as a dedicated work
-	 * request for the field updates and start a new work request
-	 * for the TLS work request afterward.
+	 * If the TCB updates are being sent in a separate work
+	 * request, finish the TCB update work request and start the
+	 * TLS work request.
 	 */
-	if (fields != 0) {
-		wr_len = fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-		if (twr_len + wr_len <= SGE_MAX_WR_LEN &&
-		    cipher->sc->tlst.combo_wrs) {
-			wr_len += twr_len;
-			txpkt = (void *)out;
-		} else {
-			wr_len += sizeof(*wr);
-			wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
-			wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
-			    V_FW_WR_LEN16(wr_len / 16));
-			wr->cookie = 0;
+	if (separate_wr) {
+		commit_wrq_wr(tlsp->txq, wr, &cookie);
 
-			/*
-			 * If we were using scratch space, copy the
-			 * field updates work request to the ring.
-			 */
-			if (using_scratch) {
-				out = dst;
-				copy_to_txd(eq, txq->ss, &out, wr_len);
-			}
+		*len16p += wr_len / 16;
+		available -= wr_len / 16;
 
-			ndesc = howmany(wr_len, EQ_ESIZE);
-			MPASS(ndesc <= available);
-
-			txq->raw_wrs++;
-			txsd = &txq->sdesc[pidx];
-			txsd->m = NULL;
-			txsd->desc_used = ndesc;
-			IDXINCR(pidx, ndesc, eq->sidx);
-			dst = &eq->desc[pidx];
-
-			/*
-			 * Determine if we should use scratch space
-			 * for the TLS work request based on the
-			 * available space after advancing pidx for
-			 * the field updates work request.
-			 */
-			wr_len = twr_len;
-			using_scratch = (eq->sidx - pidx <
-			    howmany(wr_len, EQ_ESIZE));
-			if (using_scratch)
-				wr = (void *)txq->ss;
-			else
-				wr = dst;
-			txpkt = (void *)(wr + 1);
-		}
-	} else {
 		wr_len = twr_len;
-		txpkt = (void *)out;
+
+		MPASS(wr_len % 16 == 0);
+		MPASS(wr_len / 16 <= available);
+		MPASS(wr_len <= SGE_MAX_WR_LEN);
+
+		wr = start_wrq_wr(tlsp->txq, wr_len / 16, &cookie);
+		if (wr == NULL)
+			return (false);
+
+		/* FW_TLS_TUNNEL_OFLD_WR */
+		memset(wr, 0, wr_len);
+		wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR) |
+		    V_FW_WR_COMPL(last_wr ? 1 : 0));
+		wr->flowid_len16 = htobe32(V_FW_WR_LEN16(wr_len / 16) |
+		    V_FW_WR_FLOWID(tlsp->tid));
+		out = (void *)(wr + 1);
 	}
 
-	wr_len = roundup2(wr_len, 16);
-	MPASS(ndesc + howmany(wr_len, EQ_ESIZE) <= available);
-
-	/* FW_ULPTX_WR */
-	wr->op_to_compl = htobe32(V_FW_WR_OP(FW_ULPTX_WR));
-	wr->flowid_len16 = htobe32(F_FW_ULPTX_WR_DATA |
-	    V_FW_WR_LEN16(wr_len / 16));
-	wr->cookie = 0;
+	/*
+	 * Store the expected sequence number of the next byte after
+	 * this record.
+	 *
+	 * NB: This update is performed as part of the TLS work
+	 * request, so it can't be committed until we are certain the
+	 * TLS work request can be sent.  We may send some spurious
+	 * TCB field updates if a TLS record uses separate work
+	 * requests and the second call to start_wrq_wr() fails.
+	 * However, those spurious updates are harmless.
+	 */
+	cipher->prev_seq = tcp_seqno + tlen;
 
 	/* ULP_TXPKT */
+	txpkt = (void *)out;
 	txpkt->cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
 	    V_ULP_TXPKT_DATAMODIFY(0) |
 	    V_ULP_TXPKT_CHANNELID(tlsp->vi->pi->port_id) | V_ULP_TXPKT_DEST(0) |
-	    V_ULP_TXPKT_FID(txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
+	    V_ULP_TXPKT_FID(tlsp->txq->eq.cntxt_id) | V_ULP_TXPKT_RO(1));
 	txpkt->len = htobe32(howmany(twr_len - sizeof(*wr), 16));
 
 	/* ULPTX_IDATA sub-command */
@@ -2134,8 +2130,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		sec_pdu->ivgen_hdrlen = htobe32(
 		    tlsp->scmd0_short.ivgen_hdrlen |
 		    V_SCMD_HDR_LEN(offset == 0 ? ext_pgs->hdr_len : 0));
-
-		txq->kern_tls_short++;
 	} else {
 		/*
 		 * AAD is TLS header.  IV is after AAD.  The cipher region
@@ -2165,11 +2159,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		/* These two flits are actually a CPL_TLS_TX_SCMD_FMT. */
 		sec_pdu->seqno_numivs = tlsp->scmd0.seqno_numivs;
 		sec_pdu->ivgen_hdrlen = tlsp->scmd0.ivgen_hdrlen;
-
-		if (mtod(m_tls, vm_offset_t) == 0)
-			txq->kern_tls_full++;
-		else
-			txq->kern_tls_partial++;
 	}
 	sec_pdu->op_ivinsrtofst = htobe32(
 	    V_CPL_TX_SEC_PDU_OPCODE(CPL_TX_SEC_PDU) |
@@ -2192,8 +2181,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	/* Key context */
 	out = (void *)(sec_pdu + 1);
 	if (tlsp->inline_key) {
-		memcpy(out, &tlsp->keyctx, tlsp->tx_key_info_size);
-		out += tlsp->tx_key_info_size;
+		copy_to_wr(&out, &tlsp->keyctx, tlsp->tx_key_info_size);
 	} else {
 		/* ULPTX_SC_MEMRD to read key context. */
 		memrd = (void *)out;
@@ -2234,6 +2222,22 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (last_wr && tcp->th_flags & TH_PUSH)
 		tx_data->flags |= htobe32(F_TX_PUSH | F_TX_SHOVE);
 
+	/*
+	 * The 'plen' field in the work request header is supposed to
+	 * count the actual bytes on wire as a result of this request
+	 * (including headers).  Starting with the values stored in
+	 * CPL_TX_DATA, adjust the payload length to discard any
+	 * segments before tx_max, then add in header overhead for
+	 * Ethernet, IP, and TCP.
+	 */
+	wr->plen = G_TX_LENGTH(be32toh(tx_data->len));
+	wr->plen -= rounddown(tx_max - be32toh(tx_data->rsvd), mss);
+	hlen = m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(struct tcphdr);
+	if (cipher->using_timestamps)
+		hlen + = 12;
+	wr->plen += howmany(wr->plen, mss) * hlen;
+	wr->plen = htobe32(wr->plen);
+
 	/* Populate the TLS header */
 	out = (void *)(tx_data + 1);
 	if (offset == 0) {
@@ -2258,10 +2262,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	}
 
 	/* Skip over padding to a 16-byte boundary. */
-	if (imm_len % 16 != 0) {
-		memset(out, 0, 16 - (imm_len % 16));
+	if (imm_len % 16 != 0)
 		out += 16 - (imm_len % 16);
-	}
 
 	/* SGL for record payload */
 	sglist_reset(txq->gl);
@@ -2273,77 +2275,76 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	}
 	write_gl_to_buf(txq->gl, out);
 
-	if (using_scratch) {
-		out = dst;
-		copy_to_txd(eq, txq->ss, &out, wr_len);
-	}
+	TXQ_LOCK(tlsp->txq);
+	tlsp->txq->tls_wrs++;
 
-	ndesc += howmany(wr_len, EQ_ESIZE);
-	MPASS(ndesc <= available);
-	txq->tls_wrs++;
-
-	txq->kern_tls_records++;
-	txq->kern_tls_octets += tlen - mtod(m_tls, vm_offset_t);
+	tlsp->txq->kern_tls_records++;
+	if (plen == tlen)
+		tlsp->txq->kern_tls_short++;
+	else if (mtod(m_tls, vm_offset_t) == 0)
+		tlsp->txq->kern_tls_full++;
+	else
+		tlsp->txq->kern_tls_partial++;
+	tlsp->txq->kern_tls_octets += tlen - mtod(m_tls, vm_offset_t);
 	if (mtod(m_tls, vm_offset_t) != 0) {
 		if (offset == 0)
-			txq->kern_tls_waste += mtod(m_tls, vm_offset_t);
+			tlsp->txq->kern_tls_waste += mtod(m_tls, vm_offset_t);
 		else
-			txq->kern_tls_waste += mtod(m_tls, vm_offset_t) -
+			tlsp->txq->kern_tls_waste += mtod(m_tls, vm_offset_t) -
 			    (ext_pgs->hdr_len + offset);
 	}
 
-	txsd = &txq->sdesc[pidx];
-	if (last_wr)
-		txsd->m = m;
-	else
-		txsd->m = NULL;
-	txsd->desc_used = howmany(wr_len, EQ_ESIZE);
 
-	return (ndesc);
+	commit_wrq_wr_locked(tlsp->txq, wr, &cookie);
+	TXQ_UNLOCK(tlsp->txq);
+
+	*len16p += wr_len / 16;
+	return (true);
 }
 
 static int
-sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int available, tcp_seq tcp_seqno, u_int pidx)
+sbtls_write_tcp_fin(struct tlspcb *tlsp, struct mbuf *m, u_int available,
+    tcp_seq tcp_seqno)
 {
-	struct tx_sdesc *txsd;
-	struct fw_eth_tx_pkt_wr *wr;
+	struct wrq_cookie cookie;
+	struct fw_tls_tunnel_ofld_wr *wr;
 	struct cpl_tx_pkt_core *cpl;
 	uint32_t ctrl;
 	uint64_t ctrl1;
-	int len16, ndesc, pktlen;
+	int len16, pktlen;
 	struct ether_header *eh;
 	struct ip *ip, newip;
 	struct ip6_hdr *ip6, newip6;
 	struct tcphdr *tcp, newtcp;
-	caddr_t out;
+	char *out;
 
-	TXQ_LOCK_ASSERT_OWNED(txq);
+	mtx_assert(&tlsp->lock, MA_OWNED);
 	M_ASSERTPKTHDR(m);
 
-	wr = dst;
 	pktlen = m->m_len;
 	ctrl = sizeof(struct cpl_tx_pkt_core) + pktlen;
-	len16 = howmany(sizeof(struct fw_eth_tx_pkt_wr) + ctrl, 16);
-	ndesc = howmany(len16, EQ_ESIZE / 16);
-	MPASS(ndesc <= available);
+	len16 = howmany(sizeof(struct fw_tls_tunnel_ofld_wr) + ctrl, 16);
+	MPASS(len16 <= available);
+
+	wr = start_wrq_wr(tlsp->txq, len16, &cookie);
+	if (wr == NULL)
+		return (-1);
 
 	/* Firmware work request header */
-	wr->op_immdlen = htobe32(V_FW_WR_OP(FW_ETH_TX_PKT_WR) |
-	    V_FW_ETH_TX_PKT_WR_IMMDLEN(ctrl));
-
-	ctrl = V_FW_WR_LEN16(len16);
-	wr->equiq_to_len16 = htobe32(ctrl);
-	wr->r3 = 0;
+	memset(wr, 0, len16 * 16);
+	wr->op_compl = htobe32(V_FW_WR_OP(FW_TLS_TUNNEL_OFLD_WR) |
+	    F_FW_WR_COMPL);
+	wr->flowid_len16 = htobe32(V_FW_WR_LEN16(len16) |
+	    V_FW_WR_FLOWID(tlsp->tid));
+	wr->plen = htobe32(pktlen);
 
 	cpl = (void *)(wr + 1);
 
 	/* Checksum offload */
 	ctrl1 = 0;
-	txq->txcsum++;
 
 	/* CPL header */
-	cpl->ctrl0 = txq->cpl_ctrl0;
+	cpl->ctrl0 = tlsp->cpl_tx_pkt_ctrl0;
 	cpl->pack = 0;
 	cpl->len = htobe16(pktlen);
 	cpl->ctrl1 = htobe64(ctrl1);
@@ -2352,22 +2353,22 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	/* Copy over Ethernet header. */
 	eh = mtod(m, struct ether_header *);
-	copy_to_txd(&txq->eq, (caddr_t)eh, &out, m->m_pkthdr.l2hlen);
+	copy_to_wr(&out, eh, m->m_pkthdr.l2hlen);
 
 	/* Fixup length in IP header and copy out. */
 	if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
 		ip = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip = *ip;
 		newip.ip_len = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip, &out, sizeof(newip));
+		copy_to_wr(&out, &newip, sizeof(newip));
 		if (m->m_pkthdr.l3hlen > sizeof(*ip))
-			copy_to_txd(&txq->eq, (caddr_t)(ip + 1), &out,
+			copy_to_wr(&out, ip + 1,
 			    m->m_pkthdr.l3hlen - sizeof(*ip));
 	} else {
 		ip6 = (void *)((char *)eh + m->m_pkthdr.l2hlen);
 		newip6 = *ip6;
 		newip6.ip6_plen = htons(pktlen - m->m_pkthdr.l2hlen);
-		copy_to_txd(&txq->eq, (caddr_t)&newip6, &out, sizeof(newip6));
+		copy_to_wr(&out, &newip6, sizeof(newip6));
 		MPASS(m->m_pkthdr.l3hlen == sizeof(*ip6));
 	}
 
@@ -2375,45 +2376,37 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tcp = (void *)((char *)eh + m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen);
 	newtcp = *tcp;
 	newtcp.th_seq = htonl(tcp_seqno);
-	copy_to_txd(&txq->eq, (caddr_t)&newtcp, &out, sizeof(newtcp));
+	copy_to_wr(&out, &newtcp, sizeof(newtcp));
 
 	/* Copy rest of packet. */
-	copy_to_txd(&txq->eq, (caddr_t)(tcp + 1), &out, m->m_len -
+	copy_to_wr(&out, tcp + 1, m->m_len -
 	    (m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(*tcp)));
-	txq->imm_wrs++;
 
-	txq->txpkt_wrs++;
+	TXQ_LOCK(tlsp->txq);
+	tlsp->txq->kern_tls_fin++;
 
-	txq->kern_tls_fin++;
+	commit_wrq_wr_locked(tlsp->txq, wr, &cookie);
+	TXQ_UNLOCK(tlsp->txq);
 
-	txsd = &txq->sdesc[pidx];
-	txsd->m = m;
-	txsd->desc_used = ndesc;
-
-	return (ndesc);
+	return (len16);
 }
 
-static int
-sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
-    struct mbuf *m, u_int nsegs, u_int available)
+static bool
+sbtls_write_wrs(struct tlspcb *tlsp, struct mbuf *m, u_int available, int compl)
 {
-	struct sge_eq *eq = &txq->eq;
-	struct tx_sdesc *txsd;
-	struct tlspcb *tlsp;
 	struct tcphdr *tcp;
 	struct mbuf *m_tls;
 	struct ether_header *eh;
 	tcp_seq tcp_seqno;
-	u_int ndesc, pidx, totdesc;
+	u_int tot_len16;
+	int len16;
 	bool has_fin, set_l2t_idx;
 	void *tsopt;
 
-	totdesc = 0;
+	tot_len16 = 0;
 	eh = mtod(m, struct ether_header *);
 	tcp = (struct tcphdr *)((char *)eh + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
-	pidx = eq->pidx;
-	tlsp = cipher->tlsp;
 	has_fin = (tcp->th_flags & TH_FIN) != 0;
 
 	/*
@@ -2421,11 +2414,10 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	 * requested options as part of the FIN packet.
 	 */
 	if (!has_fin && sbtls_has_tcp_options(tcp)) {
-		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
-		    pidx);
-		totdesc += ndesc;
-		IDXINCR(pidx, ndesc, eq->sidx);
-		dst = &eq->desc[pidx];
+		len16 = sbtls_write_tcp_options(tlsp, m, available);
+		if (len16 < 0)
+			goto err;
+		tot_len16 += len16;
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote TCP options packet", __func__,
 		    tlsp->tid);
@@ -2434,7 +2426,8 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 
 	/*
 	 * Allocate a new L2T entry if necessary.  This may write out
-	 * a work request to the txq.
+	 * a work request to the txq.  NB: This work request does not
+	 * consume FLOWC credits.
 	 */
 	set_l2t_idx = false;
 	if (tlsp->l2te == NULL ||
@@ -2442,21 +2435,10 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		set_l2t_idx = true;
 		if (tlsp->l2te)
 			t4_l2t_release(tlsp->l2te);
-		tlsp->l2te = t4_l2t_alloc_tls(cipher->sc, txq, dst, &ndesc,
+		tlsp->l2te = t4_l2t_alloc_tls(tlsp->vi->pi->adapter, tlsp->txq,
 		    0xfff, tlsp->vi->pi->lport, eh->ether_dhost);
 		if (tlsp->l2te == NULL)
 			CXGBE_UNIMPLEMENTED("failed to allocate TLS L2TE");
-		if (ndesc != 0) {
-			MPASS(ndesc <= available - totdesc);
-
-			txq->raw_wrs++;
-			txsd = &txq->sdesc[pidx];
-			txsd->m = NULL;
-			txsd->desc_used = ndesc;
-			totdesc += ndesc;
-			IDXINCR(pidx, ndesc, eq->sidx);
-			dst = &eq->desc[pidx];
-		}
 	}
 
 	/*
@@ -2481,18 +2463,13 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 			tcp_seqno = cipher->prev_seq;
 		}
 
-		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
-		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx,
-		    set_l2t_idx);
-		totdesc += ndesc;
-		IDXINCR(pidx, ndesc, eq->sidx);
-		dst = &eq->desc[pidx];
-
-		/*
-		 * The value of nsegs from the header mbuf's metadata
-		 * is only valid for the first TLS record.
-		 */
-		nsegs = 0;
+		if (!sbtls_write_tls_wr(tlsp, m, tcp, m_tls,
+		    available - tot_len16, tcp_seqno, tsopt, set_l2t_idx,
+		    &len16)) {
+			tot_len16 += len16;
+			goto err;
+		}
+		tot_len16 += len16;
 
 		/* Only need to set the L2T index once. */
 		set_l2t_idx = false;
@@ -2507,13 +2484,20 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 		 * uses the TCP sequence number after that reqeust as
 		 * the sequence number for the FIN packet.
 		 */
-		ndesc = sbtls_write_tcp_fin(cipher, txq, dst, m, available,
+		len16 = sbtls_write_tcp_fin(tlsp, m, available - tot_len16,
 		    cipher->prev_seq, pidx);
-		totdesc += ndesc;
+		if (len16 < 0)
+			goto err;
+		tot_len16 += len16;
 	}
 
-	MPASS(totdesc <= available);
-	return (totdesc);
+	MPASS(tot_len16 <= available);
+	set_mbuf_len16(m, tot_len16);
+	return (true);
+
+err:
+	set_mbuf_len16(m, tot_len16);
+	return (false);
 }
 
 static void
@@ -2543,7 +2527,15 @@ sbtls_tx(struct tlspcb *tlsp)
 
 		compl = tlsp->ncompl == 0 ||
 		    tlsp->tx_nocompl + mbuf_len16(m) >= tlsp->tx_total / 2;
-		sbtls_write_wr(tlsp, m, compl);
+		if (!sbtls_write_wrs(tlsp, m, tlsp->tx_credits, compl)) {
+			/*
+			 * sbtls_write_wrs only wrote a partial set of
+			 * work requests.  Assume a completion wasn't
+			 * requested.  Any credits used must still be
+			 * accounted for.
+			 */
+			compl = 0;
+		}
 
 		/*
 		 * NB: Before sbtls_write_wr(), mbuf_len16(m) is an
@@ -2551,6 +2543,8 @@ sbtls_tx(struct tlspcb *tlsp)
 		 * mbuf_len16() with the final count, so defer
 		 * consuming credits until here.
 		 */
+		KASSERT(mbuf_len16(m) <= tlsp->tx_credits,
+		    ("%s: tlsp %p mbuf %p: len16 grew", __func__, tlsp, m));
 		tlsp->tx_credits -= mbuf_len16(m);
 		if (compl) {
 			tlsp->ncompl++;
@@ -2559,7 +2553,10 @@ sbtls_tx(struct tlspcb *tlsp)
 			tlsp->tx_nocompl += mbuf_len16(m);
 
 		(void) mbufq_dequeue(&tlsp->pending_tx);
-		mbufq_enqueue(&tlsp->pending_fwack, m);
+		if (mbuf_len16(m) == 0)
+			m_freem(m);
+		else
+			mbufq_enqueue(&tlsp->pending_fwack, m);
 	}
 }
 
