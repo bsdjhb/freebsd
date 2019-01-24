@@ -2800,17 +2800,18 @@ slowpath:
 }
 
 void
-commit_wrq_wr(struct sge_wrq *wrq, void *w, struct wrq_cookie *cookie)
+commit_wrq_wr_locked(struct sge_wrq *wrq, void *w, struct wrq_cookie *cookie)
 {
 	struct sge_eq *eq = &wrq->eq;
 	struct adapter *sc = wrq->adapter;
 	int ndesc, pidx;
 	struct wrq_cookie *prev, *next;
 
+	EQ_LOCK_ASSERT_OWNED(eq);
 	if (cookie->pidx == -1) {
 		struct wrqe *wr = __containerof(w, struct wrqe, wr);
 
-		t4_wrq_tx(sc, wr);
+		t4_wrq_tx_locked(sc, wrq, wr);
 		return;
 	}
 
@@ -2824,7 +2825,6 @@ commit_wrq_wr(struct sge_wrq *wrq, void *w, struct wrq_cookie *cookie)
 	} else
 		wrq->tx_wrs_direct++;
 
-	EQ_LOCK(eq);
 	ndesc = cookie->ndesc;	/* Can be more than SGE_MAX_WR_NDESC here. */
 	pidx = cookie->pidx;
 	MPASS(pidx >= 0 && pidx < eq->sidx);
@@ -2875,7 +2875,6 @@ commit_wrq_wr(struct sge_wrq *wrq, void *w, struct wrq_cookie *cookie)
 		MPASS(wrq->eq.pidx == wrq->eq.dbidx);
 	}
 #endif
-	EQ_UNLOCK(eq);
 }
 
 static u_int
