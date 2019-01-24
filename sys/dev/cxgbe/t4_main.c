@@ -509,6 +509,9 @@ TUNABLE_INT("hw.cxgbe.tls.inline_keys", &t4_tls_inline_keys);
 
 static int t4_tls_combo_wrs = 0;
 TUNABLE_INT("hw.cxgbe.tls.combo_wrs", &t4_tls_combo_wrs);
+
+static int t4_tls_max_backlog = 1024 * 1024;
+TUNABLE_INT("hw.cxgbe.tls.max_backlog", &t4_tls_max_backlog);
 #endif
 
 /* Functions used by VIs to obtain unique MAC addresses for each VI. */
@@ -4317,6 +4320,7 @@ t4_enable_kern_tls(struct adapter *sc)
 	sc->tlst.enable = t4_tls_enable;
 	sc->tlst.inline_keys = t4_tls_inline_keys;
 	sc->tlst.combo_wrs = t4_tls_combo_wrs;
+	sc->tlst.max_backlog = t4_tls_max_backlog;
 }
 #endif
 
@@ -6036,6 +6040,9 @@ t4_sysctls(struct adapter *sc)
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "combo_wrs",
 		    CTLFLAG_RW, &sc->tlst.combo_wrs, 0, "Attempt to combine "
 		    "TCB field updates with TLS record work requests.");
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "max_backlog",
+		    CTLFLAG_RW, &sc->tlst.max_backlog, 0, "Maximum backlog of "
+		    "pending data per connection.");
 	}
 #endif
 

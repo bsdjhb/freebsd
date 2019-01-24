@@ -241,6 +241,7 @@ struct tls_tunables {
 	int enable;
 	int inline_keys;
 	int combo_wrs;
+	int max_backlog;
 };
 
 #ifdef TCP_OFFLOAD
