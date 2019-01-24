@@ -160,7 +160,6 @@ struct tls_keyctx {
 
 struct tlspcb {
 	struct inpcb *inp;	/* backpointer to host stack's PCB */
-	struct vnet *vnet;
 	struct vi_info *vi;	/* virtual interface */
 	struct sge_wrq *ctrlq;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
@@ -388,7 +387,6 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	bool isipv6;
 
 	inp = so->so_pcb;
-	tlsp->vnet = so->so_vnet;
 	isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
 
 	if (isipv6) {
