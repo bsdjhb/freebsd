@@ -910,22 +910,11 @@ struct adapter {
 /* XXX: Probably move to a different header later. */
 struct t6_sbtls_cipher;
 typedef int (*parse_tls_pkt_t)(struct t6_sbtls_cipher *, struct mbuf *);
-#if 0
-typedef int (*write_tls_wr_t)(struct t6_sbtls_cipher *, struct sge_txq *,
-    void *, struct mbuf *, u_int, u_int);
-#endif
 
 struct t6_sbtls_cipher {
 	parse_tls_pkt_t parse_pkt;
-#if 0
-	write_tls_wr_t write_tls_wr;
-#endif
 	struct adapter *sc;
 	struct tlspcb *tlsp;
-#if 0
-	struct sge_txq *txq;
-	struct mbuf *key_wr;
-#endif
 	uint32_t prev_seq;
 	uint32_t prev_ack;
 	uint16_t prev_win;

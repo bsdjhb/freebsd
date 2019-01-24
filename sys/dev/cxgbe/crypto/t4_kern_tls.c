@@ -840,14 +840,8 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en, int *errorp)
 	}
 	cipher = tls->cipher;
 	cipher->parse_pkt = sbtls_parse_pkt;
-#if 0
-	cipher->write_tls_wr = sbtls_write_wr;
-#endif
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
-#if 0
-	cipher->txq = txq;
-#endif
 	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
 
 	init_sbtls_key_params(tlsp, en, tls);
