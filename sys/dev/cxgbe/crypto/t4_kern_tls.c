@@ -1791,7 +1791,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 	u_int auth_start, auth_stop, auth_insert;
 	u_int cipher_start, cipher_stop, iv_offset;
 	u_int imm_len, mss, offset, plen, tlen, twr_len, wr_len;
-	u_int fields, nsegs, tx_max;
+	u_int fields, hlen, nsegs, tx_max;
 	bool first_wr, last_wr, separate_wr;
 
 	*len16p = 0;
@@ -1898,6 +1898,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 		KASSERT(m_tls == m->m_next,
 		    ("trying to set RCV_NXT for subsequent TLS WR"));
 		fields++;
+	}
 	if (first_wr || tlsp->prev_win != ntohs(tcp->th_win)) {
 		KASSERT(m_tls == m->m_next,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
@@ -1924,7 +1925,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 	if (fields != 0) {
 		wr_len = fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		if (twr_len + wr_len <= SGE_MAX_WR_LEN &&
-		    cipher->sc->tlst.combo_wrs) {
+		    tlsp->vi->pi->adapter->tlst.combo_wrs) {
 			separate_wr = false;
 			wr_len += twr_len;
 		} else {
@@ -2235,7 +2236,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 	wr->plen -= rounddown(tx_max - be32toh(tx_data->rsvd), mss);
 	hlen = m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen + sizeof(struct tcphdr);
 	if (tlsp->using_timestamps)
-		hlen + = 12;
+		hlen += 12;
 	wr->plen += howmany(wr->plen, mss) * hlen;
 	wr->plen = htobe32(wr->plen);
 
@@ -2294,7 +2295,6 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 			tlsp->txq->kern_tls_waste += mtod(m_tls, vm_offset_t) -
 			    (ext_pgs->hdr_len + offset);
 	}
-
 
 	commit_wrq_wr_locked(tlsp->txq, wr, &cookie);
 	TXQ_UNLOCK(tlsp->txq);
@@ -2486,7 +2486,7 @@ sbtls_write_wrs(struct tlspcb *tlsp, struct mbuf *m, u_int available, int compl)
 		 * the sequence number for the FIN packet.
 		 */
 		len16 = sbtls_write_tcp_fin(tlsp, m, available - tot_len16,
-		    tlsp->prev_seq, pidx);
+		    tlsp->prev_seq);
 		if (len16 < 0)
 			goto err;
 		tot_len16 += len16;
