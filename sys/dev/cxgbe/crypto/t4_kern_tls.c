@@ -2616,11 +2616,9 @@ static void
 t6_sbtls_clean_cipher(struct sbtls_info *tls, void *cipher_arg)
 {
 	struct t6_sbtls_cipher *cipher;
-	struct adapter *sc;
 	struct tlspcb *tlsp;
 
 	cipher = cipher_arg;
-	sc = cipher->sc;
 	tlsp = cipher->tlsp;
 
 	CTR2(KTR_CXGBE, "%s: tid %d", __func__, tlsp->tid);
