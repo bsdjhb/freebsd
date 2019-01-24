@@ -9906,25 +9906,25 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 					txq->txpkts0_pkts = 0;
 					txq->txpkts1_pkts = 0;
 					txq->raw_wrs = 0;
-					txq->kern_tls_records = 0;
-					txq->kern_tls_short = 0;
-					txq->kern_tls_partial = 0;
-					txq->kern_tls_full = 0;
-					txq->kern_tls_octets = 0;
-					txq->kern_tls_waste = 0;
-					txq->kern_tls_options = 0;
-					txq->kern_tls_header = 0;
-					txq->kern_tls_fin = 0;
-					txq->kern_tls_fin_short = 0;
 					mp_ring_reset_stats(txq->r);
 				}
 
-#ifdef TCP_OFFLOAD
+#if defined(TCP_OFFLOAD) || defined(RATELIMIT) || defined(KERN_TLS)
 				/* nothing to clear for each ofld_rxq */
 
 				for_each_ofld_txq(vi, i, wrq) {
 					wrq->tx_wrs_direct = 0;
 					wrq->tx_wrs_copied = 0;
+					wrq->kern_tls_records = 0;
+					wrq->kern_tls_short = 0;
+					wrq->kern_tls_partial = 0;
+					wrq->kern_tls_full = 0;
+					wrq->kern_tls_octets = 0;
+					wrq->kern_tls_waste = 0;
+					wrq->kern_tls_options = 0;
+					wrq->kern_tls_header = 0;
+					wrq->kern_tls_fin = 0;
+					wrq->kern_tls_fin_short = 0;
 				}
 #endif
 

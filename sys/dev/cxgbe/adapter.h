@@ -579,17 +579,6 @@ struct sge_txq {
 	uint64_t tls_wrs;	/* # of TLS work requests */
 	uint64_t raw_wrs;	/* # of raw work requests (alloc_wr_mbuf) */
 
-	uint64_t kern_tls_records;
-	uint64_t kern_tls_short;
-	uint64_t kern_tls_partial;
-	uint64_t kern_tls_full;
-	uint64_t kern_tls_octets;
-	uint64_t kern_tls_waste;
-	uint64_t kern_tls_options;
-	uint64_t kern_tls_header;
-	uint64_t kern_tls_fin;
-	uint64_t kern_tls_fin_short;
-
 	/* stats for not-that-common events */
 } __aligned(CACHE_LINE_SIZE);
 
@@ -671,6 +660,17 @@ struct sge_wrq {
 	uint64_t tx_wrs_copied;	/* # of WRs queued and copied to desc ring. */
 
 	/* stats for not-that-common events */
+
+	uint64_t kern_tls_records;
+	uint64_t kern_tls_short;
+	uint64_t kern_tls_partial;
+	uint64_t kern_tls_full;
+	uint64_t kern_tls_octets;
+	uint64_t kern_tls_waste;
+	uint64_t kern_tls_options;
+	uint64_t kern_tls_header;
+	uint64_t kern_tls_fin;
+	uint64_t kern_tls_fin_short;
 
 	/*
 	 * Scratch space for work requests that wrap around after reaching the
