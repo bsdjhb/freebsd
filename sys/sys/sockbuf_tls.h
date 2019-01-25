@@ -137,7 +137,7 @@ struct tls_so_enable {
 struct tls_session_params {
 	uint8_t *hmac_key;
 	uint8_t *crypt;
-	uint8_t *iv;
+	uint8_t iv[TLS_AEAD_GCM_LEN];
 	int crypt_algorithm;
 	int mac_algorithm;
 	uint16_t hmac_key_len;
@@ -164,7 +164,7 @@ struct tls_session_params {
 
 MALLOC_DECLARE(M_TLSSOBUF);
 
-#define SBTLS_API_VERSION 4
+#define SBTLS_API_VERSION 5
 
 struct mbuf_ext_pgs;
 struct sbtls_session;
@@ -172,10 +172,9 @@ struct iovec;
 
 struct sbtls_crypto_backend {
 	LIST_ENTRY(sbtls_crypto_backend) next;
-	int (*try) (struct socket *so, struct tls_so_enable *en,
-	    struct sbtls_session **tlsp);
-	int (*setup_cipher) (struct sbtls_session *tls);
-	void (*clean_cipher) (struct sbtls_session *tls, void *cipher);
+	int (*try)(struct socket *so, struct sbtls_session *tls);
+	void *old_setup_cipher;		/* no longer used */
+	void *old_clean_cipher;		/* no longer used */
 	int prio;
 	int api_version;
 	int use_count;                  /* dev testing */
@@ -188,9 +187,10 @@ struct sbtls_session {
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
 	void *cipher;
+	struct sbtls_crypto_backend *be;/* backend crypto impl. */
+	void (*sb_tls_free)(struct sbtls_session *tls);
 	struct tls_session_params sb_params;
 	uint16_t sb_tsk_instance;	/* For task selection */
-	struct sbtls_crypto_backend *be;/* backend crypto impl. */
 	uint8_t t_type; 	 	/* Flags indicating type of encode */
 	uint8_t taglen;                 /* for CBC tag padding */
 	volatile u_int refcount;
@@ -257,8 +257,6 @@ int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
 int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
 void sbtlsdestroy(struct sockbuf *sb);
 void sbtls_destroy(struct sbtls_session *tls);
-struct sbtls_session *sbtls_init_session(struct socket *so,
-    struct tls_so_enable *en, size_t cipher_len);
 int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);

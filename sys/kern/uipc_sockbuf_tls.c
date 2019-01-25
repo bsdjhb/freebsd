@@ -153,8 +153,9 @@ struct sbtls_wq {
 
 
 static struct sbtls_wq *sbtls_wq;
-static void sbtls_work_thread(void *ctx);
 
+static void sbtls_cleanup(struct sbtls_session *tls);
+static void sbtls_work_thread(void *ctx);
 
 
 int
@@ -324,167 +325,12 @@ sbtls_init(void *st __unused)
 
 SYSINIT(sbtls, SI_SUB_SMP + 1, SI_ORDER_ANY, sbtls_init, NULL);
 
-
-
-struct sbtls_session *
-sbtls_init_session(struct socket *so, struct tls_so_enable *en, size_t size)
+static int
+sbtls_create_session(struct socket *so, struct tls_so_enable *en,
+    struct sbtls_session **tlsp)
 {
-	static int warn_once = 0;
-	struct sbtls_session *tls;
-	void *cipher;
-
-	tls = uma_zalloc(zone_tlssock, M_NOWAIT | M_ZERO);
-	if (tls == NULL)
-		return (NULL);
-
-	cipher = malloc(size, M_TLSSOBUF, M_NOWAIT | M_ZERO);
-	if (cipher == NULL) {
-		uma_zfree(zone_tlssock, tls);
-		return (NULL);
-	}
-	tls->cipher = cipher;
-	refcount_init(&tls->refcount, 1);
-
-	/* cache cpu index */
-	tls->sb_tsk_instance = sbtls_get_cpu(so);
-
-	tls->sb_params.crypt_algorithm = en->crypt_algorithm;
-	tls->sb_params.mac_algorithm = en->mac_algorithm;
-	tls->sb_params.tls_vmajor = en->tls_vmajor;
-	tls->sb_params.tls_vminor = en->tls_vminor;
-
-	/* Determine max size */
-	if (tls->sb_params.tls_vmajor == TLS_MAJOR_VER_ONE) {
-		/* 
-		 *  note that 1.3 was supposed to go to 64K, but that 
-		 * was shot down
-		 */
-		tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
-
-	} else {
-		/*
-		 * Unknown play it safe and frag at V1.0-2 size
-		 * (16k).
-		 */
-		if (warn_once == 0) {
-			printf("Warning saw TLS version major:%d -- unknown size limited to 16k\n",
-			    tls->sb_params.tls_vmajor);
-			warn_once = 1;
-		}
-		tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
-	}
-	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
-		tls->sb_params.sb_maxlen = sbtls_maxlen;
-
-	/* Set the header and trailer lengths. */
-	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
-	switch (en->crypt_algorithm) {
-	case CRYPTO_AES_NIST_GCM_16:
-		tls->sb_params.tls_hlen += 8;
-		tls->sb_params.tls_tlen = 16;
-		tls->sb_params.tls_bs = 1;
-		break;
-	case CRYPTO_AES_CBC:
-		switch (en->mac_algorithm) {
-		case CRYPTO_SHA1_HMAC:
-			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
-				/* Implicit IV, no nonce. */
-			} else {
-				tls->sb_params.tls_hlen += AES_BLOCK_LEN;
-			}
-			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
-			    SHA1_HASH_LEN;
-			break;
-		case CRYPTO_SHA2_256_HMAC:
-			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
-			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
-			    SHA2_256_HASH_LEN;
-			break;
-		default:
-			panic("invalid hmac");
-		}
-		tls->sb_params.tls_bs = AES_BLOCK_LEN;
-		break;
-	default:
-		panic("invalid cipher");
-	}
-
-	KASSERT(tls->sb_params.tls_hlen <= MBUF_PEXT_HDR_LEN,
-	    ("TLS header length too long: %d", tls->sb_params.tls_hlen));
-	KASSERT(tls->sb_params.tls_tlen <= MBUF_PEXT_TRAIL_LEN,
-	    ("TLS trailer length too long: %d", tls->sb_params.tls_tlen));
-	counter_u64_add(sbtls_offload_active, 1);
-	return (tls);
-}
-
-static void
-sbtls_cleanup(struct sbtls_session *tls)
-{
-	void *cipher;
-
-	if (NULL != (cipher = tls->cipher)) {
-		counter_u64_add(sbtls_offload_active, -1);
-		tls->cipher = NULL;
-		if (tls->be != NULL && tls->be->clean_cipher != NULL)
-			tls->be->clean_cipher(tls, cipher);
-		free(cipher, M_TLSSOBUF);
-	}
-	if (tls->sb_params.hmac_key) {
-		explicit_bzero(tls->sb_params.hmac_key,
-		    tls->sb_params.hmac_key_len);
-		free(tls->sb_params.hmac_key, M_TLSSOBUF);
-		tls->sb_params.hmac_key = NULL;
-		tls->sb_params.hmac_key_len = 0;
-	}
-	if (tls->sb_params.crypt) {
-		explicit_bzero(tls->sb_params.crypt,
-		    tls->sb_params.crypt_key_len);
-		free(tls->sb_params.crypt, M_TLSSOBUF);
-		tls->sb_params.crypt = NULL;
-		tls->sb_params.crypt_key_len = 0;
-	}
-	if (tls->sb_params.iv) {
-		explicit_bzero(tls->sb_params.iv, tls->sb_params.iv_len);
-		free(tls->sb_params.iv, M_TLSSOBUF);
-		tls->sb_params.iv = NULL;
-		tls->sb_params.iv_len = 0;
-	}
-}
-
-int
-sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
-{
-	struct rm_priotracker prio;
-	struct sbtls_crypto_backend *be;
 	struct sbtls_session *tls;
 	int error;
-
-	if (sbtls_offload_disable) {
-		return (ENOTSUP);
-	}
-	counter_u64_add(sbtls_offload_enable_calls, 1);
-	if (so->so_proto->pr_protocol != IPPROTO_TCP) {
-		/* We can only support TCP for now */
-		return (EINVAL);
-	}
-
-	if (so->so_snd.sb_tls_info != NULL) {
-		/* Already setup, you get to do it once per socket. */
-		return (EALREADY);
-	}
-
-	if (en->crypt_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
-		return (ENOTSUP);
-
-	/* TLS requires ext pgs */
-	if (mb_use_ext_pgs == 0)
-		return (ENXIO);
-
-	/* XXX: We could just rely on copyin to fault on NULL. */
-	if ((en->hmac_key_len != 0 && en->hmac_key == NULL) ||
-	    (en->crypt_key_len != 0 && en->crypt == NULL) ||
-	    (en->iv_len != 0 && en->iv == NULL))
-		return (EFAULT);
 
 	/* Only TLS 1.0 - 1.2 are supported. */
 	if (en->tls_vmajor != TLS_MAJOR_VER_ONE)
@@ -536,42 +382,73 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		if (en->hmac_key_len == 0)
 			return (EINVAL);
 		/* XXX: Explicitly ignore the supplied IV. */
+		en->iv_len = 0;
 		break;
 	default:
 		return (EINVAL);
 	}
 
-	/*
-	 * Now lets find the algorithms if possible. The idea here is we
-	 * prioritize what to use. 1) Hardware, if we have an offload card
-	 * use it. 2) INTEL ISA lib which is faster than BoringSSL. 3)
-	 * Finally if nothing else we try boring SSL.
-	 * 
-	 * As noted in the sbtls_try_hardware comments, that is more historic
-	 * and needs to be re-written with async in mind as well as folding
-	 * the SID/et.al. into its own structure. But that will come when we
-	 * intergrate the intel QAT card.
-	 */
-
-	if (sbtls_allow_unload)
-		rm_rlock(&sbtls_backend_lock, &prio);
-	tls = NULL;
-	LIST_FOREACH(be, &sbtls_backend_head, next) {
-		if (be->try(so, en, &tls) == 0)
-			break;
-		KASSERT(tls == NULL,
-		    ("sbtls backend try failed but created a session"));
-	}
-	if (tls != NULL) {
-		if (sbtls_allow_unload)
-			be->use_count++;
-		tls->be = be;
-		so->so_snd.sb_tls_info = tls;
-	}
-	if (sbtls_allow_unload)
-		rm_runlock(&sbtls_backend_lock, &prio);
+	tls = uma_zalloc(zone_tlssock, M_NOWAIT | M_ZERO);
 	if (tls == NULL)
-		return (ENOTSUP);
+		return (ENOMEM);
+
+	counter_u64_add(sbtls_offload_active, 1);
+
+	refcount_init(&tls->refcount, 1);
+
+	/* cache cpu index */
+	tls->sb_tsk_instance = sbtls_get_cpu(so);
+
+	tls->sb_params.crypt_algorithm = en->crypt_algorithm;
+	tls->sb_params.mac_algorithm = en->mac_algorithm;
+	tls->sb_params.tls_vmajor = en->tls_vmajor;
+	tls->sb_params.tls_vminor = en->tls_vminor;
+
+	/* 
+	 * Note that 1.3 was supposed to go to 64K, but that 
+	 * was shot down.
+	 */
+	tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
+	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
+		tls->sb_params.sb_maxlen = sbtls_maxlen;
+
+	/* Set the header and trailer lengths. */
+	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
+	switch (en->crypt_algorithm) {
+	case CRYPTO_AES_NIST_GCM_16:
+		tls->sb_params.tls_hlen += 8;
+		tls->sb_params.tls_tlen = 16;
+		tls->sb_params.tls_bs = 1;
+		break;
+	case CRYPTO_AES_CBC:
+		switch (en->mac_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
+				/* Implicit IV, no nonce. */
+			} else {
+				tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+			}
+			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			    SHA1_HASH_LEN;
+			break;
+		case CRYPTO_SHA2_256_HMAC:
+			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			    SHA2_256_HASH_LEN;
+			break;
+		default:
+			panic("invalid hmac");
+		}
+		tls->sb_params.tls_bs = AES_BLOCK_LEN;
+		break;
+	default:
+		panic("invalid cipher");
+	}
+
+	KASSERT(tls->sb_params.tls_hlen <= MBUF_PEXT_HDR_LEN,
+	    ("TLS header length too long: %d", tls->sb_params.tls_hlen));
+	KASSERT(tls->sb_params.tls_tlen <= MBUF_PEXT_TRAIL_LEN,
+	    ("TLS trailer length too long: %d", tls->sb_params.tls_tlen));
 
 	/* Now lets get in the keys and such */
 	if (en->hmac_key_len != 0) {
@@ -589,7 +466,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	}
 
 	tls->sb_params.crypt_key_len = en->crypt_key_len;
-	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_NOWAIT);
+	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_WAITOK);
 	if (tls->sb_params.crypt == NULL) {
 		error = ENOMEM;
 		goto out;
@@ -600,28 +477,115 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		goto out;
 
 	/*
-	 * We allow these to be set as a number to indicate how many random
-	 * bytes to send if iv is present, then its for an AEAD fixed part
-	 * nonce.
+	 * This holds the implicit portion of the nonce for GCM.  The
+	 * explicit portions of the IV are generated in sbtls_frame().
 	 */
 	if (en->iv_len != 0) {
-		tls->sb_params.iv = malloc(en->iv_len,
-		    M_TLSSOBUF, M_NOWAIT);
+		MPASS(en->iv_len <= sizeof(tls->sb_params.iv));
 		tls->sb_params.iv_len = en->iv_len;
-		if (tls->sb_params.iv == NULL) {
-			error = ENOMEM;
-			goto out;
-		}
-		error = copyin_nofault(en->iv, tls->sb_params.iv,
-		    en->iv_len);
+		error = copyin_nofault(en->iv, tls->sb_params.iv, en->iv_len);
 		if (error)
 			goto out;
 	}
-	error = tls->be->setup_cipher(tls);
-	if (error)
-		goto out;
 
-	/* TODO: Possibly defer setting sb_tls_info to here. */
+	*tlsp = tls;
+	return (0);
+
+out:
+	sbtls_cleanup(tls);
+	return (error);
+}
+
+static void
+sbtls_cleanup(struct sbtls_session *tls)
+{
+
+	counter_u64_add(sbtls_offload_active, -1);
+	if (tls->sb_tls_free != NULL)
+		tls->sb_tls_free(tls);
+	if (tls->sb_params.hmac_key) {
+		explicit_bzero(tls->sb_params.hmac_key,
+		    tls->sb_params.hmac_key_len);
+		free(tls->sb_params.hmac_key, M_TLSSOBUF);
+		tls->sb_params.hmac_key = NULL;
+		tls->sb_params.hmac_key_len = 0;
+	}
+	if (tls->sb_params.crypt) {
+		explicit_bzero(tls->sb_params.crypt,
+		    tls->sb_params.crypt_key_len);
+		free(tls->sb_params.crypt, M_TLSSOBUF);
+		tls->sb_params.crypt = NULL;
+		tls->sb_params.crypt_key_len = 0;
+	}
+	explicit_bzero(tls->sb_params.iv, sizeof(tls->sb_params.iv));
+}
+
+int
+sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
+{
+	struct rm_priotracker prio;
+	struct sbtls_crypto_backend *be;
+	struct sbtls_session *tls;
+	int error;
+
+	if (sbtls_offload_disable) {
+		return (ENOTSUP);
+	}
+	counter_u64_add(sbtls_offload_enable_calls, 1);
+	if (so->so_proto->pr_protocol != IPPROTO_TCP) {
+		/* We can only support TCP for now */
+		return (EINVAL);
+	}
+
+	if (so->so_snd.sb_tls_info != NULL) {
+		/* Already setup, you get to do it once per socket. */
+		return (EALREADY);
+	}
+
+	if (en->crypt_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
+		return (ENOTSUP);
+
+	/* TLS requires ext pgs */
+	if (mb_use_ext_pgs == 0)
+		return (ENXIO);
+
+	error = sbtls_create_session(so, en, &tls);
+	if (error)
+		return (error);
+
+	/*
+	 * Now lets find the algorithms if possible. The idea here is we
+	 * prioritize what to use. 1) Hardware, if we have an offload card
+	 * use it. 2) INTEL ISA lib which is faster than BoringSSL. 3)
+	 * Finally if nothing else we try boring SSL.
+	 * 
+	 * As noted in the sbtls_try_hardware comments, that is more historic
+	 * and needs to be re-written with async in mind as well as folding
+	 * the SID/et.al. into its own structure. But that will come when we
+	 * intergrate the intel QAT card.
+	 */
+
+	if (sbtls_allow_unload)
+		rm_rlock(&sbtls_backend_lock, &prio);
+	LIST_FOREACH(be, &sbtls_backend_head, next) {
+		if (be->try(so, tls) == 0)
+			break;
+		KASSERT(tls->cipher == NULL,
+		    ("sbtls backend leaked a cipher pointer"));
+	}
+	if (be != NULL) {
+		if (sbtls_allow_unload)
+			be->use_count++;
+		tls->be = be;
+	}
+	if (sbtls_allow_unload)
+		rm_runlock(&sbtls_backend_lock, &prio);
+	if (be == NULL) {
+		sbtls_cleanup(tls);
+		return (ENOTSUP);
+	}
+
+	so->so_snd.sb_tls_info = tls;
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
 	if (tls->sb_tls_crypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
@@ -629,10 +593,6 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	counter_u64_add(sbtls_offload_total, 1);
 
 	return (0);
-
-out:
-	sbtlsdestroy(&so->so_snd);
-	return (error);
 }
 
 void
