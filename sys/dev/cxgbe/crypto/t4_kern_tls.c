@@ -70,6 +70,8 @@ __FBSDID("$FreeBSD$");
 
 #define	TLS_KEY_CONTEXT_SZ	roundup2(sizeof(struct tls_keyctx), 32)
 
+#define	TLS_SGL_SEGS		25
+
 struct tls_scmd {
 	__be32 seqno_numivs;
 	__be32 ivgen_hdrlen;
@@ -219,6 +221,9 @@ struct tlspcb {
 	int proto_ver;
 
 	bool open_pending;
+
+	struct sglist sg;
+	struct sglist_seg segs[TLS_SGL_SEGS];
 };
 
 static struct protosw *tcp_protosw, *tcp6_protosw;
@@ -359,6 +364,7 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 	tlsp->tid = -1;
 	tlsp->tx_key_addr = -1;
 	mtx_init(&tlsp->lock, "t6 sbtls", NULL, MTX_DEF);
+	sglist_init(&tlsp->sg, nitems(tlsp->segs), tlsp->segs);
 
 	return (tlsp);
 }
@@ -1425,7 +1431,7 @@ sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m)
 		CTR4(KTR_CXGBE, "%s: tid %d wr_len %d nsegs %d", __func__,
 		    tlsp->tid, wr_len, mbuf_nsegs(m_tls));
 #endif
-		if (wr_len > SGE_MAX_WR_LEN || mbuf_nsegs(m_tls) > TX_SGL_SEGS)
+		if (wr_len > SGE_MAX_WR_LEN || mbuf_nsegs(m_tls) > TLS_SGL_SEGS)
 			return (EFBIG);
 		tot_len += roundup2(wr_len, 16);
 	}
@@ -2268,14 +2274,14 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct mbuf *m, struct tcphdr *tcp,
 		out += 16 - (imm_len % 16);
 
 	/* SGL for record payload */
-	sglist_reset(txq->gl);
-	if (sglist_append_ext_pgs(txq->gl, ext_pgs, ext_pgs->hdr_len + offset,
+	sglist_reset(&tlsp->sg);
+	if (sglist_append_ext_pgs(&tlsp->sg, ext_pgs, ext_pgs->hdr_len + offset,
 	    plen - (ext_pgs->hdr_len + offset)) != 0) {
 #ifdef INVARIANTS
 		panic("%s: failed to append sglist", __func__);
 #endif
 	}
-	write_gl_to_buf(txq->gl, out);
+	write_gl_to_buf(&tlsp->sg, out);
 
 	TXQ_LOCK(tlsp->txq);
 	tlsp->txq->tls_wrs++;
