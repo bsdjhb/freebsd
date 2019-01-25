@@ -189,6 +189,9 @@ struct tlspcb {
 
 static struct protosw *tcp_protosw, *tcp6_protosw;
 
+static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
+    struct sge_txq *txq);
+static void sbtls_clean_cipher(struct sbtls_session *tls);
 static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
     int *nsegsp, int *len16p);
 static int sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
@@ -253,19 +256,18 @@ free_tlspcb(struct tlspcb *tlsp)
 }
 
 static void
-init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
-    struct sbtls_session *tls)
+init_sbtls_key_params(struct tlspcb *tlsp, struct sbtls_session *tls)
 {
 	int mac_key_size;
 
-	if (en->tls_vminor == TLS_MINOR_VER_ONE)
+	if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ONE)
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
 	else
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_2;
-	tlsp->cipher_secret_size = en->key_size;
+	tlsp->cipher_secret_size = tls->sb_params.crypt_key_len;
 	tlsp->tx_key_info_size = sizeof(struct tx_keyctx_hdr) +
 	    tlsp->cipher_secret_size;
-	if (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
+	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		tlsp->auth_mode = SCMD_AUTH_MODE_GHASH;
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_GCM;
 		tlsp->iv_size = 4;
@@ -273,7 +275,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
 		tlsp->tx_key_info_size += GMAC_BLOCK_LEN;
 	} else {
-		switch (en->mac_algorithm) {
+		switch (tls->sb_params.mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			mac_key_size = roundup2(SHA1_HASH_LEN, 16);
 			tlsp->auth_mode = SCMD_AUTH_MODE_SHA1;
@@ -292,7 +294,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct tls_so_enable *en,
 			break;
 		}
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_CBC;
-		tlsp->mac_secret_size = en->hmac_key_len;
+		tlsp->mac_secret_size = tls->sb_params.hmac_key_len;
 		tlsp->iv_size = 8; /* for CBC, iv is 16B, unit of 2B */
 		tlsp->mac_first = 1;
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NO_TRUNC;
@@ -532,12 +534,9 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 }
 
 static int
-t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
-    struct sbtls_session **ptls)
+t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
-	struct sbtls_session *tls;
-	struct mbuf *key_wr;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
@@ -546,15 +545,13 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	struct sge_txq *txq;
-	int atid, error, keyid, len;
+	int atid, error, keyid;
 
-	/* Sanity check values in *en. */
-	if (en->key_size != en->crypt_key_len)
-		return (EINVAL);
-	switch (en->crypt_algorithm) {
+	/* Sanity check values in *tls. */
+	switch (tls->sb_params.crypt_algorithm) {
 	case CRYPTO_AES_CBC:
 		/* XXX: Explicitly ignore any provided IV. */
-		switch (en->key_size) {
+		switch (tls->sb_params.crypt_key_len) {
 		case 128 / 8:
 		case 192 / 8:
 		case 256 / 8:
@@ -562,7 +559,7 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 		default:
 			return (EINVAL);
 		}
-		switch (en->mac_algorithm) {
+		switch (tls->sb_params.mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
@@ -573,20 +570,12 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 		}
 		break;
 	case CRYPTO_AES_NIST_GCM_16:
-		if (en->iv_len != SALT_SIZE)
+		if (tls->sb_params.iv_len != SALT_SIZE)
 			return (EINVAL);
-		switch (en->key_size) {
+		switch (tls->sb_params.crypt_key_len) {
 		case 128 / 8:
-			if (en->mac_algorithm != CRYPTO_AES_128_NIST_GMAC)
-				return (EINVAL);
-			break;
 		case 192 / 8:
-			if (en->mac_algorithm != CRYPTO_AES_192_NIST_GMAC)
-				return (EINVAL);
-			break;
 		case 256 / 8:
-			if (en->mac_algorithm != CRYPTO_AES_256_NIST_GMAC)
-				return (EINVAL);
 			break;
 		default:
 			return (EINVAL);
@@ -597,9 +586,9 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	}
 
 	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
-	if (en->tls_vmajor != TLS_MAJOR_VER_ONE ||
-	    en->tls_vminor < TLS_MINOR_VER_ONE ||
-	    en->tls_vminor > TLS_MINOR_VER_TWO)
+	if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+	    tls->sb_params.tls_vminor < TLS_MINOR_VER_ONE ||
+	    tls->sb_params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
 	/*
@@ -640,7 +629,6 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	if (tlsp == NULL)
 		return (ENOMEM);
 
-	key_wr = NULL;
 	atid = alloc_atid(sc, tlsp);
 	if (atid < 0) {
 		error = ENOMEM;
@@ -700,40 +688,23 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	if (error)
 		goto failed;
 
-	/*
-	 * Preallocate a work request mbuf to hold the work request
-	 * that programs the transmit key.  The work request isn't
-	 * populated until the setup_cipher callback since the keys
-	 * aren't available yet.  However, if that callback fails the
-	 * socket won't fall back to software encryption, so the
-	 * allocation is done here where failure can be handled more
-	 * gracefully.
-	 */
-	if (!tlsp->inline_key) {
-		len = sizeof(struct tls_key_req) +
-		    roundup2(sizeof(struct tls_keyctx), 32);
-		key_wr = alloc_wr_mbuf(len, M_NOWAIT);
-		if (key_wr == NULL) {
-			error = ENOMEM;
-			goto failed;
-		}
-	}
+	error = sbtls_setup_keys(tlsp, tls, txq);
+	if (error)
+		goto failed;
 
-	tls = sbtls_init_session(so, en, sizeof(struct t6_sbtls_cipher));
-	if (tls == NULL) {
+	cipher = malloc(sizeof(*cipher), M_CXGBE, M_ZERO | M_NOWAIT);
+	if (cipher == NULL) {
 		error = ENOMEM;
 		goto failed;
 	}
-	cipher = tls->cipher;
 	cipher->parse_pkt = sbtls_parse_pkt;
 	cipher->write_tls_wr = sbtls_write_wr;
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
 	cipher->txq = txq;
-	cipher->key_wr = key_wr;
 	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
 
-	init_sbtls_key_params(tlsp, en, tls);
+	init_sbtls_key_params(tlsp, tls);
 
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
@@ -777,13 +748,12 @@ t6_sbtls_try(struct socket *so, struct tls_so_enable *en,
 	if (tlsp->inline_key)
 		tlsp->scmd0_short.ivgen_hdrlen |= V_SCMD_KEY_CTX_INLINE(1);
 
+	tls->cipher = cipher;
+	tls->sb_tls_free = sbtls_clean_cipher;
 	tls->t_type = SBTLS_T_TYPE_CHELSIO;
-	*ptls = tls;
 	return (0);
 
 failed:
-	if (key_wr != NULL)
-		m_free(key_wr);
 	if (atid >= 0)
 		free_atid(sc, atid);
 	free_tlspcb(tlsp);
@@ -876,10 +846,9 @@ init_sbtls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
 }
 
 static int
-t6_sbtls_setup_cipher(struct sbtls_session *tls)
+sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
+    struct sge_txq *txq)
 {
-	struct t6_sbtls_cipher *cipher = tls->cipher;
-	struct tlspcb *tlsp = cipher->tlsp;
 	struct auth_hash *axf;
 	int error, keyid, kwrlen, kctxlen, len;
 	struct tls_key_req *kwr;
@@ -887,6 +856,7 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 	void *items[1], *key;
 	struct tx_keyctx_hdr *khdr;
 	unsigned int ck_size, mk_size, partial_digest_len;
+	struct mbuf *m;
 
 	/* INP_WLOCK_ASSERT(inp); */
 
@@ -975,8 +945,10 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
-	MPASS(cipher->key_wr->m_len == len);
-	kwr = mtod(cipher->key_wr, void *);
+        m = alloc_wr_mbuf(len, M_NOWAIT);
+	if (m == NULL)
+		return (ENOMEM);
+	kwr = mtod(m, void *);
 	memset(kwr, 0, len);
 
 	kwr->wr_hi = htobe32(V_FW_WR_OP(FW_ULPTX_WR) |
@@ -1006,12 +978,12 @@ t6_sbtls_setup_cipher(struct sbtls_session *tls)
 	 * should be sent to the NIC before any TLS packets using this
 	 * session.
 	 */
-	items[0] = cipher->key_wr;
-	error = mp_ring_enqueue(cipher->txq->r, items, 1, 1);
-	if (error == 0) {
-		cipher->key_wr = NULL;
+	items[0] = m;
+	error = mp_ring_enqueue(txq->r, items, 1, 1);
+	if (error)
+		m_free(m);
+	else
 		CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
-	}
 	return (error);
 }
 
@@ -2451,13 +2423,13 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 }
 
 static void
-t6_sbtls_clean_cipher(struct sbtls_session *tls, void *cipher_arg)
+sbtls_clean_cipher(struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
 	struct adapter *sc;
 	struct tlspcb *tlsp;
 
-	cipher = cipher_arg;
+	cipher = tls->cipher;
 	sc = cipher->sc;
 	tlsp = cipher->tlsp;
 
@@ -2465,9 +2437,8 @@ t6_sbtls_clean_cipher(struct sbtls_session *tls, void *cipher_arg)
 
 	explicit_bzero(&tlsp->keyctx, sizeof(&tlsp->keyctx));
 
-	if (cipher->key_wr != NULL)
-		m_free(cipher->key_wr);
 	free_tlspcb(tlsp);
+	free(cipher, M_CXGBE);
 }
 
 struct sbtls_crypto_backend t6tls_backend = {
@@ -2475,8 +2446,6 @@ struct sbtls_crypto_backend t6tls_backend = {
 	.prio = 30,
 	.api_version = SBTLS_API_VERSION,
 	.try = t6_sbtls_try,
-	.setup_cipher = t6_sbtls_setup_cipher,
-	.clean_cipher = t6_sbtls_clean_cipher
 };
 
 static void
