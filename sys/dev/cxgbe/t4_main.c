@@ -1717,6 +1717,7 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 	if (vi->pi->adapter->flags & KERN_TLS_OK) {
 		ifp->if_capabilities |= IFCAP_TXTLS;
 		ifp->if_capenable |= IFCAP_TXTLS;
+		ifp->if_create_tls_session = cxgbe_create_tls_session;
 	}
 #endif
 

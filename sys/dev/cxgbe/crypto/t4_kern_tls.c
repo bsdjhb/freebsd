@@ -36,7 +36,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/module.h>
 #ifdef KERN_TLS
-#include <sys/protosw.h>
 #include <sys/sglist.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -186,8 +185,6 @@ struct tlspcb {
 
 	bool open_pending;
 };
-
-static struct protosw *tcp_protosw, *tcp6_protosw;
 
 static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
     struct sge_txq *txq);
@@ -534,14 +531,12 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 }
 
 static int
-t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
+t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
-	struct ifnet *ifp;
-	struct rtentry *rt;
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	struct sge_txq *txq;
@@ -591,18 +586,8 @@ t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
 	    tls->sb_params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
-	/*
-	 * Perform routing lookup to find ifnet.  Reject if it is not
-	 * on a T6 or on a T6 that doesn't support TLS.  Also reject
-	 * if it is not using the standard protocol switch (e.g. TOE).
-	 */
-	if (so->so_proto != tcp_protosw && so->so_proto != tcp6_protosw)
-		return (EPROTONOSUPPORT);
 	inp = so->so_pcb;
 	INP_WLOCK_ASSERT(inp);
-	rt = inp->inp_route.ro_rt;
-	if (rt == NULL || rt->rt_ifp == NULL)
-		return (ENXIO);
 
 	tp = inp->inp_ppcb;
 	if (tp->t_flags & TF_REQ_TSTMP) {
@@ -610,18 +595,6 @@ t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
 			return (EINVAL);
 	}
 
-	/* XXX: Gross */
-	ifp = rt->rt_ifp;
-	if (ifp->if_get_counter != cxgbe_get_counter)
-		return (ENXIO);
-
-	if (inp->inp_vflag & INP_IPV6) {
-		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
-			return (ENXIO);
-	} else {
-		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
-			return (ENXIO);
-	}
 	vi = ifp->if_softc;
 	sc = vi->pi->adapter;
 
@@ -2441,46 +2414,27 @@ sbtls_clean_cipher(struct sbtls_session *tls)
 	free(cipher, M_CXGBE);
 }
 
-struct sbtls_crypto_backend t6tls_backend = {
-	.name = "Chelsio T6",
-	.prio = 30,
-	.api_version = SBTLS_API_VERSION,
-	.try = t6_sbtls_try,
-};
-
-static void
-t6_sbtls_proto_init(void *dummy __unused)
-{
-
-	tcp_protosw = pffindproto(PF_INET, IPPROTO_TCP, SOCK_STREAM);
-	tcp6_protosw = pffindproto(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
-}
-SYSINIT(t6_sbtls, SI_SUB_PROTO_END, SI_ORDER_ANY, t6_sbtls_proto_init, NULL);
-
 static int
 t6_sbtls_mod_load(void)
 {
-	int error;
 
-	error = sbtls_crypto_backend_register(&t6tls_backend);
-	if (error)
-		return (error);
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, sbtls_act_open_rpl,
 	    CPL_COOKIE_KERN_TLS);
-	return (error);
+	t4_register_tls_session_handler(t6_sbtls_try);
+	return (0);
 }
 
 static int
 t6_sbtls_mod_unload(void)
 {
-	int error;
 
-	error = sbtls_crypto_backend_deregister(&t6tls_backend);
-	if (error)
-		return (error);
+	return (EBUSY);
+#if 0
+	t4_register_tls_session_handler(NULL);
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
 	    CPL_COOKIE_KERN_TLS);
-	return (error);
+	return (0);
+#endif
 }
 #endif
 

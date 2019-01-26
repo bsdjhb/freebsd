@@ -391,6 +391,8 @@ typedef int (*cpl_handler_t)(struct sge_iq *, const struct rss_header *,
     struct mbuf *);
 typedef int (*an_handler_t)(struct sge_iq *, const struct rsp_ctrl *);
 typedef int (*fw_msg_handler_t)(struct adapter *, const __be64 *);
+typedef int (*tls_session_handler_t)(struct ifnet *, struct socket *,
+    struct sbtls_session *);
 
 /*
  * Ingress Queue: T4 is producer, driver is consumer.
@@ -1247,6 +1249,9 @@ void t4_register_an_handler(an_handler_t);
 void t4_register_fw_msg_handler(int, fw_msg_handler_t);
 void t4_register_cpl_handler(int, cpl_handler_t);
 void t4_register_shared_cpl_handler(int, cpl_handler_t, int);
+void t4_register_tls_session_handler(tls_session_handler_t);
+int cxgbe_create_tls_session(struct ifnet *, struct socket *,
+    struct sbtls_session *);
 #ifdef RATELIMIT
 int ethofld_transmit(struct ifnet *, struct mbuf *);
 void send_etid_flush_wr(struct cxgbe_snd_tag *);
