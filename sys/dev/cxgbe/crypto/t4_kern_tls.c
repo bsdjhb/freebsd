@@ -688,6 +688,8 @@ t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
 	if (error)
 		goto failed;
 
+	init_sbtls_key_params(tlsp, tls);
+
 	error = sbtls_setup_keys(tlsp, tls, txq);
 	if (error)
 		goto failed;
@@ -703,8 +705,6 @@ t6_sbtls_try(struct socket *so, struct sbtls_session *tls)
 	cipher->tlsp = tlsp;
 	cipher->txq = txq;
 	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
-
-	init_sbtls_key_params(tlsp, tls);
 
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
