@@ -374,6 +374,9 @@ struct ifnet {
 	if_snd_tag_query_t *if_snd_tag_query;
 	if_snd_tag_free_t *if_snd_tag_free;
 
+	int	(*if_create_tls_session)
+		(struct socket *, struct sbtls_session *);
+
 	/* Ethernet PCP */
 	uint8_t if_pcp;
 

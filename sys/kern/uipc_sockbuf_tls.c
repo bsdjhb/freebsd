@@ -520,38 +520,29 @@ sbtls_cleanup(struct sbtls_session *tls)
 	explicit_bzero(tls->sb_params.iv, sizeof(tls->sb_params.iv));
 }
 
-int
-sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
+static int
+sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
+{
+	struct ifnet *ifp;
+	struct rtentry *rt;
+	struct inpcb *inp;
+
+	inp = so->so_pcb;
+	INP_WLOCK_ASSERT(inp);
+	rt = inp->inp_route.ro_rt;
+	if (rt == NULL || rt->rt_ifp == NULL)
+		return (ENXIO);
+	ifp = rt->rt_ifp;
+	if (ifp->if_create_tls_session == NULL)
+		return (EOPNOTSUPP);
+	return (ifp->if_create_tls_session(so, tls));
+}
+
+static int
+sbtls_try_sw_tls(struct socket *so, struct sbtls_session *tls)
 {
 	struct rm_priotracker prio;
 	struct sbtls_crypto_backend *be;
-	struct sbtls_session *tls;
-	int error;
-
-	if (sbtls_offload_disable) {
-		return (ENOTSUP);
-	}
-	counter_u64_add(sbtls_offload_enable_calls, 1);
-	if (so->so_proto->pr_protocol != IPPROTO_TCP) {
-		/* We can only support TCP for now */
-		return (EINVAL);
-	}
-
-	if (so->so_snd.sb_tls_info != NULL) {
-		/* Already setup, you get to do it once per socket. */
-		return (EALREADY);
-	}
-
-	if (en->crypt_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
-		return (ENOTSUP);
-
-	/* TLS requires ext pgs */
-	if (mb_use_ext_pgs == 0)
-		return (ENXIO);
-
-	error = sbtls_create_session(so, en, &tls);
-	if (error)
-		return (error);
 
 	/*
 	 * Now lets find the algorithms if possible. The idea here is we
@@ -580,9 +571,49 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	}
 	if (sbtls_allow_unload)
 		rm_runlock(&sbtls_backend_lock, &prio);
-	if (be == NULL) {
-		sbtls_cleanup(tls);
+	if (be == NULL)
+		return (EOPNOTSUPP);
+	return (0);
+}
+
+int
+sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
+{
+	struct sbtls_session *tls;
+	int error;
+
+	if (sbtls_offload_disable) {
 		return (ENOTSUP);
+	}
+	counter_u64_add(sbtls_offload_enable_calls, 1);
+	if (so->so_proto->pr_protocol != IPPROTO_TCP) {
+		/* We can only support TCP for now */
+		return (EINVAL);
+	}
+
+	if (so->so_snd.sb_tls_info != NULL) {
+		/* Already setup, you get to do it once per socket. */
+		return (EALREADY);
+	}
+
+	if (en->crypt_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
+		return (ENOTSUP);
+
+	/* TLS requires ext pgs */
+	if (mb_use_ext_pgs == 0)
+		return (ENXIO);
+
+	error = sbtls_create_session(so, en, &tls);
+	if (error)
+		return (error);
+
+	error = sbtls_try_ifnet_tls(so, tls);
+	if (error)
+		error = sbtls_try_sw_tls(so, tls);
+
+	if (error) {
+		sbtls_cleanup(tls);
+		return (error);
 	}
 
 	so->so_snd.sb_tls_info = tls;
