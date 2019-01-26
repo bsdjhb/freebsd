@@ -535,7 +535,7 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 	ifp = rt->rt_ifp;
 	if (ifp->if_create_tls_session == NULL)
 		return (EOPNOTSUPP);
-	return (ifp->if_create_tls_session(so, tls));
+	return (ifp->if_create_tls_session(ifp, so, tls));
 }
 
 static int
