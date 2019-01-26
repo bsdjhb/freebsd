@@ -466,7 +466,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	}
 
 	tls->sb_params.crypt_key_len = en->crypt_key_len;
-	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_WAITOK);
+	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_NOWAIT);
 	if (tls->sb_params.crypt == NULL) {
 		error = ENOMEM;
 		goto out;
