@@ -1446,7 +1446,6 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	struct sbtls_session *tls;
 	int pru_flag, tls_pruflag, tls_enq_cnt;
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
-	bool tls_control = false;
 
 	tls = NULL;
 	if (uio != NULL)
@@ -1495,7 +1494,7 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 				clen = 0;
 				m_freem(control);
 				control = NULL;
-				tls_control = true;
+				atomic = 1;
 			}
 		}
 	}
@@ -1548,8 +1547,7 @@ restart:
 			goto release;
 		}
 		if (space < resid + clen &&
-		    (atomic || tls_control ||
-			space < so->so_snd.sb_lowat || space < clen)) {
+		    (atomic || space < so->so_snd.sb_lowat || space < clen)) {
 			if ((so->so_state & SS_NBIO) ||
 			    (flags & (MSG_NBIO | MSG_DONTWAIT)) != 0) {
 				SOCKBUF_UNLOCK(&so->so_snd);
