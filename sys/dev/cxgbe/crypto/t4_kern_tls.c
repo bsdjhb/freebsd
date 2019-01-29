@@ -541,6 +541,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	struct tcpcb *tp;
 	struct sge_txq *txq;
 	int atid, error, keyid;
+	bool using_timestamps;
 
 	/* Sanity check values in *tls. */
 	switch (tls->sb_params.crypt_algorithm) {
@@ -586,21 +587,10 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	    tls->sb_params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
-	inp = so->so_pcb;
-	INP_WLOCK_ASSERT(inp);
-
-	tp = inp->inp_ppcb;
-	if (tp->t_flags & TF_REQ_TSTMP) {
-		if ((tp->ts_offset & 0xfffffff) != 0)
-			return (EINVAL);
-	}
-
 	vi = ifp->if_softc;
 	sc = vi->pi->adapter;
 
-	tlsp = alloc_tlspcb(vi, M_NOWAIT);
-	if (tlsp == NULL)
-		return (ENOMEM);
+	tlsp = alloc_tlspcb(vi, M_WAITOK);
 
 	atid = alloc_atid(sc, tlsp);
 	if (atid < 0) {
@@ -623,17 +613,33 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 		    atid, tlsp->tx_key_addr);
 	}
 
-	tlsp->inp = inp;
-	error = send_sbtls_act_open_req(sc, vi, so, tlsp, atid);
-	if (error)
+	inp = so->so_pcb;
+	INP_WLOCK(inp);
+	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_WUNLOCK(inp);
+		error = ECONNRESET;
 		goto failed;
+	}
+	tlsp->inp = inp;
 
-	/*
-	 * Wait for reply to active open.
-	 *
-	 * XXX: Probably need to recheck INP validity here and and in
-	 * the try loop in sbtls_crypt_tls_enable().
-	 */
+	tp = inp->inp_ppcb;
+	if (tp->t_flags & TF_REQ_TSTMP) {
+		using_timestamps = true;
+		if ((tp->ts_offset & 0xfffffff) != 0) {
+			INP_WUNLOCK(inp);
+			error = EINVAL;
+			goto failed;
+		}
+	} else
+		using_timestamps = false;
+
+	error = send_sbtls_act_open_req(sc, vi, so, tlsp, atid);
+	if (error) {
+		INP_WUNLOCK(inp);
+		goto failed;
+	}
+
+	/* Wait for reply to active open. */
 	CTR2(KTR_CXGBE, "%s: atid %d sent CPL_ACT_OPEN_REQ", __func__,
 	    atid);
 	while (tlsp->open_pending) {
@@ -646,11 +652,13 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 
 	atid = -1;
 	if (tlsp->tid < 0) {
+		INP_WUNLOCK(inp);
 		error = ENOMEM;
 		goto failed;
 	}
 
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_WUNLOCK(inp);
 		error = ECONNRESET;
 		goto failed;
 	}
@@ -661,6 +669,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 		    vi->rsrv_noflowq);
 
 	error = sbtls_set_tcb_fields(tlsp, tp, txq);
+	INP_WUNLOCK(inp);
 	if (error)
 		goto failed;
 
@@ -680,7 +689,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
 	cipher->txq = txq;
-	cipher->using_timestamps = (tp->t_flags & TF_REQ_TSTMP) != 0;
+	cipher->using_timestamps = using_timestamps;
 
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |

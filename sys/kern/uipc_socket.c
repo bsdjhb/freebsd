@@ -1448,15 +1448,7 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
 	bool tls_control = false;
 
-	tls_pruflag = 0;
-	if ((so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) != 0) {
-		tls = sbtls_hold(so->so_snd.sb_tls_info);
-		if (tls->sb_tls_crypt != NULL)
-			tls_pruflag = PRUS_NOTREADY;
-	}  else {
-		tls = NULL;
-	}
-
+	tls = NULL;
 	if (uio != NULL)
 		resid = uio->uio_resid;
 	else
@@ -1481,23 +1473,32 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	    (so->so_proto->pr_flags & PR_ATOMIC);
 	if (td != NULL)
 		td->td_ru.ru_msgsnd++;
-	if (control != NULL) {
-		struct cmsghdr *cm = mtod(control, struct cmsghdr *);
+	if (control != NULL)
 		clen = control->m_len;
-
-		if (tls != NULL && clen >= sizeof(*cm) &&
-		    cm->cmsg_type == TLS_SET_RECORD_TYPE) {
-			tls_rtype = *((uint8_t *)CMSG_DATA(cm));
-			clen = 0;
-			m_freem(control);
-			control = NULL;
-			tls_control = true;
-		}
-	}
 
 	error = sblock(&so->so_snd, SBLOCKWAIT(flags));
 	if (error)
 		goto out;
+
+	tls_pruflag = 0;
+	if ((so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) != 0) {
+		tls = sbtls_hold(so->so_snd.sb_tls_info);
+		if (tls->sb_tls_crypt != NULL)
+			tls_pruflag = PRUS_NOTREADY;
+
+		if (control != NULL) {
+			struct cmsghdr *cm = mtod(control, struct cmsghdr *);
+
+			if (clen >= sizeof(*cm) &&
+			    cm->cmsg_type == TLS_SET_RECORD_TYPE) {
+				tls_rtype = *((uint8_t *)CMSG_DATA(cm));
+				clen = 0;
+				m_freem(control);
+				control = NULL;
+				tls_control = true;
+			}
+		}
+	}
 
 restart:
 	do {

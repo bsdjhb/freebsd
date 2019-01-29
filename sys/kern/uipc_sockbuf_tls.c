@@ -388,9 +388,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 		return (EINVAL);
 	}
 
-	tls = uma_zalloc(zone_tlssock, M_NOWAIT | M_ZERO);
-	if (tls == NULL)
-		return (ENOMEM);
+	tls = uma_zalloc(zone_tlssock, M_WAITOK | M_ZERO);
 
 	counter_u64_add(sbtls_offload_active, 1);
 
@@ -454,25 +452,16 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	if (en->hmac_key_len != 0) {
 		tls->sb_params.hmac_key_len = en->hmac_key_len;
 		tls->sb_params.hmac_key = malloc(en->hmac_key_len,
-		    M_TLSSOBUF, M_NOWAIT);
-		if (tls->sb_params.hmac_key == NULL) {
-			error = ENOMEM;
-			goto out;
-		}
-		error = copyin_nofault(en->hmac_key, tls->sb_params.hmac_key,
+		    M_TLSSOBUF, M_WAITOK);
+		error = copyin(en->hmac_key, tls->sb_params.hmac_key,
 		    en->hmac_key_len);
 		if (error)
 			goto out;
 	}
 
 	tls->sb_params.crypt_key_len = en->crypt_key_len;
-	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_NOWAIT);
-	if (tls->sb_params.crypt == NULL) {
-		error = ENOMEM;
-		goto out;
-	}
-	error = copyin_nofault(en->crypt, tls->sb_params.crypt,
-	    en->crypt_key_len);
+	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_WAITOK);
+	error = copyin(en->crypt, tls->sb_params.crypt, en->crypt_key_len);
 	if (error)
 		goto out;
 
@@ -483,7 +472,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	if (en->iv_len != 0) {
 		MPASS(en->iv_len <= sizeof(tls->sb_params.iv));
 		tls->sb_params.iv_len = en->iv_len;
-		error = copyin_nofault(en->iv, tls->sb_params.iv, en->iv_len);
+		error = copyin(en->iv, tls->sb_params.iv, en->iv_len);
 		if (error)
 			goto out;
 	}
@@ -625,10 +614,17 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		return (error);
 	}
 
+	error = sblock(&so->so_snd, SBL_WAIT);
+	if (error) {
+		sbtls_cleanup(tls);
+		return (error);
+	}
+
 	so->so_snd.sb_tls_info = tls;
 	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
 	if (tls->sb_tls_crypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+	sbunlock(&so->so_snd);
 
 	counter_u64_add(sbtls_offload_total, 1);
 

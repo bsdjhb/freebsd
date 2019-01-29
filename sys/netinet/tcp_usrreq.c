@@ -1925,10 +1925,8 @@ unlock_and_done:
 			INP_WUNLOCK(inp);
 			error = sooptcopyin(sopt, &tls, sizeof(tls),
 			    sizeof(tls));
-			INP_WLOCK_RECHECK(inp);
-			if (!error)
+			if (error == 0)
 				error = sbtls_crypt_tls_enable(so, &tls);
-			INP_WUNLOCK(inp);
 			break;
 
 		case TCP_KEEPIDLE:
