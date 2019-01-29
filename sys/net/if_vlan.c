@@ -261,6 +261,10 @@ static __inline struct ifvlan * vlan_gethash(struct ifvlantrunk *trunk,
 #endif
 static	void trunk_destroy(struct ifvlantrunk *trunk);
 
+#ifdef KERN_TLS
+static	int vlan_create_tls_session(struct ifnet *ifp, struct socket *so,
+    struct sbtls_session *tls);
+#endif
 static	void vlan_init(void *foo);
 static	void vlan_input(struct ifnet *ifp, struct mbuf *m);
 static	int vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t addr);
@@ -1049,6 +1053,9 @@ vlan_clone_create(struct if_clone *ifc, char *name, size_t len, caddr_t params)
 #ifdef RATELIMIT
 	ifp->if_snd_tag_alloc = vlan_snd_tag_alloc;
 	ifp->if_snd_tag_free = vlan_snd_tag_free;
+#endif
+#ifdef KERN_TLS
+	ifp->if_create_tls_session = vlan_create_tls_session;
 #endif
 	ifp->if_flags = VLAN_IFFLAGS;
 	ether_ifattach(ifp, eaddr);
@@ -1955,5 +1962,25 @@ static void
 vlan_snd_tag_free(struct m_snd_tag *tag)
 {
 	tag->ifp->if_snd_tag_free(tag);
+}
+#endif
+
+#ifdef KERN_TLS
+static int
+vlan_create_tls_session(struct ifnet *ifp, struct socket *so,
+    struct sbtls_session *tls)
+{
+
+	ifp = vlan_trunkdev(ifp);
+	if (ifp == NULL || ifp->if_create_tls_session == NULL)
+		return (EOPNOTSUPP);
+
+	/*
+	 * The vlan's if_capenable is a subset of the trunk's
+	 * if_capenable.  Since the caller already checked the vlan's
+	 * if_capenable, this means the bits must already be set in
+	 * the parent's if_capenable.
+	 */
+	return (ifp->if_create_tls_session(ifp, so, tls));
 }
 #endif
