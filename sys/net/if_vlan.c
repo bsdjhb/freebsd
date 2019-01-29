@@ -1700,6 +1700,16 @@ vlan_capabilities(struct ifvlan *ifv)
 #endif
 
 	/*
+	 * If the parent interface supports unmapped mbufs, so does
+	 * the VLAN interface.  Note that this should be fine even for
+	 * interfaces that don't support hardware tagging as headers
+	 * are prepended in normal bufs to unmapped mbufs holding
+	 * payload data.
+	 */
+	cap |= (p->if_capabilities & IFCAP_NOMAP);
+	ena |= (mena & IFCAP_NOMAP);
+
+	/*
 	 * If the parent interface can offload encryption and segmentation
 	 * of TLS records over TCP, propagate it's capability to the VLAN
 	 * interface.
