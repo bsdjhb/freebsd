@@ -1297,6 +1297,8 @@ ether_vlanencap(struct mbuf *m, uint16_t tag)
 {
 	struct ether_vlan_header *evl;
 
+	if (m->m_flags & M_NOMAP)
+		return (NULL);
 	M_PREPEND(m, ETHER_VLAN_ENCAP_LEN, M_NOWAIT);
 	if (m == NULL)
 		return (NULL);
