@@ -46,6 +46,7 @@
 __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
+#include "opt_kern_tls.h"
 #include "opt_vlan.h"
 #include "opt_ratelimit.h"
 
