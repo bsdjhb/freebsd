@@ -631,8 +631,6 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	/*
 	 * Wait for reply to active open.
 	 *
-	 * XXX: What about rm lock?  Can't sleep while that is held.
-	 *
 	 * XXX: Probably need to recheck INP validity here and and in
 	 * the try loop in sbtls_crypt_tls_enable().
 	 */
@@ -649,6 +647,11 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	atid = -1;
 	if (tlsp->tid < 0) {
 		error = ENOMEM;
+		goto failed;
+	}
+
+	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		error = ECONNRESET;
 		goto failed;
 	}
 
