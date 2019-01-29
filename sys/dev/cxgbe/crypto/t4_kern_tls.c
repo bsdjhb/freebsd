@@ -2284,6 +2284,7 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	struct ether_header *eh;
 	tcp_seq tcp_seqno;
 	u_int ndesc, pidx, totdesc;
+	uint16_t vlan_tag;
 	bool has_fin, set_l2t_idx;
 	void *tsopt;
 
@@ -2315,14 +2316,18 @@ sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
 	 * Allocate a new L2T entry if necessary.  This may write out
 	 * a work request to the txq.
 	 */
+	if (m->m_flags & M_VLANTAG)
+		vlan_tag = m->m_pkthdr.ether_vtag;
+	else
+		vlan_tag = 0xfff;
 	set_l2t_idx = false;
-	if (tlsp->l2te == NULL ||
+	if (tlsp->l2te == NULL || tlsp->l2te->vlan != vlan_tag ||
 	    memcmp(tlsp->l2te->dmac, eh->ether_dhost, ETHER_ADDR_LEN) != 0) {
 		set_l2t_idx = true;
 		if (tlsp->l2te)
 			t4_l2t_release(tlsp->l2te);
 		tlsp->l2te = t4_l2t_alloc_tls(cipher->sc, txq, dst, &ndesc,
-		    0xfff, tlsp->vi->pi->lport, eh->ether_dhost);
+		    vlan_tag, tlsp->vi->pi->lport, eh->ether_dhost);
 		if (tlsp->l2te == NULL)
 			CXGBE_UNIMPLEMENTED("failed to allocate TLS L2TE");
 		if (ndesc != 0) {
