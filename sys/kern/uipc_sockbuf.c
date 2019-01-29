@@ -753,7 +753,7 @@ sbappendstream_locked(struct sockbuf *sb, struct mbuf *m, int flags)
 
 	SBLASTMBUFCHK(sb);
 
-	if ((sb->sb_tls_flags & SB_TLS_ACTIVE) != 0)
+	if (sb->sb_tls_info != NULL)
 		sbtls_seq(sb, m);
 
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */

@@ -642,7 +642,6 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	}
 
 	so->so_snd.sb_tls_info = tls;
-	so->so_snd.sb_tls_flags |= SB_TLS_ACTIVE;
 	if (tls->sb_tls_crypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
 	sbunlock(&so->so_snd);

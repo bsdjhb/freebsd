@@ -1480,8 +1480,8 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		goto out;
 
 	tls_pruflag = 0;
-	if ((so->so_snd.sb_tls_flags & SB_TLS_ACTIVE) != 0) {
-		tls = sbtls_hold(so->so_snd.sb_tls_info);
+	tls = sbtls_hold(so->so_snd.sb_tls_info);
+	if (tls != NULL) {
 		if (tls->sb_tls_crypt != NULL)
 			tls_pruflag = PRUS_NOTREADY;
 

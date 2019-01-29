@@ -48,7 +48,6 @@ struct tls_record_layer {
 /*
  * Constants for the Socket Buffer TLS state flags (sb_tls_flags).
  */
-#define	SB_TLS_ACTIVE		0x0001	/* set if SO_CRYPT_TLS is enabled. */
 #define	SB_TLS_IFNET		0x0010	/* crypto performed at ifnet layer. */
 
 /*
@@ -267,7 +266,8 @@ static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)
 {
 
-	refcount_acquire(&tls->refcount);
+	if (tls != NULL)
+		refcount_acquire(&tls->refcount);
 	return (tls);
 }
 

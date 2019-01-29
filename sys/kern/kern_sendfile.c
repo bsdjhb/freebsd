@@ -655,8 +655,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	 * we implement that, but possibly shouldn't.
 	 */
 	(void)sblock(&so->so_snd, SBL_WAIT | SBL_NOINTR);
-	if (so->so_snd.sb_tls_flags & SB_TLS_ACTIVE)
-		tls = sbtls_hold(so->so_snd.sb_tls_info);
+	tls = sbtls_hold(so->so_snd.sb_tls_info);
 
 	/*
 	 * Loop through the pages of the file, starting with the requested
