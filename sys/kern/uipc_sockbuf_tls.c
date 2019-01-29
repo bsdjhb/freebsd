@@ -535,6 +535,8 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 	ifp = rt->rt_ifp;
 	if (ifp->if_create_tls_session == NULL)
 		return (EOPNOTSUPP);
+	if ((ifp->if_capenable & IFCAP_NOMAP) == 0)
+		return (EOPNOTSUPP);
 	if (inp->inp_vflag & INP_IPV6) {
 		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
 			return (EOPNOTSUPP);
