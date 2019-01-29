@@ -537,10 +537,10 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 		return (EOPNOTSUPP);
 	if (inp->inp_vflag & INP_IPV6) {
 		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
-			return (ENXIO);
+			return (EOPNOTSUPP);
 	} else {
 		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
-			return (ENXIO);
+			return (EOPNOTSUPP);
 	}
 	return (ifp->if_create_tls_session(ifp, so, tls));
 }
