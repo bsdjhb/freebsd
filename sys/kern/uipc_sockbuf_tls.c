@@ -515,25 +515,46 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 	struct ifnet *ifp;
 	struct rtentry *rt;
 	struct inpcb *inp;
+	int error;
 
+	/*
+	 * XXX: Use the cached route in the inpcb to find the
+	 * interface.  This should perhaps instead use
+	 * rtalloc1_fib(dst, 0, 0, fibnum).
+	 */
 	inp = so->so_pcb;
-	INP_WLOCK_ASSERT(inp);
+	INP_RLOCK(inp);
 	rt = inp->inp_route.ro_rt;
-	if (rt == NULL || rt->rt_ifp == NULL)
+	if (rt == NULL || rt->rt_ifp == NULL) {
+		INP_RUNLOCK(inp);
 		return (ENXIO);
-	ifp = rt->rt_ifp;
-	if (ifp->if_create_tls_session == NULL)
-		return (EOPNOTSUPP);
-	if ((ifp->if_capenable & IFCAP_NOMAP) == 0)
-		return (EOPNOTSUPP);
-	if (inp->inp_vflag & INP_IPV6) {
-		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
-			return (EOPNOTSUPP);
-	} else {
-		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
-			return (EOPNOTSUPP);
 	}
-	return (ifp->if_create_tls_session(ifp, so, tls));
+	ifp = rt->rt_ifp;
+	if_ref(ifp);
+	INP_RUNLOCK(inp);
+	if (ifp->if_create_tls_session == NULL) {
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	if ((ifp->if_capenable & IFCAP_NOMAP) == 0) {	
+		error = EOPNOTSUPP;
+		goto out;
+	}
+	if (inp->inp_vflag & INP_IPV6) {
+		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+	} else {
+		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0) {
+			error = EOPNOTSUPP;
+			goto out;
+		}
+	}
+	error = ifp->if_create_tls_session(ifp, so, tls);
+out:
+	if_rele(ifp);
+	return (error);
 }
 
 static int
