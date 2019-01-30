@@ -166,6 +166,7 @@ MALLOC_DECLARE(M_TLSSOBUF);
 
 #define SBTLS_API_VERSION 4
 
+struct mbuf_ext_pgs;
 struct sbtls_session;
 struct iovec;
 
