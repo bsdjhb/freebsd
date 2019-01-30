@@ -23,6 +23,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_ratelimit.h"
 
 #include <sys/param.h>
@@ -39,6 +40,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/proc.h>
 #include <sys/lock.h>
 #include <sys/rmlock.h>
+#ifdef KERN_TLS
+#include <sys/socketvar.h>
+#endif
 #include <sys/sx.h>
 #include <sys/taskqueue.h>
 #include <sys/eventhandler.h>
@@ -57,6 +61,9 @@ __FBSDID("$FreeBSD$");
 #if defined(INET) || defined(INET6)
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#ifdef KERN_TLS
+#include <netinet/in_pcb.h>
+#endif
 #endif
 #ifdef INET
 #include <netinet/in_systm.h>
@@ -113,6 +120,10 @@ VNET_DEFINE_STATIC(struct if_clone *, lagg_cloner);
 static const char laggname[] = "lagg";
 
 static void	lagg_capabilities(struct lagg_softc *);
+#ifdef KERN_TLS
+static int	lagg_create_tls_session(struct ifnet *ifp, struct socket *so,
+    struct sbtls_session *tls);
+#endif
 static int	lagg_port_create(struct lagg_softc *, struct ifnet *);
 static int	lagg_port_destroy(struct lagg_port *, int);
 static struct mbuf *lagg_input(struct ifnet *, struct mbuf *);
@@ -516,6 +527,9 @@ lagg_clone_create(struct if_clone *ifc, int unit, caddr_t params)
 #ifdef RATELIMIT
 	ifp->if_snd_tag_alloc = lagg_snd_tag_alloc;
 	ifp->if_snd_tag_free = lagg_snd_tag_free;
+#endif
+#ifdef KERN_TLS
+	ifp->if_create_tls_session = lagg_create_tls_session;
 #endif
 	ifp->if_capenable = ifp->if_capabilities = IFCAP_HWSTATS;
 
@@ -1577,6 +1591,58 @@ lagg_snd_tag_free(struct m_snd_tag *tag)
 	tag->ifp->if_snd_tag_free(tag);
 }
 
+#endif
+
+#ifdef KERN_TLS
+static int
+lagg_create_tls_session(struct ifnet *ifp, struct socket *so,
+    struct sbtls_session *tls)
+{
+	struct lagg_softc *sc = (struct lagg_softc *)ifp->if_softc;
+	struct lagg_port *lp;
+	struct lagg_lb *lb;
+	struct inpcb *inp;
+	uint32_t p;
+
+	inp = so->so_pcb;
+	switch (sc->sc_proto) {
+	case LAGG_PROTO_FAILOVER:
+		lp = lagg_link_active(sc, sc->sc_primary);
+		break;
+	case LAGG_PROTO_LOADBALANCE:
+		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
+		    inp->inp_flowtype == M_HASHTYPE_NONE)
+			return (EOPNOTSUPP);
+		p = inp->inp_flowid >> sc->flowid_shift;
+		p %= sc->sc_count;
+		lb = (struct lagg_lb *)sc->sc_psc;
+		lp = lb->lb_ports[p];
+		lp = lagg_link_active(sc, lp);
+		break;
+	case LAGG_PROTO_LACP:
+		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
+		    inp->inp_flowtype == M_HASHTYPE_NONE)
+			return (EOPNOTSUPP);
+		lp = lacp_select_tx_port_by_hash(sc, inp->inp_flowid);
+		break;
+	default:
+		return (EOPNOTSUPP);
+	}
+	if (lp == NULL)
+		return (EOPNOTSUPP);
+	ifp = lp->lp_ifp;
+	if (ifp == NULL || ifp->if_create_tls_session == NULL)
+		return (EOPNOTSUPP);
+
+	if (inp->inp_vflag & INP_IPV6) {
+		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
+			return (EOPNOTSUPP);
+	} else {
+		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
+			return (EOPNOTSUPP);
+	}
+	return (ifp->if_create_tls_session(ifp, so, tls));
+}
 #endif
 
 static int
