@@ -686,6 +686,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	}
 	cipher->parse_pkt = sbtls_parse_pkt;
 	cipher->write_tls_wr = sbtls_write_wr;
+	cipher->vi = vi;
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
 	cipher->txq = txq;

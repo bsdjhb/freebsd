@@ -927,6 +927,7 @@ typedef int (*write_tls_wr_t)(struct t6_sbtls_cipher *, struct sge_txq *,
 struct t6_sbtls_cipher {
 	parse_tls_pkt_t parse_pkt;
 	write_tls_wr_t write_tls_wr;
+	struct vi_info *vi;
 	struct adapter *sc;
 	struct tlspcb *tlsp;
 	struct sge_txq *txq;
@@ -1241,7 +1242,7 @@ void t4_intr_evt(void *);
 void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
 struct mbuf *alloc_wr_mbuf(int, int);
-int parse_pkt(struct adapter *, struct mbuf **);
+int parse_pkt(struct adapter *, struct vi_info *, struct mbuf **);
 void *start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *);
 void commit_wrq_wr(struct sge_wrq *, void *, struct wrq_cookie *);
 int tnl_cong(struct port_info *, int);
