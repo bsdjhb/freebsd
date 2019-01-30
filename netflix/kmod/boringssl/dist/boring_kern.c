@@ -126,7 +126,7 @@ iov_pulldown(struct iovec *iov, size_t bytes)
 	size_t len, recurse;
 
 
-	NASSERT(iov->iov_len + bytes <= PAGE_SIZE,
+	KASSERT(iov->iov_len + bytes <= PAGE_SIZE,
 	    ("pull down:  %ld bytes > PAGE_SIZE\n",
 		iov->iov_len + bytes));
 
@@ -202,7 +202,7 @@ sbtls_boring_cbc_fixup(struct sbtls_info *tls,
 	 * us may not have enough space for the tag, so we need
 	 * to copy into a bigger one.
 	 */
-	NASSERT(iovcnt < 2 + btoc(TLS_MAX_MSG_SIZE_V10_2),
+	KASSERT(iovcnt < 2 + btoc(TLS_MAX_MSG_SIZE_V10_2),
 	    ("iovcnt too large?"));
 	memcpy(work_iov, outiov, iovcnt * sizeof(outiov[0]));
 	work_iov[iovcnt].iov_base = trailer;
@@ -228,7 +228,7 @@ sbtls_boring_cbc_fixup(struct sbtls_info *tls,
 
 	/* This check can eventually be moved under INVARIANTS */
 	for (i = 0; i < iovcnt; i++) {
-		NASSERT(iniov[i].iov_len == outiov[i].iov_len,
+		KASSERT(iniov[i].iov_len == outiov[i].iov_len,
 		    ("boring wasn't fixed: in= %p, out= %p, work= %p, tls= %p",
 			iniov, outiov, work_iov, tls));
 	}
