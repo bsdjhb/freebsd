@@ -184,7 +184,7 @@ struct sbtls_crypto_backend {
 
 struct sbtls_session {
 	int	(*sb_tls_crypt)(struct sbtls_session *tls,
-	    struct tls_record_layer *hdr, uint8_t *trailer,
+	    const struct tls_record_layer *hdr, uint8_t *trailer,
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
 	void *cipher;

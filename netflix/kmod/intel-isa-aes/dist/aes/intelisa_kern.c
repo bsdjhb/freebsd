@@ -154,17 +154,16 @@ fixup_done:
 }
 
 static int
-sbtls_crypt_intelisa_aead(struct sbtls_info *tls,
-    struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
+sbtls_crypt_intelisa_aead(struct sbtls_session *tls,
+    const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
-	char *lbuf;
 	struct isa_gcm_struct *isa;
 	struct tls_aead_data ad;
 	struct tls_nonce_data nd;
 	size_t noncelen, adlen, taglen;
 	int ret;
-	uint16_t tls_tot_len;
+	uint16_t tls_comp_len;
 
 	isa = (struct isa_gcm_struct *)tls->cipher;
 
@@ -174,36 +173,27 @@ sbtls_crypt_intelisa_aead(struct sbtls_info *tls,
 
 	/* Setup the nonce */
 	memcpy(nd.fixed, tls->sb_params.iv, TLS_AEAD_GCM_LEN);
-	nd.seq = htobe64(seqno);
+	memcpy(&nd.seq, hdr + 1, sizeof(nd.seq));
 	noncelen = sizeof(nd);
 	/* Setup the associated data */
+	tls_comp_len = ntohs(hdr->tls_length) -
+	    (SBTLS_INTELISA_AEAD_TAGLEN + sizeof(nd.seq));
 	ad.type = hdr->tls_type;
 	ad.tls_vmajor = hdr->tls_vmajor;
 	ad.tls_vminor = hdr->tls_vminor;
-	ad.tls_length = hdr->tls_length;
+	ad.tls_length = htons(tls_comp_len);
 	memcpy(&ad.seq, &nd.seq, sizeof(uint64_t));
-	lbuf = (char *)(hdr + 1);
-	memcpy(lbuf, &nd.seq, sizeof(nd.seq));
 	adlen = sizeof(ad);
 	ret = intel_isa_seal(isa, outiov, iovcnt,
 	    (uint8_t *) & nd, noncelen, iniov,
 	    (uint8_t *) & ad, adlen, trailer, &taglen);
 
-	tls_tot_len = ntohs(hdr->tls_length) +
-	    SBTLS_INTELISA_AEAD_TAGLEN + sizeof(nd.seq);
-#ifdef KTLS_VERBOSE
-	printf("tls_tot_len %d = %d + %d + %d\n",
-	    tls_tot_len, ntohs(hdr->tls_length),
-	    SBTLS_INTELISA_AEAD_TAGLEN, sizeof(nd.seq));
-#endif
-	hdr->tls_length = htons(tls_tot_len);
-
 	return(ret);
 }
 
 
-static void
-sbtls_setup_isa_cipher(struct sbtls_info *tls, int *err)
+static int
+sbtls_setup_isa_cipher(struct sbtls_session *tls)
 {
 	uint8_t *key;
 	struct fpu_kern_ctx *fpu_ctx;
@@ -212,48 +202,45 @@ sbtls_setup_isa_cipher(struct sbtls_info *tls, int *err)
 
 	key = tls->sb_params.crypt;
 	if (key == NULL) {
-		*err = EINVAL;
-		return;
+		return (EINVAL);
 	}
 	isa = (struct isa_gcm_struct *)tls->cipher;
 	fpu_ctx = fpu_kern_alloc_ctx(FPU_KERN_NOWAIT);
 	if (fpu_ctx == NULL) {
-		*err = ENOMEM;
-		return;
+		return (ENOMEM);
 	}
 	fpu_kern_enter(curthread, fpu_ctx, FPU_KERN_NORMAL);
 	isa->gcm_pre(key, &isa->key_data);
 	fpu_kern_leave(curthread, fpu_ctx);
 	fpu_kern_free_ctx(fpu_ctx);
+	return (0);
 }
 
 static int
-sbtls_try_intelisa(struct socket *so, struct tls_so_enable *en, int *error)
+sbtls_try_intelisa(struct socket *so, struct tls_so_enable *en,
+    struct sbtls_session **ptls)
 {
-
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	struct isa_gcm_struct *isa;
 
-	*error = 0;
 	if (sbtls_use_intel_isa_gcm &&
 	    ((en->crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
 	    (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
-	    ((en->mac_algorthim == CRYPTO_AES_128_NIST_GMAC) ||
-	    (en->mac_algorthim == CRYPTO_AES_256_NIST_GMAC))) {
-		tls = sbtls_init_sb_tls(so, en, sizeof (*isa));
+	    ((en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
+	    (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
+		tls = sbtls_init_session(so, en, sizeof (*isa));
 
 		if (tls == NULL) {
-			*error = ENOMEM;
-			return (1);
+			return (ENOMEM);
 		}
 		isa = tls->cipher;
-		if (en->mac_algorthim == CRYPTO_AES_128_NIST_GMAC) {
+		if (en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) {
 			isa->gcm_pre = aes_gcm_pre_128;
 			isa->gcm_init = aes_gcm_init_128;
 			isa->gcm_upd = aes_gcm_enc_128_update;
 			isa->gcm_upd_nt = aes_gcm_enc_128_update_nt;
 			isa->gcm_final = aes_gcm_enc_128_finalize;
-		} else if (en->mac_algorthim == CRYPTO_AES_256_NIST_GMAC) {
+		} else if (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC) {
 			isa->gcm_pre = aes_gcm_pre_256;
 			isa->gcm_init = aes_gcm_init_256;
 			isa->gcm_upd = aes_gcm_enc_256_update;
@@ -262,15 +249,12 @@ sbtls_try_intelisa(struct socket *so, struct tls_so_enable *en, int *error)
 		} else {
 			panic("Unknown key size -- mac alg");
 		}
-		tls->sb_params.sb_tls_hlen =
-		    sizeof(struct tls_record_layer) + sizeof(uint64_t);
-		tls->sb_params.sb_tls_tlen = SBTLS_INTELISA_AEAD_TAGLEN;
 		tls->t_type = SBTLS_T_TYPE_INTELISA_GCM;
 		tls->sb_tls_crypt = sbtls_crypt_intelisa_aead;
+		*ptls = tls;
 		return (0);
 	}
-	*error = ENOTSUP;
-	return (1);
+	return (EOPNOTSUPP);
 }
 
 SYSCTL_DECL(_kern_ipc_tls);

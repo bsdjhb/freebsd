@@ -1053,7 +1053,7 @@ retry_page:
 			vm_wire_add(wire_adj);
 
 		error = (*tls->sb_tls_crypt)(tls,
-		    (struct tls_record_layer *)pgs->hdr,
+		    (const struct tls_record_layer *)pgs->hdr,
 		    pgs->trail, src_iov, dst_iov, i, seqno);
 		if (error) {
 			/* WTF can we do..? */

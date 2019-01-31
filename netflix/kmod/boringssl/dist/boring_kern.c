@@ -62,18 +62,17 @@ static counter_u64_t sbtls_offload_boring_cbc_ok;
 
 
 static int
-sbtls_crypt_boringssl_aead(struct sbtls_info *tls,
-    struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
+sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
+    const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
-	char *lbuf;
 	size_t taglen;
 	struct evp_aead_ctx_st *bssl;
 	struct tls_aead_data ad;
 	struct tls_nonce_data nd;
 	size_t noncelen, adlen;
 	int ret;
-	uint16_t tls_tot_len;
+	uint16_t tls_comp_len;
 
 
 	bssl = (struct evp_aead_ctx_st *)tls->cipher;
@@ -85,16 +84,16 @@ sbtls_crypt_boringssl_aead(struct sbtls_info *tls,
 
 	/* Setup the nonce */
 	memcpy(nd.fixed, tls->sb_params.iv, TLS_AEAD_GCM_LEN);
-	nd.seq = htobe64(seqno);
+	memcpy(&nd.seq, hdr + 1, sizeof(nd.seq));
 	noncelen = sizeof(nd);
 	/* Setup the associated data */
+	tls_comp_len = ntohs(hdr->tls_length) -
+	    (bssl->aead->overhead + sizeof(nd.seq));
 	ad.type = hdr->tls_type;
 	ad.tls_vmajor = hdr->tls_vmajor;
 	ad.tls_vminor = hdr->tls_vminor;
-	ad.tls_length = hdr->tls_length;
+	ad.tls_length = htons(tls_comp_len);
 	memcpy(&ad.seq, &nd.seq, sizeof(uint64_t));
-	lbuf = (char *)(hdr + 1);
-	memcpy(lbuf, &nd.seq, sizeof(nd.seq));
 	adlen = sizeof(ad);
 	taglen = bssl->aead->overhead;
 	tls->taglen = taglen;
@@ -106,14 +105,6 @@ sbtls_crypt_boringssl_aead(struct sbtls_info *tls,
 		/* Seal failed? */
 		return EFAULT;
 	}
-
-	/*
-	 * Now fix up the TLS header to have the proper length (incremented
-	 * by bssl->aead->overhead) and the nonce part.
-	 */
-	tls_tot_len = ntohs(hdr->tls_length) +
-	    bssl->aead->overhead + sizeof(nd.seq);
-	hdr->tls_length = htons(tls_tot_len);
 
 	return (0);
 }
@@ -186,7 +177,7 @@ iov_pulldown(struct iovec *iov, size_t bytes)
  */
 
 static void
-sbtls_boring_cbc_fixup(struct sbtls_info *tls,
+sbtls_boring_cbc_fixup(struct sbtls_session *tls,
     struct iovec *iniov, struct iovec *outiov,
     uint8_t *trailer, int iovcnt)
 {
@@ -237,18 +228,16 @@ sbtls_boring_cbc_fixup(struct sbtls_info *tls,
 }
 
 static int
-sbtls_crypt_boringssl_cbc(struct sbtls_info *tls,
-    struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
+sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
+    const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
-	char *lbuf;
 	size_t taglen;
 	struct tls_mac_data mac;
 	struct evp_aead_ctx_st *bssl;
 	size_t ivlen;
 	uint8_t iv[64];
 	int ret, tls_size_out, i;
-	uint16_t tls_tot_len;
 
 
 	bssl = (struct evp_aead_ctx_st *)tls->cipher;
@@ -262,7 +251,7 @@ sbtls_crypt_boringssl_cbc(struct sbtls_info *tls,
 	mac.tls_length = 0;
 	if (bssl->aead->nonce_len) {
 		ivlen = bssl->aead->nonce_len;
-		arc4rand(iv, ivlen, 0);
+		memcpy(iv, hdr + 1, ivlen);
 	} else {
 		ivlen = 0;
 	}
@@ -286,16 +275,6 @@ sbtls_crypt_boringssl_cbc(struct sbtls_info *tls,
 	tls->taglen = taglen;
 
 	/*
-	 * Now fix up the TLS header to have the proper length (incremented
-	 * by bssl->aead->overhead) and the nonce part.
-	 */
-	lbuf = (char *)(hdr + 1);
-	memcpy(lbuf, iv, ivlen);
-
-	tls_tot_len = tls_size_out + taglen + ivlen;
-	hdr->tls_length = htons(tls_tot_len);
-
-	/*
 	 * move data in the output iovec back to the original
 	 * layout
 	 */
@@ -305,50 +284,45 @@ sbtls_crypt_boringssl_cbc(struct sbtls_info *tls,
 }
 
 static int
-sbtls_try_boring(struct socket *so, struct tls_so_enable *en, int *error)
+sbtls_try_boring(struct socket *so, struct tls_so_enable *en,
+    struct sbtls_session **ptls)
 {
-	struct sbtls_info *tls;
+	struct sbtls_session *tls;
 	struct evp_aead_ctx_st *bssl;
 
-	*error = 0;
 	if (((en->crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
 	    (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
-	    ((en->mac_algorthim == CRYPTO_AES_128_NIST_GMAC) ||
-	    (en->mac_algorthim == CRYPTO_AES_256_NIST_GMAC))) {
+	    ((en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
+	    (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
 
-		tls = sbtls_init_sb_tls(so, en, sizeof(*bssl));
+		tls = sbtls_init_session(so, en, sizeof(*bssl));
 		if (tls == NULL) {
-			*error = ENOMEM;
-			return (1);
+			return (ENOMEM);
 		}
 		bssl = tls->cipher;
-		if (en->mac_algorthim == CRYPTO_AES_128_NIST_GMAC)
+		if (en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC)
 			bssl->aead = EVP_aead_aes_128_gcm();
-		else if (en->mac_algorthim == CRYPTO_AES_256_NIST_GMAC)
+		else if (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC)
 			bssl->aead = EVP_aead_aes_256_gcm();
 		else
 			panic("Unknown key size -- mac alg");
 
-		tls->sb_params.sb_tls_hlen =
-		    sizeof(struct tls_record_layer) + sizeof(uint64_t);
-		tls->sb_params.sb_tls_tlen = SBTLS_INTELISA_AEAD_TAGLEN;
-		tls->sb_params.sb_tls_bs = 1;
 		tls->t_type = SBTLS_T_TYPE_BSSL;
 		tls->sb_tls_crypt = sbtls_crypt_boringssl_aead;
+		*ptls = tls;
 		return (0);
 	} else if (en->crypt_algorithm == CRYPTO_AES_CBC) {
 		const EVP_AEAD *choice = NULL;
 
-		if (en->mac_algorthim == CRYPTO_SHA2_256_HMAC) {
+		if (en->mac_algorithm == CRYPTO_SHA2_256_HMAC) {
 			if (en->key_size == 16) {
 				choice = EVP_aead_aes_128_cbc_sha256_tls();
 			} else if (en->key_size == 32) {
 				choice = EVP_aead_aes_256_cbc_sha256_tls();
 			}
-		} else if (en->mac_algorthim == CRYPTO_SHA1_HMAC) {
+		} else if (en->mac_algorithm == CRYPTO_SHA1_HMAC) {
 			if (en->tls_vmajor != TLS_MAJOR_VER_ONE) {
-				*error = EINVAL;
-				return (4);
+				return (EINVAL);
 			}
 			if (en->key_size == 16) {
 				if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
@@ -373,33 +347,34 @@ sbtls_try_boring(struct socket *so, struct tls_so_enable *en, int *error)
 		 * matches
 		 */
 		if (choice == NULL) {
-			*error = ENOTSUP;
-			return (5);
+			return (EOPNOTSUPP);
 		}
 
-		tls = sbtls_init_sb_tls(so, en, sizeof(*bssl));
+		tls = sbtls_init_session(so, en, sizeof(*bssl));
 		if (tls == NULL) {
-			*error = ENOMEM;
-			return (6);
+			return (ENOMEM);
 		}
+
+		KASSERT(tls->sb_params.tls_hlen ==
+		    sizeof(struct tls_record_layer) + choice->nonce_len,
+		    ("TLS header length mismatch"));
+		KASSERT(tls->sb_params.tls_tlen != choice->overhead,
+		    ("TLS trailer length mismatch"));
+
 		bssl = tls->cipher;
 		bssl->aead = choice;
-		tls->sb_params.sb_tls_hlen =
-		    sizeof(struct tls_record_layer) + bssl->aead->nonce_len;
-		tls->sb_params.sb_tls_tlen = bssl->aead->overhead;
-		tls->sb_params.sb_tls_bs = 16;
 		tls->t_type = SBTLS_T_TYPE_BSSL;
 		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
+		*ptls = tls;
 		return (0);
 	} else {
-		*error = ENOTSUP;
-		return (9);
+		return (EOPNOTSUPP);
 	}
 
 }
 
-static void
-sbtls_setup_boring_cipher(struct sbtls_info *tls, int *err)
+static int
+sbtls_setup_boring_cipher(struct sbtls_session *tls)
 {
 	int ret;
 	struct evp_aead_ctx_st *bssl;
@@ -413,14 +388,12 @@ sbtls_setup_boring_cipher(struct sbtls_info *tls, int *err)
 		/* CBC has a merged key */
 		keylen = tls->sb_params.hmac_key_len + tls->sb_params.crypt_key_len;
 		if (tls->sb_params.hmac_key == NULL || tls->sb_params.crypt == NULL) {
-			*err = EINVAL;
-			return;
+			return (EINVAL);
 		}
 		    
 		mal = malloc(keylen, M_TLSSOBUF, M_NOWAIT);
 		if (mal == NULL) {
-			*err = ENOMEM;
-			return;
+			return (ENOMEM);
 		}
 		memcpy(mal, tls->sb_params.hmac_key, tls->sb_params.hmac_key_len);
 		memcpy(mal + tls->sb_params.hmac_key_len, tls->sb_params.crypt,
@@ -430,14 +403,12 @@ sbtls_setup_boring_cipher(struct sbtls_info *tls, int *err)
 		key = tls->sb_params.crypt;
 		keylen = tls->sb_params.crypt_key_len;
 		if (key == NULL) {
-			*err = EINVAL;
-			return;
+			return (EINVAL);
 		}
 	}
 	fpu_ctx = fpu_kern_alloc_ctx(FPU_KERN_NOWAIT);
 	if (fpu_ctx == NULL) {
-		*err = ENOMEM;
-		return;
+		return (ENOMEM);
 	}
 	fpu_kern_enter(curthread, fpu_ctx, FPU_KERN_NORMAL);
 	ret = EVP_AEAD_CTX_init_with_direction(bssl,
@@ -449,17 +420,17 @@ sbtls_setup_boring_cipher(struct sbtls_info *tls, int *err)
 	if (mal) {
 		free(mal, M_TLSSOBUF);
 	}
-	if (ret == 0) {
-		*err = EINVAL;
-	} else {
-		*err = 0;
-	}
 	fpu_kern_leave(curthread, fpu_ctx);
 	fpu_kern_free_ctx(fpu_ctx);
+	if (ret == 0) {
+		return (EINVAL);
+	} else {
+		return (0);
+	}
 }
 
 static void
-sbtls_clean_boring(struct sbtls_info *tls, void *arg)
+sbtls_clean_boring(struct sbtls_session *tls, void *arg)
 {
 	EVP_AEAD_CTX_cleanup(arg);
 }
