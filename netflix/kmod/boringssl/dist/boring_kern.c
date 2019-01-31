@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
+#include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/proc.h>
 #include <sys/sockbuf.h>
@@ -60,6 +61,11 @@ static counter_u64_t sbtls_offload_boring_cbc;
 static counter_u64_t sbtls_offload_boring_cbc_cp;
 static counter_u64_t sbtls_offload_boring_cbc_ok;
 
+static MALLOC_DEFINE(M_BORINGSSL, "boringssl", "boringssl");
+
+static int sbtls_setup_boring_cipher(struct sbtls_session *tls,
+    struct evp_aead_ctx_st *bssl);
+static void sbtls_clean_boring(struct sbtls_session *tls);
 
 static int
 sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
@@ -284,59 +290,47 @@ sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
 }
 
 static int
-sbtls_try_boring(struct socket *so, struct tls_so_enable *en,
-    struct sbtls_session **ptls)
+sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 {
-	struct sbtls_session *tls;
 	struct evp_aead_ctx_st *bssl;
+	const EVP_AEAD *choice;
+	int error;
 
-	if (((en->crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
-	    (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
-	    ((en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
-	    (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
-
-		tls = sbtls_init_session(so, en, sizeof(*bssl));
-		if (tls == NULL) {
-			return (ENOMEM);
-		}
-		bssl = tls->cipher;
-		if (en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC)
-			bssl->aead = EVP_aead_aes_128_gcm();
-		else if (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC)
-			bssl->aead = EVP_aead_aes_256_gcm();
+	choice = NULL;
+	if (((tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
+	    (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
+	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
+	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
+		if (tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC)
+			choice = EVP_aead_aes_128_gcm();
+		else if (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC)
+			choice = EVP_aead_aes_256_gcm();
 		else
 			panic("Unknown key size -- mac alg");
-
-		tls->t_type = SBTLS_T_TYPE_BSSL;
-		tls->sb_tls_crypt = sbtls_crypt_boringssl_aead;
-		*ptls = tls;
-		return (0);
-	} else if (en->crypt_algorithm == CRYPTO_AES_CBC) {
-		const EVP_AEAD *choice = NULL;
-
-		if (en->mac_algorithm == CRYPTO_SHA2_256_HMAC) {
-			if (en->key_size == 16) {
+	} else if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
+		if (tls->sb_params.mac_algorithm == CRYPTO_SHA2_256_HMAC) {
+			if (tls->sb_params.crypt_key_len == 16) {
 				choice = EVP_aead_aes_128_cbc_sha256_tls();
-			} else if (en->key_size == 32) {
+			} else if (tls->sb_params.crypt_key_len == 32) {
 				choice = EVP_aead_aes_256_cbc_sha256_tls();
 			}
-		} else if (en->mac_algorithm == CRYPTO_SHA1_HMAC) {
-			if (en->tls_vmajor != TLS_MAJOR_VER_ONE) {
+		} else if (tls->sb_params.mac_algorithm == CRYPTO_SHA1_HMAC) {
+			if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE) {
 				return (EINVAL);
 			}
-			if (en->key_size == 16) {
-				if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
+			if (tls->sb_params.crypt_key_len == 16) {
+				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
 					/* TLS 1.1 */
 					choice = EVP_aead_aes_128_cbc_sha1_tls_implicit_iv();
-				} else if (en->tls_vminor >= TLS_MINOR_VER_ONE) {
+				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
 					/* TLS 1.2 and > */
 					choice = EVP_aead_aes_128_cbc_sha1_tls();
 				}
-			} else if (en->key_size == 32) {
-				if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
+			} else if (tls->sb_params.crypt_key_len == 32) {
+				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
 					/* TLS 1.1 */
 					choice = EVP_aead_aes_256_cbc_sha1_tls_implicit_iv();
-				} else if (en->tls_vminor >= TLS_MINOR_VER_ONE) {
+				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
 					/* TLS 1.2 and > */
 					choice = EVP_aead_aes_256_cbc_sha1_tls();
 				}
@@ -350,48 +344,55 @@ sbtls_try_boring(struct socket *so, struct tls_so_enable *en,
 			return (EOPNOTSUPP);
 		}
 
-		tls = sbtls_init_session(so, en, sizeof(*bssl));
-		if (tls == NULL) {
-			return (ENOMEM);
-		}
-
 		KASSERT(tls->sb_params.tls_hlen ==
 		    sizeof(struct tls_record_layer) + choice->nonce_len,
 		    ("TLS header length mismatch"));
 		KASSERT(tls->sb_params.tls_tlen == choice->overhead,
 		    ("TLS trailer length mismatch"));
-
-		bssl = tls->cipher;
-		bssl->aead = choice;
-		tls->t_type = SBTLS_T_TYPE_BSSL;
-		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
-		*ptls = tls;
-		return (0);
 	} else {
 		return (EOPNOTSUPP);
 	}
 
+	bssl = malloc(sizeof(*bssl), M_BORINGSSL, M_NOWAIT | M_ZERO);
+	if (bssl == NULL) {
+		return (ENOMEM);
+	}
+	bssl->aead = choice;
+
+	error = sbtls_setup_boring_cipher(tls, bssl);
+	if (error) {
+		free(bssl, M_BORINGSSL);
+		return (error);
+	}
+
+	tls->cipher = bssl;
+	tls->t_type = SBTLS_T_TYPE_BSSL;
+	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC)
+		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
+	else
+		tls->sb_tls_crypt = sbtls_crypt_boringssl_aead;
+	tls->sb_tls_free = sbtls_clean_boring;
+	return (0);
 }
 
 static int
-sbtls_setup_boring_cipher(struct sbtls_session *tls)
+sbtls_setup_boring_cipher(struct sbtls_session *tls,
+    struct evp_aead_ctx_st *bssl)
 {
-	int ret;
-	struct evp_aead_ctx_st *bssl;
+	int error, ret;
 	uint8_t *key, *mal = NULL;
 	struct fpu_kern_ctx *fpu_ctx;
 	size_t keylen;
 
 
-	bssl = (struct evp_aead_ctx_st *)tls->cipher;
-	if (tls->sb_tls_crypt == sbtls_crypt_boringssl_cbc) {
+	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
 		/* CBC has a merged key */
 		keylen = tls->sb_params.hmac_key_len + tls->sb_params.crypt_key_len;
 		if (tls->sb_params.hmac_key == NULL || tls->sb_params.crypt == NULL) {
 			return (EINVAL);
 		}
 		    
-		mal = malloc(keylen, M_TLSSOBUF, M_NOWAIT);
+		mal = malloc(keylen, M_BORINGSSL, M_NOWAIT);
 		if (mal == NULL) {
 			return (ENOMEM);
 		}
@@ -408,7 +409,8 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls)
 	}
 	fpu_ctx = fpu_kern_alloc_ctx(FPU_KERN_NOWAIT);
 	if (fpu_ctx == NULL) {
-		return (ENOMEM);
+		error = ENOMEM;
+		goto out;
 	}
 	fpu_kern_enter(curthread, fpu_ctx, FPU_KERN_NORMAL);
 	ret = EVP_AEAD_CTX_init_with_direction(bssl,
@@ -417,22 +419,27 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls)
 	    keylen,
 	    EVP_AEAD_DEFAULT_TAG_LENGTH,
 	    evp_aead_seal);
-	if (mal) {
-		free(mal, M_TLSSOBUF);
+	if (ret == 0) {
+		error = EINVAL;
+	} else {
+		error = 0;
 	}
 	fpu_kern_leave(curthread, fpu_ctx);
 	fpu_kern_free_ctx(fpu_ctx);
-	if (ret == 0) {
-		return (EINVAL);
-	} else {
-		return (0);
+out:
+	if (mal != NULL) {
+		explicit_bzero(mal, keylen);
+		free(mal, M_BORINGSSL);
 	}
+	return (error);
 }
 
 static void
-sbtls_clean_boring(struct sbtls_session *tls, void *arg)
+sbtls_clean_boring(struct sbtls_session *tls)
 {
-	EVP_AEAD_CTX_cleanup(arg);
+
+	EVP_AEAD_CTX_cleanup(tls->cipher);
+	free(tls->cipher, M_BORINGSSL);
 }
 
 SYSCTL_DECL(_kern_ipc_tls_counters);
@@ -456,8 +463,6 @@ struct sbtls_crypto_backend bssl_backend  = {
 	.prio = 10,
 	.api_version = SBTLS_API_VERSION,
 	.try = sbtls_try_boring,
-	.setup_cipher = sbtls_setup_boring_cipher,
-	.clean_cipher = sbtls_clean_boring,
 };
 
 static int

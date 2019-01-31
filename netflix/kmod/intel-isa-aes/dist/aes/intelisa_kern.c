@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
+#include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/proc.h>
 #include <sys/sockbuf.h>
@@ -83,6 +84,7 @@ static counter_u64_t intelisa_aligned_mem_b;
 static counter_u64_t intelisa_unaligned_mem;
 static counter_u64_t intelisa_unaligned_mem_b;
 
+static MALLOC_DEFINE(M_INTEL_ISA, "isal_tls", "Intel ISA-L TLS");
 
 static int
 intel_isa_seal(struct isa_gcm_struct *isa,
@@ -193,18 +195,14 @@ sbtls_crypt_intelisa_aead(struct sbtls_session *tls,
 
 
 static int
-sbtls_setup_isa_cipher(struct sbtls_session *tls)
+sbtls_setup_isa_cipher(struct isa_gcm_struct *isa, uint8_t *key)
 {
-	uint8_t *key;
 	struct fpu_kern_ctx *fpu_ctx;
-	struct isa_gcm_struct *isa;
 
 
-	key = tls->sb_params.crypt;
 	if (key == NULL) {
 		return (EINVAL);
 	}
-	isa = (struct isa_gcm_struct *)tls->cipher;
 	fpu_ctx = fpu_kern_alloc_ctx(FPU_KERN_NOWAIT);
 	if (fpu_ctx == NULL) {
 		return (ENOMEM);
@@ -216,42 +214,60 @@ sbtls_setup_isa_cipher(struct sbtls_session *tls)
 	return (0);
 }
 
-static int
-sbtls_try_intelisa(struct socket *so, struct tls_so_enable *en,
-    struct sbtls_session **ptls)
+static void
+sbtls_intelisa_free(struct sbtls_session *tls)
 {
-	struct sbtls_session *tls;
 	struct isa_gcm_struct *isa;
 
-	if (sbtls_use_intel_isa_gcm &&
-	    ((en->crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
-	    (en->crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
-	    ((en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
-	    (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
-		tls = sbtls_init_session(so, en, sizeof (*isa));
+	isa = tls->cipher;
+	explicit_bzero(isa, sizeof(*isa));
+	free(isa, M_INTEL_ISA);
+}
 
-		if (tls == NULL) {
+static int
+sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
+{
+	struct isa_gcm_struct *isa;
+	int error;
+
+	if (sbtls_use_intel_isa_gcm &&
+	    ((tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
+	    (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
+	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
+	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
+		isa = malloc(sizeof (*isa), M_INTEL_ISA, M_NOWAIT | M_ZERO);
+		if (isa == NULL) {
 			return (ENOMEM);
 		}
-		isa = tls->cipher;
-		if (en->mac_algorithm == CRYPTO_AES_128_NIST_GMAC) {
+		switch (tls->sb_params.mac_algorithm) {
+		case CRYPTO_AES_128_NIST_GMAC:
 			isa->gcm_pre = aes_gcm_pre_128;
 			isa->gcm_init = aes_gcm_init_128;
 			isa->gcm_upd = aes_gcm_enc_128_update;
 			isa->gcm_upd_nt = aes_gcm_enc_128_update_nt;
 			isa->gcm_final = aes_gcm_enc_128_finalize;
-		} else if (en->mac_algorithm == CRYPTO_AES_256_NIST_GMAC) {
+			break;
+		case CRYPTO_AES_256_NIST_GMAC:
 			isa->gcm_pre = aes_gcm_pre_256;
 			isa->gcm_init = aes_gcm_init_256;
 			isa->gcm_upd = aes_gcm_enc_256_update;
 			isa->gcm_upd_nt = aes_gcm_enc_256_update_nt;
 			isa->gcm_final = aes_gcm_enc_256_finalize;
-		} else {
+			break;
+		default:
 			panic("Unknown key size -- mac alg");
 		}
+
+		error = sbtls_setup_isa_cipher(isa, tls->sb_params.crypt);
+		if (error) {
+			free(isa, M_INTEL_ISA);
+			return (error);
+		}
+
+		tls->cipher = isa;
 		tls->t_type = SBTLS_T_TYPE_INTELISA_GCM;
 		tls->sb_tls_crypt = sbtls_crypt_intelisa_aead;
-		*ptls = tls;
+		tls->sb_tls_free = sbtls_intelisa_free;
 		return (0);
 	}
 	return (EOPNOTSUPP);
@@ -285,7 +301,6 @@ struct sbtls_crypto_backend intelisa_backend  = {
 	.prio = 20,
 	.api_version = SBTLS_API_VERSION,
 	.try = sbtls_try_intelisa,
-	.setup_cipher = sbtls_setup_isa_cipher,
 };
 
 static int
