@@ -288,60 +288,71 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	choice = NULL;
-	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16 &&
-	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
-	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
-		if (tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC)
+	switch (tls->sb_params.crypt_algorithm) {
+	case CRYPTO_AES_NIST_GCM_16:
+		switch (tls->sb_params.crypt_key_len) {
+		case 16:
 			choice = EVP_aead_aes_128_gcm();
-		else if (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC)
+			break;
+		case 32:
 			choice = EVP_aead_aes_256_gcm();
-		else
-			panic("Unknown key size -- mac alg");
-	} else if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
-		if (tls->sb_params.mac_algorithm == CRYPTO_SHA2_256_HMAC) {
-			if (tls->sb_params.crypt_key_len == 16) {
+			break;
+		}
+		break;
+	case CRYPTO_AES_CBC:
+		switch (tls->sb_params.mac_algorithm) {
+		case CRYPTO_SHA2_256_HMAC:
+			switch (tls->sb_params.crypt_key_len) {
+			case 16:
 				choice = EVP_aead_aes_128_cbc_sha256_tls();
-			} else if (tls->sb_params.crypt_key_len == 32) {
+				break;
+			case 32:
 				choice = EVP_aead_aes_256_cbc_sha256_tls();
+				break;
 			}
-		} else if (tls->sb_params.mac_algorithm == CRYPTO_SHA1_HMAC) {
+			break;
+		case CRYPTO_SHA1_HMAC:
 			if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE) {
 				return (EINVAL);
 			}
-			if (tls->sb_params.crypt_key_len == 16) {
+			switch (tls->sb_params.crypt_key_len) {
+			case 16:
 				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
-					/* TLS 1.1 */
+					/* TLS 1.0 */
 					choice = EVP_aead_aes_128_cbc_sha1_tls_implicit_iv();
 				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
-					/* TLS 1.2 and > */
+					/* TLS 1.1 and > */
 					choice = EVP_aead_aes_128_cbc_sha1_tls();
 				}
-			} else if (tls->sb_params.crypt_key_len == 32) {
+				break;
+			case 32:
 				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
-					/* TLS 1.1 */
+					/* TLS 1.0 */
 					choice = EVP_aead_aes_256_cbc_sha1_tls_implicit_iv();
 				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
-					/* TLS 1.2 and > */
+					/* TLS 1.1 and > */
 					choice = EVP_aead_aes_256_cbc_sha1_tls();
 				}
+				break;
 			}
+			break;
 		}
-		/*
-		 * At this point choice is set if we have a cipher that
-		 * matches
-		 */
-		if (choice == NULL) {
-			return (EOPNOTSUPP);
-		}
+		break;
+	}
 
-		KASSERT(tls->sb_params.tls_hlen ==
-		    sizeof(struct tls_record_layer) + choice->nonce_len,
-		    ("TLS header length mismatch"));
-		KASSERT(tls->sb_params.tls_tlen == choice->overhead,
-		    ("TLS trailer length mismatch"));
-	} else {
+	/*
+	 * At this point choice is set if we have a cipher that
+	 * matches
+	 */
+	if (choice == NULL) {
 		return (EOPNOTSUPP);
 	}
+
+	KASSERT(tls->sb_params.tls_hlen ==
+	    sizeof(struct tls_record_layer) + choice->nonce_len,
+	    ("TLS header length mismatch"));
+	KASSERT(tls->sb_params.tls_tlen == choice->overhead,
+	    ("TLS trailer length mismatch"));
 
 	bssl = malloc(sizeof(*bssl), M_BORINGSSL, M_NOWAIT | M_ZERO);
 	if (bssl == NULL) {
