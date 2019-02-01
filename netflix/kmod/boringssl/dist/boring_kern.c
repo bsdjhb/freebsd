@@ -288,8 +288,7 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	choice = NULL;
-	if (((tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
-	    (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
+	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16 &&
 	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
 	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
 		if (tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC)

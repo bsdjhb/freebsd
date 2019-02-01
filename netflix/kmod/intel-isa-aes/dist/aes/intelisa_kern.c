@@ -231,8 +231,7 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	if (sbtls_use_intel_isa_gcm &&
-	    ((tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GMAC) ||
-	    (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16)) &&
+	    tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16 &&
 	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
 	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
 		isa = malloc(sizeof (*isa), M_INTEL_ISA, M_NOWAIT | M_ZERO);
