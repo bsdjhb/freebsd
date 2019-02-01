@@ -357,7 +357,6 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	}
 
 	tls->cipher = bssl;
-	tls->t_type = SBTLS_T_TYPE_BSSL;
 	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC)
 		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
 	else

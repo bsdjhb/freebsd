@@ -736,7 +736,6 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 
 	tls->cipher = cipher;
 	tls->sb_tls_free = sbtls_clean_cipher;
-	tls->t_type = SBTLS_T_TYPE_CHELSIO;
 	return (0);
 
 failed:

@@ -150,11 +150,6 @@ struct tls_session_params {
 	uint8_t tls_bs;
 };
 
-#define SBTLS_T_TYPE_OCFW		1	/* Open Crypto Framework */
-#define SBTLS_T_TYPE_BSSL		2	/* Boring SSL */
-#define SBTLS_T_TYPE_INTELISA_GCM	3	/* Intel ISA AES GCM */
-#define	SBTLS_T_TYPE_CHELSIO		4
-
 #define SBTLS_INTELISA_AEAD_TAGLEN	16
 #define SBTLS_INTELISA_CBC_TAGLEN	16
 #ifdef _KERNEL
@@ -189,8 +184,7 @@ struct sbtls_session {
 	struct sbtls_crypto_backend *be;/* backend crypto impl. */
 	void (*sb_tls_free)(struct sbtls_session *tls);
 	struct tls_session_params sb_params;
-	uint16_t sb_tsk_instance;	/* For task selection */
-	uint8_t t_type; 	 	/* Flags indicating type of encode */
+	u_int	sb_tsk_instance;	/* For task selection */
 	volatile u_int refcount;
 } __aligned(CACHE_LINE_SIZE);
 

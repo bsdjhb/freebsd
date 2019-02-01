@@ -265,7 +265,6 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 		}
 
 		tls->cipher = isa;
-		tls->t_type = SBTLS_T_TYPE_INTELISA_GCM;
 		tls->sb_tls_crypt = sbtls_crypt_intelisa_aead;
 		tls->sb_tls_free = sbtls_intelisa_free;
 		return (0);
