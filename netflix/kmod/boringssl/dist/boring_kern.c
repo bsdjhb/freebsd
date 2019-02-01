@@ -89,11 +89,11 @@ sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
 	/* Setup the associated data */
 	tls_comp_len = ntohs(hdr->tls_length) -
 	    (bssl->aead->overhead + sizeof(nd.seq));
+	ad.seq = htobe64(seqno);
 	ad.type = hdr->tls_type;
 	ad.tls_vmajor = hdr->tls_vmajor;
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
-	memcpy(&ad.seq, &nd.seq, sizeof(uint64_t));
 	adlen = sizeof(ad);
 	taglen = bssl->aead->overhead;
 	tls->taglen = taglen;
