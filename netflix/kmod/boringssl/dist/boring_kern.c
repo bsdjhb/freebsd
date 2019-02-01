@@ -337,6 +337,14 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 			}
 			break;
 		}
+
+		if (choice != NULL) {
+			KASSERT(tls->sb_params.tls_hlen ==
+			    sizeof(struct tls_record_layer) + choice->nonce_len,
+			    ("TLS header length mismatch"));
+			KASSERT(tls->sb_params.tls_tlen == choice->overhead,
+			    ("TLS trailer length mismatch"));
+		}
 		break;
 	}
 
@@ -347,12 +355,6 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	if (choice == NULL) {
 		return (EOPNOTSUPP);
 	}
-
-	KASSERT(tls->sb_params.tls_hlen ==
-	    sizeof(struct tls_record_layer) + choice->nonce_len,
-	    ("TLS header length mismatch"));
-	KASSERT(tls->sb_params.tls_tlen == choice->overhead,
-	    ("TLS trailer length mismatch"));
 
 	bssl = malloc(sizeof(*bssl), M_BORINGSSL, M_NOWAIT | M_ZERO);
 	if (bssl == NULL) {
