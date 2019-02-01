@@ -101,8 +101,6 @@ sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
 	adlen = sizeof(ad);
-	taglen = bssl->aead->overhead;
-	tls->taglen = taglen;
 	ret = bssl->aead->seal(bssl, outiov, iovcnt,
 	    (uint8_t *) & nd, noncelen, iniov, iovcnt,
 	    (uint8_t *) & ad, adlen, trailer, &taglen);
@@ -185,7 +183,7 @@ iov_pulldown(struct iovec *iov, size_t bytes)
 static void
 sbtls_boring_cbc_fixup(struct sbtls_session *tls,
     struct iovec *iniov, struct iovec *outiov,
-    uint8_t *trailer, int iovcnt)
+    uint8_t *trailer, int iovcnt, size_t taglen)
 {
 	struct iovec *in, *out;
 	struct iovec work_iov[2 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
@@ -203,7 +201,7 @@ sbtls_boring_cbc_fixup(struct sbtls_session *tls,
 	    ("iovcnt too large?"));
 	memcpy(work_iov, outiov, iovcnt * sizeof(outiov[0]));
 	work_iov[iovcnt].iov_base = trailer;
-	work_iov[iovcnt].iov_len = tls->taglen;
+	work_iov[iovcnt].iov_len = taglen;
 
 
 	 /* Now loop over the in/out iovecs, restoring the input len. */
@@ -274,17 +272,10 @@ sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
 	}
 
 	/*
-	 * horrific hack to pass the taglen for this one pkt
-	 * back to the higher level code without extending the API
-	 * and adding args that GCM would have to deal with
-	 */
-	tls->taglen = taglen;
-
-	/*
 	 * move data in the output iovec back to the original
 	 * layout
 	 */
-	sbtls_boring_cbc_fixup(tls, iniov, outiov, trailer, iovcnt);
+	sbtls_boring_cbc_fixup(tls, iniov, outiov, trailer, iovcnt, taglen);
 
 	return (0);
 }

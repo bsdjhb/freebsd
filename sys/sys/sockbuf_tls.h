@@ -191,7 +191,6 @@ struct sbtls_session {
 	struct tls_session_params sb_params;
 	uint16_t sb_tsk_instance;	/* For task selection */
 	uint8_t t_type; 	 	/* Flags indicating type of encode */
-	uint8_t taglen;                 /* for CBC tag padding */
 	volatile u_int refcount;
 } __aligned(CACHE_LINE_SIZE);
 
