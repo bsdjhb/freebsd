@@ -358,7 +358,7 @@ sbtls_try_boring(struct socket *so, struct tls_so_enable *en,
 		KASSERT(tls->sb_params.tls_hlen ==
 		    sizeof(struct tls_record_layer) + choice->nonce_len,
 		    ("TLS header length mismatch"));
-		KASSERT(tls->sb_params.tls_tlen != choice->overhead,
+		KASSERT(tls->sb_params.tls_tlen == choice->overhead,
 		    ("TLS trailer length mismatch"));
 
 		bssl = tls->cipher;
