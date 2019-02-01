@@ -834,158 +834,6 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	counter_u64_add(sbtls_cnt_on, 1);
 }
 
-static void
-sbtls_boring_fixup(struct sbtls_session *tls, struct sockbuf *sb,
-    struct mbuf *m, struct iovec *dst_iov, int *pgcnt)
-{
-	struct mbuf_ext_pgs *pgs;
-	struct vm_page *pg;
-	struct iovec *iov;
-	int i, pg_delta, tag_delta, len, off;
-
-
-	/*
-	 * Boring CBC will shuffle data around in order to better
-	 * align things.  We need to account for several different
-	 * cases, where data can move into or out of the first or
-	 * last segment.  We do not expect any middle segments to
-	 * be impacted.
-	 *
-	 * Holding the sb lock is not required, when we are only
-	 * changing the internal layout of the mbuf; we are not
-	 * changing its length.  Because the mbuf is marked
-	 * M_NOTREADY, and nothing in the socket buffer code that
-	 * deals with M_NOTREADY can look inside one, changing the
-	 * layout is safe.
-	 *
-	 * The exception is removing pages, which is reflected in
-	 * decrease in ext_size and sb_mbcnt.  This does require
-	 * the lock.
-	 *
-	 * Note that if the session is closed, we avoid fixing up
-	 * the mbuf.  This is because we both don't care what's
-	 * in the mbuf at this point (since it cannot be sent),
-	 * and because sb_free() may have already run and accounted
-	 * for the page we're about to remove when it decremented
-	 * sb_mbcnt.
-	 */
-
-	pgs = m->m_ext.ext_pgs;
-	tag_delta = tls->taglen - pgs->trail_len;
-	pgs->trail_len += tag_delta;
-	off = pgs->first_pg_off;
-	for (i = 0, iov = dst_iov; i < pgs->npgs; i++, iov++) {
-		len = mbuf_ext_pg_len(pgs, i, off);
-		off = 0;
-		pg_delta = iov->iov_len - len;
-		if (pg_delta == 0)
-			continue;
-
-		/* try to fix the mess boring has made */
-
-		if (pgs->npgs == 1 && iov->iov_len == 0) {
-			/*
-			 *  if the only page is removed, then downgrade
-			 * it to a normal mbuf
-			 */
-
-			SOCKBUF_LOCK(sb);
-			mb_ext_pgs_downgrade(m);
-			sb->sb_mbcnt -= PAGE_SIZE;
-			SOCKBUF_UNLOCK(sb);
-			/*
-			 * must return here, as pgs has been freed
-			 * Note: We must not decease pgcnt!  This
-			 * is required so that sbready will ready the
-			 * plain mbuf.
-			 */
-			return;
-		} else if (i == pgs->npgs - 1) {
-			/*
-			 * Handle changes to the last page
-			 */
-
-			pgs->last_pg_len = iov->iov_len;
-			if (pgs->last_pg_len == 0) {
-				/* last segment entirely removed */
-				SOCKBUF_LOCK(sb);
-				*pgcnt = *pgcnt + 1;
-				pg = PHYS_TO_VM_PAGE(pgs->pa[i]);
-				pg->flags &= ~PG_ZERO;
-				vm_page_free_toq(pg);
-				vm_wire_sub(1);
-				pgs->last_pg_len = PAGE_SIZE;
-				pgs->npgs -= 1;
-				pgs->nrdy -= 1;
-				/*
-				 * If this is the only page, then its
-				 * length must reflect the 1st page off
-				 */
-				if (pgs->npgs == 1)
-					pgs->last_pg_len -=
-					    pgs->first_pg_off;
-				sb->sb_mbcnt -= PAGE_SIZE;
-				m->m_ext.ext_size -= PAGE_SIZE;
-				SOCKBUF_UNLOCK(sb);
-			}
-		} else {
-			/*
-			 * Handle changes to the first page
-			 */
-
-			if (i != 0)
-				panic("boring removed dat in the middle: %p %p %p %d %d?!?!\n",
-				    m, pgs, dst_iov, pg_delta, i);
-			if (iov->iov_len == 0) {
-				/* first segment entirely removed */
-				SOCKBUF_LOCK(sb);
-				*pgcnt = *pgcnt + 1;
-				pg = PHYS_TO_VM_PAGE(pgs->pa[i]);
-				pg->flags &= ~PG_ZERO;
-				vm_page_free_toq(pg);
-				vm_wire_sub(1);
-				pgs->first_pg_off = 0;
-				pgs->npgs -= 1;
-				pgs->nrdy -= 1;
-				/* move remainder of pgs down */
-				ovbcopy(&pgs->pa[1], &pgs->pa[0],
-				    pgs->npgs * sizeof(pgs->pa[0]));
-
-				/*
-				 * back up loop index to look at the
-				 * page we just moved into place, else
-				 * it will be skipped over
-				 */
-				i--;
-
-				sb->sb_mbcnt -= PAGE_SIZE;
-				m->m_ext.ext_size -= PAGE_SIZE;
-				SOCKBUF_UNLOCK(sb);
-			} else {
-				/*
-				 * Remove data from the first segment:
-				 *
-				 * We have no way to express the length of
-				 * the first segment except for the offset.
-				 * However, boring reduces the length
-				 * and leaves the offset the same.  The only
-				 * way to recover is to copy the data so
-				 * that it starts at the adjusted offset.
-				 *
-				 * Note: pg_delta is negative, that is why
-				 * it is subtracted.
-				 *
-				 */
-				ovbcopy(iov->iov_base,
-				    (caddr_t)iov->iov_base - pg_delta,
-				    iov->iov_len);
-				pgs->first_pg_off = PAGE_SIZE - iov->iov_len;
-			}
-		}
-	}
-	MBUF_EXT_PGS_ASSERT_SANITY(pgs);
-}
-
 static __noinline void
 sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 {
@@ -999,7 +847,6 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	vm_page_t pg;
 	int off, len, npages, page_count, error, i, wire_adj;
 	bool is_anon;
-	bool boring = false;
 
 	so = pgs->so;
 	tls = pgs->tls;
@@ -1009,7 +856,6 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	pgs->so = NULL;
 	pgs->mbuf = NULL;
 	npages = 0;
-	boring = (tls->t_type == SBTLS_T_TYPE_BSSL);
 	/*
 	 *  each TLS record is in a single mbuf.  Do
 	 *  one at a time
@@ -1088,13 +934,6 @@ retry_page:
 			 * Switch the free routine to basic one.
 			 */
 			m->m_ext.ext_free = mb_free_mext_pgs;
-		}
-		if (boring) {
-			int pgs_removed = 0;
-			sbtls_boring_fixup(tls, &so->so_snd, m, dst_iov,
-			    &pgs_removed);
-			npages -= pgs_removed;
-			page_count -= pgs_removed;
 		}
 
 		/* XXX: Not sure if this is really needed, but can't hurt? */
