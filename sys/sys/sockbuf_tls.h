@@ -150,8 +150,6 @@ struct tls_session_params {
 	uint8_t tls_bs;
 };
 
-#define SBTLS_INTELISA_AEAD_TAGLEN	16
-#define SBTLS_INTELISA_CBC_TAGLEN	16
 #ifdef _KERNEL
 
 #include <sys/malloc.h>

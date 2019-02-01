@@ -50,6 +50,8 @@ __FBSDID("$FreeBSD$");
 #include "aes_gcm.h"
 #include "aes_cbc.h"
 
+#define SBTLS_INTELISA_AEAD_TAGLEN	16
+
 struct isa_gcm_struct {
 	struct gcm_key_data key_data;
 	struct gcm_context_data ctx_data;
