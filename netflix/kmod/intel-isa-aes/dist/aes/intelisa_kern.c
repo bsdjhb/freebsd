@@ -231,22 +231,20 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	if (sbtls_use_intel_isa_gcm &&
-	    tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16 &&
-	    ((tls->sb_params.mac_algorithm == CRYPTO_AES_128_NIST_GMAC) ||
-	    (tls->sb_params.mac_algorithm == CRYPTO_AES_256_NIST_GMAC))) {
+	    tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		isa = malloc(sizeof (*isa), M_INTEL_ISA, M_NOWAIT | M_ZERO);
 		if (isa == NULL) {
 			return (ENOMEM);
 		}
-		switch (tls->sb_params.mac_algorithm) {
-		case CRYPTO_AES_128_NIST_GMAC:
+		switch (tls->sb_params.crypt_key_len) {
+		case 16:
 			isa->gcm_pre = aes_gcm_pre_128;
 			isa->gcm_init = aes_gcm_init_128;
 			isa->gcm_upd = aes_gcm_enc_128_update;
 			isa->gcm_upd_nt = aes_gcm_enc_128_update_nt;
 			isa->gcm_final = aes_gcm_enc_128_finalize;
 			break;
-		case CRYPTO_AES_256_NIST_GMAC:
+		case 32:
 			isa->gcm_pre = aes_gcm_pre_256;
 			isa->gcm_init = aes_gcm_init_256;
 			isa->gcm_upd = aes_gcm_enc_256_update;
@@ -254,7 +252,8 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 			isa->gcm_final = aes_gcm_enc_256_finalize;
 			break;
 		default:
-			panic("Unknown key size -- mac alg");
+			free(isa, M_INTEL_ISA);
+			return (EOPNOTSUPP);
 		}
 
 		error = sbtls_setup_isa_cipher(isa, tls->sb_params.crypt);
