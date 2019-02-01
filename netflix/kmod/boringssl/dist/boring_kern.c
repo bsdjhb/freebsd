@@ -82,9 +82,6 @@ sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
 
 
 	bssl = (struct evp_aead_ctx_st *)tls->cipher;
-	if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN) {
-		return (EINVAL);
-	}
 	KASSERT(bssl != NULL, ("Null cipher"));
 	counter_u64_add(sbtls_offload_boring_aead, 1);
 
@@ -290,6 +287,9 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	choice = NULL;
 	switch (tls->sb_params.crypt_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
+		if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN) {
+			return (EINVAL);
+		}
 		switch (tls->sb_params.crypt_key_len) {
 		case 16:
 			choice = EVP_aead_aes_128_gcm();
