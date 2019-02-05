@@ -251,7 +251,7 @@ sbtls_get_cpu(struct socket *so)
 static void
 sbtls_init(void *st __unused)
 {
-	int domain, error, i, j;
+	int error, i;
 	cpuset_t mask;
 	struct pcpu *pc;
 	struct thread **sbtls_ctx;
@@ -301,17 +301,11 @@ sbtls_init(void *st __unused)
 	 */
 	if (sbtls_bind_threads) {
 		CPU_FOREACH(i) {
-			CPU_ZERO(&mask);
 			if (sbtls_bind_threads > 1) {
 				pc = pcpu_find(i);
-				domain = pc->pc_domain;
-				CPU_FOREACH(j) {
-					pc = pcpu_find(j);
-					if (pc->pc_domain == domain)
-						CPU_SET(j, &mask);
-				}
+				CPU_COPY(&cpuset_domain[pc->pc_domain], &mask);
 			} else {
-				CPU_SET(i, &mask);
+				CPU_SETOF(i, &mask);
 			}
 			error |= cpuset_setthread(sbtls_ctx[i]->td_tid,
 			    &mask);
