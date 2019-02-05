@@ -517,6 +517,9 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 	struct inpcb *inp;
 	int error;
 
+	if ((so->so_snd.sb_flags & SB_IFNET_TLS_OK) == 0)
+		return (ENXIO);
+
 	/*
 	 * XXX: Use the cached route in the inpcb to find the
 	 * interface.  This should perhaps instead use
