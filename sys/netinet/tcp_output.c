@@ -997,17 +997,25 @@ send:
 
 #ifdef KERN_TLS
 		/*
-		 * XXX: A gross hack to avoid mixing TLS records with
-		 * handshake data.
+		 * XXX: A gross hack to avoid mixing records between
+		 * different TLS sessions.
 		 */
-		if (so->so_snd.sb_tls_flags & SB_TLS_IFNET &&
-		    !(mb->m_flags & M_NOMAP)) {
+		if (so->so_snd.sb_tls_flags & SB_TLS_IFNET) {
+			struct sbtls_session *tls, *ntls;
 			struct mbuf *n;
 			u_int new_len;
 
+			if (mb->m_flags & M_NOMAP)
+				tls = mb->m_ext.ext_pgs->tls;
+			else
+				tls = NULL;
 			new_len = mb->m_len - moff;
 			for (n = mb->m_next; new_len < len; n = n->m_next) {
-				if (mbuf_is_ifnet_tls(n))
+				if (n->m_flags & M_NOMAP)
+					ntls = n->m_ext.ext_pgs->tls;
+				else
+					ntls = NULL;
+				if (tls != ntls)
 					break;
 				new_len += n->m_len;
 			}
