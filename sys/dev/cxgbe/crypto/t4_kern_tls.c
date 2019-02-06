@@ -614,9 +614,9 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	}
 
 	inp = so->so_pcb;
-	INP_WLOCK(inp);
+	INP_RLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
-		INP_WUNLOCK(inp);
+		INP_RUNLOCK(inp);
 		error = ECONNRESET;
 		goto failed;
 	}
@@ -626,7 +626,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 	if (tp->t_flags & TF_REQ_TSTMP) {
 		using_timestamps = true;
 		if ((tp->ts_offset & 0xfffffff) != 0) {
-			INP_WUNLOCK(inp);
+			INP_RUNLOCK(inp);
 			error = EINVAL;
 			goto failed;
 		}
@@ -635,7 +635,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 
 	error = send_sbtls_act_open_req(sc, vi, so, tlsp, atid);
 	if (error) {
-		INP_WUNLOCK(inp);
+		INP_RUNLOCK(inp);
 		goto failed;
 	}
 
@@ -652,13 +652,13 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 
 	atid = -1;
 	if (tlsp->tid < 0) {
-		INP_WUNLOCK(inp);
+		INP_RUNLOCK(inp);
 		error = ENOMEM;
 		goto failed;
 	}
 
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
-		INP_WUNLOCK(inp);
+		INP_RUNLOCK(inp);
 		error = ECONNRESET;
 		goto failed;
 	}
@@ -669,7 +669,7 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 		    vi->rsrv_noflowq);
 
 	error = sbtls_set_tcb_fields(tlsp, tp, txq);
-	INP_WUNLOCK(inp);
+	INP_RUNLOCK(inp);
 	if (error)
 		goto failed;
 
