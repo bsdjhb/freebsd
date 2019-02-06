@@ -843,8 +843,6 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 	unsigned int ck_size, mk_size, partial_digest_len;
 	struct mbuf *m;
 
-	/* INP_WLOCK_ASSERT(inp); */
-
 	/*
 	 * Store the salt and keys in the key context.  For
 	 * connections with an inline key, this key context is passed
