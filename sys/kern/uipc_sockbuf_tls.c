@@ -81,6 +81,7 @@ LIST_HEAD(sbtls_backend_head, sbtls_crypto_backend) sbtls_backend_head =
 static uma_zone_t zone_tlssock;
 static int sbtls_number_threads;
 static int sbtls_maxlen = 16384;
+static uint16_t sbtls_cpuid_lookup[MAXCPU];
 
 SYSCTL_DECL(_kern_ipc);
 
@@ -242,7 +243,7 @@ sbtls_get_cpu(struct socket *so)
 	 * Note that some crypto backends rely on the serialization provided by
 	 * having the same connection use the same queue.
 	 */
-	cpuid = inp->inp_flowid % (sbtls_number_threads);
+	cpuid = sbtls_cpuid_lookup[inp->inp_flowid % sbtls_number_threads];
 	return (cpuid);
 
 }
@@ -254,7 +255,7 @@ sbtls_init(void *st __unused)
 	int error, i;
 	cpuset_t mask;
 	struct pcpu *pc;
-	struct thread **sbtls_ctx;
+	struct thread *sbtls_td;
 
 	/*
 	 * Initialize the task's to run the TLS work. We create a task
@@ -271,48 +272,41 @@ sbtls_init(void *st __unused)
 
 	rm_init(&sbtls_backend_lock, "sbtls crypto backend lock");
 
-	sbtls_number_threads = mp_ncpus;
-
-	sbtls_wq = malloc(sizeof(*sbtls_wq) * mp_ncpus, M_TLSSOBUF,
+	sbtls_wq = malloc(sizeof(*sbtls_wq) * (mp_maxid + 1), M_TLSSOBUF,
 	    M_WAITOK | M_ZERO);
 
 	zone_tlssock = uma_zcreate("sbtls_session",
 	    sizeof(struct sbtls_session),
 	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE, 0);
 
-	sbtls_ctx = malloc((sizeof(struct thread *) * mp_ncpus),
-	    M_TLSSOBUF, M_WAITOK | M_ZERO);
-
-	error = kproc_kthread_add(sbtls_work_thread, &sbtls_wq[0],
-	    &sbtls_proc, &sbtls_ctx[0],  0, 0, "TLS_proc", "tls_thr_0");
-
-	if (error)
-		panic("Can't start TLS_proc err:%d", error);
-
-	for (i = 1; i < mp_ncpus; i++) {
-		error = kthread_add(sbtls_work_thread, &sbtls_wq[i],
-		    sbtls_proc, &sbtls_ctx[i], 0, 0, "tls_thr_%d", i);
+	CPU_FOREACH(i) {
+		STAILQ_INIT(&sbtls_wq[i].head);
+		mtx_init(&sbtls_wq[i].mtx, "sbtls work queue lock",
+		    "tls_wqlock", MTX_DEF);
+		error = kproc_kthread_add(sbtls_work_thread, &sbtls_wq[i],
+		    &sbtls_proc, &sbtls_td, 0, 0, "TLS_proc", "tls_thr_%d", i);
 		if (error)
 			panic("Can't add TLS_thread %d err:%d", i, error);
-	}
-	/*
-	 * Bind threads to cores.  If sbtls_bind_threads is > 1, then
-	 * we bind to the NUMA domain.
-	 */
-	if (sbtls_bind_threads) {
-		CPU_FOREACH(i) {
+
+		/*
+		 * Bind threads to cores.  If sbtls_bind_threads is >
+		 * 1, then we bind to the NUMA domain.
+		 */
+		if (sbtls_bind_threads) {
 			if (sbtls_bind_threads > 1) {
 				pc = pcpu_find(i);
 				CPU_COPY(&cpuset_domain[pc->pc_domain], &mask);
 			} else {
 				CPU_SETOF(i, &mask);
 			}
-			error |= cpuset_setthread(sbtls_ctx[i]->td_tid,
-			    &mask);
+			error = cpuset_setthread(sbtls_td->td_tid, &mask);
+			if (error)
+				printf(
+				    "Unable to bind KTLS thread for CPU %d.\n",
+				    i);
 		}
-		if (error) {
-			printf("unable to bind crypto threads\n");
-		}
+		sbtls_cpuid_lookup[sbtls_number_threads] = i;
+		sbtls_number_threads++;
 	}
 	printf("SBTLS: Initialized %d threads\n", sbtls_number_threads);
 }
@@ -975,10 +969,7 @@ sbtls_work_thread(void *ctx)
 	struct sbtls_session *tls;
 
 
-	STAILQ_INIT(&wq->head);
 	fpu_kern_thread(0);
-	mtx_init(&wq->mtx, "sbtls work queue lock", "tls_wqlock",
-	    MTX_DEF);
 	mtx_lock(&wq->mtx);
 
 	while (1) {
