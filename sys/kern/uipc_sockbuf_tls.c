@@ -995,6 +995,7 @@ sbtls_work_thread(void *ctx)
 				uma_zfree(zone_extpgs, p);
 			}
 		}
+
 		mtx_lock(&wq->mtx);
 	}
 }
