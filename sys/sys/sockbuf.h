@@ -50,7 +50,6 @@
 #define	SB_AUTOSIZE	0x800		/* automatically size socket buffer */
 #define	SB_STOP		0x1000		/* backpressure indicator */
 #define	SB_AIO_RUNNING	0x2000		/* AIO operation running */
-#define	SB_IFNET_TLS_OK	0x4000		/* Permitted to use ifnet TLS */
 
 #define	SBS_CANTSENDMORE	0x0010	/* can't send more data to peer */
 #define	SBS_CANTRCVMORE		0x0020	/* can't receive more data from peer */
@@ -76,6 +75,7 @@ struct sbtls_session;
  *
  * Locking key to struct sockbuf:
  * (a) locked by SOCKBUF_LOCK().
+ * (b) locked by sblock()
  */
 struct	sockbuf {
 	struct	mtx sb_mtx;		/* sockbuf lock */
@@ -100,9 +100,9 @@ struct	sockbuf {
 	u_int	sb_ctl;		/* (a) non-data chars in buffer */
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
-	uint64_t sb_tls_seqno;	/* TLS seqno */
-	struct	sbtls_session *sb_tls_info; /* TLS state */
-	u_int	sb_tls_flags;	/* flags used by TLS */
+	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
+	struct	sbtls_session *sb_tls_info; /* (a + b) TLS state */
+	u_int	sb_tls_flags;	/* (a + b) flags used by TLS */
 	short	sb_flags;	/* (a) flags, see below */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */
 	void	*sb_upcallarg;	/* (a) */

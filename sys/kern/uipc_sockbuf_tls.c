@@ -48,6 +48,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/vmparam.h>
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
+#include <netinet/tcp_var.h>
 #include <sys/smp.h>
 #include <sys/uio.h>
 #include <vm/vm.h>
@@ -131,6 +132,8 @@ static counter_u64_t sbtls_offload_total;
 static counter_u64_t sbtls_offload_enable_calls;
 static counter_u64_t sbtls_offload_active;
 static counter_u64_t sbtls_offload_failed_crypto;
+static counter_u64_t sbtls_switch_to_ifnet;
+static counter_u64_t sbtls_switch_to_sw;
 
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, offload_total,
     CTLFLAG_RD, &sbtls_offload_total,
@@ -142,6 +145,10 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, active, CTLFLAG_RD,
     &sbtls_offload_active, "Total Active TLS sessions");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, failed_crypto, CTLFLAG_RD,
     &sbtls_offload_failed_crypto, "TotalTLS crypto failures");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_ifnet, CTLFLAG_RD,
+    &sbtls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_sw, CTLFLAG_RD,
+    &sbtls_switch_to_sw, "TLS sessions switched from ifnet to SW");
 
 MALLOC_DEFINE(M_TLSSOBUF, "tls_sobuf", "TLS Socket Buffer");
 
@@ -269,6 +276,8 @@ sbtls_init(void *st __unused)
 	sbtls_offload_enable_calls = counter_u64_alloc(M_WAITOK);
 	sbtls_offload_active = counter_u64_alloc(M_WAITOK);
 	sbtls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
+	sbtls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
+	sbtls_switch_to_sw = counter_u64_alloc(M_WAITOK);
 
 	rm_init(&sbtls_backend_lock, "sbtls crypto backend lock");
 
@@ -473,6 +482,37 @@ out:
 	return (error);
 }
 
+static struct sbtls_session *
+sbtls_clone_session(struct sbtls_session *tls)
+{
+	struct sbtls_session *tls_new;
+
+	tls_new = uma_zalloc(zone_tlssock, M_WAITOK | M_ZERO);
+
+	counter_u64_add(sbtls_offload_active, 1);
+
+	refcount_init(&tls_new->refcount, 1);
+
+	/* Copy fields from existing session. */
+	tls_new->sb_params = tls->sb_params;
+	tls_new->sb_tsk_instance = tls->sb_tsk_instance;
+
+	/* Deep copy keys. */
+	if (tls_new->sb_params.hmac_key != NULL) {
+		tls_new->sb_params.hmac_key = malloc(
+		    tls->sb_params.hmac_key_len, M_TLSSOBUF, M_WAITOK);
+		memcpy(tls_new->sb_params.hmac_key, tls->sb_params.hmac_key,
+		    tls->sb_params.hmac_key_len);
+	}
+
+	tls_new->sb_params.crypt = malloc(tls->sb_params.crypt_key_len,
+	    M_TLSSOBUF, M_WAITOK);
+	memcpy(tls_new->sb_params.crypt, tls->sb_params.crypt,
+	    tls->sb_params.crypt_key_len);
+
+	return (tls_new);
+}
+
 static void
 sbtls_cleanup(struct sbtls_session *tls)
 {
@@ -503,18 +543,26 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 	struct ifnet *ifp;
 	struct rtentry *rt;
 	struct inpcb *inp;
+	struct tcpcb *tp;
 	int error;
 
-	if ((so->so_snd.sb_flags & SB_IFNET_TLS_OK) == 0)
+	inp = so->so_pcb;
+	INP_RLOCK(inp);
+	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_RUNLOCK(inp);
+		return (ECONNRESET);
+	}
+	tp = inp->inp_ppcb;
+	if ((tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0) {
+		INP_RUNLOCK(inp);
 		return (ENXIO);
+	}
 
 	/*
 	 * XXX: Use the cached route in the inpcb to find the
 	 * interface.  This should perhaps instead use
 	 * rtalloc1_fib(dst, 0, 0, fibnum).
 	 */
-	inp = so->so_pcb;
-	INP_RLOCK(inp);
 	rt = inp->inp_route.ro_rt;
 	if (rt == NULL || rt->rt_ifp == NULL) {
 		INP_RUNLOCK(inp);
@@ -632,12 +680,100 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		return (error);
 	}
 
+	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls;
 	if (tls->sb_tls_crypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
 
 	counter_u64_add(sbtls_offload_total, 1);
+
+	return (0);
+}
+
+/*
+ * Switch between SW and ifnet TLS sessions as requested.
+ */
+int
+sbtls_update_session(struct socket *so, enum sbtls_session_type type)
+{
+	struct sbtls_session *tls, *tls_new;
+	struct inpcb *inp;
+	int error;
+
+	inp = so->so_pcb;
+	INP_WLOCK_ASSERT(inp);
+	SOCKBUF_LOCK(&so->so_snd);
+	tls = so->so_snd.sb_tls_info;
+	if (tls == NULL) {
+		SOCKBUF_UNLOCK(&so->so_snd);
+		return (0);
+	}
+
+	if ((tls->sb_tls_crypt != NULL && type == SW_TLS) ||
+	    (tls->sb_tls_crypt == NULL && type == IFNET_TLS)) {
+		SOCKBUF_UNLOCK(&so->so_snd);
+		return (0);
+	}
+
+	tls = sbtls_hold(tls);
+	SOCKBUF_UNLOCK(&so->so_snd);
+	INP_WUNLOCK(inp);
+
+	tls_new = sbtls_clone_session(tls);
+
+	if (type == IFNET_TLS)
+		error = sbtls_try_ifnet_tls(so, tls_new);
+	else
+		error = sbtls_try_sw_tls(so, tls_new);
+	if (error) {
+		sbtls_free(tls_new);
+		sbtls_free(tls);
+		INP_WLOCK(inp);
+		return (error);
+	}
+
+	error = sblock(&so->so_snd, SBL_WAIT);
+	if (error) {
+		sbtls_free(tls_new);
+		sbtls_free(tls);
+		INP_WLOCK(inp);
+		return (error);
+	}
+
+	/*
+	 * If we raced with another session change, keep the existing
+	 * session.
+	 */
+	if (tls != so->so_snd.sb_tls_info) {
+		sbunlock(&so->so_snd);
+		sbtls_free(tls_new);
+		sbtls_free(tls);
+		INP_WLOCK(inp);
+		return (EBUSY);
+	}
+
+	SOCKBUF_LOCK(&so->so_snd);
+	so->so_snd.sb_tls_info = tls_new;
+	if (tls_new->sb_tls_crypt == NULL)
+		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+	SOCKBUF_UNLOCK(&so->so_snd);
+	sbunlock(&so->so_snd);
+
+	/*
+	 * Drop two references on 'tls'.  The first is for the
+	 * sbtls_hold() above.  The second drops the reference from
+	 * the socket buffer.
+	 */
+	KASSERT(tls->refcount >= 2, ("too few references on old session"));
+	sbtls_free(tls);
+	sbtls_free(tls);
+
+	if (type == IFNET_TLS)
+		counter_u64_add(sbtls_switch_to_ifnet, 1);
+	else
+		counter_u64_add(sbtls_switch_to_sw, 1);
 
 	return (0);
 }

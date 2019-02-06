@@ -799,7 +799,7 @@ register_tcp_functions_as_names(struct tcp_function_block *blk, int wait,
 	}
 
 	refcount_init(&blk->tfb_refcnt, 0);
-	blk->tfb_flags = 0;
+	blk->tfb_flags &= ~TCP_FUNC_BEING_REMOVED;
 	blk->tfb_id = atomic_fetchadd_int(&next_tcp_stack_id, 1);
 	for (i = 0; i < *num_names; i++) {
 		n = malloc(sizeof(struct tcp_function), M_TCPFUNCTIONS, wait);

@@ -1726,6 +1726,12 @@ tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 			     sopt->sopt_name);
 		}
 #endif
+#ifdef KERN_TLS
+		if (so->so_snd.sb_tls_info != NULL)
+			(void)sbtls_update_session(so,
+			    (blk->tfb_flags & TCP_FUNC_IFNET_TLS_OK) ?
+			    IFNET_TLS : SW_TLS);
+#endif
 err_out:
 		INP_WUNLOCK(inp);
 		return (error);
