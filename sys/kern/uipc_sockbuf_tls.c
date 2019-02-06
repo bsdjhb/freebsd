@@ -967,35 +967,34 @@ sbtls_work_thread(void *ctx)
 	struct sbtls_wq *wq = ctx;
 	struct mbuf_ext_pgs *p, *n;
 	struct sbtls_session *tls;
-
+	STAILQ_HEAD(, mbuf_ext_pgs) local_head;
 
 	fpu_kern_thread(0);
 	mtx_lock(&wq->mtx);
-
-	while (1) {
+	for (;;) {
 		wq->running = 0;
 		mtx_sleep(wq, &wq->mtx, 0, "sbtls wq", 0);
 		wq->running = 1;
-		while (NULL != (p = STAILQ_FIRST(&wq->head))) {
-			/* pull the entire list off */
-			STAILQ_INIT(&wq->head);
-			mtx_unlock(&wq->mtx);
+
+		if (STAILQ_EMPTY(&wq->head))
+			continue;
+
+		STAILQ_INIT(&local_head);
+		STAILQ_CONCAT(&local_head, &wq->head);
+		mtx_unlock(&wq->mtx);
+
+		STAILQ_FOREACH_SAFE(p, &local_head, stailq, n) {
 			/* encrypt or free each TLS record on the list */
-			while (p != NULL) {
-				n = STAILQ_NEXT(p, stailq);
-				STAILQ_NEXT(p, stailq) = NULL;
-				if (p->mbuf != NULL) {
-					sbtls_encrypt(p);
-					counter_u64_add(sbtls_cnt_on, -1);
-				} else {
-					/* records w/null mbuf are freed */
-					tls = p->tls;
-					sbtls_free(tls);
-					uma_zfree(zone_extpgs, p);
-				}
-				p = n;
+			if (p->mbuf != NULL) {
+				sbtls_encrypt(p);
+				counter_u64_add(sbtls_cnt_on, -1);
+			} else {
+				/* records w/null mbuf are freed */
+				tls = p->tls;
+				sbtls_free(tls);
+				uma_zfree(zone_extpgs, p);
 			}
-			mtx_lock(&wq->mtx);
 		}
+		mtx_lock(&wq->mtx);
 	}
 }
