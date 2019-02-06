@@ -254,7 +254,8 @@ int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
 void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
-int sbtls_update_session(struct socket *so, enum sbtls_session_type type);
+int sbtls_update_session(struct socket *so, enum sbtls_session_type type,
+    bool force);
 
 static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)

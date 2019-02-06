@@ -538,7 +538,7 @@ sbtls_cleanup(struct sbtls_session *tls)
 }
 
 static int
-sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
+sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 {
 	struct ifnet *ifp;
 	struct rtentry *rt;
@@ -553,7 +553,7 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls)
 		return (ECONNRESET);
 	}
 	tp = inp->inp_ppcb;
-	if ((tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0) {
+	if ((tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0 && !force) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
@@ -665,7 +665,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	if (error)
 		return (error);
 
-	error = sbtls_try_ifnet_tls(so, tls);
+	error = sbtls_try_ifnet_tls(so, tls, false);
 	if (error)
 		error = sbtls_try_sw_tls(so, tls);
 
@@ -696,7 +696,8 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
  * Switch between SW and ifnet TLS sessions as requested.
  */
 int
-sbtls_update_session(struct socket *so, enum sbtls_session_type type)
+sbtls_update_session(struct socket *so, enum sbtls_session_type type,
+    bool force)
 {
 	struct sbtls_session *tls, *tls_new;
 	struct inpcb *inp;
@@ -724,7 +725,7 @@ sbtls_update_session(struct socket *so, enum sbtls_session_type type)
 	tls_new = sbtls_clone_session(tls);
 
 	if (type == IFNET_TLS)
-		error = sbtls_try_ifnet_tls(so, tls_new);
+		error = sbtls_try_ifnet_tls(so, tls_new, force);
 	else
 		error = sbtls_try_sw_tls(so, tls_new);
 	if (error) {
