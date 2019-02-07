@@ -1109,12 +1109,11 @@ sbtls_work_thread(void *ctx)
 	fpu_kern_thread(0);
 	mtx_lock(&wq->mtx);
 	for (;;) {
-		wq->running = 0;
-		mtx_sleep(wq, &wq->mtx, 0, "sbtls wq", 0);
-		wq->running = 1;
-
-		if (STAILQ_EMPTY(&wq->head))
-			continue;
+		while (STAILQ_EMPTY(&wq->head)) {
+			wq->running = 0;
+			mtx_sleep(wq, &wq->mtx, 0, "sbtls wq", 0);
+			wq->running = 1;
+		}
 
 		STAILQ_INIT(&local_head);
 		STAILQ_CONCAT(&local_head, &wq->head);
