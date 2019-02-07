@@ -125,7 +125,7 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
 static counter_u64_t sbtls_cnt_on;
 
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, so_inqueue, CTLFLAG_RD,
-    &sbtls_cnt_on, "Number of sockets in queue to tasks");
+    &sbtls_cnt_on, "Number of TLS records in queue to tasks for SW crypto");
 
 /* Sysctl counters */
 static counter_u64_t sbtls_offload_total;
@@ -144,7 +144,7 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, enable_calls,
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, active, CTLFLAG_RD,
     &sbtls_offload_active, "Total Active TLS sessions");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, failed_crypto, CTLFLAG_RD,
-    &sbtls_offload_failed_crypto, "TotalTLS crypto failures");
+    &sbtls_offload_failed_crypto, "Total TLS crypto failures");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_ifnet, CTLFLAG_RD,
     &sbtls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_sw, CTLFLAG_RD,
