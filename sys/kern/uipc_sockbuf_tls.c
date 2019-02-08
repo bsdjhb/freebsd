@@ -776,6 +776,7 @@ sbtls_update_session(struct socket *so, enum sbtls_session_type type,
 	else
 		counter_u64_add(sbtls_switch_to_sw, 1);
 
+	INP_WLOCK(inp);
 	return (0);
 }
 
