@@ -1024,7 +1024,12 @@ send:
 				CTR3(KTR_SPARE3,
 				    "%s: truncating len from %u to %u",
 				    __func__, len, new_len);
+
+				flags &= ~TH_FIN;
+				if (new_len <= tp->t_maxseg - optlen)
+					tso = 0;
 				len = new_len;
+				sendalot = 1;
 			}
 		}
 #endif
