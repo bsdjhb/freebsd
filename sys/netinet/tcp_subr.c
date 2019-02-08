@@ -3164,7 +3164,7 @@ sysctl_switch_tls(SYSCTL_HANDLER_ARGS)
 			so = inp->inp_socket;
 			soref(so);
 			error = sbtls_update_session(so,
-			    arg1 == 0 ? SW_TLS : IFNET_TLS, true);
+			    arg2 == 0 ? SW_TLS : IFNET_TLS, true);
 			INP_WUNLOCK(inp);
 			SOCK_LOCK(so);
 			sorele(so);
