@@ -1080,7 +1080,13 @@ retry_page:
 			m->m_ext.ext_free = mb_free_mext_pgs;
 		}
 
-		/* XXX: Not sure if this is really needed, but can't hurt? */
+		/*
+		 * Drop a reference to the session now that it is no
+		 * longer needed.  Existing code depends on encrypted
+		 * records having no associated session vs
+		 * yet-to-be-encrypted records having an associated
+		 * session.
+		 */
 		pgs->tls = NULL;
 		sbtls_free(tls);
 	}
