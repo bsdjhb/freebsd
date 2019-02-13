@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
  *
- * Copyright (c) 2018 Chelsio Communications, Inc.
+ * Copyright (c) 2018-2019 Chelsio Communications, Inc.
  * All rights reserved.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
@@ -29,21 +29,16 @@
 
 #include "opt_kern_tls.h"
 
+#ifdef KERN_TLS
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
-#include <sys/kernel.h>
-#include <sys/module.h>
-#ifdef KERN_TLS
 #include <sys/sglist.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sockbuf.h>
 #include <sys/sockbuf_tls.h>
-#endif
-#include <sys/systm.h>
-#ifdef KERN_TLS
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
 #include <netinet/ip.h>
@@ -189,10 +184,6 @@ struct tlspcb {
 static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
     struct sge_txq *txq);
 static void sbtls_clean_cipher(struct sbtls_session *tls);
-static int sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m,
-    int *nsegsp, int *len16p);
-static int sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *wr, struct mbuf *m, u_int nsegs, u_int available);
 
 /* XXX: There are similar versions of these two in tom/t4_tls.c. */
 static int
@@ -530,7 +521,7 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 	return (error);
 }
 
-static int
+int
 t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
@@ -684,8 +675,6 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 		error = ENOMEM;
 		goto failed;
 	}
-	cipher->parse_pkt = sbtls_parse_pkt;
-	cipher->write_tls_wr = sbtls_write_wr;
 	cipher->vi = vi;
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
@@ -1232,8 +1221,8 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 	return (NULL);
 }
 
-static int
-sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
+int
+t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
     int *len16p)
 {
 	struct ether_header *eh;
@@ -2282,9 +2271,9 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	return (ndesc);
 }
 
-static int
-sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq, void *dst,
-    struct mbuf *m, u_int nsegs, u_int available)
+int
+t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+    void *dst, struct mbuf *m, u_int nsegs, u_int available)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -2429,59 +2418,19 @@ sbtls_clean_cipher(struct sbtls_session *tls)
 	free(cipher, M_CXGBE);
 }
 
-static int
-t6_sbtls_mod_load(void)
+void
+t6_sbtls_modload(void)
 {
 
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, sbtls_act_open_rpl,
 	    CPL_COOKIE_KERN_TLS);
-	t4_register_tls_session_handler(t6_sbtls_try);
-	return (0);
 }
 
-static int
-t6_sbtls_mod_unload(void)
+void
+t6_sbtls_modunload(void)
 {
 
-	return (EBUSY);
-#if 0
-	t4_register_tls_session_handler(NULL);
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
 	    CPL_COOKIE_KERN_TLS);
-	return (0);
-#endif
 }
 #endif
-
-static int
-t6_sbtls_modevent(module_t mod, int cmd, void *arg)
-{
-	int error;
-
-#ifdef KERN_TLS
-	switch (cmd) {
-	case MOD_LOAD:
-		error = t6_sbtls_mod_load();
-		break;
-	case MOD_UNLOAD:
-		error = t6_sbtls_mod_unload();
-		break;
-	default:
-		error = EOPNOTSUPP;
-	}
-#else
-	printf("t4_kern_tls: compiled without KERN_TLS support.\n");
-	error = EOPNOTSUPP;
-#endif
-	return (error);
-}
-
-static moduledata_t t6_sbtls_moddata = {
-	"t6_sbtls",
-	t6_sbtls_modevent,
-	0
-};
-
-MODULE_VERSION(t6_sbtls, 1);
-MODULE_DEPEND(t6_sbtls, t6nex, 1, 1, 1);
-DECLARE_MODULE(t6_sbtls, t6_sbtls_moddata, SI_SUB_EXEC, SI_ORDER_ANY);

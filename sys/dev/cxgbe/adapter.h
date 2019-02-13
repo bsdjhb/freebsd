@@ -925,8 +925,6 @@ typedef int (*write_tls_wr_t)(struct t6_sbtls_cipher *, struct sge_txq *,
     void *, struct mbuf *, u_int, u_int);
 
 struct t6_sbtls_cipher {
-	parse_tls_pkt_t parse_pkt;
-	write_tls_wr_t write_tls_wr;
 	struct vi_info *vi;
 	struct adapter *sc;
 	struct tlspcb *tlsp;
@@ -1208,6 +1206,16 @@ int cxgbe_media_change(struct ifnet *);
 void cxgbe_media_status(struct ifnet *, struct ifmediareq *);
 bool t4_os_dump_cimla(struct adapter *, int, bool);
 void t4_os_dump_devlog(struct adapter *);
+
+#ifdef KERN_TLS
+/* t4_kern_tls.c */
+void t6_sbtls_modload(void);
+void t6_sbtls_modunload(void);
+int t6_sbtls_try(struct ifnet *, struct socket *, struct sbtls_session *);
+int t6_sbtls_parse_pkt(struct t6_sbtls_cipher *, struct mbuf *, int *, int *);
+int t6_sbtls_write_wr(struct t6_sbtls_cipher *, struct sge_txq *, void *,
+    struct mbuf *, u_int, u_int);
+#endif
 
 #ifdef DEV_NETMAP
 /* t4_netmap.c */

@@ -10880,6 +10880,9 @@ mod_event(module_t mod, int cmd, void *arg)
 #ifdef INET6
 			t4_clip_modload();
 #endif
+#ifdef KERN_TLS
+			t6_sbtls_modload();
+#endif
 			t4_tracer_modload();
 			tweak_tunables();
 		}
@@ -10919,6 +10922,9 @@ mod_event(module_t mod, int cmd, void *arg)
 
 			if (t4_sge_extfree_refs() == 0) {
 				t4_tracer_modunload();
+#ifdef KERN_TLS
+				t6_sbtls_modunload();
+#endif
 #ifdef INET6
 				t4_clip_modunload();
 #endif

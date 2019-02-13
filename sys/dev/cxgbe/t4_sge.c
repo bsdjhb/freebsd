@@ -2663,7 +2663,7 @@ restart:
 			goto fail;
 		}
 		set_mbuf_cflags(m0, cflags);
-		rc = cipher->parse_pkt(cipher, m0, &nsegs, &len16);
+		rc = t6_sbtls_parse_pkt(cipher, m0, &nsegs, &len16);
 		if (rc != 0)
 			goto fail;
 		set_mbuf_nsegs(m0, nsegs);
@@ -3032,7 +3032,7 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
 			cipher = tls_mbuf_cipher(m0);
-			n = cipher->write_tls_wr(cipher, txq, (void *)wr, m0,
+			n = t6_sbtls_write_wr(cipher, txq, (void *)wr, m0,
 			    mbuf_nsegs(m0), available);
 		} else if (sc->flags & IS_VF) {
 			total++;
