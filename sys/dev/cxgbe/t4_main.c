@@ -10240,6 +10240,8 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 					txq->kern_tls_header = 0;
 					txq->kern_tls_fin = 0;
 					txq->kern_tls_fin_short = 0;
+					txq->kern_tls_cbc = 0;
+					txq->kern_tls_gcm = 0;
 					mp_ring_reset_stats(txq->r);
 				}
 

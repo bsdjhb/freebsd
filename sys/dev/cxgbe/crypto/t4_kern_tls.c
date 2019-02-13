@@ -725,6 +725,12 @@ t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
 
 	tls->cipher = cipher;
 	tls->sb_tls_free = sbtls_clean_cipher;
+	TXQ_LOCK(txq);
+	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM)
+		txq->kern_tls_gcm++;
+	else
+		txq->kern_tls_cbc++;
+	TXQ_UNLOCK(txq);
 	return (0);
 
 failed:

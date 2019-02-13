@@ -596,6 +596,8 @@ struct sge_txq {
 	uint64_t kern_tls_header;
 	uint64_t kern_tls_fin;
 	uint64_t kern_tls_fin_short;
+	uint64_t kern_tls_cbc;
+	uint64_t kern_tls_gcm;
 
 	/* stats for not-that-common events */
 

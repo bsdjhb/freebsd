@@ -4330,6 +4330,12 @@ alloc_txq(struct vi_info *vi, struct sge_txq *txq, int idx,
 		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
 		    "kern_tls_fin_short", CTLFLAG_RD, &txq->kern_tls_fin_short,
 		    "# of NIC TLS padded FIN packets on short TLS records");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_cbc", CTLFLAG_RD, &txq->kern_tls_cbc,
+		    "# of NIC TLS sessions using AES-CBC");
+		SYSCTL_ADD_UQUAD(&vi->ctx, children, OID_AUTO,
+		    "kern_tls_gcm", CTLFLAG_RD, &txq->kern_tls_gcm,
+		    "# of NIC TLS sessions using AES-GCM");
 	}
 #endif
 	
