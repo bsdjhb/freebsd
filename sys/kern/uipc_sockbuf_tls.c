@@ -94,7 +94,7 @@ SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, counters, CTLFLAG_RW, 0,
     "TLS offload counters");
 
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, allow_unload, CTLFLAG_RDTUN,
-    &sbtls_allow_unload, 0, "Allow backend crypto modules to unload");
+    &sbtls_allow_unload, 0, "Allow software crypto modules to unload");
 
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, bind_threads, CTLFLAG_RDTUN,
     &sbtls_bind_threads, 0,
@@ -115,7 +115,7 @@ static int sbtls_cbc_disable;
 
 SYSCTL_UINT(_kern_ipc_tls, OID_AUTO, cbc_disable, CTLFLAG_RW,
     &sbtls_cbc_disable, 1,
-    "Disable Support of AES CBC crypto");
+    "Disable Support of AES-CBC crypto");
 
 static counter_u64_t sbtls_tasks_active;
 
@@ -134,10 +134,14 @@ static counter_u64_t sbtls_offload_active;
 static counter_u64_t sbtls_offload_failed_crypto;
 static counter_u64_t sbtls_switch_to_ifnet;
 static counter_u64_t sbtls_switch_to_sw;
+static counter_u64_t sbtls_sw_cbc;
+static counter_u64_t sbtls_sw_gcm;
+static counter_u64_t sbtls_ifnet_cbc;
+static counter_u64_t sbtls_ifnet_gcm;
 
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, offload_total,
     CTLFLAG_RD, &sbtls_offload_total,
-    "Total succesful TLS setups (parameters set)");
+    "Total successful TLS setups (parameters set)");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, enable_calls,
     CTLFLAG_RD, &sbtls_offload_enable_calls,
     "Total number of TLS enable calls made");
@@ -149,6 +153,22 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_ifnet, CTLFLAG_RD,
     &sbtls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_sw, CTLFLAG_RD,
     &sbtls_switch_to_sw, "TLS sessions switched from ifnet to SW");
+
+SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, sw, CTLFLAG_RD, 0,
+    "Software TLS session stats");
+SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, ifnet, CTLFLAG_RD, 0,
+    "Hardware (ifnet) TLS session stats");
+
+SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, cbc, CTLFLAG_RD, &sbtls_sw_cbc,
+    "Active number of software TLS sessions using AES-CBC");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, gcm, CTLFLAG_RD, &sbtls_sw_gcm,
+    "Active number of software TLS sessions using AES-GCM");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, cbc, CTLFLAG_RD,
+    &sbtls_ifnet_cbc,
+    "Active number of ifnet TLS sessions using AES-CBC");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, gcm, CTLFLAG_RD,
+    &sbtls_ifnet_gcm,
+    "Active number of ifnet TLS sessions using AES-GCM");
 
 MALLOC_DEFINE(M_TLSSOBUF, "tls_sobuf", "TLS Socket Buffer");
 
@@ -278,6 +298,10 @@ sbtls_init(void *st __unused)
 	sbtls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_to_sw = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
+	sbtls_sw_cbc = counter_u64_alloc(M_WAITOK);
+	sbtls_sw_gcm = counter_u64_alloc(M_WAITOK);
 
 	rm_init(&sbtls_backend_lock, "sbtls crypto backend lock");
 
@@ -518,8 +542,28 @@ sbtls_cleanup(struct sbtls_session *tls)
 {
 
 	counter_u64_add(sbtls_offload_active, -1);
-	if (tls->sb_tls_free != NULL)
+	if (tls->sb_tls_free != NULL) {
+		if (tls->be != NULL) {
+			switch (tls->sb_params.crypt_algorithm) {
+			case CRYPTO_AES_CBC:
+				counter_u64_add(sbtls_sw_cbc, -1);
+				break;
+			case CRYPTO_AES_NIST_GCM_16:
+				counter_u64_add(sbtls_sw_gcm, -1);
+				break;
+			}
+		} else {
+			switch (tls->sb_params.crypt_algorithm) {
+			case CRYPTO_AES_CBC:
+				counter_u64_add(sbtls_ifnet_cbc, -1);
+				break;
+			case CRYPTO_AES_NIST_GCM_16:
+				counter_u64_add(sbtls_ifnet_gcm, -1);
+				break;
+			}
+		}
 		tls->sb_tls_free(tls);
+	}
 	if (tls->sb_params.hmac_key) {
 		explicit_bzero(tls->sb_params.hmac_key,
 		    tls->sb_params.hmac_key_len);
@@ -591,6 +635,16 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 		}
 	}
 	error = ifp->if_create_tls_session(ifp, so, tls);
+	if (error == 0) {
+		switch (tls->sb_params.crypt_algorithm) {
+		case CRYPTO_AES_CBC:
+			counter_u64_add(sbtls_ifnet_cbc, 1);
+			break;
+		case CRYPTO_AES_NIST_GCM_16:
+			counter_u64_add(sbtls_ifnet_gcm, 1);
+			break;
+		}
+	}
 out:
 	if_rele(ifp);
 	return (error);
@@ -631,6 +685,14 @@ sbtls_try_sw_tls(struct socket *so, struct sbtls_session *tls)
 		rm_runlock(&sbtls_backend_lock, &prio);
 	if (be == NULL)
 		return (EOPNOTSUPP);
+	switch (tls->sb_params.crypt_algorithm) {
+	case CRYPTO_AES_CBC:
+		counter_u64_add(sbtls_sw_cbc, 1);
+		break;
+	case CRYPTO_AES_NIST_GCM_16:
+		counter_u64_add(sbtls_sw_gcm, 1);
+		break;
+	}
 	return (0);
 }
 
