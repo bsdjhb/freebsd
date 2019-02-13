@@ -185,22 +185,6 @@ cc_after_idle(struct tcpcb *tp)
 		CC_ALGO(tp)->after_idle(tp->ccv);
 }
 
-static inline bool
-mbuf_is_ifnet_tls(struct mbuf *m)
-{
-
-#ifdef KERN_TLS
-	if (m->m_flags & M_NOMAP) {
-		MBUF_EXT_PGS_ASSERT(m);
-		if (m->m_ext.ext_pgs->tls != NULL) {
-			MPASS(m->m_ext.ext_pgs->tls->sb_tls_crypt == NULL);
-			return (true);
-		}
-	}
-#endif
-	return (false);
-}
-
 /*
  * Tcp output routine: figure out what should be sent and send it.
  */
@@ -1062,7 +1046,7 @@ send:
 		m->m_len = hdrlen;
 
 		if (len <= MHLEN - hdrlen - max_linkhdr &&
-		    !mbuf_is_ifnet_tls(mb)) {
+		    !mbuf_has_tls_session(mb)) {
 			m_copydata(mb, moff, len,
 			    mtod(m, caddr_t) + hdrlen);
 			if (SEQ_LT(tp->snd_nxt, tp->snd_max))

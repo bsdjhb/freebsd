@@ -1471,5 +1471,18 @@ void	netdump_mbuf_dump(void);
 void	netdump_mbuf_reinit(int nmbuf, int nclust, int clsize);
 #endif
 
+static inline bool
+mbuf_has_tls_session(struct mbuf *m)
+{
+
+	if (m->m_flags & M_NOMAP) {
+		MBUF_EXT_PGS_ASSERT(m);
+		if (m->m_ext.ext_pgs->tls != NULL) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
 #endif /* _KERNEL */
 #endif /* !_SYS_MBUF_H_ */
