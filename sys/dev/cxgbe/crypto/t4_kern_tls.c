@@ -522,7 +522,8 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 }
 
 int
-t6_sbtls_try(struct ifnet *ifp, struct socket *so, struct sbtls_session *tls)
+cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
+    struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
 	struct tlspcb *tlsp;

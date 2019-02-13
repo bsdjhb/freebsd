@@ -329,9 +329,6 @@ static int ethofld_fw4_ack(struct sge_iq *, const struct rss_header *,
 static counter_u64_t extfree_refs;
 static counter_u64_t extfree_rels;
 
-#ifdef KERN_TLS
-static tls_session_handler_t t4_tls_session_handler;
-#endif
 an_handler_t t4_an_handler;
 fw_msg_handler_t t4_fw_msg_handler[NUM_FW6_TYPES];
 cpl_handler_t t4_cpl_handler[NUM_CPL_CMDS];
@@ -382,29 +379,6 @@ t4_register_cpl_handler(int opcode, cpl_handler_t h)
 	loc = (uintptr_t *)&t4_cpl_handler[opcode];
 	atomic_store_rel_ptr(loc, (uintptr_t)h);
 }
-
-#ifdef KERN_TLS
-void
-t4_register_tls_session_handler(tls_session_handler_t h)
-{
-	uintptr_t *loc;
-
-	MPASS(h == NULL || t4_tls_session_handler == NULL);
-
-	loc = (uintptr_t *)&t4_tls_session_handler;
-	atomic_store_rel_ptr(loc, (uintptr_t)h);
-}
-
-int
-cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls)
-{
-
-	if (t4_tls_session_handler == NULL)
-		return (ENXIO);
-	return (t4_tls_session_handler(ifp, so, tls));
-}
-#endif
 
 static int
 set_tcb_rpl_handler(struct sge_iq *iq, const struct rss_header *rss,
