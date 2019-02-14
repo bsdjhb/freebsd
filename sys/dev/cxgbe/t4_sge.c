@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_ratelimit.h"
 
 #include <sys/types.h>
@@ -2429,6 +2430,7 @@ m_advance(struct mbuf **pm, int *poffset, int len)
 	return ((void *)p);
 }
 
+#ifdef KERN_TLS
 static inline bool
 is_tls_mbuf(struct mbuf *m)
 {
@@ -2436,11 +2438,12 @@ is_tls_mbuf(struct mbuf *m)
 
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
-	ext_pgs = (void *)m->m_ext.ext_buf;
+	ext_pgs = m->m_ext.ext_pgs;
 	MPASS(ext_pgs->tls == NULL ||
 	    ext_pgs->tls->sb_tls_crypt == NULL);
 	return (ext_pgs->tls != NULL);
 }
+#endif
 
 static inline struct t6_sbtls_cipher *
 tls_mbuf_cipher(struct mbuf *m)
@@ -2566,6 +2569,7 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags,
 
 		if ((m->m_flags & M_NOMAP) != 0) {
 			*cflags |= MC_NOMAP;
+#ifdef KERN_TLS
 			if (is_tls_mbuf(m)) {
 				if (*cflags & MC_TLS) {
 					MPASS(*cipherp == tls_mbuf_cipher(m));
@@ -2575,6 +2579,7 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags,
 					*cipherp = tls_mbuf_cipher(m);
 				}
 			}
+#endif
 			nsegs += count_mbuf_ext_pgs(m, skip, &lastb);
 			skip = 0;
 			continue;
@@ -2629,6 +2634,7 @@ restart:
 	MPASS(m0->m_pkthdr.len > 0);
 	cipher = NULL;
 	nsegs = count_mbuf_nsegs(m0, 0, &cflags, &cipher);
+#ifdef KERN_TLS
 	if (cflags & MC_TLS) {
 		int len16;
 
@@ -2644,6 +2650,7 @@ restart:
 		set_mbuf_len16(m0, len16);
 		return (0);
 	}
+#endif
 	MPASS(cipher == NULL);
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
@@ -2999,15 +3006,18 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			next_cidx = 0;
 
 		wr = (void *)&eq->desc[eq->pidx];
-		if (mbuf_cflags(m0) & MC_TLS) {
-			struct t6_sbtls_cipher *cipher;
-
+		if (mbuf_cflags(m0) & MC_RAW_WR) {
+			total++;
+			remaining--;
+			n = write_raw_wr(txq, (void *)wr, m0, available);
+#ifdef KERN_TLS
+		} else if (mbuf_cflags(m0) & MC_TLS) {
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
-			cipher = tls_mbuf_cipher(m0);
-			n = t6_sbtls_write_wr(cipher, txq, (void *)wr, m0,
-			    mbuf_nsegs(m0), available);
+			n = t6_sbtls_write_wr(tls_mbuf_cipher(m0), txq,
+			    (void *)wr, m0, mbuf_nsegs(m0), available);
+#endif
 		} else if (sc->flags & IS_VF) {
 			total++;
 			remaining--;
@@ -3042,10 +3052,6 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			n = write_txpkts_wr(txq, wr, m0, &txp, available);
 			total += txp.npkt;
 			remaining -= txp.npkt;
-		} else if (mbuf_cflags(m0) & MC_RAW_WR) {
-			total++;
-			remaining--;
-			n = write_raw_wr(txq, (void *)wr, m0, available);
 		} else {
 			total++;
 			remaining--;
