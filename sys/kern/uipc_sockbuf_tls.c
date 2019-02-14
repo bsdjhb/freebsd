@@ -405,7 +405,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 			 * TLS 1.0 requires an implicit IV.  TLS 1.1+
 			 * all use explicit IVs.
 			 */
-			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
+			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
 				if (en->iv_len != TLS_CBC_IMPLICIT_IV_LEN)
 					return (EINVAL);
 				break;
