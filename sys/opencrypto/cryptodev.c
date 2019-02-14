@@ -607,6 +607,8 @@ cryptof_ioctl(
 				    __LINE__);
 				goto bail;
 			}
+
+			csp.csp_ivlen = txform->ivsize;
 		}
 
 		if (thash) {
