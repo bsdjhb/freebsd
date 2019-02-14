@@ -300,17 +300,17 @@ cuio_contiguous_segment(struct uio *uio, size_t skip, size_t len)
 }
 
 void *
-crypto_contiguous_subsegment(int crp_flags, void *crpbuf,
-    size_t skip, size_t len)
+crypto_contiguous_subsegment(struct cryptop *crp, size_t skip, size_t len)
 {
-	if ((crp_flags & CRYPTO_F_IMBUF) != 0)
-		return (m_contiguous_subsegment(crpbuf, skip, len));
-	else if ((crp_flags & CRYPTO_F_IOV) != 0)
-		return (cuio_contiguous_segment(crpbuf, skip, len));
-	else {
-		MPASS((crp_flags & (CRYPTO_F_IMBUF | CRYPTO_F_IOV)) !=
-		    (CRYPTO_F_IMBUF | CRYPTO_F_IOV));
-		return ((char*)crpbuf + skip);
+
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		return (m_contiguous_subsegment(crp->crp_mbuf, skip, len));
+	case CRYPTO_BUF_IOV:
+		return (cuio_contiguous_segment(crp->crp_uio, skip, len));
+	case CRYPTO_BUF_CONTIG:
+		return (crp->crp_buf + skip);
+	default:
+		panic("invalid crp buf type %d", crp->crp_buf_type);
 	}
 }
-

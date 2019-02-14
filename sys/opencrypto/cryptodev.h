@@ -640,8 +640,8 @@ void	crypto_copyback(struct cryptop *crp, int off, int size,
 void	crypto_copydata(struct cryptop *crp, int off, int size, void *dst);
 int	crypto_apply(struct cryptop *crp, int off, int len,
 	    int (*f)(void *, void *, u_int), void *arg);
-
-extern void *crypto_contiguous_subsegment(int, void *, size_t, size_t);
+void	*crypto_contiguous_subsegment(struct cryptop *crp, size_t skip,
+	    size_t len);
 
 #endif /* _KERNEL */
 #endif /* _CRYPTO_CRYPTO_H_ */
