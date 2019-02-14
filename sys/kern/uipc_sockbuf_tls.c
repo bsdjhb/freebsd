@@ -170,6 +170,12 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, gcm, CTLFLAG_RD,
     &sbtls_ifnet_gcm,
     "Active number of ifnet TLS sessions using AES-GCM");
 
+static int sbtls_ifnet_disable;
+
+SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, disable, CTLFLAG_RWTUN,
+    &sbtls_ifnet_disable, 1,
+    "Disable hardware (ifnet) TLS sessions");
+
 MALLOC_DEFINE(M_TLSSOBUF, "tls_sobuf", "TLS Socket Buffer");
 
 
@@ -601,6 +607,9 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	int error;
+
+	if (sbtls_ifnet_disable)
+		return (ENXIO);
 
 	inp = so->so_pcb;
 	INP_RLOCK(inp);
