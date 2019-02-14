@@ -559,6 +559,7 @@ cryptof_ioctl(
 			case CRYPTO_AES_256_NIST_GMAC:
 				if (sop->keylen != sop->mackeylen)
 					return (EINVAL);
+				thash = NULL;
 				break;
 			case 0:
 				break;
