@@ -395,15 +395,26 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	case CRYPTO_AES_CBC:
 		switch (en->mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
+			/*
+			 * TLS 1.0 requires an implicit IV.  TLS 1.1+
+			 * all use explicit IVs.
+			 */
+			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
+				if (en->iv_len != TLS_CBC_IMPLICIT_IV_LEN)
+					return (EINVAL);
+				break;
+			}
+
+			/* FALLTHROUGH */
 		case CRYPTO_SHA2_256_HMAC:
+			/* Ignore any supplied IV. */
+			en->iv_len = 0;
 			break;
 		default:
 			return (EINVAL);
 		}
 		if (en->hmac_key_len == 0)
 			return (EINVAL);
-		/* XXX: Explicitly ignore the supplied IV. */
-		en->iv_len = 0;
 		break;
 	default:
 		return (EINVAL);
@@ -487,8 +498,9 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 		goto out;
 
 	/*
-	 * This holds the implicit portion of the nonce for GCM.  The
-	 * explicit portions of the IV are generated in sbtls_frame().
+	 * This holds the implicit portion of the nonce for GCM and
+	 * the initial implicit IV for TLS 1.0.  The explicit portions
+	 * of the IV are generated in sbtls_frame() and sbtls_seq().
 	 */
 	if (en->iv_len != 0) {
 		MPASS(en->iv_len <= sizeof(tls->sb_params.iv));

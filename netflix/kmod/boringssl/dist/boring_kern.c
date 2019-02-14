@@ -388,12 +388,16 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 
 
 	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
-		/* CBC has a merged key */
-		keylen = tls->sb_params.hmac_key_len + tls->sb_params.crypt_key_len;
+		/*
+		 * CBC has a merged key.  For TLS 1.0, the implicit IV
+		 * is placed after the keys.
+		 */
+		keylen = tls->sb_params.hmac_key_len +
+		    tls->sb_params.crypt_key_len + tls->sb_params.iv_len;
 		if (tls->sb_params.hmac_key == NULL || tls->sb_params.crypt == NULL) {
 			return (EINVAL);
 		}
-		    
+
 		mal = malloc(keylen, M_BORINGSSL, M_NOWAIT);
 		if (mal == NULL) {
 			return (ENOMEM);
@@ -401,6 +405,9 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 		memcpy(mal, tls->sb_params.hmac_key, tls->sb_params.hmac_key_len);
 		memcpy(mal + tls->sb_params.hmac_key_len, tls->sb_params.crypt,
 		    tls->sb_params.crypt_key_len);
+		memcpy(mal + tls->sb_params.hmac_key_len +
+		    tls->sb_params.crypt_key_len, tls->sb_params.iv,
+		    tls->sb_params.iv_len);
 		key = mal;
 	} else {
 		key = tls->sb_params.crypt;

@@ -41,6 +41,7 @@ struct tls_record_layer {
 #define TLS_MAX_MSG_SIZE_V10_2	16384
 #define TLS_MAX_PARAM_SIZE	1024	/* Max key/mac/iv in sockopt */
 #define TLS_AEAD_GCM_LEN	4
+#define	TLS_CBC_IMPLICIT_IV_LEN	16
 
 /* Type values for the record layer */
 #define TLS_RLTYPE_APP		23
@@ -136,7 +137,7 @@ struct tls_so_enable {
 struct tls_session_params {
 	uint8_t *hmac_key;
 	uint8_t *crypt;
-	uint8_t iv[TLS_AEAD_GCM_LEN];
+	uint8_t iv[TLS_CBC_IMPLICIT_IV_LEN];
 	int crypt_algorithm;
 	int mac_algorithm;
 	uint16_t hmac_key_len;
