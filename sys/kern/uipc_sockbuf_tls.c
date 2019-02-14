@@ -442,7 +442,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	case CRYPTO_AES_CBC:
 		switch (en->mac_algorithm) {
 		case CRYPTO_SHA1_HMAC:
-			if (en->tls_vmajor == TLS_MINOR_VER_ZERO) {
+			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
 				/* Implicit IV, no nonce. */
 			} else {
 				tls->sb_params.tls_hlen += AES_BLOCK_LEN;
