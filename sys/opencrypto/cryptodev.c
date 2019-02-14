@@ -385,7 +385,9 @@ cryptof_ioctl(
 	struct crypt_op copc;
 	struct crypt_kop kopc;
 #endif
+	bool use_gmac;
 
+	use_gmac = false;
 	switch (cmd) {
 	case CIOCGSESSION:
 	case CIOCGSESSION2:
@@ -446,6 +448,27 @@ cryptof_ioctl(
 		case CRYPTO_AES_CCM_16:
 			txform = &enc_xform_ccm;
 			break;
+		case CRYPTO_AES_NIST_GMAC:
+			/* XXX: Legacy. */
+			if (sop->keylen != sop->mackeylen) {
+				CRYPTDEB("GMAC mismatched key lengths");
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
+			switch (sop->mac) {
+			case CRYPTO_AES_128_NIST_GMAC:
+				thash = &auth_hash_nist_gmac_aes_128;
+				break;
+			case CRYPTO_AES_192_NIST_GMAC:
+				thash = &auth_hash_nist_gmac_aes_192;
+				break;
+			case CRYPTO_AES_256_NIST_GMAC:
+				thash = &auth_hash_nist_gmac_aes_256;
+				break;
+			}
+			use_gmac = true;
+			break;
 
 		default:
 			CRYPTDEB("invalid cipher");
@@ -488,6 +511,25 @@ cryptof_ioctl(
 			break;
 		case CRYPTO_AES_256_NIST_GMAC:
 			thash = &auth_hash_nist_gmac_aes_256;
+			break;
+		case CRYPTO_AES_NIST_GMAC:
+			switch (sop->mackeylen * 8) {
+			case 128:
+				thash = &auth_hash_nist_gmac_aes_128;
+				break;
+			case 192:
+				thash = &auth_hash_nist_gmac_aes_128;
+				break;
+			case 256:
+				thash = &auth_hash_nist_gmac_aes_128;
+				break;
+			default:
+				CRYPTDEB("invalid GMAC key length");
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
+			use_gmac = true;
 			break;
 
 		case CRYPTO_AES_CCM_CBC_MAC:
@@ -613,7 +655,10 @@ cryptof_ioctl(
 		}
 
 		if (thash) {
-			csp.csp_auth_alg = thash->type;
+			if (use_gmac)
+				csp.csp_auth_alg = CRYPTO_AES_NIST_GMAC;
+			else
+				csp.csp_auth_alg = thash->type;
 			csp.csp_auth_klen = sop->mackeylen * 8;
 			if (sop->mackeylen > thash->keysize ||
 			    sop->mackeylen < 0) {
