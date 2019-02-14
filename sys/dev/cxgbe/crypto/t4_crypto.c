@@ -590,7 +590,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 
 	if (s->blkcipher.key_len == 0 || crp->crp_payload_length == 0)
 		return (EINVAL);
-	if (s->blkcipher.cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_CBC &&
+	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_CBC &&
 	    (crp->crp_payload_length % AES_BLOCK_LEN) != 0)
 		return (EINVAL);
 
@@ -696,7 +696,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 
 	crwr->key_ctx.ctx_hdr = s->blkcipher.key_ctx_hdr;
 	switch (s->blkcipher.cipher_mode) {
-	case CHCR_SCMD_CIPHER_MODE_AES_CBC:
+	case SCMD_CIPH_MODE_AES_CBC:
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
 			memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
 			    s->blkcipher.key_len);
@@ -704,11 +704,11 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 			memcpy(crwr->key_ctx.key, s->blkcipher.deckey,
 			    s->blkcipher.key_len);
 		break;
-	case CHCR_SCMD_CIPHER_MODE_AES_CTR:
+	case SCMD_CIPH_MODE_AES_CTR:
 		memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
 		    s->blkcipher.key_len);
 		break;
-	case CHCR_SCMD_CIPHER_MODE_AES_XTS:
+	case SCMD_CIPH_MODE_AES_XTS:
 		key_half = s->blkcipher.key_len / 2;
 		memcpy(crwr->key_ctx.key, s->blkcipher.enckey + key_half,
 		    key_half);
@@ -792,7 +792,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	 */
 	if (s->blkcipher.key_len == 0 || crp->crp_payload_length == 0)
 		return (EINVAL);
-	if (s->blkcipher.cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_CBC &&
+	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_CBC &&
 	    (crp->crp_payload_length % AES_BLOCK_LEN) != 0)
 		return (EINVAL);
 
@@ -998,7 +998,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 
 	crwr->key_ctx.ctx_hdr = s->blkcipher.key_ctx_hdr;
 	switch (s->blkcipher.cipher_mode) {
-	case CHCR_SCMD_CIPHER_MODE_AES_CBC:
+	case SCMD_CIPH_MODE_AES_CBC:
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
 			memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
 			    s->blkcipher.key_len);
@@ -1006,11 +1006,11 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 			memcpy(crwr->key_ctx.key, s->blkcipher.deckey,
 			    s->blkcipher.key_len);
 		break;
-	case CHCR_SCMD_CIPHER_MODE_AES_CTR:
+	case SCMD_CIPH_MODE_AES_CTR:
 		memcpy(crwr->key_ctx.key, s->blkcipher.enckey,
 		    s->blkcipher.key_len);
 		break;
-	case CHCR_SCMD_CIPHER_MODE_AES_XTS:
+	case SCMD_CIPH_MODE_AES_XTS:
 		key_half = s->blkcipher.key_len / 2;
 		memcpy(crwr->key_ctx.key, s->blkcipher.enckey + key_half,
 		    key_half);
@@ -2122,13 +2122,13 @@ ccr_aes_check_keylen(int cipher_mode, int klen)
 	switch (klen) {
 	case 128:
 	case 192:
-		if (cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_XTS)
+		if (cipher_mode == SCMD_CIPH_MODE_AES_XTS)
 			return (EINVAL);
 		break;
 	case 256:
 		break;
 	case 512:
-		if (cipher_mode != CHCR_SCMD_CIPHER_MODE_AES_XTS)
+		if (cipher_mode != SCMD_CIPH_MODE_AES_XTS)
 			return (EINVAL);
 		break;
 	default:
@@ -2143,7 +2143,7 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	unsigned int ck_size, iopad_size, kctx_flits, kctx_len, kbits, mk_size;
 	unsigned int opad_present;
 
-	if (s->blkcipher.cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_XTS)
+	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_XTS)
 		kbits = klen / 2;
 	else
 		kbits = klen;
@@ -2164,8 +2164,8 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	s->blkcipher.key_len = klen / 8;
 	memcpy(s->blkcipher.enckey, key, s->blkcipher.key_len);
 	switch (s->blkcipher.cipher_mode) {
-	case CHCR_SCMD_CIPHER_MODE_AES_CBC:
-	case CHCR_SCMD_CIPHER_MODE_AES_XTS:
+	case SCMD_CIPH_MODE_AES_CBC:
+	case SCMD_CIPH_MODE_AES_XTS:
 		t4_aes_getdeckey(s->blkcipher.deckey, key, kbits);
 		break;
 	}
@@ -2208,7 +2208,7 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	kctx_flits = (sizeof(struct _key_ctx) + kctx_len) / 16;
 	s->blkcipher.key_ctx_hdr = htobe32(V_KEY_CONTEXT_CTX_LEN(kctx_flits) |
 	    V_KEY_CONTEXT_DUAL_CK(s->blkcipher.cipher_mode ==
-	    CHCR_SCMD_CIPHER_MODE_AES_XTS) |
+	    SCMD_CIPH_MODE_AES_XTS) |
 	    V_KEY_CONTEXT_OPAD_PRESENT(opad_present) |
 	    V_KEY_CONTEXT_SALT_PRESENT(1) | V_KEY_CONTEXT_CK_SIZE(ck_size) |
 	    V_KEY_CONTEXT_MK_SIZE(mk_size) | V_KEY_CONTEXT_VALID(1));
@@ -2296,25 +2296,25 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 
 	switch (csp->csp_cipher_alg) {
 	case 0:
-		cipher_mode = CHCR_SCMD_CIPHER_MODE_NOP;
+		cipher_mode = SCMD_CIPH_MODE_NOP;
 		break;
 	case CRYPTO_AES_CBC:
-		cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CBC;
+		cipher_mode = SCMD_CIPH_MODE_AES_CBC;
 		if (iv_len != AES_BLOCK_LEN)
 			return (EINVAL);
 		break;
 	case CRYPTO_AES_ICM:
-		cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_CTR;
+		cipher_mode = SCMD_CIPH_MODE_AES_CTR;
 		if (iv_len != AES_BLOCK_LEN)
 			return (EINVAL);
 		break;
 	case CRYPTO_AES_NIST_GCM_16:
-		cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_GCM;
+		cipher_mode = SCMD_CIPH_MODE_AES_GCM;
 		if (iv_len != AES_GCM_IV_LEN)
 			return (EINVAL);
 		break;
 	case CRYPTO_AES_XTS:
-		cipher_mode = CHCR_SCMD_CIPHER_MODE_AES_XTS;
+		cipher_mode = SCMD_CIPH_MODE_AES_XTS;
 		if (iv_len != AES_BLOCK_LEN)
 			return (EINVAL);
 		break;
@@ -2335,37 +2335,37 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 
 	switch (csp->csp_mode) {
 	case CSP_MODE_CIPHER:
-		if (cipher_mode == CHCR_SCMD_CIPHER_MODE_NOP ||
-		    cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_GCM ||
+		if (cipher_mode == SCMD_CIPH_MODE_NOP ||
+		    cipher_mode == SCMD_CIPH_MODE_AES_GCM ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_CCM)
 			return (EINVAL);
 		break;
 	case CSP_MODE_DIGEST:
 #if 0
-		if (auth_mode == CHCR_SCMD_AUTH_MODE_NOP ||
-		    auth_mode == CHCR_SCMD_AUTH_MODE_GHASH)
+		if (auth_mode == SCMD_AUTH_MODE_NOP ||
+		    auth_mode == SCMD_AUTH_MODE_GHASH)
 #else
-		if (auth_mode == CHCR_SCMD_AUTH_MODE_NOP)
+		if (auth_mode == SCMD_AUTH_MODE_NOP)
 #endif
 			return (EINVAL);
 		break;
 	case CSP_MODE_AEAD:
-		if (cipher_mode != CHCR_SCMD_CIPHER_MODE_AES_GCM &&
+		if (cipher_mode != SCMD_CIPH_MODE_AES_GCM &&
 		    cipher_mode != SCMD_CIPH_MODE_AES_CCM)
 			return (EINVAL);
-		if (auth_mode != CHCR_SCMD_AUTH_MODE_NOP)
+		if (auth_mode != SCMD_AUTH_MODE_NOP)
 			return (EINVAL);
 		break;
 	case CSP_MODE_ETA:
-		if (cipher_mode == CHCR_SCMD_CIPHER_MODE_NOP ||
-		    cipher_mode == CHCR_SCMD_CIPHER_MODE_AES_GCM ||
+		if (cipher_mode == SCMD_CIPH_MODE_NOP ||
+		    cipher_mode == SCMD_CIPH_MODE_AES_GCM ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_CCM)
 			return (EINVAL);
 #if 0
-		if (auth_mode == CHCR_SCMD_AUTH_MODE_NOP ||
-		    auth_mode == CHCR_SCMD_AUTH_MODE_GHASH)
+		if (auth_mode == SCMD_AUTH_MODE_NOP ||
+		    auth_mode == SCMD_AUTH_MODE_GHASH)
 #else
-		if (auth_mode == CHCR_SCMD_AUTH_MODE_NOP)
+		if (auth_mode == SCMD_AUTH_MODE_NOP)
 #endif
 			return (EINVAL);
 		break;
@@ -2428,7 +2428,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 			s->ccm_mac.hash_len = AES_CBC_MAC_HASH_LEN;
 		else
 			s->ccm_mac.hash_len = csp->csp_auth_mlen;
-	} else if (auth_mode != CHCR_SCMD_AUTH_MODE_NOP) {
+	} else if (auth_mode != SCMD_AUTH_MODE_NOP) {
 		s->hmac.auth_hash = auth_hash;
 		s->hmac.auth_mode = auth_mode;
 		s->hmac.mk_size = mk_size;
@@ -2444,7 +2444,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		else
 			ccr_init_hash_digest(s);
 	}
-	if (cipher_mode != CHCR_SCMD_CIPHER_MODE_NOP) {
+	if (cipher_mode != SCMD_CIPH_MODE_NOP) {
 		s->blkcipher.cipher_mode = cipher_mode;
 		s->blkcipher.iv_len = iv_len;
 		if (csp->csp_cipher_key != NULL)
