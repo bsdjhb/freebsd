@@ -167,6 +167,8 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 			segoff = pgoff;
 		}
 		seglen = min(seglen, len);
+		if (__predict_false(seglen == 0))
+			continue;
 		len -= seglen;
 		error = _bus_dmamap_load_phys(dmat, map,
 		    ext_pgs->pa[i] + segoff, seglen,
@@ -185,6 +187,8 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 		    &ext_pgs->trail[off], seglen, kernel_pmap,
 		    flags, segs, nsegs);
 	}
+	KASSERT(len == 0 || error != 0,
+	    ("len = %d, m = %p\n", len, m));
 	return (error);
 }
 

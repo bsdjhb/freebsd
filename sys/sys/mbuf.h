@@ -695,7 +695,7 @@ void		 mb_dupcl(struct mbuf *, struct mbuf *);
 void		 mb_free_ext(struct mbuf *);
 void		 mb_free_mext_pgs(struct mbuf *);
 struct mbuf	*mb_alloc_ext_pgs(int, bool, m_ext_free_t);
-void		 mb_ext_pgs_downgrade(struct mbuf *m);
+int		 mb_ext_pgs_downgrade(struct mbuf *m);
 struct mbuf 	*mb_unmapped_to_ext(struct mbuf *m);
 void		 mb_free_notready(struct mbuf *m, int count);
 void		 m_adj(struct mbuf *, int);

@@ -868,29 +868,52 @@ CTASSERT(MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN < MLEN);
  * and any data in the hdr/trailer portion of the mbuf_ext_pgs
  * struct are copied into the normal mbuf data.
  */
-void
+int
 mb_ext_pgs_downgrade(struct mbuf *m)
 {
-	struct mbuf_ext_pgs *pgs;
+	volatile u_int *refcnt;
+	struct mbuf m_temp;
 
 	/* XXXGL: why assert !M_PKTHDR? */
 	KASSERT((m->m_flags & M_PKTHDR) == 0 && (m->m_flags & M_EXT) &&
 	    m->m_ext.ext_type == EXT_PGS,
             ("%s: m %p !M_EXT or !EXT_PGS or M_PKTHDR", __func__, m));
-	pgs = m->m_ext.ext_pgs;
+	KASSERT(m->m_data == 0, ("m_data != 0 %p", m));
+	KASSERT(m->m_len <= MLEN, ("m_len too large %p", m));
+
+	if (m->m_ext.ext_flags & EXT_FLAG_EMBREF) {
+		refcnt = &m->m_ext.ext_count;
+	} else {
+		KASSERT(m->m_ext.ext_cnt != NULL,
+		    ("%s: no refcounting pointer on %p", __func__, m));
+		refcnt = m->m_ext.ext_cnt;
+	}
+
+	if (*refcnt != 1)
+		return (EBUSY);
+
+	/*
+	 * Copy ext portion of mbuf to temp, so that
+	 * we can call the free functions with appropriate
+	 * arguments
+	 */
+	bcopy(m, &m_temp, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
+	m_temp.m_next = NULL;
+	m_temp.m_nextpkt = NULL;
+
+	/* turn m into a "normal" mbuf */
+	m->m_flags &= ~(M_EXT | M_RDONLY | M_NOMAP);
+	m->m_data = m->m_dat;
+
+	/* copy data from template's ext_pgs */
+	m_copydata(&m_temp, 0, m_temp.m_len, mtod(m, caddr_t));
 
 	/* free the backing page(s) */
-	m->m_ext.ext_free(m);
-	m->m_flags &= ~(M_EXT | M_RDONLY | M_NOMAP);
+	m_temp.m_ext.ext_free(&m_temp);
 
-	/* copy hdr/trailer to in-line data */
-	m->m_data = m->m_dat;
-	bcopy(pgs->hdr, m->m_data, pgs->hdr_len);
-	bcopy(pgs->trail, m->m_data + pgs->hdr_len, pgs->trail_len);
-	m->m_len = pgs->hdr_len + pgs->trail_len;
-
-	/* finally free the ext pgs struct */
-	uma_zfree(zone_extpgs, (void *)pgs);
+	/* finally, free the extpgs memory */
+	uma_zfree(zone_extpgs, m_temp.m_ext.ext_buf);
+	return (0);
 }
 
 /*
