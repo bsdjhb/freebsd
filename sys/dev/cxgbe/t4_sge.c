@@ -2633,7 +2633,7 @@ restart:
 		int len16;
 
 		if (cipher->vi != vi) {
-			rc = EHOSTUNREACH;
+			rc = ECONNABORTED;
 			goto fail;
 		}
 		set_mbuf_cflags(m0, cflags);

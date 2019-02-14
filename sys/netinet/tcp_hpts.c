@@ -28,6 +28,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_tcpdebug.h"
 /**
  * Some notes about usage.
@@ -1553,6 +1554,13 @@ out_now:
 			} else {
 				error = tp->t_fb->tfb_tcp_output(tp);
 			}
+#ifdef KERN_TLS
+			if (error == ECONNABORTED) {
+				/* Schedule this guy to drop */
+				tcp_hpts_remove(inp, HPTS_REMOVE_ALL);
+				tcp_set_inp_to_drop(inp, error);
+			}
+#endif
 			if (ninp && ninp->inp_ppcb) {
 				/*
 				 * If we have a nxt inp, see if we can
