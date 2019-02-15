@@ -170,11 +170,12 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, gcm, CTLFLAG_RD,
     &sbtls_ifnet_gcm,
     "Active number of ifnet TLS sessions using AES-GCM");
 
-static int sbtls_ifnet_disable;
+static int sbtls_ifnet_permitted;
 
-SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, disable, CTLFLAG_RWTUN,
-    &sbtls_ifnet_disable, 1,
-    "Disable hardware (ifnet) TLS sessions");
+SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, permitted, CTLFLAG_RWTUN,
+    &sbtls_ifnet_permitted, 1,
+    "Whether to permit hardware (ifnet) TLS sessions: 0 = never, 1 = always, "
+    "2 = defer to TCP stack flag");
 
 MALLOC_DEFINE(M_TLSSOBUF, "tls_sobuf", "TLS Socket Buffer");
 
@@ -624,7 +625,19 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 		return (ECONNRESET);
 	}
 	tp = inp->inp_ppcb;
-	if ((tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0 && !force) {
+
+	/*
+	 * Check administrative controls on ifnet TLS to determine if
+	 * ifnet TLS should be denied.
+	 *
+	 * - Always permit 'force' requests.
+	 * - sbtls_ifnet_permitted == 0: always deny.
+	 * - sbtls_ifnet_permitted == 1: always permit.
+	 * - sbtls_ifnet_permitted == 2: honor TCP stack flag.
+	 */
+	if (!force && (sbtls_ifnet_permitted == 0 ||
+	    (sbtls_ifnet_permitted == 2 &&
+	    (tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0))) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
