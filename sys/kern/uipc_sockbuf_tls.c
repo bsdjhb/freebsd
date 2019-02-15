@@ -413,6 +413,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 
 			/* FALLTHROUGH */
 		case CRYPTO_SHA2_256_HMAC:
+		case CRYPTO_SHA2_384_HMAC:
 			/* Ignore any supplied IV. */
 			en->iv_len = 0;
 			break;
@@ -471,6 +472,11 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
 			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
 			    SHA2_256_HASH_LEN;
+			break;
+		case CRYPTO_SHA2_384_HMAC:
+			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			    SHA2_384_HASH_LEN;
 			break;
 		default:
 			panic("invalid hmac");

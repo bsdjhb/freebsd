@@ -311,6 +311,13 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 				break;
 			}
 			break;
+		case CRYPTO_SHA2_384_HMAC:
+			switch (tls->sb_params.crypt_key_len) {
+			case 32:
+				choice = EVP_aead_aes_256_cbc_sha384_tls();
+				break;
+			}
+			break;
 		case CRYPTO_SHA1_HMAC:
 			if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE) {
 				return (EINVAL);
