@@ -615,16 +615,13 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 	struct tcpcb *tp;
 	int error;
 
-	if (sbtls_ifnet_disable)
-		return (ENXIO);
-
 	inp = so->so_pcb;
 	INP_RLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_RUNLOCK(inp);
 		return (ECONNRESET);
 	}
-	tp = inp->inp_ppcb;
+	tp = intotcpcb(inp);
 
 	/*
 	 * Check administrative controls on ifnet TLS to determine if
@@ -794,16 +791,38 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 	return (0);
 }
 
+int
+sbtls_get_tls_mode(struct socket *so)
+{
+	struct sbtls_session *tls;
+	struct inpcb *inp;
+	int mode;
+
+	inp = so->so_pcb;
+	INP_WLOCK_ASSERT(inp);
+	SOCKBUF_LOCK(&so->so_snd);
+	tls = so->so_snd.sb_tls_info;
+	if (tls == NULL)
+		mode = TCP_TLS_MODE_NONE;
+	else if (tls->sb_tls_crypt != NULL)
+		mode = TCP_TLS_MODE_SW;
+	else
+		mode = TCP_TLS_MODE_IFNET;
+	SOCKBUF_UNLOCK(&so->so_snd);
+	return (mode);
+}
+
 /*
  * Switch between SW and ifnet TLS sessions as requested.
  */
 int
-sbtls_update_session(struct socket *so, enum sbtls_session_type type,
-    bool force)
+sbtls_set_tls_mode(struct socket *so, int mode)
 {
 	struct sbtls_session *tls, *tls_new;
 	struct inpcb *inp;
 	int error;
+
+	MPASS(mode == TCP_TLS_MODE_SW || mode == TCP_TLS_MODE_IFNET);
 
 	inp = so->so_pcb;
 	INP_WLOCK_ASSERT(inp);
@@ -814,8 +833,8 @@ sbtls_update_session(struct socket *so, enum sbtls_session_type type,
 		return (0);
 	}
 
-	if ((tls->sb_tls_crypt != NULL && type == SW_TLS) ||
-	    (tls->sb_tls_crypt == NULL && type == IFNET_TLS)) {
+	if ((tls->sb_tls_crypt != NULL && mode == TCP_TLS_MODE_SW) ||
+	    (tls->sb_tls_crypt == NULL && mode == TCP_TLS_MODE_IFNET)) {
 		SOCKBUF_UNLOCK(&so->so_snd);
 		return (0);
 	}
@@ -826,8 +845,8 @@ sbtls_update_session(struct socket *so, enum sbtls_session_type type,
 
 	tls_new = sbtls_clone_session(tls);
 
-	if (type == IFNET_TLS)
-		error = sbtls_try_ifnet_tls(so, tls_new, force);
+	if (mode == TCP_TLS_MODE_IFNET)
+		error = sbtls_try_ifnet_tls(so, tls_new, true);
 	else
 		error = sbtls_try_sw_tls(so, tls_new);
 	if (error) {
@@ -873,13 +892,39 @@ sbtls_update_session(struct socket *so, enum sbtls_session_type type,
 	sbtls_free(tls);
 	sbtls_free(tls);
 
-	if (type == IFNET_TLS)
+	if (mode == TCP_TLS_MODE_IFNET)
 		counter_u64_add(sbtls_switch_to_ifnet, 1);
 	else
 		counter_u64_add(sbtls_switch_to_sw, 1);
 
 	INP_WLOCK(inp);
 	return (0);
+}
+
+void
+sbtls_tcp_stack_changed(struct socket *so)
+{
+	struct inpcb *inp;
+	struct tcpcb *tp;
+	int mode;
+
+	inp = so->so_pcb;
+	INP_WLOCK_ASSERT(inp);
+
+	/*
+	 * If the TCP stack has changed and we are honoring the stack
+	 * flag, check the stack flag to determine what mode the
+	 * session should be using with the new stack.
+	 */
+	if (sbtls_ifnet_permitted != 2)
+		return;
+
+	tp = intotcpcb(inp);
+	if (tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK)
+		mode = TCP_TLS_MODE_IFNET;
+	else
+		mode = TCP_TLS_MODE_SW;
+	(void)sbtls_set_tls_mode(so, mode);
 }
 
 void

@@ -196,13 +196,6 @@ struct sbtls_session {
 
 /* TLS stubs so we can compile kernels without options KERN_TLS */
 
-static inline int
-sbtls_crypt_tls_enable(struct socket *so,
-    struct tls_so_enable *en)
-{
-	return (ENOTSUP);
-}
-
 static inline void
 sbtlsdestroy(struct sockbuf *sb)
 {
@@ -243,8 +236,6 @@ sbtls_free(struct sbtls_session *tls)
 
 #else
 
-enum sbtls_session_type { SW_TLS, IFNET_TLS };
-
 int sbtls_crypto_backend_register(struct sbtls_crypto_backend *be);
 int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
 int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
@@ -255,8 +246,9 @@ int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
 void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
 void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
-int sbtls_update_session(struct socket *so, enum sbtls_session_type type,
-    bool force);
+void sbtls_tcp_stack_changed(struct socket *so);
+int sbtls_set_tls_mode(struct socket *so, int mode);
+int sbtls_get_tls_mode(struct socket *so);
 
 static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)
