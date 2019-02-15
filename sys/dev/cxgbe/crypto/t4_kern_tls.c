@@ -276,10 +276,6 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct sbtls_session *tls)
 			mac_key_size = SHA2_512_HASH_LEN;
 			tlsp->auth_mode = SCMD_AUTH_MODE_SHA512_384;
 			break;
-		case CRYPTO_SHA2_512_HMAC:
-			mac_key_size = SHA2_512_HASH_LEN;
-			tlsp->auth_mode = SCMD_AUTH_MODE_SHA512_512;
-			break;
 		}
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_CBC;
 		tlsp->mac_secret_size = tls->sb_params.hmac_key_len;
@@ -551,7 +547,6 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
-		case CRYPTO_SHA2_512_HMAC:
 			break;
 		default:
 			return (EPROTONOSUPPORT);
@@ -776,10 +771,6 @@ sbtls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
 		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
 			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
 		break;
-	case CRYPTO_SHA2_512_HMAC:
-		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
-			u64[i] = htobe64(auth_ctx->sha512ctx.state[i]);
-		break;
 	}
 }
 
@@ -880,11 +871,6 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 			break;
 		case SCMD_AUTH_MODE_SHA512_384:
 			axf = &auth_hash_hmac_sha2_384;
-			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
-			partial_digest_len = SHA2_512_HASH_LEN;
-			break;
-		case SCMD_AUTH_MODE_SHA512_512:
-			axf = &auth_hash_hmac_sha2_512;
 			mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 			partial_digest_len = SHA2_512_HASH_LEN;
 			break;
