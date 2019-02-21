@@ -134,6 +134,7 @@ static counter_u64_t sbtls_offload_active;
 static counter_u64_t sbtls_offload_failed_crypto;
 static counter_u64_t sbtls_switch_to_ifnet;
 static counter_u64_t sbtls_switch_to_sw;
+static counter_u64_t sbtls_switch_failed;
 static counter_u64_t sbtls_sw_cbc;
 static counter_u64_t sbtls_sw_gcm;
 static counter_u64_t sbtls_ifnet_cbc;
@@ -153,6 +154,8 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_ifnet, CTLFLAG_RD,
     &sbtls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_sw, CTLFLAG_RD,
     &sbtls_switch_to_sw, "TLS sessions switched from ifnet to SW");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_failed, CTLFLAG_RD,
+    &sbtls_switch_failed, "TLS sessions unable to switch between SW and ifnet");
 
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, sw, CTLFLAG_RD, 0,
     "Software TLS session stats");
@@ -305,6 +308,7 @@ sbtls_init(void *st __unused)
 	sbtls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_to_sw = counter_u64_alloc(M_WAITOK);
+	sbtls_switch_failed = counter_u64_alloc(M_WAITOK);
 	sbtls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
 	sbtls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
 	sbtls_sw_cbc = counter_u64_alloc(M_WAITOK);
@@ -850,6 +854,7 @@ sbtls_set_tls_mode(struct socket *so, int mode)
 	else
 		error = sbtls_try_sw_tls(so, tls_new);
 	if (error) {
+		counter_u64_add(sbtls_switch_failed, 1);
 		sbtls_free(tls_new);
 		sbtls_free(tls);
 		INP_WLOCK(inp);
@@ -858,6 +863,7 @@ sbtls_set_tls_mode(struct socket *so, int mode)
 
 	error = sblock(&so->so_snd, SBL_WAIT);
 	if (error) {
+		counter_u64_add(sbtls_switch_failed, 1);
 		sbtls_free(tls_new);
 		sbtls_free(tls);
 		INP_WLOCK(inp);
@@ -869,6 +875,7 @@ sbtls_set_tls_mode(struct socket *so, int mode)
 	 * session.
 	 */
 	if (tls != so->so_snd.sb_tls_info) {
+		counter_u64_add(sbtls_switch_failed, 1);
 		sbunlock(&so->so_snd);
 		sbtls_free(tls_new);
 		sbtls_free(tls);
