@@ -989,6 +989,14 @@ send:
 			struct mbuf *n;
 			u_int new_len;
 
+			/*
+			 * Walk forward to the first mbuf with data we
+			 * want to send.
+			 */
+			while (moff >= mb->m_len) {
+				moff -= mb->m_len;
+				mb = mb->m_next;
+			}
 			if (mb->m_flags & M_NOMAP)
 				tls = mb->m_ext.ext_pgs->tls;
 			else
