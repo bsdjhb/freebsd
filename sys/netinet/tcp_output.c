@@ -1011,6 +1011,8 @@ send:
 					break;
 				new_len += n->m_len;
 			}
+			MPASS(new_len > 0 && new_len <= len);
+
 			if (new_len < len) {
 				/* XXX: KTR_CXGBE */
 				CTR3(KTR_SPARE3,
