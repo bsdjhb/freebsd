@@ -179,6 +179,8 @@ struct tlspcb {
 	int proto_ver;
 
 	bool open_pending;
+
+	int refs;
 };
 
 static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
@@ -223,14 +225,25 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 	tlsp->ctrlq = &sc->sge.ctrlq[pi->port_id];
 	tlsp->tid = -1;
 	tlsp->tx_key_addr = -1;
+	refcount_init(&tlsp->refs, 1);
 
 	return (tlsp);
 }
 
 static void
+hold_tlspcb(struct tlspcb *tlsp)
+{
+
+	refcount_acquire(&tlsp->refs);
+}
+
+void
 free_tlspcb(struct tlspcb *tlsp)
 {
 	struct adapter *sc = tlsp->vi->pi->adapter;
+
+	if (!refcount_release(&tlsp->refs))
+		return;
 
 	if (tlsp->l2te)
 		t4_l2t_release(tlsp->l2te);
@@ -472,9 +485,10 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 	len = sizeof(*wr) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 	if (tp->t_flags & TF_REQ_TSTMP)
 		len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-	m = alloc_wr_mbuf(len, M_NOWAIT);
+	m = alloc_wr_mbuf(len, M_NOWAIT, tlsp);
 	if (m == NULL)
 		return (ENOMEM);
+	hold_tlspcb(tlsp);
 
 	/* FW_ULPTX_WR */
 	wr = mtod(m, void *);
@@ -512,8 +526,10 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 
 	items[0] = m;
 	error = mp_ring_enqueue(txq->r, items, 1, 1);
-	if (error)
+	if (error) {
+		free_tlspcb(tlsp);
 		m_free(m);
+	}
 	return (error);
 }
 
@@ -910,9 +926,10 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
-        m = alloc_wr_mbuf(len, M_NOWAIT);
+        m = alloc_wr_mbuf(len, M_NOWAIT, tlsp);
 	if (m == NULL)
 		return (ENOMEM);
+	hold_tlspcb(tlsp);
 	kwr = mtod(m, void *);
 	memset(kwr, 0, len);
 
@@ -945,9 +962,10 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 	 */
 	items[0] = m;
 	error = mp_ring_enqueue(txq->r, items, 1, 1);
-	if (error)
+	if (error) {
+		free_tlspcb(tlsp);
 		m_free(m);
-	else
+	} else
 		CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
 	return (error);
 }

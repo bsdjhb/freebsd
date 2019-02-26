@@ -341,6 +341,7 @@ struct tx_desc {
 struct tx_sdesc {
 	struct mbuf *m;		/* m_nextpkt linked chain of frames */
 	uint8_t desc_used;	/* # of hardware descriptors used by the WR */
+	struct tlspcb *tlsp;
 };
 
 
@@ -1217,6 +1218,7 @@ int t6_sbtls_try(struct ifnet *, struct socket *, struct sbtls_session *);
 int t6_sbtls_parse_pkt(struct t6_sbtls_cipher *, struct mbuf *, int *, int *);
 int t6_sbtls_write_wr(struct t6_sbtls_cipher *, struct sge_txq *, void *,
     struct mbuf *, u_int, u_int);
+void free_tlspcb(struct tlspcb *);
 #endif
 
 #ifdef DEV_NETMAP
@@ -1251,7 +1253,7 @@ void t4_intr_err(void *);
 void t4_intr_evt(void *);
 void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
-struct mbuf *alloc_wr_mbuf(int, int);
+struct mbuf *alloc_wr_mbuf(int, int, struct tlspcb *);
 int parse_pkt(struct adapter *, struct vi_info *, struct mbuf **);
 void *start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *);
 void commit_wrq_wr(struct sge_wrq *, void *, struct wrq_cookie *);

@@ -2331,7 +2331,7 @@ needs_eo(struct mbuf *m)
  * single mbuf.
  */
 struct mbuf *
-alloc_wr_mbuf(int len, int how)
+alloc_wr_mbuf(int len, int how, struct tlspcb *tlsp)
 {
 	struct mbuf *m;
 
@@ -2344,6 +2344,11 @@ alloc_wr_mbuf(int len, int how)
 	if (m == NULL)
 		return (NULL);
 	m->m_pkthdr.len = len;
+#ifdef KERN_TLS
+	m->m_pkthdr.PH_per.ptr = tlsp;
+#else
+	MPASS(tlsp == NULL);
+#endif
 	m->m_len = len;
 	set_mbuf_cflags(m, MC_RAW_WR);
 	set_mbuf_len16(m, howmany(len, 16));
@@ -4893,6 +4898,7 @@ write_raw_wr(struct sge_txq *txq, void *wr, struct mbuf *m0, u_int available)
 	txsd = &txq->sdesc[eq->pidx];
 	txsd->m = m0;
 	txsd->desc_used = ndesc;
+	txsd->tlsp = m0->m_pkthdr.PH_per.ptr;
 
 	return (ndesc);
 }
@@ -5433,6 +5439,12 @@ reclaim_tx_descs(struct sge_txq *txq, u_int n)
 			m->m_nextpkt = NULL;
 			m_freem(m);
 		}
+#ifdef KERN_TLS
+		if (txsd->tlsp != NULL) {
+			free_tlspcb(txsd->tlsp);
+			txsd->tlsp = NULL;
+		}
+#endif
 		reclaimed += ndesc;
 		can_reclaim -= ndesc;
 		IDXINCR(eq->cidx, ndesc, eq->sidx);
