@@ -448,7 +448,7 @@ driver_suitable(const struct cryptocap *cap,
     const struct crypto_session_params *csp)
 {
 
-	if (cap->cc_alg[csp->csp_cipher_alg] == 0)
+	if (csp->csp_cipher_alg != 0 && cap->cc_alg[csp->csp_cipher_alg] == 0)
 		return (false);
 	if (csp->csp_auth_alg != 0 && cap->cc_alg[csp->csp_auth_alg] == 0)
 		return (false);
