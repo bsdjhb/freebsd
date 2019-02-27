@@ -385,9 +385,7 @@ cryptof_ioctl(
 	struct crypt_op copc;
 	struct crypt_kop kopc;
 #endif
-	bool use_gmac;
 
-	use_gmac = false;
 	switch (cmd) {
 	case CIOCGSESSION:
 	case CIOCGSESSION2:
@@ -467,7 +465,6 @@ cryptof_ioctl(
 				thash = &auth_hash_nist_gmac_aes_256;
 				break;
 			}
-			use_gmac = true;
 			break;
 
 		default:
@@ -529,7 +526,6 @@ cryptof_ioctl(
 				    __LINE__);
 				return (EINVAL);
 			}
-			use_gmac = true;
 			break;
 
 		case CRYPTO_AES_CCM_CBC_MAC:
@@ -655,10 +651,7 @@ cryptof_ioctl(
 		}
 
 		if (thash) {
-			if (use_gmac)
-				csp.csp_auth_alg = CRYPTO_AES_NIST_GMAC;
-			else
-				csp.csp_auth_alg = thash->type;
+			csp.csp_auth_alg = thash->type;
 			csp.csp_auth_klen = sop->mackeylen * 8;
 			if (sop->mackeylen > thash->keysize ||
 			    sop->mackeylen < 0) {
