@@ -1098,8 +1098,6 @@ swcr_setup_auth(struct swcr_session *ses,
 	case CRYPTO_SHA2_512_HMAC:
 	case CRYPTO_NULL_HMAC:
 	case CRYPTO_RIPEMD160_HMAC:
-		if (csp->csp_ivlen != 0)
-			return (EINVAL);
 		swa->sw_octx_len = axf->ctxsize;
 		swa->sw_octx = malloc(swa->sw_octx_len, M_CRYPTO_DATA,
 		    M_NOWAIT);
@@ -1118,8 +1116,6 @@ swcr_setup_auth(struct swcr_session *ses,
 		break;
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
-		if (csp->csp_ivlen != 0)
-			return (EINVAL);
 		swa->sw_octx_len = csp->csp_auth_klen / 8;
 		swa->sw_octx = malloc(swa->sw_octx_len, M_CRYPTO_DATA,
 		    M_NOWAIT);
@@ -1145,8 +1141,6 @@ swcr_setup_auth(struct swcr_session *ses,
 	case CRYPTO_SHA2_256:
 	case CRYPTO_SHA2_384:
 	case CRYPTO_SHA2_512:
-		if (csp->csp_ivlen != 0)
-			return (EINVAL);
 		axf->Init(swa->sw_ictx);
 		if (csp->csp_mode == CSP_MODE_DIGEST)
 			ses->swcr_process = swcr_authcompute;
@@ -1170,14 +1164,16 @@ swcr_setup_auth(struct swcr_session *ses,
 		if (csp->csp_mode == CSP_MODE_DIGEST)
 			ses->swcr_process = swcr_gmac;
 		break;
-	case CRYPTO_BLAKE2B:
-	case CRYPTO_BLAKE2S:
 	case CRYPTO_POLY1305:
-		if (csp->csp_ivlen != 0)
-			return (EINVAL);
 		if (csp->csp_auth_key == NULL)
 			return (EINVAL);
-
+		/* FALLTHROUGH */
+	case CRYPTO_BLAKE2B:
+	case CRYPTO_BLAKE2S:
+		/*
+		 * Blake2b and Blake2s support an optional key but do
+		 * not require one.
+		 */
 		axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
 		    csp->csp_auth_klen / 8);
 		axf->Init(swa->sw_ictx);
