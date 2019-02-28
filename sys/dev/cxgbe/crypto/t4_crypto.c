@@ -2235,6 +2235,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		auth_mode = SCMD_AUTH_MODE_NOP;
 		mk_size = 0;
 		partial_digest_len = 0;
+		break;
 	case CRYPTO_SHA1:
 	case CRYPTO_SHA1_HMAC:
 		auth_hash = &auth_hash_hmac_sha1;
@@ -2421,7 +2422,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 			s->gmac.hash_len = AES_GMAC_HASH_LEN;
 		else
 			s->gmac.hash_len = csp->csp_auth_mlen;
-		t4_init_gmac_hash(csp->csp_auth_key, csp->csp_auth_klen,
+		t4_init_gmac_hash(csp->csp_cipher_key, csp->csp_cipher_klen,
 		    s->gmac.ghash_h);
 	} else if (s->mode == CCM) {
 		if (csp->csp_auth_mlen == 0)
