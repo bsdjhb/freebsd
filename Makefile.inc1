@@ -68,6 +68,10 @@ LOCALBASE?=	/usr/local
 .error CROSS_TOOLCHAIN ${CROSS_TOOLCHAIN} not found
 .endif
 CROSSENV+=CROSS_TOOLCHAIN="${CROSS_TOOLCHAIN}"
+.else
+# Look for settings from base toolchain packages.
+.sinclude "/usr/share/toolchains/binutils.mk"
+.sinclude "/usr/share/toolchains/gcc.mk"
 .endif
 .if defined(CROSS_TOOLCHAIN_PREFIX)
 CROSS_COMPILER_PREFIX?=${CROSS_TOOLCHAIN_PREFIX}
