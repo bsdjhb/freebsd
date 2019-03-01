@@ -103,6 +103,20 @@ struct ifvlantrunk {
 	int		refcnt;
 };
 
+#ifdef RATELIMIT
+struct vlan_snd_tag {
+	struct m_snd_tag com;
+	struct m_snd_tag *tag;
+};
+
+static inline struct vlan_snd_tag *
+mst_to_vst(struct m_snd_tag *mst)
+{
+
+	return (__containerof(mst, struct vlan_snd_tag, com));
+}
+#endif
+
 /*
  * This macro provides a facility to iterate over every vlan on a trunk with
  * the assumption that none will be added/removed during iteration.
@@ -267,7 +281,11 @@ static	int vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t addr);
 #ifdef RATELIMIT
 static	int vlan_snd_tag_alloc(struct ifnet *,
     union if_snd_tag_alloc_params *, struct m_snd_tag **);
-static void vlan_snd_tag_free(struct m_snd_tag *);
+static	int vlan_snd_tag_modify(struct m_snd_tag *,
+    union if_snd_tag_modify_params *);
+static	int vlan_snd_tag_query(struct m_snd_tag *,
+    union if_snd_tag_query_params *);
+static	void vlan_snd_tag_free(struct m_snd_tag *);
 #endif
 static	void vlan_qflush(struct ifnet *ifp);
 static	int vlan_setflag(struct ifnet *ifp, int flag, int status,
@@ -1048,6 +1066,8 @@ vlan_clone_create(struct if_clone *ifc, char *name, size_t len, caddr_t params)
 	ifp->if_ioctl = vlan_ioctl;
 #ifdef RATELIMIT
 	ifp->if_snd_tag_alloc = vlan_snd_tag_alloc;
+	ifp->if_snd_tag_modify = vlan_snd_tag_modify;
+	ifp->if_snd_tag_query = vlan_snd_tag_query;
 	ifp->if_snd_tag_free = vlan_snd_tag_free;
 #endif
 	ifp->if_flags = VLAN_IFFLAGS;
@@ -1136,6 +1156,30 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	mcast = (m->m_flags & (M_MCAST | M_BCAST)) ? 1 : 0;
 
 	BPF_MTAP(ifp, m);
+
+#ifdef RATELIMIT
+	if (m->m_pkthdr.snd_tag != NULL) {
+		struct vlan_snd_tag *vst;
+
+		/* XXX: Temporary. */
+		if (ifp != m->m_pkthdr.snd_tag->ifp) {
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
+			NET_EPOCH_EXIT(et);
+			m_freem(m);
+			return (EAGAIN);
+		}
+
+		vst = mst_to_vst(m->m_pkthdr.snd_tag);
+		if (vst->tag->ifp != p) {
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
+			NET_EPOCH_EXIT(et);
+			m_freem(m);
+			return (EAGAIN);
+		}
+
+		m->m_pkthdr.snd_tag = vst->tag;
+	}
+#endif
 
 	/*
 	 * Do not run parent's if_transmit() if the parent is not up,
@@ -1928,18 +1972,93 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
     union if_snd_tag_alloc_params *params,
     struct m_snd_tag **ppmt)
 {
+	struct epoch_tracker et;
+	struct vlan_snd_tag *vst;
+	struct ifvlan *ifv;
+	struct ifnet *parent;
+	int error;
 
-	/* get trunk device */
-	ifp = vlan_trunkdev(ifp);
-	if (ifp == NULL || (ifp->if_capenable & IFCAP_TXRTLMT) == 0)
+	NET_EPOCH_ENTER(et);
+	ifv = ifp->if_softc;
+	if (ifv->ifv_trunk != NULL)
+		parent = PARENT(ifv);
+	else
+		parent = NULL;
+	if (parent == NULL || parent->if_snd_tag_alloc == NULL) {
+		NET_EPOCH_EXIT(et);
 		return (EOPNOTSUPP);
-	/* forward allocation request */
-	return (ifp->if_snd_tag_alloc(ifp, params, ppmt));
+	}
+	if_ref(parent);
+	NET_EPOCH_EXIT(et);
+
+	vst = malloc(sizeof(*vst), M_VLAN, M_NOWAIT);
+	if (vst == NULL) {
+		if_rele(parent);
+		return (ENOMEM);
+	}
+
+	vst->com.ifp = ifp;
+	error = parent->if_snd_tag_alloc(parent, params, &vst->tag);
+	if (error) {
+		free(vst, M_VLAN);
+		if_rele(parent);
+		return (error);
+	}
+
+	*ppmt = &vst->com;
+	return (0);
+}
+
+static int
+vlan_snd_tag_modify(struct m_snd_tag *mst,
+    union if_snd_tag_modify_params *params)
+{
+	struct epoch_tracker et;
+	struct vlan_snd_tag *vst;
+	struct ifvlan *ifv;
+
+	NET_EPOCH_ENTER(et);
+	vst = mst_to_vst(mst);
+	ifv = mst->ifp->if_softc;
+	if (ifv->ifv_trunk == NULL || PARENT(ifv) != vst->tag->ifp) {
+		NET_EPOCH_EXIT(et);
+		return (ENXIO);
+	}
+	NET_EPOCH_EXIT(et);
+
+	return (vst->tag->ifp->if_snd_tag_modify(vst->tag, params));
+}
+
+static int
+vlan_snd_tag_query(struct m_snd_tag *mst,
+    union if_snd_tag_query_params *params)
+{
+	struct epoch_tracker et;
+	struct vlan_snd_tag *vst;
+	struct ifvlan *ifv;
+
+	NET_EPOCH_ENTER(et);
+	vst = mst_to_vst(mst);
+	ifv = mst->ifp->if_softc;
+	if (ifv->ifv_trunk == NULL || PARENT(ifv) != vst->tag->ifp) {
+		NET_EPOCH_EXIT(et);
+		return (ENXIO);
+	}
+	NET_EPOCH_EXIT(et);
+
+	return (vst->tag->ifp->if_snd_tag_query(vst->tag, params));
 }
 
 static void
-vlan_snd_tag_free(struct m_snd_tag *tag)
+vlan_snd_tag_free(struct m_snd_tag *mst)
 {
-	tag->ifp->if_snd_tag_free(tag);
+	struct vlan_snd_tag *vst;
+	struct ifnet *ifp;
+
+	vst = mst_to_vst(mst);
+	ifp = vst->tag->ifp;
+	ifp->if_snd_tag_free(vst->tag);
+	if_rele(ifp);
+	free(vst, M_VLAN);
 }
 #endif

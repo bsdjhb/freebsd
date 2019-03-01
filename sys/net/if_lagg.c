@@ -95,6 +95,17 @@ static struct {
 	{0, NULL}
 };
 
+struct lagg_port_snd_tag {
+	struct m_snd_tag *tag;
+	CK_SLIST_ENTRY(lagg_port_snd_tag) link;
+};
+
+struct lagg_snd_tag {
+	struct m_snd_tag com;
+	union if_snd_tag_alloc_params params;
+	CK_SLIST_HEAD(, lagg_port_snd_tag) port_tags;
+};
+
 VNET_DEFINE(SLIST_HEAD(__trhead, lagg_softc), lagg_list); /* list of laggs */
 #define	V_lagg_list	VNET(lagg_list)
 VNET_DEFINE_STATIC(struct mtx, lagg_list_mtx);
@@ -134,6 +145,10 @@ static int	lagg_ioctl(struct ifnet *, u_long, caddr_t);
 static int	lagg_snd_tag_alloc(struct ifnet *,
 		    union if_snd_tag_alloc_params *,
 		    struct m_snd_tag **);
+static int	lagg_snd_tag_modify(struct m_snd_tag *,
+		    union if_snd_tag_modify_params *);
+static int	lagg_snd_tag_query(struct m_snd_tag *,
+		    union if_snd_tag_query_params *);
 static void	lagg_snd_tag_free(struct m_snd_tag *);
 #endif
 static int	lagg_setmulti(struct lagg_port *);
@@ -525,6 +540,8 @@ lagg_clone_create(struct if_clone *ifc, int unit, caddr_t params)
 	ifp->if_flags = IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST;
 #ifdef RATELIMIT
 	ifp->if_snd_tag_alloc = lagg_snd_tag_alloc;
+	ifp->if_snd_tag_modify = lagg_snd_tag_modify;
+	ifp->if_snd_tag_query = lagg_snd_tag_query;
 	ifp->if_snd_tag_free = lagg_snd_tag_free;
 #endif
 	ifp->if_capenable = ifp->if_capabilities = IFCAP_HWSTATS;
@@ -1537,63 +1554,197 @@ lagg_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 }
 
 #ifdef RATELIMIT
+static inline struct lagg_snd_tag *
+mst_to_lst(struct m_snd_tag *mst)
+{
+
+	return (__containerof(mst, struct lagg_snd_tag, com));
+}
+
+static struct lagg_port *
+lookup_snd_tag_port(struct ifnet *ifp, uint32_t flowid, uint32_t flowtype)
+{
+	struct lagg_softc *sc;
+	struct lagg_port *lp;
+	struct lagg_lb *lb;
+	uint32_t p;
+
+	sc = ifp->if_softc;
+
+	switch (sc->sc_proto) {
+	case LAGG_PROTO_FAILOVER:
+		return (lagg_link_active(sc, sc->sc_primary));
+	case LAGG_PROTO_LOADBALANCE:
+		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
+		    flowtype == M_HASHTYPE_NONE)
+			return (NULL);
+		p = flowid >> sc->flowid_shift;
+		p %= sc->sc_count;
+		lb = (struct lagg_lb *)sc->sc_psc;
+		lp = lb->lb_ports[p];
+		return (lagg_link_active(sc, lp));
+	case LAGG_PROTO_LACP:
+		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
+		    flowtype == M_HASHTYPE_NONE)
+			return (NULL);
+		return (lacp_select_tx_port_by_hash(sc, flowid));
+	default:
+		return (NULL);
+	}
+}
+
 static int
 lagg_snd_tag_alloc(struct ifnet *ifp,
     union if_snd_tag_alloc_params *params,
     struct m_snd_tag **ppmt)
 {
-	struct lagg_softc *sc = (struct lagg_softc *)ifp->if_softc;
+	struct lagg_port_snd_tag *lpst;
+	struct lagg_snd_tag *lst;
+	struct lagg_softc *sc;
 	struct lagg_port *lp;
-	struct lagg_lb *lb;
-	uint32_t p;
+	struct ifnet *lp_ifp;
+	int error;
+
+	sc = ifp->if_softc;
 
 	LAGG_RLOCK();
-	switch (sc->sc_proto) {
-	case LAGG_PROTO_FAILOVER:
-		lp = lagg_link_active(sc, sc->sc_primary);
-		break;
-	case LAGG_PROTO_LOADBALANCE:
-		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    params->hdr.flowtype == M_HASHTYPE_NONE) {
-			LAGG_RUNLOCK();
-			return (EOPNOTSUPP);
-		}
-		p = params->hdr.flowid >> sc->flowid_shift;
-		p %= sc->sc_count;
-		lb = (struct lagg_lb *)sc->sc_psc;
-		lp = lb->lb_ports[p];
-		lp = lagg_link_active(sc, lp);
-		break;
-	case LAGG_PROTO_LACP:
-		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    params->hdr.flowtype == M_HASHTYPE_NONE) {
-			LAGG_RUNLOCK();
-			return (EOPNOTSUPP);
-		}
-		lp = lacp_select_tx_port_by_hash(sc, params->hdr.flowid);
-		break;
-	default:
-		LAGG_RUNLOCK();
-		return (EOPNOTSUPP);
-	}
+	lp = lookup_snd_tag_port(ifp, params->hdr.flowid, params->hdr.flowtype);
 	if (lp == NULL) {
 		LAGG_RUNLOCK();
 		return (EOPNOTSUPP);
 	}
-	ifp = lp->lp_ifp;
-	LAGG_RUNLOCK();
-	if (ifp == NULL || ifp->if_snd_tag_alloc == NULL ||
-	    (ifp->if_capenable & IFCAP_TXRTLMT) == 0)
+	if (lp->lp_ifp == NULL || lp->lp_ifp->if_snd_tag_alloc == NULL) {
+		LAGG_RUNLOCK();
 		return (EOPNOTSUPP);
+	}
+	lp_ifp = lp->lp_ifp;
+	if_ref(lp_ifp);
+	LAGG_RUNLOCK();
 
-	/* forward allocation request */
-	return (ifp->if_snd_tag_alloc(ifp, params, ppmt));
+	lst = malloc(sizeof(*lst), M_LAGG, M_NOWAIT);
+	if (lst == NULL) {
+		if_rele(lp_ifp);
+		return (ENOMEM);
+	}
+	lpst = malloc(sizeof(*lpst), M_LAGG, M_NOWAIT);
+	if (lpst == NULL) {
+		free(lst, M_LAGG);
+		if_rele(lp_ifp);
+		return (ENOMEM);
+	}
+
+	lst->com.ifp = ifp;
+	lst->params = *params;
+	CK_SLIST_INIT(&lst->port_tags);
+
+	error = lp_ifp->if_snd_tag_alloc(lp_ifp, params, &lpst->tag);
+	if (error) {
+		if_rele(lp_ifp);
+		free(lpst, M_LAGG);
+		free(lst, M_LAGG);
+		return (error);
+	}
+
+	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
+
+	*ppmt = &lst->com;
+	return (0);
+}
+
+static int
+lagg_snd_tag_modify(struct m_snd_tag *mst,
+    union if_snd_tag_modify_params *params)
+{
+	struct lagg_port_snd_tag *lpst;
+	struct lagg_snd_tag *lst;
+	struct lagg_softc *sc;
+	int error, ret;
+
+	sc = mst->ifp->if_softc;
+	lst = mst_to_lst(mst);
+	LAGG_XLOCK(sc);
+	switch (lst->params.hdr.type) {
+	case IF_SND_TAG_TYPE_RATE_LIMIT:
+		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
+		break;
+	case IF_SND_TAG_TYPE_UNLIMITED:
+		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
+		break;
+	default:
+		LAGG_XUNLOCK(sc);
+		return (EOPNOTSUPP);
+	}
+	LAGG_XUNLOCK(sc);
+
+	error = 0;
+	LAGG_RLOCK();
+	CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
+		ret = lpst->tag->ifp->if_snd_tag_modify(lpst->tag, params);
+		if (ret != 0)
+			error = ret;
+	}
+	LAGG_RUNLOCK();
+	return (error);
+}
+
+static int
+lagg_snd_tag_query(struct m_snd_tag *mst,
+    union if_snd_tag_query_params *params)
+{
+	struct lagg_port_snd_tag *lpst;
+	struct lagg_snd_tag *lst;
+	struct lagg_port *lp;
+
+	lst = mst_to_lst(mst);
+	LAGG_RLOCK();
+	lp = lookup_snd_tag_port(mst->ifp, lst->params.hdr.flowid,
+	    lst->params.hdr.flowtype);
+	if (lp == NULL) {
+		LAGG_RUNLOCK();
+		return (ENXIO);
+	}
+	if (lp->lp_ifp == NULL) {
+		LAGG_RUNLOCK();
+		return (EOPNOTSUPP);
+	}
+
+	CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
+		if (lpst->tag->ifp == lp->lp_ifp)
+			break;
+	}
+	if (lpst == NULL) {
+		LAGG_RUNLOCK();
+		return (EOPNOTSUPP);
+	}
+	LAGG_RUNLOCK();
+
+	return (lpst->tag->ifp->if_snd_tag_query(lpst->tag, params));
 }
 
 static void
-lagg_snd_tag_free(struct m_snd_tag *tag)
+lagg_snd_tag_free(struct m_snd_tag *mst)
 {
-	tag->ifp->if_snd_tag_free(tag);
+	struct lagg_port_snd_tag *lpst;
+	struct lagg_snd_tag *lst;
+	struct ifnet *ifp;
+
+	/*
+	 * This should be the only reference to the tag at this point,
+	 * so no locking is needed for the port_tags list.
+	 *
+	 * XXX: Does this require epoch_call to free lpst?
+	 */
+	lst = mst_to_lst(mst);
+	while (!CK_SLIST_EMPTY(&lst->port_tags)) {
+		lpst = CK_SLIST_FIRST(&lst->port_tags);
+		CK_SLIST_REMOVE_HEAD(&lst->port_tags, link);
+
+		ifp = lpst->tag->ifp;
+		ifp->if_snd_tag_free(lpst->tag);
+		if_rele(ifp);
+		free(lpst, M_LAGG);
+	}
+	free(lst, M_LAGG);
 }
 
 #endif
@@ -1720,6 +1871,16 @@ lagg_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct lagg_softc *sc = (struct lagg_softc *)ifp->if_softc;
 	int error;
 
+#ifdef RATELIMIT
+	/* XXX: Temporary. */
+	if (m->m_pkthdr.snd_tag != NULL) {
+		if (ifp != m->m_pkthdr.snd_tag->ifp) {
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
+			m_freem(m);
+			return (EAGAIN);
+		}
+	}
+#endif
 	LAGG_RLOCK();
 	/* We need a Tx algorithm and at least one port */
 	if (sc->sc_proto == LAGG_PROTO_NONE || sc->sc_count == 0) {
@@ -1910,6 +2071,25 @@ int
 lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 {
 
+#ifdef RATELIMIT
+	if (m->m_pkthdr.snd_tag != NULL) {
+		struct lagg_port_snd_tag *lpst;
+		struct lagg_snd_tag *lst;
+
+		LAGG_RLOCK_ASSERT();
+		lst = mst_to_lst(m->m_pkthdr.snd_tag);
+		CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
+			if (lpst->tag->ifp == ifp) {
+				m->m_pkthdr.snd_tag = lpst->tag;
+				break;
+			}
+		}
+		if (lpst == NULL) {
+			m_freem(m);
+			return (EAGAIN);
+		}
+	}
+#endif
 	return (ifp->if_transmit)(ifp, m);
 }
 
