@@ -623,7 +623,7 @@ cryptof_ioctl(
 			csp.csp_mode = CSP_MODE_CIPHER;
 		else
 			csp.csp_mode = CSP_MODE_DIGEST;
-		
+
 		if (txform) {
 			csp.csp_cipher_alg = txform->type;
 			csp.csp_cipher_klen = sop->keylen * 8;
