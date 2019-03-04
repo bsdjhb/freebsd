@@ -583,7 +583,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	struct wrqe *wr;
 	char *dst;
 	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
-	u_int imm_len;
+	u_int imm_len, iv_len;
 	int dsgl_nsegs, dsgl_len;
 	int sgl_nsegs, sgl_len;
 	int error;
@@ -617,8 +617,13 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 
-	if (ccr_use_imm_data(transhdr_len, crp->crp_payload_length +
-	    s->blkcipher.iv_len)) {
+	/* For AES-XTS we send a 16-byte IV in the work request. */
+	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_XTS)
+		iv_len = AES_BLOCK_LEN;
+	else
+		iv_len = s->blkcipher.iv_len;
+
+	if (ccr_use_imm_data(transhdr_len, crp->crp_payload_length + iv_len)) {
 		imm_len = crp->crp_payload_length;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -633,7 +638,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
 	}
 
-	wr_len = roundup2(transhdr_len, 16) + s->blkcipher.iv_len +
+	wr_len = roundup2(transhdr_len, 16) + iv_len +
 	    roundup2(imm_len, 16) + sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
@@ -659,6 +664,9 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		crypto_copydata(crp, crp->crp_iv_start, s->blkcipher.iv_len,
 		    iv);
 
+	/* Zero the remainder of the IV for AES-XTS. */
+	memset(iv + s->blkcipher.iv_len, 0, iv_len - s->blkcipher.iv_len);
+
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, imm_len, sgl_len, 0,
 	    crp);
 
@@ -670,11 +678,10 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
 	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
 
-	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len +
-	    crp->crp_payload_length);
+	crwr->sec_cpl.pldlen = htobe32(iv_len + crp->crp_payload_length);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
-	    V_CPL_TX_SEC_PDU_CIPHERSTART(s->blkcipher.iv_len + 1) |
+	    V_CPL_TX_SEC_PDU_CIPHERSTART(iv_len + 1) |
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_HI(0));
 	crwr->sec_cpl.cipherstop_lo_authinsert = htobe32(
 	    V_CPL_TX_SEC_PDU_CIPHERSTOP_LO(0));
@@ -687,7 +694,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
 	    V_SCMD_AUTH_MODE(SCMD_AUTH_MODE_NOP) |
 	    V_SCMD_HMAC_CTRL(SCMD_HMAC_CTRL_NOP) |
-	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
+	    V_SCMD_IV_SIZE(iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
@@ -724,8 +731,8 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	dst = (char *)(crwr + 1) + kctx_len;
 	ccr_write_phys_dsgl(sc, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
-	memcpy(dst, iv, s->blkcipher.iv_len);
-	dst += s->blkcipher.iv_len;
+	memcpy(dst, iv, iv_len);
+	dst += iv_len;
 	if (imm_len != 0)
 		crypto_copydata(crp, crp->crp_payload_start,
 		    crp->crp_payload_length, dst);
@@ -777,7 +784,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	struct auth_hash *axf;
 	char *dst;
 	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
-	u_int hash_size_in_response, imm_len, iopad_size;
+	u_int hash_size_in_response, imm_len, iopad_size, iv_len;
 	u_int aad_start, aad_stop;
 	u_int auth_insert;
 	u_int cipher_start, cipher_stop;
@@ -796,7 +803,13 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    (crp->crp_payload_length % AES_BLOCK_LEN) != 0)
 		return (EINVAL);
 
-	if (crp->crp_aad_length + s->blkcipher.iv_len > MAX_AAD_LEN)
+	/* For AES-XTS we send a 16-byte IV in the work request. */
+	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_XTS)
+		iv_len = AES_BLOCK_LEN;
+	else
+		iv_len = s->blkcipher.iv_len;
+
+	if (crp->crp_aad_length + iv_len > MAX_AAD_LEN)
 		return (EINVAL);
 
 	axf = s->hmac.auth_hash;
@@ -816,18 +829,17 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	 * output buffer.
 	 */
 	if (op_type == CHCR_ENCRYPT_OP) {
-		if (s->blkcipher.iv_len + crp->crp_aad_length +
-		    crp->crp_payload_length + hash_size_in_response >
-		    MAX_REQUEST_SIZE)
+		if (iv_len + crp->crp_aad_length + crp->crp_payload_length +
+		    hash_size_in_response > MAX_REQUEST_SIZE)
 			return (EFBIG);
 	} else {
-		if (s->blkcipher.iv_len + crp->crp_aad_length +
-		    crp->crp_payload_length > MAX_REQUEST_SIZE)
+		if (iv_len + crp->crp_aad_length + crp->crp_payload_length >
+		    MAX_REQUEST_SIZE)
 			return (EFBIG);
 	}
 	sglist_reset(sc->sg_dsgl);
 	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_iv_aad, 0,
-	    s->blkcipher.iv_len + crp->crp_aad_length);
+	    iv_len + crp->crp_aad_length);
 	if (error)
 		return (error);
 	error = sglist_append_sglist(sc->sg_dsgl, sc->sg_crp,
@@ -880,7 +892,8 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		return (EFBIG);
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (ccr_use_imm_data(transhdr_len, s->blkcipher.iv_len + input_len)) {
+
+	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -913,13 +926,13 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	 * the auth section.
 	 */
 	if (crp->crp_aad_length != 0) {
-		aad_start = s->blkcipher.iv_len + 1;
+		aad_start = iv_len + 1;
 		aad_stop = aad_start + crp->crp_aad_length - 1;
 	} else {
 		aad_start = 0;
 		aad_stop = 0;
 	}
-	cipher_start = s->blkcipher.iv_len + crp->crp_aad_length + 1;
+	cipher_start = iv_len + crp->crp_aad_length + 1;
 	if (op_type == CHCR_DECRYPT_OP)
 		cipher_stop = hash_size_in_response;
 	else
@@ -929,8 +942,8 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	else
 		auth_insert = 0;
 
-	wr_len = roundup2(transhdr_len, 16) + s->blkcipher.iv_len +
-	    roundup2(imm_len, 16) + sgl_len;
+	wr_len = roundup2(transhdr_len, 16) + iv_len + roundup2(imm_len, 16) +
+	    sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
 	wr = alloc_wrqe(wr_len, sc->txq);
@@ -955,6 +968,9 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		crypto_copydata(crp, crp->crp_iv_start, s->blkcipher.iv_len,
 		    iv);
 
+	/* Zero the remainder of the IV for AES-XTS. */
+	memset(iv + s->blkcipher.iv_len, 0, iv_len - s->blkcipher.iv_len);
+
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, imm_len, sgl_len,
 	    op_type == CHCR_DECRYPT_OP ? hash_size_in_response : 0, crp);
 
@@ -966,7 +982,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_CPL_TX_SEC_PDU_CPLLEN(2) | V_CPL_TX_SEC_PDU_PLACEHOLDER(0) |
 	    V_CPL_TX_SEC_PDU_IVINSRTOFST(1));
 
-	crwr->sec_cpl.pldlen = htobe32(s->blkcipher.iv_len + input_len);
+	crwr->sec_cpl.pldlen = htobe32(iv_len + input_len);
 
 	crwr->sec_cpl.aadstart_cipherstop_hi = htobe32(
 	    V_CPL_TX_SEC_PDU_AADSTART(aad_start) |
@@ -989,7 +1005,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    V_SCMD_CIPH_MODE(s->blkcipher.cipher_mode) |
 	    V_SCMD_AUTH_MODE(s->hmac.auth_mode) |
 	    V_SCMD_HMAC_CTRL(hmac_ctrl) |
-	    V_SCMD_IV_SIZE(s->blkcipher.iv_len / 2) |
+	    V_SCMD_IV_SIZE(iv_len / 2) |
 	    V_SCMD_NUM_IVS(0));
 	crwr->sec_cpl.ivgen_hdrlen = htobe32(
 	    V_SCMD_IV_GEN_CTRL(0) |
@@ -1029,8 +1045,8 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	dst = (char *)(crwr + 1) + kctx_len;
 	ccr_write_phys_dsgl(sc, dst, dsgl_nsegs);
 	dst += sizeof(struct cpl_rx_phys_dsgl) + dsgl_len;
-	memcpy(dst, iv, s->blkcipher.iv_len);
-	dst += s->blkcipher.iv_len;
+	memcpy(dst, iv, iv_len);
+	dst += iv_len;
 	if (imm_len != 0) {
 		if (crp->crp_aad_length != 0) {
 			crypto_copydata(crp, crp->crp_aad_start,
@@ -2316,7 +2332,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		break;
 	case CRYPTO_AES_XTS:
 		cipher_mode = SCMD_CIPH_MODE_AES_XTS;
-		if (iv_len != AES_BLOCK_LEN)
+		if (iv_len != AES_XTS_IV_LEN)
 			return (EINVAL);
 		break;
 	case CRYPTO_AES_CCM_16:
