@@ -423,6 +423,11 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 
 	bcopy(sw->sw_ictx, &ctx, axf->ctxsize);
 
+	err = crypto_apply(crp, crp->crp_aad_start, crp->crp_aad_length,
+	    (int (*)(void *, void *, unsigned int))axf->Update, &ctx);
+	if (err)
+		return err;
+
 	err = crypto_apply(crp, crp->crp_payload_start, crp->crp_payload_length,
 	    (int (*)(void *, void *, unsigned int))axf->Update, &ctx);
 	if (err)
