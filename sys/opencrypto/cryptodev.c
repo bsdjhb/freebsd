@@ -272,6 +272,7 @@ struct csession {
 	struct enc_xform *txform;
 	int		hashsize;
 	int		ivsize;
+	int		mode;
 
 	caddr_t		key;
 	caddr_t		mackey;
@@ -1111,8 +1112,10 @@ cryptodev_aead(
 
 	if (caead->op == COP_ENCRYPT)
 		crp->crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
-	else
+	else if (cse->mode == CSP_MODE_AEAD)
 		crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
+	else
+		crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 
 	crp->crp_ilen = caead->aadlen + caead->len + cse->hashsize;
 	crp->crp_flags = CRYPTO_F_CBIMM | (caead->flags & COP_F_BATCH);
@@ -1461,6 +1464,7 @@ csecreate(struct fcrypt *fcr, crypto_session_t cses,
 	refcount_init(&cse->refs, 1);
 	cse->key = csp->csp_cipher_key;
 	cse->mackey = csp->csp_auth_key;
+	cse->mode = csp->csp_mode;
 	cse->cses = cses;
 	cse->txform = txform;
 	if (thash != NULL)
