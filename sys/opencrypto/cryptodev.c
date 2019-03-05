@@ -1126,6 +1126,15 @@ cryptodev_aead(
 	crp->crp_opaque = cod;
 
 	if (caead->iv) {
+		/*
+		 * Permit a 16-byte IV for AES-XTS, but only use the
+		 * first 8 bytes as a block number.
+		 */
+		if (cse->mode == CSP_MODE_ETA &&
+		    caead->ivlen == AES_BLOCK_LEN &&
+		    cse->ivsize == AES_XTS_IV_LEN)
+			caead->ivlen = AES_XTS_IV_LEN;
+
 		if (caead->ivlen != cse->ivsize) {
 			error = EINVAL;
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
