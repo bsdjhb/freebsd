@@ -1249,12 +1249,19 @@ crp_sanity(struct cryptop *crp)
 	    ("invalid payload start"));
 	KASSERT(crp->crp_payload_start + crp->crp_payload_length <=
 	    crp->crp_ilen, ("payload outside input length"));
-	KASSERT(crp->crp_digest_start == 0 ||
-	    crp->crp_digest_start < crp->crp_ilen,
-	    ("invalid digest start"));
-	/* XXX: For the mlen == 0 case this check isn't perfect. */
-	KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <= crp->crp_ilen,
-	    ("digest outside input length"));
+	if (csp->csp_mode == CSP_MODE_DIGEST ||
+	    csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA) {
+		KASSERT(crp->crp_digest_start == 0 ||
+		    crp->crp_digest_start < crp->crp_ilen,
+		    ("invalid digest start"));
+		/* XXX: For the mlen == 0 case this check isn't perfect. */
+		KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <=
+		    crp->crp_ilen,
+		    ("digest outside input length"));
+	} else {
+		KASSERT(crp->crp_digest_start == 0,
+		    ("non-zero digest start for request without a digest"));
+	}
 	KASSERT(crp->crp_cipher_key == NULL || crp->crp_cipher_klen != 0,
 	    ("new cipher key with zero length"));
 	KASSERT(crp->crp_auth_key == NULL || crp->crp_auth_klen != 0,
