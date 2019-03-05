@@ -866,7 +866,7 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 		if (SAV_ISGCM(sav))
 			crp->crp_aad_length = 8; /* RFC4106 5, SPI + SN */
 		else
-			crp->crp_aad_length = m->m_pkthdr.len - (skip + alen);
+			crp->crp_aad_length = hlen;
 		crp->crp_digest_start = m->m_pkthdr.len - alen;
 	}
 
