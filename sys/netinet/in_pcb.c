@@ -3361,11 +3361,15 @@ in_pcboutput_txrtlmt(struct inpcb *inp, struct ifnet *ifp, struct mbuf *mb)
 	max_pacing_rate = socket->so_max_pacing_rate;
 
 	/*
-	 * If the existing send tag is for the wrong interface due
-	 * to a route change, first drop the existing tag.
+	 * If the existing send tag is for the wrong interface due to
+	 * a route change, first drop the existing tag.  Set the
+	 * CHANGED flag so that we will keep trying to allocate a new
+	 * tag if we fail to allocate one this time.
 	 */
-	if (inp->inp_snd_tag != NULL && inp->inp_snd_tag->ifp != ifp)
+	if (inp->inp_snd_tag != NULL && inp->inp_snd_tag->ifp != ifp) {
 		in_pcbdetach_txrtlmt(inp);
+		inp->inp_flags2 |= INP_RATE_LIMIT_CHANGED;
+	}
 
 	/*
 	 * NOTE: When attaching to a network interface a reference is
