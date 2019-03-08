@@ -692,6 +692,11 @@ sendit:
 		} else {
 			m->m_pkthdr.snd_tag = NULL;
 		}
+		if (m->m_pkthdr.snd_tag != NULL &&
+		    m->m_pkthdr.snd_tag->ifp != ifp) {
+			in_pcboutput_eagain(inp);
+			goto done;
+		}
 #endif
 		error = (*ifp->if_output)(ifp, m,
 		    (const struct sockaddr *)gw, ro);

@@ -966,6 +966,11 @@ passout:
 		} else {
 			m->m_pkthdr.snd_tag = NULL;
 		}
+		if (m->m_pkthdr.snd_tag != NULL &&
+		    m->m_pkthdr.snd_tag->ifp != ifp) {
+			in_pcboutput_eagain(inp);
+			goto done;
+		}
 #endif
 		error = nd6_output_ifp(ifp, origifp, m, dst,
 		    (struct route *)ro);
