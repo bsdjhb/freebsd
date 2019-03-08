@@ -959,17 +959,25 @@ passout:
 		}
 #ifdef RATELIMIT
 		if (inp != NULL) {
-			if (inp->inp_flags2 & INP_RATE_LIMIT_CHANGED)
+			if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+			    (inp->inp_snd_tag != NULL &&
+			    inp->inp_snd_tag->ifp != ifp))
 				in_pcboutput_txrtlmt(inp, ifp, m);
+
+			/*
+			 * NB: in_pcboutput_txrlmt might fail to
+			 * refresh the tag if the lock upgrade fails.
+			 */
+			if (inp->inp_snd_tag->ifp != ifp) {
+				in_pcboutput_eagain(inp);
+				error = EAGAIN;
+				goto done;
+			}
+
 			/* stamp send tag on mbuf */
 			m->m_pkthdr.snd_tag = inp->inp_snd_tag;
 		} else {
 			m->m_pkthdr.snd_tag = NULL;
-		}
-		if (m->m_pkthdr.snd_tag != NULL &&
-		    m->m_pkthdr.snd_tag->ifp != ifp) {
-			in_pcboutput_eagain(inp);
-			goto done;
 		}
 #endif
 		error = nd6_output_ifp(ifp, origifp, m, dst,
