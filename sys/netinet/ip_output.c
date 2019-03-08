@@ -695,10 +695,10 @@ sendit:
 			 * refresh the tag if the lock upgrade fails.
 			 */
 			if (inp->inp_snd_tag->ifp != ifp) {
-				in_pcboutput_eagain(inp);
 				error = EAGAIN;
 				goto done;
 			}
+
 			/* stamp send tag on mbuf */
 			m->m_pkthdr.snd_tag = inp->inp_snd_tag;
 		} else {
@@ -707,11 +707,6 @@ sendit:
 #endif
 		error = (*ifp->if_output)(ifp, m,
 		    (const struct sockaddr *)gw, ro);
-#ifdef RATELIMIT
-		/* check for route change */
-		if (error == EAGAIN)
-			in_pcboutput_eagain(inp);
-#endif
 		goto done;
 	}
 

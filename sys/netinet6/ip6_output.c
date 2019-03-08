@@ -969,7 +969,6 @@ passout:
 			 * refresh the tag if the lock upgrade fails.
 			 */
 			if (inp->inp_snd_tag->ifp != ifp) {
-				in_pcboutput_eagain(inp);
 				error = EAGAIN;
 				goto done;
 			}
@@ -982,11 +981,6 @@ passout:
 #endif
 		error = nd6_output_ifp(ifp, origifp, m, dst,
 		    (struct route *)ro);
-#ifdef RATELIMIT
-		/* check for route change */
-		if (error == EAGAIN)
-			in_pcboutput_eagain(inp);
-#endif
 		goto done;
 	}
 
