@@ -103,6 +103,7 @@ struct lagg_port_snd_tag {
 struct lagg_snd_tag {
 	struct m_snd_tag com;
 	union if_snd_tag_alloc_params params;
+	struct mtx lock;
 	CK_SLIST_HEAD(, lagg_port_snd_tag) port_tags;
 };
 
@@ -1645,6 +1646,7 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 		return (error);
 	}
 
+	mtx_init(&lst->lock, "lagg snd tag", NULL, MTX_DEF);
 	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
 
 	*ppmt = &lst->com;
@@ -1662,7 +1664,7 @@ lagg_snd_tag_modify(struct m_snd_tag *mst,
 
 	sc = mst->ifp->if_softc;
 	lst = mst_to_lst(mst);
-	LAGG_XLOCK(sc);
+	mtx_lock(&lst->lock);
 	switch (lst->params.hdr.type) {
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
 		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
@@ -1671,10 +1673,10 @@ lagg_snd_tag_modify(struct m_snd_tag *mst,
 		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
 		break;
 	default:
-		LAGG_XUNLOCK(sc);
+		mtx_unlock(&lst->lock);
 		return (EOPNOTSUPP);
 	}
-	LAGG_XUNLOCK(sc);
+	mtx_unlock(&lst->lock);
 
 	error = 0;
 	LAGG_RLOCK();
@@ -1744,6 +1746,7 @@ lagg_snd_tag_free(struct m_snd_tag *mst)
 		if_rele(ifp);
 		free(lpst, M_LAGG);
 	}
+	mtx_destroy(&lst->lock);
 	free(lst, M_LAGG);
 }
 
