@@ -1594,6 +1594,52 @@ lookup_snd_tag_port(struct ifnet *ifp, uint32_t flowid, uint32_t flowtype)
 	}
 }
 
+static void
+lagg_snd_tag_free_port(struct lagg_port_snd_tag *lpst)
+{
+	struct ifnet *ifp;
+
+	ifp = lpst->tag->ifp;
+	ifp->if_snd_tag_free(lpst->tag);
+	if_rele(ifp);
+	free(lpst, M_LAGG);
+}
+
+static struct lagg_port_snd_tag *
+lagg_snd_tag_alloc_port(struct lagg_snd_tag *lst, struct ifnet *ifp)
+{
+	struct lagg_port_snd_tag *lpst, *lpst2;
+	int error;
+
+	LAGG_RLOCK_ASSERT();
+	
+	lpst = malloc(sizeof(*lpst), M_LAGG, M_NOWAIT);
+	if (lpst == NULL)
+		return (NULL);
+
+	mtx_lock(&lst->lock);
+	error = ifp->if_snd_tag_alloc(ifp, &lst->params, &lpst->tag);
+	if (error) {
+		mtx_unlock(&lst->lock);
+		free(lpst, M_LAGG);
+		return (NULL);
+	}
+	if_ref(ifp);
+
+	CK_SLIST_FOREACH(lpst2, &lst->port_tags, link) {
+		if (lpst2->tag->ifp == ifp) {
+			mtx_unlock(&lst->lock);
+			lagg_snd_tag_free_port(lpst);
+			return (lpst2);
+		}
+	}
+
+	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
+	mtx_unlock(&lst->lock);
+
+	return (lpst);
+}
+
 static int
 lagg_snd_tag_alloc(struct ifnet *ifp,
     union if_snd_tag_alloc_params *params,
@@ -1728,23 +1774,20 @@ lagg_snd_tag_free(struct m_snd_tag *mst)
 {
 	struct lagg_port_snd_tag *lpst;
 	struct lagg_snd_tag *lst;
-	struct ifnet *ifp;
 
 	/*
 	 * This should be the only reference to the tag at this point,
 	 * so no locking is needed for the port_tags list.
 	 *
-	 * XXX: Does this require epoch_call to free lpst?
+	 * XXX: Does this require epoch_call to free lpst?  I think
+	 * it does not because the tag only gets freed once the socket
+	 * is torn down.
 	 */
 	lst = mst_to_lst(mst);
 	while (!CK_SLIST_EMPTY(&lst->port_tags)) {
 		lpst = CK_SLIST_FIRST(&lst->port_tags);
 		CK_SLIST_REMOVE_HEAD(&lst->port_tags, link);
-
-		ifp = lpst->tag->ifp;
-		ifp->if_snd_tag_free(lpst->tag);
-		if_rele(ifp);
-		free(lpst, M_LAGG);
+		lagg_snd_tag_free_port(lpst);
 	}
 	mtx_destroy(&lst->lock);
 	free(lst, M_LAGG);
@@ -1875,14 +1918,8 @@ lagg_transmit(struct ifnet *ifp, struct mbuf *m)
 	int error;
 
 #ifdef RATELIMIT
-	/* XXX: Temporary. */
-	if (m->m_pkthdr.snd_tag != NULL) {
-		if (ifp != m->m_pkthdr.snd_tag->ifp) {
-			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
-			m_freem(m);
-			return (EAGAIN);
-		}
-	}
+	if (m->m_pkthdr.snd_tag != NULL)
+		MPASS(ifp == m->m_pkthdr.snd_tag->ifp);
 #endif
 	LAGG_RLOCK();
 	/* We need a Tx algorithm and at least one port */
@@ -2082,15 +2119,16 @@ lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 		LAGG_RLOCK_ASSERT();
 		lst = mst_to_lst(m->m_pkthdr.snd_tag);
 		CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
-			if (lpst->tag->ifp == ifp) {
-				m->m_pkthdr.snd_tag = lpst->tag;
+			if (lpst->tag->ifp == ifp)
 				break;
-			}
 		}
+		if (lpst == NULL)
+			lpst = lagg_snd_tag_alloc_port(lst, ifp);
 		if (lpst == NULL) {
 			m_freem(m);
 			return (EAGAIN);
 		}
+		m->m_pkthdr.snd_tag = lpst->tag;
 	}
 #endif
 	return (ifp->if_transmit)(ifp, m);
