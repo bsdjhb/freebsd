@@ -1163,14 +1163,6 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct vlan_snd_tag *vst
 ;		struct m_snd_tag *mst;
 
-		/* XXX: Temporary. */
-		if (ifp != m->m_pkthdr.snd_tag->ifp) {
-			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
-			NET_EPOCH_EXIT(et);
-			m_freem(m);
-			return (EAGAIN);
-		}
-
 		mst = m->m_pkthdr.snd_tag;
 		vst = mst_to_vst(mst);
 		if (vst->tag->ifp != p) {
