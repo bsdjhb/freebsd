@@ -106,6 +106,7 @@ struct ifvlantrunk {
 #ifdef RATELIMIT
 struct vlan_snd_tag {
 	struct m_snd_tag com;
+	union if_snd_tag_alloc_params params;
 	struct m_snd_tag *tag;
 };
 
@@ -1159,7 +1160,8 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 
 #ifdef RATELIMIT
 	if (m->m_pkthdr.snd_tag != NULL) {
-		struct vlan_snd_tag *vst;
+		struct vlan_snd_tag *vst
+;		struct m_snd_tag *mst;
 
 		/* XXX: Temporary. */
 		if (ifp != m->m_pkthdr.snd_tag->ifp) {
@@ -1169,7 +1171,8 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 			return (EAGAIN);
 		}
 
-		vst = mst_to_vst(m->m_pkthdr.snd_tag);
+		mst = m->m_pkthdr.snd_tag;
+		vst = mst_to_vst(mst);
 		if (vst->tag->ifp != p) {
 			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 			NET_EPOCH_EXIT(et);
@@ -1177,7 +1180,8 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 			return (EAGAIN);
 		}
 
-		m->m_pkthdr.snd_tag = vst->tag;
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(vst->tag);
+		m_snd_tag_rele(mst);
 	}
 #endif
 
@@ -1997,13 +2001,14 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
 		return (ENOMEM);
 	}
 
-	vst->com.ifp = ifp;
 	error = parent->if_snd_tag_alloc(parent, params, &vst->tag);
+	if_rele(parent);
 	if (error) {
 		free(vst, M_VLAN);
-		if_rele(parent);
 		return (error);
 	}
+
+	m_snd_tag_init(&vst->com, ifp);
 
 	*ppmt = &vst->com;
 	return (0);
@@ -2053,12 +2058,9 @@ static void
 vlan_snd_tag_free(struct m_snd_tag *mst)
 {
 	struct vlan_snd_tag *vst;
-	struct ifnet *ifp;
 
 	vst = mst_to_vst(mst);
-	ifp = vst->tag->ifp;
-	ifp->if_snd_tag_free(vst->tag);
-	if_rele(ifp);
+	m_snd_tag_rele(vst->tag);
 	free(vst, M_VLAN);
 }
 #endif

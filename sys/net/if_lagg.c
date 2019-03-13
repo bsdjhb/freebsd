@@ -1597,11 +1597,8 @@ lookup_snd_tag_port(struct ifnet *ifp, uint32_t flowid, uint32_t flowtype)
 static void
 lagg_snd_tag_free_port(struct lagg_port_snd_tag *lpst)
 {
-	struct ifnet *ifp;
 
-	ifp = lpst->tag->ifp;
-	ifp->if_snd_tag_free(lpst->tag);
-	if_rele(ifp);
+	m_snd_tag_rele(lpst->tag);
 	free(lpst, M_LAGG);
 }
 
@@ -1624,7 +1621,6 @@ lagg_snd_tag_alloc_port(struct lagg_snd_tag *lst, struct ifnet *ifp)
 		free(lpst, M_LAGG);
 		return (NULL);
 	}
-	if_ref(ifp);
 
 	CK_SLIST_FOREACH(lpst2, &lst->port_tags, link) {
 		if (lpst2->tag->ifp == ifp) {
@@ -1680,19 +1676,18 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 		return (ENOMEM);
 	}
 
-	lst->com.ifp = ifp;
-	lst->params = *params;
-	CK_SLIST_INIT(&lst->port_tags);
-
 	error = lp_ifp->if_snd_tag_alloc(lp_ifp, params, &lpst->tag);
+	if_rele(lp_ifp);
 	if (error) {
-		if_rele(lp_ifp);
 		free(lpst, M_LAGG);
 		free(lst, M_LAGG);
 		return (error);
 	}
 
+	m_snd_tag_init(&lst->com, ifp);
+	lst->params = *params;
 	mtx_init(&lst->lock, "lagg snd tag", NULL, MTX_DEF);
+	CK_SLIST_INIT(&lst->port_tags);
 	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
 
 	*ppmt = &lst->com;
@@ -2115,9 +2110,11 @@ lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 	if (m->m_pkthdr.snd_tag != NULL) {
 		struct lagg_port_snd_tag *lpst;
 		struct lagg_snd_tag *lst;
+		struct m_snd_tag *mst;
 
 		LAGG_RLOCK_ASSERT();
-		lst = mst_to_lst(m->m_pkthdr.snd_tag);
+		mst = m->m_pkthdr.snd_tag;
+		lst = mst_to_lst(mst);
 		CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
 			if (lpst->tag->ifp == ifp)
 				break;
@@ -2128,7 +2125,8 @@ lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 			m_freem(m);
 			return (EAGAIN);
 		}
-		m->m_pkthdr.snd_tag = lpst->tag;
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(lpst->tag);
+		m_snd_tag_rele(mst);
 	}
 #endif
 	return (ifp->if_transmit)(ifp, m);

@@ -3274,13 +3274,6 @@ in_pcbattach_txrtlmt(struct inpcb *inp, struct ifnet *ifp,
 		error = EOPNOTSUPP;
 	} else {
 		error = ifp->if_snd_tag_alloc(ifp, &params, &inp->inp_snd_tag);
-
-		/*
-		 * At success increment the refcount on
-		 * the send tag's network interface:
-		 */
-		if (error == 0)
-			if_ref(inp->inp_snd_tag->ifp);
 	}
 	return (error);
 }
@@ -3293,7 +3286,6 @@ void
 in_pcbdetach_txrtlmt(struct inpcb *inp)
 {
 	struct m_snd_tag *mst;
-	struct ifnet *ifp;
 
 	INP_WLOCK_ASSERT(inp);
 
@@ -3303,19 +3295,7 @@ in_pcbdetach_txrtlmt(struct inpcb *inp)
 	if (mst == NULL)
 		return;
 
-	ifp = mst->ifp;
-	if (ifp == NULL)
-		return;
-
-	/*
-	 * If the device was detached while we still had reference(s)
-	 * on the ifp, we assume if_snd_tag_free() was replaced with
-	 * stubs.
-	 */
-	ifp->if_snd_tag_free(mst);
-
-	/* release reference count on network interface */
-	if_rele(ifp);
+	m_snd_tag_rele(mst);
 }
 
 /*

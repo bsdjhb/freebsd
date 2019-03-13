@@ -46,7 +46,11 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/protosw.h>
 #include <sys/smp.h>
+#include <sys/socket.h>
 #include <sys/sysctl.h>
+
+#include <net/if.h>
+#include <net/if_var.h>
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -1148,4 +1152,23 @@ m_freem(struct mbuf *mb)
 	MBUF_PROBE1(m__freem, mb);
 	while (mb != NULL)
 		mb = m_free(mb);
+}
+
+void
+m_snd_tag_init(struct m_snd_tag *mst, struct ifnet *ifp)
+{
+
+	if_ref(ifp);
+	mst->ifp = ifp;
+	refcount_init(&mst->refcount, 1);
+}
+
+void
+m_snd_tag_destroy(struct m_snd_tag *mst)
+{
+	struct ifnet *ifp;
+
+	ifp = mst->ifp;
+	ifp->if_snd_tag_free(mst);
+	if_rele(ifp);
 }

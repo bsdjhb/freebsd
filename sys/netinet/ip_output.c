@@ -223,7 +223,8 @@ ip_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 			return (EAGAIN);
 
 		/* stamp send tag on mbuf */
-		m->m_pkthdr.snd_tag = inp->inp_snd_tag;
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
+		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	} else {
 		m->m_pkthdr.snd_tag = NULL;
 	}
