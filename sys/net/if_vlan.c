@@ -2009,19 +2009,9 @@ static int
 vlan_snd_tag_modify(struct m_snd_tag *mst,
     union if_snd_tag_modify_params *params)
 {
-	struct epoch_tracker et;
 	struct vlan_snd_tag *vst;
-	struct ifvlan *ifv;
 
-	NET_EPOCH_ENTER(et);
 	vst = mst_to_vst(mst);
-	ifv = mst->ifp->if_softc;
-	if (ifv->ifv_trunk == NULL || PARENT(ifv) != vst->tag->ifp) {
-		NET_EPOCH_EXIT(et);
-		return (ENXIO);
-	}
-	NET_EPOCH_EXIT(et);
-
 	return (vst->tag->ifp->if_snd_tag_modify(vst->tag, params));
 }
 
@@ -2029,19 +2019,9 @@ static int
 vlan_snd_tag_query(struct m_snd_tag *mst,
     union if_snd_tag_query_params *params)
 {
-	struct epoch_tracker et;
 	struct vlan_snd_tag *vst;
-	struct ifvlan *ifv;
 
-	NET_EPOCH_ENTER(et);
 	vst = mst_to_vst(mst);
-	ifv = mst->ifp->if_softc;
-	if (ifv->ifv_trunk == NULL || PARENT(ifv) != vst->tag->ifp) {
-		NET_EPOCH_EXIT(et);
-		return (ENXIO);
-	}
-	NET_EPOCH_EXIT(et);
-
 	return (vst->tag->ifp->if_snd_tag_query(vst->tag, params));
 }
 
