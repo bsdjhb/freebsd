@@ -3361,7 +3361,8 @@ in_pcboutput_txrtlmt(struct inpcb *inp, struct ifnet *ifp, struct mbuf *mb)
 	if (max_pacing_rate == 0 && inp->inp_snd_tag == NULL) {
 		error = 0;
 	} else if (!(ifp->if_capenable & IFCAP_TXRTLMT)) {
-		MPASS(inp->inp_snd_tag == NULL);
+		if (inp->inp_snd_tag != NULL)
+			in_pcbdetach_txrtlmt(inp);
 		error = 0;
 	} else if (inp->inp_snd_tag == NULL) {
 		/*
