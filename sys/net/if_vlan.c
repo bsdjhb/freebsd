@@ -106,7 +106,6 @@ struct ifvlantrunk {
 #ifdef RATELIMIT
 struct vlan_snd_tag {
 	struct m_snd_tag com;
-	union if_snd_tag_alloc_params params;
 	struct m_snd_tag *tag;
 };
 
@@ -1160,8 +1159,8 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 
 #ifdef RATELIMIT
 	if (m->m_pkthdr.snd_tag != NULL) {
-		struct vlan_snd_tag *vst
-;		struct m_snd_tag *mst;
+		struct vlan_snd_tag *vst;
+		struct m_snd_tag *mst;
 
 		mst = m->m_pkthdr.snd_tag;
 		vst = mst_to_vst(mst);
