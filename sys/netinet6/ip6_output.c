@@ -992,6 +992,10 @@ passout:
 #endif
 		error = nd6_output_ifp(ifp, origifp, m, dst,
 		    (struct route *)ro);
+#ifdef RATELIMIT
+		if (error == EAGAIN)
+			in_pcboutput_eagain(inp);
+#endif
 		goto done;
 	}
 
@@ -1096,6 +1100,10 @@ sendorfree:
 			}
 			error = nd6_output_ifp(ifp, origifp, m, dst,
 			    (struct route *)ro);
+#ifdef RATELIMIT
+			if (error == EAGAIN)
+				in_pcboutput_eagain(inp);
+#endif
 		} else
 			m_freem(m);
 	}

@@ -718,6 +718,10 @@ sendit:
 #endif
 		error = (*ifp->if_output)(ifp, m,
 		    (const struct sockaddr *)gw, ro);
+#ifdef RATELIMIT
+		if (error == EAGAIN)
+			in_pcboutput_eagain(inp);
+#endif
 		goto done;
 	}
 
@@ -759,6 +763,10 @@ sendit:
 			    mtod(m, struct ip *), NULL);
 			error = (*ifp->if_output)(ifp, m,
 			    (const struct sockaddr *)gw, ro);
+#ifdef RATELIMIT
+			if (error == EAGAIN)
+				in_pcboutput_eagain(inp);
+#endif
 		} else
 			m_freem(m);
 	}
