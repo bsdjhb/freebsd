@@ -993,6 +993,7 @@ passout:
 		error = nd6_output_ifp(ifp, origifp, m, dst,
 		    (struct route *)ro);
 #ifdef RATELIMIT
+		/* check for route change */
 		if (error == EAGAIN)
 			in_pcboutput_eagain(inp);
 #endif
@@ -1101,6 +1102,7 @@ sendorfree:
 			error = nd6_output_ifp(ifp, origifp, m, dst,
 			    (struct route *)ro);
 #ifdef RATELIMIT
+			/* check for route change */
 			if (error == EAGAIN)
 				in_pcboutput_eagain(inp);
 #endif

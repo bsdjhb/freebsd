@@ -719,6 +719,7 @@ sendit:
 		error = (*ifp->if_output)(ifp, m,
 		    (const struct sockaddr *)gw, ro);
 #ifdef RATELIMIT
+		/* check for route change */
 		if (error == EAGAIN)
 			in_pcboutput_eagain(inp);
 #endif
@@ -764,6 +765,7 @@ sendit:
 			error = (*ifp->if_output)(ifp, m,
 			    (const struct sockaddr *)gw, ro);
 #ifdef RATELIMIT
+			/* check for route change */
 			if (error == EAGAIN)
 				in_pcboutput_eagain(inp);
 #endif
