@@ -95,16 +95,9 @@ static struct {
 	{0, NULL}
 };
 
-struct lagg_port_snd_tag {
-	struct m_snd_tag *tag;
-	CK_SLIST_ENTRY(lagg_port_snd_tag) link;
-};
-
 struct lagg_snd_tag {
 	struct m_snd_tag com;
-	union if_snd_tag_alloc_params params;
-	struct mtx lock;
-	CK_SLIST_HEAD(, lagg_port_snd_tag) port_tags;
+	struct m_snd_tag *tag;
 };
 
 VNET_DEFINE(SLIST_HEAD(__trhead, lagg_softc), lagg_list); /* list of laggs */
@@ -1594,54 +1587,11 @@ lookup_snd_tag_port(struct ifnet *ifp, uint32_t flowid, uint32_t flowtype)
 	}
 }
 
-static void
-lagg_snd_tag_free_port(struct lagg_port_snd_tag *lpst)
-{
-
-	m_snd_tag_rele(lpst->tag);
-	free(lpst, M_LAGG);
-}
-
-static struct lagg_port_snd_tag *
-lagg_snd_tag_alloc_port(struct lagg_snd_tag *lst, struct ifnet *ifp)
-{
-	struct lagg_port_snd_tag *lpst, *lpst2;
-	int error;
-
-	LAGG_RLOCK_ASSERT();
-	
-	lpst = malloc(sizeof(*lpst), M_LAGG, M_NOWAIT);
-	if (lpst == NULL)
-		return (NULL);
-
-	mtx_lock(&lst->lock);
-	error = ifp->if_snd_tag_alloc(ifp, &lst->params, &lpst->tag);
-	if (error) {
-		mtx_unlock(&lst->lock);
-		free(lpst, M_LAGG);
-		return (NULL);
-	}
-
-	CK_SLIST_FOREACH(lpst2, &lst->port_tags, link) {
-		if (lpst2->tag->ifp == ifp) {
-			mtx_unlock(&lst->lock);
-			lagg_snd_tag_free_port(lpst);
-			return (lpst2);
-		}
-	}
-
-	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
-	mtx_unlock(&lst->lock);
-
-	return (lpst);
-}
-
 static int
 lagg_snd_tag_alloc(struct ifnet *ifp,
     union if_snd_tag_alloc_params *params,
     struct m_snd_tag **ppmt)
 {
-	struct lagg_port_snd_tag *lpst;
 	struct lagg_snd_tag *lst;
 	struct lagg_softc *sc;
 	struct lagg_port *lp;
@@ -1669,26 +1619,15 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 		if_rele(lp_ifp);
 		return (ENOMEM);
 	}
-	lpst = malloc(sizeof(*lpst), M_LAGG, M_NOWAIT);
-	if (lpst == NULL) {
-		free(lst, M_LAGG);
-		if_rele(lp_ifp);
-		return (ENOMEM);
-	}
 
-	error = lp_ifp->if_snd_tag_alloc(lp_ifp, params, &lpst->tag);
+	error = lp_ifp->if_snd_tag_alloc(lp_ifp, params, &lst->tag);
 	if_rele(lp_ifp);
 	if (error) {
-		free(lpst, M_LAGG);
 		free(lst, M_LAGG);
 		return (error);
 	}
 
 	m_snd_tag_init(&lst->com, ifp);
-	lst->params = *params;
-	mtx_init(&lst->lock, "lagg snd tag", NULL, MTX_DEF);
-	CK_SLIST_INIT(&lst->port_tags);
-	CK_SLIST_INSERT_HEAD(&lst->port_tags, lpst, link);
 
 	*ppmt = &lst->com;
 	return (0);
@@ -1698,93 +1637,29 @@ static int
 lagg_snd_tag_modify(struct m_snd_tag *mst,
     union if_snd_tag_modify_params *params)
 {
-	struct lagg_port_snd_tag *lpst;
 	struct lagg_snd_tag *lst;
-	struct lagg_softc *sc;
-	int error, ret;
 
-	sc = mst->ifp->if_softc;
 	lst = mst_to_lst(mst);
-	mtx_lock(&lst->lock);
-	switch (lst->params.hdr.type) {
-	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
-		break;
-	case IF_SND_TAG_TYPE_UNLIMITED:
-		lst->params.rate_limit.max_rate = params->rate_limit.max_rate;
-		break;
-	default:
-		mtx_unlock(&lst->lock);
-		return (EOPNOTSUPP);
-	}
-	mtx_unlock(&lst->lock);
-
-	error = 0;
-	LAGG_RLOCK();
-	CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
-		ret = lpst->tag->ifp->if_snd_tag_modify(lpst->tag, params);
-		if (ret != 0)
-			error = ret;
-	}
-	LAGG_RUNLOCK();
-	return (error);
+	return (lst->tag->ifp->if_snd_tag_modify(lst->tag, params));
 }
 
 static int
 lagg_snd_tag_query(struct m_snd_tag *mst,
     union if_snd_tag_query_params *params)
 {
-	struct lagg_port_snd_tag *lpst;
 	struct lagg_snd_tag *lst;
-	struct lagg_port *lp;
 
 	lst = mst_to_lst(mst);
-	LAGG_RLOCK();
-	lp = lookup_snd_tag_port(mst->ifp, lst->params.hdr.flowid,
-	    lst->params.hdr.flowtype);
-	if (lp == NULL) {
-		LAGG_RUNLOCK();
-		return (ENXIO);
-	}
-	if (lp->lp_ifp == NULL) {
-		LAGG_RUNLOCK();
-		return (EOPNOTSUPP);
-	}
-
-	CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
-		if (lpst->tag->ifp == lp->lp_ifp)
-			break;
-	}
-	if (lpst == NULL) {
-		LAGG_RUNLOCK();
-		return (EOPNOTSUPP);
-	}
-	LAGG_RUNLOCK();
-
-	return (lpst->tag->ifp->if_snd_tag_query(lpst->tag, params));
+	return (lst->tag->ifp->if_snd_tag_query(lst->tag, params));
 }
 
 static void
 lagg_snd_tag_free(struct m_snd_tag *mst)
 {
-	struct lagg_port_snd_tag *lpst;
 	struct lagg_snd_tag *lst;
 
-	/*
-	 * This should be the only reference to the tag at this point,
-	 * so no locking is needed for the port_tags list.
-	 *
-	 * XXX: Does this require epoch_call to free lpst?  I think
-	 * it does not because the tag only gets freed once the socket
-	 * is torn down.
-	 */
 	lst = mst_to_lst(mst);
-	while (!CK_SLIST_EMPTY(&lst->port_tags)) {
-		lpst = CK_SLIST_FIRST(&lst->port_tags);
-		CK_SLIST_REMOVE_HEAD(&lst->port_tags, link);
-		lagg_snd_tag_free_port(lpst);
-	}
-	mtx_destroy(&lst->lock);
+	m_snd_tag_rele(lst->tag);
 	free(lst, M_LAGG);
 }
 
@@ -2108,24 +1983,16 @@ lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 
 #ifdef RATELIMIT
 	if (m->m_pkthdr.snd_tag != NULL) {
-		struct lagg_port_snd_tag *lpst;
 		struct lagg_snd_tag *lst;
 		struct m_snd_tag *mst;
 
-		LAGG_RLOCK_ASSERT();
 		mst = m->m_pkthdr.snd_tag;
 		lst = mst_to_lst(mst);
-		CK_SLIST_FOREACH(lpst, &lst->port_tags, link) {
-			if (lpst->tag->ifp == ifp)
-				break;
-		}
-		if (lpst == NULL)
-			lpst = lagg_snd_tag_alloc_port(lst, ifp);
-		if (lpst == NULL) {
+		if (lst->tag->ifp != ifp) {
 			m_freem(m);
 			return (EAGAIN);
 		}
-		m->m_pkthdr.snd_tag = m_snd_tag_ref(lpst->tag);
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(lst->tag);
 		m_snd_tag_rele(mst);
 	}
 #endif
