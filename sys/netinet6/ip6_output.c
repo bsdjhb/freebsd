@@ -270,12 +270,16 @@ static __inline int
 ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 {
 
-	if (inp != NULL) {
-		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
-		    (inp->inp_snd_tag != NULL &&
-		    inp->inp_snd_tag->ifp != ifp))
-			in_pcboutput_txrtlmt(inp, ifp, m);
+	MPASS(m->m_pkthdr.snd_tag == NULL);
+	if (inp == NULL)
+		return (0);
 
+	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+	    (inp->inp_snd_tag != NULL &&
+		inp->inp_snd_tag->ifp != ifp))
+		in_pcboutput_txrtlmt(inp, ifp, m);
+
+	if (inp->inp_snd_tag != NULL) {
 		/*
 		 * NB: in_pcboutput_txrlmt might fail to refresh the
 		 * tag if the lock upgrade fails.
@@ -286,8 +290,6 @@ ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 		/* stamp send tag on mbuf */
 		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
-	} else {
-		m->m_pkthdr.snd_tag = NULL;
 	}
 	return (0);
 }
