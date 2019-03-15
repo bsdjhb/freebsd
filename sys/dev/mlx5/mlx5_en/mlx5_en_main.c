@@ -2144,7 +2144,6 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	c->priv = priv;
 	c->ix = ix;
 	/* setup send tag */
-	c->tag.m_snd_tag.ifp = priv->ifp;
 	c->tag.type = IF_SND_TAG_TYPE_UNLIMITED;
 	c->mkey_be = cpu_to_be32(priv->mr.key);
 	c->num_tc = priv->num_tc;
@@ -3986,6 +3985,8 @@ mlx5e_ul_snd_tag_alloc(struct ifnet *ifp,
 		if (unlikely(pch->sq[0].running == 0))
 			return (ENXIO);
 		mlx5e_ref_channel(priv);
+		MPASS(pch->tag.m_snd_tag.refcount == 0);
+		m_snd_tag_init(&pch->tag.m_snd_tag, ifp);
 		*ppmt = &pch->tag.m_snd_tag;
 		return (0);
 	}
