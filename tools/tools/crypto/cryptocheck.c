@@ -133,11 +133,6 @@
 
 #include <crypto/cryptodev.h>
 
-/* XXX: Temporary hack */
-#ifndef COP_F_CIPHER_FIRST
-#define	COP_F_CIPHER_FIRST	0x0001	/* Cipher before MAC. */
-#endif
-
 struct alg {
 	const char *name;
 	int cipher;
