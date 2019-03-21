@@ -427,7 +427,7 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 
 		m_copydata(m, skip + hlen - sav->ivlen, sav->ivlen, &ivp[4]);
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
-	} else
+	} else if (sav->ivlen != 0)
 		crp->crp_iv_start = skip + hlen - sav->ivlen;
 
 	return (crypto_dispatch(crp));
@@ -836,7 +836,7 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 
 		m_copyback(m, skip + hlen - sav->ivlen, sav->ivlen, &ivp[4]);
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
-	} else {
+	} else if (sav->ivlen != 0) {
 		crp->crp_iv_start = skip + hlen - sav->ivlen;
 		crp->crp_flags |= CRYPTO_F_IV_GENERATE;
 	}
