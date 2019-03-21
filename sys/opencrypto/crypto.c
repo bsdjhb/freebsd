@@ -533,7 +533,6 @@ alg_is_cipher(int alg)
 		return (true);
 	if (alg >= CRYPTO_CAMELLIA_CBC && alg <= CRYPTO_AES_ICM)
 		return (true);
-	/* XXX: CRYPTO_AES_NIST_GMAC? */
 	if (alg == CRYPTO_CHACHA20)
 		return (true);
 	return (false);
@@ -553,7 +552,9 @@ alg_is_digest(int alg)
 		return (true);
 	if (alg >= CRYPTO_SHA2_256_HMAC && alg <= CRYPTO_SHA2_512_HMAC)
 		return (true);
-	if (alg >= CRYPTO_AES_128_NIST_GMAC && alg <= CRYPTO_BLAKE2S)
+	if (alg == CRYPTO_AES_NIST_GMAC)
+		return (true);
+	if (alg >= CRYPTO_BLAKE2B && alg <= CRYPTO_BLAKE2S)
 		return (true);
 	if (alg >= CRYPTO_SHA2_224_HMAC && alg <= CRYPTO_POLY1305)
 		return (true);
@@ -568,7 +569,9 @@ alg_is_keyed_digest(int alg)
 		return (true);
 	if (alg >= CRYPTO_SHA2_256_HMAC && alg <= CRYPTO_SHA2_512_HMAC)
 		return (true);
-	if (alg >= CRYPTO_AES_128_NIST_GMAC && alg <= CRYPTO_AES_256_NIST_GMAC)
+	if (alg == CRYPTO_AES_NIST_GMAC)
+		return (true);
+	if (alg >= CRYPTO_BLAKE2B && alg <= CRYPTO_BLAKE2S)
 		return (true);
 	if (alg == CRYPTO_SHA2_224_HMAC)
 		return (true);

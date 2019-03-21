@@ -979,9 +979,6 @@ swcr_lookup_hash(int alg, int klen)
 	case CRYPTO_SHA2_512:
 		return (&auth_hash_sha2_512);
 	case CRYPTO_AES_NIST_GMAC:
-	case CRYPTO_AES_128_NIST_GMAC:	/* XXX: These three for legacy. */
-	case CRYPTO_AES_192_NIST_GMAC:
-	case CRYPTO_AES_256_NIST_GMAC:
 		switch (klen) {
 		case 128:
 			return (&auth_hash_nist_gmac_aes_128);
@@ -1151,9 +1148,6 @@ swcr_setup_auth(struct swcr_session *ses,
 			ses->swcr_process = swcr_authcompute;
 		break;
 	case CRYPTO_AES_NIST_GMAC:
-	case CRYPTO_AES_128_NIST_GMAC:
-	case CRYPTO_AES_192_NIST_GMAC:
-	case CRYPTO_AES_256_NIST_GMAC:
 		if (csp->csp_auth_klen != 128 &&
 		    csp->csp_auth_klen != 192 &&
 		    csp->csp_auth_klen != 256)
@@ -1390,9 +1384,6 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		}
 		switch (csp->csp_auth_alg) {
 		case CRYPTO_AES_NIST_GMAC:
-		case CRYPTO_AES_128_NIST_GMAC:
-		case CRYPTO_AES_192_NIST_GMAC:
-		case CRYPTO_AES_256_NIST_GMAC:
 			error = EINVAL;
 			break;
 		}
@@ -1528,9 +1519,6 @@ swcr_attach(device_t dev)
 	REGISTER(CRYPTO_AES_ICM);
 	REGISTER(CRYPTO_AES_NIST_GCM_16);
 	REGISTER(CRYPTO_AES_NIST_GMAC);
-	REGISTER(CRYPTO_AES_128_NIST_GMAC);
-	REGISTER(CRYPTO_AES_192_NIST_GMAC);
-	REGISTER(CRYPTO_AES_256_NIST_GMAC);
  	REGISTER(CRYPTO_CAMELLIA_CBC);
 	REGISTER(CRYPTO_DEFLATE_COMP);
 	REGISTER(CRYPTO_BLAKE2B);
