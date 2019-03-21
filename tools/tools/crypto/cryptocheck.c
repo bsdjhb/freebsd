@@ -1260,9 +1260,11 @@ ocf_init_aead_session(const struct alg *alg, const char *key, size_t key_len,
 	sop.keylen = key_len;
 	sop.key = (char *)key;
 	sop.cipher = alg->cipher;
+#ifdef OLD_API
 	sop.mackeylen = key_len;
 	sop.mackey = (char *)key;
 	sop.mac = alg->mac;
+#endif
 	return (ocf_init_session(&sop, "AEAD", alg->name, ses));
 }
 
