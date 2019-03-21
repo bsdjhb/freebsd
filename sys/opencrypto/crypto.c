@@ -622,7 +622,7 @@ csp_sanity(const struct crypto_session_params *csp)
 			KASSERT(csp->csp_cipher_klen > 0,
 			    ("zero length encryption key"));
 		}
-		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC)	
+		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC)
 			KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
 		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
 		    ("IV too large: %d", csp->csp_ivlen));
