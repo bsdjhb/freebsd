@@ -1332,6 +1332,7 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_DEFLATE_COMP:
 			cxf = &comp_algo_deflate;
+			break;
 		default:
 			error = EINVAL;
 		}
