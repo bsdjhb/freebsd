@@ -73,19 +73,26 @@
  *
  * Supported algorithms:
  *	all		Run all tests
+ *	hash		Run all hash tests
  *	hmac		Run all hmac tests
  *	blkcipher	Run all block cipher tests
  *	authenc		Run all authenticated encryption tests
  *	aead		Run all authenticated encryption with associated data
  *			tests
  *
+ * Hashes:
+ *	sha1		sha1
+ *	sha256		256-bit sha2
+ *	sha384		384-bit sha2
+ *	sha512		512-bit	sha2
+ *	blake2b		Blake2-B
+ *	blake2s		Blake2-S
+ *
  * HMACs:
  *	sha1		sha1 hmac
  *	sha256		256-bit sha2 hmac
  *	sha384		384-bit sha2 hmac
  *	sha512		512-bit	sha2 hmac
- *	blake2b		Blake2-B
- *	blake2s		Blake2-S
  *
  * Block Ciphers:
  *	aes-cbc		128-bit aes cbc
