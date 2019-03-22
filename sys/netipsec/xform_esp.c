@@ -364,7 +364,7 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	}
 
 	/* Get IPsec-specific opaque pointer */
-	xd = malloc(sizeof(*xd) + alen, M_XDATA, M_NOWAIT | M_ZERO);
+	xd = malloc(sizeof(*xd), M_XDATA, M_NOWAIT | M_ZERO);
 	if (xd == NULL) {
 		DPRINTF(("%s: failed to allocate xform_data\n", __func__));
 		ESPSTAT_INC(esps_crypto);
@@ -381,10 +381,6 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 		else
 			crp->crp_aad_length = hlen;
 		crp->crp_digest_start = m->m_pkthdr.len - alen;
-
-		/* Copy the authenticator */
-		m_copydata(m, m->m_pkthdr.len - alen, alen,
-		    (caddr_t) (xd + 1));
 	}
 
 	/* Crypto operation descriptor */
