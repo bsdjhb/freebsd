@@ -496,10 +496,10 @@ cryptof_ioctl(
 				thash = &auth_hash_nist_gmac_aes_128;
 				break;
 			case 192:
-				thash = &auth_hash_nist_gmac_aes_128;
+				thash = &auth_hash_nist_gmac_aes_192;
 				break;
 			case 256:
-				thash = &auth_hash_nist_gmac_aes_128;
+				thash = &auth_hash_nist_gmac_aes_256;
 				break;
 			default:
 				CRYPTDEB("invalid GMAC key length");
