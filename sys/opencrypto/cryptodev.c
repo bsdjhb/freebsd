@@ -447,26 +447,6 @@ cryptof_ioctl(
 		case CRYPTO_AES_CCM_16:
 			txform = &enc_xform_ccm;
 			break;
-		case CRYPTO_AES_NIST_GMAC:
-			/* XXX: Legacy. */
-			if (sop->keylen != sop->mackeylen) {
-				CRYPTDEB("GMAC mismatched key lengths");
-				SDT_PROBE1(opencrypto, dev, ioctl, error,
-				    __LINE__);
-				return (EINVAL);
-			}
-			switch (sop->mac) {
-			case CRYPTO_AES_128_NIST_GMAC:
-				thash = &auth_hash_nist_gmac_aes_128;
-				break;
-			case CRYPTO_AES_192_NIST_GMAC:
-				thash = &auth_hash_nist_gmac_aes_192;
-				break;
-			case CRYPTO_AES_256_NIST_GMAC:
-				thash = &auth_hash_nist_gmac_aes_256;
-				break;
-			}
-			break;
 
 		default:
 			CRYPTDEB("invalid cipher");
