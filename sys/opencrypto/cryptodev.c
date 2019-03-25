@@ -675,6 +675,9 @@ cryptof_ioctl(
 					goto bail;
 				}
 			}
+
+			if (csp.csp_auth_alg == CRYPTO_AES_NIST_GMAC)
+				csp.csp_ivlen = AES_GCM_IV_LEN;
 		}
 
 		/* NB: CIOCGSESSION2 has the crid */
@@ -1479,13 +1482,8 @@ csecreate(struct fcrypt *fcr, crypto_session_t cses,
 	if (thash != NULL)
 		cse->hashsize = thash->hashsize;
 	else if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
-		cse->hashsize = auth_hash_nist_gmac_aes_128.hashsize;
-	if (txform != NULL && csp->csp_cipher_alg != CRYPTO_ARC4)
-		cse->ivsize = txform->ivsize;
-	else if (csp->csp_auth_alg == CRYPTO_AES_128_NIST_GMAC ||
-	    csp->csp_auth_alg == CRYPTO_AES_192_NIST_GMAC ||
-	    csp->csp_auth_alg == CRYPTO_AES_256_NIST_GMAC)
-		cse->ivsize = enc_xform_aes_nist_gcm.ivsize;
+		cse->hashsize = AES_GMAC_HASH_LEN;
+	cse->ivsize = csp->csp_ivlen;
 	mtx_lock(&fcr->lock);
 	TAILQ_INSERT_TAIL(&fcr->csessions, cse, next);
 	cse->ses = fcr->sesn++;
