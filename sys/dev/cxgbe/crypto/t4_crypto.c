@@ -2086,11 +2086,6 @@ ccr_attach(device_t dev)
 	crypto_register(cid, CRYPTO_AES_CBC, 0, 0);
 	crypto_register(cid, CRYPTO_AES_ICM, 0, 0);
 	crypto_register(cid, CRYPTO_AES_NIST_GCM_16, 0, 0);
-#if 0
-	crypto_register(cid, CRYPTO_AES_128_NIST_GMAC, 0, 0);
-	crypto_register(cid, CRYPTO_AES_192_NIST_GMAC, 0, 0);
-	crypto_register(cid, CRYPTO_AES_256_NIST_GMAC, 0, 0);
-#endif
 	crypto_register(cid, CRYPTO_AES_XTS, 0, 0);
 	crypto_register(cid, CRYPTO_AES_CCM_16, 0, 0);
 	crypto_register(cid, CRYPTO_AES_CCM_CBC_MAC, 0, 0);
@@ -2287,16 +2282,6 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_512;
 		partial_digest_len = SHA2_512_HASH_LEN;
 		break;
-#if 0
-	case CRYPTO_AES_128_NIST_GMAC:
-	case CRYPTO_AES_192_NIST_GMAC:
-	case CRYPTO_AES_256_NIST_GMAC:
-		auth_mode = SCMD_AUTH_MODE_GHASH;
-		mk_size = CHCR_KEYCTX_MAC_KEY_SIZE_128;
-		if (iv_len != AES_GCM_IV_LEN)
-			return (EINVAL);
-		break;
-#endif
 	default:
 		return (EINVAL);
 	}
@@ -2358,12 +2343,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 			return (EINVAL);
 		break;
 	case CSP_MODE_DIGEST:
-#if 0
-		if (auth_mode == SCMD_AUTH_MODE_NOP ||
-		    auth_mode == SCMD_AUTH_MODE_GHASH)
-#else
 		if (auth_mode == SCMD_AUTH_MODE_NOP)
-#endif
 			return (EINVAL);
 		break;
 	case CSP_MODE_AEAD:
@@ -2378,12 +2358,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		    cipher_mode == SCMD_CIPH_MODE_AES_GCM ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_CCM)
 			return (EINVAL);
-#if 0
-		if (auth_mode == SCMD_AUTH_MODE_NOP ||
-		    auth_mode == SCMD_AUTH_MODE_GHASH)
-#else
 		if (auth_mode == SCMD_AUTH_MODE_NOP)
-#endif
 			return (EINVAL);
 		break;
 	default:
