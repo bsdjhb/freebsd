@@ -921,9 +921,7 @@ struct adapter {
 /* XXX: Probably move to a different header later. */
 struct t6_sbtls_cipher {
 	struct vi_info *vi;
-	struct adapter *sc;
 	struct tlspcb *tlsp;
-	struct sge_txq *txq;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)

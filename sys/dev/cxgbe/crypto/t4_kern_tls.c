@@ -154,6 +154,7 @@ struct tls_keyctx {
 struct tlspcb {
 	struct inpcb *inp;	/* backpointer to host stack's PCB */
 	struct vi_info *vi;	/* virtual interface */
+	struct adapter *sc;
 	struct sge_wrq *ctrlq;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
 	struct clip_entry *ce;	/* CLIP table entry used by this tid */
@@ -188,6 +189,8 @@ struct tlspcb {
 	bool open_pending;
 
 	int refs;
+
+	struct sge_txq *txq;
 };
 
 static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
@@ -198,11 +201,10 @@ static void sbtls_clean_cipher(struct sbtls_session *tls);
 static int
 get_new_keyid(struct tlspcb *tlsp)
 {
-	struct adapter *sc = tlsp->vi->pi->adapter;
 	vmem_addr_t addr;
 
-	if (vmem_alloc(sc->key_map, TLS_KEY_CONTEXT_SZ, M_NOWAIT | M_FIRSTFIT,
-	    &addr) != 0)
+	if (vmem_alloc(tlsp->sc->key_map, TLS_KEY_CONTEXT_SZ,
+	    M_NOWAIT | M_FIRSTFIT, &addr) != 0)
 		return (-1);
 
 	return (addr);
@@ -211,10 +213,9 @@ get_new_keyid(struct tlspcb *tlsp)
 static void
 free_keyid(struct tlspcb *tlsp, int keyid)
 {
-	struct adapter *sc = tlsp->vi->pi->adapter;
 
 	CTR3(KTR_CXGBE, "%s: tid %d key addr %#x", __func__, tlsp->tid, keyid);
-	vmem_free(sc->key_map, keyid, TLS_KEY_CONTEXT_SZ);
+	vmem_free(tlsp->sc->key_map, keyid, TLS_KEY_CONTEXT_SZ);
 }
 
 static struct tlspcb *
@@ -229,6 +230,7 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 		return (NULL);
 
 	tlsp->vi = vi;
+	tlsp->sc = sc;
 	tlsp->ctrlq = &sc->sge.ctrlq[pi->port_id];
 	tlsp->tid = -1;
 	tlsp->tx_key_addr = -1;
@@ -247,7 +249,7 @@ hold_tlspcb(struct tlspcb *tlsp)
 void
 free_tlspcb(struct tlspcb *tlsp)
 {
-	struct adapter *sc = tlsp->vi->pi->adapter;
+	struct adapter *sc = tlsp->sc;
 
 	if (!refcount_release(&tlsp->refs))
 		return;
@@ -676,6 +678,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	if (inp->inp_flowtype != M_HASHTYPE_NONE)
 		txq += ((inp->inp_flowid % (vi->ntxq - vi->rsrv_noflowq)) +
 		    vi->rsrv_noflowq);
+	tlsp->txq = txq;
 
 	error = sbtls_set_tcb_fields(tlsp, tp, txq);
 	INP_RUNLOCK(inp);
@@ -694,9 +697,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 		goto failed;
 	}
 	cipher->vi = vi;
-	cipher->sc = sc;
 	cipher->tlsp = tlsp;
-	cipher->txq = txq;
 
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
@@ -1684,7 +1685,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 	ndesc = 0;
 	tlsp = cipher->tlsp;
-	MPASS(cipher->txq == txq);
+	MPASS(tlsp->txq == txq);
 
 	first_wr = (tlsp->prev_seq == 0 && tlsp->prev_ack == 0 &&
 	    tlsp->prev_win == 0);
@@ -1915,7 +1916,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	if (fields != 0) {
 		wr_len = fields * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		if (twr_len + wr_len <= SGE_MAX_WR_LEN &&
-		    cipher->sc->tlst.combo_wrs) {
+		    tlsp->sc->tlst.combo_wrs) {
 			wr_len += twr_len;
 			txpkt = (void *)out;
 		} else {
@@ -2341,7 +2342,7 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		set_l2t_idx = true;
 		if (tlsp->l2te)
 			t4_l2t_release(tlsp->l2te);
-		tlsp->l2te = t4_l2t_alloc_tls(cipher->sc, txq, dst, &ndesc,
+		tlsp->l2te = t4_l2t_alloc_tls(tlsp->sc, txq, dst, &ndesc,
 		    vlan_tag, tlsp->vi->pi->lport, eh->ether_dhost);
 		if (tlsp->l2te == NULL)
 			CXGBE_UNIMPLEMENTED("failed to allocate TLS L2TE");
@@ -2419,11 +2420,9 @@ static void
 sbtls_clean_cipher(struct sbtls_session *tls)
 {
 	struct t6_sbtls_cipher *cipher;
-	struct adapter *sc;
 	struct tlspcb *tlsp;
 
 	cipher = tls->cipher;
-	sc = cipher->sc;
 	tlsp = cipher->tlsp;
 
 	CTR2(KTR_CXGBE, "%s: tid %d", __func__, tlsp->tid);
