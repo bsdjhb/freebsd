@@ -919,12 +919,6 @@ struct adapter {
 };
 
 /* XXX: Probably move to a different header later. */
-struct t6_sbtls_cipher;
-typedef int (*parse_tls_pkt_t)(struct t6_sbtls_cipher *, struct mbuf *, int *,
-    int *);
-typedef int (*write_tls_wr_t)(struct t6_sbtls_cipher *, struct sge_txq *,
-    void *, struct mbuf *, u_int, u_int);
-
 struct t6_sbtls_cipher {
 	struct vi_info *vi;
 	struct adapter *sc;
