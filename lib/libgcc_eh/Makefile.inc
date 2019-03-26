@@ -26,7 +26,7 @@ CFLAGS.${file}+=	-fno-exceptions -funwind-tables
 CXXFLAGS.${file}+=	-fno-exceptions -funwind-tables
 .endfor
 
-CFLAGS+=	-I${UNWINDINCDIR} -I${.CURDIR} -D_LIBUNWIND_IS_NATIVE_ONLY
+CFLAGS+=	-I${UNWINDINCDIR} -D_LIBUNWIND_IS_NATIVE_ONLY
 CXXFLAGS+=	-fno-rtti
 CXXSTD?=	c++11
 STATIC_CXXFLAGS+= -fvisibility=hidden -fPIC

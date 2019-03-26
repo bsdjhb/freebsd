@@ -215,9 +215,6 @@ STD_HEADERS+=	wchar.h
 STD_HEADERS+=	wctype.h
 
 RT_HEADERS+=	cxxabi.h
-RT_HEADERS+=	unwind-arm.h
-RT_HEADERS+=	unwind-itanium.h
-RT_HEADERS+=	unwind.h
 
 .for hdr in ${STD_HEADERS}
 STD+=		${HDRDIR}/${hdr}

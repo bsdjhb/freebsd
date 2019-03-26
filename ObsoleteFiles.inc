@@ -36,6 +36,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2020xxxx: unwind.h moved to /usr/include
+OLD_FILES+=usr/include/c++/v1/unwind-arm.h
+OLD_FILES+=usr/include/c++/v1/unwind-itanium.h
+OLD_FILES+=usr/include/c++/v1/unwind.h
 # 20200309: amd(8) retired
 OLD_FILES+=etc/amd.map
 OLD_FILES+=etc/newsyslog.conf.d/amd.conf
