@@ -160,9 +160,16 @@ struct tlspcb {
 	int tid;		/* Connection identifier */
 
 	bool inline_key;
+	bool using_timestamps;
 	int tx_key_addr;
 	struct tls_scmd scmd0;
 	struct tls_scmd scmd0_short;
+
+	uint32_t prev_seq;
+	uint32_t prev_ack;
+	uint32_t prev_tsecr;
+	uint16_t prev_win;
+	uint16_t prev_mss;
 
 	struct tls_keyctx keyctx;
 
@@ -545,7 +552,6 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	struct tcpcb *tp;
 	struct sge_txq *txq;
 	int atid, error, keyid;
-	bool using_timestamps;
 
 	/* Sanity check values in *tls. */
 	switch (tls->sb_params.crypt_algorithm) {
@@ -627,14 +633,14 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 
 	tp = inp->inp_ppcb;
 	if (tp->t_flags & TF_REQ_TSTMP) {
-		using_timestamps = true;
+		tlsp->using_timestamps = true;
 		if ((tp->ts_offset & 0xfffffff) != 0) {
 			INP_RUNLOCK(inp);
 			error = EINVAL;
 			goto failed;
 		}
 	} else
-		using_timestamps = false;
+		tlsp->using_timestamps = false;
 
 	error = send_sbtls_act_open_req(sc, vi, so, tlsp, atid);
 	if (error) {
@@ -691,7 +697,6 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	cipher->sc = sc;
 	cipher->tlsp = tlsp;
 	cipher->txq = txq;
-	cipher->using_timestamps = using_timestamps;
 
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
@@ -1366,7 +1371,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * If timestamps are present, reserve 1 more command for
 	 * setting the echoed timestamp.
 	 */
-	if (cipher->using_timestamps)
+	if (cipher->tlsp->using_timestamps)
 		wr_len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	tot_len += roundup2(wr_len, EQ_ESIZE);
@@ -1681,8 +1686,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	tlsp = cipher->tlsp;
 	MPASS(cipher->txq == txq);
 
-	first_wr = (cipher->prev_seq == 0 && cipher->prev_ack == 0 &&
-	    cipher->prev_win == 0);
+	first_wr = (tlsp->prev_seq == 0 && tlsp->prev_ack == 0 &&
+	    tlsp->prev_win == 0);
 
 	/*
 	 * Use the per-txq scratch pad if near the end of the ring to
@@ -1805,7 +1810,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 	}		
-	if (tsopt != NULL && cipher->prev_tsecr != ntohl(tsopt[1])) {
+	if (tsopt != NULL && tlsp->prev_tsecr != ntohl(tsopt[1])) {
 		KASSERT(nsegs != 0,
 		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
 #ifdef VERBOSE_TRACES
@@ -1818,10 +1823,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
-		cipher->prev_tsecr = ntohl(tsopt[1]);
+		tlsp->prev_tsecr = ntohl(tsopt[1]);
 	}
 
-	if (first_wr || cipher->prev_seq != tx_max) {
+	if (first_wr || tlsp->prev_seq != tx_max) {
 		KASSERT(nsegs != 0,
 		    ("trying to set TX_MAX for subsequent TLS WR"));
 #ifdef VERBOSE_TRACES
@@ -1840,7 +1845,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * record or if this is a retransmit,
 	 * reset SND_UNA_RAW to 0 so that SND_UNA == TX_MAX.
 	 */
-	if (cipher->prev_seq != tx_max || mtod(m_tls, vm_offset_t) != 0) {
+	if (tlsp->prev_seq != tx_max || mtod(m_tls, vm_offset_t) != 0) {
 		KASSERT(nsegs != 0,
 		    ("trying to clear SND_UNA_RAW for subsequent TLS WR"));
 #ifdef VERBOSE_TRACES
@@ -1858,9 +1863,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * Store the expected sequence number of the next byte after
 	 * this record.
 	 */
-	cipher->prev_seq = tcp_seqno + tlen;
+	tlsp->prev_seq = tcp_seqno + tlen;
 
-	if (first_wr || cipher->prev_ack != ntohl(tcp->th_ack)) {
+	if (first_wr || tlsp->prev_ack != ntohl(tcp->th_ack)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_NXT for subsequent TLS WR"));
 		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_RCV_NXT,
@@ -1869,10 +1874,10 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
-		cipher->prev_ack = ntohl(tcp->th_ack);
+		tlsp->prev_ack = ntohl(tcp->th_ack);
 	}
 
-	if (first_wr || cipher->prev_win != ntohs(tcp->th_win)) {
+	if (first_wr || tlsp->prev_win != ntohs(tcp->th_win)) {
 		KASSERT(nsegs != 0,
 		    ("trying to set RCV_WND for subsequent TLS WR"));
 		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_RCV_WND,
@@ -1881,7 +1886,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		out += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 		fields++;
 
-		cipher->prev_win = ntohs(tcp->th_win);
+		tlsp->prev_win = ntohs(tcp->th_win);
 	}
 
 	/* Recalculate 'nsegs' if cached value is not available. */
@@ -2097,9 +2102,9 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	OPCODE_TID(tx_data) = htonl(MK_OPCODE_TID(CPL_TX_DATA, tlsp->tid));
 	if (m->m_pkthdr.csum_flags & CSUM_TSO) {
 		mss = m->m_pkthdr.tso_segsz;
-		cipher->prev_mss = mss;
-	} else if (cipher->prev_mss != 0)
-		mss = cipher->prev_mss;
+		tlsp->prev_mss = mss;
+	} else if (tlsp->prev_mss != 0)
+		mss = tlsp->prev_mss;
 	else
 		mss = tlsp->vi->ifp->if_mtu -
 		    (m->m_pkthdr.l3hlen + m->m_pkthdr.l4hlen);
@@ -2368,11 +2373,11 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		if (m_tls == m->m_next) {
 			tcp_seqno = ntohl(tcp->th_seq) -
 			    mtod(m_tls, vm_offset_t);
-			if (cipher->using_timestamps)
+			if (tlsp->using_timestamps)
 				tsopt = sbtls_find_tcp_timestamps(tcp);
 		} else {
 			MPASS(mtod(m_tls, vm_offset_t) == 0);
-			tcp_seqno = cipher->prev_seq;
+			tcp_seqno = tlsp->prev_seq;
 		}
 
 		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
@@ -2402,7 +2407,7 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		 * the sequence number for the FIN packet.
 		 */
 		ndesc = sbtls_write_tcp_fin(cipher, txq, dst, m, available,
-		    cipher->prev_seq, pidx);
+		    tlsp->prev_seq, pidx);
 		totdesc += ndesc;
 	}
 

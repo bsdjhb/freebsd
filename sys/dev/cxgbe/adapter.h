@@ -924,12 +924,6 @@ struct t6_sbtls_cipher {
 	struct adapter *sc;
 	struct tlspcb *tlsp;
 	struct sge_txq *txq;
-	uint32_t prev_seq;
-	uint32_t prev_ack;
-	uint16_t prev_win;
-	uint16_t using_timestamps;
-	uint32_t prev_tsecr;
-	uint16_t prev_mss;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)
