@@ -152,19 +152,20 @@ struct tls_keyctx {
 #define KEY_DELETE_TX			0x8
 
 struct tlspcb {
-	struct inpcb *inp;	/* backpointer to host stack's PCB */
 	struct vi_info *vi;	/* virtual interface */
 	struct adapter *sc;
-	struct sge_wrq *ctrlq;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
-	struct clip_entry *ce;	/* CLIP table entry used by this tid */
 	int tid;		/* Connection identifier */
 
+	int tx_key_addr;
 	bool inline_key;
 	bool using_timestamps;
-	int tx_key_addr;
+	unsigned char enc_mode;
+
 	struct tls_scmd scmd0;
 	struct tls_scmd scmd0_short;
+
+	unsigned int tx_key_info_size;
 
 	uint32_t prev_seq;
 	uint32_t prev_ack;
@@ -172,25 +173,27 @@ struct tlspcb {
 	uint16_t prev_win;
 	uint16_t prev_mss;
 
+	int refs;
+
+	/* Only used outside of setup and teardown when using inline keys. */
 	struct tls_keyctx keyctx;
 
-	unsigned char enc_mode;
+	/* Fields only used during setup and teardown. */
+	struct inpcb *inp;	/* backpointer to host stack's PCB */
+	struct sge_txq *txq;
+	struct sge_wrq *ctrlq;
+	struct clip_entry *ce;	/* CLIP table entry used by this tid */
+
 	unsigned char auth_mode;
 	unsigned char hmac_ctrl;
 	unsigned char mac_first;
 	unsigned char iv_size;
 
-	unsigned int tx_key_info_size;
 	unsigned int frag_size;
-	unsigned int mac_secret_size;
 	unsigned int cipher_secret_size;
 	int proto_ver;
 
 	bool open_pending;
-
-	int refs;
-
-	struct sge_txq *txq;
 };
 
 static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
@@ -300,7 +303,6 @@ init_sbtls_key_params(struct tlspcb *tlsp, struct sbtls_session *tls)
 			break;
 		}
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_CBC;
-		tlsp->mac_secret_size = tls->sb_params.hmac_key_len;
 		tlsp->iv_size = 8; /* for CBC, iv is 16B, unit of 2B */
 		tlsp->mac_first = 1;
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NO_TRUNC;
