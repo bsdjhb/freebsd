@@ -52,6 +52,11 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2022xxxx: unwind.h moved to /usr/include
+OLD_FILES+=usr/include/c++/v1/unwind-arm.h
+OLD_FILES+=usr/include/c++/v1/unwind-itanium.h
+OLD_FILES+=usr/include/c++/v1/unwind.h
+
 # 20211229: libc++ moved to /lib
 MOVED_LIBS+=usr/lib/libc++.so.1
 
