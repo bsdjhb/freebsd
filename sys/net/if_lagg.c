@@ -1961,7 +1961,7 @@ lagg_bcast_start(struct lagg_softc *sc, struct mbuf *m)
 	struct lagg_port *lp, *last = NULL;
 	struct mbuf *m0;
 
-	LAGG_RLOCK();
+	LAGG_RLOCK_ASSERT();
 	CK_SLIST_FOREACH(lp, &sc->sc_ports, lp_entries) {
 		if (!LAGG_PORTACTIVE(lp))
 			continue;
@@ -1984,18 +1984,15 @@ lagg_bcast_start(struct lagg_softc *sc, struct mbuf *m)
 	}
 
 	if (last == NULL) {
-		LAGG_RUNLOCK();
 		m_freem(m);
 		return (ENOENT);
 	}
 	if ((last = lagg_link_active(sc, last)) == NULL) {
-		LAGG_RUNLOCK();
 		m_freem(m);
 		return (ENETDOWN);
 	}
 
 	ret = lagg_enqueue(last->lp_ifp, m);
-	LAGG_RUNLOCK();
 	if (ret != 0)
 		errors++;
 
