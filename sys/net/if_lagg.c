@@ -1982,18 +1982,20 @@ lagg_bcast_start(struct lagg_softc *sc, struct mbuf *m)
 		}
 		last = lp;
 	}
-	LAGG_RUNLOCK();
 
 	if (last == NULL) {
+		LAGG_RUNLOCK();
 		m_freem(m);
 		return (ENOENT);
 	}
 	if ((last = lagg_link_active(sc, last)) == NULL) {
+		LAGG_RUNLOCK();
 		m_freem(m);
 		return (ENETDOWN);
 	}
 
 	ret = lagg_enqueue(last->lp_ifp, m);
+	LAGG_RUNLOCK();
 	if (ret != 0)
 		errors++;
 
