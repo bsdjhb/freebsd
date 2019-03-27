@@ -2092,7 +2092,7 @@ lagg_lb_porttable(struct lagg_softc *sc, struct lagg_port *lp)
 
 	rv = 0;
 	bzero(&lb->lb_ports, sizeof(lb->lb_ports));
-	LAGG_RLOCK();
+	LAGG_XLOCK_ASSERT(sc);
 	CK_SLIST_FOREACH(lp_next, &sc->sc_ports, lp_entries) {
 		if (lp_next == lp)
 			continue;
@@ -2105,7 +2105,6 @@ lagg_lb_porttable(struct lagg_softc *sc, struct lagg_port *lp)
 			    sc->sc_ifname, lp_next->lp_ifp->if_xname, i);
 		lb->lb_ports[i++] = lp_next;
 	}
-	LAGG_RUNLOCK();
 
 	return (rv);
 }
