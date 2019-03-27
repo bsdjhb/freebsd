@@ -1535,14 +1535,17 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 	struct lagg_lb *lb;
 	uint32_t p;
 
+	LAGG_RLOCK();
 	switch (sc->sc_proto) {
 	case LAGG_PROTO_FAILOVER:
 		lp = lagg_link_active(sc, sc->sc_primary);
 		break;
 	case LAGG_PROTO_LOADBALANCE:
 		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    params->hdr.flowtype == M_HASHTYPE_NONE)
+		    params->hdr.flowtype == M_HASHTYPE_NONE) {
+			LAGG_RUNLOCK();
 			return (EOPNOTSUPP);
+		}
 		p = params->hdr.flowid >> sc->flowid_shift;
 		p %= sc->sc_count;
 		lb = (struct lagg_lb *)sc->sc_psc;
@@ -1551,16 +1554,22 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 		break;
 	case LAGG_PROTO_LACP:
 		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    params->hdr.flowtype == M_HASHTYPE_NONE)
+		    params->hdr.flowtype == M_HASHTYPE_NONE) {
+			LAGG_RUNLOCK();
 			return (EOPNOTSUPP);
+		}
 		lp = lacp_select_tx_port_by_hash(sc, params->hdr.flowid);
 		break;
 	default:
+		LAGG_RUNLOCK();
 		return (EOPNOTSUPP);
 	}
-	if (lp == NULL)
+	if (lp == NULL) {
+		LAGG_RUNLOCK();
 		return (EOPNOTSUPP);
+	}
 	ifp = lp->lp_ifp;
+	LAGG_RUNLOCK();
 	if (ifp == NULL || ifp->if_snd_tag_alloc == NULL ||
 	    (ifp->if_capenable & IFCAP_TXRTLMT) == 0)
 		return (EOPNOTSUPP);
@@ -1851,11 +1860,17 @@ struct lagg_port *
 lagg_link_active(struct lagg_softc *sc, struct lagg_port *lp)
 {
 	struct lagg_port *lp_next, *rval = NULL;
-	struct epoch_tracker net_et;
 
 	/*
 	 * Search a port which reports an active link state.
 	 */
+
+	/*
+	 * This is called with either LAGG_RLOCK() held or
+	 * LAGG_XLOCK(sc) held.
+	 */
+	if (!in_epoch(net_epoch_preempt))
+		LAGG_XLOCK_ASSERT(sc);
 
 	if (lp == NULL)
 		goto search;
@@ -1869,15 +1884,12 @@ lagg_link_active(struct lagg_softc *sc, struct lagg_port *lp)
 		goto found;
 	}
 
- search:
-	epoch_enter_preempt(net_epoch_preempt, &net_et);
+search:
 	CK_SLIST_FOREACH(lp_next, &sc->sc_ports, lp_entries) {
 		if (LAGG_PORTACTIVE(lp_next)) {
-			epoch_exit_preempt(net_epoch_preempt, &net_et);
 			return (lp_next);
 		}
 	}
-	epoch_exit_preempt(net_epoch_preempt, &net_et);
 found:
 	return (rval);
 }
