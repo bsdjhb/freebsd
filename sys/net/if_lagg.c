@@ -751,7 +751,6 @@ lagg_port_create(struct lagg_softc *sc, struct ifnet *ifp)
 	 * is predictable and `ifconfig laggN create ...` command
 	 * will lead to the same result each time.
 	 */
-	LAGG_RLOCK();
 	CK_SLIST_FOREACH(tlp, &sc->sc_ports, lp_entries) {
 		if (tlp->lp_ifp->if_index < ifp->if_index && (
 		    CK_SLIST_NEXT(tlp, lp_entries) == NULL ||
@@ -759,7 +758,6 @@ lagg_port_create(struct lagg_softc *sc, struct ifnet *ifp)
 		    ifp->if_index))
 			break;
 	}
-	LAGG_RUNLOCK();
 	if (tlp != NULL)
 		CK_SLIST_INSERT_AFTER(tlp, lp, lp_entries);
 	else
