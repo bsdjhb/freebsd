@@ -2539,8 +2539,10 @@ restart:
 	 * checksumming is enabled.  needs_l4_csum happens to check for all the
 	 * right things.
 	 */
-	if (__predict_false(needs_eo(m0) && !needs_l4_csum(m0)))
+	if (__predict_false(needs_eo(m0) && !needs_l4_csum(m0))) {
+		m_snd_tag_rele(m0->m_pkthdr.snd_tag);
 		m0->m_pkthdr.snd_tag = NULL;
+	}
 #endif
 
 	if (!needs_tso(m0) &&
