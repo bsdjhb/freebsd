@@ -152,6 +152,7 @@ struct tls_keyctx {
 #define KEY_DELETE_TX			0x8
 
 struct tlspcb {
+	struct cxgbe_snd_tag com;
 	struct vi_info *vi;	/* virtual interface */
 	struct adapter *sc;
 	struct l2t_entry *l2te;	/* L2 table entry used by this connection */
@@ -172,8 +173,6 @@ struct tlspcb {
 	uint32_t prev_tsecr;
 	uint16_t prev_win;
 	uint16_t prev_mss;
-
-	int refs;
 
 	/* Only used outside of setup and teardown when using inline keys. */
 	struct tls_keyctx keyctx;
@@ -196,9 +195,14 @@ struct tlspcb {
 	bool open_pending;
 };
 
-static int sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
-    struct sge_txq *txq);
-static void sbtls_clean_cipher(struct sbtls_session *tls);
+static int sbtls_setup_keys(struct tlspcb *tlsp,
+    const struct sbtls_session *tls, struct sge_txq *txq);
+
+static inline struct tlspcb *
+mst_to_tls(struct m_snd_tag *t)
+{
+	return ((struct tlspcb *)mst_to_cst(t));
+}
 
 /* XXX: There are similar versions of these two in tom/t4_tls.c. */
 static int
@@ -222,7 +226,7 @@ free_keyid(struct tlspcb *tlsp, int keyid)
 }
 
 static struct tlspcb *
-alloc_tlspcb(struct vi_info *vi, int flags)
+alloc_tlspcb(struct ifnet *ifp, struct vi_info *vi, int flags)
 {
 	struct port_info *pi = vi->pi;
 	struct adapter *sc = pi->adapter;
@@ -232,44 +236,18 @@ alloc_tlspcb(struct vi_info *vi, int flags)
 	if (tlsp == NULL)
 		return (NULL);
 
+	cxgbe_snd_tag_init(&tlsp->com, ifp, IF_SND_TAG_TYPE_TLS);
 	tlsp->vi = vi;
 	tlsp->sc = sc;
 	tlsp->ctrlq = &sc->sge.ctrlq[pi->port_id];
 	tlsp->tid = -1;
 	tlsp->tx_key_addr = -1;
-	refcount_init(&tlsp->refs, 1);
 
 	return (tlsp);
 }
 
 static void
-hold_tlspcb(struct tlspcb *tlsp)
-{
-
-	refcount_acquire(&tlsp->refs);
-}
-
-void
-free_tlspcb(struct tlspcb *tlsp)
-{
-	struct adapter *sc = tlsp->sc;
-
-	if (!refcount_release(&tlsp->refs))
-		return;
-
-	if (tlsp->l2te)
-		t4_l2t_release(tlsp->l2te);
-	if (tlsp->tid >= 0)
-		release_tid(sc, tlsp->tid, tlsp->ctrlq);
-	if (tlsp->ce)
-		t4_release_lip(sc, tlsp->ce);
-	if (tlsp->tx_key_addr >= 0)
-		free_keyid(tlsp, tlsp->tx_key_addr);
-	free(tlsp, M_CXGBE);
-}
-
-static void
-init_sbtls_key_params(struct tlspcb *tlsp, struct sbtls_session *tls)
+init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 {
 	int mac_key_size;
 
@@ -390,7 +368,7 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 
 static int
 send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
-    struct socket *so, struct tlspcb *tlsp, int atid)
+    const struct socket *so, struct tlspcb *tlsp, int atid)
 {
 	struct inpcb *inp;
 	struct wrqe *wr;
@@ -496,10 +474,11 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 	len = sizeof(*wr) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 	if (tp->t_flags & TF_REQ_TSTMP)
 		len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
-	m = alloc_wr_mbuf(len, M_NOWAIT, tlsp);
+	m = alloc_wr_mbuf(len, M_NOWAIT);
 	if (m == NULL)
 		return (ENOMEM);
-	hold_tlspcb(tlsp);
+	m->m_pkthdr.snd_tag = m_snd_tag_ref(&tlsp->com.com);
+	m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 
 	/* FW_ULPTX_WR */
 	wr = mtod(m, void *);
@@ -537,18 +516,16 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 
 	items[0] = m;
 	error = mp_ring_enqueue(txq->r, items, 1, 1);
-	if (error) {
-		free_tlspcb(tlsp);
+	if (error)
 		m_free(m);
-	}
 	return (error);
 }
 
 int
-cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls)
+cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
+    struct m_snd_tag **pt)
 {
-	struct t6_sbtls_cipher *cipher;
+	const struct sbtls_session *tls;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
@@ -558,6 +535,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	int atid, error, keyid;
 
 	/* Sanity check values in *tls. */
+	tls = params->tls.tls;
 	switch (tls->sb_params.crypt_algorithm) {
 	case CRYPTO_AES_CBC:
 		/* XXX: Explicitly ignore any provided IV. */
@@ -603,7 +581,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	vi = ifp->if_softc;
 	sc = vi->pi->adapter;
 
-	tlsp = alloc_tlspcb(vi, M_WAITOK);
+	tlsp = alloc_tlspcb(ifp, vi, M_WAITOK);
 
 	atid = alloc_atid(sc, tlsp);
 	if (atid < 0) {
@@ -626,7 +604,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 		    atid, tlsp->tx_key_addr);
 	}
 
-	inp = so->so_pcb;
+	inp = params->tls.so->so_pcb;
 	INP_RLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_RUNLOCK(inp);
@@ -646,7 +624,7 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	} else
 		tlsp->using_timestamps = false;
 
-	error = send_sbtls_act_open_req(sc, vi, so, tlsp, atid);
+	error = send_sbtls_act_open_req(sc, vi, params->tls.so, tlsp, atid);
 	if (error) {
 		INP_RUNLOCK(inp);
 		goto failed;
@@ -693,14 +671,6 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	if (error)
 		goto failed;
 
-	cipher = malloc(sizeof(*cipher), M_CXGBE, M_ZERO | M_NOWAIT);
-	if (cipher == NULL) {
-		error = ENOMEM;
-		goto failed;
-	}
-	cipher->vi = vi;
-	cipher->tlsp = tlsp;
-
 	/* The SCMD fields used when encrypting a full TLS record. */
 	tlsp->scmd0.seqno_numivs = htobe32(V_SCMD_SEQ_NO_CTRL(3) |
 	    V_SCMD_PROTO_VERSION(tlsp->proto_ver) |
@@ -743,20 +713,19 @@ cxgbe_create_tls_session(struct ifnet *ifp, struct socket *so,
 	if (tlsp->inline_key)
 		tlsp->scmd0_short.ivgen_hdrlen |= V_SCMD_KEY_CTX_INLINE(1);
 
-	tls->cipher = cipher;
-	tls->sb_tls_free = sbtls_clean_cipher;
 	TXQ_LOCK(txq);
 	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM)
 		txq->kern_tls_gcm++;
 	else
 		txq->kern_tls_cbc++;
 	TXQ_UNLOCK(txq);
+	*pt = &tlsp->com.com;
 	return (0);
 
 failed:
 	if (atid >= 0)
 		free_atid(sc, atid);
-	free_tlspcb(tlsp);
+	m_snd_tag_rele(&tlsp->com.com);
 	return (error);
 }
 
@@ -842,7 +811,7 @@ init_sbtls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
 }
 
 static int
-sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
+sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
     struct sge_txq *txq)
 {
 	struct auth_hash *axf;
@@ -934,10 +903,11 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 	kctxlen = roundup2(sizeof(*kctx), 32);
 	len = kwrlen + kctxlen;
 
-        m = alloc_wr_mbuf(len, M_NOWAIT, tlsp);
+        m = alloc_wr_mbuf(len, M_NOWAIT);
 	if (m == NULL)
 		return (ENOMEM);
-	hold_tlspcb(tlsp);
+	m->m_pkthdr.snd_tag = m_snd_tag_ref(&tlsp->com.com);
+	m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	kwr = mtod(m, void *);
 	memset(kwr, 0, len);
 
@@ -970,10 +940,9 @@ sbtls_setup_keys(struct tlspcb *tlsp, struct sbtls_session *tls,
 	 */
 	items[0] = m;
 	error = mp_ring_enqueue(txq->r, items, 1, 1);
-	if (error) {
-		free_tlspcb(tlsp);
+	if (error)
 		m_free(m);
-	} else
+	else
 		CTR2(KTR_CXGBE, "%s: tid %d sent key WR", __func__, tlsp->tid);
 	return (error);
 }
@@ -999,7 +968,7 @@ sbtls_base_wr_size(struct tlspcb *tlsp)
 
 /* How many bytes of TCP payload to send for a given TLS record. */
 static u_int
-sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
+sbtls_tcp_payload_length(struct tlspcb *tlsp, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
@@ -1033,7 +1002,7 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 	 * For AES-CBC adjust the ciphertext length for the block
 	 * size.
 	 */
-	if (cipher->tlsp->enc_mode == SCMD_CIPH_MODE_AES_CBC &&
+	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_CBC &&
 	    mlen > TLS_HEADER_LENGTH) {
 		mlen = TLS_HEADER_LENGTH + rounddown(mlen - TLS_HEADER_LENGTH,
 		    AES_BLOCK_LEN);
@@ -1041,7 +1010,7 @@ sbtls_tcp_payload_length(struct t6_sbtls_cipher *cipher, struct mbuf *m_tls)
 
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d short TLS record (%u vs %u)",
-	    __func__, cipher->tlsp->tid, mlen, TLS_HEADER_LENGTH + plen);
+	    __func__, tlsp->tid, mlen, TLS_HEADER_LENGTH + plen);
 #endif
 	return (mlen);
 }
@@ -1101,7 +1070,7 @@ sbtls_sgl_size(u_int nsegs)
 }
 
 static int
-sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
+sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
     int *nsegsp)
 {
 	struct mbuf_ext_pgs *ext_pgs;
@@ -1115,7 +1084,7 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	 * Determine the size of the TLS record payload to send
 	 * excluding header and trailer.
 	 */
-	tlen = sbtls_tcp_payload_length(cipher, m_tls);
+	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
@@ -1127,8 +1096,7 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 		if (wr_len > SGE_MAX_WR_LEN) {
 			CTR3(KTR_CXGBE,
 		    "%s: tid %d TLS header-only packet too long (len %d)",
-			    __func__, cipher->tlsp->tid, m->m_len +
-			    m_tls->m_len);
+			    __func__, tlsp->tid, m->m_len + m_tls->m_len);
 		}
 
 		/* This should always be the last TLS record in a chain. */
@@ -1146,12 +1114,12 @@ sbtls_wr_len(struct t6_sbtls_cipher *cipher, struct mbuf *m, struct mbuf *m_tls,
 	plen = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len;
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(cipher->tlsp, m_tls);
+		offset = sbtls_payload_offset(tlsp, m_tls);
 	} else
 		offset = 0;
 
 	/* Calculate the size of the work request. */
-	wr_len = sbtls_base_wr_size(cipher->tlsp);
+	wr_len = sbtls_base_wr_size(tlsp);
 
 	/*
 	 * Full records and short records with an offset of 0 include
@@ -1241,9 +1209,9 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 }
 
 int
-t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
-    int *len16p)
+t6_sbtls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
 {
+	struct tlspcb *tlsp;
 	struct ether_header *eh;
 	struct ip *ip;
 	struct ip6_hdr *ip6;
@@ -1259,16 +1227,19 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * out to not be true.
 	 */
 	M_ASSERTPKTHDR(m);
+	MPASS(m->m_pkthdr.snd_tag != NULL);
+	tlsp = mst_to_tls(m->m_pkthdr.snd_tag);
+
 	if (m->m_len <= sizeof(*eh) + sizeof(*ip)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short", __func__,
-		    cipher->tlsp->tid);
+		    tlsp->tid);
 		return (EINVAL);
 	}
 	eh = mtod(m, struct ether_header *);
 	if (ntohs(eh->ether_type) != ETHERTYPE_IP &&
 	    ntohs(eh->ether_type) != ETHERTYPE_IPV6) {
 		CTR2(KTR_CXGBE, "%s: tid %d mbuf not ETHERTYPE_IP{,V6}",
-		    __func__, cipher->tlsp->tid);
+		    __func__, tlsp->tid);
 		return (EINVAL);
 	}
 	m->m_pkthdr.l2hlen = sizeof(*eh);
@@ -1278,7 +1249,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		ip = (struct ip *)(eh + 1);
 		if (ip->ip_p != IPPROTO_TCP) {
 			CTR2(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP",
-			    __func__, cipher->tlsp->tid);
+			    __func__, tlsp->tid);
 			return (EINVAL);
 		}
 		m->m_pkthdr.l3hlen = ip->ip_hl * 4;
@@ -1286,7 +1257,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		ip6 = (struct ip6_hdr *)(eh + 1);
 		if (ip6->ip6_nxt != IPPROTO_TCP) {
 			CTR3(KTR_CXGBE, "%s: tid %d mbuf not IPPROTO_TCP (%u)",
-			    __func__, cipher->tlsp->tid, ip6->ip6_nxt);
+			    __func__, tlsp->tid, ip6->ip6_nxt);
 			return (EINVAL);
 		}
 		m->m_pkthdr.l3hlen = sizeof(struct ip6_hdr);
@@ -1294,7 +1265,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	if (m->m_len < m->m_pkthdr.l2hlen + m->m_pkthdr.l3hlen +
 	    sizeof(*tcp)) {
 		CTR2(KTR_CXGBE, "%s: tid %d header mbuf too short (2)",
-		    __func__, cipher->tlsp->tid);
+		    __func__, tlsp->tid);
 		return (EINVAL);
 	}
 	tcp = (struct tcphdr *)((char *)(eh + 1) + m->m_pkthdr.l3hlen);
@@ -1305,7 +1276,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	    m->m_pkthdr.l4hlen) {
 		CTR6(KTR_CXGBE,
 		    "%s: tid %d header mbuf bad length (%d + %d + %d != %d)",
-		    __func__, cipher->tlsp->tid, m->m_pkthdr.l2hlen,
+		    __func__, tlsp->tid, m->m_pkthdr.l2hlen,
 		    m->m_pkthdr.l3hlen, m->m_pkthdr.l4hlen, m->m_len);
 		return (EINVAL);
 	}
@@ -1324,10 +1295,10 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
 
-		wr_len = sbtls_wr_len(cipher, m, m_tls, &nsegs);
+		wr_len = sbtls_wr_len(tlsp, m, m_tls, &nsegs);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d wr_len %d nsegs %d", __func__,
-		    cipher->tlsp->tid, wr_len, nsegs);
+		    tlsp->tid, wr_len, nsegs);
 #endif
 		if (wr_len > SGE_MAX_WR_LEN || nsegs > TX_SGL_SEGS)
 			return (EFBIG);
@@ -1353,7 +1324,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 		if (wr_len > SGE_MAX_WR_LEN) {
 			CTR3(KTR_CXGBE,
 			    "%s: tid %d options-only packet too long (len %d)",
-			    __func__, cipher->tlsp->tid, m->m_len);
+			    __func__, tlsp->tid, m->m_len);
 			return (EINVAL);
 		}
 		tot_len += roundup2(wr_len, EQ_ESIZE);
@@ -1374,7 +1345,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	 * If timestamps are present, reserve 1 more command for
 	 * setting the echoed timestamp.
 	 */
-	if (cipher->tlsp->using_timestamps)
+	if (tlsp->using_timestamps)
 		wr_len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 
 	tot_len += roundup2(wr_len, EQ_ESIZE);
@@ -1382,7 +1353,7 @@ t6_sbtls_parse_pkt(struct t6_sbtls_cipher *cipher, struct mbuf *m, int *nsegsp,
 	*len16p = tot_len / 16;
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %d len16 %d nsegs %d", __func__,
-	    cipher->tlsp->tid, *len16p, *nsegsp);
+	    tlsp->tid, *len16p, *nsegsp);
 #endif
 	return (0);
 }
@@ -1457,8 +1428,8 @@ copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
 }
 
 static int
-sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int available, u_int pidx)
+sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
+    u_int available, u_int pidx)
 {
 	struct tx_sdesc *txsd;
 	struct fw_eth_tx_pkt_wr *wr;
@@ -1548,9 +1519,8 @@ sbtls_write_tcp_options(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 }
 
 static int
-sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, struct mbuf *m_tls, u_int available,
-    tcp_seq tcp_seqno, u_int pidx)
+sbtls_write_tunnel_packet(struct sge_txq *txq, void *dst, struct mbuf *m,
+    struct mbuf *m_tls, u_int available, tcp_seq tcp_seqno, u_int pidx)
 {
 	struct tx_sdesc *txsd;
 	struct fw_eth_tx_pkt_wr *wr;
@@ -1644,7 +1614,7 @@ sbtls_write_tunnel_packet(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 
 #ifdef VERBOSE_TRACES
 	CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
-	    __func__, cipher->tlsp->tid, (u_int)ext_pgs->seqno);
+	    __func__, tlsp->tid, (u_int)ext_pgs->seqno);
 #endif
 	txq->kern_tls_header++;
 
@@ -1661,14 +1631,13 @@ _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
     "SND_NXT_RAW and SND_UNA_RAW are in different words");
 
 static int
-sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
+sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
     u_int nsegs, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
     u_int pidx, bool set_l2t_idx)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
-	struct tlspcb *tlsp;
 	struct fw_ulptx_wr *wr;
 	struct ulp_txpkt *txpkt;
 	struct ulptx_sc_memrd *memrd;
@@ -1686,7 +1655,6 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	bool first_wr, last_wr, using_scratch;
 
 	ndesc = 0;
-	tlsp = cipher->tlsp;
 	MPASS(tlsp->txq == txq);
 
 	first_wr = (tlsp->prev_seq == 0 && tlsp->prev_ack == 0 &&
@@ -1707,21 +1675,21 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	plen = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len;
 
 	/* Determine how much of the TLS record to send. */
-	tlen = sbtls_tcp_payload_length(cipher, m_tls);
+	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
 		 * send a tunnelled packet as immediate data.
 		 */
-		return (sbtls_write_tunnel_packet(cipher, txq, dst, m, m_tls,
-		    available, tcp_seqno, pidx));
+		return (sbtls_write_tunnel_packet(txq, dst, m, m_tls, available,
+		    tcp_seqno, pidx));
 	}
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(cipher->tlsp, m_tls);
+		offset = sbtls_payload_offset(tlsp, m_tls);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d short TLS record %u with offset %u",
-		    __func__, cipher->tlsp->tid, (u_int)ext_pgs->seqno, offset);
+		    __func__, tlsp->tid, (u_int)ext_pgs->seqno, offset);
 #endif
 		if (m_tls->m_next == NULL && (tcp->th_flags & TH_FIN) != 0) {
 			txq->kern_tls_fin_short++;
@@ -1818,7 +1786,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    ("trying to set T_RTSEQ_RECENT for subsequent TLS WR"));
 #ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d wrote updated T_RTSEQ_RECENT",
-		    __func__, cipher->tlsp->tid);
+		    __func__, tlsp->tid);
 #endif
 		write_set_tcb_field_ulp(tlsp, out, txq, W_TCB_T_RTSEQ_RECENT,
 		    V_TCB_T_RTSEQ_RECENT(M_TCB_T_RTSEQ_RECENT),
@@ -1898,7 +1866,7 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		    offset, plen - (ext_pgs->hdr_len + offset));
 
 	/* Calculate the size of the TLS work request. */
-	twr_len = sbtls_base_wr_size(cipher->tlsp);
+	twr_len = sbtls_base_wr_size(tlsp);
 
 	imm_len = 0;
 	if (offset == 0)
@@ -2200,8 +2168,8 @@ sbtls_write_tls_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 }
 
 static int
-sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int available, tcp_seq tcp_seqno, u_int pidx)
+sbtls_write_tcp_fin(struct sge_txq *txq, void *dst, struct mbuf *m,
+    u_int available, tcp_seq tcp_seqno, u_int pidx)
 {
 	struct tx_sdesc *txsd;
 	struct fw_eth_tx_pkt_wr *wr;
@@ -2291,8 +2259,8 @@ sbtls_write_tcp_fin(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 }
 
 int
-t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
-    void *dst, struct mbuf *m, u_int nsegs, u_int available)
+t6_sbtls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
+    u_int available)
 {
 	struct sge_eq *eq = &txq->eq;
 	struct tx_sdesc *txsd;
@@ -2306,12 +2274,15 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	bool has_fin, set_l2t_idx;
 	void *tsopt;
 
+	M_ASSERTPKTHDR(m);
+	MPASS(m->m_pkthdr.snd_tag != NULL);
+	tlsp = mst_to_tls(m->m_pkthdr.snd_tag);
+
 	totdesc = 0;
 	eh = mtod(m, struct ether_header *);
 	tcp = (struct tcphdr *)((char *)eh + m->m_pkthdr.l2hlen +
 	    m->m_pkthdr.l3hlen);
 	pidx = eq->pidx;
-	tlsp = cipher->tlsp;
 	has_fin = (tcp->th_flags & TH_FIN) != 0;
 
 	/*
@@ -2319,8 +2290,7 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	 * requested options as part of the FIN packet.
 	 */
 	if (!has_fin && sbtls_has_tcp_options(tcp)) {
-		ndesc = sbtls_write_tcp_options(cipher, txq, dst, m, available,
-		    pidx);
+		ndesc = sbtls_write_tcp_options(txq, dst, m, available, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 		dst = &eq->desc[pidx];
@@ -2383,7 +2353,7 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 			tcp_seqno = tlsp->prev_seq;
 		}
 
-		ndesc = sbtls_write_tls_wr(cipher, txq, dst, m, tcp, m_tls,
+		ndesc = sbtls_write_tls_wr(tlsp, txq, dst, m, tcp, m_tls,
 		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx,
 		    set_l2t_idx);
 		totdesc += ndesc;
@@ -2409,7 +2379,7 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 		 * uses the TCP sequence number after that reqeust as
 		 * the sequence number for the FIN packet.
 		 */
-		ndesc = sbtls_write_tcp_fin(cipher, txq, dst, m, available,
+		ndesc = sbtls_write_tcp_fin(txq, dst, m, available,
 		    tlsp->prev_seq, pidx);
 		totdesc += ndesc;
 	}
@@ -2418,21 +2388,28 @@ t6_sbtls_write_wr(struct t6_sbtls_cipher *cipher, struct sge_txq *txq,
 	return (totdesc);
 }
 
-static void
-sbtls_clean_cipher(struct sbtls_session *tls)
+void
+cxgbe_tls_tag_free(struct m_snd_tag *mst)
 {
-	struct t6_sbtls_cipher *cipher;
+	struct adapter *sc;
 	struct tlspcb *tlsp;
 
-	cipher = tls->cipher;
-	tlsp = cipher->tlsp;
+	tlsp = mst_to_tls(mst);
+	sc = tlsp->sc;
 
 	CTR2(KTR_CXGBE, "%s: tid %d", __func__, tlsp->tid);
 
-	explicit_bzero(&tlsp->keyctx, sizeof(&tlsp->keyctx));
+	if (tlsp->l2te)
+		t4_l2t_release(tlsp->l2te);
+	if (tlsp->tid >= 0)
+		release_tid(sc, tlsp->tid, tlsp->ctrlq);
+	if (tlsp->ce)
+		t4_release_lip(sc, tlsp->ce);
+	if (tlsp->tx_key_addr >= 0)
+		free_keyid(tlsp, tlsp->tx_key_addr);
 
-	free_tlspcb(tlsp);
-	free(cipher, M_CXGBE);
+	explicit_bzero(&tlsp->keyctx, sizeof(&tlsp->keyctx));
+	free(tlsp, M_CXGBE);
 }
 
 void

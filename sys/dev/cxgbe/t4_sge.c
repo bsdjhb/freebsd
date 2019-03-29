@@ -2318,10 +2318,10 @@ set_mbuf_eo_tsclk_tsoff(struct mbuf *m, uint8_t tsclk_tsoff)
 }
 
 static inline int
-needs_eo(struct mbuf *m)
+needs_eo(struct cxgbe_snd_tag *cst)
 {
 
-	return (m->m_pkthdr.snd_tag != NULL);
+	return (cst != NULL && cst->type == IF_SND_TAG_TYPE_RATE_LIMIT);
 }
 #endif
 
@@ -2331,7 +2331,7 @@ needs_eo(struct mbuf *m)
  * single mbuf.
  */
 struct mbuf *
-alloc_wr_mbuf(int len, int how, struct tlspcb *tlsp)
+alloc_wr_mbuf(int len, int how)
 {
 	struct mbuf *m;
 
@@ -2344,11 +2344,6 @@ alloc_wr_mbuf(int len, int how, struct tlspcb *tlsp)
 	if (m == NULL)
 		return (NULL);
 	m->m_pkthdr.len = len;
-#ifdef KERN_TLS
-	m->m_pkthdr.PH_per.ptr = tlsp;
-#else
-	MPASS(tlsp == NULL);
-#endif
 	m->m_len = len;
 	set_mbuf_cflags(m, MC_RAW_WR);
 	set_mbuf_len16(m, howmany(len, 16));
@@ -2435,40 +2430,6 @@ m_advance(struct mbuf **pm, int *poffset, int len)
 	return ((void *)p);
 }
 
-#ifdef KERN_TLS
-static inline bool
-is_tls_mbuf(struct mbuf *m)
-{
-	struct mbuf_ext_pgs *ext_pgs;
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
-	MBUF_EXT_PGS_ASSERT(m);
-	ext_pgs = m->m_ext.ext_pgs;
-	MPASS(ext_pgs->tls == NULL ||
-	    ext_pgs->tls->sb_tls_crypt == NULL);
-	return (ext_pgs->tls != NULL);
-}
-#endif
-
-static inline struct t6_sbtls_cipher *
-tls_mbuf_cipher(struct mbuf *m)
-{
-	struct mbuf_ext_pgs *ext_pgs;
-
-	while (m != NULL) {
-		if (m->m_flags & M_NOMAP) {
-			/* for now, all unmapped mbufs are assumed to be EXT_PGS */
-			MBUF_EXT_PGS_ASSERT(m);
-			ext_pgs = (void *)m->m_ext.ext_buf;
-			MPASS(ext_pgs->tls != NULL);
-			MPASS(ext_pgs->tls->sb_tls_crypt == NULL);
-			return (ext_pgs->tls->cipher);
-		}
-		m = m->m_next;
-	}
-	return (NULL);
-}
-
 static inline int
 count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
 {
@@ -2549,8 +2510,7 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
  * routine to return 0 if skip accounts for all the contents of the mbuf chain.
  */
 static inline int
-count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags,
-    struct t6_sbtls_cipher **cipherp)
+count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 {
 	vm_paddr_t lastb, next;
 	vm_offset_t va;
@@ -2574,17 +2534,6 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags,
 
 		if ((m->m_flags & M_NOMAP) != 0) {
 			*cflags |= MC_NOMAP;
-#ifdef KERN_TLS
-			if (is_tls_mbuf(m)) {
-				if (*cflags & MC_TLS) {
-					MPASS(*cipherp == tls_mbuf_cipher(m));
-				} else {
-					MPASS(*cipherp == NULL);
-					*cflags |= MC_TLS;
-					*cipherp = tls_mbuf_cipher(m);
-				}
-			}
-#endif
 			nsegs += count_mbuf_ext_pgs(m, skip, &lastb);
 			skip = 0;
 			continue;
@@ -2617,7 +2566,9 @@ parse_pkt(struct adapter *sc, struct vi_info *vi, struct mbuf **mp)
 #if defined(INET) || defined(INET6)
 	struct tcphdr *tcp;
 #endif
-	struct t6_sbtls_cipher *cipher;
+#if defined(KERN_TLS) || defined(RATELIMIT)
+	struct cxgbe_snd_tag *cst;
+#endif
 	uint16_t eh_type;
 	uint8_t cflags;
 
@@ -2637,18 +2588,20 @@ restart:
 	 */
 	M_ASSERTPKTHDR(m0);
 	MPASS(m0->m_pkthdr.len > 0);
-	cipher = NULL;
-	nsegs = count_mbuf_nsegs(m0, 0, &cflags, &cipher);
+	nsegs = count_mbuf_nsegs(m0, 0, &cflags);
+#if defined(KERN_TLS) || defined(RATELIMIT)
+	if (m->m_pkthdr.snd_tag != NULL)
+		cst = mst_to_cst(m->m_pkthdr.snd_tag);
+	else
+		cst = NULL;
+#endif
 #ifdef KERN_TLS
-	if (cflags & MC_TLS) {
+	if (cst != NULL && cst->type == IF_SND_TAG_TYPE_TLS) {
 		int len16;
 
-		if (cipher->vi != vi) {
-			rc = ECONNABORTED;
-			goto fail;
-		}
+		cflags |= MC_TLS;
 		set_mbuf_cflags(m0, cflags);
-		rc = t6_sbtls_parse_pkt(cipher, m0, &nsegs, &len16);
+		rc = t6_sbtls_parse_pkt(m0, &nsegs, &len16);
 		if (rc != 0)
 			goto fail;
 		set_mbuf_nsegs(m0, nsegs);
@@ -2656,7 +2609,6 @@ restart:
 		return (0);
 	}
 #endif
-	MPASS(cipher == NULL);
 	if (nsegs > (needs_tso(m0) ? TX_SGL_SEGS_TSO : TX_SGL_SEGS)) {
 		if (defragged++ > 0 || (m = m_defrag(m0, M_NOWAIT)) == NULL) {
 			rc = EFBIG;
@@ -2690,13 +2642,16 @@ restart:
 	 * checksumming is enabled.  needs_l4_csum happens to check for all the
 	 * right things.
 	 */
-	if (__predict_false(needs_eo(m0) && !needs_l4_csum(m0)))
+	if (__predict_false(needs_eo(cst) && !needs_l4_csum(m0))) {
+		m_snd_tag_rele(m0->m_pkthdr.snd_tag);
 		m0->m_pkthdr.snd_tag = NULL;
+		cst = NULL;
+	}
 #endif
 
 	if (!needs_tso(m0) &&
 #ifdef RATELIMIT
-	    !needs_eo(m0) &&
+	    !needs_eo(cst) &&
 #endif
 	    !(sc->flags & IS_VF && (needs_l3_csum(m0) || needs_l4_csum(m0))))
 		return (0);
@@ -2758,7 +2713,7 @@ restart:
 #endif
 	}
 #ifdef RATELIMIT
-	if (needs_eo(m0)) {
+	if (needs_eo(cst)) {
 		u_int immhdrs;
 
 		/* EO WRs have the headers in the WR and not the GL. */
@@ -3020,8 +2975,8 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
-			n = t6_sbtls_write_wr(tls_mbuf_cipher(m0), txq,
-			    (void *)wr, m0, mbuf_nsegs(m0), available);
+			n = t6_sbtls_write_wr(txq,(void *)wr, m0,
+			    mbuf_nsegs(m0), available);
 #endif
 		} else if (sc->flags & IS_VF) {
 			total++;
@@ -4898,7 +4853,6 @@ write_raw_wr(struct sge_txq *txq, void *wr, struct mbuf *m0, u_int available)
 	txsd = &txq->sdesc[eq->pidx];
 	txsd->m = m0;
 	txsd->desc_used = ndesc;
-	txsd->tlsp = m0->m_pkthdr.PH_per.ptr;
 
 	return (ndesc);
 }
@@ -5439,12 +5393,6 @@ reclaim_tx_descs(struct sge_txq *txq, u_int n)
 			m->m_nextpkt = NULL;
 			m_freem(m);
 		}
-#ifdef KERN_TLS
-		if (txsd->tlsp != NULL) {
-			free_tlspcb(txsd->tlsp);
-			txsd->tlsp = NULL;
-		}
-#endif
 		reclaimed += ndesc;
 		can_reclaim -= ndesc;
 		IDXINCR(eq->cidx, ndesc, eq->sidx);
@@ -5879,7 +5827,7 @@ done:
 #define ETID_FLOWC_LEN16 (howmany(ETID_FLOWC_LEN, 16))
 
 static int
-send_etid_flowc_wr(struct cxgbe_snd_tag *cst, struct port_info *pi,
+send_etid_flowc_wr(struct cxgbe_rate_tag *cst, struct port_info *pi,
     struct vi_info *vi)
 {
 	struct wrq_cookie cookie;
@@ -5925,7 +5873,7 @@ send_etid_flowc_wr(struct cxgbe_snd_tag *cst, struct port_info *pi,
 #define ETID_FLUSH_LEN16 (howmany(sizeof (struct fw_flowc_wr), 16))
 
 void
-send_etid_flush_wr(struct cxgbe_snd_tag *cst)
+send_etid_flush_wr(struct cxgbe_rate_tag *cst)
 {
 	struct fw_flowc_wr *flowc;
 	struct wrq_cookie cookie;
@@ -5951,7 +5899,7 @@ send_etid_flush_wr(struct cxgbe_snd_tag *cst)
 }
 
 static void
-write_ethofld_wr(struct cxgbe_snd_tag *cst, struct fw_eth_tx_eo_wr *wr,
+write_ethofld_wr(struct cxgbe_rate_tag *cst, struct fw_eth_tx_eo_wr *wr,
     struct mbuf *m0, int compl)
 {
 	struct cpl_tx_pkt_core *cpl;
@@ -6100,7 +6048,7 @@ write_ethofld_wr(struct cxgbe_snd_tag *cst, struct fw_eth_tx_eo_wr *wr,
 }
 
 static void
-ethofld_tx(struct cxgbe_snd_tag *cst)
+ethofld_tx(struct cxgbe_rate_tag *cst)
 {
 	struct mbuf *m;
 	struct wrq_cookie cookie;
@@ -6145,7 +6093,7 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 		/*
 		 * Drop the mbuf's reference on the tag now rather
 		 * than waiting until m_freem().  This ensures that
-		 * cxgbe_snd_tag_free gets called when the inp drops
+		 * cxgbe_rate_tag_free gets called when the inp drops
 		 * its reference on the tag and there are no more
 		 * mbufs in the pending_tx queue and can flush any
 		 * pending requests.  Otherwise if the last mbuf
@@ -6163,12 +6111,12 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 int
 ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 {
-	struct cxgbe_snd_tag *cst;
+	struct cxgbe_rate_tag *cst;
 	int rc;
 
 	MPASS(m0->m_nextpkt == NULL);
 	MPASS(m0->m_pkthdr.snd_tag != NULL);
-	cst = mst_to_cst(m0->m_pkthdr.snd_tag);
+	cst = mst_to_crt(m0->m_pkthdr.snd_tag);
 
 	mtx_lock(&cst->lock);
 	MPASS(cst->flags & EO_SND_TAG_REF);
@@ -6227,7 +6175,7 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 	const struct cpl_fw4_ack *cpl = (const void *)(rss + 1);
 	struct mbuf *m;
 	u_int etid = G_CPL_FW4_ACK_FLOWID(be32toh(OPCODE_TID(cpl)));
-	struct cxgbe_snd_tag *cst;
+	struct cxgbe_rate_tag *cst;
 	uint8_t credits = cpl->credits;
 
 	cst = lookup_etid(sc, etid);
@@ -6260,7 +6208,7 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 			cst->flags &= ~EO_FLUSH_RPL_PENDING;
 			cst->tx_credits += cpl->credits;
 freetag:
-			cxgbe_snd_tag_free_locked(cst);
+			cxgbe_rate_tag_free_locked(cst);
 			return (0);	/* cst is gone. */
 		}
 		KASSERT(m != NULL,

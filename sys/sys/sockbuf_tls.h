@@ -159,6 +159,7 @@ MALLOC_DECLARE(M_TLSSOBUF);
 
 #define SBTLS_API_VERSION 5
 
+struct m_snd_tag;
 struct mbuf_ext_pgs;
 struct sbtls_session;
 struct iovec;
@@ -179,7 +180,10 @@ struct sbtls_session {
 	    const struct tls_record_layer *hdr, uint8_t *trailer,
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
-	void *cipher;
+	union {
+		void *cipher;
+		struct m_snd_tag *snd_tag;
+	};
 	struct sbtls_crypto_backend *be;/* backend crypto impl. */
 	void (*sb_tls_free)(struct sbtls_session *tls);
 	struct tls_session_params sb_params;

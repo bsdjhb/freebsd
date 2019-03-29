@@ -191,7 +191,8 @@ struct m_snd_tag;
 
 #define	IF_SND_TAG_TYPE_RATE_LIMIT 0
 #define	IF_SND_TAG_TYPE_UNLIMITED 1
-#define	IF_SND_TAG_TYPE_MAX 2
+#define	IF_SND_TAG_TYPE_TLS 2
+#define	IF_SND_TAG_TYPE_MAX 3
 
 struct if_snd_tag_alloc_header {
 	uint32_t type;		/* send tag type, see IF_SND_TAG_XXX */
@@ -203,6 +204,16 @@ struct if_snd_tag_alloc_rate_limit {
 	struct if_snd_tag_alloc_header hdr;
 	uint64_t max_rate;	/* in bytes/s */
 };
+
+#ifdef KERN_TLS
+struct sbtls_session;
+
+struct if_snd_tag_alloc_tls {
+	struct if_snd_tag_alloc_header hdr;
+	const struct socket *so;
+	const struct sbtls_session *tls;
+};
+#endif
 
 struct if_snd_tag_rate_limit_params {
 	uint64_t max_rate;	/* in bytes/s */
@@ -216,6 +227,9 @@ union if_snd_tag_alloc_params {
 	struct if_snd_tag_alloc_header hdr;
 	struct if_snd_tag_alloc_rate_limit rate_limit;
 	struct if_snd_tag_alloc_rate_limit unlimited;
+#ifdef KERN_TLS
+	struct if_snd_tag_alloc_tls tls;
+#endif
 };
 
 union if_snd_tag_modify_params {
@@ -373,9 +387,6 @@ struct ifnet {
 	if_snd_tag_modify_t *if_snd_tag_modify;
 	if_snd_tag_query_t *if_snd_tag_query;
 	if_snd_tag_free_t *if_snd_tag_free;
-
-	int	(*if_create_tls_session)
-		(struct ifnet *, struct socket *, struct sbtls_session *);
 
 	/* Ethernet PCP */
 	uint8_t if_pcp;

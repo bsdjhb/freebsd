@@ -40,9 +40,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/proc.h>
 #include <sys/lock.h>
 #include <sys/rmlock.h>
-#ifdef KERN_TLS
-#include <sys/socketvar.h>
-#endif
 #include <sys/sx.h>
 #include <sys/taskqueue.h>
 #include <sys/eventhandler.h>
@@ -61,9 +58,6 @@ __FBSDID("$FreeBSD$");
 #if defined(INET) || defined(INET6)
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#ifdef KERN_TLS
-#include <netinet/in_pcb.h>
-#endif
 #endif
 #ifdef INET
 #include <netinet/in_systm.h>
@@ -126,10 +120,6 @@ static const char laggname[] = "lagg";
 static MALLOC_DEFINE(M_LAGG, laggname, "802.3AD Link Aggregation Interface");
 
 static void	lagg_capabilities(struct lagg_softc *);
-#ifdef KERN_TLS
-static int	lagg_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls);
-#endif
 static int	lagg_port_create(struct lagg_softc *, struct ifnet *);
 static int	lagg_port_destroy(struct lagg_port *, int);
 static struct mbuf *lagg_input(struct ifnet *, struct mbuf *);
@@ -146,7 +136,7 @@ static void	lagg_port2req(struct lagg_port *, struct lagg_reqport *);
 static void	lagg_init(void *);
 static void	lagg_stop(struct lagg_softc *);
 static int	lagg_ioctl(struct ifnet *, u_long, caddr_t);
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 static int	lagg_snd_tag_alloc(struct ifnet *,
 		    union if_snd_tag_alloc_params *,
 		    struct m_snd_tag **);
@@ -534,14 +524,11 @@ lagg_clone_create(struct if_clone *ifc, int unit, caddr_t params)
 	ifp->if_ioctl = lagg_ioctl;
 	ifp->if_get_counter = lagg_get_counter;
 	ifp->if_flags = IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST;
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 	ifp->if_snd_tag_alloc = lagg_snd_tag_alloc;
 	ifp->if_snd_tag_modify = lagg_snd_tag_modify;
 	ifp->if_snd_tag_query = lagg_snd_tag_query;
 	ifp->if_snd_tag_free = lagg_snd_tag_free;
-#endif
-#ifdef KERN_TLS
-	ifp->if_create_tls_session = lagg_create_tls_session;
 #endif
 	ifp->if_capenable = ifp->if_capabilities = IFCAP_HWSTATS;
 
@@ -1550,7 +1537,7 @@ lagg_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	return (error);
 }
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 static inline struct lagg_snd_tag *
 mst_to_lst(struct m_snd_tag *mst)
 {
@@ -1666,58 +1653,6 @@ lagg_snd_tag_free(struct m_snd_tag *mst)
 	free(lst, M_LAGG);
 }
 
-#endif
-
-#ifdef KERN_TLS
-static int
-lagg_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls)
-{
-	struct lagg_softc *sc = (struct lagg_softc *)ifp->if_softc;
-	struct lagg_port *lp;
-	struct lagg_lb *lb;
-	struct inpcb *inp;
-	uint32_t p;
-
-	inp = so->so_pcb;
-	switch (sc->sc_proto) {
-	case LAGG_PROTO_FAILOVER:
-		lp = lagg_link_active(sc, sc->sc_primary);
-		break;
-	case LAGG_PROTO_LOADBALANCE:
-		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    inp->inp_flowtype == M_HASHTYPE_NONE)
-			return (EOPNOTSUPP);
-		p = inp->inp_flowid >> sc->flowid_shift;
-		p %= sc->sc_count;
-		lb = (struct lagg_lb *)sc->sc_psc;
-		lp = lb->lb_ports[p];
-		lp = lagg_link_active(sc, lp);
-		break;
-	case LAGG_PROTO_LACP:
-		if ((sc->sc_opts & LAGG_OPT_USE_FLOWID) == 0 ||
-		    inp->inp_flowtype == M_HASHTYPE_NONE)
-			return (EOPNOTSUPP);
-		lp = lacp_select_tx_port_by_hash(sc, inp->inp_flowid);
-		break;
-	default:
-		return (EOPNOTSUPP);
-	}
-	if (lp == NULL)
-		return (EOPNOTSUPP);
-	ifp = lp->lp_ifp;
-	if (ifp == NULL || ifp->if_create_tls_session == NULL)
-		return (EOPNOTSUPP);
-
-	if (inp->inp_vflag & INP_IPV6) {
-		if ((ifp->if_capenable & IFCAP_TXTLS6) == 0)
-			return (EOPNOTSUPP);
-	} else {
-		if ((ifp->if_capenable & IFCAP_TXTLS4) == 0)
-			return (EOPNOTSUPP);
-	}
-	return (ifp->if_create_tls_session(ifp, so, tls));
-}
 #endif
 
 static int
@@ -1842,7 +1777,7 @@ lagg_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct lagg_softc *sc = (struct lagg_softc *)ifp->if_softc;
 	int error;
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 	if (m->m_pkthdr.snd_tag != NULL)
 		MPASS(ifp == m->m_pkthdr.snd_tag->ifp);
 #endif
@@ -2036,7 +1971,7 @@ int
 lagg_enqueue(struct ifnet *ifp, struct mbuf *m)
 {
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 	if (m->m_pkthdr.snd_tag != NULL) {
 		struct lagg_snd_tag *lst;
 		struct m_snd_tag *mst;

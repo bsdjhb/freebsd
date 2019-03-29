@@ -572,26 +572,26 @@ sbtls_cleanup(struct sbtls_session *tls)
 
 	counter_u64_add(sbtls_offload_active, -1);
 	if (tls->sb_tls_free != NULL) {
-		if (tls->be != NULL) {
-			switch (tls->sb_params.crypt_algorithm) {
-			case CRYPTO_AES_CBC:
-				counter_u64_add(sbtls_sw_cbc, -1);
-				break;
-			case CRYPTO_AES_NIST_GCM_16:
-				counter_u64_add(sbtls_sw_gcm, -1);
-				break;
-			}
-		} else {
-			switch (tls->sb_params.crypt_algorithm) {
-			case CRYPTO_AES_CBC:
-				counter_u64_add(sbtls_ifnet_cbc, -1);
-				break;
-			case CRYPTO_AES_NIST_GCM_16:
-				counter_u64_add(sbtls_ifnet_gcm, -1);
-				break;
-			}
+		MPASS(tls->be != NULL);
+		switch (tls->sb_params.crypt_algorithm) {
+		case CRYPTO_AES_CBC:
+			counter_u64_add(sbtls_sw_cbc, -1);
+			break;
+		case CRYPTO_AES_NIST_GCM_16:
+			counter_u64_add(sbtls_sw_gcm, -1);
+			break;
 		}
 		tls->sb_tls_free(tls);
+	} else if (tls->snd_tag != NULL) {
+		switch (tls->sb_params.crypt_algorithm) {
+		case CRYPTO_AES_CBC:
+			counter_u64_add(sbtls_ifnet_cbc, -1);
+			break;
+		case CRYPTO_AES_NIST_GCM_16:
+			counter_u64_add(sbtls_ifnet_gcm, -1);
+			break;
+		}
+		m_snd_tag_rele(tls->snd_tag);
 	}
 	if (tls->sb_params.hmac_key) {
 		explicit_bzero(tls->sb_params.hmac_key,
@@ -613,6 +613,8 @@ sbtls_cleanup(struct sbtls_session *tls)
 static int
 sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 {
+	union if_snd_tag_alloc_params params;
+	struct m_snd_tag *mst;
 	struct ifnet *ifp;
 	struct rtentry *rt;
 	struct inpcb *inp;
@@ -655,8 +657,15 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 	}
 	ifp = rt->rt_ifp;
 	if_ref(ifp);
+
+	params.hdr.type = IF_SND_TAG_TYPE_TLS;
+	params.hdr.flowid = inp->inp_flowid;
+	params.hdr.flowtype = inp->inp_flowtype;
+	params.tls.so = so;
+	params.tls.tls = tls;
 	INP_RUNLOCK(inp);
-	if (ifp->if_create_tls_session == NULL) {
+
+	if (ifp->if_snd_tag_alloc == NULL) {
 		error = EOPNOTSUPP;
 		goto out;
 	}
@@ -675,8 +684,9 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 			goto out;
 		}
 	}
-	error = ifp->if_create_tls_session(ifp, so, tls);
+	error = ifp->if_snd_tag_alloc(ifp, &params, &mst);
 	if (error == 0) {
+		tls->snd_tag = mst;
 		switch (tls->sb_params.crypt_algorithm) {
 		case CRYPTO_AES_CBC:
 			counter_u64_add(sbtls_ifnet_cbc, 1);

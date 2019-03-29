@@ -104,7 +104,7 @@ struct ifvlantrunk {
 	int		refcnt;
 };
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 struct vlan_snd_tag {
 	struct m_snd_tag com;
 	struct m_snd_tag *tag;
@@ -276,14 +276,10 @@ static __inline struct ifvlan * vlan_gethash(struct ifvlantrunk *trunk,
 #endif
 static	void trunk_destroy(struct ifvlantrunk *trunk);
 
-#ifdef KERN_TLS
-static	int vlan_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls);
-#endif
 static	void vlan_init(void *foo);
 static	void vlan_input(struct ifnet *ifp, struct mbuf *m);
 static	int vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t addr);
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 static	int vlan_snd_tag_alloc(struct ifnet *,
     union if_snd_tag_alloc_params *, struct m_snd_tag **);
 static	int vlan_snd_tag_modify(struct m_snd_tag *,
@@ -1069,14 +1065,11 @@ vlan_clone_create(struct if_clone *ifc, char *name, size_t len, caddr_t params)
 	ifp->if_transmit = vlan_transmit;
 	ifp->if_qflush = vlan_qflush;
 	ifp->if_ioctl = vlan_ioctl;
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 	ifp->if_snd_tag_alloc = vlan_snd_tag_alloc;
 	ifp->if_snd_tag_modify = vlan_snd_tag_modify;
 	ifp->if_snd_tag_query = vlan_snd_tag_query;
 	ifp->if_snd_tag_free = vlan_snd_tag_free;
-#endif
-#ifdef KERN_TLS
-	ifp->if_create_tls_session = vlan_create_tls_session;
 #endif
 	ifp->if_flags = VLAN_IFFLAGS;
 	ether_ifattach(ifp, eaddr);
@@ -1165,7 +1158,7 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	BPF_MTAP(ifp, m);
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 	if (m->m_pkthdr.snd_tag != NULL) {
 		struct vlan_snd_tag *vst;
 		struct m_snd_tag *mst;
@@ -1993,7 +1986,7 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	return (error);
 }
 
-#ifdef RATELIMIT
+#if defined(KERN_TLS) || defined(RATELIMIT)
 static int
 vlan_snd_tag_alloc(struct ifnet *ifp,
     union if_snd_tag_alloc_params *params,
@@ -2065,25 +2058,5 @@ vlan_snd_tag_free(struct m_snd_tag *mst)
 	vst = mst_to_vst(mst);
 	m_snd_tag_rele(vst->tag);
 	free(vst, M_VLAN);
-}
-#endif
-
-#ifdef KERN_TLS
-static int
-vlan_create_tls_session(struct ifnet *ifp, struct socket *so,
-    struct sbtls_session *tls)
-{
-
-	ifp = vlan_trunkdev(ifp);
-	if (ifp == NULL || ifp->if_create_tls_session == NULL)
-		return (EOPNOTSUPP);
-
-	/*
-	 * The vlan's if_capenable is a subset of the trunk's
-	 * if_capenable.  Since the caller already checked the vlan's
-	 * if_capenable, this means the bits must already be set in
-	 * the parent's if_capenable.
-	 */
-	return (ifp->if_create_tls_session(ifp, so, tls));
 }
 #endif

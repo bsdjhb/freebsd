@@ -341,7 +341,6 @@ struct tx_desc {
 struct tx_sdesc {
 	struct mbuf *m;		/* m_nextpkt linked chain of frames */
 	uint8_t desc_used;	/* # of hardware descriptors used by the WR */
-	struct tlspcb *tlsp;
 };
 
 
@@ -918,12 +917,6 @@ struct adapter {
 	struct callout sbtls_tick;
 };
 
-/* XXX: Probably move to a different header later. */
-struct t6_sbtls_cipher {
-	struct vi_info *vi;
-	struct tlspcb *tlsp;
-};
-
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)
 #define ADAPTER_UNLOCK(sc)		mtx_unlock(&(sc)->sc_lock)
 #define ADAPTER_LOCK_ASSERT_OWNED(sc)	mtx_assert(&(sc)->sc_lock, MA_OWNED)
@@ -1180,6 +1173,7 @@ int update_mac_settings(struct ifnet *, int);
 int adapter_full_init(struct adapter *);
 int adapter_full_uninit(struct adapter *);
 uint64_t cxgbe_get_counter(struct ifnet *, ift_counter);
+void cxgbe_snd_tag_init(struct cxgbe_snd_tag *, struct ifnet *, int);
 int vi_full_init(struct vi_info *);
 int vi_full_uninit(struct vi_info *);
 void vi_sysctls(struct vi_info *);
@@ -1196,15 +1190,14 @@ void t4_os_dump_devlog(struct adapter *);
 
 #ifdef KERN_TLS
 /* t4_kern_tls.c */
-int cxgbe_create_tls_session(struct ifnet *, struct socket *,
-    struct sbtls_session *);
+int cxgbe_tls_tag_alloc(struct ifnet *, union if_snd_tag_alloc_params *,
+    struct m_snd_tag **);
+void cxgbe_tls_tag_free(struct m_snd_tag *);
 void t6_sbtls_modload(void);
 void t6_sbtls_modunload(void);
 int t6_sbtls_try(struct ifnet *, struct socket *, struct sbtls_session *);
-int t6_sbtls_parse_pkt(struct t6_sbtls_cipher *, struct mbuf *, int *, int *);
-int t6_sbtls_write_wr(struct t6_sbtls_cipher *, struct sge_txq *, void *,
-    struct mbuf *, u_int, u_int);
-void free_tlspcb(struct tlspcb *);
+int t6_sbtls_parse_pkt(struct mbuf *, int *, int *);
+int t6_sbtls_write_wr(struct sge_txq *, void *, struct mbuf *, u_int, u_int);
 #endif
 
 #ifdef DEV_NETMAP
@@ -1239,7 +1232,7 @@ void t4_intr_err(void *);
 void t4_intr_evt(void *);
 void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
-struct mbuf *alloc_wr_mbuf(int, int, struct tlspcb *);
+struct mbuf *alloc_wr_mbuf(int, int);
 int parse_pkt(struct adapter *, struct vi_info *, struct mbuf **);
 void *start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *);
 void commit_wrq_wr(struct sge_wrq *, void *, struct wrq_cookie *);
@@ -1277,12 +1270,12 @@ int sysctl_tc_params(SYSCTL_HANDLER_ARGS);
 void t4_init_etid_table(struct adapter *);
 void t4_free_etid_table(struct adapter *);
 struct cxgbe_snd_tag *lookup_etid(struct adapter *, int);
-int cxgbe_snd_tag_alloc(struct ifnet *, union if_snd_tag_alloc_params *,
+int cxgbe_rate_tag_alloc(struct ifnet *, union if_snd_tag_alloc_params *,
     struct m_snd_tag **);
-int cxgbe_snd_tag_modify(struct m_snd_tag *, union if_snd_tag_modify_params *);
-int cxgbe_snd_tag_query(struct m_snd_tag *, union if_snd_tag_query_params *);
-void cxgbe_snd_tag_free(struct m_snd_tag *);
-void cxgbe_snd_tag_free_locked(struct cxgbe_snd_tag *);
+int cxgbe_rate_tag_modify(struct m_snd_tag *, union if_snd_tag_modify_params *);
+int cxgbe_rate_tag_query(struct m_snd_tag *, union if_snd_tag_query_params *);
+void cxgbe_rate_tag_free(struct m_snd_tag *);
+void cxgbe_rate_tag_free_locked(struct cxgbe_snd_tag *);
 #endif
 
 /* t4_filter.c */
