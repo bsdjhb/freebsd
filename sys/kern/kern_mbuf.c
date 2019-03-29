@@ -49,6 +49,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/refcount.h>
 #include <sys/sf_buf.h>
 #include <sys/smp.h>
+#include <sys/socket.h>
 #include <sys/socketvar.h>
 #ifdef KERN_TLS
 #include <sys/sockbuf_tls.h>
@@ -56,6 +57,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysctl.h>
 #include <sys/taskqueue.h>
 
+#include <net/if.h>
+#include <net/if_var.h>
 #include <net/vnet.h>
 
 #include <vm/vm.h>
@@ -122,6 +125,10 @@ static quad_t maxmbufmem;	/* overall real memory limit for all mbufs */
 
 SYSCTL_QUAD(_kern_ipc, OID_AUTO, maxmbufmem, CTLFLAG_RDTUN | CTLFLAG_NOFETCH, &maxmbufmem, 0,
     "Maximum real memory allocatable to various mbuf types");
+
+static counter_u64_t snd_tag_count;
+SYSCTL_COUNTER_U64(_kern_ipc, OID_AUTO, num_snd_tags, CTLFLAG_RW,
+    &snd_tag_count, "# of active mbuf send tags");
 
 /*
  * tunable_mbinit() has to be run before any mbuf allocations are done.
@@ -399,6 +406,8 @@ mbuf_init(void *dummy)
 	 */
 	EVENTHANDLER_REGISTER(vm_lowmem, mb_reclaim, NULL,
 	    EVENTHANDLER_PRI_FIRST);
+
+	snd_tag_count = counter_u64_alloc(M_WAITOK);
 }
 SYSINIT(mbuf, SI_SUB_MBUF, SI_ORDER_FIRST, mbuf_init, NULL);
 
@@ -1538,4 +1547,25 @@ m_freem(struct mbuf *mb)
 	MBUF_PROBE1(m__freem, mb);
 	while (mb != NULL)
 		mb = m_free(mb);
+}
+
+void
+m_snd_tag_init(struct m_snd_tag *mst, struct ifnet *ifp)
+{
+
+	if_ref(ifp);
+	mst->ifp = ifp;
+	refcount_init(&mst->refcount, 1);
+	counter_u64_add(snd_tag_count, 1);
+}
+
+void
+m_snd_tag_destroy(struct m_snd_tag *mst)
+{
+	struct ifnet *ifp;
+
+	ifp = mst->ifp;
+	ifp->if_snd_tag_free(mst);
+	if_rele(ifp);
+	counter_u64_add(snd_tag_count, -1);
 }

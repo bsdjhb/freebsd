@@ -265,6 +265,36 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 	return (0);
 }
 
+#ifdef RATELIMIT
+static __inline int
+ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
+{
+
+	MPASS(m->m_pkthdr.snd_tag == NULL);
+	if (inp == NULL)
+		return (0);
+
+	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+	    (inp->inp_snd_tag != NULL &&
+		inp->inp_snd_tag->ifp != ifp))
+		in_pcboutput_txrtlmt(inp, ifp, m);
+
+	if (inp->inp_snd_tag != NULL) {
+		/*
+		 * NB: in_pcboutput_txrlmt might fail to refresh the
+		 * tag if the lock upgrade fails.
+		 */
+		if (inp->inp_snd_tag->ifp != ifp)
+			return (EAGAIN);
+
+		/* stamp send tag on mbuf */
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
+		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
+	}
+	return (0);
+}
+#endif
+
 /*
  * IP6 output. The packet in mbuf chain m contains a skeletal IP6
  * header (with pri, len, nxt, hlim, src, dst).
@@ -966,14 +996,9 @@ passout:
 			ifa_free(&ia6->ia_ifa);
 		}
 #ifdef RATELIMIT
-		if (inp != NULL) {
-			if (inp->inp_flags2 & INP_RATE_LIMIT_CHANGED)
-				in_pcboutput_txrtlmt(inp, ifp, m);
-			/* stamp send tag on mbuf */
-			m->m_pkthdr.snd_tag = inp->inp_snd_tag;
-		} else {
-			m->m_pkthdr.snd_tag = NULL;
-		}
+		error = ip6_set_ratelimit_tag(inp, ifp, m);
+		if (error)
+			goto done;
 #endif
 		error = nd6_output_ifp(ifp, origifp, m, dst,
 		    (struct route *)ro);
@@ -1079,6 +1104,10 @@ sendorfree:
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
+#ifdef RATELIMIT
+		if (error == 0)
+			error = ip6_set_ratelimit_tag(inp, ifp, m);
+#endif
 		if (error == 0) {
 			/* Record statistics for this interface address. */
 			if (ia) {
@@ -1086,16 +1115,6 @@ sendorfree:
 				counter_u64_add(ia->ia_ifa.ifa_obytes,
 				    m->m_pkthdr.len);
 			}
-#ifdef RATELIMIT
-			if (inp != NULL) {
-				if (inp->inp_flags2 & INP_RATE_LIMIT_CHANGED)
-					in_pcboutput_txrtlmt(inp, ifp, m);
-				/* stamp send tag on mbuf */
-				m->m_pkthdr.snd_tag = inp->inp_snd_tag;
-			} else {
-				m->m_pkthdr.snd_tag = NULL;
-			}
-#endif
 			error = nd6_output_ifp(ifp, origifp, m, dst,
 			    (struct route *)ro);
 #ifdef RATELIMIT

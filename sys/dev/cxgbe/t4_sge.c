@@ -6141,6 +6141,21 @@ ethofld_tx(struct cxgbe_snd_tag *cst)
 			cst->tx_nocompl	= 0;
 		}
 		(void) mbufq_dequeue(&cst->pending_tx);
+
+		/*
+		 * Drop the mbuf's reference on the tag now rather
+		 * than waiting until m_freem().  This ensures that
+		 * cxgbe_snd_tag_free gets called when the inp drops
+		 * its reference on the tag and there are no more
+		 * mbufs in the pending_tx queue and can flush any
+		 * pending requests.  Otherwise if the last mbuf
+		 * doesn't request a completion the etid will never be
+		 * released.
+		 */
+		m->m_pkthdr.snd_tag = NULL;
+		m->m_pkthdr.csum_flags &= ~CSUM_SND_TAG;
+		m_snd_tag_rele(&cst->com);
+
 		mbufq_enqueue(&cst->pending_fwack, m);
 	}
 }
@@ -6186,8 +6201,18 @@ ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 	mbufq_enqueue(&cst->pending_tx, m0);
 	cst->plen += m0->m_pkthdr.len;
 
+	/*
+	 * Hold an extra reference on the tag while generating work
+	 * requests to ensure that we don't try to free the tag during
+	 * ethofld_tx() in case we are sending the final mbuf after
+	 * the inp was freed.
+	 */
+	m_snd_tag_ref(&cst->com);
 	ethofld_tx(cst);
-	rc = 0;
+	mtx_unlock(&cst->lock);
+	m_snd_tag_rele(&cst->com);
+	return (0);
+
 done:
 	mtx_unlock(&cst->lock);
 	if (__predict_false(rc != 0))

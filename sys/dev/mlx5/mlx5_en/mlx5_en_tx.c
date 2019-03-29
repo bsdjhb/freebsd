@@ -610,20 +610,9 @@ mlx5e_xmit(struct ifnet *ifp, struct mbuf *mb)
 	int ret;
 
 	if (mb->m_pkthdr.snd_tag != NULL) {
+		MPASS(mb->m_pkthdr.snd_tag->ifp == ifp);
 		sq = mlx5e_select_queue_by_send_tag(ifp, mb);
 		if (unlikely(sq == NULL)) {
-			/* Check for route change */
-			if (mb->m_pkthdr.snd_tag->ifp != ifp) {
-				/* Free mbuf */
-				m_freem(mb);
-
-				/*
-				 * Tell upper layers about route
-				 * change and to re-transmit this
-				 * packet:
-				 */
-				return (EAGAIN);
-			}
 			goto select_queue;
 		}
 	} else {
