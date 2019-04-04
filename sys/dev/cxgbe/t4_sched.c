@@ -764,7 +764,7 @@ cxgbe_rate_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	struct adapter *sc = pi->adapter;
 	struct cxgbe_rate_tag *cst;
 
-	MPASS(params->hdr.type == IF_SND_TAG_TYPE_RATE_LIMIT)
+	MPASS(params->hdr.type == IF_SND_TAG_TYPE_RATE_LIMIT);
 
 	rc = t4_reserve_cl_rl_kbps(sc, pi->port_id,
 	    (params->rate_limit.max_rate * 8ULL / 1000), &schedcl);
@@ -806,7 +806,7 @@ failed:
 	 * Queues will be selected later when the connection flowid is available.
 	 */
 
-	*pt = &cst->com;
+	*pt = &cst->com.com;
 	return (0);
 }
 

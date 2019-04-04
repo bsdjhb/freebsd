@@ -2323,7 +2323,7 @@ cxgbe_snd_tag_modify(struct m_snd_tag *mst,
 	switch (cst->type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		return (cxgbe_rate_tag_modify(ifp, params));
+		return (cxgbe_rate_tag_modify(mst, params));
 #endif
 	default:
 		return (EOPNOTSUPP);
@@ -2340,7 +2340,7 @@ cxgbe_snd_tag_query(struct m_snd_tag *mst,
 	switch (cst->type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		return (cxgbe_rate_tag_query(ifp, params));
+		return (cxgbe_rate_tag_query(mst, params));
 #endif
 	default:
 		return (EOPNOTSUPP);

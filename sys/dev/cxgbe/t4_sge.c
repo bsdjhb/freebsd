@@ -2720,9 +2720,8 @@ restart:
 		immhdrs = m0->m_pkthdr.l2hlen + m0->m_pkthdr.l3hlen +
 		    m0->m_pkthdr.l4hlen;
 		cflags = 0;
-		nsegs = count_mbuf_nsegs(m0, immhdrs, &cflags, &cipher);
+		nsegs = count_mbuf_nsegs(m0, immhdrs, &cflags);
 		MPASS(cflags == mbuf_cflags(m0));
-		MPASS(cipher == NULL);
 		set_mbuf_eo_nsegs(m0, nsegs);
 		set_mbuf_eo_len16(m0,
 		    txpkt_eo_len16(nsegs, immhdrs, needs_tso(m0)));
@@ -6081,7 +6080,7 @@ ethofld_tx(struct cxgbe_rate_tag *cst)
 		cst->tx_credits -= next_credits;
 		cst->tx_nocompl += next_credits;
 		compl = cst->ncompl == 0 || cst->tx_nocompl >= cst->tx_total / 2;
-		ETHER_BPF_MTAP(cst->com.ifp, m);
+		ETHER_BPF_MTAP(cst->com.com.ifp, m);
 		write_ethofld_wr(cst, wr, m, compl);
 		commit_wrq_wr(cst->eo_txq, wr, &cookie);
 		if (compl) {
@@ -6102,7 +6101,7 @@ ethofld_tx(struct cxgbe_rate_tag *cst)
 		 */
 		m->m_pkthdr.snd_tag = NULL;
 		m->m_pkthdr.csum_flags &= ~CSUM_SND_TAG;
-		m_snd_tag_rele(&cst->com);
+		m_snd_tag_rele(&cst->com.com);
 
 		mbufq_enqueue(&cst->pending_fwack, m);
 	}
@@ -6155,10 +6154,10 @@ ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 	 * ethofld_tx() in case we are sending the final mbuf after
 	 * the inp was freed.
 	 */
-	m_snd_tag_ref(&cst->com);
+	m_snd_tag_ref(&cst->com.com);
 	ethofld_tx(cst);
 	mtx_unlock(&cst->lock);
-	m_snd_tag_rele(&cst->com);
+	m_snd_tag_rele(&cst->com.com);
 	return (0);
 
 done:
