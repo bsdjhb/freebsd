@@ -67,11 +67,12 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
-#include "opt_ratelimit.h"
 #include "opt_ipsec.h"
-#include "opt_sctp.h"
+#include "opt_kern_tls.h"
+#include "opt_ratelimit.h"
 #include "opt_route.h"
 #include "opt_rss.h"
+#include "opt_sctp.h"
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -81,6 +82,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/priv.h>
 #include <sys/proc.h>
 #include <sys/protosw.h>
+#ifdef KERN_TLS
+#include <sys/sockbuf_tls.h>
+#endif
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/syslog.h>
@@ -266,13 +270,18 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 }
 
 #ifdef RATELIMIT
-static __inline int
+static __inline void
 ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 {
 
+#ifdef KERN_TLS
+	if (m->m_pkthdr.snd_tag != NULL)
+		return;
+#else
 	MPASS(m->m_pkthdr.snd_tag == NULL);
+#endif
 	if (inp == NULL)
-		return (0);
+		return;
 
 	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
 	    (inp->inp_snd_tag != NULL &&
@@ -280,18 +289,10 @@ ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 		in_pcboutput_txrtlmt(inp, ifp, m);
 
 	if (inp->inp_snd_tag != NULL) {
-		/*
-		 * NB: in_pcboutput_txrlmt might fail to refresh the
-		 * tag if the lock upgrade fails.
-		 */
-		if (inp->inp_snd_tag->ifp != ifp)
-			return (EAGAIN);
-
 		/* stamp send tag on mbuf */
 		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	}
-	return (0);
 }
 #endif
 
@@ -343,6 +344,9 @@ ip6_output(struct mbuf *m0, struct ip6_pktopts *opt,
 	uint32_t fibnum;
 	struct m_tag *fwd_tag = NULL;
 	uint32_t id;
+#ifdef KERN_TLS
+	struct m_snd_tag *tls_snd_tag = NULL;
+#endif
 
 	if (inp != NULL) {
 		INP_LOCK_ASSERT(inp);
@@ -953,7 +957,12 @@ passout:
 		sctp_delayed_cksum(m, sizeof(struct ip6_hdr));
 	}
 #endif
-	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
+#if defined(KERN_TLS)
+	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG)
+		tls_snd_tag = m_snd_tag_ref(m->m_pkthdr.snd_tag);
+#endif
+	m->m_pkthdr.csum_flags &= ifp->if_hwassist | CSUM_SND_TAG;
+	
 	tlen = m->m_pkthdr.len;
 
 	if ((opt && (opt->ip6po_flags & IP6PO_DONTFRAG)) || tso)
@@ -996,14 +1005,23 @@ passout:
 			ifa_free(&ia6->ia_ifa);
 		}
 #ifdef RATELIMIT
-		error = ip6_set_ratelimit_tag(inp, ifp, m);
-		if (error)
-			goto done;
+		ip6_set_ratelimit_tag(inp, ifp, m);
 #endif
-		error = nd6_output_ifp(ifp, origifp, m, dst,
-		    (struct route *)ro);
+#if defined(KERN_TLS) || defined(RATELIMIT)
+		if (m->m_pkthdr.snd_tag != NULL &&
+		    m->m_pkthdr.snd_tag->ifp != ifp)
+			error = EAGAIN;
+		else
+#endif
+			error = nd6_output_ifp(ifp, origifp, m, dst,
+			    (struct route *)ro);
+
+		/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+		if (error == EAGAIN && tls_snd_tag != NULL)
+			error = sbtls_output_eagain(tls_snd_tag);
+#endif
 #ifdef RATELIMIT
-		/* check for route change */
 		if (error == EAGAIN)
 			in_pcboutput_eagain(inp);
 #endif
@@ -1104,10 +1122,6 @@ sendorfree:
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
-#ifdef RATELIMIT
-		if (error == 0)
-			error = ip6_set_ratelimit_tag(inp, ifp, m);
-#endif
 		if (error == 0) {
 			/* Record statistics for this interface address. */
 			if (ia) {
@@ -1115,10 +1129,24 @@ sendorfree:
 				counter_u64_add(ia->ia_ifa.ifa_obytes,
 				    m->m_pkthdr.len);
 			}
-			error = nd6_output_ifp(ifp, origifp, m, dst,
-			    (struct route *)ro);
 #ifdef RATELIMIT
-			/* check for route change */
+			ip6_set_ratelimit_tag(inp, ifp, m);
+#endif
+#if defined(KERN_TLS) || defined(RATELIMIT)
+			if (m->m_pkthdr.snd_tag != NULL &&
+			    m->m_pkthdr.snd_tag->ifp != ifp)
+				error = EAGAIN;
+			else
+#endif
+				error = nd6_output_ifp(ifp, origifp, m, dst,
+				    (struct route *)ro);
+
+			/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+			if (error == EAGAIN && tls_snd_tag != NULL)
+				error = sbtls_output_eagain(tls_snd_tag);
+#endif
+#ifdef RATELIMIT
 			if (error == EAGAIN)
 				in_pcboutput_eagain(inp);
 #endif
@@ -1132,6 +1160,10 @@ sendorfree:
 done:
 	if (ro == &ip6route)
 		RO_RTFREE(ro);
+#ifdef KERN_TLS
+	if (tls_snd_tag != NULL)
+		m_snd_tag_rele(tls_snd_tag);
+#endif
 	return (error);
 
 freehdrs:

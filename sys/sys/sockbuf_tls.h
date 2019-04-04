@@ -116,6 +116,7 @@ struct tls_ss_format {
 #define TLS_MINOR_VER_ONE	2	/* 3, 2 */
 #define TLS_MINOR_VER_TWO	3	/* 3, 3 */
 
+struct sockbuf;
 struct sockopt;
 struct uio;
 
@@ -253,6 +254,7 @@ void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
 void sbtls_tcp_stack_changed(struct socket *so);
 int sbtls_set_tls_mode(struct socket *so, int mode);
 int sbtls_get_tls_mode(struct socket *so);
+int sbtls_output_eagain(struct m_snd_tag *mst);
 
 static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)

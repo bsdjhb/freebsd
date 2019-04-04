@@ -35,13 +35,14 @@
 __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
-#include "opt_ratelimit.h"
 #include "opt_ipsec.h"
 #include "opt_mbuf_stress_test.h"
 #include "opt_mpath.h"
+#include "opt_kern_tls.h"
+#include "opt_ratelimit.h"
 #include "opt_route.h"
-#include "opt_sctp.h"
 #include "opt_rss.h"
+#include "opt_sctp.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,6 +55,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/protosw.h>
 #include <sys/rmlock.h>
 #include <sys/sdt.h>
+#ifdef KERN_TLS
+#include <sys/sockbuf_tls.h>
+#endif
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
@@ -204,13 +208,18 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 }
 
 #ifdef RATELIMIT
-static __inline int
+static __inline void
 ip_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 {
 
+#ifdef KERN_TLS
+	if (m->m_pkthdr.snd_tag != NULL)
+		return;
+#else
 	MPASS(m->m_pkthdr.snd_tag == NULL);
+#endif
 	if (inp == NULL)
-		return (0);
+		return;
 
 	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
 	    (inp->inp_snd_tag != NULL &&
@@ -218,18 +227,10 @@ ip_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
 		in_pcboutput_txrtlmt(inp, ifp, m);
 
 	if (inp->inp_snd_tag != NULL) {
-		/*
-		 * NB: in_pcboutput_txrlmt might fail to refresh the
-		 * tag if the lock upgrade fails.
-		 */
-		if (inp->inp_snd_tag->ifp != ifp)
-			return (EAGAIN);
-
 		/* stamp send tag on mbuf */
 		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	}
-	return (0);
 }
 #endif
 
@@ -267,6 +268,9 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	uint32_t fibnum;
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 	int no_route_but_check_spd = 0;
+#endif
+#if defined(KERN_TLS)
+	struct m_snd_tag *tls_snd_tag = NULL;
 #endif
 	M_ASSERTPKTHDR(m);
 
@@ -656,6 +660,10 @@ sendit:
 		m->m_pkthdr.csum_flags &= ~CSUM_SCTP;
 	}
 #endif
+#if defined(KERN_TLS)
+	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG)
+		tls_snd_tag = m_snd_tag_ref(m->m_pkthdr.snd_tag);
+#endif
 
 	/*
 	 * If small enough for interface, or the interface will take
@@ -695,14 +703,23 @@ sendit:
 		m_clrprotoflags(m);
 		IP_PROBE(send, NULL, NULL, ip, ifp, ip, NULL);
 #ifdef RATELIMIT
-		error = ip_set_ratelimit_tag(inp, ifp, m);
-		if (error)
-			goto done;
+		ip_set_ratelimit_tag(inp, ifp, m);
 #endif
-		error = (*ifp->if_output)(ifp, m,
-		    (const struct sockaddr *)gw, ro);
+#if defined(KERN_TLS) || defined(RATELIMIT)
+		if (m->m_pkthdr.snd_tag != NULL &&
+		    m->m_pkthdr.snd_tag->ifp != ifp)
+			error = EAGAIN;
+		else
+#endif
+			error = (*ifp->if_output)(ifp, m,
+			    (const struct sockaddr *)gw, ro);
+
+		/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+		if (error == EAGAIN && tls_snd_tag != NULL)
+			error = sbtls_output_eagain(tls_snd_tag);
+#endif
 #ifdef RATELIMIT
-		/* check for route change */
 		if (error == EAGAIN)
 			in_pcboutput_eagain(inp);
 #endif
@@ -726,10 +743,6 @@ sendit:
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
-#ifdef RATELIMIT
-		if (error == 0)
-			error = ip_set_ratelimit_tag(inp, ifp, m);
-#endif
 		if (error == 0) {
 			/* Record statistics for this interface address. */
 			if (ia != NULL) {
@@ -745,10 +758,24 @@ sendit:
 
 			IP_PROBE(send, NULL, NULL, mtod(m, struct ip *), ifp,
 			    mtod(m, struct ip *), NULL);
-			error = (*ifp->if_output)(ifp, m,
-			    (const struct sockaddr *)gw, ro);
 #ifdef RATELIMIT
-			/* check for route change */
+			ip_set_ratelimit_tag(inp, ifp, m);
+#endif
+#if defined(KERN_TLS) || defined(RATELIMIT)
+			if (m->m_pkthdr.snd_tag != NULL &&
+			    m->m_pkthdr.snd_tag->ifp != ifp)
+				error = EAGAIN;
+			else
+#endif
+				error = (*ifp->if_output)(ifp, m,
+				    (const struct sockaddr *)gw, ro);
+
+			/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+			if (error == EAGAIN && tls_snd_tag != NULL)
+				error = sbtls_output_eagain(tls_snd_tag);
+#endif
+#ifdef RATELIMIT
 			if (error == EAGAIN)
 				in_pcboutput_eagain(inp);
 #endif
@@ -770,6 +797,10 @@ done:
 		 */
 		ro->ro_rt = NULL;
 	NET_EPOCH_EXIT(et);
+#ifdef KERN_TLS
+	if (tls_snd_tag != NULL)
+		m_snd_tag_rele(tls_snd_tag);
+#endif
 	return (error);
  bad:
 	m_freem(m);
