@@ -182,6 +182,7 @@ struct ccr_softc {
 	int tx_channel_id;
 	struct mtx lock;
 	bool detaching;
+	bool use_imm_data;
 	struct sge_wrq *txq;
 	struct sge_rxq *rxq;
 
@@ -374,9 +375,11 @@ ccr_write_ulptx_sgl(struct ccr_softc *sc, void *dst, int nsegs)
 }
 
 static bool
-ccr_use_imm_data(u_int transhdr_len, u_int input_len)
+ccr_use_imm_data(struct ccr_softc *sc, u_int transhdr_len, u_int input_len)
 {
 
+	if (!sc->use_imm_data)
+		return (false);
 	if (input_len > CRYPTO_MAX_IMM_TX_PKT_LEN)
 		return (false);
 	if (roundup2(transhdr_len, 16) + roundup2(input_len, 16) >
@@ -476,7 +479,7 @@ ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		imm_len = axf->blocksize;
 		sgl_nsegs = 0;
 		sgl_len = 0;
-	} else if (ccr_use_imm_data(transhdr_len, crd->crd_len)) {
+	} else if (ccr_use_imm_data(sc, transhdr_len, crd->crd_len)) {
 		imm_len = crd->crd_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -621,7 +624,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 	transhdr_len = CIPHER_TRANSHDR_SIZE(kctx_len, dsgl_len);
 
-	if (ccr_use_imm_data(transhdr_len, crd->crd_len +
+	if (ccr_use_imm_data(sc, transhdr_len, crd->crd_len +
 	    s->blkcipher.iv_len)) {
 		imm_len = crd->crd_len;
 		sgl_nsegs = 0;
@@ -906,7 +909,8 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 		return (EFBIG);
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (ccr_use_imm_data(transhdr_len, s->blkcipher.iv_len + input_len)) {
+	if (ccr_use_imm_data(sc, transhdr_len, s->blkcipher.iv_len +
+	    input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -1251,7 +1255,7 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 		input_len += hash_size_in_response;
 	if (input_len > MAX_REQUEST_SIZE)
 		return (EFBIG);
-	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
+	if (ccr_use_imm_data(sc, transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -1725,7 +1729,7 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 		input_len += hash_size_in_response;
 	if (input_len > MAX_REQUEST_SIZE)
 		return (EFBIG);
-	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
+	if (ccr_use_imm_data(sc, transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
 		sgl_len = 0;
@@ -2084,6 +2088,10 @@ ccr_sysctls(struct ccr_softc *sc)
 	oid = device_get_sysctl_tree(sc->dev);
 	children = SYSCTL_CHILDREN(oid);
 
+	SYSCTL_ADD_BOOL(ctx, children, OID_AUTO, "use_imm_data", CTLFLAG_RW,
+	    &sc->use_imm_data, 0,
+	    "Pass small payloads inline in the work request");
+
 	/*
 	 * dev.ccr.X.stats.
 	 */
@@ -2159,6 +2167,7 @@ ccr_attach(device_t dev)
 	sc->tx_channel_id = 0;
 
 	mtx_init(&sc->lock, "ccr", NULL, MTX_DEF);
+	sc->use_imm_data = true;
 	sc->sg_crp = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	sc->sg_ulptx = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
 	sc->sg_dsgl = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
