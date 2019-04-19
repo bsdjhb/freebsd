@@ -368,15 +368,12 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 
 static int
 send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
-    const struct socket *so, struct tlspcb *tlsp, int atid)
+    struct inpcb *inp, struct tlspcb *tlsp, int atid)
 {
-	struct inpcb *inp;
 	struct wrqe *wr;
 	bool isipv6;
 
-	inp = so->so_pcb;
 	isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
-
 	if (isipv6) {
 		tlsp->ce = t4_hold_lip(sc, &inp->in6p_laddr, NULL);
 		if (tlsp->ce == NULL)
@@ -624,7 +621,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	} else
 		tlsp->using_timestamps = false;
 
-	error = send_sbtls_act_open_req(sc, vi, params->tls.so, tlsp, atid);
+	error = send_sbtls_act_open_req(sc, vi, inp, tlsp, atid);
 	if (error) {
 		INP_RUNLOCK(inp);
 		goto failed;
