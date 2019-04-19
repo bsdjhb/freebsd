@@ -669,12 +669,7 @@ sbtls_alloc_snd_tag(struct inpcb *inp, struct sbtls_session *tls, bool force,
 	params.hdr.type = IF_SND_TAG_TYPE_TLS;
 	params.hdr.flowid = inp->inp_flowid;
 	params.hdr.flowtype = inp->inp_flowtype;
-
-	/*
-	 * XXX: If we don't need this, it would be great to kill it,
-	 * or replace it with the inp pointer instead.
-	 */
-	params.tls.so = inp->inp_socket;
+	params.tls.inp = inp;
 	params.tls.tls = tls;
 	INP_RUNLOCK(inp);
 

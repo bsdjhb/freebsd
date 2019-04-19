@@ -601,7 +601,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		    atid, tlsp->tx_key_addr);
 	}
 
-	inp = params->tls.so->so_pcb;
+	inp = params->tls.inp;
 	INP_RLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_RUNLOCK(inp);

@@ -210,7 +210,7 @@ struct sbtls_session;
 
 struct if_snd_tag_alloc_tls {
 	struct if_snd_tag_alloc_header hdr;
-	const struct socket *so;
+	struct inpcb *inp;
 	const struct sbtls_session *tls;
 };
 #endif
