@@ -27,14 +27,15 @@
  */
 #ifndef _SYS_SOCKBUF_TLS_H_
 #define _SYS_SOCKBUF_TLS_H_
-#include <sys/types.h>
+
 #include <sys/refcount.h>
+#include <sys/_task.h>
 
 struct tls_record_layer {
 	uint8_t  tls_type;
 	uint8_t  tls_vmajor;
 	uint8_t  tls_vminor;
-	uint16_t tls_length;	
+	uint16_t tls_length;
 	uint8_t  tls_data[0];
 } __attribute__ ((packed));
 
@@ -190,6 +191,10 @@ struct sbtls_session {
 	struct tls_session_params sb_params;
 	u_int	sb_tsk_instance;	/* For task selection */
 	volatile u_int refcount;
+
+	struct task reset_tag_task;
+	struct inpcb *inp;
+	bool reset_pending;
 } __aligned(CACHE_LINE_SIZE);
 
 
@@ -254,7 +259,7 @@ void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
 void sbtls_tcp_stack_changed(struct socket *so);
 int sbtls_set_tls_mode(struct socket *so, int mode);
 int sbtls_get_tls_mode(struct socket *so);
-int sbtls_output_eagain(struct m_snd_tag *mst);
+int sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls);
 
 static inline struct sbtls_session *
 sbtls_hold(struct sbtls_session *tls)

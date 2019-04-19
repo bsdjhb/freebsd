@@ -43,6 +43,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/socketvar.h>
 #include <sys/sockbuf_tls.h>
 #include <sys/sysctl.h>
+#include <sys/taskqueue.h>
 #include <sys/kthread.h>
 #include <machine/fpu.h>
 #include <machine/vmparam.h>
@@ -193,8 +194,8 @@ struct sbtls_wq {
 static struct sbtls_wq *sbtls_wq;
 
 static void sbtls_cleanup(struct sbtls_session *tls);
+static void sbtls_reset_send_tag(void *context, int pending);
 static void sbtls_work_thread(void *ctx);
-
 
 int
 sbtls_crypto_backend_register(struct sbtls_crypto_backend *be)
@@ -437,6 +438,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	counter_u64_add(sbtls_offload_active, 1);
 
 	refcount_init(&tls->refcount, 1);
+	TASK_INIT(&tls->reset_tag_task, 0, sbtls_reset_send_tag, tls);
 
 	/* cache cpu index */
 	tls->sb_tsk_instance = sbtls_get_cpu(so);
@@ -611,19 +613,25 @@ sbtls_cleanup(struct sbtls_session *tls)
 }
 
 static int
-sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
+sbtls_alloc_snd_tag(struct inpcb *inp, struct sbtls_session *tls, bool force,
+    struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
-	struct m_snd_tag *mst;
 	struct ifnet *ifp;
 	struct rtentry *rt;
-	struct inpcb *inp;
 	struct tcpcb *tp;
 	int error;
 
-	inp = so->so_pcb;
 	INP_RLOCK(inp);
+	if (inp->inp_flags2 & INP_FREED) {
+		INP_RUNLOCK(inp);
+		return (ECONNRESET);
+	}
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_RUNLOCK(inp);
+		return (ECONNRESET);
+	}
+	if (inp->inp_socket == NULL) {
 		INP_RUNLOCK(inp);
 		return (ECONNRESET);
 	}
@@ -661,7 +669,12 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 	params.hdr.type = IF_SND_TAG_TYPE_TLS;
 	params.hdr.flowid = inp->inp_flowid;
 	params.hdr.flowtype = inp->inp_flowtype;
-	params.tls.so = so;
+
+	/*
+	 * XXX: If we don't need this, it would be great to kill it,
+	 * or replace it with the inp pointer instead.
+	 */
+	params.tls.so = inp->inp_socket;
 	params.tls.tls = tls;
 	INP_RUNLOCK(inp);
 
@@ -684,7 +697,19 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 			goto out;
 		}
 	}
-	error = ifp->if_snd_tag_alloc(ifp, &params, &mst);
+	error = ifp->if_snd_tag_alloc(ifp, &params, mstp);
+out:
+	if_rele(ifp);
+	return (error);
+}
+
+static int
+sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
+{
+	struct m_snd_tag *mst;
+	int error;
+
+	error = sbtls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
 	if (error == 0) {
 		tls->snd_tag = mst;
 		switch (tls->sb_params.crypt_algorithm) {
@@ -696,8 +721,6 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 			break;
 		}
 	}
-out:
-	if_rele(ifp);
 	return (error);
 }
 
@@ -942,6 +965,97 @@ sbtls_tcp_stack_changed(struct socket *so)
 	else
 		mode = TCP_TLS_MODE_SW;
 	(void)sbtls_set_tls_mode(so, mode);
+}
+
+/*
+ * Try to allocate a new TLS send tag.  This task is scheduled when
+ * ip_output detects a route change while trying to transmit a packet
+ * holding a TLS record.  If a new tag is allocated, replace the tag
+ * in the TLS session.  Subsequent packets on the connection will use
+ * the new tag.  If a new tag cannot be allocated, drop the
+ * connection.
+ */
+static void
+sbtls_reset_send_tag(void *context, int pending)
+{
+	struct epoch_tracker et;
+	struct sbtls_session *tls;
+	struct m_snd_tag *old, *new;
+	struct inpcb *inp;
+	struct tcpcb *tp;
+	int error;
+
+	MPASS(pending == 1);
+
+	tls = context;
+	inp = tls->inp;
+
+	error = sbtls_alloc_snd_tag(inp, tls, true, &new);
+
+	if (error == 0) {
+		old = tls->snd_tag;
+		tls->snd_tag = new;
+
+		INP_RLOCK(inp);
+		mtx_pool_lock(mtxpool_sleep, tls);
+		tls->reset_pending = false;
+		mtx_pool_unlock(mtxpool_sleep, tls);
+		if (!in_pcbrele_rlocked(inp))
+			INP_RUNLOCK(inp);
+
+		m_snd_tag_rele(old);
+
+		/*
+		 * XXX: Should we kick tcp_output explicitly now that
+		 * the send tag is fixed or just rely on timers?
+		 */
+	} else {
+		INP_INFO_RLOCK_ET(&V_tcbinfo, et);
+		INP_WLOCK(inp);
+		if (in_pcbrele_wlocked(inp)) {
+			if (!(inp->inp_flags & INP_TIMEWAIT) &&
+			    !(inp->inp_flags & INP_DROPPED)) {
+				tp = intotcpcb(inp);
+				tp = tcp_drop(tp, ECONNABORTED);
+				if (tp != NULL)
+					INP_WUNLOCK(inp);
+			} else
+				INP_WUNLOCK(inp);
+		}
+		INP_INFO_RUNLOCK_ET(&V_tcbinfo, et);
+
+		/*
+		 * Leave reset_pending true to avoid future tasks while
+		 * the socket goes away.
+		 */
+	}
+
+	sbtls_free(tls);
+}
+
+int
+sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls)
+{
+
+	if (inp == NULL)
+		return (ENOBUFS);
+
+	INP_LOCK_ASSERT(inp);
+
+	/*
+	 * See if we should schedule a task to update the send tag for
+	 * this session.
+	 */
+	mtx_pool_lock(mtxpool_sleep, tls);
+	if (!tls->reset_pending) {
+		(void) sbtls_hold(tls);
+		in_pcbref(inp);
+		tls->inp = inp;
+		tls->reset_pending = true;
+		taskqueue_enqueue(taskqueue_thread, &tls->reset_tag_task);
+	}
+	mtx_pool_unlock(mtxpool_sleep, tls);
+	return (ENOBUFS);
 }
 
 void

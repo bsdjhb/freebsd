@@ -55,9 +55,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/protosw.h>
 #include <sys/rmlock.h>
 #include <sys/sdt.h>
-#ifdef KERN_TLS
 #include <sys/sockbuf_tls.h>
-#endif
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
@@ -207,32 +205,56 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 	return 0;
 }
 
-#ifdef RATELIMIT
-static __inline void
-ip_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
+static __inline int
+ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
+    const struct sockaddr_in *gw, struct route *ro, struct sbtls_session *tls)
 {
+	struct m_snd_tag *mst;
+	int error;
+
+	MPASS(m->m_pkthdr.snd_tag == NULL);
+	mst = NULL;
 
 #ifdef KERN_TLS
-	if (m->m_pkthdr.snd_tag != NULL)
-		return;
-#else
-	MPASS(m->m_pkthdr.snd_tag == NULL);
+	if (tls != NULL)
+		mst = tls->snd_tag;
 #endif
-	if (inp == NULL)
-		return;
+#ifdef RATELIMIT
+	if (inp != NULL && mst == NULL) {
+		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+		    (inp->inp_snd_tag != NULL &&
+		    inp->inp_snd_tag->ifp != ifp))
+			in_pcboutput_txrtlmt(inp, ifp, m);
 
-	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
-	    (inp->inp_snd_tag != NULL &&
-		inp->inp_snd_tag->ifp != ifp))
-		in_pcboutput_txrtlmt(inp, ifp, m);
+		if (inp->inp_snd_tag != NULL)
+			mst = inp->inp_snd_tag;
+	}
+#endif
+	if (mst != NULL) {
+		if (mst->ifp != ifp) {
+			error = EAGAIN;
+			goto done;
+		}
 
-	if (inp->inp_snd_tag != NULL) {
 		/* stamp send tag on mbuf */
-		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(mst);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	}
-}
+
+	error = (*ifp->if_output)(ifp, m, (const struct sockaddr *)gw, ro);
+
+done:
+	/* Check for route change invalidating send tags. */
+#ifdef KERN_TLS
+	if (error == EAGAIN && tls != NULL)
+		error = sbtls_output_eagain(inp, tls);
 #endif
+#ifdef RATELIMIT
+	if (error == EAGAIN)
+		in_pcboutput_eagain(inp);
+#endif
+	return (error);
+}
 
 /*
  * IP output.  The packet in mbuf chain m contains a skeletal IP
@@ -255,6 +277,7 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	struct ip *ip;
 	struct ifnet *ifp = NULL;	/* keep compiler happy */
 	struct mbuf *m0;
+	struct sbtls_session *tls = NULL;
 	int hlen = sizeof (struct ip);
 	int mtu;
 	int error = 0;
@@ -269,9 +292,7 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 	int no_route_but_check_spd = 0;
 #endif
-#if defined(KERN_TLS)
-	struct m_snd_tag *tls_snd_tag = NULL;
-#endif
+
 	M_ASSERTPKTHDR(m);
 
 	if (inp != NULL) {
@@ -661,8 +682,14 @@ sendit:
 	}
 #endif
 #if defined(KERN_TLS)
-	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG)
-		tls_snd_tag = m_snd_tag_ref(m->m_pkthdr.snd_tag);
+	/*
+	 * If this is an unencrypted TLS record, save a reference to
+	 * the record.  This local reference is used to call
+	 * sbtls_output_eagain after the mbuf has been freed (thus
+	 * dropping the mbuf's reference) in if_output.
+	 */
+	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
+		tls = sbtls_hold(m->m_next->m_ext.ext_pgs->tls);
 #endif
 
 	/*
@@ -702,27 +729,7 @@ sendit:
 		 */
 		m_clrprotoflags(m);
 		IP_PROBE(send, NULL, NULL, ip, ifp, ip, NULL);
-#ifdef RATELIMIT
-		ip_set_ratelimit_tag(inp, ifp, m);
-#endif
-#if defined(KERN_TLS) || defined(RATELIMIT)
-		if (m->m_pkthdr.snd_tag != NULL &&
-		    m->m_pkthdr.snd_tag->ifp != ifp)
-			error = EAGAIN;
-		else
-#endif
-			error = (*ifp->if_output)(ifp, m,
-			    (const struct sockaddr *)gw, ro);
-
-		/* Check for route change invalidating send tags. */
-#ifdef KERN_TLS
-		if (error == EAGAIN && tls_snd_tag != NULL)
-			error = sbtls_output_eagain(tls_snd_tag);
-#endif
-#ifdef RATELIMIT
-		if (error == EAGAIN)
-			in_pcboutput_eagain(inp);
-#endif
+		error = ip_output_send(inp, ifp, m, gw, ro, tls);
 		goto done;
 	}
 
@@ -758,27 +765,7 @@ sendit:
 
 			IP_PROBE(send, NULL, NULL, mtod(m, struct ip *), ifp,
 			    mtod(m, struct ip *), NULL);
-#ifdef RATELIMIT
-			ip_set_ratelimit_tag(inp, ifp, m);
-#endif
-#if defined(KERN_TLS) || defined(RATELIMIT)
-			if (m->m_pkthdr.snd_tag != NULL &&
-			    m->m_pkthdr.snd_tag->ifp != ifp)
-				error = EAGAIN;
-			else
-#endif
-				error = (*ifp->if_output)(ifp, m,
-				    (const struct sockaddr *)gw, ro);
-
-			/* Check for route change invalidating send tags. */
-#ifdef KERN_TLS
-			if (error == EAGAIN && tls_snd_tag != NULL)
-				error = sbtls_output_eagain(tls_snd_tag);
-#endif
-#ifdef RATELIMIT
-			if (error == EAGAIN)
-				in_pcboutput_eagain(inp);
-#endif
+			error = ip_output_send(inp, ifp, m, gw, ro, tls);
 		} else
 			m_freem(m);
 	}
@@ -798,8 +785,8 @@ done:
 		ro->ro_rt = NULL;
 	NET_EPOCH_EXIT(et);
 #ifdef KERN_TLS
-	if (tls_snd_tag != NULL)
-		m_snd_tag_rele(tls_snd_tag);
+	if (tls != NULL)
+		sbtls_free(tls);
 #endif
 	return (error);
  bad:

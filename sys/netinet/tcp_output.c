@@ -1086,20 +1086,6 @@ send:
 				sack_rxmit = 0;
 				goto out;
 			}
-
-#ifdef KERN_TLS
-			if (m->m_next->m_flags & M_NOMAP) {
-				struct sbtls_session *tls;
-
-				tls = mb->m_ext.ext_pgs->tls;
-				if (tls != NULL) {
-					MPASS(tls->snd_tag != NULL);
-					m->m_pkthdr.snd_tag = m_snd_tag_ref(
-					    tls->snd_tag);
-					m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
-				}
-			}
-#endif
 		}
 
 		/*
