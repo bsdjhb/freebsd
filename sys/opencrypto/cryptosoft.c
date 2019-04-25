@@ -409,8 +409,6 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 	int err;
 
 	sw = &ses->swcr_auth;
-	if (sw->sw_ictx == NULL)
-		return EINVAL;
 
 	axf = sw->sw_axf;
 
@@ -578,10 +576,6 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 	swa = &ses->swcr_auth;
 	axf = swa->sw_axf;
 
-	/* XXX: Can this even happen? */
-	if (swa->sw_ictx == NULL)
-		return (EINVAL);
-
 	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
 	blksz = axf->blocksize;
 	
@@ -743,10 +737,6 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 
 	swa = &ses->swcr_auth;
 	axf = swa->sw_axf;
-
-	/* XXX: Can this even happen? */
-	if (swa->sw_ictx == NULL)
-		return (EINVAL);
 
 	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
 	blksz = axf->blocksize;
@@ -1252,7 +1242,6 @@ swcr_setup_gcm(struct swcr_session *ses,
 
 	return (0);
 }
-
 
 static int
 swcr_setup_ccm(struct swcr_session *ses,
