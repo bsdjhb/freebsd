@@ -518,8 +518,10 @@ swcr_gmac(struct swcr_session *ses, struct cryptop *crp)
 	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
 	blksz = axf->blocksize;
 
+	if (crp->crp_flags & CRYPTO_F_IV_GENERATE)
+		return (EINVAL);
+
 	/* Initialize the IV */
-	/* XXX: Not clear if we should support CRYPTO_F_IV_GENERATE? */
 	ivlen = AES_GCM_IV_LEN;
 	if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
 		bcopy(crp->crp_iv, iv, ivlen);
@@ -679,8 +681,10 @@ swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
 	blksz = axf->blocksize;
 
+	if (crp->crp_flags & CRYPTO_F_IV_GENERATE)
+		return (EINVAL);
+
 	/* Initialize the IV */
-	/* XXX: Not clear if we should support CRYPTO_F_IV_GENERATE? */
 	ivlen = AES_CCM_IV_LEN;
 	if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
 		bcopy(crp->crp_iv, iv, ivlen);
