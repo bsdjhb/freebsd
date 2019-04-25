@@ -57,3 +57,89 @@ session and crypto op parameters.
 
 - GCM IV length is kind of busted, perhaps need IV length as part of crp
   instead of csp?
+
+- Testing
+  + cryptocheck
+    + soft
+    + ccr
+  - ipsec
+    - auth
+      - hmac-md5
+      - hmac-sha1
+      - keyed-md5
+      - keyed-sha1
+      - null
+      - hmac-sha2-256
+      - hmac-sha2-384
+      - hmac-sha2-512
+      - hmac-ripemd160
+      - aes-xcbc-mac
+      - tcp-md5
+    - encrypt
+      - des-cbc
+      - 3desc-cbc
+      - null
+      - blowfish-cbc
+      - cast128-cbc
+      - des-deriv
+      - des-32iv
+      - rijndael-cbc
+      - aes-ctr
+      - aes-gcm16
+      - camellia-cbc
+
+    - 3des-hmac-md5
+      + soft
+    - aes-cbc-hmac-sha
+      + soft
+    - aes-cbc
+      + soft
+    - aes-ctr-hmac-sha2-512
+      + soft
+    - aes-ctr
+      + soft
+    - aes-gcm-256
+      + soft
+    - aes-gcm
+      + soft
+    - blowfish
+      + soft
+    - camellia
+      + soft
+    - cast128
+      + soft
+    - des-32iv
+      + soft
+    - des-deriv
+      + soft
+    - hmac-sha1
+      + soft
+    - hmac-sha2-256
+      + soft
+    - hmac-sha2-384
+      + soft
+    - hmac-sha2-512
+      + soft
+    - ipcomp
+      - doesn't work with stock FreeBSD
+    - null-ipcomp
+      - doesn't work with stock FreeBSD
+    - null
+      + soft
+    - rijndael-hmac-sha2-256
+      + soft
+    - rijndael
+      + soft
+    - tcp-md5
+      - needs kernel with TCP_SIGNATURE
+
+- Not converted yet:
+  - aesni
+  - blake2
+  - ccp
+  - geom
+  - hifn
+  - kgssapi_krb5
+  - padlock
+  - safe
+  - ubsec
