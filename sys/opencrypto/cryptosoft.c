@@ -608,7 +608,7 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 
 	exf->reinit(swe->sw_kschedule, iv);
 
-	/* Do encryption/decryption with MAC */
+	/* Do encryption with MAC */
 	for (i = 0; i < crp->crp_payload_length; i += len) {
 		len = MIN(crp->crp_payload_length - i, blksz);
 		if (len < blksz)
@@ -1380,11 +1380,13 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		/* AEAD algorithms cannot be used for EtA. */
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
 			error = EINVAL;
 			break;
 		}
 		switch (csp->csp_auth_alg) {
 		case CRYPTO_AES_NIST_GMAC:
+		case CRYPTO_AES_CCM_CBC_MAC:
 			error = EINVAL;
 			break;
 		}
