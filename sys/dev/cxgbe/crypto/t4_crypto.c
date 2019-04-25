@@ -1873,10 +1873,6 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 	if (error)
 		goto out;
 
-	/*
-	 * This assumes a 12-byte IV from the crp.  See longer comment
-	 * above in ccr_gcm() for more details.
-	 */
 	if ((crp->crp_flags & CRYPTO_F_IV_SEPARATE) == 0) {
 		error = EINVAL;
 		goto out;

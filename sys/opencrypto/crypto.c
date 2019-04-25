@@ -558,6 +558,8 @@ alg_is_digest(int alg)
 		return (true);
 	if (alg >= CRYPTO_SHA2_224_HMAC && alg <= CRYPTO_POLY1305)
 		return (true);
+	if (alg == CRYPTO_AES_CCM_CBC_MAC)
+		return (true);
 	return (false);
 }
 
@@ -577,6 +579,8 @@ alg_is_keyed_digest(int alg)
 		return (true);
 	if (alg == CRYPTO_POLY1305)
 		return (true);
+	if (alg == CRYPTO_AES_CCM_CBC_MAC)
+		return (true);
 	return (false);
 }
 
@@ -585,6 +589,8 @@ alg_is_aead(int alg)
 {
 
 	if (alg == CRYPTO_AES_NIST_GCM_16)
+		return (true);
+	if (alg == CRYPTO_AES_CCM_16)
 		return (true);
 	return (false);
 }
@@ -1198,6 +1204,9 @@ crp_sanity(struct cryptop *crp)
 		if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
 			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
 			    ("GCM without a separate IV"));
+		if (csp->csp_cipher_alg == CRYPTO_AES_CCM_16)
+			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
+			    ("CCM without a separate IV"));
 		break;
 	case CSP_MODE_ETA:
 		KASSERT(crp->crp_op ==

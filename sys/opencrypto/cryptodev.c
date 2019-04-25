@@ -508,7 +508,6 @@ cryptof_ioctl(
 				return (EINVAL);
 			}
 			break;
-
 		case CRYPTO_AES_CCM_CBC_MAC:
 			switch (sop->keylen) {
 			case 16:
@@ -658,6 +657,8 @@ cryptof_ioctl(
 
 			if (csp.csp_auth_alg == CRYPTO_AES_NIST_GMAC)
 				csp.csp_ivlen = AES_GCM_IV_LEN;
+			if (csp.csp_auth_alg == CRYPTO_AES_CCM_CBC_MAC)
+				csp.csp_ivlen = AES_CCM_IV_LEN;
 		}
 
 		/* NB: CIOCGSESSION2 has the crid */
@@ -1463,6 +1464,8 @@ csecreate(struct fcrypt *fcr, crypto_session_t cses,
 		cse->hashsize = thash->hashsize;
 	else if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
 		cse->hashsize = AES_GMAC_HASH_LEN;
+	else if (csp->csp_cipher_alg == CRYPTO_AES_CCM_16)
+		cse->hashsize = AES_CBC_MAC_HASH_LEN;
 	cse->ivsize = csp->csp_ivlen;
 	mtx_lock(&fcr->lock);
 	TAILQ_INSERT_TAIL(&fcr->csessions, cse, next);
