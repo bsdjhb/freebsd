@@ -672,7 +672,6 @@ swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 	union authctx ctx;
 	struct swcr_auth *swa;
 	struct auth_hash *axf;
-	uint32_t *blkp;
 	int blksz, i, ivlen, len;
 
 	swa = &ses->swcr_auth;
@@ -736,7 +735,6 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 	struct swcr_encdec *swe;
 	struct auth_hash *axf;
 	struct enc_xform *exf;
-	uint32_t *blkp;
 	int blksz, i, ivlen, len, r;
 
 	swa = &ses->swcr_auth;
@@ -1296,7 +1294,6 @@ swcr_setup_ccm(struct swcr_session *ses,
 			return (error);
 	}
 	swe->sw_exf = txf;
-	swe->sw_klen = csp->csp_cipher_klen;
 
 	return (0);
 }

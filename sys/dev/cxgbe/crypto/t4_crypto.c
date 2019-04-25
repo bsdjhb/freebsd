@@ -1773,16 +1773,16 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	if (sgl_nsegs == 0) {
 		dst += b0_len;
 		if (crp->crp_aad_length != 0) {
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crp->crp_aad_start, crp->crp_aad_length, dst);
+			crypto_copydata(crp, crp->crp_aad_start,
+			    crp->crp_aad_length, dst);
 			dst += crp->crp_aad_length;
 		}
-		crypto_copydata(crp->crp_flags, crp->crp_buf,
-		    crp->crp_payload_start, crp->crp_payload_length, dst);
+		crypto_copydata(crp, crp->crp_payload_start,
+		    crp->crp_payload_length, dst);
 		dst += crp->crp_payload_length;
 		if (op_type == CHCR_DECRYPT_OP)
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    crp->crp_digest_start, hash_size_in_response, dst);
+			crypto_copydata(crp, crp->crp_digest_start,
+			    hash_size_in_response, dst);
 	} else {
 		dst += CCM_B0_SIZE;
 		if (b0_len > CCM_B0_SIZE) {
@@ -1880,14 +1880,13 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 	memcpy(iv, crp->crp_iv, AES_CCM_IV_LEN);
 
 	auth_ctx->aes_cbc_mac_ctx.authDataLength = crp->crp_aad_length;
-	auth_ctx->aes_cbc_mac_ctx.cryptDataLength = crde->crd_len;
+	auth_ctx->aes_cbc_mac_ctx.cryptDataLength = crp->crp_payload_length;
 	axf->Reinit(auth_ctx, iv, sizeof(iv));
 
 	/* MAC the AAD. */
 	for (i = 0; i < crp->crp_aad_length; i += sizeof(block)) {
 		len = imin(crp->crp_aad_length - i, sizeof(block));
-		crypto_copydata(crp->crp_flags, crp->crp_buf,
-		    crp->crp_aad_start + i, len, block);
+		crypto_copydata(crp, crp->crp_aad_start + i, len, block);
 		bzero(block + len, sizeof(block) - len);
 		axf->Update(auth_ctx, block, sizeof(block));
 	}
@@ -1895,8 +1894,8 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 	exf->reinit(kschedule, iv);
 
 	/* Do encryption/decryption with MAC */
-	for (i = 0; i < crde->crd_len; i += sizeof(block)) {
-		len = imin(crde->crd_len - i, sizeof(block));
+	for (i = 0; i < crp->crp_payload_length; i += sizeof(block)) {
+		len = imin(crp->crp_payload_length - i, sizeof(block));
 		crypto_copydata(crp, crp->crp_payload_start + i, len, block);
 		bzero(block + len, sizeof(block) - len);
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
@@ -1914,7 +1913,7 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 	axf->Final(digest, auth_ctx);
 
 	/* Inject or validate tag. */
-	if (crde->crd_flags & CRD_F_ENCRYPT) {
+	if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
 		crypto_copyback(crp, crp->crp_digest_start, sizeof(digest),
 		    digest);
 		error = 0;
