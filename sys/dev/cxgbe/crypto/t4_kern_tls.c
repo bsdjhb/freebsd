@@ -1609,10 +1609,6 @@ sbtls_write_tunnel_packet(struct sge_txq *txq, void *dst, struct mbuf *m,
 
 	txq->txpkt_wrs++;
 
-#ifdef VERBOSE_TRACES
-	CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
-	    __func__, tlsp->tid, (u_int)ext_pgs->seqno);
-#endif
 	txq->kern_tls_header++;
 
 	txsd = &txq->sdesc[pidx];
@@ -1678,6 +1674,10 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 		 * For requests that only want to send the TLS header,
 		 * send a tunnelled packet as immediate data.
 		 */
+#ifdef VERBOSE_TRACES
+		CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
+		    __func__, tlsp->tid, (u_int)ext_pgs->seqno);
+#endif
 		return (sbtls_write_tunnel_packet(txq, dst, m, m_tls, available,
 		    tcp_seqno, pidx));
 	}
