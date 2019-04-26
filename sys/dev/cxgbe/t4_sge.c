@@ -2590,8 +2590,8 @@ restart:
 	MPASS(m0->m_pkthdr.len > 0);
 	nsegs = count_mbuf_nsegs(m0, 0, &cflags);
 #if defined(KERN_TLS) || defined(RATELIMIT)
-	if (m->m_pkthdr.snd_tag != NULL)
-		cst = mst_to_cst(m->m_pkthdr.snd_tag);
+	if (m0->m_pkthdr.snd_tag != NULL)
+		cst = mst_to_cst(m0->m_pkthdr.snd_tag);
 	else
 		cst = NULL;
 #endif
