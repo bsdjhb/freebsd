@@ -140,6 +140,9 @@ static counter_u64_t sbtls_sw_cbc;
 static counter_u64_t sbtls_sw_gcm;
 static counter_u64_t sbtls_ifnet_cbc;
 static counter_u64_t sbtls_ifnet_gcm;
+static counter_u64_t sbtls_ifnet_reset;
+static counter_u64_t sbtls_ifnet_reset_dropped;
+static counter_u64_t sbtls_ifnet_reset_failed;
 
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, offload_total,
     CTLFLAG_RD, &sbtls_offload_total,
@@ -173,6 +176,14 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, cbc, CTLFLAG_RD,
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, gcm, CTLFLAG_RD,
     &sbtls_ifnet_gcm,
     "Active number of ifnet TLS sessions using AES-GCM");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset, CTLFLAG_RD,
+    &sbtls_ifnet_reset, "TLS sessions updated to a new ifnet send tag");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset_dropped, CTLFLAG_RD,
+    &sbtls_ifnet_reset_dropped,
+    "TLS sessions dropped after failing to update ifnet send tag");
+SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset_failed, CTLFLAG_RD,
+    &sbtls_ifnet_reset_failed,
+    "TLS sessions that failed to allocate a new ifnet send tag");
 
 static int sbtls_ifnet_permitted;
 
@@ -310,10 +321,13 @@ sbtls_init(void *st __unused)
 	sbtls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_to_sw = counter_u64_alloc(M_WAITOK);
 	sbtls_switch_failed = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
 	sbtls_sw_cbc = counter_u64_alloc(M_WAITOK);
 	sbtls_sw_gcm = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_reset = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_reset_dropped = counter_u64_alloc(M_WAITOK);
+	sbtls_ifnet_reset_failed = counter_u64_alloc(M_WAITOK);
 
 	rm_init(&sbtls_backend_lock, "sbtls crypto backend lock");
 
@@ -1000,6 +1014,8 @@ sbtls_reset_send_tag(void *context, int pending)
 
 		m_snd_tag_rele(old);
 
+		counter_u64_add(sbtls_ifnet_reset, 1);
+
 		/*
 		 * XXX: Should we kick tcp_output explicitly now that
 		 * the send tag is fixed or just rely on timers?
@@ -1007,17 +1023,20 @@ sbtls_reset_send_tag(void *context, int pending)
 	} else {
 		INP_INFO_RLOCK_ET(&V_tcbinfo, et);
 		INP_WLOCK(inp);
-		if (in_pcbrele_wlocked(inp)) {
+		if (!in_pcbrele_wlocked(inp)) {
 			if (!(inp->inp_flags & INP_TIMEWAIT) &&
 			    !(inp->inp_flags & INP_DROPPED)) {
 				tp = intotcpcb(inp);
 				tp = tcp_drop(tp, ECONNABORTED);
 				if (tp != NULL)
 					INP_WUNLOCK(inp);
+				counter_u64_add(sbtls_ifnet_reset_dropped, 1);
 			} else
 				INP_WUNLOCK(inp);
 		}
 		INP_INFO_RUNLOCK_ET(&V_tcbinfo, et);
+
+		counter_u64_add(sbtls_ifnet_reset_failed, 1);
 
 		/*
 		 * Leave reset_pending true to avoid future tasks while
