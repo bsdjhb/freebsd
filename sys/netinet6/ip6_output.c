@@ -279,8 +279,19 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 	mst = NULL;
 
 #ifdef KERN_TLS
-	if (tls != NULL)
+	if (tls != NULL) {
 		mst = tls->snd_tag;
+
+		/*
+		 * If a TLS session doesn't have a valid tag, it must
+		 * have had an earlier ifp mismatch, so drop this
+		 * packet.
+		 */
+		if (mst == NULL) {
+			error = EAGAIN;
+			goto done;
+		}
+	}
 #endif
 #ifdef RATELIMIT
 	if (inp != NULL && mst == NULL) {

@@ -999,20 +999,33 @@ sbtls_reset_send_tag(void *context, int pending)
 	tls = context;
 	inp = tls->inp;
 
+	/*
+	 * Free the old tag first before allocating a new one.
+	 * ip[6]_output_send() will treat a NULL send tag the same as
+	 * an ifp mismatch and drop packets until a new tag is
+	 * allocated.
+	 *
+	 * Write-lock the INP when changing tls->snd_tag since
+	 * ip[6]_output_send() holds a read-lock when reading the
+	 * pointer.
+	 */
+	INP_WLOCK(inp);
+	old = tls->snd_tag;
+	tls->snd_tag = NULL;
+	INP_WUNLOCK(inp);
+	if (old != NULL)
+		m_snd_tag_rele(old);
+
 	error = sbtls_alloc_snd_tag(inp, tls, true, &new);
 
 	if (error == 0) {
-		old = tls->snd_tag;
+		INP_WLOCK(inp);
 		tls->snd_tag = new;
-
-		INP_RLOCK(inp);
 		mtx_pool_lock(mtxpool_sleep, tls);
 		tls->reset_pending = false;
 		mtx_pool_unlock(mtxpool_sleep, tls);
-		if (!in_pcbrele_rlocked(inp))
-			INP_RUNLOCK(inp);
-
-		m_snd_tag_rele(old);
+		if (!in_pcbrele_wlocked(inp))
+			INP_WUNLOCK(inp);
 
 		counter_u64_add(sbtls_ifnet_reset, 1);
 
