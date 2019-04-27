@@ -382,8 +382,11 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 
 	/* XXX: Use start/commit? */
 	wr = alloc_wrqe(sbtls_act_open_cpl_size(isipv6), tlsp->ctrlq);
-	if (wr == NULL)
+	if (wr == NULL) {
+		CTR2(KTR_CXGBE, "%s: atid %d failed to alloc WR", __func__,
+		    atid);
 		return (ENOMEM);
+	}
 
 	if (isipv6)
 		mk_sbtls_act_open_req6(sc, vi, inp, tlsp, atid, wrtod(wr));
@@ -406,6 +409,7 @@ sbtls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
 	struct tlspcb *tlsp = lookup_atid(sc, atid);
 	struct inpcb *inp = tlsp->inp;
 
+	CTR3(KTR_CXGBE, "%s: atid %d status %d", __func__, atid, status);
 	free_atid(sc, atid);
 	if (status == 0)
 		tlsp->tid = GET_TID(cpl);
@@ -472,8 +476,11 @@ sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 	if (tp->t_flags & TF_REQ_TSTMP)
 		len += roundup2(LEN__SET_TCB_FIELD_ULP, 16);
 	m = alloc_wr_mbuf(len, M_NOWAIT);
-	if (m == NULL)
+	if (m == NULL) {
+		CTR2(KTR_CXGBE, "%s: tid %d failed to alloc WR mbuf", __func__,
+		    tlsp->tid);
 		return (ENOMEM);
+	}
 	m->m_pkthdr.snd_tag = m_snd_tag_ref(&tlsp->com.com);
 	m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 
@@ -901,8 +908,11 @@ sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
 	len = kwrlen + kctxlen;
 
         m = alloc_wr_mbuf(len, M_NOWAIT);
-	if (m == NULL)
+	if (m == NULL) {
+		CTR2(KTR_CXGBE, "%s: tid %d failed to alloc WR mbuf", __func__,
+		    tlsp->tid);
 		return (ENOMEM);
+	}
 	m->m_pkthdr.snd_tag = m_snd_tag_ref(&tlsp->com.com);
 	m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	kwr = mtod(m, void *);
