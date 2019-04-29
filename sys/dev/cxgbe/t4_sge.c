@@ -2542,6 +2542,7 @@ restart:
 	if (__predict_false(needs_eo(m0) && !needs_l4_csum(m0))) {
 		m_snd_tag_rele(m0->m_pkthdr.snd_tag);
 		m0->m_pkthdr.snd_tag = NULL;
+		m0->m_pkthdr.csum_flags &= ~CSUM_SND_TAG;
 	}
 #endif
 
