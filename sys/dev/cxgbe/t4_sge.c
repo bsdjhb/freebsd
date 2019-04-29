@@ -6061,17 +6061,26 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 	cst->tx_credits += cpl->credits;
 	MPASS(cst->tx_credits <= cst->tx_total);
 
-	/*
-	 * As with ethofld_transmit(), hold an extra reference so that
-	 * the tag is stable across ethold_tx().
-	 */
-	MPASS(cst->flags & EO_SND_TAG_REF);
-	m_snd_tag_ref(&cst->com);	
-	m = mbufq_first(&cst->pending_tx);
-	if (m != NULL && cst->tx_credits >= mbuf_eo_len16(m))
-		ethofld_tx(cst);
-	mtx_unlock(&cst->lock);
-	m_snd_tag_rele(&cst->com);
+	if (cst->flags & EO_SND_TAG_REF) {
+		/*
+		 * As with ethofld_transmit(), hold an extra reference
+		 * so that the tag is stable across ethold_tx().
+		 */
+		m_snd_tag_ref(&cst->com);	
+		m = mbufq_first(&cst->pending_tx);
+		if (m != NULL && cst->tx_credits >= mbuf_eo_len16(m))
+			ethofld_tx(cst);
+		mtx_unlock(&cst->lock);
+		m_snd_tag_rele(&cst->com);
+	} else {
+		/*
+		 * There shouldn't be any pending packets if the tag
+		 * was freed by the kernel since any pending packet
+		 * should hold a reference to the tag.
+		 */
+		MPASS(mbufq_first(&cst->pending_tx) == NULL);
+		mtx_unlock(&cst->lock);
+	}
 
 	return (0);
 }
