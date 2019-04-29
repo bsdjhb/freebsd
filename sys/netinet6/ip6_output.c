@@ -265,35 +265,48 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 	return (0);
 }
 
-#ifdef RATELIMIT
 static __inline int
-ip6_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
+ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
+    struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro)
 {
+	struct m_snd_tag *mst;
+	int error;
 
 	MPASS(m->m_pkthdr.snd_tag == NULL);
-	if (inp == NULL)
-		return (0);
+	mst = NULL;
 
-	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
-	    (inp->inp_snd_tag != NULL &&
-		inp->inp_snd_tag->ifp != ifp))
-		in_pcboutput_txrtlmt(inp, ifp, m);
+#ifdef RATELIMIT
+	if (inp != NULL && mst == NULL) {
+		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+		    (inp->inp_snd_tag != NULL &&
+		    inp->inp_snd_tag->ifp != ifp))
+			in_pcboutput_txrtlmt(inp, ifp, m);
 
-	if (inp->inp_snd_tag != NULL) {
-		/*
-		 * NB: in_pcboutput_txrlmt might fail to refresh the
-		 * tag if the lock upgrade fails.
-		 */
-		if (inp->inp_snd_tag->ifp != ifp)
-			return (EAGAIN);
+		if (inp->inp_snd_tag != NULL)
+			mst = inp->inp_snd_tag;
+	}
+#endif
+	if (mst != NULL) {
+		if (mst->ifp != ifp) {
+			error = EAGAIN;
+			goto done;
+		}
 
 		/* stamp send tag on mbuf */
-		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(mst);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	}
-	return (0);
-}
+
+	error = nd6_output_ifp(ifp, origifp, m, dst, (struct route *)ro);
+
+done:
+	/* Check for route change invalidating send tags. */
+#ifdef RATELIMIT
+	if (error == EAGAIN)
+		in_pcboutput_eagain(inp);
 #endif
+	return (error);
+}
 
 /*
  * IP6 output. The packet in mbuf chain m contains a skeletal IP6
@@ -987,18 +1000,7 @@ passout:
 			    m->m_pkthdr.len);
 			ifa_free(&ia6->ia_ifa);
 		}
-#ifdef RATELIMIT
-		error = ip6_set_ratelimit_tag(inp, ifp, m);
-		if (error)
-			goto done;
-#endif
-		error = nd6_output_ifp(ifp, origifp, m, dst,
-		    (struct route *)ro);
-#ifdef RATELIMIT
-		/* check for route change */
-		if (error == EAGAIN)
-			in_pcboutput_eagain(inp);
-#endif
+		error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
 		goto done;
 	}
 
@@ -1090,10 +1092,6 @@ sendorfree:
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
-#ifdef RATELIMIT
-		if (error == 0)
-			error = ip6_set_ratelimit_tag(inp, ifp, m);
-#endif
 		if (error == 0) {
 			/* Record statistics for this interface address. */
 			if (ia) {
@@ -1101,13 +1099,7 @@ sendorfree:
 				counter_u64_add(ia->ia_ifa.ifa_obytes,
 				    m->m_pkthdr.len);
 			}
-			error = nd6_output_ifp(ifp, origifp, m, dst,
-			    (struct route *)ro);
-#ifdef RATELIMIT
-			/* check for route change */
-			if (error == EAGAIN)
-				in_pcboutput_eagain(inp);
-#endif
+			error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
 		} else
 			m_freem(m);
 	}

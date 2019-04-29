@@ -204,35 +204,48 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 	return 0;
 }
 
-#ifdef RATELIMIT
 static __inline int
-ip_set_ratelimit_tag(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m)
+ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
+    const struct sockaddr_in *gw, struct route *ro)
 {
+	struct m_snd_tag *mst;
+	int error;
 
 	MPASS(m->m_pkthdr.snd_tag == NULL);
-	if (inp == NULL)
-		return (0);
+	mst = NULL;
 
-	if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
-	    (inp->inp_snd_tag != NULL &&
-		inp->inp_snd_tag->ifp != ifp))
-		in_pcboutput_txrtlmt(inp, ifp, m);
+#ifdef RATELIMIT
+	if (inp != NULL && mst == NULL) {
+		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
+		    (inp->inp_snd_tag != NULL &&
+		    inp->inp_snd_tag->ifp != ifp))
+			in_pcboutput_txrtlmt(inp, ifp, m);
 
-	if (inp->inp_snd_tag != NULL) {
-		/*
-		 * NB: in_pcboutput_txrlmt might fail to refresh the
-		 * tag if the lock upgrade fails.
-		 */
-		if (inp->inp_snd_tag->ifp != ifp)
-			return (EAGAIN);
+		if (inp->inp_snd_tag != NULL)
+			mst = inp->inp_snd_tag;
+	}
+#endif
+	if (mst != NULL) {
+		if (mst->ifp != ifp) {
+			error = EAGAIN;
+			goto done;
+		}
 
 		/* stamp send tag on mbuf */
-		m->m_pkthdr.snd_tag = m_snd_tag_ref(inp->inp_snd_tag);
+		m->m_pkthdr.snd_tag = m_snd_tag_ref(mst);
 		m->m_pkthdr.csum_flags |= CSUM_SND_TAG;
 	}
-	return (0);
-}
+
+	error = (*ifp->if_output)(ifp, m, (const struct sockaddr *)gw, ro);
+
+done:
+	/* Check for route change invalidating send tags. */
+#ifdef RATELIMIT
+	if (error == EAGAIN)
+		in_pcboutput_eagain(inp);
 #endif
+	return (error);
+}
 
 /*
  * IP output.  The packet in mbuf chain m contains a skeletal IP
@@ -713,18 +726,7 @@ sendit:
 		 */
 		m_clrprotoflags(m);
 		IP_PROBE(send, NULL, NULL, ip, ifp, ip, NULL);
-#ifdef RATELIMIT
-		error = ip_set_ratelimit_tag(inp, ifp, m);
-		if (error)
-			goto done;
-#endif
-		error = (*ifp->if_output)(ifp, m,
-		    (const struct sockaddr *)gw, ro);
-#ifdef RATELIMIT
-		/* check for route change */
-		if (error == EAGAIN)
-			in_pcboutput_eagain(inp);
-#endif
+		error = ip_output_send(inp, ifp, m, gw, ro);
 		goto done;
 	}
 
@@ -745,10 +747,6 @@ sendit:
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
-#ifdef RATELIMIT
-		if (error == 0)
-			error = ip_set_ratelimit_tag(inp, ifp, m);
-#endif
 		if (error == 0) {
 			/* Record statistics for this interface address. */
 			if (ia != NULL) {
@@ -764,13 +762,7 @@ sendit:
 
 			IP_PROBE(send, NULL, NULL, mtod(m, struct ip *), ifp,
 			    mtod(m, struct ip *), NULL);
-			error = (*ifp->if_output)(ifp, m,
-			    (const struct sockaddr *)gw, ro);
-#ifdef RATELIMIT
-			/* check for route change */
-			if (error == EAGAIN)
-				in_pcboutput_eagain(inp);
-#endif
+			error = ip_output_send(inp, ifp, m, gw, ro);
 		} else
 			m_freem(m);
 	}
