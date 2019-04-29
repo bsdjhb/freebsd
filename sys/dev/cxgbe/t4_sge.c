@@ -6044,7 +6044,6 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 
 			cst->flags &= ~EO_FLUSH_RPL_PENDING;
 			cst->tx_credits += cpl->credits;
-freetag:
 			cxgbe_snd_tag_free_locked(cst);
 			return (0);	/* cst is gone. */
 		}
@@ -6062,21 +6061,17 @@ freetag:
 	cst->tx_credits += cpl->credits;
 	MPASS(cst->tx_credits <= cst->tx_total);
 
+	/*
+	 * As with ethofld_transmit(), hold an extra reference so that
+	 * the tag is stable across ethold_tx().
+	 */
+	MPASS(cst->flags & EO_SND_TAG_REF);
+	m_snd_tag_ref(&cst->com);	
 	m = mbufq_first(&cst->pending_tx);
 	if (m != NULL && cst->tx_credits >= mbuf_eo_len16(m))
 		ethofld_tx(cst);
-
-	if (__predict_false((cst->flags & EO_SND_TAG_REF) == 0) &&
-	    cst->ncompl == 0) {
-		if (cst->tx_credits == cst->tx_total)
-			goto freetag;
-		else {
-			MPASS((cst->flags & EO_FLUSH_RPL_PENDING) == 0);
-			send_etid_flush_wr(cst);
-		}
-	}
-
 	mtx_unlock(&cst->lock);
+	m_snd_tag_rele(&cst->com);
 
 	return (0);
 }
