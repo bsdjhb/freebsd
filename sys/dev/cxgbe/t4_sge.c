@@ -2557,7 +2557,7 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
  * b) it may get defragged up if the gather list is too long for the hardware.
  */
 int
-parse_pkt(struct adapter *sc, struct vi_info *vi, struct mbuf **mp)
+parse_pkt(struct adapter *sc, struct mbuf **mp)
 {
 	struct mbuf *m0 = *mp, *m;
 	int rc, nsegs, defragged = 0, offset;
