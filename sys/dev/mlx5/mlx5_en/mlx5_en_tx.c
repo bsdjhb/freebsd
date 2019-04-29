@@ -83,10 +83,6 @@ mlx5e_select_queue_by_send_tag(struct ifnet *ifp, struct mbuf *mb)
 	struct mlx5e_snd_tag *ptag;
 	struct mlx5e_sq *sq;
 
-	/* check for route change */
-	if (mb->m_pkthdr.snd_tag->ifp != ifp)
-		return (NULL);
-
 	/* get pointer to sendqueue */
 	ptag = container_of(mb->m_pkthdr.snd_tag,
 	    struct mlx5e_snd_tag, m_snd_tag);
