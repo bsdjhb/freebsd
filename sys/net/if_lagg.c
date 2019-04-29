@@ -1788,8 +1788,10 @@ lagg_transmit(struct ifnet *ifp, struct mbuf *m)
 	int error;
 
 #ifdef RATELIMIT
-	if (m->m_pkthdr.snd_tag != NULL)
-		MPASS(ifp == m->m_pkthdr.snd_tag->ifp);
+	if (m->m_pkthdr.snd_tag != NULL) {
+		MPASS(m->m_pkthdr.csum_flags & CSUM_SND_TAG);
+		MPASS(m->m_pkthdr.snd_tag->ifp == ifp);
+	}
 #endif
 	LAGG_RLOCK();
 	/* We need a Tx algorithm and at least one port */

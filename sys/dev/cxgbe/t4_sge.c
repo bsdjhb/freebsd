@@ -5951,6 +5951,7 @@ ethofld_transmit(struct ifnet *ifp, struct mbuf *m0)
 	int rc;
 
 	MPASS(m0->m_nextpkt == NULL);
+	MPASS(m0->m_pkthdr.csum_flags & CSUM_SND_TAG);
 	MPASS(m0->m_pkthdr.snd_tag != NULL);
 	cst = mst_to_cst(m0->m_pkthdr.snd_tag);
 

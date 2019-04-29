@@ -2058,6 +2058,7 @@ cxgbe_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 #ifdef RATELIMIT
 	if (m->m_pkthdr.snd_tag != NULL) {
+		MPASS(m->m_pkthdr.csum_flags & CSUM_SND_TAG);
 		MPASS(m->m_pkthdr.snd_tag->ifp == ifp);
 		return (ethofld_transmit(ifp, m));
 	}

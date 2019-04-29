@@ -610,6 +610,7 @@ mlx5e_xmit(struct ifnet *ifp, struct mbuf *mb)
 	int ret;
 
 	if (mb->m_pkthdr.snd_tag != NULL) {
+		MPASS(mb->m_pkthdr.csum_flags & CSUM_SND_TAG);
 		MPASS(mb->m_pkthdr.snd_tag->ifp == ifp);
 		sq = mlx5e_select_queue_by_send_tag(ifp, mb);
 		if (unlikely(sq == NULL)) {
