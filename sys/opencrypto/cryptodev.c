@@ -590,6 +590,7 @@ cryptof_ioctl(
 			case CRYPTO_AES_CCM_CBC_MAC:
 				if (sop->keylen != sop->mackeylen)
 					return (EINVAL);
+				thash = NULL;
 				break;
 			case 0:
 				break;
