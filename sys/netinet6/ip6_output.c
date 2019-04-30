@@ -272,7 +272,7 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 	struct m_snd_tag *mst;
 	int error;
 
-	MPASS(m->m_pkthdr.snd_tag == NULL);
+	MPASS((m->m_pkthdr.csum_flags & CSUM_SND_TAG) == 0);
 	mst = NULL;
 
 #ifdef RATELIMIT
@@ -287,6 +287,8 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 	}
 #endif
 	if (mst != NULL) {
+		KASSERT(m->m_pkthdr.rcvif == NULL,
+		    ("trying to add a send tag to a forwarded packet"));
 		if (mst->ifp != ifp) {
 			error = EAGAIN;
 			goto done;
