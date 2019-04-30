@@ -1158,11 +1158,10 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	BPF_MTAP(ifp, m);
 
 #ifdef RATELIMIT
-	if (m->m_pkthdr.snd_tag != NULL) {
+	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG) {
 		struct vlan_snd_tag *vst;
 		struct m_snd_tag *mst;
 
-		MPASS(m->m_pkthdr.csum_flags & CSUM_SND_TAG);
 		MPASS(m->m_pkthdr.snd_tag->ifp == ifp);
 		mst = m->m_pkthdr.snd_tag;
 		vst = mst_to_vst(mst);

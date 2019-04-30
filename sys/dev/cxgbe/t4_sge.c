@@ -2325,7 +2325,7 @@ static inline int
 needs_eo(struct mbuf *m)
 {
 
-	return (m->m_pkthdr.snd_tag != NULL);
+	return (m->m_pkthdr.csum_flags & CSUM_SND_TAG);
 }
 #endif
 
