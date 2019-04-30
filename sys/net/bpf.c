@@ -2209,6 +2209,15 @@ bpf_tap(struct bpf_if *bp, u_char *pkt, u_int pktlen)
 	    (((d)->bd_direction == BPF_D_IN && (r) != (i)) ||	\
 	    ((d)->bd_direction == BPF_D_OUT && (r) == (i)))
 
+static __inline struct ifnet *
+bpf_rcvif(struct mbuf *m)
+{
+
+	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG)
+		return (NULL);
+	return (m->m_pkthdr.rcvif);
+}
+
 /*
  * Incoming linkage from device drivers, when packet is in an mbuf chain.
  * Locking model is explained in bpf_tap().
@@ -2225,7 +2234,7 @@ bpf_mtap(struct bpf_if *bp, struct mbuf *m)
 	int gottime;
 
 	/* Skip outgoing duplicate packets. */
-	if ((m->m_flags & M_PROMISC) != 0 && m->m_pkthdr.rcvif == NULL) {
+	if ((m->m_flags & M_PROMISC) != 0 && bpf_rcvif(m) == NULL) {
 		m->m_flags &= ~M_PROMISC;
 		return;
 	}
@@ -2236,7 +2245,7 @@ bpf_mtap(struct bpf_if *bp, struct mbuf *m)
 	BPFIF_RLOCK(bp);
 
 	LIST_FOREACH(d, &bp->bif_dlist, bd_next) {
-		if (BPF_CHECK_DIRECTION(d, m->m_pkthdr.rcvif, bp->bif_ifp))
+		if (BPF_CHECK_DIRECTION(d, bpf_rcvif(m), bp->bif_ifp))
 			continue;
 		counter_u64_add(d->bd_rcount, 1);
 #ifdef BPF_JITTER
