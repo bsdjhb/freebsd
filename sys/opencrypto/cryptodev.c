@@ -942,14 +942,69 @@ cryptodev_op(
 	if (cse->hashsize)
 		crp->crp_digest_start = cop->len;
 
-	if (cop->op == COP_ENCRYPT)
-		crp->crp_op = CRYPTO_OP_ENCRYPT;
-	else
-		crp->crp_op = CRYPTO_OP_DECRYPT;
-
-	/* TODO: Add a flag to request digest verify? */
-	if (cse->hashsize)
-		crp->crp_op |= CRYPTO_OP_COMPUTE_DIGEST;
+	switch (cse->mode) {
+	case CSP_MODE_COMPRESS:
+		switch (cop->op) {
+		case COP_ENCRYPT:
+			crp->crp_op = CRYPTO_OP_COMPRESS;
+			break;
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_DECOMPRESS;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	case CSP_MODE_CIPHER:
+		switch (cop->op) {
+		case COP_ENCRYPT:
+			crp->crp_op = CRYPTO_OP_ENCRYPT;
+			break;
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_DECRYPT;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	case CSP_MODE_DIGEST:
+		switch (cop->op) {
+		case 0:
+		case COP_ENCRYPT:
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	case CSP_MODE_ETA:
+		switch (cop->op) {
+		case COP_ENCRYPT:
+			crp->crp_op = CRYPTO_OP_ENCRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_DECRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	default:
+		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+		error = EINVAL;
+		goto bail;
+	}
 
 	crp->crp_ilen = cop->len + cse->hashsize;
 	crp->crp_flags = CRYPTO_F_CBIMM | (cop->flags & COP_F_BATCH);
@@ -1095,12 +1150,44 @@ cryptodev_aead(
 	crp->crp_payload_length = caead->len;
 	crp->crp_digest_start = caead->aadlen + caead->len;
 
-	if (caead->op == COP_ENCRYPT)
-		crp->crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
-	else if (cse->mode == CSP_MODE_AEAD)
-		crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
-	else
-		crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST;
+	switch (cse->mode) {
+	case CSP_MODE_AEAD:
+		switch (caead->op) {
+		case COP_ENCRYPT:
+			crp->crp_op = CRYPTO_OP_ENCRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_DECRYPT |
+			    CRYPTO_OP_VERIFY_DIGEST;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	case CSP_MODE_ETA:
+		switch (caead->op) {
+		case COP_ENCRYPT:
+			crp->crp_op = CRYPTO_OP_ENCRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		case COP_DECRYPT:
+			crp->crp_op = CRYPTO_OP_DECRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
+			break;
+		default:
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			error = EINVAL;
+			goto bail;
+		}
+		break;
+	default:
+		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+		error = EINVAL;
+		goto bail;
+	}
 
 	crp->crp_ilen = caead->aadlen + caead->len + cse->hashsize;
 	crp->crp_flags = CRYPTO_F_CBIMM | (caead->flags & COP_F_BATCH);
