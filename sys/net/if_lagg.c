@@ -1555,6 +1555,13 @@ mst_to_lst(struct m_snd_tag *mst)
 	return (__containerof(mst, struct lagg_snd_tag, com));
 }
 
+/*
+ * Look up the port used by a specific flow.  This only works for lagg
+ * protocols with deterministic port mappings (e.g. not roundrobin).
+ * In addition protocols which use a hash to map flows to ports must
+ * be configured to use the mbuf flowid rather than hashing packet
+ * contents.
+ */
 static struct lagg_port *
 lookup_snd_tag_port(struct ifnet *ifp, uint32_t flowid, uint32_t flowtype)
 {
