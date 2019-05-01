@@ -216,6 +216,7 @@ struct ccr_softc {
 	uint64_t stats_ccm_encrypt;
 	uint64_t stats_ccm_decrypt;
 	uint64_t stats_wr_nomem;
+	uint64_t stats_wr_restart;
 	uint64_t stats_inflight;
 	uint64_t stats_mac_error;
 	uint64_t stats_pad_error;
@@ -385,6 +386,38 @@ ccr_use_imm_data(u_int transhdr_len, u_int input_len)
 	return (true);
 }
 
+static int
+ccr_alloc_wr(struct ccr_softc *sc, u_int wr_len, struct wrq_cookie *cookie,
+    struct chcr_wr **crwrp)
+{
+	struct chcr_wr *crwr;
+
+	/*
+	 * If there is at least one request already inflight, use
+	 * try_start_wrq_wr and fail with ERESTART if the queue is
+	 * full.  If there is not a request, use start_wrq_wr which
+	 * will fall back to alloc_wrqe if the queue is full.  This
+	 * avoids blocking the crypto driver when there aren't any
+	 * requests in flight.
+	 */
+	if (sc->stats_inflight != 0) {
+		crwr = try_start_wrq_wr(sc->txq, wr_len, cookie);
+		if (crwr == NULL) {
+			sc->stats_wr_restart++;
+			return (ERESTART);
+		}
+	} else {
+		crwr = start_wrq_wr(sc->txq, wr_len, cookie);
+		if (crwr == NULL) {
+			sc->stats_wr_nomem++;
+			return (ENOMEM);
+		}
+	}
+
+	*crwrp = crwr;
+	return (0);
+}
+
 static void
 ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
     u_int wr_len, u_int imm_len, u_int sgl_len, u_int hash_size,
@@ -434,8 +467,8 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 static int
 ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 {
+	struct wrq_cookie cookie;
 	struct chcr_wr *crwr;
-	struct wrqe *wr;
 	struct auth_hash *axf;
 	struct cryptodesc *crd;
 	char *dst;
@@ -494,12 +527,9 @@ ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	wr_len = roundup2(transhdr_len, 16) + roundup2(imm_len, 16) + sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
-	wr = alloc_wrqe(wr_len, sc->txq);
-	if (wr == NULL) {
-		sc->stats_wr_nomem++;
-		return (ENOMEM);
-	}
-	crwr = wrtod(wr);
+	error = ccr_alloc_wr(sc, wr_len, &cookie, &crwr);
+	if (error)
+		return (error);
 	memset(crwr, 0, wr_len);
 
 	ccr_populate_wreq(sc, crwr, kctx_len, wr_len, imm_len, sgl_len,
@@ -555,8 +585,7 @@ ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
-	/* XXX: TODO backpressure */
-	t4_wrq_tx(sc->adapter, wr);
+	commit_wrq_wr(sc->txq, crwr, &cookie);
 
 	return (0);
 }
@@ -580,8 +609,8 @@ static int
 ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
+	struct wrq_cookie cookie;
 	struct chcr_wr *crwr;
-	struct wrqe *wr;
 	struct cryptodesc *crd;
 	char *dst;
 	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
@@ -641,12 +670,9 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	    roundup2(imm_len, 16) + sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
-	wr = alloc_wrqe(wr_len, sc->txq);
-	if (wr == NULL) {
-		sc->stats_wr_nomem++;
-		return (ENOMEM);
-	}
-	crwr = wrtod(wr);
+	error = ccr_alloc_wr(sc, wr_len, &cookie, &crwr);
+	if (error)
+		return (error);
 	memset(crwr, 0, wr_len);
 
 	/*
@@ -742,8 +768,7 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
-	/* XXX: TODO backpressure */
-	t4_wrq_tx(sc->adapter, wr);
+	commit_wrq_wr(sc->txq, crwr, &cookie);
 
 	return (0);
 }
@@ -783,8 +808,8 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
     struct cryptodesc *crda, struct cryptodesc *crde)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
+	struct wrq_cookie cookie;
 	struct chcr_wr *crwr;
-	struct wrqe *wr;
 	struct auth_hash *axf;
 	char *dst;
 	u_int kctx_len, key_half, op_type, transhdr_len, wr_len;
@@ -971,12 +996,9 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	    roundup2(imm_len, 16) + sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
-	wr = alloc_wrqe(wr_len, sc->txq);
-	if (wr == NULL) {
-		sc->stats_wr_nomem++;
-		return (ENOMEM);
-	}
-	crwr = wrtod(wr);
+	error = ccr_alloc_wr(sc, wr_len, &cookie, &crwr);
+	if (error)
+		return (error);
 	memset(crwr, 0, wr_len);
 
 	/*
@@ -1092,8 +1114,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
-	/* XXX: TODO backpressure */
-	t4_wrq_tx(sc->adapter, wr);
+	commit_wrq_wr(sc->txq, crwr, &cookie);
 
 	return (0);
 }
@@ -1133,8 +1154,8 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
     struct cryptodesc *crda, struct cryptodesc *crde)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
+	struct wrq_cookie cookie;
 	struct chcr_wr *crwr;
-	struct wrqe *wr;
 	char *dst;
 	u_int iv_len, kctx_len, op_type, transhdr_len, wr_len;
 	u_int hash_size_in_response, imm_len;
@@ -1299,12 +1320,9 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	    sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
-	wr = alloc_wrqe(wr_len, sc->txq);
-	if (wr == NULL) {
-		sc->stats_wr_nomem++;
-		return (ENOMEM);
-	}
-	crwr = wrtod(wr);
+	error = ccr_alloc_wr(sc, wr_len, &cookie, &crwr);
+	if (error)
+		return (error);
 	memset(crwr, 0, wr_len);
 
 	/*
@@ -1409,8 +1427,7 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
-	/* XXX: TODO backpressure */
-	t4_wrq_tx(sc->adapter, wr);
+	commit_wrq_wr(sc->txq, crwr, &cookie);
 
 	return (0);
 }
@@ -1611,9 +1628,9 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
     struct cryptodesc *crda, struct cryptodesc *crde)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
+	struct wrq_cookie cookie;
 	struct ulptx_idata *idata;
 	struct chcr_wr *crwr;
-	struct wrqe *wr;
 	char *dst;
 	u_int iv_len, kctx_len, op_type, transhdr_len, wr_len;
 	u_int aad_len, b0_len, hash_size_in_response, imm_len;
@@ -1770,12 +1787,9 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	    sgl_len;
 	if (wr_len > SGE_MAX_WR_LEN)
 		return (EFBIG);
-	wr = alloc_wrqe(wr_len, sc->txq);
-	if (wr == NULL) {
-		sc->stats_wr_nomem++;
-		return (ENOMEM);
-	}
-	crwr = wrtod(wr);
+	error = ccr_alloc_wr(sc, wr_len, &cookie, &crwr);
+	if (error)
+		return (error);
 	memset(crwr, 0, wr_len);
 
 	/*
@@ -1890,8 +1904,7 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 	}
 
-	/* XXX: TODO backpressure */
-	t4_wrq_tx(sc->adapter, wr);
+	commit_wrq_wr(sc->txq, crwr, &cookie);
 
 	return (0);
 }
@@ -2117,6 +2130,8 @@ ccr_sysctls(struct ccr_softc *sc)
 	    &sc->stats_ccm_decrypt, 0, "AES-CCM decryption requests submitted");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "wr_nomem", CTLFLAG_RD,
 	    &sc->stats_wr_nomem, 0, "Work request memory allocation failures");
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "wr_restart", CTLFLAG_RD,
+	    &sc->stats_wr_restart, 0, "Requests delayed due to full queue");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "inflight", CTLFLAG_RD,
 	    &sc->stats_inflight, 0, "Requests currently pending");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "mac_error", CTLFLAG_RD,
@@ -2835,7 +2850,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	if (error == 0) {
 		s->pending++;
 		sc->stats_inflight++;
-	} else
+	} else if (error != ERESTART)
 		sc->stats_process_error++;
 
 out:
@@ -2857,7 +2872,7 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	struct ccr_session *s;
 	const struct cpl_fw6_pld *cpl;
 	struct cryptop *crp;
-	uint32_t status;
+	uint32_t cid, status;
 	int error;
 
 	if (m != NULL)
@@ -2876,6 +2891,7 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	mtx_lock(&sc->lock);
 	s->pending--;
 	sc->stats_inflight--;
+	cid = sc->cid;
 
 	switch (s->mode) {
 	case HASH:
@@ -2906,6 +2922,7 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	crp->crp_etype = error;
 	crypto_done(crp);
 	m_freem(m);
+	crypto_unblock(cid, CRYPTO_SYMQ);
 	return (0);
 }
 
