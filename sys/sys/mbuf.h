@@ -1001,6 +1001,17 @@ m_align(struct mbuf *m, int len)
  */
 #define	MCHTYPE(m, t)	m_chtype((m), (t))
 
+/* Return the rcvif of a packet header. */
+static __inline struct ifnet *
+m_rcvif(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG)
+		return (NULL);
+	return (m->m_pkthdr.rcvif);
+}
+
 /* Length to m_copy to copy all. */
 #define	M_COPYALL	1000000000
 
