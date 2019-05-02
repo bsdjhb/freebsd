@@ -2625,7 +2625,8 @@ restart:
 }
 
 void *
-start_wrq_wr(struct sge_wrq *wrq, int len16, struct wrq_cookie *cookie)
+_start_wrq_wr(struct sge_wrq *wrq, int len16, struct wrq_cookie *cookie,
+    bool alloc_fallback)
 {
 	struct sge_eq *eq = &wrq->eq;
 	struct adapter *sc = wrq->adapter;
@@ -2645,6 +2646,8 @@ start_wrq_wr(struct sge_wrq *wrq, int len16, struct wrq_cookie *cookie)
 	if (!STAILQ_EMPTY(&wrq->wr_list)) {
 slowpath:
 		EQ_UNLOCK(eq);
+		if (!alloc_fallback)
+			return (NULL);
 		wr = alloc_wrqe(len16 * 16, wrq);
 		if (__predict_false(wr == NULL))
 			return (NULL);

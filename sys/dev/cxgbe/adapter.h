@@ -1205,7 +1205,7 @@ void t4_wrq_tx_locked(struct adapter *, struct sge_wrq *, struct wrqe *);
 void t4_update_fl_bufsize(struct ifnet *);
 struct mbuf *alloc_wr_mbuf(int, int);
 int parse_pkt(struct adapter *, struct mbuf **);
-void *start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *);
+void *_start_wrq_wr(struct sge_wrq *, int, struct wrq_cookie *, bool);
 void commit_wrq_wr(struct sge_wrq *, void *, struct wrq_cookie *);
 int tnl_cong(struct port_info *, int);
 void t4_register_an_handler(an_handler_t);
@@ -1273,6 +1273,18 @@ alloc_wrqe(int wr_len, struct sge_wrq *wrq)
 	wr->wr_len = wr_len;
 	wr->wrq = wrq;
 	return (wr);
+}
+
+static inline void *
+start_wrq_wr(struct sge_wrq *wrq, int len16, struct wrq_cookie *cookie)
+{
+	return (_start_wrq_wr(wrq, len16, cookie, true));
+}
+
+static inline void *
+try_start_wrq_wr(struct sge_wrq *wrq, int len16, struct wrq_cookie *cookie)
+{
+	return (_start_wrq_wr(wrq, len16, cookie, false));
 }
 
 static inline void *
