@@ -401,13 +401,13 @@ ccr_alloc_wr(struct ccr_softc *sc, u_int wr_len, struct wrq_cookie *cookie,
 	 * requests in flight.
 	 */
 	if (sc->stats_inflight != 0) {
-		crwr = try_start_wrq_wr(sc->txq, wr_len, cookie);
+		crwr = try_start_wrq_wr(sc->txq, howmany(wr_len, 16), cookie);
 		if (crwr == NULL) {
 			sc->stats_wr_restart++;
 			return (ERESTART);
 		}
 	} else {
-		crwr = start_wrq_wr(sc->txq, wr_len, cookie);
+		crwr = start_wrq_wr(sc->txq, howmany(wr_len, 16), cookie);
 		if (crwr == NULL) {
 			sc->stats_wr_nomem++;
 			return (ENOMEM);
