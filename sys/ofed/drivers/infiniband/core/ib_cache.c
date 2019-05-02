@@ -1298,6 +1298,7 @@ if_t rdma_read_gid_attr_ndev_rcu(const struct ib_gid_attr *attr)
 	read_unlock_irqrestore(&table->rwlock, flags);
 	return ndev;
 }
+EXPORT_SYMBOL(rdma_read_gid_attr_ndev_rcu);
 
 /**
  * rdma_read_gid_l2_fields - Read the vlan ID and source MAC address
