@@ -2856,7 +2856,9 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 out:
 	mtx_unlock(&sc->lock);
 
-	if (error) {
+	if (error == ERESTART)
+		return (error);
+	else if (error) {
 		crp->crp_etype = error;
 		crypto_done(crp);
 	}
