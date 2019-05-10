@@ -215,7 +215,7 @@ ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
 	mst = NULL;
 
 #ifdef RATELIMIT
-	if (inp != NULL && mst == NULL) {
+	if (inp != NULL) {
 		if ((inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) != 0 ||
 		    (inp->inp_snd_tag != NULL &&
 		    inp->inp_snd_tag->ifp != ifp))
