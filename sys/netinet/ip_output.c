@@ -204,7 +204,7 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, struct inpcb *inp,
 	return 0;
 }
 
-static __inline int
+static int
 ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
     const struct sockaddr_in *gw, struct route *ro)
 {

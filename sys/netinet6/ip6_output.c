@@ -276,7 +276,7 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 	return (0);
 }
 
-static __inline int
+static int
 ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
     struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro)
 {
