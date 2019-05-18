@@ -485,6 +485,7 @@ enum vm_cap_type {
 	VM_CAP_BPT_EXIT,
 	VM_CAP_RDPID,
 	VM_CAP_RDTSCP,
+	VM_CAP_DB_EXIT,
 	VM_CAP_MAX
 };
 
@@ -632,6 +633,7 @@ enum vm_exitcode {
 	VM_EXITCODE_DEBUG,
 	VM_EXITCODE_VMINSN,
 	VM_EXITCODE_BPT,
+	VM_EXITCODE_DB,
 	VM_EXITCODE_MAX
 };
 
@@ -721,6 +723,11 @@ struct vm_exit {
 		struct {
 			int		inst_length;
 		} bpt;
+		struct {
+			int		trace_trap;
+			int		drx_access;
+			int		watchpoints;	/* bitmask */
+		} dbg;
 		struct {
 			uint32_t	code;		/* ecx value */
 			uint64_t	wval;
