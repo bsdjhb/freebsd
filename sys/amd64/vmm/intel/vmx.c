@@ -2658,6 +2658,14 @@ vmx_exit_process(struct vmx *vmx, int vcpu, struct vm_exit *vmexit)
 			vmexit->inst_length = 0;
 			break;
 		}
+		if (intr_type == VMCS_INTR_T_HWEXCEPTION && intr_vec == IDT_DB &&
+		    (vmx->cap[vcpu].set & (1 << VM_CAP_DB_EXIT))) {
+			vmexit->exitcode = VM_EXITCODE_DB;
+			vmexit->u.dbg.trace_trap = !!(qual & EXIT_QUAL_DBG_BS);
+			vmexit->u.dbg.drx_access = !!(qual & EXIT_QUAL_DBG_BD);
+			vmexit->u.dbg.watchpoints = qual & EXIT_QUAL_DBG_B_MASK;
+			break;
+		}
 
 		if (intr_vec == IDT_PF) {
 			error = vmxctx_setreg(vmxctx, VM_REG_GUEST_CR2, qual);
@@ -3488,6 +3496,7 @@ vmx_getcap(void *arg, int vcpu, int type, int *retval)
 			ret = 0;
 		break;
 	case VM_CAP_BPT_EXIT:
+	case VM_CAP_DB_EXIT:
 		ret = 0;
 		break;
 	default:
@@ -3580,6 +3589,17 @@ vmx_setcap(void *arg, int vcpu, int type, int val)
 			pptr = &vmx->cap[vcpu].exc_bitmap;
 			baseval = *pptr;
 			flag = (1 << IDT_BP);
+			reg = VMCS_EXCEPTION_BITMAP;
+		}
+		break;
+	case VM_CAP_DB_EXIT:
+		retval = 0;
+
+		/* Don't change the bitmap if we are tracing all exceptions. */
+		if (vmx->cap[vcpu].exc_bitmap != 0xffffffff) {
+			pptr = &vmx->cap[vcpu].exc_bitmap;
+			baseval = *pptr;
+			flag = (1 << IDT_DB);
 			reg = VMCS_EXCEPTION_BITMAP;
 		}
 		break;
