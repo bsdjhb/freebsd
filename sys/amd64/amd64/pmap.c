@@ -7181,7 +7181,7 @@ pmap_pde_attr(pd_entry_t *pde, int cache_bits, int mask)
  * NOT real memory.
  */
 static void *
-pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, bool noflush)
+pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, bool noflush, bool setattr)
 {
 	struct pmap_preinit_mapping *ppim;
 	vm_offset_t va, offset;
@@ -7224,9 +7224,12 @@ pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, bool noflush)
 		 */
 		if (pa < dmaplimit && pa + size <= dmaplimit) {
 			va = PHYS_TO_DMAP(pa);
-			PMAP_LOCK(kernel_pmap);
-			i = pmap_change_attr_locked(va, size, mode, noflush);
-			PMAP_UNLOCK(kernel_pmap);
+			if (setattr) {
+				PMAP_LOCK(kernel_pmap);
+				i = pmap_change_attr_locked(va, size, mode, noflush);
+				PMAP_UNLOCK(kernel_pmap);
+			} else
+				i = 0;
 			if (!i)
 				return ((void *)(va + offset));
 		}
@@ -7246,28 +7249,35 @@ void *
 pmap_mapdev_attr(vm_paddr_t pa, vm_size_t size, int mode)
 {
 
-	return (pmap_mapdev_internal(pa, size, mode, false));
+	return (pmap_mapdev_internal(pa, size, mode, false, true));
 }
 
 void *
 pmap_mapdev(vm_paddr_t pa, vm_size_t size)
 {
 
-	return (pmap_mapdev_internal(pa, size, PAT_UNCACHEABLE, false));
+	return (pmap_mapdev_internal(pa, size, PAT_UNCACHEABLE, false, true));
 }
 
 void *
 pmap_mapdev_pciecfg(vm_paddr_t pa, vm_size_t size)
 {
 
-	return (pmap_mapdev_internal(pa, size, PAT_UNCACHEABLE, true));
+	return (pmap_mapdev_internal(pa, size, PAT_UNCACHEABLE, true, true));
 }
 
 void *
 pmap_mapbios(vm_paddr_t pa, vm_size_t size)
 {
 
-	return (pmap_mapdev_internal(pa, size, PAT_WRITE_BACK, false));
+	return (pmap_mapdev_internal(pa, size, PAT_WRITE_BACK, false, true));
+}
+
+void *
+pmap_mapphys(vm_paddr_t pa, vm_size_t size)
+{
+
+	return (pmap_mapdev_internal(pa, size, PAT_WRITE_BACK, false, false));
 }
 
 void
