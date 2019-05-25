@@ -2436,23 +2436,18 @@ m_advance(struct mbuf **pm, int *poffset, int len)
 }
 
 static inline int
-count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
+count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *nextaddr)
 {
 	struct mbuf_ext_pgs *ext_pgs;
-	vm_paddr_t tmp;
+	vm_paddr_t paddr;
 	uintptr_t off, segoff;
 	int len, seglen, pgoff, pglen, i;
 	int nsegs = 0;
 
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
-	len = m->m_len;
-
-	/* somebody may have removed data from the front;
-	 * so skip ahead until we find the start
-	 */
 	off = mtod(m, vm_offset_t);
+	len = m->m_len;
 	off += skip;
 	len -= skip;
 
@@ -2465,44 +2460,39 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
 			seglen = min (seglen, len);
 			off = 0;
 			len -= seglen;
-			tmp = pmap_kextract((vm_offset_t)&ext_pgs->hdr[segoff]);
-			if ((*lastb + 1) != tmp)
+			paddr = pmap_kextract(
+			    (vm_offset_t)&ext_pgs->hdr[segoff]);
+			if (*nextaddr != paddr)
 				nsegs++;
-			*lastb = tmp + seglen - 1;
+			*nextaddr = paddr + seglen;
 		}
 	}
 	pgoff = ext_pgs->first_pg_off;
 	for (i = 0; i < ext_pgs->npgs && len > 0; i++) {
 		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off != 0) {
-			if (off >= pglen) {
-				off -= pglen;
-				pgoff = 0;
-				continue;
-			} else {
-				seglen = pglen - off;
-				segoff = pgoff + off;
-				off = 0;
-			}
-		} else {
-			seglen = pglen;
-			segoff = pgoff;
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
 		}
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
 		seglen = min(seglen, len);
 		len -= seglen;
-		tmp = ext_pgs->pa[i] + segoff;
-		if ((*lastb) + 1 != tmp)
+		paddr = ext_pgs->pa[i] + segoff;
+		if (*nextaddr != paddr)
 			nsegs++;
-		*lastb = tmp + seglen - 1;
+		*nextaddr = paddr + seglen;
 		pgoff = 0;
 	};
 	if (len) {
 		seglen = min(len, ext_pgs->trail_len - off);
 		len -= seglen;
-		tmp = pmap_kextract((vm_offset_t)&ext_pgs->trail[off]);
-		if ((*lastb + 1) != tmp)
+		paddr = pmap_kextract((vm_offset_t)&ext_pgs->trail[off]);
+		if (*nextaddr != paddr)
 			nsegs++;
-		*lastb = tmp + seglen - 1;
+		*nextaddr = paddr + seglen;
 	}
 
 	return (nsegs);
@@ -2510,14 +2500,15 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *lastb)
 
 
 /*
- * Can deal with empty mbufs in the chain that have m_len = 0, but the chain
- * must have at least one mbuf that's not empty.  It is possible for this
- * routine to return 0 if skip accounts for all the contents of the mbuf chain.
+ * Can deal with empty mbufs in the chain that have m_len = 0, but the
+ * chain must have at least one mbuf that's not empty.  It is possible
+ * for this routine to return 0 if skip accounts for all the contents
+ * of the mbuf chain.
  */
 static inline int
 count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 {
-	vm_paddr_t lastb, next;
+	vm_paddr_t nextaddr, paddr;
 	vm_offset_t va;
 	int len, nsegs;
 
@@ -2526,9 +2517,8 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 	MPASS(m->m_pkthdr.len >= skip);
 
 	nsegs = 0;
-	lastb = 0;
+	nextaddr = 0;
 	for (; m; m = m->m_next) {
-
 		len = m->m_len;
 		if (__predict_false(len == 0))
 			continue;
@@ -2539,18 +2529,18 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 
 		if ((m->m_flags & M_NOMAP) != 0) {
 			*cflags |= MC_NOMAP;
-			nsegs += count_mbuf_ext_pgs(m, skip, &lastb);
+			nsegs += count_mbuf_ext_pgs(m, skip, &nextaddr);
 			skip = 0;
 			continue;
 		}
 		va = mtod(m, vm_offset_t) + skip;
 		len -= skip;
 		skip = 0;
-		next = pmap_kextract(va);
+		paddr = pmap_kextract(va);
 		nsegs += sglist_count((void *)(uintptr_t)va, len);
-		if (lastb + 1 == next)
+		if (paddr == nextaddr)
 			nsegs--;
-		lastb = pmap_kextract(va + len - 1);
+		nextaddr = pmap_kextract(va + len - 1) + 1;
 	}
 
 	return (nsegs);
