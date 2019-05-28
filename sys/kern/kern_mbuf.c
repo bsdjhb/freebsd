@@ -1150,6 +1150,11 @@ mb_unmapped_to_ext(struct mbuf *top)
 	return (top);
 }
 
+/*
+ * Allocate an empty EXT_PGS mbuf.  The ext_free routine is
+ * responsible for freeing any pages backing this mbuf when it is
+ * freed.
+ */
 struct mbuf *
 mb_alloc_ext_pgs(int how, bool pkthdr, m_ext_free_t ext_free)
 {
@@ -1198,6 +1203,8 @@ mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs)
 	 */
 	KASSERT(ext_pgs->npgs > 0,
 	    ("ext_pgs with no valid pages: %p", ext_pgs));
+	KASSERT(ext_pgs->npgs <= nitems(ext_pgs->pa),
+	    ("ext_pgs with too many pages: %p", ext_pgs));
 	KASSERT(ext_pgs->nrdy >= 0,
 	    ("ext_pgs with negative ready pages: %p", ext_pgs));
 	KASSERT(ext_pgs->nrdy <= ext_pgs->npgs,
