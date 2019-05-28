@@ -111,7 +111,11 @@ int nmbclusters;		/* limits number of mbuf clusters */
 int nmbjumbop;			/* limits number of page size jumbo clusters */
 int nmbjumbo9;			/* limits number of 9k jumbo clusters */
 int nmbjumbo16;			/* limits number of 16k jumbo clusters */
+
 bool mb_use_ext_pgs;		/* use ext_pgs for sendfile */
+SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
+    &mb_use_ext_pgs, 0,
+    "Use bundles of pages for sendfile(2)");
 
 static quad_t maxmbufmem;	/* overall real memory limit for all mbufs */
 
@@ -274,10 +278,6 @@ SYSCTL_PROC(_kern_ipc, OID_AUTO, nmbufs, CTLTYPE_INT|CTLFLAG_RW,
 &nmbufs, 0, sysctl_nmbufs, "IU",
     "Maximum number of mbufs allowed");
 
-SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
-    &mb_use_ext_pgs, 0,
-    "Use bundles of pages for sendfile(2)");
-
 /*
  * Zones from which we allocate.
  */
@@ -386,10 +386,14 @@ mbuf_init(void *dummy)
 	uma_zone_set_warning(zone_jumbo16, "kern.ipc.nmbjumbo16 limit reached");
 	uma_zone_set_maxaction(zone_jumbo16, mb_reclaim);
 
-
 	zone_extpgs = uma_zcreate(MBUF_EXTPGS_MEM_NAME,
-	    sizeof (struct mbuf_ext_pgs),
-	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE, 0);
+	    sizeof(struct mbuf_ext_pgs),
+#ifdef INVARIANTS
+	    trash_ctor, trash_dtor, trash_init, trash_fini,
+#else
+	    NULL, NULL, NULL, NULL,
+#endif
+	    UMA_ALIGN_CACHE, 0);
 
 	/*
 	 * Hook event handler for low-memory situation, used to
@@ -837,7 +841,7 @@ mb_reclaim(uma_zone_t zone __unused, int pending __unused)
 
 /*
  * Free "count" units of I/O from an mbuf chain.  They could be held
- * in ext_pgs, or just as a normal mbuf.  This code is intended to be
+ * in ext_pgs or just as a normal mbuf.  This code is intended to be
  * called in an error path (I/O error, closed connection, etc).
  */
 void
@@ -858,16 +862,21 @@ mb_free_notready(struct mbuf *m, int count)
 }
 
 /*
- * ensure it is possible to downgrade an ext_pgs mbuf
- * to a normal mbuf
+ * Ensure it is possible to downgrade an ext_pgs mbuf
+ * to a normal mbuf.
  */
 CTASSERT(MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN < MLEN);
 
 /*
- * Downgrade an unmapped mbuf to a normal one, when it
+ * Downgrade an unmapped mbuf to a normal one when it
  * no longer needs its pages.  Any remaining pages are freed,
- * and any data in the hdr/trailer portion of the mbuf_ext_pgs
+ * and any data in the header/trailer portion of the mbuf_ext_pgs
  * struct are copied into the normal mbuf data.
+ *
+ * XXX: I originally read this as only working for mbufs without
+ * any unmapped data, but instead it seems intended to be used
+ * in sbcompress for "small" buffers.  If so, the comment above
+ * should be revisited.
  */
 int
 mb_ext_pgs_downgrade(struct mbuf *m)
@@ -894,26 +903,26 @@ mb_ext_pgs_downgrade(struct mbuf *m)
 		return (EBUSY);
 
 	/*
-	 * Copy ext portion of mbuf to temp, so that
-	 * we can call the free functions with appropriate
-	 * arguments
+	 * Copy m_ext portion of mbuf to m_temp so that
+	 * we can call the ext_free function with appropriate
+	 * arguments.
 	 */
 	bcopy(m, &m_temp, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
 	m_temp.m_next = NULL;
 	m_temp.m_nextpkt = NULL;
 
-	/* turn m into a "normal" mbuf */
+	/* Turn m into a "normal" mbuf. */
 	m->m_flags &= ~(M_EXT | M_RDONLY | M_NOMAP);
 	m->m_data = m->m_dat;
 
-	/* copy data from template's ext_pgs */
+	/* Copy data from template's ext_pgs. */
 	m_copydata(&m_temp, 0, m_temp.m_len, mtod(m, caddr_t));
 
-	/* free the backing page(s) */
+	/* Free the backing pages. */
 	m_temp.m_ext.ext_free(&m_temp);
 
-	/* finally, free the extpgs memory */
-	uma_zfree(zone_extpgs, m_temp.m_ext.ext_buf);
+	/* Finally, free the ext_pgs struct. */
+	uma_zfree(zone_extpgs, m_temp.m_ext.ext_pgs);
 	return (0);
 }
 

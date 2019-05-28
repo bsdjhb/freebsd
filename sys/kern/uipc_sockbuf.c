@@ -104,7 +104,7 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thre
 			 * small unmapped mbufs to normal mbufs
 			 */
 			int ext_size = m->m_ext.ext_size;
-			if (0 == mb_ext_pgs_downgrade(m)) {
+			if (mb_ext_pgs_downgrade(m) == 0) {
 				sb->sb_mbcnt -= ext_size;
 				sb->sb_ccnt -= 1;
 			}
