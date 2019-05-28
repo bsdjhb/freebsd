@@ -118,8 +118,7 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
     struct mbuf *m, bus_dma_segment_t *segs, int *nsegs, int flags)
 {
 	struct mbuf_ext_pgs *ext_pgs;
-	uintptr_t off, segoff;
-	int len, seglen, error, pgoff, pglen, i;
+	int error, i, off, len, pglen, pgoff, seglen, segoff;
 
 
 	ext_pgs = m->m_ext.ext_pgs;
@@ -142,7 +141,7 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 		} else {
 			seglen = ext_pgs->hdr_len - off;
 			segoff = off;
-			seglen = min (seglen, len);
+			seglen = min(seglen, len);
 			off = 0;
 			len -= seglen;
 			error = _bus_dmamap_load_buffer(dmat, map,
@@ -153,20 +152,14 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 	pgoff = ext_pgs->first_pg_off;
 	for (i = 0; i < ext_pgs->npgs && error == 0 && len > 0; i++) {
 		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off != 0) {
-			if (off >= pglen) {
-				off -= pglen;
-				pgoff = 0;
-				continue;
-			} else {
-				seglen = pglen - off;
-				segoff = pgoff + off;
-				off = 0;
-			}
-		} else {
-			seglen = pglen;
-			segoff = pgoff;
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
 		}
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
 		seglen = min(seglen, len);
 		if (__predict_false(seglen == 0))
 			continue;
@@ -176,7 +169,7 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 		    flags, segs, nsegs);
 		pgoff = 0;
 	};
-	if (len && error == 0) {
+	if (len != 0 && error == 0) {
 		if (off > ext_pgs->trail_len) {
 			printf("off > trail (%d > %d)\n",
 			    (int)off, ext_pgs->trail_len);

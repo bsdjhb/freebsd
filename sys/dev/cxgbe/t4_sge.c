@@ -2440,8 +2440,7 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *nextaddr)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	vm_paddr_t paddr;
-	uintptr_t off, segoff;
-	int len, seglen, pgoff, pglen, i;
+	int i, len, off, pglen, pgoff, seglen, segoff;
 	int nsegs = 0;
 
 	MBUF_EXT_PGS_ASSERT(m);
@@ -2457,7 +2456,7 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *nextaddr)
 		} else {
 			seglen = ext_pgs->hdr_len - off;
 			segoff = off;
-			seglen = min (seglen, len);
+			seglen = min(seglen, len);
 			off = 0;
 			len -= seglen;
 			paddr = pmap_kextract(
@@ -2486,7 +2485,7 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *nextaddr)
 		*nextaddr = paddr + seglen;
 		pgoff = 0;
 	};
-	if (len) {
+	if (len != 0) {
 		seglen = min(len, ext_pgs->trail_len - off);
 		len -= seglen;
 		paddr = pmap_kextract((vm_offset_t)&ext_pgs->trail[off]);

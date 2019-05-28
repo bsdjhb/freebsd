@@ -1762,7 +1762,7 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	vm_page_t pg;
-	int off, segoff, seglen, error, pgoff, pglen, i;
+	int error, i, off, pglen, pgoff, seglen, segoff;
 
 
 	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
@@ -1781,7 +1781,7 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 		} else {
 			seglen = ext_pgs->hdr_len - off;
 			segoff = off;
-			seglen = min (seglen, len);
+			seglen = min(seglen, len);
 			off = 0;
 			len -= seglen;
 			error = uiomove(&ext_pgs->hdr[segoff], seglen, uio);
@@ -1790,20 +1790,14 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 	pgoff = ext_pgs->first_pg_off;
 	for (i = 0; i < ext_pgs->npgs && error == 0 && len > 0; i++) {
 		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off != 0) {
-			if (off >= pglen) {
-				off -= pglen;
-				pgoff = 0;
-				continue;
-			} else {
-				seglen = pglen - off;
-				segoff = pgoff + off;
-				off = 0;
-			}
-		} else {
-			seglen = pglen;
-			segoff = pgoff;
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
 		}
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
 		seglen = min(seglen, len);
 		len -= seglen;
 		pg = PHYS_TO_VM_PAGE(ext_pgs->pa[i]);

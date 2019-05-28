@@ -220,7 +220,7 @@ sglist_count_vmpages(vm_page_t *m, size_t pgoff, size_t len)
 
 /*
  * Determine the number of scatter/gather list elements needed to
- * describe a TLS buffer.
+ * describe an EXT_PGS buffer.
  */
 int
 sglist_count_ext_pgs(struct mbuf_ext_pgs *ext_pgs, size_t off, size_t len)
@@ -265,7 +265,7 @@ sglist_count_ext_pgs(struct mbuf_ext_pgs *ext_pgs, size_t off, size_t len)
 		nextaddr = paddr + seglen;
 		pgoff = 0;
 	};
-	if (len) {
+	if (len != 0) {
 		seglen = MIN(len, ext_pgs->trail_len - off);
 		len -= seglen;
 		nsegs += sglist_count(&ext_pgs->trail[off], seglen);
