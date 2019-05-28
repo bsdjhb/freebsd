@@ -112,10 +112,10 @@ int nmbjumbop;			/* limits number of page size jumbo clusters */
 int nmbjumbo9;			/* limits number of 9k jumbo clusters */
 int nmbjumbo16;			/* limits number of 16k jumbo clusters */
 
-bool mb_use_ext_pgs;		/* use ext_pgs for sendfile */
+bool mb_use_ext_pgs;		/* use EXT_PGS mbufs for sendfile */
 SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
     &mb_use_ext_pgs, 0,
-    "Use bundles of pages for sendfile(2)");
+    "Use unmapped mbufs for sendfile(2)");
 
 static quad_t maxmbufmem;	/* overall real memory limit for all mbufs */
 
@@ -841,7 +841,7 @@ mb_reclaim(uma_zone_t zone __unused, int pending __unused)
 
 /*
  * Free "count" units of I/O from an mbuf chain.  They could be held
- * in ext_pgs or just as a normal mbuf.  This code is intended to be
+ * in EXT_PGS or just as a normal mbuf.  This code is intended to be
  * called in an error path (I/O error, closed connection, etc).
  */
 void
@@ -862,7 +862,7 @@ mb_free_notready(struct mbuf *m, int count)
 }
 
 /*
- * Ensure it is possible to downgrade an ext_pgs mbuf
+ * Ensure it is possible to downgrade an EXT_PGS mbuf
  * to a normal mbuf.
  *
  * XXXJHB: I think this is no longer needed?  The callers of
@@ -908,10 +908,10 @@ mb_unmapped_compress(struct mbuf *m)
 
 	/*
 	 * Copy m_ext portion of 'm' to 'm_temp' to create a "fake"
-	 * ext_pgs mbuf that can be used with m_copydata() as well as
+	 * EXT_PGS mbuf that can be used with m_copydata() as well as
 	 * the ext_free callback.
 	 */
-	bcopy(m, &m_temp, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
+	memcpy(&m_temp, m, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
 	m_temp.m_next = NULL;
 	m_temp.m_nextpkt = NULL;
 
@@ -931,8 +931,30 @@ mb_unmapped_compress(struct mbuf *m)
 }
 
 /*
- * The primary unmapped mbuf will free the page,
- * so all we need to do is free the sf_buf
+ * These next few routines are used to permit downgrading an unmapped
+ * mbuf to a chain of mapped mbufs.  This is used when an interface
+ * doesn't supported unmapped mbufs or if checksums need to be
+ * computed in software.
+ *
+ * Each unmapped mbuf is converted to a chain of mbufs.  First, any
+ * TLS header data is stored in a regular mbuf.  Second, each page of
+ * unmapped data is stored in an mbuf with an EXT_SFBUF external
+ * cluster.  These mbufs use an sf_buf to provide a valid KVA for the
+ * associated physical page.  They also hold a reference on the
+ * original EXT_PGS mbuf to ensure the physical page doesn't go away.
+ * Finally, any TLS trailer data is stored in a regular mbuf.
+ *
+ * mb_unmapped_free_mext() is the ext_free handler for the EXT_SFBUF
+ * mbufs.  It frees the associated sf_buf and releases its reference
+ * on the original EXT_PGS mbuf.
+ *
+ * _mb_unmapped_to_ext() is a helper function that converts a single
+ * unmapped mbuf into a chain of mbufs.
+ *
+ * mb_unmapped_to_ext() is the public function that walks an mbuf
+ * chain converting any unmapped mbufs to mapped mbufs.  It returns
+ * the new chain of unmapped mbufs on success.  On failure it frees
+ * the original mbuf chain and returns NULL.
  */
 static void
 mb_unmapped_free_mext(struct mbuf *m)
@@ -943,7 +965,7 @@ mb_unmapped_free_mext(struct mbuf *m)
 	sf = m->m_ext.ext_arg1;
 	sf_buf_free(sf);
 
-	/* drop the reference on the backing M_UNMAPPED mbuf */
+	/* Drop the reference on the backing EXT_PGS mbuf. */
 	old_m = m->m_ext.ext_arg2;
 	mb_free_ext(old_m);
 }
@@ -955,12 +977,10 @@ _mb_unmapped_to_ext(struct mbuf *m)
 	struct mbuf *m_new, *top, *prev, *mref;
 	struct sf_buf *sf;
 	vm_page_t pg;
-	int off, len, segoff, seglen, pgoff, pglen, i;
+	int i, len, off, pglen, pgoff, seglen, segoff;
 	volatile u_int *refcnt;
 	u_int ref_inc = 0;
 
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
 	len = m->m_len;
@@ -977,19 +997,18 @@ _mb_unmapped_to_ext(struct mbuf *m)
 		refcnt = m->m_ext.ext_cnt;
 		mref = __containerof(refcnt, struct mbuf, m_ext.ext_count);
 	}
-	/* somebody may have removed data from the front;
-	 * so skip ahead until we find the start
-	 */
-	top = NULL;
+
+	/* Skip over any data remved from the front. */
 	off = mtod(m, vm_offset_t);
 
+	top = NULL;
 	if (ext_pgs->hdr_len != 0) {
 		if (off >= ext_pgs->hdr_len) {
 			off -= ext_pgs->hdr_len;
 		} else {
 			seglen = ext_pgs->hdr_len - off;
 			segoff = off;
-			seglen = min (seglen, len);
+			seglen = min(seglen, len);
 			off = 0;
 			len -= seglen;
 			m_new = m_get(M_NOWAIT, MT_DATA);
@@ -997,27 +1016,21 @@ _mb_unmapped_to_ext(struct mbuf *m)
 				goto fail;
 			m_new->m_len = seglen;
 			prev = top = m_new;
-			bcopy(&ext_pgs->hdr[segoff], mtod(m_new, void *),
+			memcpy(mtod(m_new, void *), &ext_pgs->hdr[segoff],
 			    seglen);
 		}
 	}
 	pgoff = ext_pgs->first_pg_off;
 	for (i = 0; i < ext_pgs->npgs && len > 0; i++) {
 		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off != 0) {
-			if (off >= pglen) {
-				off -= pglen;
-				pgoff = 0;
-				continue;
-			} else {
-				seglen = pglen - off;
-				segoff = pgoff + off;
-				off = 0;
-			}
-		} else {
-			seglen = pglen;
-			segoff = pgoff;
+		if (off >= pglen) {
+			off -= pglen;
+			pgoff = 0;
+			continue;
 		}
+		seglen = pglen - off;
+		segoff = pgoff + off;
+		off = 0;
 		seglen = min(seglen, len);
 		len -= seglen;
 		pg = PHYS_TO_VM_PAGE(ext_pgs->pa[i]);
@@ -1044,7 +1057,7 @@ _mb_unmapped_to_ext(struct mbuf *m)
 
 		pgoff = 0;
 	};
-	if (len) {
+	if (len != 0) {
 		KASSERT((off + len) <= ext_pgs->trail_len,
 		    ("off + len > trail (%d + %d > %d)\n",
 			off, len, ext_pgs->trail_len));
@@ -1056,13 +1069,14 @@ _mb_unmapped_to_ext(struct mbuf *m)
 		else
 			prev->m_next = m_new;
 		m_new->m_len = len;
-		bcopy(&ext_pgs->trail[off], mtod(m_new, void *), len);
+		memcpy(mtod(m_new, void *), &ext_pgs->trail[off], len);
 	}
 
 	if (ref_inc != 0) {
 		/*
-		 * get a refcnt on the old mbuf, to be dropped in
-		 * mb_unmapped_free_mext();
+		 * Obtain an additional reference on the old mbuf for
+		 * each created EXT_SFBUF mbuf.  They will be dropped
+		 * in mb_unmapped_free_mext().
 		 */
 		if (*refcnt == 1)
 			*refcnt += ref_inc;
@@ -1075,8 +1089,10 @@ _mb_unmapped_to_ext(struct mbuf *m)
 fail:
 	if (ref_inc != 0) {
 		/*
-		 * get a refcnt on the old mbuf before
-		 * freeing the new.
+		 * Obtain an additional reference on the old mbuf for
+		 * each created EXT_SFBUF mbuf.  They will be
+		 * immediately dropped when these mbufs are freed
+		 * below.
 		 */
 		if (*refcnt == 1)
 			*refcnt += ref_inc;
@@ -1095,22 +1111,32 @@ mb_unmapped_to_ext(struct mbuf *top)
 
 	prev = NULL;
 	for (m = top; m != NULL; m = next) {
-		/* m might get freed, so cache the next pointer */
+		/* m might be freed, so cache the next pointer. */
 		next = m->m_next;
 		if (m->m_flags & M_NOMAP) {
-			m = _mb_unmapped_to_ext(m);
-			if (prev == NULL) {
-				top = m;
-			} else {
-				prev->m_next = m;
+			if (prev != NULL) {
+				/*
+				 * Remove 'm' from the new chain so
+				 * that the 'top' chain terminates
+				 * before 'm' in case 'top' is freed
+				 * due to an error.
+				 */
+				prev->m_next = NULL;
 			}
+			m = _mb_unmapped_to_ext(m);
 			if (m == NULL) {
 				m_freem(top);
 				m_freem(next);
 				return (NULL);
 			}
+			if (prev == NULL) {
+				top = m;
+			} else {
+				prev->m_next = m;
+			}
+
 			/*
-			 * replaced one mbuf with a chain, so we must
+			 * Replaced one mbuf with a chain, so we must
 			 * find the end of chain.
 			 */
 			prev = m_last(m);
