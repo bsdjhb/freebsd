@@ -104,7 +104,7 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thre
 			 * small unmapped mbufs to normal mbufs
 			 */
 			int ext_size = m->m_ext.ext_size;
-			if (mb_ext_pgs_downgrade(m) == 0) {
+			if (mb_unmapped_compress(m) == 0) {
 				sb->sb_mbcnt -= ext_size;
 				sb->sb_ccnt -= 1;
 			}
@@ -1130,13 +1130,13 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 			sb->sb_mb = m;
 		sb->sb_mbtail = m;
 		/*
-		 * Note that if m is downgraded here, the sb
+		 * Note that if m is compressed here, the sb
 		 * accounting does not need to be adjusted, since
 		 * sballoc() has not yet been called.
 		 */
 		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
 		    (m->m_flags & M_NOTREADY) == 0)
-			(void)mb_ext_pgs_downgrade(m);
+			(void)mb_unmapped_compress(m);
 
 		sballoc(sb, m);
 		n = m;

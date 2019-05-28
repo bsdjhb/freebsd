@@ -864,27 +864,31 @@ mb_free_notready(struct mbuf *m, int count)
 /*
  * Ensure it is possible to downgrade an ext_pgs mbuf
  * to a normal mbuf.
+ *
+ * XXXJHB: I think this is no longer needed?  The callers of
+ * mb_unmapped_compress all check the length against MLEN, and
+ * mb_unmapped_compress allows data to be stored in unmapped pages.
  */
 CTASSERT(MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN < MLEN);
 
 /*
- * Downgrade an unmapped mbuf to a normal one when it
- * no longer needs its pages.  Any remaining pages are freed,
- * and any data in the header/trailer portion of the mbuf_ext_pgs
- * struct are copied into the normal mbuf data.
- *
- * XXX: I originally read this as only working for mbufs without
- * any unmapped data, but instead it seems intended to be used
- * in sbcompress for "small" buffers.  If so, the comment above
- * should be revisited.
+ * Compress an unmapped mbuf into a simple mbuf when it holds a small
+ * amount of data.  This is used as a DOS defense to avoid having
+ * small packets tie up wired pages, an ext_pgs structure, and an
+ * mbuf.  Since this converts the existing mbuf in place, it can only
+ * be used if there are no other references to 'm'.
  */
 int
-mb_ext_pgs_downgrade(struct mbuf *m)
+mb_unmapped_compress(struct mbuf *m)
 {
 	volatile u_int *refcnt;
 	struct mbuf m_temp;
 
-	/* XXXGL: why assert !M_PKTHDR? */
+	/*
+	 * Assert that 'm' does not have a packet header.  If 'm' had
+	 * a packet header, it would only be able to hold MHLEN bytes
+	 * and m_data would have to be initialized differently.
+	 */
 	KASSERT((m->m_flags & M_PKTHDR) == 0 && (m->m_flags & M_EXT) &&
 	    m->m_ext.ext_type == EXT_PGS,
             ("%s: m %p !M_EXT or !EXT_PGS or M_PKTHDR", __func__, m));
@@ -903,15 +907,15 @@ mb_ext_pgs_downgrade(struct mbuf *m)
 		return (EBUSY);
 
 	/*
-	 * Copy m_ext portion of mbuf to m_temp so that
-	 * we can call the ext_free function with appropriate
-	 * arguments.
+	 * Copy m_ext portion of 'm' to 'm_temp' to create a "fake"
+	 * ext_pgs mbuf that can be used with m_copydata() as well as
+	 * the ext_free callback.
 	 */
 	bcopy(m, &m_temp, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
 	m_temp.m_next = NULL;
 	m_temp.m_nextpkt = NULL;
 
-	/* Turn m into a "normal" mbuf. */
+	/* Turn 'm' into a "normal" mbuf. */
 	m->m_flags &= ~(M_EXT | M_RDONLY | M_NOMAP);
 	m->m_data = m->m_dat;
 
