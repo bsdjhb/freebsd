@@ -572,7 +572,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	struct vm_object *obj;
 	struct socket *so;
 	struct mbuf_ext_pgs *ext_pgs;
-	struct mbuf *m, *m0, *mh, *mhtail;
+	struct mbuf *m, *mh, *mhtail;
 	struct sf_buf *sf;
 	struct shmfd *shmfd;
 	struct sendfile_sync *sfs;
@@ -810,11 +810,11 @@ retry_space:
 
 			/* Start at last index, to wrap on first use. */
 			ext_pgs_idx = max_pgs - 1;
-
-			m0 = NULL; /* -Wsometimes-uninitialized */
 		}
 
 		for (int i = 0; i < npages; i++) {
+			struct mbuf *m0;
+
 			/*
 			 * If a page wasn't grabbed successfully, then
 			 * trim the array. Can happen only with SF_NODISKIO.
@@ -873,7 +873,7 @@ retry_space:
 					    vmoff(i, off) & PAGE_MASK;
 				}
 				if (nios) {
-					m0->m_flags |= M_NOTREADY;
+					mtail->m_flags |= M_NOTREADY;
 					ext_pgs->nrdy++;
 				}
 
@@ -882,8 +882,8 @@ retry_space:
 				xfs = xfsize(i, npages, off, space);
 				ext_pgs->last_pg_len = xfs;
 				MBUF_EXT_PGS_ASSERT_SANITY(ext_pgs);
-				m0->m_len += xfs;
-				m0->m_ext.ext_size += PAGE_SIZE;
+				mtail->m_len += xfs;
+				mtail->m_ext.ext_size += PAGE_SIZE;
 				continue;
 			}
 
