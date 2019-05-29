@@ -207,18 +207,18 @@ static void
 sendfile_free_mext_pg(struct mbuf *m)
 {
 	struct mbuf_ext_pgs *ext_pgs;
+	vm_page_t pg;
+	int i;
 	bool nocache, cache_last;
 
 	KASSERT(m->m_flags & M_EXT && m->m_ext.ext_type == EXT_PGS,
 	    ("%s: m %p !M_EXT or !EXT_PGS", __func__, m));
 
-	if ((nocache = m->m_ext.ext_flags & EXT_FLAG_NOCACHE))
-		cache_last = m->m_ext.ext_flags & EXT_FLAG_CACHE_LAST;
+	nocache = m->m_ext.ext_flags & EXT_FLAG_NOCACHE;
+	cache_last = m->m_ext.ext_flags & EXT_FLAG_CACHE_LAST;
 	ext_pgs = m->m_ext.ext_pgs;
 
-	for (int i = 0; i < ext_pgs->npgs; i++) {
-		vm_page_t pg;
-
+	for (i = 0; i < ext_pgs->npgs; i++) {
 		if (cache_last && i == ext_pgs->npgs - 1)
 			nocache = false;
 		pg = PHYS_TO_VM_PAGE(ext_pgs->pa[i]);
@@ -318,8 +318,6 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 	CURVNET_SET(so->so_vnet);
 	if (sfio->error) {
-		struct mbuf *m;
-
 		/*
 		 * I/O operation failed.  The state of data in the socket
 		 * is now inconsistent, and all what we can do is to tear
@@ -334,12 +332,10 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 		so->so_proto->pr_usrreqs->pru_abort(so);
 		so->so_error = EIO;
 
-		m = sfio->m;
-		mb_free_notready(m, sfio->npages);
-	} else {
-		(void)(so->so_proto->pr_usrreqs->pru_ready)(so,
-		    sfio->m, sfio->npages);
-	}
+		mb_free_notready(sfio->m, sfio->npages);
+	} else
+		(void)(so->so_proto->pr_usrreqs->pru_ready)(so, sfio->m,
+		    sfio->npages);
 
 	SOCK_LOCK(so);
 	sorele(so);
@@ -575,17 +571,15 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	struct vnode *vp;
 	struct vm_object *obj;
 	struct socket *so;
-	struct mbuf *m, *mh, *mhtail;
+	struct mbuf_ext_pgs *ext_pgs;
+	struct mbuf *m, *m0, *mh, *mhtail;
 	struct sf_buf *sf;
 	struct shmfd *shmfd;
 	struct sendfile_sync *sfs;
 	struct vattr va;
 	off_t off, sbytes, rem, obj_size;
-	struct mbuf_ext_pgs *ext_pgs;
-	struct mbuf *m0;
-	int use_ext_pgs = 0;
-	int error, softerr, bsize, hdrlen;
-	int ext_pgs_idx, max_pgs;
+	int bsize, error, ext_pgs_idx, hdrlen, max_pgs, softerr;
+	bool use_ext_pgs;
 
 	obj = NULL;
 	so = NULL;
@@ -593,6 +587,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	sfs = NULL;
 	hdrlen = sbytes = 0;
 	softerr = 0;
+	use_ext_pgs = false;
 
 	error = sendfile_getobj(td, fp, &obj, &vp, &shmfd, &obj_size, &bsize);
 	if (error != 0)
@@ -755,7 +750,8 @@ retry_space:
 			space = rem;
 		else if (space > PAGE_SIZE) {
 			/*
-			 * Keep TLS chunked at a page boundary, when possible.
+			 * Use page boundaries when possible for large
+			 * requests.
 			 */
 			if (off & PAGE_MASK)
 				space -= (PAGE_SIZE - (off & PAGE_MASK));
@@ -801,16 +797,22 @@ retry_space:
 		 */
 		pa = sfio->pa;
 
+		/*
+		 * Use unmapped mbufs if enabled for TCP.  Unmapped
+		 * bufs are restricted to TCP as that is what has been
+		 * tested.  In particular, unmapped mbufs have not
+		 * been tested with UNIX-domain sockets.
+		 */
 		if (mb_use_ext_pgs &&
 		    so->so_proto->pr_protocol == IPPROTO_TCP) {
-			/* cache state in a local, to avoid locks */
-			use_ext_pgs = 1;
+			use_ext_pgs = true;
 			max_pgs = MBUF_PEXT_MAX_PGS;
-			/* start at last index, to wrap to first */
+
+			/* Start at last index, to wrap on first use. */
 			ext_pgs_idx = max_pgs - 1;
+
 			m0 = NULL; /* -Wsometimes-uninitialized */
 		}
-
 
 		for (int i = 0; i < npages; i++) {
 			/*
@@ -842,8 +844,7 @@ retry_space:
 						 * ignoring SF_NOCACHE for the
 						 * last page.
 						 */
-						if ((i + min(npages - i,
-						    max_pgs) == npages) &&
+						if ((npages - i <= max_pgs) &&
 						    ((off + space) & PAGE_MASK) &&
 						    (rem > space || rhpages > 0))
 							m0->m_ext.ext_flags |=
@@ -861,6 +862,7 @@ retry_space:
 					if (i == 0)
 						sfio->m = m0;
 					ext_pgs_idx = 0;
+
 					/* Append to mbuf chain. */
 					if (mtail != NULL)
 						mtail->m_next = m0;
@@ -882,7 +884,6 @@ retry_space:
 				MBUF_EXT_PGS_ASSERT_SANITY(ext_pgs);
 				m0->m_len += xfs;
 				m0->m_ext.ext_size += PAGE_SIZE;
-
 				continue;
 			}
 
