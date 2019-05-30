@@ -274,11 +274,14 @@ sglist_count_ext_pgs(struct mbuf_ext_pgs *ext_pgs, size_t off, size_t len)
 	return (nsegs);
 }
 
+/*
+ * Determine the number of scatter/gather list elements needed to
+ * describe an EXT_PGS mbuf.
+ */
 int
 sglist_count_mb_ext_pgs(struct mbuf *m)
 {
 
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
 	return (sglist_count_ext_pgs(m->m_ext.ext_pgs, mtod(m, vm_offset_t),
 	    m->m_len));
@@ -385,6 +388,11 @@ sglist_append_phys(struct sglist *sg, vm_paddr_t paddr, size_t len)
 	return (error);
 }
 
+/*
+ * Append the segments to describe an EXT_PGS buffer to a
+ * scatter/gather list.  If there are insufficient segments, then this
+ * fails with EFBIG.
+ */
 int
 sglist_append_ext_pgs(struct sglist *sg, struct mbuf_ext_pgs *ext_pgs,
     size_t off, size_t len)
@@ -435,6 +443,11 @@ sglist_append_ext_pgs(struct sglist *sg, struct mbuf_ext_pgs *ext_pgs,
 	return (error);
 }
 
+/*
+ * Append the segments to describe an EXT_PGS mbuf to a scatter/gather
+ * list.  If there are insufficient segments, then this fails with
+ * EFBIG.
+ */
 int
 sglist_append_mb_ext_pgs(struct sglist *sg, struct mbuf *m)
 {
