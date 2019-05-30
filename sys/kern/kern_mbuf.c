@@ -998,7 +998,7 @@ _mb_unmapped_to_ext(struct mbuf *m)
 		mref = __containerof(refcnt, struct mbuf, m_ext.ext_count);
 	}
 
-	/* Skip over any data remved from the front. */
+	/* Skip over any data removed from the front. */
 	off = mtod(m, vm_offset_t);
 
 	top = NULL;
@@ -1033,6 +1033,7 @@ _mb_unmapped_to_ext(struct mbuf *m)
 		off = 0;
 		seglen = min(seglen, len);
 		len -= seglen;
+
 		pg = PHYS_TO_VM_PAGE(ext_pgs->pa[i]);
 		m_new = m_get(M_NOWAIT, MT_DATA);
 		if (m_new == NULL)
@@ -1043,13 +1044,11 @@ _mb_unmapped_to_ext(struct mbuf *m)
 			prev->m_next = m_new;
 			prev = m_new;
 		}
-
 		sf = sf_buf_alloc(pg, SFB_NOWAIT);
 		if (sf == NULL)
 			goto fail;
 
 		ref_inc++;
-
 		m_extadd(m_new, (char *)sf_buf_kva(sf), PAGE_SIZE,
 		    mb_unmapped_free_mext, sf, mref, M_RDONLY, EXT_SFBUF);
 		m_new->m_data += segoff;
