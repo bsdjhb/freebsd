@@ -536,7 +536,8 @@ void	mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs);
 
 #define MBUF_EXT_PGS_ASSERT(m)						\
 	KASSERT((((m)->m_flags & M_EXT) != 0) &&			\
-	    ((m)->m_ext.ext_type == EXT_PGS), ("ext not EXT_PGS"))
+	    ((m)->m_ext.ext_type == EXT_PGS),				\
+	    ("%s: m %p !M_EXT or !EXT_PGS", __func__, m))
 
 /*
  * Flags indicating checksum, segmentation and other offload work to be
