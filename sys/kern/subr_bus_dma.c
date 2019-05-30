@@ -120,19 +120,13 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 	struct mbuf_ext_pgs *ext_pgs;
 	int error, i, off, len, pglen, pgoff, seglen, segoff;
 
-
-	ext_pgs = m->m_ext.ext_pgs;
-
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
+	ext_pgs = m->m_ext.ext_pgs;
 
 	len = m->m_len;
 	error = 0;
 
-	/* somebody may have removed data from the front;
-	 * so skip ahead until we find the start
-	 */
+	/* Skip over any data removed from the front. */
 	off = mtod(m, vm_offset_t);
 
 	if (ext_pgs->hdr_len != 0) {
@@ -161,28 +155,19 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 		segoff = pgoff + off;
 		off = 0;
 		seglen = min(seglen, len);
-		if (__predict_false(seglen == 0))
-			continue;
 		len -= seglen;
 		error = _bus_dmamap_load_phys(dmat, map,
-		    ext_pgs->pa[i] + segoff, seglen,
-		    flags, segs, nsegs);
+		    ext_pgs->pa[i] + segoff, seglen, flags, segs, nsegs);
 		pgoff = 0;
 	};
 	if (len != 0 && error == 0) {
-		if (off > ext_pgs->trail_len) {
-			printf("off > trail (%d > %d)\n",
-			    (int)off, ext_pgs->trail_len);
-			return (ENXIO);
-		}
-		seglen = min(len, ext_pgs->trail_len - off);
-		len -= seglen;
+		KASSERT((off + len) <= ext_pgs->trail_len,
+		    ("off + len > trail (%d + %d > %d)\n",
+			off, len, ext_pgs->trail_len));
 		error = _bus_dmamap_load_buffer(dmat, map,
-		    &ext_pgs->trail[off], seglen, kernel_pmap,
-		    flags, segs, nsegs);
+		    &ext_pgs->trail[off], len, kernel_pmap, flags, segs,
+		    nsegs);
 	}
-	KASSERT(len == 0 || error != 0,
-	    ("len = %d, m = %p\n", len, m));
 	return (error);
 }
 
@@ -199,14 +184,13 @@ _bus_dmamap_load_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 	error = 0;
 	for (m = m0; m != NULL && error == 0; m = m->m_next) {
 		if (m->m_len > 0) {
-			if ((m->m_flags & M_NOMAP) != 0) {
-				error = _bus_dmamap_load_unmapped_mbuf_sg(
-				    dmat, map, m, segs, nsegs, flags);
-				continue;
-			}
-			error = _bus_dmamap_load_buffer(dmat, map, m->m_data,
-			    m->m_len, kernel_pmap, flags | BUS_DMA_LOAD_MBUF,
-			    segs, nsegs);
+			if ((m->m_flags & M_NOMAP) != 0)
+				error = _bus_dmamap_load_unmapped_mbuf_sg(dmat,
+				    map, m, segs, nsegs, flags);
+			else
+				error = _bus_dmamap_load_buffer(dmat, map,
+				    m->m_data, m->m_len, kernel_pmap,
+				    flags | BUS_DMA_LOAD_MBUF, segs, nsegs);
 		}
 	}
 	CTR5(KTR_BUSDMA, "%s: tag %p tag flags 0x%x error %d nsegs %d",
