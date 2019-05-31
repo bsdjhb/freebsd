@@ -109,6 +109,8 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 		return;
 
 	for (m = m0; m != end; m = m->m_next) {
+		MPASS((m->m_flags & M_NOTREADY) == 0);
+
 		/* Compress small unmapped mbufs into plain mbufs. */
 		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN) {
 			MPASS(m->m_flags & M_EXT);
@@ -119,15 +121,21 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 			}
 		}
 
+		/*
+		 * NB: In sbcompress(), 'n' is the last mbuf in the
+		 * socket buffer and 'm' is the new mbuf being copied
+		 * into the trailing space of 'n'.  Here, the roles
+		 * are reversed and 'n' is the next mbuf after 'm'
+		 * that is being copied into the trailing space of
+		 * 'm'.
+		 */
 		n = m->m_next;
-		while (M_WRITABLE(m) &&
-		    (n != NULL) &&
-		    (n != end) &&
+		while ((n != NULL) && (n != end) && (m->m_flags & M_EOR) == 0 &&
+		    M_WRITABLE(m) &&
 		    (m->m_flags & M_NOMAP) == 0 &&
-		    (n->m_flags & M_EOR) == 0 &&
-		    n->m_len <= MCLBYTES / 4 &&
-		    n->m_type == m->m_type &&
-		    M_TRAILINGSPACE(m) >= n->m_len) {
+		    n->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
+		    n->m_len <= M_TRAILINGSPACE(m) &&
+		    m->m_type == n->m_type) {
 			m_copydata(n, 0, n->m_len, mtodo(m, m->m_len));
 			m->m_len += n->m_len;
 			m->m_next = n->m_next;
@@ -146,6 +154,8 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 			n = m->m_next;
 		}
 	}
+	SBLASTRECORDCHK(sb);
+	SBLASTMBUFCHK(sb);
 }
 
 /*
