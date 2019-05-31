@@ -93,11 +93,12 @@ sbm_clrprotoflags(struct mbuf *m, int flags)
  *
  * sbcompress() skips M_NOTREADY mbufs since the data is not available to
  * be copied at the time of sbcompress().  This function combines small
- * mbufs similar to sbcompress() once mbufs are ready.
+ * mbufs similar to sbcompress() once mbufs are ready.  'm0' is the first
+ * mbuf sbready() marked ready, and 'end' is the first mbuf still not
+ * ready.
  */
 static void
-sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end,
-    int thresh)
+sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 {
 	struct mbuf *m, *n;
 	int ext_size;
@@ -124,7 +125,7 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end,
 		    (n != end) &&
 		    (m->m_flags & M_NOMAP) == 0 &&
 		    (n->m_flags & M_EOR) == 0 &&
-		    n->m_len < thresh  &&
+		    n->m_len <= MCLBYTES / 4 &&
 		    n->m_type == m->m_type &&
 		    M_TRAILINGSPACE(m) >= n->m_len) {
 			m_copydata(n, 0, n->m_len, mtodo(m, m->m_len));
@@ -189,7 +190,7 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 		return (EINPROGRESS);
 
 	if (!blocker) {
-		sbready_compress(sb, m0, m, MCLBYTES / 2);
+		sbready_compress(sb, m0, m);
 		return (EINPROGRESS);
 	}
 
@@ -202,7 +203,7 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 	}
 
 	sb->sb_fnrdy = m;
-	sbready_compress(sb, m0, m, MCLBYTES / 2);
+	sbready_compress(sb, m0, m);
 
 	return (0);
 }
