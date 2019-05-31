@@ -666,15 +666,8 @@ sbrelease(struct sockbuf *sb, struct socket *so)
 void
 sbdestroy(struct sockbuf *sb, struct socket *so)
 {
-	int locked = 0;
 
-	if (SOCKBUF_OWNED(sb) == 0) {
-		SOCKBUF_LOCK(sb);
-		locked = 1;
-	}
 	sbrelease_internal(sb, so);
-	if (locked)
-		SOCKBUF_UNLOCK(sb);
 }
 
 /*
