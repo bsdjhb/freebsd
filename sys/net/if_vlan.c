@@ -1735,7 +1735,7 @@ vlan_capabilities(struct ifvlan *ifv)
 	 * If the parent interface supports unmapped mbufs, so does
 	 * the VLAN interface.  Note that this should be fine even for
 	 * interfaces that don't support hardware tagging as headers
-	 * are prepended in normal bufs to unmapped mbufs holding
+	 * are prepended in normal mbufs to unmapped mbufs holding
 	 * payload data.
 	 */
 	cap |= (p->if_capabilities & IFCAP_NOMAP);
