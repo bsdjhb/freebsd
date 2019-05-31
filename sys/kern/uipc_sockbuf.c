@@ -88,22 +88,30 @@ sbm_clrprotoflags(struct mbuf *m, int flags)
 	}
 }
 
+/*
+ * Compress M_NOTREADY mbufs after they have been readied by sbready().
+ *
+ * sbcompress() skips M_NOTREADY mbufs since the data is not available to
+ * be copied at the time of sbcompress().  This function combines small
+ * mbufs similar to sbcompress() once mbufs are ready.
+ */
 static void
-sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thresh)
+sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end,
+    int thresh)
 {
 	struct mbuf *m, *n;
+	int ext_size;
 
+	SOCKBUF_LOCK_ASSERT(sb);
 
 	if ((sb->sb_flags & SB_NOCOALESCE) != 0)
 		return;
 
 	for (m = m0; m != end; m = m->m_next) {
+		/* Compress small unmapped mbufs into plain mbufs. */
 		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN) {
-			/*
-			 * Carve out a place to stand by downgrading
-			 * small unmapped mbufs to normal mbufs
-			 */
-			int ext_size = m->m_ext.ext_size;
+			MPASS(m->m_flags & M_EXT);
+			ext_size = m->m_ext.ext_size;
 			if (mb_unmapped_compress(m) == 0) {
 				sb->sb_mbcnt -= ext_size;
 				sb->sb_ccnt -= 1;
@@ -140,17 +148,20 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thre
 }
 
 /*
- * Mark ready "count" mbufs starting with "m".
+ * Mark ready "count" units of I/O starting with "m".  Most mbufs
+ * count as a single unit of I/O except for EXT_PGS-backed mbufs which
+ * can be backed by multiple pages.
  */
 int
-sbready(struct sockbuf *sb, struct mbuf *m, int count)
+sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 {
+	struct mbuf *m;
 	u_int blocker;
-	struct mbuf *om = m;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(sb->sb_fnrdy != NULL, ("%s: sb %p NULL fnrdy", __func__, sb));
 
+	m = m0;
 	blocker = (sb->sb_fnrdy == m) ? M_BLOCKED : 0;
 
 	for (int i = 0; i < count; i++) {
@@ -169,19 +180,18 @@ sbready(struct sockbuf *sb, struct mbuf *m, int count)
 		m = m->m_next;
 	}
 
+	/*
+	 * If the first mbuf is still not fully ready because only
+	 * some of its backing pages were readied, no further progress
+	 * can be made.
+	 */
+	if (m0 == m)
+		return (EINPROGRESS);
 
 	if (!blocker) {
-		sbready_compress(sb, om, m, MCLBYTES / 2);
+		sbready_compress(sb, m0, m, MCLBYTES / 2);
 		return (EINPROGRESS);
 	}
-
-
-	/*
-	 * not completing all of bocker's pages is the same
-	 * as not finding the blocker
-	 */
-	if (m == om)
-		return (EINPROGRESS);
 
 	/* This one was blocking all the queue. */
 	for (; m && (m->m_flags & M_NOTREADY) == 0; m = m->m_next) {
@@ -192,7 +202,7 @@ sbready(struct sockbuf *sb, struct mbuf *m, int count)
 	}
 
 	sb->sb_fnrdy = m;
-	sbready_compress(sb, om, m, MCLBYTES / 2);
+	sbready_compress(sb, m0, m, MCLBYTES / 2);
 
 	return (0);
 }
