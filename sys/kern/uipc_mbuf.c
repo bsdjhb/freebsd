@@ -593,8 +593,10 @@ m_copyfromunmapped(const struct mbuf *m, int off, int len, caddr_t cp)
 	struct uio uio;
 	int error;
 
-
-	KASSERT(off < m->m_len, ("len exceeds mbuf length"));
+	KASSERT(off >= 0, ("m_copyfromunmapped: negative off %d", off));
+	KASSERT(len >= 0, ("m_copyfromunmapped: negative len %d", len));
+	KASSERT(off < m->m_len,
+	    ("m_copyfromunmapped: len exceeds mbuf length"));
 	iov.iov_base = cp;
 	iov.iov_len = len;
 	uio.uio_resid = len;
@@ -604,9 +606,8 @@ m_copyfromunmapped(const struct mbuf *m, int off, int len, caddr_t cp)
 	uio.uio_offset = 0;
 	uio.uio_rw = UIO_READ;
 	error = m_unmappedtouio(m, off, &uio, len);
-	KASSERT(error == 0, ("m_mbuftouio failed, off %d, len %d\n",
-		off, len));
-
+	KASSERT(error == 0, ("m_unmappedtouio failed: off %d, len %d", off,
+	   len));
 }
 
 /*
@@ -1398,16 +1399,30 @@ nospace:
 	return (NULL);
 }
 
+/*
+ * Return the number of fragments an mbuf will use.  This is usually
+ * used as a proxy for the number of scatter/gather elements needed by
+ * a DMA engine to access an mbuf.  In general mapped mbufs are
+ * assumed to be backed by physically contiguous buffers that only
+ * need a single fragment.  Unmapped mbufs, on the other hand, can
+ * span disjoint physical pages.
+ */
 static int
 frags_per_mbuf(struct mbuf *m)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	int frags;
 
-
-	if (0 == (m->m_flags & M_NOMAP))
+	if ((m->m_flags & M_NOMAP) == 0)
 		return (1);
 
+	/*
+	 * The header and trailer are counted as a single fragment
+	 * each when present.
+	 *
+	 * XXX: This overestimates the number of fragments by assuming
+	 * all the backing physical pages are disjoint.
+	 */
 	ext_pgs = m->m_ext.ext_pgs;
 	frags = 0;
 	if (ext_pgs->hdr_len != 0)
@@ -1483,7 +1498,7 @@ again:
 			m->m_len = n->m_len + n2->m_len;
 			m->m_next = n2->m_next;
 			*prev = m;
-			curfrags += 1;  /* for the new cluster */
+			curfrags += 1;  /* For the new cluster */
 			curfrags -= frags_per_mbuf(n);
 			curfrags -= frags_per_mbuf(n2);
 			m_free(n);
@@ -1589,9 +1604,9 @@ nospace:
 #endif
 
 /*
- * Free pages from mbuf_ext_pgs, assuming they aren't associated
- * with any object.  Complement to allocator from m_uiotombuf_nomap()
- * and from TLS code.
+ * Free pages from mbuf_ext_pgs, assuming they were allocated via
+ * vm_page_alloc() and aren't associated with any object.  Complement
+ * to allocator from m_uiotombuf_nomap().
  */
 void
 mb_free_mext_pgs(struct mbuf *m)
@@ -1600,9 +1615,7 @@ mb_free_mext_pgs(struct mbuf *m)
 	vm_page_t pg;
 	int wire_adj;
 
-	KASSERT(m->m_flags & M_EXT && m->m_ext.ext_type == EXT_PGS,
-	    ("%s: m %p !M_EXT or !EXT_PGS", __func__, m));
-
+	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
 	wire_adj = 0;
 	for (int i = 0; i < ext_pgs->npgs; i++) {
@@ -1645,7 +1658,8 @@ m_uiotombuf_nomap(struct uio *uio, int how, int len, int maxseg, int flags)
 	 */
 	m = NULL;
 	while (total > 0) {
-		mb = mb_alloc_ext_pgs(how, (flags & M_PKTHDR), mb_free_mext_pgs);
+		mb = mb_alloc_ext_pgs(how, (flags & M_PKTHDR),
+		    mb_free_mext_pgs);
 		if (mb == NULL)
 			goto failed;
 		if (m == NULL)
@@ -1670,8 +1684,7 @@ retry_page:
 				}
 			}
 			wire_adj++;
-			if (pg_array[i]->flags & PG_ZERO)
-				pg_array[i]->flags &= ~PG_ZERO;
+			pg_array[i]->flags &= ~PG_ZERO;
 			pgs->pa[i] = VM_PAGE_TO_PHYS(pg_array[i]);
 			pgs->npgs++;
 		}
@@ -1687,11 +1700,8 @@ retry_page:
 		mb->m_ext.ext_size += PAGE_SIZE * pgs->npgs;
 		if (flags & M_PKTHDR)
 			m->m_pkthdr.len += length;
-
-
 	}
 	return (m);
-
 
 failed:
 	m_freem(m);
@@ -1757,6 +1767,9 @@ m_uiotombuf(struct uio *uio, int how, int len, int align, int flags)
 	return (m);
 }
 
+/*
+ * Copy data from an unmapped mbuf into a uio limited by len if set.
+ */
 int
 m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 {
@@ -1764,16 +1777,13 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 	vm_page_t pg;
 	int error, i, off, pglen, pgoff, seglen, segoff;
 
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
 	error = 0;
 
-	/* somebody may have removed data from the front;
-	 * so skip ahead until we find the start
-	 */
+	/* Skip over any data removed from the front. */
 	off = mtod(m, vm_offset_t);
+
 	off += m_off;
 	if (ext_pgs->hdr_len != 0) {
 		if (off >= ext_pgs->hdr_len) {
@@ -1804,18 +1814,14 @@ m_unmappedtouio(const struct mbuf *m, int m_off, struct uio *uio, int len)
 		error = uiomove_fromphys(&pg, segoff, seglen, uio);
 		pgoff = 0;
 	};
-
-	/* note we only want to do this if error == 0 */
 	if (len != 0 && error == 0) {
 		KASSERT((off + len) <= ext_pgs->trail_len,
-		    ("off + len > trail (%d + %d > %d, m_off = %d)\n",
-			off, len, ext_pgs->trail_len,
-			m_off));
+		    ("off + len > trail (%d + %d > %d, m_off = %d)", off, len,
+		    ext_pgs->trail_len, m_off));
 		error = uiomove(&ext_pgs->trail[off], len, uio);
 	}
 	return (error);
 }
-
 
 /*
  * Copy an mbuf chain into a uio limited by len if set.
