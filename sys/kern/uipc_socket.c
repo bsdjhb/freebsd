@@ -141,7 +141,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/jail.h>
 #include <sys/syslog.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+
 #include <net/vnet.h>
 
 #include <security/mac/mac_framework.h>
@@ -1442,7 +1442,6 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	ssize_t resid;
 	int clen = 0, error, dontroute;
 	int atomic = sosendallatonce(so) || top;
-	int pru_flag;
 
 	if (uio != NULL)
 		resid = uio->uio_resid;
@@ -1579,8 +1578,8 @@ restart:
 			 * this.
 			 */
 			VNET_SO_ASSERT(so);
-
-			pru_flag = (flags & MSG_OOB) ? PRUS_OOB :
+			error = (*so->so_proto->pr_usrreqs->pru_send)(so,
+			    (flags & MSG_OOB) ? PRUS_OOB :
 			/*
 			 * If the user set MSG_EOF, the protocol understands
 			 * this flag and nothing left to send then use
@@ -1592,17 +1591,13 @@ restart:
 				PRUS_EOF :
 			/* If there is more to send set PRUS_MORETOCOME. */
 			    (flags & MSG_MORETOCOME) ||
-			    (resid > 0 && space > 0) ? PRUS_MORETOCOME : 0;
-
-			error = (*so->so_proto->pr_usrreqs->pru_send)(so,
-			    pru_flag, top, addr, control, td);
-
+			    (resid > 0 && space > 0) ? PRUS_MORETOCOME : 0,
+			    top, addr, control, td);
 			if (dontroute) {
 				SOCK_LOCK(so);
 				so->so_options &= ~SO_DONTROUTE;
 				SOCK_UNLOCK(so);
 			}
-
 			clen = 0;
 			control = NULL;
 			top = NULL;
