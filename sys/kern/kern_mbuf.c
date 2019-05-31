@@ -1058,8 +1058,8 @@ _mb_unmapped_to_ext(struct mbuf *m)
 	};
 	if (len != 0) {
 		KASSERT((off + len) <= ext_pgs->trail_len,
-		    ("off + len > trail (%d + %d > %d)\n",
-			off, len, ext_pgs->trail_len));
+		    ("off + len > trail (%d + %d > %d)", off, len,
+		    ext_pgs->trail_len));
 		m_new = m_get(M_NOWAIT, MT_DATA);
 		if (m_new == NULL)
 			goto fail;

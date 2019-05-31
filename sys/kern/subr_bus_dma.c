@@ -162,8 +162,8 @@ _bus_dmamap_load_unmapped_mbuf_sg(bus_dma_tag_t dmat, bus_dmamap_t map,
 	};
 	if (len != 0 && error == 0) {
 		KASSERT((off + len) <= ext_pgs->trail_len,
-		    ("off + len > trail (%d + %d > %d)\n",
-			off, len, ext_pgs->trail_len));
+		    ("off + len > trail (%d + %d > %d)", off, len,
+		    ext_pgs->trail_len));
 		error = _bus_dmamap_load_buffer(dmat, map,
 		    &ext_pgs->trail[off], len, kernel_pmap, flags, segs,
 		    nsegs);
