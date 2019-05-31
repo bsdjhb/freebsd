@@ -173,19 +173,25 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(sb->sb_fnrdy != NULL, ("%s: sb %p NULL fnrdy", __func__, sb));
+	KASSERT(count > 0, ("%s: invalid count %d", __func__, count));
 
 	m = m0;
 	blocker = (sb->sb_fnrdy == m) ? M_BLOCKED : 0;
 
-	for (int i = 0; i < count; i++) {
+	while (count > 0) {
 		KASSERT(m->m_flags & M_NOTREADY,
 		    ("%s: m %p !M_NOTREADY", __func__, m));
 		if ((m->m_flags & M_EXT) != 0 &&
 		    m->m_ext.ext_type == EXT_PGS) {
-			m->m_ext.ext_pgs->nrdy--;
-			if (m->m_ext.ext_pgs->nrdy != 0)
-				continue;
-		}
+			if (count < m->m_ext.ext_pgs->nrdy) {
+				m->m_ext.ext_pgs->nrdy -= count;
+				count = 0;
+				break;
+			}
+			count -= m->m_ext.ext_pgs->nrdy;
+			m->m_ext.ext_pgs->nrdy = 0;
+		} else
+			count--;
 
 		m->m_flags &= ~(M_NOTREADY | blocker);
 		if (blocker)
@@ -198,8 +204,10 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 	 * some of its backing pages were readied, no further progress
 	 * can be made.
 	 */
-	if (m0 == m)
+	if (m0 == m) {
+		MPASS(m->m_flags & M_NOTREADY);
 		return (EINPROGRESS);
+	}
 
 	if (!blocker) {
 		sbready_compress(sb, m0, m);
