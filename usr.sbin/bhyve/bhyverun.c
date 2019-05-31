@@ -787,6 +787,10 @@ static int
 vmexit_breakpoint(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
 {
 
+	if (gdb_port == 0) {
+		fprintf(stderr, "vm_loop: unexpected VMEXIT_DEBUG\n");
+		exit(4);
+	}
 	gdb_cpu_breakpoint(*pvcpu, vmexit);
 	return (VMEXIT_CONTINUE);
 }
