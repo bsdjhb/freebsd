@@ -1155,20 +1155,14 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 			m = m_free(m);
 			continue;
 		}
+		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
+		    (m->m_flags & M_NOTREADY) == 0)
+			(void)mb_unmapped_compress(m);
 		if (n)
 			n->m_next = m;
 		else
 			sb->sb_mb = m;
 		sb->sb_mbtail = m;
-		/*
-		 * Note that if m is compressed here, the sb
-		 * accounting does not need to be adjusted, since
-		 * sballoc() has not yet been called.
-		 */
-		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
-		    (m->m_flags & M_NOTREADY) == 0)
-			(void)mb_unmapped_compress(m);
-
 		sballoc(sb, m);
 		n = m;
 		m->m_flags &= ~M_EOR;
