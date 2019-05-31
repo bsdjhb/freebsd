@@ -136,13 +136,15 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 		    n->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
 		    n->m_len <= M_TRAILINGSPACE(m) &&
 		    m->m_type == n->m_type) {
+			KASSERT(sb->sb_lastrecord != n,
+		    ("%s: merging start of record (%p) into previous mbuf (%p)",
+			    __func__, n, m));
 			m_copydata(n, 0, n->m_len, mtodo(m, m->m_len));
 			m->m_len += n->m_len;
 			m->m_next = n->m_next;
+			m->m_flags |= n->m_flags & M_EOR;
 			if (sb->sb_mbtail == n)
 				sb->sb_mbtail = m;
-			if (sb->sb_lastrecord == n)
-				sb->sb_lastrecord = m;
 
 			sb->sb_mbcnt -= MSIZE;
 			sb->sb_mcnt -= 1;
