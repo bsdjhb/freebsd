@@ -987,7 +987,8 @@ m_extrefcnt(struct mbuf *m)
  * handling external storage, packet-header mbufs, and regular data mbufs.
  */
 #define	M_START(m)							\
-	(((m)->m_flags & M_EXT) ? (m)->m_ext.ext_buf :			\
+	(((m)->m_flags & M_NOMAP) ? NULL :				\
+	 ((m)->m_flags & M_EXT) ? (m)->m_ext.ext_buf :			\
 	 ((m)->m_flags & M_PKTHDR) ? &(m)->m_pktdat[0] :		\
 	 &(m)->m_dat[0])
 
