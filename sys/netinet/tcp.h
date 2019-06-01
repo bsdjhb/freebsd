@@ -337,8 +337,4 @@ struct tcp_function_set {
 	uint32_t pcbcnt;
 };
 
-/*
- * TCP Control message types
- */
-#define TLS_SET_RECORD_TYPE 1
 #endif /* !_NETINET_TCP_H_ */
