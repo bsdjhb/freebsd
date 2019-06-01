@@ -968,12 +968,6 @@ send:
 		struct sockbuf *msb;
 		u_int moff;
 
-		/*
-		 * Start the m_copy functions from the closest mbuf
-		 * to the offset in the socket buffer chain.
-		 */
-		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
-
 		if ((tp->t_flags & TF_FORCEDATA) && len == 1)
 			TCPSTAT_INC(tcps_sndprobe);
 		else if (SEQ_LT(tp->snd_nxt, tp->snd_max) || sack_rxmit) {
@@ -1001,6 +995,11 @@ send:
 		m->m_data += max_linkhdr;
 		m->m_len = hdrlen;
 
+		/*
+		 * Start the m_copy functions from the closest mbuf
+		 * to the offset in the socket buffer chain.
+		 */
+		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
 		if (len <= MHLEN - hdrlen - max_linkhdr) {
 			m_copydata(mb, moff, len,
 			    mtod(m, caddr_t) + hdrlen);
