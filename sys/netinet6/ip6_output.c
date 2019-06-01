@@ -966,24 +966,31 @@ passout:
 		m = mb_unmapped_to_ext(m);
 		if (m == NULL) {
 			error = ENOBUFS;
+			IP6STAT_INC(ip6s_odropped);
 			goto bad;
 		}
 		in6_delayed_cksum(m, plen, sizeof(struct ip6_hdr));
-	} else if (0 == (ifp->if_capenable & IFCAP_NOMAP)) {
+	} else if ((ifp->if_capenable & IFCAP_NOMAP) == 0) {
 		m = mb_unmapped_to_ext(m);
 		if (m == NULL) {
 			error = ENOBUFS;
+			IP6STAT_INC(ip6s_odropped);
 			goto bad;
 		}
 	}
 #ifdef SCTP
 	if (sw_csum & CSUM_SCTP_IPV6) {
 		sw_csum &= ~CSUM_SCTP_IPV6;
+		m = mb_unmapped_to_ext(m);
+		if (m == NULL) {
+			error = ENOBUFS;
+			IP6STAT_INC(ip6s_odropped);
+			goto bad;
+		}
 		sctp_delayed_cksum(m, sizeof(struct ip6_hdr));
 	}
 #endif
 	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
-	
 	tlen = m->m_pkthdr.len;
 
 	if ((opt && (opt->ip6po_flags & IP6PO_DONTFRAG)) || tso)
@@ -1078,6 +1085,12 @@ passout:
 		}
 #ifdef SCTP
 		if (m->m_pkthdr.csum_flags & CSUM_SCTP_IPV6) {
+			m = mb_unmapped_to_ext(m);
+			if (m == NULL) {
+				in6_ifstat_inc(ifp, ifs6_out_fragfail);
+				error = ENOBUFS;
+				goto bad;
+			}
 			sctp_delayed_cksum(m, hlen);
 			m->m_pkthdr.csum_flags &= ~CSUM_SCTP_IPV6;
 		}
