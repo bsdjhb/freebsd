@@ -847,6 +847,9 @@ m_pullup(struct mbuf *n, int len)
 	int count;
 	int space;
 
+	KASSERT((n->m_flags & M_NOMAP) == 0,
+	    ("%s: unmapped mbuf %p", __func__, n));
+
 	/*
 	 * If first mbuf has no cluster, and has room for len bytes
 	 * without shifting current data, pullup into it,
