@@ -322,9 +322,9 @@ struct socket;
 #define	MBUF_PEXT_TRAIL_LEN	64
 
 #ifdef __LP64__
-#define	MBUF_PEXT_MAX_PGS	(144 / sizeof(vm_paddr_t))
-#else
 #define	MBUF_PEXT_MAX_PGS	(152 / sizeof(vm_paddr_t))
+#else
+#define	MBUF_PEXT_MAX_PGS	(156 / sizeof(vm_paddr_t))
 #endif
 
 #define	MBUF_PEXT_MAX_BYTES						\
@@ -336,16 +336,12 @@ struct socket;
  * fit in a single 64 byte cacheline.
  */
 struct mbuf_ext_pgs {
-	int16_t		npgs;			/* Number of attached pages */
-	int16_t		nrdy;			/* Pages with I/O pending */
-	int16_t		first_pg_off;		/* Offset into 1st page */
-	int16_t		last_pg_len;		/* Length of last page */
-	int8_t		hdr_len;		/* TLS header length */
-	int8_t		trail_len;		/* TLS trailer length */
-	uint16_t	enc_cnt;		/* TLS pages to be encrypted */
-#ifdef __LP64__
-	uint32_t	pad;			/* align pa[] to 8b */
-#endif
+	uint8_t		npgs;			/* Number of attached pages */
+	uint8_t		nrdy;			/* Pages with I/O pending */
+	uint8_t		hdr_len;		/* TLS header length */
+	uint8_t		trail_len;		/* TLS trailer length */
+	uint16_t	first_pg_off;		/* Offset into 1st page */
+	uint16_t	last_pg_len;		/* Length of last page */
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */
 	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
 	void		*tls;			/* TLS session */
@@ -358,6 +354,13 @@ struct mbuf_ext_pgs {
 			STAILQ_ENTRY(mbuf_ext_pgs) stailq;
 		};
 	};
+#ifdef __i386__
+	/*
+	 * i386 has 64-bit vm_paddr_t, so there is a 4 byte remainder
+	 * from the space allocated for pa[].
+	 */
+	uint32_t	pad;
+#endif
 };
 
 #ifdef _KERNEL
