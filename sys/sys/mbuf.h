@@ -303,7 +303,22 @@ struct mbuf {
 
 struct socket;
 
+/*
+ * TLS records for TLS 1.0-1.2 can have the following header lengths:
+ * - 5 (AES-CBC with implicit IV)
+ * - 21 (AES-CBC with explicit IV)
+ * - 13 (AES-GCM with 8 byte explicit IV)
+ */
 #define	MBUF_PEXT_HDR_LEN	32
+
+/*
+ * TLS records for TLS 1.0-1.2 can have the following maximum trailer
+ * lengths:
+ * - 16 (AES-GCM)
+ * - 36 (AES-CBC with SHA1 and up to 16 bytes of padding)
+ * - 48 (AES-CBC with SHA2-256 and up to 16 bytes of padding)
+ * - 64 (AES-CBC with SHA2-384 and up to 16 bytes of padding)
+ */
 #define	MBUF_PEXT_TRAIL_LEN	64
 #define	MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
 
@@ -311,19 +326,21 @@ struct socket;
     (MBUF_PEXT_MAX_PGS * PAGE_SIZE + MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN)
 
 /*
- * This struct is 256 bytes in size, and is arranged so that the most
- * common case (accessing the first 4 pages) will fit in a single 64
- * byte cacheline
+ * This struct is 256 bytes in size and is arranged so that the most
+ * common case (accessing the first 4 pages of a 16KB TLS record) will
+ * fit in a single 64 byte cacheline.
  */
 struct mbuf_ext_pgs {
-	int16_t		npgs;			/* Number of attached pgs */
-	int16_t		nrdy;			/* pgs w/IO pending */
+	int16_t		npgs;			/* Number of attached pages */
+	int16_t		nrdy;			/* Pages with I/O pending */
 	int16_t		first_pg_off;		/* Offset into 1st page */
-	int16_t		last_pg_len;		/* Len of last page */
-	int8_t		hdr_len;		/* TLS hdr len */
-	int8_t		trail_len;		/* TLS trailer len */
+	int16_t		last_pg_len;		/* Length of last page */
+	int8_t		hdr_len;		/* TLS header length */
+	int8_t		trail_len;		/* TLS trailer length */
 	uint16_t	enc_cnt;		/* TLS pages to be encrypted */
+#if defined(__LP64__)
 	uint32_t	pad;			/* align pa[] to 8b */
+#endif
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */
 	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
 	void		*tls;			/* TLS session */
