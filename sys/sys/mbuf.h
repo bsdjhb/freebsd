@@ -309,7 +309,7 @@ struct socket;
  * - 21 (AES-CBC with explicit IV)
  * - 13 (AES-GCM with 8 byte explicit IV)
  */
-#define	MBUF_PEXT_HDR_LEN	32
+#define	MBUF_PEXT_HDR_LEN	24
 
 /*
  * TLS records for TLS 1.0-1.2 can have the following maximum trailer
@@ -322,9 +322,9 @@ struct socket;
 #define	MBUF_PEXT_TRAIL_LEN	64
 
 #ifdef __LP64__
-#define	MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
-#else
 #define	MBUF_PEXT_MAX_PGS	(144 / sizeof(vm_paddr_t))
+#else
+#define	MBUF_PEXT_MAX_PGS	(152 / sizeof(vm_paddr_t))
 #endif
 
 #define	MBUF_PEXT_MAX_BYTES						\
