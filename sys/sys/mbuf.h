@@ -320,7 +320,12 @@ struct socket;
  * - 64 (AES-CBC with SHA2-384 and up to 16 bytes of padding)
  */
 #define	MBUF_PEXT_TRAIL_LEN	64
+
+#ifdef __LP64__
 #define	MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
+#else
+#define	MBUF_PEXT_MAX_PGS	(144 / sizeof(vm_paddr_t))
+#endif
 
 #define	MBUF_PEXT_MAX_BYTES						\
     (MBUF_PEXT_MAX_PGS * PAGE_SIZE + MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN)
@@ -338,7 +343,7 @@ struct mbuf_ext_pgs {
 	int8_t		hdr_len;		/* TLS header length */
 	int8_t		trail_len;		/* TLS trailer length */
 	uint16_t	enc_cnt;		/* TLS pages to be encrypted */
-#if defined(__LP64__)
+#ifdef __LP64__
 	uint32_t	pad;			/* align pa[] to 8b */
 #endif
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */

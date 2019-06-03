@@ -305,10 +305,8 @@ static void    *mbuf_jumbo_alloc(uma_zone_t, vm_size_t, int, uint8_t *, int);
 /* Ensure that MSIZE is a power of 2. */
 CTASSERT((((MSIZE - 1) ^ MSIZE) + 1) >> 1 == MSIZE);
 
-#ifdef __LP64__
 _Static_assert(sizeof(struct mbuf_ext_pgs) == 256,
     "mbuf_ext_pgs size mismatch");
-#endif
 
 /*
  * Initialize FreeBSD Network buffer allocation.
