@@ -229,7 +229,7 @@ struct m_ext {
 	};
 	union {
 		/*
-		 * If ext_type == EXT_PGS, 'ext_pgs' point to a
+		 * If ext_type == EXT_PGS, 'ext_pgs' points to a
 		 * structure describing the buffer.  Otherwise,
 		 * 'ext_buf' points to the start of the buffer.
 		 */
@@ -305,17 +305,16 @@ struct socket;
 
 #define	MBUF_PEXT_HDR_LEN	32
 #define	MBUF_PEXT_TRAIL_LEN	64
-#define MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
+#define	MBUF_PEXT_MAX_PGS	(136 / sizeof(vm_paddr_t))
 
-#define MBUF_PEXT_MAX_BYTES	(		\
-    MBUF_PEXT_MAX_PGS * PAGE_SIZE +  MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN)
+#define	MBUF_PEXT_MAX_BYTES						\
+    (MBUF_PEXT_MAX_PGS * PAGE_SIZE + MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN)
 
 /*
  * This struct is 256 bytes in size, and is arranged so that the most
  * common case (accessing the first 4 pages) will fit in a single 64
  * byte cacheline
  */
-
 struct mbuf_ext_pgs {
 	int16_t		npgs;			/* Number of attached pgs */
 	int16_t		nrdy;			/* pgs w/IO pending */
@@ -323,18 +322,18 @@ struct mbuf_ext_pgs {
 	int16_t		last_pg_len;		/* Len of last page */
 	int8_t		hdr_len;		/* TLS hdr len */
 	int8_t		trail_len;		/* TLS trailer len */
-	uint16_t	enc_cnt;		/* TLS pgs to be encrypted */
-	uint32_t	pad;			/* align pgs to 8b */
-	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pgs */
-	char		hdr[MBUF_PEXT_HDR_LEN];		/* TLS hdr */
-	void		*tls;
+	uint16_t	enc_cnt;		/* TLS pages to be encrypted */
+	uint32_t	pad;			/* align pa[] to 8b */
+	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */
+	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
+	void		*tls;			/* TLS session */
 	union {
-		char	trail[MBUF_PEXT_TRAIL_LEN];	/* TLS trailer */
+		char	trail[MBUF_PEXT_TRAIL_LEN]; /* TLS trailer */
 		struct {
 			struct socket *so;
 			void	*mbuf;
 			uint64_t seqno;
-			STAILQ_ENTRY(mbuf_ext_pgs)	stailq;
+			STAILQ_ENTRY(mbuf_ext_pgs) stailq;
 		};
 	};
 };
@@ -964,7 +963,7 @@ m_extrefcnt(struct mbuf *m)
  * be both the local data payload, or an external buffer area, depending on
  * whether M_EXT is set).
  */
-#define	M_WRITABLE(m)	(!((m)->m_flags & (M_RDONLY|M_NOMAP)) &&	\
+#define	M_WRITABLE(m)	(((m)->m_flags & (M_RDONLY | M_NOMAP)) == 0 &&	\
 			 (!(((m)->m_flags & M_EXT)) ||			\
 			 (m_extrefcnt(m) == 1)))
 
