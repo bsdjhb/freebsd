@@ -1190,7 +1190,7 @@ parse_breakpoint(const uint8_t *data, size_t len)
 
 	/* Parse and consume type. */
 	cp = memchr(data, ',', len);
-	if (cp == NULL || cp ==  data) {
+	if (cp == NULL || cp == data) {
 		send_error(EINVAL);
 		return;
 	}
@@ -1200,7 +1200,7 @@ parse_breakpoint(const uint8_t *data, size_t len)
 
 	/* Parse and consume address. */
 	cp = memchr(data, ',', len);
-	if (cp == NULL || cp ==  data) {
+	if (cp == NULL || cp == data) {
 		send_error(EINVAL);
 		return;
 	}
@@ -1209,8 +1209,8 @@ parse_breakpoint(const uint8_t *data, size_t len)
 	data += (cp - data) + 1;
 
 	/* Parse and consume kind. */
-	cp = memchr(data, ':', len);
-	if (cp ==  data) {
+	cp = memchr(data, ';', len);
+	if (cp == data) {
 		send_error(EINVAL);
 		return;
 	}
@@ -1223,7 +1223,14 @@ parse_breakpoint(const uint8_t *data, size_t len)
 		len -= (cp - data) + 1;
 		data += (cp - data) + 1;
 
-		/* XXX: send_empty_response? */
+		/*
+		 * We do not advertise support for either the
+		 * ConditionalBreakpoints or BreakpointCommands
+		 * features, so we should not be getting conditions or
+		 * commands from the remote end.
+		 */
+		send_empty_response();
+		break;
 	}
 
 	switch (type) {
