@@ -100,6 +100,26 @@ struct breakpoint {
 	TAILQ_ENTRY(breakpoint) link;
 };
 
+/*
+ * When a vCPU stops to due to an event that should be reported to the
+ * debugger, information about the event is stored in this structure.
+ * 'stopped_vcpus' is a linked list of vCPUs with pending events that
+ * need to be reported.  The report_stop() function reports the event
+ * from the first pending vCPU in this list.  When the debugger
+ * resumes execution via continue or step, the first pending event is
+ * discarded.
+ *
+ * An idle vCPU will have all of the boolean fields set to false.
+ *
+ * When a vCPU is stepped, 'stepping' is set to true when the vCPU is
+ * released to execute the stepped instruction.  When the vCPU reports
+ * the stepping trap, 'stepped' is set and the vCPU is then queued in
+ * 'stopped_vcpus'.
+ *
+ * When a vCPU hits a breakpoint set by the debug server,
+ * 'hit_swbreak' is set to true and the vCPU is then queued in
+ * 'stopped_vcpus'.
+ */
 struct vcpu_state {
 	int vcpu;
 	bool stepping;
@@ -648,9 +668,7 @@ report_stop(void)
 			debug("$vCPU %d reporting swbreak\n", vs->vcpu);
 			if (swbreak_enabled)
 				append_string("swbreak:;");
-			vs->hit_swbreak = false;
 		} else if (vs->stepped) {
-			vs->stepped = false;
 			debug("$vCPU %d reporting step\n", vs->vcpu);
 		} else
 			debug("$vCPU %d reporting ???\n", vs->vcpu);
@@ -665,8 +683,11 @@ discard_stop(void)
 	struct vcpu_state *vs;
 
 	vs = TAILQ_FIRST(&stopped_vcpus);
-	if (vs != NULL)
+	if (vs != NULL) {
+		vs->hit_swbreak = false;
+		vs->stepped = false;
 		TAILQ_REMOVE(&stopped_vcpus, vs, link);
+	}
 	report_next_stop = true;
 }
 
@@ -820,17 +841,23 @@ gdb_step_vcpu(int vcpu)
 	struct vcpu_state *vs;
 	int error, val;
 
-	vs = &vcpu_state[vcpu];
-	assert(vs->stepping == false);
-	assert(vs->stepped == false);
 	debug("$vCPU %d step\n", vcpu);
 	error = vm_get_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, &val);
 	if (error < 0)
 		return (false);
+
+	/*
+	 * XXX: What if this vCPU has a pending event not cleared by
+	 * discard_stop?
+	 */
+	discard_stop();
+	vs = &vcpu_state[vcpu];
+	assert(vs->stepping == false);
+	assert(vs->stepped == false);
 	error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
+	assert(error == 0);
 	vm_resume_cpu(ctx, vcpu);
 	vs->stepping = true;
-	discard_stop();
 	CPU_CLR(vcpu, &vcpus_suspended);
 	pthread_cond_broadcast(&idle_vcpus);
 	return (true);
@@ -1230,7 +1257,7 @@ parse_breakpoint(const uint8_t *data, size_t len)
 		 * commands from the remote end.
 		 */
 		send_empty_response();
-		break;
+		return;
 	}
 
 	switch (type) {
