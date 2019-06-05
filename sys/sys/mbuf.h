@@ -345,6 +345,14 @@ struct mbuf_ext_pgs {
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */
 	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
 	void		*tls;			/* TLS session */
+#if defined(__i386__) || \
+    ((defined(__powerpc__) && !defined(__powerpc64__) && defined(BOOKE))
+	/*
+	 * i386 and Book-E PowerPC have 64-bit vm_paddr_t, so there is
+	 * a 4 byte remainder from the space allocated for pa[].
+	 */
+	uint32_t	pad;
+#endif
 	union {
 		char	trail[MBUF_PEXT_TRAIL_LEN]; /* TLS trailer */
 		struct {
@@ -354,13 +362,6 @@ struct mbuf_ext_pgs {
 			STAILQ_ENTRY(mbuf_ext_pgs) stailq;
 		};
 	};
-#ifdef __i386__
-	/*
-	 * i386 has 64-bit vm_paddr_t, so there is a 4 byte remainder
-	 * from the space allocated for pa[].
-	 */
-	uint32_t	pad;
-#endif
 };
 
 #ifdef _KERNEL
