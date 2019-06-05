@@ -1241,15 +1241,7 @@ parse_breakpoint(const uint8_t *data, size_t len)
 		send_error(EINVAL);
 		return;
 	}
-	if (cp == NULL) {
-		kind = parse_integer(data, len);
-		data += len;
-		len = 0;
-	} else {
-		kind = parse_integer(data, cp - data);
-		len -= (cp - data) + 1;
-		data += (cp - data) + 1;
-
+	if (cp != NULL) {
 		/*
 		 * We do not advertise support for either the
 		 * ConditionalBreakpoints or BreakpointCommands
@@ -1259,6 +1251,9 @@ parse_breakpoint(const uint8_t *data, size_t len)
 		send_empty_response();
 		return;
 	}
+	kind = parse_integer(data, len);
+	data += len;
+	len = 0;
 
 	switch (type) {
 	case 0:
