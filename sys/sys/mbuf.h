@@ -346,7 +346,7 @@ struct mbuf_ext_pgs {
 	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
 	void		*tls;			/* TLS session */
 #if defined(__i386__) || \
-    ((defined(__powerpc__) && !defined(__powerpc64__) && defined(BOOKE))
+    (defined(__powerpc__) && !defined(__powerpc64__) && defined(BOOKE))
 	/*
 	 * i386 and Book-E PowerPC have 64-bit vm_paddr_t, so there is
 	 * a 4 byte remainder from the space allocated for pa[].
