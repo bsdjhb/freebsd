@@ -668,9 +668,9 @@ report_stop(void)
 			debug("$vCPU %d reporting swbreak\n", vs->vcpu);
 			if (swbreak_enabled)
 				append_string("swbreak:;");
-		} else if (vs->stepped) {
+		} else if (vs->stepped)
 			debug("$vCPU %d reporting step\n", vs->vcpu);
-		} else
+		else
 			debug("$vCPU %d reporting ???\n", vs->vcpu);
 	}
 	finish_packet();
@@ -1123,7 +1123,7 @@ set_breakpoint_caps(bool enable)
 		vcpu = CPU_FFS(&mask) - 1;
 		CPU_CLR(vcpu, &mask);
 		if (vm_set_capability(ctx, vcpu, VM_CAP_BPT_EXIT,
-		    enable ? 1: 0) < 0)
+		    enable ? 1 : 0) < 0)
 			return (false);
 		debug("$vCPU %d %sabled breakpoint exits\n", vcpu,
 		    enable ? "en" : "dis");
