@@ -1661,7 +1661,7 @@ gdb_writable(int fd, enum ev_type event, void *arg)
 static void
 new_connection(int fd, enum ev_type event, void *arg)
 {
-	int optval, s;
+	int optval, s, vcpu;
 
 	s = accept4(fd, NULL, NULL, SOCK_NONBLOCK);
 	if (s == -1) {
@@ -1703,7 +1703,11 @@ new_connection(int fd, enum ev_type event, void *arg)
 
 	cur_fd = s;
 	cur_vcpu = 0;
-	memset(vcpu_state, 0, guest_ncpus * sizeof(*vcpu_state));
+	for (vcpu = 0; vcpu < guest_ncpus; vcpu++) {
+		vcpu_state[vcpu].stepping = false;
+		vcpu_state[vcpu].stepped = false;
+		vcpu_state[vcpu].hit_swbreak = false;
+	}
 	TAILQ_INIT(&stopped_vcpus);
 
 	/* Break on attach. */
