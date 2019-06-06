@@ -1207,12 +1207,8 @@ mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs)
 	    ("ext_pgs with no valid pages: %p", ext_pgs));
 	KASSERT(ext_pgs->npgs <= nitems(ext_pgs->pa),
 	    ("ext_pgs with too many pages: %p", ext_pgs));
-	KASSERT(ext_pgs->nrdy >= 0,
-	    ("ext_pgs with negative ready pages: %p", ext_pgs));
 	KASSERT(ext_pgs->nrdy <= ext_pgs->npgs,
 	    ("ext_pgs with too many ready pages: %p", ext_pgs));
-	KASSERT(ext_pgs->first_pg_off >= 0,
-	    ("ext_pgs with negative page offset: %p", ext_pgs));
 	KASSERT(ext_pgs->first_pg_off < PAGE_SIZE,
 	    ("ext_pgs with too large page offset: %p", ext_pgs));
 	KASSERT(ext_pgs->last_pg_len > 0,
@@ -1224,13 +1220,9 @@ mb_ext_pgs_check(struct mbuf_ext_pgs *ext_pgs)
 		    PAGE_SIZE, ("ext_pgs with single page too large: %p",
 		    ext_pgs));
 	}
-	KASSERT(ext_pgs->hdr_len >= 0,
-	    ("ext_pgs with negative header length: %p", ext_pgs));
-	KASSERT(ext_pgs->hdr_len < sizeof(ext_pgs->hdr),
+	KASSERT(ext_pgs->hdr_len <= sizeof(ext_pgs->hdr),
 	    ("ext_pgs with too large header length: %p", ext_pgs));
-	KASSERT(ext_pgs->trail_len >= 0,
-	    ("ext_pgs with negative header length: %p", ext_pgs));
-	KASSERT(ext_pgs->trail_len < sizeof(ext_pgs->trail),
+	KASSERT(ext_pgs->trail_len <= sizeof(ext_pgs->trail),
 	    ("ext_pgs with too large header length: %p", ext_pgs));
 }
 #endif
