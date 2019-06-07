@@ -649,7 +649,7 @@ parse_threadid(const uint8_t *data, size_t len)
 }
 
 static void
-report_stop(void)
+report_stop(bool set_cur_vcpu)
 {
 	struct vcpu_state *vs;
 
@@ -661,6 +661,8 @@ report_stop(void)
 		append_char('T');
 	append_byte(GDB_SIGNAL_TRAP);
 	if (vs != NULL) {
+		if (set_cur_vcpu)
+			cur_vcpu = vs->vcpu;
 		append_string("thread:");
 		append_integer(vs->vcpu + 1);
 		append_char(';');
@@ -700,7 +702,7 @@ gdb_finish_suspend_vcpus(void)
 		TAILQ_INIT(&stopped_vcpus);
 	} else if (report_next_stop) {
 		assert(!response_pending());
-		report_stop();
+		report_stop(true);
 		send_pending_data(cur_fd);
 	}
 }
@@ -1431,7 +1433,7 @@ handle_command(const uint8_t *data, size_t len)
 			/* Don't send a reply until a stop occurs. */
 			gdb_resume_vcpus();
 		} else
-			report_stop();
+			report_stop(true);
 		break;
 	case 'D':
 		send_ok();
@@ -1507,7 +1509,7 @@ handle_command(const uint8_t *data, size_t len)
 		parse_breakpoint(data, len);
 		break;
 	case '?':
-		report_stop();
+		report_stop(false);
 		break;
 	case 'G': /* TODO */
 	case 'v':
@@ -1549,7 +1551,7 @@ check_command(int fd)
 				io_buffer_reset(&cur_resp);
 			io_buffer_consume(&cur_comm, 1);
 			if (!TAILQ_EMPTY(&stopped_vcpus) && report_next_stop) {
-				report_stop();
+				report_stop(true);
 				send_pending_data(fd);
 			}
 			break;
