@@ -782,7 +782,7 @@ gdb_cpu_mtrap(int vcpu)
 		vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 0);
 		vm_suspend_cpu(ctx, vcpu);
 		CPU_SET(vcpu, &vcpus_suspended);
-		debug("$vCPU %d reporting step\n", vs->vcpu);
+		debug("$vCPU %d reporting step\n", vcpu);
 		TAILQ_INSERT_HEAD(&stopped_vcpus, vs, link);
 		_gdb_cpu_suspend(vcpu, true);
 	}
