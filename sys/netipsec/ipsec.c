@@ -158,11 +158,6 @@ VNET_DEFINE(int, crypto_support) = CRYPTOCAP_F_HARDWARE | CRYPTOCAP_F_SOFTWARE;
  */
 VNET_DEFINE(int, async_crypto) = 0;
 
-struct timeval ipsec_warn_interval = { .tv_sec = 1, .tv_usec = 0 };
-SYSCTL_TIMEVAL_SEC(_net_inet_ipsec, OID_AUTO, crypto_warn_interval, CTLFLAG_RW,
-    &ipsec_warn_interval,
-    "Delay in seconds between warnings of deprecated IPsec crypto algorithms.");
-
 /*
  * TCP/UDP checksum handling policy for transport mode NAT-T (RFC3948)
  *
@@ -220,6 +215,11 @@ SYSCTL_INT(_net_inet_ipsec, OID_AUTO, filtertunnel,
 	"If set, filter packets from an IPsec tunnel.");
 SYSCTL_VNET_PCPUSTAT(_net_inet_ipsec, OID_AUTO, ipsecstats, struct ipsecstat,
     ipsec4stat, "IPsec IPv4 statistics.");
+
+struct timeval ipsec_warn_interval = { .tv_sec = 1, .tv_usec = 0 };
+SYSCTL_TIMEVAL_SEC(_net_inet_ipsec, OID_AUTO, crypto_warn_interval, CTLFLAG_RW,
+    &ipsec_warn_interval,
+    "Delay in seconds between warnings of deprecated IPsec crypto algorithms.");
 
 #ifdef REGRESSION
 /*
