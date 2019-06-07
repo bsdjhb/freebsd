@@ -218,7 +218,7 @@ int sysctl_handle_uma_zone_cur(SYSCTL_HANDLER_ARGS);
 
 int sysctl_msec_to_sbintime(SYSCTL_HANDLER_ARGS);
 int sysctl_usec_to_sbintime(SYSCTL_HANDLER_ARGS);
-int sysctl_sec_to_timeval_interval(SYSCTL_HANDLER_ARGS);
+int sysctl_sec_to_timeval(SYSCTL_HANDLER_ARGS);
 
 int sysctl_dpcpu_int(SYSCTL_HANDLER_ARGS);
 int sysctl_dpcpu_long(SYSCTL_HANDLER_ARGS);
