@@ -835,7 +835,7 @@ gdb_cpu_mtrap(int vcpu)
 		vs->stepped = true;
 		vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 0);
 		while (vs->stepped) {
-			if (stopped_vcpu != -1) {
+			if (stopped_vcpu == -1) {
 				debug("$vCPU %d reporting step\n", vcpu);
 				stopped_vcpu = vcpu;
 				gdb_suspend_vcpus();
