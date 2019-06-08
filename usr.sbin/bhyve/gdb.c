@@ -77,7 +77,7 @@ static struct mevent *read_event, *write_event;
 static cpuset_t vcpus_active, vcpus_suspended, vcpus_waiting;
 static pthread_mutex_t gdb_lock;
 static pthread_cond_t idle_vcpus;
-static bool first_stop, swbreak_enabled, report_next_stop;
+static bool first_stop, report_next_stop, swbreak_enabled;
 
 /*
  * An I/O buffer contains 'capacity' bytes of room at 'data'.  For a
@@ -652,7 +652,7 @@ parse_threadid(const uint8_t *data, size_t len)
 
 /*
  * Report the current stop event to the debugger.  If the stop is due
- * to an event triggered on a specific vCPU such as breakpoint or
+ * to an event triggered on a specific vCPU such as a breakpoint or
  * stepping trap, stopped_vcpu will be set to the vCPU triggering the
  * stop.  If 'set_cur_vcpu' is true, then cur_vcpu will be updated to
  * the reporting vCPU for vCPU events.
