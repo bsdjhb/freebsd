@@ -217,6 +217,8 @@ debug(const char *fmt, ...)
 #define debug(...)
 #endif
 
+static void	remove_all_sw_breakpoints(void);
+
 static int
 guest_paging_info(int vcpu, struct vm_guest_paging *paging)
 {
@@ -385,7 +387,7 @@ close_connection(void)
 	io_buffer_reset(&cur_resp);
 	cur_fd = -1;
 
-	/* TODO: Clear breakpoints. */
+	remove_all_sw_breakpoints();
 
 	/* Clear any pending events. */
 	memset(vcpu_state, 0, guest_ncpus * sizeof(*vcpu_state));
@@ -1193,6 +1195,26 @@ set_breakpoint_caps(bool enable)
 		    enable ? "en" : "dis");
 	}
 	return (true);
+}
+
+static void
+remove_all_sw_breakpoints(void)
+{
+	struct breakpoint *bp, *nbp;
+	uint8_t *cp;
+
+	if (TAILQ_EMPTY(&breakpoints))
+		return;
+
+	TAILQ_FOREACH_SAFE(bp, &breakpoints, link, nbp) {
+		debug("remove breakpoint at %#lx\n", bp->gpa);
+		cp = paddr_guest2host(ctx, bp->gpa, 1);
+		*cp = bp->shadow_inst;
+		TAILQ_REMOVE(&breakpoints, bp, link);
+		free(bp);
+	}
+	TAILQ_INIT(&breakpoints);
+	set_breakpoint_caps(false);
 }
 
 static void
