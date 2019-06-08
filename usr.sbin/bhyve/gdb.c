@@ -103,39 +103,35 @@ struct breakpoint {
 /*
  * When a vCPU stops to due to an event that should be reported to the
  * debugger, information about the event is stored in this structure.
- * 'stopped_vcpus' is a linked list of vCPUs with pending events that
- * need to be reported.  The report_stop() function reports the event
- * from the first pending vCPU in this list.  When the debugger
- * resumes execution via continue or step, the first pending event is
- * discarded.
+ * The vCPU thread then sets 'stopped_vcpu' if it is not already set
+ * and stops other vCPUs so the event can be reported.  The
+ * report_stop() function reports the event for the 'stopped_vcpu'
+ * vCPU.  When the debugger resumes execution via continue or step,
+ * the event for 'stopped_vcpu' is cleared.  vCPUs will loop in their
+ * event handlers until the associated event is reported or disabled.
  *
  * An idle vCPU will have all of the boolean fields set to false.
  *
  * When a vCPU is stepped, 'stepping' is set to true when the vCPU is
  * released to execute the stepped instruction.  When the vCPU reports
- * the stepping trap, 'stepped' is set and the vCPU is then queued in
- * 'stopped_vcpus'.
+ * the stepping trap, 'stepped' is set.
  *
  * When a vCPU hits a breakpoint set by the debug server,
- * 'hit_swbreak' is set to true and the vCPU is then queued in
- * 'stopped_vcpus'.
+ * 'hit_swbreak' is set to true.
  */
 struct vcpu_state {
-	int vcpu;
 	bool stepping;
 	bool stepped;
 	bool hit_swbreak;
-	TAILQ_ENTRY(vcpu_state) link;
 };
 
 static struct io_buffer cur_comm, cur_resp;
 static uint8_t cur_csum;
-static int cur_vcpu;
 static struct vmctx *ctx;
 static int cur_fd = -1;
 static TAILQ_HEAD(, breakpoint) breakpoints;
-static TAILQ_HEAD(, vcpu_state) stopped_vcpus;
 static struct vcpu_state *vcpu_state;
+static int cur_vcpu, stopped_vcpu;
 
 const int gdb_regset[] = {
 	VM_REG_GUEST_RAX,
@@ -389,6 +385,11 @@ close_connection(void)
 	io_buffer_reset(&cur_comm);
 	io_buffer_reset(&cur_resp);
 	cur_fd = -1;
+
+	/* TODO: Clear breakpoints. */
+
+	/* Clear any pending events. */
+	memset(vcpu_state, 0, guest_ncpus * sizeof(*vcpu_state));
 
 	/* Resume any stopped vCPUs. */
 	gdb_resume_vcpus();
@@ -648,47 +649,58 @@ parse_threadid(const uint8_t *data, size_t len)
 	return (parse_integer(data, len));
 }
 
+/*
+ * Report the current stop event to the debugger.  If the stop is due
+ * to an event triggered on a specific vCPU such as breakpoint or
+ * stepping trap, stopped_vcpu will be set to the vCPU triggering the
+ * stop.  If 'set_cur_vcpu' is true, then cur_vcpu will be updated to
+ * the reporting vCPU for vCPU events.
+ */
 static void
 report_stop(bool set_cur_vcpu)
 {
 	struct vcpu_state *vs;
 
-	vs = TAILQ_FIRST(&stopped_vcpus);
 	start_packet();
-	if (vs == NULL)
+	if (stopped_vcpu == -1) {
 		append_char('S');
-	else
-		append_char('T');
-	append_byte(GDB_SIGNAL_TRAP);
-	if (vs != NULL) {
+		append_byte(GDB_SIGNAL_TRAP);
+	} else {
+		vs = &vcpu_state[stopped_vcpu];
 		if (set_cur_vcpu)
-			cur_vcpu = vs->vcpu;
+			cur_vcpu = stopped_vcpu;
+		append_char('T');
+		append_byte(GDB_SIGNAL_TRAP);
 		append_string("thread:");
-		append_integer(vs->vcpu + 1);
+		append_integer(stopped_vcpu + 1);
 		append_char(';');
 		if (vs->hit_swbreak) {
-			debug("$vCPU %d reporting swbreak\n", vs->vcpu);
+			debug("$vCPU %d reporting swbreak\n", stopped_vcpu);
 			if (swbreak_enabled)
 				append_string("swbreak:;");
 		} else if (vs->stepped)
-			debug("$vCPU %d reporting step\n", vs->vcpu);
+			debug("$vCPU %d reporting step\n", stopped_vcpu);
 		else
-			debug("$vCPU %d reporting ???\n", vs->vcpu);
+			debug("$vCPU %d reporting ???\n", stopped_vcpu);
 	}
 	finish_packet();
 	report_next_stop = false;
 }
 
+/*
+ * If this stop is due to a vCPU event, clear that event to mark it as
+ * acknowledged.
+ */
 static void
 discard_stop(void)
 {
 	struct vcpu_state *vs;
 
-	vs = TAILQ_FIRST(&stopped_vcpus);
-	if (vs != NULL) {
+	if (stopped_vcpu != -1) {
+		vs = &vcpu_state[stopped_vcpu];
 		vs->hit_swbreak = false;
 		vs->stepped = false;
-		TAILQ_REMOVE(&stopped_vcpus, vs, link);
+		stopped_vcpu = -1;
 	}
 	report_next_stop = true;
 }
@@ -699,7 +711,7 @@ gdb_finish_suspend_vcpus(void)
 
 	if (first_stop) {
 		first_stop = false;
-		TAILQ_INIT(&stopped_vcpus);
+		stopped_vcpu = -1;
 	} else if (report_next_stop) {
 		assert(!response_pending());
 		report_stop(true);
@@ -707,6 +719,11 @@ gdb_finish_suspend_vcpus(void)
 	}
 }
 
+/*
+ * vCPU threads invoke this function whenever the vCPU enters the
+ * debug server to pause or report an event.  vCPU threads wait here
+ * as long as the debug server keeps them suspended.
+ */
 static void
 _gdb_cpu_suspend(int vcpu, bool report_stop)
 {
@@ -721,6 +738,10 @@ _gdb_cpu_suspend(int vcpu, bool report_stop)
 	debug("$vCPU %d resuming\n", vcpu);
 }
 
+/*
+ * Invoked at the start of a vCPU thread's execution to inform the
+ * debug server about the new thread.
+ */
 void
 gdb_cpu_add(int vcpu)
 {
@@ -729,7 +750,6 @@ gdb_cpu_add(int vcpu)
 	pthread_mutex_lock(&gdb_lock);
 	assert(vcpu < guest_ncpus);
 	CPU_SET(vcpu, &vcpus_active);
-	vcpu_state[vcpu].vcpu = vcpu;
 	if (!TAILQ_EMPTY(&breakpoints)) {
 		vm_set_capability(ctx, vcpu, VM_CAP_BPT_EXIT, 1);
 		debug("$vCPU %d enabled breakpoint exits\n", vcpu);
@@ -747,12 +767,42 @@ gdb_cpu_add(int vcpu)
 	pthread_mutex_unlock(&gdb_lock);
 }
 
+/*
+ * Invoked by vCPU before resuming execution.  This enables stepping
+ * if the vCPU is marked as stepping.
+ */
+static void
+gdb_cpu_resume(int vcpu)
+{
+	struct vcpu_state *vs;
+	int error;
+
+	vs = &vcpu_state[vcpu];
+
+	/*
+	 * Any pending event should already be reported before
+	 * resuming.
+	 */
+	assert(vs->hit_swbreak == false);
+	assert(vs->stepped == false);
+	if (vs->stepping) {
+		error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
+		assert(error == 0);
+	}
+}
+
+/*
+ * Handler for VM_EXITCODE_DEBUG used to suspend a vCPU when the guest
+ * has been suspended due to an event on different vCPU or in response
+ * to a guest-wide suspend such as Ctrl-C or the stop on attach.
+ */
 void
 gdb_cpu_suspend(int vcpu)
 {
 
 	pthread_mutex_lock(&gdb_lock);
 	_gdb_cpu_suspend(vcpu, true);
+	gdb_cpu_resume(vcpu);
 	pthread_mutex_unlock(&gdb_lock);
 }
 
@@ -768,6 +818,10 @@ gdb_suspend_vcpus(void)
 		gdb_finish_suspend_vcpus();
 }
 
+/*
+ * Handler for VM_EXITCODE_MTRAP reported when a vCPU single-steps via
+ * the VT-x-specific MTRAP exit.
+ */
 void
 gdb_cpu_mtrap(int vcpu)
 {
@@ -780,11 +834,15 @@ gdb_cpu_mtrap(int vcpu)
 		vs->stepping = false;
 		vs->stepped = true;
 		vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 0);
-		vm_suspend_cpu(ctx, vcpu);
-		CPU_SET(vcpu, &vcpus_suspended);
-		debug("$vCPU %d reporting step\n", vcpu);
-		TAILQ_INSERT_HEAD(&stopped_vcpus, vs, link);
-		_gdb_cpu_suspend(vcpu, true);
+		while (vs->stepped) {
+			if (stopped_vcpu != -1) {
+				debug("$vCPU %d reporting step\n", vcpu);
+				stopped_vcpu = vcpu;
+				gdb_suspend_vcpus();
+			}
+			_gdb_cpu_suspend(vcpu, true);
+		}
+		gdb_cpu_resume(vcpu);
 	}
 	pthread_mutex_unlock(&gdb_lock);
 }
@@ -820,11 +878,26 @@ gdb_cpu_breakpoint(int vcpu, struct vm_exit *vmexit)
 		assert(vs->hit_swbreak == false);
 		vs->hit_swbreak = true;
 		vm_set_register(ctx, vcpu, VM_REG_GUEST_RIP, vmexit->rip);
-		debug("$vCPU %d reporting breakpoint at rip %#lx\n", vcpu,
-		    vmexit->rip);
-		TAILQ_INSERT_TAIL(&stopped_vcpus, vs, link);
-		gdb_suspend_vcpus();
-		_gdb_cpu_suspend(vcpu, true);
+		for (;;) {
+			if (stopped_vcpu == -1) {
+				debug("$vCPU %d reporting breakpoint at rip %#lx\n", vcpu,
+				    vmexit->rip);
+				stopped_vcpu = vcpu;
+				gdb_suspend_vcpus();
+			}
+			_gdb_cpu_suspend(vcpu, true);
+			if (!vs->hit_swbreak) {
+				/* Breakpoint reported. */
+				break;
+			}
+			bp = find_breakpoint(gpa);
+			if (bp == NULL) {
+				/* Breakpoint was removed. */
+				vs->hit_swbreak = false;
+				break;
+			}
+		}
+		gdb_cpu_resume(vcpu);
 	} else {
 		debug("$vCPU %d injecting breakpoint at rip %#lx\n", vcpu,
 		    vmexit->rip);
@@ -840,7 +913,6 @@ gdb_cpu_breakpoint(int vcpu, struct vm_exit *vmexit)
 static bool
 gdb_step_vcpu(int vcpu)
 {
-	struct vcpu_state *vs;
 	int error, val;
 
 	debug("$vCPU %d step\n", vcpu);
@@ -848,18 +920,9 @@ gdb_step_vcpu(int vcpu)
 	if (error < 0)
 		return (false);
 
-	/*
-	 * XXX: What if this vCPU has a pending event not cleared by
-	 * discard_stop?
-	 */
 	discard_stop();
-	vs = &vcpu_state[vcpu];
-	assert(vs->stepping == false);
-	assert(vs->stepped == false);
-	error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
-	assert(error == 0);
+	vcpu_state[vcpu].stepping = true;
 	vm_resume_cpu(ctx, vcpu);
-	vs->stepping = true;
 	CPU_CLR(vcpu, &vcpus_suspended);
 	pthread_cond_broadcast(&idle_vcpus);
 	return (true);
@@ -1429,11 +1492,7 @@ handle_command(const uint8_t *data, size_t len)
 		}
 
 		discard_stop();
-		if (TAILQ_EMPTY(&stopped_vcpus)) {
-			/* Don't send a reply until a stop occurs. */
-			gdb_resume_vcpus();
-		} else
-			report_stop(true);
+		gdb_resume_vcpus();
 		break;
 	case 'D':
 		send_ok();
@@ -1550,7 +1609,7 @@ check_command(int fd)
 			if (response_pending())
 				io_buffer_reset(&cur_resp);
 			io_buffer_consume(&cur_comm, 1);
-			if (!TAILQ_EMPTY(&stopped_vcpus) && report_next_stop) {
+			if (stopped_vcpu != -1 && report_next_stop) {
 				report_stop(true);
 				send_pending_data(fd);
 			}
@@ -1663,7 +1722,7 @@ gdb_writable(int fd, enum ev_type event, void *arg)
 static void
 new_connection(int fd, enum ev_type event, void *arg)
 {
-	int optval, s, vcpu;
+	int optval, s;
 
 	s = accept4(fd, NULL, NULL, SOCK_NONBLOCK);
 	if (s == -1) {
@@ -1705,12 +1764,7 @@ new_connection(int fd, enum ev_type event, void *arg)
 
 	cur_fd = s;
 	cur_vcpu = 0;
-	for (vcpu = 0; vcpu < guest_ncpus; vcpu++) {
-		vcpu_state[vcpu].stepping = false;
-		vcpu_state[vcpu].stepped = false;
-		vcpu_state[vcpu].hit_swbreak = false;
-	}
-	TAILQ_INIT(&stopped_vcpus);
+	stopped_vcpu = -1;
 
 	/* Break on attach. */
 	first_stop = true;
@@ -1766,7 +1820,7 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 	if (listen(s, 1) < 0)
 		err(1, "gdb socket listen");
 
-	TAILQ_INIT(&stopped_vcpus);
+	stopped_vcpu = -1;
 	TAILQ_INIT(&breakpoints);
 	vcpu_state = calloc(guest_ncpus, sizeof(*vcpu_state));
 	if (wait) {
@@ -1777,7 +1831,7 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 		 * until a debugger connects.
 		 */
 		CPU_SET(0, &vcpus_suspended);
-		TAILQ_INSERT_TAIL(&stopped_vcpus, &vcpu_state[0], link);
+		stopped_vcpu = 0;
 	}
 
 	flags = fcntl(s, F_GETFL);
