@@ -95,7 +95,6 @@ struct io_buffer {
 
 struct breakpoint {
 	uint64_t gpa;
-	int refs;
 	uint8_t shadow_inst;
 	TAILQ_ENTRY(breakpoint) link;
 };
@@ -1230,6 +1229,10 @@ update_sw_breakpoint(uint64_t gva, int kind, bool insert)
 	/* Find any existing breakpoint. */
 	bp = find_breakpoint(gpa);
 
+	/*
+	 * Silently ignore duplicate commands since the protocol
+	 * requires these packets to be idempotent.
+	 */
 	if (insert) {
 		if (bp == NULL) {
 			if (TAILQ_EMPTY(&breakpoints) &&
@@ -1239,29 +1242,20 @@ update_sw_breakpoint(uint64_t gva, int kind, bool insert)
 			}
 			bp = malloc(sizeof(*bp));
 			bp->gpa = gpa;
-			bp->refs = 1;
 			bp->shadow_inst = *cp;
 			*cp = 0xcc;	/* INT 3 */
 			TAILQ_INSERT_TAIL(&breakpoints, bp, link);
 			debug("new breakpoint at %#lx\n", gpa);
-		} else {
-			bp->refs++;
-			assert(bp->refs != 0);
 		}
 	} else {
-		if (bp == NULL) {
-			send_error(ENOENT);
-			return;
-		}
-		if (bp->refs == 1) {
+		if (bp != NULL) {
 			debug("remove breakpoint at %#lx\n", gpa);
 			*cp = bp->shadow_inst;
 			TAILQ_REMOVE(&breakpoints, bp, link);
 			free(bp);
 			if (TAILQ_EMPTY(&breakpoints))
 				set_breakpoint_caps(false);
-		} else
-			bp->refs--;
+		}
 	}
 	send_ok();
 }
