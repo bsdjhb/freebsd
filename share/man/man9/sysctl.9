@@ -637,9 +637,11 @@ Note that new code should use kernel variables of type
 instead of tick counts.
 .Pp
 The
-.Fn SYSCTL_ADD_SBINTIME_MSEC ,
-.Fn SYSCTL_ADD_SBINTIME_USEC ,
-.Fn SYSCTL_SBINTIME_MSEC ,
+.Fn SYSCTL_ADD_SBINTIME_MSEC
+and
+.Fn SYSCTL_ADD_SBINTIME_USEC
+functions and
+.Fn SYSCTL_SBINTIME_MSEC
 and
 .Fn SYSCTL_SBINTIME_USEC
 macros all create nodes which export an in-kernel variable of type
