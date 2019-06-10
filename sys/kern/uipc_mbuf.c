@@ -206,7 +206,7 @@ mb_dupcl(struct mbuf *n, struct mbuf *m)
 	else
 		bcopy(&m->m_ext, &n->m_ext, m_ext_copylen);
 	n->m_flags |= M_EXT;
-	n->m_flags |= m->m_flags & (M_RDONLY|M_NOMAP);
+	n->m_flags |= m->m_flags & (M_RDONLY | M_NOMAP);
 
 	/* See if this is the mbuf that holds the embedded refcount. */
 	if (m->m_ext.ext_flags & EXT_FLAG_EMBREF) {

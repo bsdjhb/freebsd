@@ -2499,10 +2499,9 @@ count_mbuf_ext_pgs(struct mbuf *m, int skip, vm_paddr_t *nextaddr)
 
 
 /*
- * Can deal with empty mbufs in the chain that have m_len = 0, but the
- * chain must have at least one mbuf that's not empty.  It is possible
- * for this routine to return 0 if skip accounts for all the contents
- * of the mbuf chain.
+ * Can deal with empty mbufs in the chain that have m_len = 0, but the chain
+ * must have at least one mbuf that's not empty.  It is possible for this
+ * routine to return 0 if skip accounts for all the contents of the mbuf chain.
  */
 static inline int
 count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
@@ -2525,7 +2524,6 @@ count_mbuf_nsegs(struct mbuf *m, int skip, uint8_t *cflags)
 			skip -= len;
 			continue;
 		}
-
 		if ((m->m_flags & M_NOMAP) != 0) {
 			*cflags |= MC_NOMAP;
 			nsegs += count_mbuf_ext_pgs(m, skip, &nextaddr);
