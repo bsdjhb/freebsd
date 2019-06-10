@@ -662,6 +662,21 @@ macros all create nodes which export an in-kernel variable of type
 These nodes do not export the raw value of the associated variable.
 Instead, they export a 64-bit integer containing a count of either
 milliseconds (the MSEC variants) or microseconds (the USEC variants).
+.Pp
+The
+.Fn SYSCTL_ADD_TIMEVAL_SEC
+function and
+.Fn SYSCTL_TIMEVAL_SEC
+macro create nodes which export an in-kernel variable of type
+.Vt struct timeval .
+These nodes do not export full value of the associated structure.
+Instead, they export a count in seconds as a simple integer which is
+stored in the
+.Fa tv_sec
+field of the associated variable.
+This function and macro are intended to be used with variables which
+store a non-negative interval rather than an absolute time.
+As a result, they reject attempts to store negative values.
 .Sh CREATING ROOT NODES
 Sysctl MIBs or OIDs are created in a hierarchical tree.
 The nodes at the bottom of the tree are called root nodes, and have no
