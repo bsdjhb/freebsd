@@ -378,6 +378,13 @@ struct cryptostats {
 
 #ifdef _KERNEL
 
+/*
+ * Return values for cryptodev_probesession methods.
+ */
+#define	CRYPTODEV_PROBE_HARDWARE	(-100)
+#define	CRYPTODEV_PROBE_ACCEL_SOFTWARE	(-200)
+#define	CRYPTODEV_PROBE_SOFTWARE	(-500)
+
 #if 0
 #define CRYPTDEB(s, ...) do {						\
 	printf("%s:%d: " s "\n", __FILE__, __LINE__, ## __VA_ARGS__);	\

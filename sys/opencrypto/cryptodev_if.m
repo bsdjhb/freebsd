@@ -40,6 +40,40 @@ CODE {
 };
 
 /**
+ * @brief Probe to see if a crypto driver supports a session.
+ *
+ * The crypto framework invokes this method on each crypto driver when
+ * creating a session to determine if the driver supports the
+ * algorithms and mode requested by the session.
+ *
+ * If the driver does not support a session with the requested
+ * parameters, this function should fail with an error.
+ *
+ * If the driver does support a session with the requested parameters,
+ * this function should return a negative value indicating the
+ * priority of this driver.  These negative values should be derived
+ * from one of the CRYPTODEV_PROBE_* constants in
+ * <opencrypto/cryptodev.h>.
+ *
+ * This function's return value is similar to that used by
+ * DEVICE_PROBE(9).  However, a return value of zero is not supported
+ * and should not be used.
+ *
+ * @param dev		the crypto driver device
+ * @param csp		crypto session parameters
+ *
+ * @retval negative	if the driver supports this session - the
+ *			least negative value is used to select the
+ *			driver for the session
+ * @retval EINVAL	if the driver does not support the session
+ * @retval positive	if some other error occurs
+ */
+METHOD int probesession {
+	device_t	dev;
+	const struct crypto_session_params *csp;
+};
+
+/**
  * Crypto driver method to initialize a new session object with the given
  * initialization parameters (crypto_session_params).  The driver's session
  * memory object is already allocated and zeroed, like driver softcs.  It is
