@@ -865,14 +865,14 @@ crypto_get_driverid(device_t dev, size_t sessionsize, int flags)
 		}
 		CRYPTO_DRIVER_UNLOCK();
 
-		newdrv = malloc(2 * crypto_drivers_num *
+		newdrv = malloc(2 * crypto_drivers_size *
 		    sizeof(*crypto_drivers), M_CRYPTO_DATA, M_WAITOK | M_ZERO);
 
 		CRYPTO_DRIVER_LOCK();
 		memcpy(newdrv, cryptodrivers,
-		    crypto_drivers_num * sizeof(*crypto_drivers));
+		    crypto_drivers_size * sizeof(*crypto_drivers));
 
-		crypto_drivers_num *= 2;
+		crypto_drivers_size *= 2;
 
 		free(crypto_drivers, M_CRYPTO_DATA);
 		crypto_drivers = newdrv;
@@ -902,16 +902,18 @@ crypto_find_driver(const char *match)
 	int i, len = strlen(match);
 
 	CRYPTO_DRIVER_LOCK();
-	for (i = 0; i < crypto_drivers_num; i++) {
+	for (i = 0; i < crypto_drivers_size; i++) {
 		if (crypto_drivers[i] == NULL)
 			continue;
 		cap = crypto_drivers[i];
 		if (strncmp(match, device_get_nameunit(cap->cc_dev), len) == 0 ||
-		    strncmp(match, device_get_name(cap->cc_dev), len) == 0)
-			break;
+		    strncmp(match, device_get_name(cap->cc_dev), len) == 0) {
+			CRYPTO_DRIVER_UNLOCK();
+			return (i);
+		}
 	}
 	CRYPTO_DRIVER_UNLOCK();
-	return i < crypto_drivers_num ? i : -1;
+	return (-1);
 }
 
 /*
@@ -1295,7 +1297,7 @@ crypto_select_kdriver(const struct cryptkop *krp, int flags)
 		match = CRYPTOCAP_F_SOFTWARE;
 	best = NULL;
 again:
-	for (hid = 0; hid < crypto_drivers_num; hid++) {
+	for (hid = 0; hid < crypto_drivers_size; hid++) {
 		cap = &crypto_drivers[hid];
 		/*
 		 * If it's not initialized, is in the process of
@@ -1958,7 +1960,7 @@ db_show_drivers(void)
 		, "QB"
 		, "KB"
 	);
-	for (hid = 0; hid < crypto_drivers_num; hid++) {
+	for (hid = 0; hid < crypto_drivers_size; hid++) {
 		const struct cryptocap *cap = &crypto_drivers[hid];
 		if (cap->cc_dev == NULL)
 			continue;
@@ -1986,7 +1988,7 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 	    "Device", "Callback");
 	TAILQ_FOREACH(crp, &crp_q, crp_next) {
 		db_printf("%4u %08x %4u %4u %4u %04x %8p %8p\n"
-		    , (int) crypto_ses2hid(crp->crp_session)
+		    , crp->crp_session->cap->cc_hid,
 		    , (int) crypto_ses2caps(crp->crp_session)
 		    , crp->crp_ilen, crp->crp_olen
 		    , crp->crp_etype
@@ -2002,7 +2004,7 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 			TAILQ_FOREACH(crp, &ret_worker->crp_ret_q, crp_next) {
 				db_printf("%8td %4u %4u %04x %8p\n"
 				    , CRYPTO_RETW_ID(ret_worker)
-				    , (int) crypto_ses2hid(crp->crp_session)
+				    , crp->crp_session->cap->cc_hid,
 				    , crp->crp_etype
 				    , crp->crp_flags
 				    , crp->crp_callback
