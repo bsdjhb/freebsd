@@ -43,8 +43,9 @@ CODE {
  * @brief Probe to see if a crypto driver supports a session.
  *
  * The crypto framework invokes this method on each crypto driver when
- * creating a session to determine if the driver supports the
- * algorithms and mode requested by the session.
+ * creating a session for symmetric crypto operations to determine if
+ * the driver supports the algorithms and mode requested by the
+ * session.
  *
  * If the driver does not support a session with the requested
  * parameters, this function should fail with an error.
