@@ -71,7 +71,6 @@
 
 /* Some initial values */
 #define CRYPTO_DRIVERS_INITIAL	4
-#define CRYPTO_SW_SESSIONS	32
 
 /* Hash values */
 #define	NULL_HASH_LEN		16
