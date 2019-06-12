@@ -575,9 +575,10 @@ struct cryptkop {
 	u_short		krp_iparams;	/* # of input parameters */
 	u_short		krp_oparams;	/* # of output parameters */
 	u_int		krp_crid;	/* desired device, etc. */
-	u_int32_t	krp_hid;
+	uint32_t	krp_hid;	/* device used */
 	struct crparam	krp_param[CRK_MAXPARAM];	/* kvm */
 	int		(*krp_callback)(struct cryptkop *);
+	struct cryptocap *krp_cap;
 };
 
 uint32_t crypto_ses2hid(crypto_session_t crypto_session);
@@ -613,6 +614,8 @@ extern	int crypto_getfeat(int *);
 
 extern	void crypto_freereq(struct cryptop *crp);
 extern	struct cryptop *crypto_getreq(void);
+extern	void crypto_freekreq(struct cryptop *crp);
+extern	struct cryptkop *crypto_getkreq(uint32_t crid);
 
 extern	int crypto_usercrypto;		/* userland may do crypto requests */
 extern	int crypto_userasymcrypto;	/* userland may do asym crypto reqs */

@@ -1406,7 +1406,7 @@ cryptodev_key(struct crypt_kop *kop)
 		goto fail;
 	}
 	
-	kop->crk_crid = krp->krp_crid;		/* device that did the work */
+	kop->crk_crid = krp->krp_hid;		/* device that did the work */
 	if (krp->krp_status != 0) {
 		error = krp->krp_status;
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
