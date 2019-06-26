@@ -196,7 +196,6 @@ int raw_stdio = 0;
 static int gdb_port = 0;
 static int guest_vmexit_on_hlt, guest_vmexit_on_pause;
 static int virtio_msix = 1;
-static int x2apic_mode = 0;	/* default is xAPIC */
 static int destroy_on_poweroff = 0;
 
 static int strictio;
@@ -974,7 +973,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_PAUSE] = vmexit_pause;
         }
 
-	if (x2apic_mode)
+	if (get_config_bool_path("x2apic"))
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_ENABLED);
 	else
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_DISABLED);
@@ -1095,6 +1094,14 @@ parse_config_option(const char *option)
 	set_config_value_path(path, value + 1);
 }
 
+static void
+set_defaults(void)
+{
+
+	/* default is xAPIC */
+	set_config_value_path("x2apic", "false");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1115,6 +1122,7 @@ main(int argc, char *argv[])
 #endif
 
 	init_config();
+	set_defaults();
 	progname = basename(argv[0]);
 	gdb_stop = false;
 	guest_ncpus = 1;
@@ -1133,7 +1141,7 @@ main(int argc, char *argv[])
 	while ((c = getopt(argc, argv, optstr)) != -1) {
 		switch (c) {
 		case 'a':
-			x2apic_mode = 0;
+			set_config_value_path("x2apic", "false");
 			break;
 		case 'A':
 			acpi = 1;
@@ -1227,7 +1235,7 @@ main(int argc, char *argv[])
 			virtio_msix = 0;
 			break;
 		case 'x':
-			x2apic_mode = 1;
+			set_config_value_path("x2apic", "true");
 			break;
 		case 'Y':
 			mptgen = 0;
