@@ -1270,6 +1270,10 @@ main(int argc, char *argv[])
 
 	vmname = argv[0];
 #endif
+#if 1
+	dump_config();
+	exit(1);
+#endif
 	ctx = do_open(vmname);
 
 #ifdef BHYVE_SNAPSHOT
