@@ -66,6 +66,11 @@ const char *get_config_value(nvlist_t *parent, const char *name);
  */
 const char *get_config_value_path(const char *path);
 
+/*
+ * Fetches a config value and interprets it as a boolean.
+ */
+bool get_config_bool_path(const char *path);
+
 /* Initializes the tree to an empty state. */
 void	init_config(void);
 

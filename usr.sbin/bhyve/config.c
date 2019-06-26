@@ -294,6 +294,27 @@ get_config_value(nvlist_t *parent, const char *name)
 	return (expand_config_value(nvlist_get_string(parent, name)));
 }
 
+bool
+get_config_bool_path(const char *path)
+{
+	const char *value;
+
+	value = get_config_value_path(path);
+	if (value == NULL)
+		err(4, "Failed to fetch boolean variable %s", path);
+	if (strcasecmp(value, "true") == 0 ||
+	    strcasecmp(value, "on") == 0 ||
+	    strcasecmp(value, "yes") == 0 ||
+	    strcmp(value, "1") == 0)
+		return (true);
+	if (strcasecmp(value, "false") == 0 ||
+	    strcasecmp(value, "off") == 0 ||
+	    strcasecmp(value, "no") == 0 ||
+	    strcmp(value, "0") == 0)
+		return (false);
+	err(4, "Invalid value %s for boolean variable %s", value, path);
+}
+
 void
 dump_config(void)
 {
