@@ -28,6 +28,7 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include <assert.h>
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +55,7 @@ lookup_config_node(const char *path, bool create)
 
 	copy = strdup(path);
 	if (copy == NULL)
-		err(4, "Failed to allocate memory");
+		errx(4, "Failed to allocate memory");
 	tofree = copy;
 	nvl = config_root;
 	while ((name = strsep(&copy, ".")) != NULL) {
@@ -77,7 +78,7 @@ lookup_config_node(const char *path, bool create)
 		} else if (create) {
 			new_nvl = nvlist_create(0);
 			if (new_nvl == NULL)
-				err(4, "Failed to allocate memory");
+				errx(4, "Failed to allocate memory");
 			nvlist_add_nvlist(nvl, name, new_nvl);
 			nvl = new_nvl;
 		} else {
@@ -114,12 +115,12 @@ set_config_value_path(const char *path, const char *value)
 	/* Look for last separator. */
 	name = strrchr(path, '.');
 	if (name == NULL) {
-		nvl = NULL;
+		nvl = config_root;
 		name = path;
 	} else {
 		node_name = strndup(path, name - path);
 		if (node_name == NULL)
-			err(4, "Failed to allocate memory");
+			errx(4, "Failed to allocate memory");
 		nvl = lookup_config_node(node_name, true);
 		if (nvl == NULL)
 			errx(4,
@@ -147,12 +148,12 @@ get_raw_config_value(const char *path)
 	/* Look for last separator. */
 	name = strrchr(path, '.');
 	if (name == NULL) {
-		nvl = NULL;
+		nvl = config_root;
 		name = path;
 	} else {
 		node_name = strndup(path, name - path);
 		if (node_name == NULL)
-			err(4, "Failed to allocate memory");
+			errx(4, "Failed to allocate memory");
 		nvl = lookup_config_node(node_name, false);
 		free(node_name);
 		if (nvl == NULL)
@@ -165,7 +166,7 @@ get_raw_config_value(const char *path)
 	if (nvlist_exists_string(nvl, name))
 		return (nvlist_get_string(nvl, name));
 	if (nvlist_exists_nvlist(nvl, name))
-		warn("Attempting to fetch value of node %s", path);
+		warnx("Attempting to fetch value of node %s", path);
 	return (NULL);
 }
 
@@ -178,17 +179,15 @@ _expand_config_value(const char *value, int depth)
 	size_t valsize;
 
 	valfp = open_memstream(&valbuf, &valsize);
-	if (valfp == NULL) {
-		warn("Failed to allocate memory");
-		return (NULL);
-	}
+	if (valfp == NULL)
+		errx(4, "Failed to allocate memory");
 
 	vp = value;
 	while (*vp != '\0') {
 		switch (*vp) {
 		case '%':
 			if (depth > 15) {
-				warn(
+				warnx(
 		    "Too many recursive references in configuration value");
 				fputc('%', valfp);
 				vp++;
@@ -199,7 +198,7 @@ _expand_config_value(const char *value, int depth)
 			else
 				cp = strchr(vp + 2, ')');
 			if (cp == NULL) {
-				warn(
+				warnx(
 			    "Invalid reference in configuration value \"%s\"",
 				    value);
 				fputc('%', valfp);
@@ -209,7 +208,7 @@ _expand_config_value(const char *value, int depth)
 			vp += 2;
 
 			if (cp == vp) {
-				warn(
+				warnx(
 			    "Empty reference in configuration value \"%s\"",
 				    value);
 				vp++;
@@ -219,18 +218,19 @@ _expand_config_value(const char *value, int depth)
 			/* Allocate a C string holding the path. */
 			path = strndup(vp, cp - vp);
 			if (path == NULL)
-				err(4, "Failed to allocate memory");
+				errx(4, "Failed to allocate memory");
 
 			/* Advance 'vp' past the reference. */
 			vp = cp + 1;
 
 			/* Fetch the referenced value. */
-			nestedval = _expand_config_value(path, depth + 1);
-			if (nestedval == NULL)
-				warn(
+			cp = get_raw_config_value(path);
+			if (cp == NULL)
+				warnx(
 		    "Failed to fetch referenced configuration variable %s",
 				    path);
 			else {
+				nestedval = _expand_config_value(cp, depth + 1);
 				fputs(nestedval, valfp);
 				free(nestedval);
 			}
@@ -239,7 +239,7 @@ _expand_config_value(const char *value, int depth)
 		case '\\':
 			vp++;
 			if (*vp == '\0') {
-				warn(
+				warnx(
 			    "Trailing \\ in configuration value \"%s\"",
 				    value);
 				break;
@@ -283,6 +283,8 @@ const char *
 get_config_value(nvlist_t *parent, const char *name)
 {
 
+	if (parent == NULL)
+		parent = config_root;
 	if (nvlist_exists_nvlist(parent, name))
 		warnx("Attempt to fetch value of node %s of list %p", name,
 		    parent);
@@ -290,4 +292,39 @@ get_config_value(nvlist_t *parent, const char *name)
 		return (NULL);
 
 	return (expand_config_value(nvlist_get_string(parent, name)));
+}
+
+void
+dump_config(void)
+{
+	const nvlist_t *nvl;
+	void *cookie;
+	const char *name, *value;
+	unsigned int depth;
+	int type;
+
+	nvl = config_root;
+	cookie = NULL;
+	depth = 0;
+	for (;;) {
+		while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
+			printf("%*s%s", (int)(depth * 4), "", name);
+			if (type == NV_TYPE_NVLIST) {
+				depth++;
+				nvl = nvlist_get_nvlist(nvl, name);
+				cookie = NULL;
+			} else {
+				assert(type == NV_TYPE_STRING);
+				value = nvlist_get_string(nvl, name);
+				printf("=%s (%s)", value,
+				    expand_config_value(value));
+			}
+			printf("\n");
+		}
+
+		nvl = nvlist_get_parent(nvl, &cookie);
+		if (nvl == NULL)
+			break;
+		depth--;
+	}
 }

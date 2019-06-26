@@ -90,4 +90,6 @@ void	set_config_value(nvlist_t *parent, const char *name,
  */
 void	set_config_value_path(const char *path, const char *value);
 
+void	dump_config(void);
+
 #endif /* !__CONFIG_H__ */
