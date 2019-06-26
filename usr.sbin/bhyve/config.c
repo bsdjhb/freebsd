@@ -79,7 +79,7 @@ lookup_config_node(const char *path, bool create)
 			new_nvl = nvlist_create(0);
 			if (new_nvl == NULL)
 				errx(4, "Failed to allocate memory");
-			nvlist_add_nvlist(nvl, name, new_nvl);
+			nvlist_move_nvlist(nvl, name, new_nvl);
 			nvl = new_nvl;
 		} else {
 			nvl = NULL;
