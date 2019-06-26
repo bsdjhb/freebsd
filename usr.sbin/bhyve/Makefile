@@ -22,6 +22,7 @@ SRCS=	\
 	bhyverun.c		\
 	block_if.c		\
 	bootrom.c		\
+	config.c		\
 	console.c		\
 	ctl_util.c		\
 	ctl_scsi_all.c		\
@@ -83,7 +84,7 @@ CFLAGS.kernemu_dev.c+=	-I${SRCTOP}/sys/amd64
 .PATH:  ${BHYVE_SYSDIR}/sys/amd64/vmm
 SRCS+=	vmm_instruction_emul.c
 
-LIBADD=	vmmapi md pthread z util sbuf cam 9p
+LIBADD=	vmmapi md nd pthread z util sbuf cam 9p
 
 .if ${MK_CASPER} != "no"
 LIBADD+=	casper

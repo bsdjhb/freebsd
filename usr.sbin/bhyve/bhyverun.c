@@ -87,6 +87,7 @@ __FBSDID("$FreeBSD$");
 #include "acpi.h"
 #include "atkbdc.h"
 #include "bootrom.h"
+#include "config.h"
 #include "inout.h"
 #include "debug.h"
 #include "fwctl.h"
@@ -1096,6 +1097,7 @@ main(int argc, char *argv[])
 	restore_file = NULL;
 #endif
 
+	init_config();
 	progname = basename(argv[0]);
 	gdb_stop = false;
 	guest_ncpus = 1;
