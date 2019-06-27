@@ -69,6 +69,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/malloc.h>
 #include <sys/proc.h>
+#include <sys/refcount.h>
 #include <sys/sdt.h>
 #include <sys/smp.h>
 #include <sys/sysctl.h>
@@ -213,7 +214,6 @@ static	void crypto_ret_proc(struct crypto_ret_worker *ret_worker);
 static	void crypto_destroy(void);
 static	int crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint);
 static	int crypto_kinvoke(struct cryptkop *krp);
-static	void crypto_remove(struct cryptocap *cap);
 static	void crypto_task_invoke(void *ctx, int pending);
 static void crypto_batch_enqueue(struct cryptop *crp);
 
@@ -421,7 +421,7 @@ crypto_destroy(void)
 	/*
 	 * Reclaim dynamically allocated resources.
 	 */
-	for (i = 0; < crypto_drivers_size) {
+	for (i = 0; i < crypto_drivers_size; i++) {
 		if (crypto_drivers[i] != NULL)
 			cap_rele(crypto_drivers[i]);
 	}
@@ -468,30 +468,23 @@ crypto_checkdriver(u_int32_t hid)
 /*
  * Select a driver for a new session that supports the specified
  * algorithms and, optionally, is constrained according to the flags.
- * The algorithm we use here is pretty stupid; just use the
- * first driver that supports all the algorithms we need. If there
- * are multiple drivers we choose the driver with the fewest active
- * sessions.  We prefer hardware-backed drivers to software ones.
- *
- * XXX We need more smarts here (in real life too, but that's
- * XXX another story altogether).
  */
 static struct cryptocap *
 crypto_select_driver(const struct crypto_session_params *csp, int flags)
 {
 	struct cryptocap *cap, *best;
-	int best_match, error, hid, match;
+	int best_match, error, hid;
 
 	CRYPTO_DRIVER_ASSERT();
 
 	best = NULL;
 	for (hid = 0; hid < crypto_drivers_size; hid++) {
-		cap = crypto_drivers[hid];
 		/*
-		 * If it's not initialized, is in the process of
-		 * going away, or is not appropriate (hardware
-		 * or software based on match), then skip.
+		 * If there is no driver for this slot, or the driver
+		 * is not appropriate (hardware or software based on
+		 * match), then skip.
 		 */
+		cap = crypto_drivers[hid];
 		if (cap == NULL ||
 		    (cap->cc_flags & flags) == 0)
 			continue;
@@ -500,6 +493,12 @@ crypto_select_driver(const struct crypto_session_params *csp, int flags)
 		if (error >= 0)
 			continue;
 
+		/*
+		 * Use the driver with the highest probe value.
+		 * Hardware drivers use a higher probe value than
+		 * software.  In case of a tie, prefer the driver with
+		 * the fewest active sessions.
+		 */
 		if (best == NULL || error > best_match ||
 		    (error == best_match &&
 		    cap->cc_sessions < best->cc_sessions)) {
@@ -722,6 +721,28 @@ csp_sanity(const struct crypto_session_params *csp)
 #endif
 
 /*
+ * Delete a session after it has been detached from its driver.
+ */
+static void
+crypto_deletesession(crypto_session_t cses)
+{
+	struct cryptocap *cap;
+
+	cap = cses->cap;
+
+	explicit_bzero(cses->softc, cap->cc_session_size);
+	free(cses->softc, M_CRYPTO_DATA);
+	uma_zfree(cryptoses_zone, cses);
+
+	CRYPTO_DRIVER_LOCK();
+	cap->cc_sessions--;
+	if (cap->cc_sessions == 0 && cap->cc_flags & CRYPTOCAP_F_CLEANUP)
+		wakeup(cap);
+	CRYPTO_DRIVER_UNLOCK();
+	cap_rele(cap);
+}
+
+/*
  * Create a new session.  The crid argument specifies a crypto
  * driver to use or constraints on a driver to select (hardware
  * only, software only, either).  Whatever driver is selected
@@ -732,7 +753,6 @@ crypto_newsession(crypto_session_t *cses,
     const struct crypto_session_params *csp, int crid)
 {
 	crypto_session_t res;
-	void *softc_mem;
 	struct cryptocap *cap;
 	int err;
 
@@ -776,15 +796,7 @@ crypto_newsession(crypto_session_t *cses,
 	err = CRYPTODEV_NEWSESSION(cap->cc_dev, res, csp);
 	if (err != 0) {
 		CRYPTDEB("dev newsession failed: %d", err);
-
-		explicit_bzero(cses->softc, cap->cc_session_size);
-		free(res->softc, M_CRYPTO_DATA);
-		uma_zfree(cryptoses_zone, res);
-
-		CRYPTO_DRIVER_LOCK();
-		cap->cc_sessions--;
-		CRYPTO_DRIVER_UNLOCK();
-		cap_rele(cap);
+		crypto_deletesession(res);
 		return (err);
 	}
 
@@ -800,9 +812,6 @@ void
 crypto_freesession(crypto_session_t cses)
 {
 	struct cryptocap *cap;
-	void *ses;
-	size_t ses_size;
-	u_int32_t hid;
 
 	if (cses == NULL)
 		return;
@@ -812,16 +821,7 @@ crypto_freesession(crypto_session_t cses)
 	/* Call the driver cleanup routine, if available. */
 	CRYPTODEV_FREESESSION(cap->cc_dev, cses);
 
-	explicit_bzero(cses->softc, cap->cc_session_size);
-	free(cses->softc, M_CRYPTO_DATA);
-	uma_zfree(cryptoses_zone, cses);
-
-	CRYPTO_DRIVER_LOCK();
-	cap->cc_sessions--;
-	if (cap->cc_sessions == 0 && cap->cc_flags & CRYPTOCAP_F_CLEANUP)
-		wakeup(cap);
-	CRYPTO_DRIVER_UNLOCK();
-	cap_rele(cap);
+	crypto_deletesession(cses);
 }
 
 /*
@@ -869,7 +869,7 @@ crypto_get_driverid(device_t dev, size_t sessionsize, int flags)
 		    sizeof(*crypto_drivers), M_CRYPTO_DATA, M_WAITOK | M_ZERO);
 
 		CRYPTO_DRIVER_LOCK();
-		memcpy(newdrv, cryptodrivers,
+		memcpy(newdrv, crypto_drivers,
 		    crypto_drivers_size * sizeof(*crypto_drivers));
 
 		crypto_drivers_size *= 2;
@@ -1171,7 +1171,6 @@ int
 crypto_dispatch(struct cryptop *crp)
 {
 	struct cryptocap *cap;
-	u_int32_t hid;
 	int result;
 
 #ifdef INVARIANTS
@@ -1298,12 +1297,12 @@ crypto_select_kdriver(const struct cryptkop *krp, int flags)
 	best = NULL;
 again:
 	for (hid = 0; hid < crypto_drivers_size; hid++) {
-		cap = &crypto_drivers[hid];
 		/*
-		 * If it's not initialized, is in the process of
-		 * going away, or is not appropriate (hardware
-		 * or software based on match), then skip.
+		 * If there is no driver for this slot, or the driver
+		 * is not appropriate (hardware or software based on
+		 * match), then skip.
 		 */
+		cap = crypto_drivers[hid];
 		if (cap->cc_dev == NULL ||
 		    (cap->cc_flags & match) == 0)
 			continue;
@@ -1378,7 +1377,6 @@ static int
 crypto_kinvoke(struct cryptkop *krp)
 {
 	struct cryptocap *cap = NULL;
-	uint32_t crid;
 	int error;
 
 	KASSERT(krp != NULL, ("%s: krp == NULL", __func__));
@@ -1733,7 +1731,6 @@ crypto_proc(void)
 	struct cryptop *crp, *submit;
 	struct cryptkop *krp;
 	struct cryptocap *cap;
-	u_int32_t hid;
 	int result, hint;
 
 #if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
@@ -1773,7 +1770,7 @@ crypto_proc(void)
 					 * better to just use a per-driver
 					 * queue instead.
 					 */
-					if (submit->crp_session->cap) == cap)
+					if (submit->crp_session->cap == cap)
 						hint = CRYPTO_HINT_MORE;
 					break;
 				} else {
@@ -1827,7 +1824,7 @@ crypto_proc(void)
 		if (krp != NULL) {
 			TAILQ_REMOVE(&crp_kq, krp, krp_next);
 			CRYPTO_Q_UNLOCK();
-			result = crypto_kinvoke(krp, krp->krp_hid);
+			result = crypto_kinvoke(krp);
 			CRYPTO_Q_LOCK();
 			if (result == ERESTART) {
 				/*
@@ -1961,8 +1958,8 @@ db_show_drivers(void)
 		, "KB"
 	);
 	for (hid = 0; hid < crypto_drivers_size; hid++) {
-		const struct cryptocap *cap = &crypto_drivers[hid];
-		if (cap->cc_dev == NULL)
+		const struct cryptocap *cap = crypto_drivers[hid];
+		if (cap == NULL)
 			continue;
 		db_printf("%-12s %4u %4u %08x %2u %2u\n"
 		    , device_get_nameunit(cap->cc_dev)
@@ -1988,12 +1985,12 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 	    "Device", "Callback");
 	TAILQ_FOREACH(crp, &crp_q, crp_next) {
 		db_printf("%4u %08x %4u %4u %4u %04x %8p %8p\n"
-		    , crp->crp_session->cap->cc_hid,
+		    , crp->crp_session->cap->cc_hid
 		    , (int) crypto_ses2caps(crp->crp_session)
 		    , crp->crp_ilen, crp->crp_olen
 		    , crp->crp_etype
 		    , crp->crp_flags
-		    , device_get_nameunit(crp->crp_session->parent)
+		    , device_get_nameunit(crp->crp_session->cap->cc_dev)
 		    , crp->crp_callback
 		);
 	}
@@ -2004,7 +2001,7 @@ DB_SHOW_COMMAND(crypto, db_show_crypto)
 			TAILQ_FOREACH(crp, &ret_worker->crp_ret_q, crp_next) {
 				db_printf("%8td %4u %4u %04x %8p\n"
 				    , CRYPTO_RETW_ID(ret_worker)
-				    , crp->crp_session->cap->cc_hid,
+				    , crp->crp_session->cap->cc_hid
 				    , crp->crp_etype
 				    , crp->crp_flags
 				    , crp->crp_callback
