@@ -199,8 +199,6 @@ static int destroy_on_poweroff = 0;
 static int strictio;
 static int strictmsr = 1;
 
-static int acpi;
-
 static char *progname;
 static const int BSP = 0;
 
@@ -1125,6 +1123,7 @@ set_defaults(void)
 
 	/* default is xAPIC */
 	set_config_bool("x2apic", false);
+	set_config_bool("acpi_tables", false);
 }
 
 int
@@ -1170,7 +1169,7 @@ main(int argc, char *argv[])
 			set_config_bool("x2apic", false);
 			break;
 		case 'A':
-			acpi = 1;
+			set_config_bool("acpi_tables", true);
 			break;
 		case 'D':
 			destroy_on_poweroff = 1;
@@ -1433,7 +1432,7 @@ main(int argc, char *argv[])
 	error = smbios_build(ctx);
 	assert(error == 0);
 
-	if (acpi) {
+	if (get_config_bool("acpi_tables")) {
 		error = acpi_build(ctx, guest_ncpus);
 		assert(error == 0);
 	}
