@@ -598,8 +598,10 @@ extern	int32_t crypto_get_driverid(device_t dev, size_t session_size,
 extern	int crypto_find_driver(const char *);
 extern	device_t crypto_find_device_byhid(int hid);
 extern	int crypto_getcaps(int hid);
+#if 0
 extern	int crypto_register(u_int32_t driverid, int alg, u_int16_t maxoplen,
 	    u_int32_t flags);
+#endif
 extern	int crypto_kregister(u_int32_t, int, u_int32_t);
 extern	int crypto_unregister(u_int32_t driverid, int alg);
 extern	int crypto_unregister_all(u_int32_t driverid);
