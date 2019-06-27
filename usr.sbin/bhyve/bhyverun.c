@@ -184,8 +184,6 @@ static const char * const vmx_exit_reason_desc[] = {
 typedef int (*vmexit_handler_t)(struct vmctx *, struct vm_exit *, int *vcpu);
 extern int vmexit_task_switch(struct vmctx *, struct vm_exit *, int *vcpu);
 
-const char *vmname;
-
 int guest_ncpus;
 uint16_t cores, maxcpus, sockets, threads;
 
@@ -239,7 +237,7 @@ usage(int code)
 		"Usage: %s [-aehuwxACDHPSWY]\n"
 		"       %*s [-c [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]]\n"
 		"       %*s [-l <lpc>]\n"
-		"       %*s [-m mem] [-p vcpu:hostcpu] [-s <pci>] [-U uuid] <vm>\n"
+		"       %*s [-m mem] [-p vcpu:hostcpu] [-s <pci>] [-U uuid] [<vm>]\n"
 		"       -a: local apic is in xAPIC mode (deprecated)\n"
 		"       -A: create ACPI tables\n"
 		"       -c: number of cpus and/or topology specification\n"
@@ -1137,6 +1135,7 @@ main(int argc, char *argv[])
 	struct vmctx *ctx;
 	uint64_t rip;
 	size_t memsize;
+	const char *vmname;
 	char *optstr;
 #ifdef BHYVE_SNAPSHOT
 	char *restore_file;
@@ -1278,10 +1277,10 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-#ifdef BHYVE_SNAPSHOT
-	if (argc > 1 || (argc == 0 && restore_file == NULL))
+	if (argc > 1)
 		usage(1);
 
+#ifdef BHYVE_SNAPSHOT
 	if (restore_file != NULL) {
 		error = load_restore_file(restore_file, &rstate);
 		if (error) {
@@ -1289,24 +1288,18 @@ main(int argc, char *argv[])
 					"file: '%s'.\n", restore_file);
 			exit(1);
 		}
-	}
-
-	if (argc == 1) {
-		vmname = argv[0];
-	} else {
 		vmname = lookup_vmname(&rstate);
-		if (vmname == NULL) {
-			fprintf(stderr, "Cannot find VM name in restore file. "
-					"Please specify one.\n");
-			exit(1);
-		}
+		if (vmname != NULL)
+			set_config_value_path("name", vmname);
 	}
-#else
-	if (argc != 1)
-		usage(1);
-
-	vmname = argv[0];
 #endif
+
+	if (argc == 1)
+		set_config_value_path("name", argv[0]);
+
+	vmname = get_config_value_path("name");
+	if (vmname == NULL)
+		usage(1);
 #if 1
 	dump_config();
 	exit(1);

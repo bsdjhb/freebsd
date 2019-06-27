@@ -43,6 +43,7 @@ __FBSDID("$FreeBSD$");
 #include <vmmapi.h>
 
 #include "bhyverun.h"
+#include "config.h"
 #include "debug.h"
 #include "smbiostbl.h"
 
@@ -606,6 +607,7 @@ smbios_type1_initializer(struct smbios_structure *template_entry,
 		MD5_CTX		mdctx;
 		u_char		digest[16];
 		char		hostname[MAXHOSTNAMELEN];
+		const char	*vmname;
 
 		/*
 		 * Universally unique and yet reproducible are an
@@ -616,6 +618,7 @@ smbios_type1_initializer(struct smbios_structure *template_entry,
 			return (-1);
 
 		MD5Init(&mdctx);
+		vmname = get_config_value_path("name");
 		MD5Update(&mdctx, vmname, strlen(vmname));
 		MD5Update(&mdctx, hostname, sizeof(hostname));
 		MD5Final(digest, &mdctx);
