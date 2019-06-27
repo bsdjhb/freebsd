@@ -316,6 +316,13 @@ get_config_bool_path(const char *path)
 }
 
 void
+set_config_bool(const char *path, bool value)
+{
+
+	set_config_value_path(path, value ? "true" : "false");
+}
+
+void
 dump_config(void)
 {
 	const nvlist_t *nvl;
