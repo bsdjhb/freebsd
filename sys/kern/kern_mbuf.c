@@ -895,7 +895,6 @@ mb_unmapped_compress(struct mbuf *m)
 	KASSERT((m->m_flags & M_PKTHDR) == 0 && (m->m_flags & M_EXT) &&
 	    m->m_ext.ext_type == EXT_PGS,
             ("%s: m %p !M_EXT or !EXT_PGS or M_PKTHDR", __func__, m));
-	KASSERT(m->m_data == 0, ("m_data != 0 %p", m));
 	KASSERT(m->m_len <= MLEN, ("m_len too large %p", m));
 
 	if (m->m_ext.ext_flags & EXT_FLAG_EMBREF) {
@@ -910,9 +909,9 @@ mb_unmapped_compress(struct mbuf *m)
 		return (EBUSY);
 
 	/*
-	 * Copy m_ext portion of 'm' to 'm_temp' to create a "fake"
-	 * EXT_PGS mbuf that can be used with m_copydata() as well as
-	 * the ext_free callback.
+	 * Copy mbuf header and m_ext portion of 'm' to 'm_temp' to
+	 * create a "fake" EXT_PGS mbuf that can be used with
+	 * m_copydata() as well as the ext_free callback.
 	 */
 	memcpy(&m_temp, m, offsetof(struct mbuf, m_ext) + sizeof (m->m_ext));
 	m_temp.m_next = NULL;
