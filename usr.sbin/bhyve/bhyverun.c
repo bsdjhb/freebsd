@@ -973,7 +973,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_PAUSE] = vmexit_pause;
         }
 
-	if (get_config_bool_path("x2apic"))
+	if (get_config_bool("x2apic"))
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_ENABLED);
 	else
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_DISABLED);
@@ -1089,7 +1089,7 @@ parse_config_option(const char *option)
 	path = strndup(option, value - option);
 	if (path == NULL)
 		err(4, "Failed to allocate memory");
-	set_config_value_path(path, value + 1);
+	set_config_value(path, value + 1);
 	return (true);
 }
 
@@ -1297,9 +1297,9 @@ main(int argc, char *argv[])
 #endif
 
 	if (argc == 1)
-		set_config_value_path("name", argv[0]);
+		set_config_value("name", argv[0]);
 
-	vmname = get_config_value_path("name");
+	vmname = get_config_value("name");
 	if (vmname == NULL)
 		usage(1);
 #if 1

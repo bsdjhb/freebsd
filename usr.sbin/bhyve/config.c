@@ -91,7 +91,7 @@ lookup_config_node(const char *path, bool create)
 }
 
 void
-set_config_value(nvlist_t *parent, const char *name, const char *value)
+set_config_value_node(nvlist_t *parent, const char *name, const char *value)
 {
 
 	if (parent == NULL)
@@ -106,7 +106,7 @@ set_config_value(nvlist_t *parent, const char *name, const char *value)
 }
 
 void
-set_config_value_path(const char *path, const char *value)
+set_config_value(const char *path, const char *value)
 {
 	const char *name;
 	char *node_name;
@@ -135,7 +135,7 @@ set_config_value_path(const char *path, const char *value)
 	if (nvlist_exists_nvlist(nvl, name))
 		errx(4, "Attempting to add value %s to existing node %s",
 		    value, path);
-	set_config_value(nvl, name, value);
+	set_config_value_node(nvl, name, value);
 }
 
 static const char *
@@ -269,7 +269,7 @@ expand_config_value(const char *value)
 }
 
 const char *
-get_config_value_path(const char *path)
+get_config_value(const char *path)
 {
 	const char *value;
 
@@ -280,7 +280,7 @@ get_config_value_path(const char *path)
 }
 
 const char *
-get_config_value(nvlist_t *parent, const char *name)
+get_config_value_node(nvlist_t *parent, const char *name)
 {
 
 	if (parent == NULL)
@@ -295,11 +295,11 @@ get_config_value(nvlist_t *parent, const char *name)
 }
 
 bool
-get_config_bool_path(const char *path)
+get_config_bool(const char *path)
 {
 	const char *value;
 
-	value = get_config_value_path(path);
+	value = get_config_value(path);
 	if (value == NULL)
 		err(4, "Failed to fetch boolean variable %s", path);
 	if (strcasecmp(value, "true") == 0 ||
@@ -319,7 +319,7 @@ void
 set_config_bool(const char *path, bool value)
 {
 
-	set_config_value_path(path, value ? "true" : "false");
+	set_config_value(path, value ? "true" : "false");
 }
 
 void

@@ -618,7 +618,7 @@ smbios_type1_initializer(struct smbios_structure *template_entry,
 			return (-1);
 
 		MD5Init(&mdctx);
-		vmname = get_config_value_path("name");
+		vmname = get_config_value("name");
 		MD5Update(&mdctx, vmname, strlen(vmname));
 		MD5Update(&mdctx, hostname, sizeof(hostname));
 		MD5Final(digest, &mdctx);

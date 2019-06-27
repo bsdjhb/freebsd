@@ -58,18 +58,13 @@
  *
  * If 'parent' is NULL, 'name' is assumed to be a top-level variable.
  */
-const char *get_config_value(nvlist_t *parent, const char *name);
+const char *get_config_value_node(nvlist_t *parent, const char *name);
 
 /*
- * Similar to get_config_value but expects a full path to the leaf
- * node.
+ * Similar to get_config_value_node but expects a full path to the
+ * leaf node.
  */
-const char *get_config_value_path(const char *path);
-
-/*
- * Fetches a config value and interprets it as a boolean.
- */
-bool get_config_bool_path(const char *path);
+const char *get_config_value(const char *path);
 
 /* Initializes the tree to an empty state. */
 void	init_config(void);
@@ -86,18 +81,17 @@ nvlist_t *lookup_config_node(const char *path, bool create);
  *
  * If 'parent' is NULL, 'name' is assumed to be a top-level variable.
  */
-void	set_config_value(nvlist_t *parent, const char *name,
+void	set_config_value_node(nvlist_t *parent, const char *name,
     const char *value);
 
 /*
- * Similar to add_config_node but expects a full path to the leaf
- * node.
+ * Similar to set_config_value_node but expects a full path to the
+ * leaf node.
  */
-void	set_config_value_path(const char *path, const char *value);
+void	set_config_value(const char *path, const char *value);
 
-/*
- * Sets a configuration variable to "true" or "false".
- */
+/* Convenience wrappers for boolean variables. */
+bool	get_config_bool(const char *path);
 void	set_config_bool(const char *path, bool value);
 
 void	dump_config(void);

@@ -108,7 +108,7 @@ net_genmac(struct pci_devinst *pi, uint8_t *macaddr)
 	char nstr[80];
 
 	snprintf(nstr, sizeof(nstr), "%d-%d-%s", pi->pi_slot,
-	    pi->pi_func, get_config_value_path("name"));
+	    pi->pi_func, get_config_value("name"));
 
 	MD5Init(&mdctx);
 	MD5Update(&mdctx, nstr, (unsigned int)strlen(nstr));
