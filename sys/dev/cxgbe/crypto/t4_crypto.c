@@ -2068,22 +2068,6 @@ ccr_attach(device_t dev)
 	sc->sg_iv_aad = sglist_build(sc->iv_aad_buf, MAX_AAD_LEN, M_WAITOK);
 	ccr_sysctls(sc);
 
-	crypto_register(cid, CRYPTO_SHA1, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_224, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_256, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_384, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_512, 0, 0);
-	crypto_register(cid, CRYPTO_SHA1_HMAC, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_224_HMAC, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_256_HMAC, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_384_HMAC, 0, 0);
-	crypto_register(cid, CRYPTO_SHA2_512_HMAC, 0, 0);
-	crypto_register(cid, CRYPTO_AES_CBC, 0, 0);
-	crypto_register(cid, CRYPTO_AES_ICM, 0, 0);
-	crypto_register(cid, CRYPTO_AES_NIST_GCM_16, 0, 0);
-	crypto_register(cid, CRYPTO_AES_XTS, 0, 0);
-	crypto_register(cid, CRYPTO_AES_CCM_16, 0, 0);
-	crypto_register(cid, CRYPTO_AES_CCM_CBC_MAC, 0, 0);
 	return (0);
 }
 
@@ -2220,6 +2204,127 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	    V_KEY_CONTEXT_MK_SIZE(mk_size) | V_KEY_CONTEXT_VALID(1));
 }
 
+static bool
+ccr_auth_supported(const struct crypto_session_params *csp)
+{
+	
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_SHA1:
+	case CRYPTO_SHA2_224:
+	case CRYPTO_SHA2_256:
+	case CRYPTO_SHA2_384:
+	case CRYPTO_SHA2_512:
+		if (csp->csp_auth_key != NULL)
+			return (false);
+		return (true);
+	case CRYPTO_SHA1_HMAC:
+	case CRYPTO_SHA2_224_HMAC:
+	case CRYPTO_SHA2_256_HMAC:
+	case CRYPTO_SHA2_384_HMAC:
+	case CRYPTO_SHA2_512_HMAC:
+		if (csp->csp_auth_key == NULL)
+			return (false);
+		return (true);
+	default:
+		return (false);
+	}
+}
+
+static bool
+ccr_cipher_supported(const struct crypto_session_params *csp)
+{
+	unsigned int cipher_mode;
+
+	switch (csp->csp_cipher_alg) {
+	case CRYPTO_AES_CBC:
+		if (csp->csp_ivlen != AES_BLOCK_LEN)
+			return (false);
+		cipher_mode = SCMD_CIPH_MODE_AES_CBC;
+		break;
+	case CRYPTO_AES_ICM:
+		if (csp->csp_ivlen != AES_BLOCK_LEN)
+			return (false);
+		cipher_mode = SCMD_CIPH_MODE_AES_CTR;
+		break;
+	case CRYPTO_AES_XTS:
+		if (csp->csp_ivlen != AES_XTS_IV_LEN)
+			return (false);
+		cipher_mode = SCMD_CIPH_MODE_AES_XTS;
+		break;
+	default:
+		return (false);
+	}
+	return (true);
+}
+
+static int
+ccr_cipher_mode(const struct crypto_session_params *csp)
+{
+
+	switch (csp->csp_cipher_alg) {
+	case CRYPTO_AES_CBC:
+		return (SCMD_CIPH_MODE_AES_CBC);
+	case CRYPTO_AES_ICM:
+		return (SCMD_CIPH_MODE_AES_CTR);
+	case CRYPTO_AES_NIST_GCM_16:
+		return (SCMD_CIPH_MODE_AES_GCM);
+	case CRYPTO_AES_XTS:
+		return (SCMD_CIPH_MODE_AES_XTS);
+	case CRYPTO_AES_CCM_16:
+		return (SCMD_CIPH_MODE_AES_CCM);
+	default:
+		return (SCMD_CIPH_MODE_NOP);
+	}
+}
+
+static int
+ccr_probesession(device_t dev, const struct crypto_session_params *csp)
+{
+	unsigned int cipher_mode;
+	int error;
+
+	switch (csp->csp_mode) {
+	case CSP_MODE_DIGEST:
+		if (!ccr_auth_supported(csp))
+			return (EINVAL);
+		break;
+	case CSP_MODE_CIPHER:
+		if (!ccr_cipher_supported(csp))
+			return (EINVAL);
+		break;
+	case CSP_MODE_AEAD:
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+			if (csp->csp_ivlen != AES_GCM_IV_LEN)
+				return (EINVAL);
+			break;
+		case CRYPTO_AES_CCM_16:
+			if (csp->csp_ivlen != AES_CCM_IV_LEN)
+				return (EINVAL);
+			break;
+		default:
+			return (EINVAL);
+		}
+	case CSP_MODE_ETA:
+		if (!ccr_auth_supported(csp) || !ccr_cipher_supported(csp))
+			return (EINVAL);
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	if (csp->csp_cipher_key != NULL) {
+		cipher_mode = ccr_cipher_mode(csp);
+		if (cipher_mode == SCMD_CIPH_MODE_NOP)
+			return (EINVAL);
+		error = ccr_aes_check_keylen(cipher_mode, csp->csp_cipher_klen);
+		if (error)
+			return (error);
+	}
+
+	return (CRYPTODEV_PROBE_HARDWARE);
+}
+
 static int
 ccr_newsession(device_t dev, crypto_session_t cses,
     const struct crypto_session_params *csp)
@@ -2227,21 +2332,11 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 	struct ccr_softc *sc;
 	struct ccr_session *s;
 	struct auth_hash *auth_hash;
-	unsigned int auth_mode, cipher_mode, iv_len, mk_size;
+	unsigned int auth_mode, cipher_mode, mk_size;
 	unsigned int partial_digest_len;
 	int error;
-	bool hmac;
 
-	iv_len = csp->csp_ivlen;
-
-	hmac = false;
 	switch (csp->csp_auth_alg) {
-	case 0:
-		auth_hash = NULL;
-		auth_mode = SCMD_AUTH_MODE_NOP;
-		mk_size = 0;
-		partial_digest_len = 0;
-		break;
 	case CRYPTO_SHA1:
 	case CRYPTO_SHA1_HMAC:
 		auth_hash = &auth_hash_hmac_sha1;
@@ -2278,56 +2373,19 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		partial_digest_len = SHA2_512_HASH_LEN;
 		break;
 	default:
-		return (EINVAL);
-	}
-
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_SHA1_HMAC:
-	case CRYPTO_SHA2_224_HMAC:
-	case CRYPTO_SHA2_256_HMAC:
-	case CRYPTO_SHA2_384_HMAC:
-	case CRYPTO_SHA2_512_HMAC:
-		hmac = true;
+		auth_hash = NULL;
+		auth_mode = SCMD_AUTH_MODE_NOP;
+		mk_size = 0;
+		partial_digest_len = 0;
 		break;
 	}
 
-	switch (csp->csp_cipher_alg) {
-	case 0:
-		cipher_mode = SCMD_CIPH_MODE_NOP;
-		break;
-	case CRYPTO_AES_CBC:
-		cipher_mode = SCMD_CIPH_MODE_AES_CBC;
-		if (iv_len != AES_BLOCK_LEN)
-			return (EINVAL);
-		break;
-	case CRYPTO_AES_ICM:
-		cipher_mode = SCMD_CIPH_MODE_AES_CTR;
-		if (iv_len != AES_BLOCK_LEN)
-			return (EINVAL);
-		break;
-	case CRYPTO_AES_NIST_GCM_16:
-		cipher_mode = SCMD_CIPH_MODE_AES_GCM;
-		if (iv_len != AES_GCM_IV_LEN)
-			return (EINVAL);
-		break;
-	case CRYPTO_AES_XTS:
-		cipher_mode = SCMD_CIPH_MODE_AES_XTS;
-		if (iv_len != AES_XTS_IV_LEN)
-			return (EINVAL);
-		break;
-	case CRYPTO_AES_CCM_16:
-		cipher_mode = SCMD_CIPH_MODE_AES_CCM;
-		if (iv_len != AES_CCM_IV_LEN)
-			return (EINVAL);
-		break;
-	default:
-		return (EINVAL);
-	}
+	cipher_mode = ccr_cipher_mode(csp);
 
-	if (csp->csp_cipher_alg != 0 && csp->csp_cipher_key != NULL) {
+#ifdef INVARIANTS
+	if (csp->csp_cipher_key != NULL) {
 		error = ccr_aes_check_keylen(cipher_mode, csp->csp_cipher_klen);
-		if (error)
-			return (error);
+		KASSERT(error == 0, ("bad cipher key length"));
 	}
 
 	switch (csp->csp_mode) {
@@ -2335,33 +2393,31 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		if (cipher_mode == SCMD_CIPH_MODE_NOP ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_GCM ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_CCM)
-			return (EINVAL);
+			panic("invalid cipher algo");
 		break;
 	case CSP_MODE_DIGEST:
 		if (auth_mode == SCMD_AUTH_MODE_NOP)
-			return (EINVAL);
+			panic("invalid auth algo");
 		break;
 	case CSP_MODE_AEAD:
 		if (cipher_mode != SCMD_CIPH_MODE_AES_GCM &&
 		    cipher_mode != SCMD_CIPH_MODE_AES_CCM)
-			return (EINVAL);
+			panic("invalid aead cipher algo");
 		if (auth_mode != SCMD_AUTH_MODE_NOP)
-			return (EINVAL);
+			panic("invalid aead auth aglo");
 		break;
 	case CSP_MODE_ETA:
 		if (cipher_mode == SCMD_CIPH_MODE_NOP ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_GCM ||
 		    cipher_mode == SCMD_CIPH_MODE_AES_CCM)
-			return (EINVAL);
+			panic("invalid cipher algo");
 		if (auth_mode == SCMD_AUTH_MODE_NOP)
-			return (EINVAL);
+			panic("invalid auth algo");
 		break;
 	default:
-		return (EINVAL);
+		panic("invalid csp mode");
 	}
-
-	if (hmac && csp->csp_auth_key == NULL)
-		return (EINVAL);
+#endif
 
 	sc = device_get_softc(dev);
 
@@ -2393,7 +2449,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		s->mode = AUTHENC;
 		break;
 	case CSP_MODE_DIGEST:
-		if (hmac)
+		if (csp->csp_auth_key != NULL)
 			s->mode = HMAC;
 		else
 			s->mode = HASH;
@@ -2424,7 +2480,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 			s->hmac.hash_len = auth_hash->hashsize;
 		else
 			s->hmac.hash_len = csp->csp_auth_mlen;
-		if (hmac)
+		if (csp->csp_auth_key != NULL)
 			t4_init_hmac_digest(auth_hash, partial_digest_len,
 			    csp->csp_auth_key, csp->csp_auth_klen,
 			    s->hmac.pads);
@@ -2433,7 +2489,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 	}
 	if (cipher_mode != SCMD_CIPH_MODE_NOP) {
 		s->blkcipher.cipher_mode = cipher_mode;
-		s->blkcipher.iv_len = iv_len;
+		s->blkcipher.iv_len = csp->csp_ivlen;
 		if (csp->csp_cipher_key != NULL)
 			ccr_aes_setkey(s, csp->csp_cipher_key,
 			    csp->csp_cipher_klen);
@@ -2685,6 +2741,7 @@ static device_method_t ccr_methods[] = {
 	DEVMETHOD(device_attach,	ccr_attach),
 	DEVMETHOD(device_detach,	ccr_detach),
 
+	DEVMETHOD(cryptodev_probesession, ccr_probesession),
 	DEVMETHOD(cryptodev_newsession,	ccr_newsession),
 	DEVMETHOD(cryptodev_freesession, ccr_freesession),
 	DEVMETHOD(cryptodev_process,	ccr_process),
