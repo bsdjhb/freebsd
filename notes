@@ -53,6 +53,10 @@ session and crypto op parameters.
   - maybe need "priority" and a "session probe/test" instead of just
     "newsession"
 
+- Add a reference count on sessions
+  - crypto_getop would take a session pointer and set crp_session along
+    with bumping refcount now
+
 - Kill the UIO usage in cryptodev.c, it's silly (done)
 
 - GCM IV length is kind of busted, perhaps need IV length as part of crp
