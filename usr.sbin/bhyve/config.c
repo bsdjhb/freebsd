@@ -327,7 +327,7 @@ dump_config(void)
 {
 	const nvlist_t *nvl;
 	void *cookie;
-	const char *name, *value;
+	const char *name, *value, *expval;
 	unsigned int depth;
 	int type;
 
@@ -344,8 +344,10 @@ dump_config(void)
 			} else {
 				assert(type == NV_TYPE_STRING);
 				value = nvlist_get_string(nvl, name);
-				printf("=%s (%s)", value,
-				    expand_config_value(value));
+				printf("=%s", value);
+				expval = expand_config_value(value);
+				if (strcmp(value, expval) != 0)
+					printf(" (%s)", expval);
 			}
 			printf("\n");
 		}
