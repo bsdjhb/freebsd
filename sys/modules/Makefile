@@ -127,7 +127,6 @@ SUBDIR=	\
 	${_glxiic} \
 	${_glxsb} \
 	gpio \
-	hifn \
 	hme \
 	${_hpt27xx} \
 	${_hptiop} \
@@ -195,7 +194,6 @@ SUBDIR=	\
 	jme \
 	kbdmux \
 	kgssapi \
-	kgssapi_krb5 \
 	khelp \
 	krpc \
 	ksyms \
@@ -354,7 +352,6 @@ SUBDIR=	\
 	twe \
 	tws \
 	uart \
-	ubsec \
 	udf \
 	udf_iconv \
 	ufs \
@@ -388,6 +385,12 @@ SUBDIR=	\
 	xl \
 	xz \
 	zlib
+
+# XXX: Disabled in this branch until ported
+XXX=	\
+	hifn \
+	kgssapi_krb5 \
+	ubsec \
 
 .if ${MK_AUTOFS} != "no" || defined(ALL_MODULES)
 _autofs=	autofs
@@ -608,7 +611,7 @@ _pccard=	pccard
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _rdma=		rdma
 .endif
-_safe=		safe
+#_safe=		safe
 _speaker=	speaker
 _splash=	splash
 _sppp=		sppp
@@ -621,7 +624,7 @@ _aacraid=	aacraid
 _acpi=		acpi
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
 .if ${COMPILER_TYPE} != "gcc" || ${COMPILER_VERSION} > 40201
-_aesni=		aesni
+#_aesni=		aesni
 .endif
 .endif
 _amd_ecc_inject=amd_ecc_inject
@@ -631,7 +634,7 @@ _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
-_blake2=	blake2
+#_blake2=	blake2
 .endif
 _bytgpio=	bytgpio
 _chvgpio=	chvgpio
@@ -672,7 +675,7 @@ _nvd=		nvd
 _nvme=		nvme
 _nvram=		nvram
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
-_padlock=	padlock
+#_padlock=	padlock
 _padlock_rng=	padlock_rng
 _rdrand_rng=	rdrand_rng
 .endif
@@ -693,7 +696,7 @@ _x86bios=	x86bios
 
 .if ${MACHINE_CPUARCH} == "amd64"
 _amdgpio=	amdgpio
-_ccp=		ccp
+#_ccp=		ccp
 _efirt=		efirt
 _iavf=		iavf
 _ioat=		ioat
