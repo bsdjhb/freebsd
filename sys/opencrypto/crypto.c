@@ -80,7 +80,6 @@ __FBSDID("$FreeBSD$");
 #include <vm/uma.h>
 #include <crypto/intake.h>
 #include <opencrypto/cryptodev.h>
-#include <opencrypto/xform.h>			/* XXX for M_XDATA */
 
 #include <sys/kobj.h>
 #include <sys/bus.h>
