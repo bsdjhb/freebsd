@@ -1124,6 +1124,8 @@ set_defaults(void)
 	/* default is xAPIC */
 	set_config_bool("x2apic", false);
 	set_config_bool("acpi_tables", false);
+	set_config_bool("memory.guest_in_core", false);
+	set_config_bool("memory.wired", false);
 }
 
 int
@@ -1156,7 +1158,6 @@ main(int argc, char *argv[])
 	memsize = 256 * MB;
 	mptgen = 1;
 	rtc_localtime = 1;
-	memflags = 0;
 
 #ifdef BHYVE_SNAPSHOT
 	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:r:";
@@ -1187,7 +1188,7 @@ main(int argc, char *argv[])
 			}
 			break;
 		case 'C':
-			memflags |= VM_MEM_F_INCORE;
+			set_config_bool("memory.guest_in_core", true);
 			break;
 		case 'f':
 			parse_simple_config_file(optarg);
@@ -1222,7 +1223,7 @@ main(int argc, char *argv[])
 			else
 				break;
 		case 'S':
-			memflags |= VM_MEM_F_WIRED;
+			set_config_bool("memory.wired", true);
 			break;
                 case 'm':
 			error = vm_parse_memsize(optarg, &memsize);
@@ -1329,6 +1330,11 @@ main(int argc, char *argv[])
 
 	fbsdrun_set_capabilities(ctx, BSP);
 
+	memflags = 0;
+	if (get_config_bool("memory.wired"))
+		memflags |= VM_MEM_F_WIRED;
+	if (get_config_bool("memory.guest_in_core"))
+		memflags |= VM_MEM_F_INCORE;
 	vm_set_memflags(ctx, memflags);
 	err = vm_setup_memory(ctx, memsize, VM_MMAP_ALL);
 	if (err) {
