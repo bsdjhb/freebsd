@@ -1049,10 +1049,7 @@ swcr_setup_encdec(struct swcr_session *ses,
 
 	swe = &ses->swcr_encdec;
 	txf = swcr_lookup_cipher(csp->csp_cipher_alg);
-	if (txf == NULL)
-		return (EINVAL);
-	if (txf->ivsize != csp->csp_ivlen)
-		return (EINVAL);
+	MPASS(txf->ivsize == csp->csp_ivlen);
 	if (csp->csp_cipher_key != NULL) {
 		error = txf->setkey(&swe->sw_kschedule,
 		    csp->csp_cipher_key, csp->csp_cipher_klen / 8);
@@ -1074,9 +1071,6 @@ swcr_setup_auth(struct swcr_session *ses,
 	swa = &ses->swcr_auth;
 
 	axf = swcr_lookup_hash(csp->csp_auth_alg, csp->csp_auth_klen);
-	if (axf == NULL)
-		return (EINVAL);
-
 	swa->sw_axf = axf;
 	swa->sw_mlen = csp->csp_auth_mlen;
 	swa->sw_ictx = malloc(axf->ctxsize, M_CRYPTO_DATA, M_NOWAIT);
@@ -1140,14 +1134,11 @@ swcr_setup_auth(struct swcr_session *ses,
 			ses->swcr_process = swcr_authcompute;
 		break;
 	case CRYPTO_AES_NIST_GMAC:
-		if (csp->csp_auth_klen != 128 &&
-		    csp->csp_auth_klen != 192 &&
-		    csp->csp_auth_klen != 256)
-			return (EINVAL);
-		if (csp->csp_auth_key == NULL)
-			return (EINVAL);
-		if (csp->csp_ivlen != AES_GCM_IV_LEN)
-			return (EINVAL);
+		KASSERT(csp->csp_auth_klen == 128 ||
+		    csp->csp_auth_klen == 192 || csp->csp_auth_klen == 256,
+		    ("%s: bad GMAC klen %d", __func__, csp->csp_auth_klen));
+		MPASS(csp->csp_auth_key != NULL);
+		MPASS(csp->csp_ivlen == AES_GCM_IV_LEN);
 
 		axf->Init(swa->sw_ictx);
 		axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
@@ -1156,8 +1147,7 @@ swcr_setup_auth(struct swcr_session *ses,
 			ses->swcr_process = swcr_gmac;
 		break;
 	case CRYPTO_POLY1305:
-		if (csp->csp_auth_key == NULL)
-			return (EINVAL);
+		MPASS(csp->csp_auth_key != NULL);
 		/* FALLTHROUGH */
 	case CRYPTO_BLAKE2B:
 	case CRYPTO_BLAKE2S:
@@ -1172,14 +1162,11 @@ swcr_setup_auth(struct swcr_session *ses,
 			ses->swcr_process = swcr_authcompute;
 		break;
 	case CRYPTO_AES_CCM_CBC_MAC:
-		if (csp->csp_auth_klen != 128 &&
-		    csp->csp_auth_klen != 192 &&
-		    csp->csp_auth_klen != 256)
-			return (EINVAL);
-		if (csp->csp_auth_key == NULL)
-			return (EINVAL);
-		if (csp->csp_ivlen != AES_CCM_IV_LEN)
-			return (EINVAL);
+		KASSERT(csp->csp_auth_klen == 128 ||
+		    csp->csp_auth_klen == 192 || csp->csp_auth_klen == 256,
+		    ("%s: bad CBC_MAC klen %d", __func__, csp->csp_auth_klen));
+		MPASS(csp->csp_auth_key != NULL);
+		MPASS(csp->csp_ivlen == AES_CCM_IV_LEN);
 		
 		axf->Init(swa->sw_ictx);
 		axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
@@ -1298,6 +1285,110 @@ swcr_setup_ccm(struct swcr_session *ses,
 	return (0);
 }
 
+static bool
+swcr_auth_supported(const struct crypto_session_params *csp)
+{
+	struct auth_hash *axf;
+
+	axf = swcr_lookup_hash(csp->csp_auth_alg, csp->csp_auth_klen);
+	if (axf == NULL)
+		return (false);
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_AES_NIST_GMAC:
+		if (csp->csp_auth_key == NULL)
+			return (false);
+		if (csp->csp_ivlen != AES_GCM_IV_LEN)
+			return (false);
+		break;
+	case CRYPTO_POLY1305:
+		if (csp->csp_auth_key == NULL)
+			return (false);
+		break;
+	case CRYPTO_AES_CCM_CBC_MAC:
+		if (csp->csp_auth_key == NULL)
+			return (false);
+		if (csp->csp_ivlen != AES_CCM_IV_LEN)
+			return (false);
+		break;
+	}
+	return (true);
+}
+
+static bool
+swcr_cipher_supported(const struct crypto_session_params *csp)
+{
+	struct enc_xform *txf;
+
+	txf = swcr_lookup_cipher(csp->csp_cipher_alg);
+	if (txf == NULL)
+		return (false);
+	if (csp->csp_cipher_alg != CRYPTO_NULL_CBC &&
+	    txf->ivsize != csp->csp_ivlen)
+		return (false);
+	return (true);
+}
+
+static int
+swcr_probesession(device_t dev, const struct crypto_session_params *csp)
+{
+
+	switch (csp->csp_mode) {
+	case CSP_MODE_COMPRESS:
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_DEFLATE_COMP:
+			break;
+		default:
+			return (EINVAL);
+		}
+		break;
+	case CSP_MODE_CIPHER:
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
+			return (EINVAL);
+		default:
+			if (!swcr_cipher_supported(csp))
+				return (EINVAL);
+			break;
+		}
+		break;
+	case CSP_MODE_DIGEST:
+		if (!swcr_auth_supported(csp))
+			return (EINVAL);
+		break;
+	case CSP_MODE_AEAD:
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
+			break;
+		default:
+			return (EINVAL);
+		}
+		break;
+	case CSP_MODE_ETA:
+		/* AEAD algorithms cannot be used for EtA. */
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
+			return (EINVAL);
+		}
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_AES_NIST_GMAC:
+		case CRYPTO_AES_CCM_CBC_MAC:
+			return (EINVAL);
+		}
+
+		if (!swcr_cipher_supported(csp) ||
+		    !swcr_auth_supported(csp))
+			return (EINVAL);
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	return (CRYPTODEV_PROBE_SOFTWARE);
+}
+
 /*
  * Generate a new software session.
  */
@@ -1323,12 +1414,11 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		case CRYPTO_DEFLATE_COMP:
 			cxf = &comp_algo_deflate;
 			break;
+#ifdef INVARIANTS
 		default:
-			error = EINVAL;
+			panic("bad compression algo");
+#endif
 		}
-		if (error)
-			break;
-
 		ses->swcr_compdec.sw_cxf = cxf;
 		ses->swcr_process = swcr_compdec;
 		break;
@@ -1337,10 +1427,11 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		case CRYPTO_NULL_CBC:
 			ses->swcr_process = swcr_null;
 			break;
+#ifdef INVARIANTS
 		case CRYPTO_AES_NIST_GCM_16:
 		case CRYPTO_AES_CCM_16:
-			error = EINVAL;
-			break;
+			panic("bad cipher algo");
+#endif
 		default:
 			error = swcr_setup_encdec(ses, csp);
 			if (error == 0)
@@ -1362,26 +1453,25 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 			if (error == 0)
 				ses->swcr_process = swcr_ccm;
 			break;
+#ifdef INVARIANTS
 		default:
-			error = EINVAL;
+			panic("bad aead algo");
+#endif
 		}
 		break;
 	case CSP_MODE_ETA:
-		/* AEAD algorithms cannot be used for EtA. */
+#ifdef INVARIANTS
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_NIST_GCM_16:
 		case CRYPTO_AES_CCM_16:
-			error = EINVAL;
-			break;
+			panic("bad eta cipher algo");
 		}
 		switch (csp->csp_auth_alg) {
 		case CRYPTO_AES_NIST_GMAC:
 		case CRYPTO_AES_CCM_CBC_MAC:
-			error = EINVAL;
-			break;
+			panic("bad eta auth algo");
 		}
-		if (error)
-			break;
+#endif
 
 		error = swcr_setup_auth(ses, csp);
 		if (error)
@@ -1481,48 +1571,10 @@ swcr_attach(device_t dev)
 			CRYPTOCAP_F_SOFTWARE | CRYPTOCAP_F_SYNC);
 	if (swcr_id < 0) {
 		device_printf(dev, "cannot initialize!");
-		return ENOMEM;
+		return (ENXIO);
 	}
-#define	REGISTER(alg) \
-	crypto_register(swcr_id, alg, 0,0)
-	REGISTER(CRYPTO_DES_CBC);
-	REGISTER(CRYPTO_3DES_CBC);
-	REGISTER(CRYPTO_BLF_CBC);
-	REGISTER(CRYPTO_CAST_CBC);
-	REGISTER(CRYPTO_SKIPJACK_CBC);
-	REGISTER(CRYPTO_NULL_CBC);
-	REGISTER(CRYPTO_MD5_HMAC);
-	REGISTER(CRYPTO_SHA1_HMAC);
-	REGISTER(CRYPTO_SHA2_224_HMAC);
-	REGISTER(CRYPTO_SHA2_256_HMAC);
-	REGISTER(CRYPTO_SHA2_384_HMAC);
-	REGISTER(CRYPTO_SHA2_512_HMAC);
-	REGISTER(CRYPTO_RIPEMD160_HMAC);
-	REGISTER(CRYPTO_NULL_HMAC);
-	REGISTER(CRYPTO_MD5_KPDK);
-	REGISTER(CRYPTO_SHA1_KPDK);
-	REGISTER(CRYPTO_MD5);
-	REGISTER(CRYPTO_SHA1);
-	REGISTER(CRYPTO_SHA2_224);
-	REGISTER(CRYPTO_SHA2_256);
-	REGISTER(CRYPTO_SHA2_384);
-	REGISTER(CRYPTO_SHA2_512);
-	REGISTER(CRYPTO_RIJNDAEL128_CBC);
-	REGISTER(CRYPTO_AES_XTS);
-	REGISTER(CRYPTO_AES_ICM);
-	REGISTER(CRYPTO_AES_NIST_GCM_16);
-	REGISTER(CRYPTO_AES_NIST_GMAC);
- 	REGISTER(CRYPTO_CAMELLIA_CBC);
-	REGISTER(CRYPTO_DEFLATE_COMP);
-	REGISTER(CRYPTO_BLAKE2B);
-	REGISTER(CRYPTO_BLAKE2S);
-	REGISTER(CRYPTO_CHACHA20);
-	REGISTER(CRYPTO_AES_CCM_16);
-	REGISTER(CRYPTO_AES_CCM_CBC_MAC);
-	REGISTER(CRYPTO_POLY1305);
-#undef REGISTER
 
-	return 0;
+	return (0);
 }
 
 static int
@@ -1538,6 +1590,7 @@ static device_method_t swcr_methods[] = {
 	DEVMETHOD(device_attach,	swcr_attach),
 	DEVMETHOD(device_detach,	swcr_detach),
 
+	DEVMETHOD(cryptodev_probesession, swcr_probesession),
 	DEVMETHOD(cryptodev_newsession,	swcr_newsession),
 	DEVMETHOD(cryptodev_freesession,swcr_freesession),
 	DEVMETHOD(cryptodev_process,	swcr_process),
