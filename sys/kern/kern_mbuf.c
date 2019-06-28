@@ -865,16 +865,6 @@ mb_free_notready(struct mbuf *m, int count)
 }
 
 /*
- * Ensure it is possible to downgrade an EXT_PGS mbuf
- * to a normal mbuf.
- *
- * XXXJHB: I think this is no longer needed?  The callers of
- * mb_unmapped_compress all check the length against MLEN, and
- * mb_unmapped_compress allows data to be stored in unmapped pages.
- */
-CTASSERT(MBUF_PEXT_HDR_LEN + MBUF_PEXT_TRAIL_LEN < MLEN);
-
-/*
  * Compress an unmapped mbuf into a simple mbuf when it holds a small
  * amount of data.  This is used as a DOS defense to avoid having
  * small packets tie up wired pages, an ext_pgs structure, and an
