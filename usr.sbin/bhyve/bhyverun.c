@@ -194,7 +194,6 @@ int raw_stdio = 0;
 static int virtio_msix = 1;
 static int destroy_on_poweroff = 0;
 
-static int strictio;
 static int strictmsr = 1;
 
 static char *progname;
@@ -527,7 +526,7 @@ vmexit_inout(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 		return (error);
 	}
 
-	error = emulate_inout(ctx, vcpu, vme, strictio);
+	error = emulate_inout(ctx, vcpu, vme);
 	if (error) {
 		fprintf(stderr, "Unhandled %s%c 0x%04x at 0x%lx\n",
 		    in ? "in" : "out",
@@ -1105,6 +1104,7 @@ set_defaults(void)
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
+	set_config_bool("strictio", false);
 	set_config_bool("vmexit_on_hlt", false);
 	set_config_bool("vmexit_on_pause", false);
 }
@@ -1226,7 +1226,7 @@ main(int argc, char *argv[])
 			set_config_bool("vmexit_on_pause", true);
 			break;
 		case 'e':
-			strictio = 1;
+			set_config_bool("strictio", true);
 			break;
 		case 'u':
 			rtc_localtime = 0;
