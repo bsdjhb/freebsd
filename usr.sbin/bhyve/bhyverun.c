@@ -1125,6 +1125,7 @@ set_defaults(void)
 	set_config_bool("x2apic", false);
 	set_config_bool("acpi_tables", false);
 	set_config_bool("memory.guest_in_core", false);
+	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
 }
 
@@ -1138,7 +1139,7 @@ main(int argc, char *argv[])
 	struct vmctx *ctx;
 	uint64_t rip;
 	size_t memsize;
-	const char *vmname;
+	const char *value, *vmname;
 	char *optstr;
 #ifdef BHYVE_SNAPSHOT
 	char *restore_file;
@@ -1155,7 +1156,6 @@ main(int argc, char *argv[])
 	guest_ncpus = 1;
 	sockets = cores = threads = 1;
 	maxcpus = 0;
-	memsize = 256 * MB;
 	mptgen = 1;
 	rtc_localtime = 1;
 
@@ -1226,9 +1226,7 @@ main(int argc, char *argv[])
 			set_config_bool("memory.wired", true);
 			break;
                 case 'm':
-			error = vm_parse_memsize(optarg, &memsize);
-			if (error)
-				errx(EX_USAGE, "invalid memsize '%s'", optarg);
+			set_config_value("memory.size", optarg);
 			break;
 		case 'o':
 			if (!parse_config_option(optarg))
@@ -1309,6 +1307,11 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 #endif
+
+	value = get_config_value("memory.size");
+	error = vm_parse_memsize(value, &memsize);
+	if (error)
+		errx(EX_USAGE, "invalid memsize '%s'", value);
 
 	ctx = do_open(vmname);
 
