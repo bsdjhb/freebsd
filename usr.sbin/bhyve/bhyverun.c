@@ -191,7 +191,6 @@ char *guest_uuid_str;
 
 int raw_stdio = 0;
 
-static int guest_vmexit_on_hlt, guest_vmexit_on_pause;
 static int virtio_msix = 1;
 static int destroy_on_poweroff = 0;
 
@@ -416,20 +415,6 @@ paddr_host2guest(struct vmctx *ctx, void *addr)
 	return (vm_rev_map_gpa(ctx, addr));
 }
 #endif
-
-int
-fbsdrun_vmexit_on_pause(void)
-{
-
-	return (guest_vmexit_on_pause);
-}
-
-int
-fbsdrun_vmexit_on_hlt(void)
-{
-
-	return (guest_vmexit_on_hlt);
-}
 
 int
 fbsdrun_virtio_msix(void)
@@ -848,10 +833,6 @@ static int
 vmexit_breakpoint(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
 {
 
-	if (!gdb_active) {
-		fprintf(stderr, "vm_loop: unexpected VMEXIT_DEBUG\n");
-		exit(4);
-	}
 	gdb_cpu_breakpoint(*pvcpu, vmexit);
 	return (VMEXIT_CONTINUE);
 }
@@ -941,7 +922,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 {
 	int err, tmp;
 
-	if (fbsdrun_vmexit_on_hlt()) {
+	if (get_config_bool("vmexit_on_hlt")) {
 		err = vm_get_capability(ctx, cpu, VM_CAP_HALT_EXIT, &tmp);
 		if (err < 0) {
 			fprintf(stderr, "VM exit on HLT not supported\n");
@@ -952,7 +933,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_HLT] = vmexit_hlt;
 	}
 
-        if (fbsdrun_vmexit_on_pause()) {
+	if (get_config_bool("vmexit_on_pause")) {
 		/*
 		 * pause exit support required for this mode
 		 */
@@ -1124,6 +1105,8 @@ set_defaults(void)
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
+	set_config_bool("vmexit_on_hlt", false);
+	set_config_bool("vmexit_on_pause", false);
 }
 
 int
@@ -1228,7 +1211,7 @@ main(int argc, char *argv[])
 				errx(EX_USAGE, "invalid configuration option '%s'", optarg);
 			break;
 		case 'H':
-			guest_vmexit_on_hlt = 1;
+			set_config_bool("vmexit_on_hlt", true);
 			break;
 		case 'I':
 			/*
@@ -1240,7 +1223,7 @@ main(int argc, char *argv[])
 			 */
 			break;
 		case 'P':
-			guest_vmexit_on_pause = 1;
+			set_config_bool("vmexit_on_pause", true);
 			break;
 		case 'e':
 			strictio = 1;
