@@ -1104,6 +1104,7 @@ set_defaults(void)
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
+	set_config_bool("rtc.use_localtime", true);
 	set_config_bool("strictio", false);
 	set_config_bool("vmexit_on_hlt", false);
 	set_config_bool("vmexit_on_pause", false);
@@ -1114,7 +1115,6 @@ main(int argc, char *argv[])
 {
 	int c, error, err;
 	int max_vcpus, mptgen, memflags;
-	int rtc_localtime;
 	struct vmctx *ctx;
 	uint64_t rip;
 	size_t memsize;
@@ -1135,7 +1135,6 @@ main(int argc, char *argv[])
 	sockets = cores = threads = 1;
 	maxcpus = 0;
 	mptgen = 1;
-	rtc_localtime = 1;
 
 #ifdef BHYVE_SNAPSHOT
 	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:r:";
@@ -1229,7 +1228,7 @@ main(int argc, char *argv[])
 			set_config_bool("strictio", true);
 			break;
 		case 'u':
-			rtc_localtime = 0;
+			set_config_bool("rtc.use_localtime", false);
 			break;
 		case 'U':
 			guest_uuid_str = optarg;
@@ -1341,7 +1340,7 @@ main(int argc, char *argv[])
 	pci_irq_init(ctx);
 	ioapic_init(ctx);
 
-	rtc_init(ctx, rtc_localtime);
+	rtc_init(ctx);
 	sci_init(ctx);
 
 	/*
