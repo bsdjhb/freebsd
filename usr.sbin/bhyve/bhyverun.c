@@ -1302,10 +1302,14 @@ main(int argc, char *argv[])
 	vmname = get_config_value("name");
 	if (vmname == NULL)
 		usage(1);
+
 #if 1
-	dump_config();
-	exit(1);
+	if (get_config_value("config.dump")) {
+		dump_config();
+		exit(1);
+	}
 #endif
+
 	ctx = do_open(vmname);
 
 #ifdef BHYVE_SNAPSHOT
