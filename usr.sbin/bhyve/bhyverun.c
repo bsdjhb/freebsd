@@ -187,8 +187,6 @@ extern int vmexit_task_switch(struct vmctx *, struct vm_exit *, int *vcpu);
 int guest_ncpus;
 uint16_t cores, maxcpus, sockets, threads;
 
-char *guest_uuid_str;
-
 int raw_stdio = 0;
 
 static int virtio_msix = 1;
@@ -1231,7 +1229,7 @@ main(int argc, char *argv[])
 			set_config_bool("rtc.use_localtime", false);
 			break;
 		case 'U':
-			guest_uuid_str = optarg;
+			set_config_value("uuid", optarg);
 			break;
 		case 'w':
 			strictmsr = 0;
