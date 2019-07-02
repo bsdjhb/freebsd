@@ -192,8 +192,6 @@ int raw_stdio = 0;
 static int virtio_msix = 1;
 static int destroy_on_poweroff = 0;
 
-static int strictmsr = 1;
-
 static char *progname;
 static const int BSP = 0;
 
@@ -548,7 +546,7 @@ vmexit_rdmsr(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 	if (error != 0) {
 		fprintf(stderr, "rdmsr to register %#x on vcpu %d\n",
 		    vme->u.msr.code, *pvcpu);
-		if (strictmsr) {
+		if (get_config_bool("strictmsr")) {
 			vm_inject_gp(ctx, *pvcpu);
 			return (VMEXIT_CONTINUE);
 		}
@@ -574,7 +572,7 @@ vmexit_wrmsr(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 	if (error != 0) {
 		fprintf(stderr, "wrmsr to register %#x(%#lx) on vcpu %d\n",
 		    vme->u.msr.code, vme->u.msr.wval, *pvcpu);
-		if (strictmsr) {
+		if (get_config_bool("strictmsr")) {
 			vm_inject_gp(ctx, *pvcpu);
 			return (VMEXIT_CONTINUE);
 		}
@@ -1104,6 +1102,7 @@ set_defaults(void)
 	set_config_bool("memory.wired", false);
 	set_config_bool("rtc.use_localtime", true);
 	set_config_bool("strictio", false);
+	set_config_bool("strictmsr", true);
 	set_config_bool("vmexit_on_hlt", false);
 	set_config_bool("vmexit_on_pause", false);
 }
@@ -1232,7 +1231,7 @@ main(int argc, char *argv[])
 			set_config_value("uuid", optarg);
 			break;
 		case 'w':
-			strictmsr = 0;
+			set_config_bool("strictmsr", false);
 			break;
 		case 'W':
 			virtio_msix = 0;
