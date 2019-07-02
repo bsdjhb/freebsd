@@ -350,6 +350,9 @@ out:
 static int
 pincpu_parse(const char *opt)
 {
+	const char *value;
+	char *newval;
+	char key[16];
 	int vcpu, pcpu;
 
 	if (sscanf(opt, "%d:%d", &vcpu, &pcpu) != 2) {
@@ -369,15 +372,83 @@ pincpu_parse(const char *opt)
 		return (-1);
 	}
 
-	if (vcpumap[vcpu] == NULL) {
-		if ((vcpumap[vcpu] = malloc(sizeof(cpuset_t))) == NULL) {
-			perror("malloc");
-			return (-1);
-		}
-		CPU_ZERO(vcpumap[vcpu]);
+	snprintf(key, sizeof(key), "vcpu.%d.cpuset", vcpu);
+	value = get_config_value(key);
+
+	if (asprintf(&newval, "%s%s%d", value != NULL ? value : "",
+	    value != NULL ? "," : "", pcpu) == -1) {
+		perror("failed to build new cpuset string");
+		return (-1);
 	}
-	CPU_SET(pcpu, vcpumap[vcpu]);
+
+	set_config_value(key, newval);
+	free(newval);
 	return (0);
+}
+
+static void
+parse_cpuset(int vcpu, const char *list, cpuset_t *set)
+{
+	char *cp, *token;
+	int pcpu, start;
+
+	CPU_ZERO(set);
+	start = -1;
+	token = __DECONST(char *, list);
+	for (;;) {
+		pcpu = strtoul(token, &cp, 0);
+		if (cp == token)
+			err(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
+		if (pcpu < 0 || pcpu >= CPU_SETSIZE)
+			err(4, "hostcpu '%d' outside valid range from 0 to %d",
+			    pcpu, CPU_SETSIZE - 1);
+		switch (*cp) {
+		case ',':
+		case '\0':
+			if (start >= 0) {
+				if (start > pcpu)
+					err(4, "Invalid hostcpu range %d-%d",
+					    start, pcpu);
+				while (start < pcpu) {
+					CPU_SET(start, vcpumap[vcpu]);
+					start++;
+				}
+				start = -1;
+			}
+			CPU_SET(pcpu, vcpumap[vcpu]);
+			break;
+		case '-':
+			if (start >= 0)
+				err(4, "invalid cpuset for vcpu %d: '%s'",
+				    vcpu, list);
+			start = pcpu;
+			break;
+		default:
+			err(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
+		}
+		if (*cp == '\0')
+			break;
+		token = cp + 1;
+	}
+}
+
+static void
+build_vcpumaps(void)
+{
+	char key[16];
+	const char *value;
+	int vcpu;
+
+	for (vcpu = 0; vcpu < guest_ncpus; vcpu++) {
+		snprintf(key, sizeof(key), "vcpu.%d.cpuset", vcpu);
+		value = get_config_value(key);
+		if (value == NULL)
+			continue;
+		vcpumap[vcpu] = malloc(sizeof(cpuset_t));
+		if (vcpumap[vcpu] == NULL)
+			err(4, "Failed to allocate cpuset for vcpu %d", vcpu);
+		parse_cpuset(vcpu, value, vcpumap[vcpu]);
+	}
 }
 
 void
@@ -1281,6 +1352,8 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 #endif
+
+	build_vcpumaps();
 
 	value = get_config_value("memory.size");
 	error = vm_parse_memsize(value, &memsize);
