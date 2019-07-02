@@ -1099,6 +1099,7 @@ set_defaults(void)
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
+	set_config_bool("mptable", true);
 	set_config_bool("rtc.use_localtime", true);
 	set_config_bool("strictio", false);
 	set_config_bool("strictmsr", true);
@@ -1111,7 +1112,7 @@ int
 main(int argc, char *argv[])
 {
 	int c, error, err;
-	int max_vcpus, mptgen, memflags;
+	int max_vcpus, memflags;
 	struct vmctx *ctx;
 	uint64_t rip;
 	size_t memsize;
@@ -1131,7 +1132,6 @@ main(int argc, char *argv[])
 	guest_ncpus = 1;
 	sockets = cores = threads = 1;
 	maxcpus = 0;
-	mptgen = 1;
 
 #ifdef BHYVE_SNAPSHOT
 	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:r:";
@@ -1240,7 +1240,7 @@ main(int argc, char *argv[])
 			set_config_bool("x2apic", true);
 			break;
 		case 'Y':
-			mptgen = 0;
+			set_config_bool("mptable", false);
 			break;
 		case 'h':
 			usage(0);			
@@ -1409,7 +1409,7 @@ main(int argc, char *argv[])
 	/*
 	 * build the guest tables, MP etc.
 	 */
-	if (mptgen) {
+	if (get_config_bool("mptable")) {
 		error = mptable_build(ctx, guest_ncpus);
 		if (error) {
 			perror("error to build the guest tables");
