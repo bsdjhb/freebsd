@@ -1994,7 +1994,7 @@ alloc_aiotx_mbuf(struct kaiocb *job, int len)
 		if (npages < 0)
 			break;
 
-		m = mb_alloc_ext_pgs(M_WAITOK, 0, aiotx_free_pgs);
+		m = mb_alloc_ext_pgs(M_WAITOK, false, aiotx_free_pgs);
 		if (m == NULL) {
 			vm_page_unhold_pages(pgs, npages);
 			break;
