@@ -1928,9 +1928,9 @@ static void
 aiotx_free_pgs(struct mbuf *m)
 {
 	struct mbuf_ext_pgs *ext_pgs;
+	struct kaiocb *job;
 	struct mtx *mtx;
 	vm_page_t pg;
-	struct kaiocb *job;
 
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
