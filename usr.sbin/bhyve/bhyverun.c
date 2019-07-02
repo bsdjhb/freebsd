@@ -189,7 +189,6 @@ uint16_t cores, maxcpus, sockets, threads;
 
 int raw_stdio = 0;
 
-static int virtio_msix = 1;
 static int destroy_on_poweroff = 0;
 
 static char *progname;
@@ -415,7 +414,7 @@ int
 fbsdrun_virtio_msix(void)
 {
 
-	return (virtio_msix);
+	return (get_config_bool("virtio_msix"));
 }
 
 static void *
@@ -1103,6 +1102,7 @@ set_defaults(void)
 	set_config_bool("rtc.use_localtime", true);
 	set_config_bool("strictio", false);
 	set_config_bool("strictmsr", true);
+	set_config_bool("virtio_msix", true);
 	set_config_bool("vmexit_on_hlt", false);
 	set_config_bool("vmexit_on_pause", false);
 }
@@ -1234,7 +1234,7 @@ main(int argc, char *argv[])
 			set_config_bool("strictmsr", false);
 			break;
 		case 'W':
-			virtio_msix = 0;
+			set_config_bool("virtio_msix", false);
 			break;
 		case 'x':
 			set_config_bool("x2apic", true);
