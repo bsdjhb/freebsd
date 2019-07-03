@@ -261,11 +261,8 @@ usage(int code)
 
 /*
  * XXX This parser is known to have the following issues:
- * 1.  It accepts null key=value tokens ",,".
- * 2.  It accepts whitespace after = and before value.
- * 3.  Values out of range of INT are silently wrapped.
- * 4.  It doesn't check non-final values.
- * 5.  The apparently bogus limits of UINT16_MAX are for future expansion.
+ * 1.  It accepts null key=value tokens ",," as setting "cpus" to an
+ *     empty string.
  *
  * The acceptance of a null specification ('-c ""') is by design to match the
  * manual page syntax specification, this results in a topology of 1 vCPU.
@@ -273,78 +270,114 @@ usage(int code)
 static int
 topology_parse(const char *opt)
 {
-	uint64_t ncpus;
-	int c, chk, n, s, t, tmp;
 	char *cp, *str;
-	bool ns, scts;
 
-	c = 1, n = 1, s = 1, t = 1;
-	ns = false, scts = false;
+	if (*opt == '\0') {
+		set_config_value("sockets", "1");
+		set_config_value("cores", "1");
+		set_config_value("threads", "1");
+		set_config_value("cpus", "1");
+		return (0);
+	}
+
 	str = strdup(opt);
 	if (str == NULL)
-		goto out;
+		errx(4, "Failed to allocate memory");
 
 	while ((cp = strsep(&str, ",")) != NULL) {
-		if (sscanf(cp, "%i%n", &tmp, &chk) == 1) {
-			n = tmp;
-			ns = true;
-		} else if (sscanf(cp, "cpus=%i%n", &tmp, &chk) == 1) {
-			n = tmp;
-			ns = true;
-		} else if (sscanf(cp, "sockets=%i%n", &tmp, &chk) == 1) {
-			s = tmp;
-			scts = true;
-		} else if (sscanf(cp, "cores=%i%n", &tmp, &chk) == 1) {
-			c = tmp;
-			scts = true;
-		} else if (sscanf(cp, "threads=%i%n", &tmp, &chk) == 1) {
-			t = tmp;
-			scts = true;
+		if (strncmp(cp, "cpus=", strlen("cpus=")) == 0)
+			set_config_value("cpus", cp + strlen("cpus="));
+		else if (strncmp(cp, "sockets=", strlen("sockets=")) == 0)
+			set_config_value("sockets", cp + strlen("sockets="));
+		else if (strncmp(cp, "cores=", strlen("cores=")) == 0)
+			set_config_value("cores", cp + strlen("cores="));
+		else if (strncmp(cp, "threads=", strlen("threads=")) == 0)
+			set_config_value("threads", cp + strlen("threads="));
 #ifdef notyet  /* Do not expose this until vmm.ko implements it */
-		} else if (sscanf(cp, "maxcpus=%i%n", &tmp, &chk) == 1) {
-			m = tmp;
+		else if (strncmp(cp, "maxcpus=", strlen("maxcpus=")) == 0)
+			set_config_value("maxcpus", cp + strlen("maxcpus="));
 #endif
-		/* Skip the empty argument case from -c "" */
-		} else if (cp[0] == '\0')
-			continue;
+		else if (strchr(cp, '=') != NULL)
+			goto out;
 		else
-			goto out;
-		/* Any trailing garbage causes an error */
-		if (cp[chk] != '\0')
-			goto out;
+			set_config_value("cpus", cp);
 	}
 	free(str);
-	str = NULL;
-
-	/*
-	 * Range check 1 <= n <= UINT16_MAX all values
-	 */
-	if (n < 1 || s < 1 || c < 1 || t < 1 ||
-	    n > UINT16_MAX || s > UINT16_MAX || c > UINT16_MAX  ||
-	    t > UINT16_MAX)
-		return (-1);
-
-	/* If only the cpus was specified, use that as sockets */
-	if (!scts)
-		s = n;
-	/*
-	 * Compute sockets * cores * threads avoiding overflow
-	 * The range check above insures these are 16 bit values
-	 * If n was specified check it against computed ncpus
-	 */
-	ncpus = (uint64_t)s * c * t;
-	if (ncpus > UINT16_MAX || (ns && n != ncpus))
-		return (-1);
-
-	guest_ncpus = ncpus;
-	sockets = s;
-	cores = c;
-	threads = t;
-	return(0);
+	return (0);
 
 out:
 	free(str);
 	return (-1);
+}
+
+static int
+parse_int_value(const char *key, const char *value, int minval, int maxval)
+{
+	char *cp;
+	long lval;
+
+	errno = 0;
+	lval = strtol(value, &cp, 0);
+	if (errno != 0 || *cp != '\0' || cp == value || lval < minval ||
+	    lval > maxval)
+		errx(4, "Invalid value for %s: '%s'", key, value);
+	return (lval);
+}
+
+/*
+ * Set the sockets, cores, threads, and guest_cpus variables based on
+ * the configured topology.
+ *
+ * The limits of UINT16_MAX are due to the types passed to
+ * vm_set_topology().  vmm.ko may enforce tighter limits.
+ */
+static void
+calc_topolopgy(void)
+{
+	const char *value;
+	bool explicit_cpus;
+	uint64_t ncpus;
+
+	value = get_config_value("cpus");
+	if (value != NULL) {
+		guest_ncpus = parse_int_value("cpus", value, 1, UINT16_MAX);
+		explicit_cpus = true;
+	} else {
+		guest_ncpus = 1;
+		explicit_cpus = false;
+	}
+	value = get_config_value("cores");
+	if (value != NULL)
+		cores = parse_int_value("cores", value, 1, UINT16_MAX);
+	else
+		cores = 1;
+	value = get_config_value("threads");
+	if (value != NULL)
+		threads = parse_int_value("threads", value, 1, UINT16_MAX);
+	else
+		threads = 1;
+	value = get_config_value("sockets");
+	if (value != NULL)
+		sockets = parse_int_value("sockets", value, 1, UINT16_MAX);
+	else
+		sockets = guest_ncpus;
+
+	/*
+	 * Compute sockets * cores * threads avoiding overflow.  The
+	 * range check above insures these are 16 bit values.
+	 */
+	ncpus = (uint64_t)sockets * cores * threads;
+	if (ncpus > UINT16_MAX)
+		errx(4, "Computed number of vCPUs too high: %ju",
+		    (uintmax_t)ncpus);
+
+	if (explicit_cpus) {
+		if (guest_ncpus != ncpus)
+			errx(4, "Topology (%d sockets, %d cores, %d threads) "
+			    "does not match %d vCPUs", sockets, cores, threads,
+			    guest_ncpus);
+	} else
+		guest_ncpus = ncpus;
 }
 
 static int
@@ -1200,9 +1233,6 @@ main(int argc, char *argv[])
 	init_config();
 	set_defaults();
 	progname = basename(argv[0]);
-	guest_ncpus = 1;
-	sockets = cores = threads = 1;
-	maxcpus = 0;
 
 #ifdef BHYVE_SNAPSHOT
 	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:r:";
@@ -1353,6 +1383,7 @@ main(int argc, char *argv[])
 	}
 #endif
 
+	calc_topolopgy();
 	build_vcpumaps();
 
 	value = get_config_value("memory.size");
