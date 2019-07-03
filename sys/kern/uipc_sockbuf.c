@@ -89,59 +89,6 @@ sbm_clrprotoflags(struct mbuf *m, int flags)
 	}
 }
 
-static void
-sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end, int thresh)
-{
-	struct mbuf *m, *n;
-
-
-	if ((sb->sb_flags & SB_NOCOALESCE) != 0)
-		return;
-
-	for (m = m0; m != end; m = m->m_next) {
-		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN &&
-			m->m_ext.ext_pgs->tls == NULL) {
-			/*
-			 * Carve out a place to stand by downgrading
-			 * small unmapped mbufs to normal mbufs
-			 */
-			int ext_size = m->m_ext.ext_size;
-			if (0 == mb_ext_pgs_downgrade(m)) {
-				sb->sb_mbcnt -= ext_size;
-				sb->sb_ccnt -= 1;
-			}
-		}
-
-		n = m->m_next;
-		while (M_WRITABLE(m) &&
-		    (n != NULL) &&
-		    (n != end) &&
-		    (m->m_flags & M_NOMAP) == 0 &&
-		    !mbuf_has_tls_session(n) &&
-		    (n->m_flags & M_EOR) == 0 &&
-		    n->m_len < thresh  &&
-		    n->m_type == m->m_type &&
-		    M_TRAILINGSPACE(m) >= n->m_len) {
-			m_copydata(n, 0, n->m_len, mtodo(m, m->m_len));
-			m->m_len += n->m_len;
-			m->m_next = n->m_next;
-			if (sb->sb_mbtail == n)
-				sb->sb_mbtail = m;
-			if (sb->sb_lastrecord == n)
-				sb->sb_lastrecord = m;
-
-			sb->sb_mbcnt -= MSIZE;
-			sb->sb_mcnt -= 1;
-			if (n->m_flags & M_EXT) {
-				sb->sb_mbcnt -= n->m_ext.ext_size;
-				sb->sb_ccnt -= 1;
-			}
-			m_free(n);
-			n = m->m_next;
-		}
-	}
-}
-
 /*
  * Compress M_NOTREADY mbufs after they have been readied by sbready().
  *
@@ -224,7 +171,6 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 {
 	struct mbuf *m;
 	u_int blocker;
-	struct mbuf *om = m;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(sb->sb_fnrdy != NULL, ("%s: sb %p NULL fnrdy", __func__, sb));
@@ -1217,23 +1163,14 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 			continue;
 		}
 		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
-		    (m->m_flags & M_NOTREADY) == 0)
+		    (m->m_flags & M_NOTREADY) == 0 &&)
+		    m->m_ext.ext_pgs->tls == NULL)
 			(void)mb_unmapped_compress(m);
 		if (n)
 			n->m_next = m;
 		else
 			sb->sb_mb = m;
 		sb->sb_mbtail = m;
-		/*
-		 * Note that if m is downgraded here, the sb
-		 * accounting does not need to be adjusted, since
-		 * sballoc() has not yet been called.
-		 */
-		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
-		    (m->m_flags & M_NOTREADY) == 0 &&
-		    m->m_ext.ext_pgs->tls == NULL)
-			(void)mb_ext_pgs_downgrade(m);
-
 		sballoc(sb, m);
 		n = m;
 		m->m_flags &= ~M_EOR;

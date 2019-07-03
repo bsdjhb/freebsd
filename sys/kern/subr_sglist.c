@@ -388,66 +388,6 @@ sglist_append_phys(struct sglist *sg, vm_paddr_t paddr, size_t len)
 	return (error);
 }
 
-int
-sglist_append_ext_pgs(struct sglist *sg, struct mbuf_ext_pgs *ext_pgs,
-    size_t off, size_t len)
-{
-	size_t seglen, segoff;
-	vm_paddr_t paddr;
-	int error, i, pglen, pgoff;
-
-	error = 0;
-	if (ext_pgs->hdr_len != 0) {
-		if (off >= ext_pgs->hdr_len) {
-			off -= ext_pgs->hdr_len;
-		} else {
-			seglen = ext_pgs->hdr_len - off;
-			segoff = off;
-			seglen = MIN(seglen, len);
-			off = 0;
-			len -= seglen;
-			error = sglist_append(sg,
-			    &ext_pgs->hdr[segoff], seglen);
-		}
-	}
-	pgoff = ext_pgs->first_pg_off;
-	for (i = 0; i < ext_pgs->npgs && error == 0 && len > 0; i++) {
-		pglen = mbuf_ext_pg_len(ext_pgs, i, pgoff);
-		if (off >= pglen) {
-			off -= pglen;
-			pgoff = 0;
-			continue;
-		}
-		seglen = pglen - off;
-		segoff = pgoff + off;
-		off = 0;
-		seglen = MIN(seglen, len);
-		len -= seglen;
-		paddr = ext_pgs->pa[i] + segoff;
-		error = sglist_append_phys(sg, paddr, seglen);
-		pgoff = 0;
-	};
-	if (error == 0 && len > 0) {
-		seglen = MIN(len, ext_pgs->trail_len - off);
-		len -= seglen;
-		error = sglist_append(sg,
-		    &ext_pgs->trail[off], seglen);
-	}
-	if (error == 0)
-		KASSERT(len == 0, ("len != 0"));
-	return (error);
-}
-
-int
-sglist_append_mb_ext_pgs(struct sglist *sg, struct mbuf *m)
-{
-
-	/* for now, all unmapped mbufs are assumed to be EXT_PGS */
-	MBUF_EXT_PGS_ASSERT(m);
-	return (sglist_append_ext_pgs(sg, m->m_ext.ext_pgs,
-	    mtod(m, vm_offset_t), m->m_len));
-}
-
 /*
  * Append the segments to describe an EXT_PGS buffer to a
  * scatter/gather list.  If there are insufficient segments, then this
