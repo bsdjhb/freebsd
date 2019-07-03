@@ -431,16 +431,16 @@ parse_cpuset(int vcpu, const char *list, cpuset_t *set)
 	for (;;) {
 		pcpu = strtoul(token, &cp, 0);
 		if (cp == token)
-			err(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
+			errx(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
 		if (pcpu < 0 || pcpu >= CPU_SETSIZE)
-			err(4, "hostcpu '%d' outside valid range from 0 to %d",
+			errx(4, "hostcpu '%d' outside valid range from 0 to %d",
 			    pcpu, CPU_SETSIZE - 1);
 		switch (*cp) {
 		case ',':
 		case '\0':
 			if (start >= 0) {
 				if (start > pcpu)
-					err(4, "Invalid hostcpu range %d-%d",
+					errx(4, "Invalid hostcpu range %d-%d",
 					    start, pcpu);
 				while (start < pcpu) {
 					CPU_SET(start, vcpumap[vcpu]);
@@ -452,12 +452,12 @@ parse_cpuset(int vcpu, const char *list, cpuset_t *set)
 			break;
 		case '-':
 			if (start >= 0)
-				err(4, "invalid cpuset for vcpu %d: '%s'",
+				errx(4, "invalid cpuset for vcpu %d: '%s'",
 				    vcpu, list);
 			start = pcpu;
 			break;
 		default:
-			err(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
+			errx(4, "invalid cpuset for vcpu %d: '%s'", vcpu, list);
 		}
 		if (*cp == '\0')
 			break;
@@ -1185,7 +1185,7 @@ parse_simple_config_file(const char *path)
 		if (cp != NULL)
 			*cp = '\0';
 		if (!parse_config_option(line))
-			err(4, "%s line %u: invalid config option '%s'", path,
+			errx(4, "%s line %u: invalid config option '%s'", path,
 			    lineno, line);
 	}
 	free(line);
