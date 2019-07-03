@@ -882,15 +882,6 @@ ip_fragment(struct ip *ip, struct mbuf **m_frag, int mtu,
 		return EMSGSIZE;
 
 	/*
-	 * Ensure packet is accessible to CPU
-	 */
-	m0 = mb_unmapped_to_ext(m0);
-	if (m0 == NULL) {
-		*m_frag = NULL;
-		return ENOBUFS;
-	}
-
-	/*
 	 * If the interface will not calculate checksums on
 	 * fragmented packets, then do it here.
 	 */

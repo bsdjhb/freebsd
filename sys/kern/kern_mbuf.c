@@ -122,12 +122,11 @@ int nmbclusters;		/* limits number of mbuf clusters */
 int nmbjumbop;			/* limits number of page size jumbo clusters */
 int nmbjumbo9;			/* limits number of 9k jumbo clusters */
 int nmbjumbo16;			/* limits number of 16k jumbo clusters */
-bool mb_use_ext_pgs;		/* use ext_pgs for sendfile & TLS  */
 
-bool mb_use_ext_pgs;		/* use EXT_PGS mbufs for sendfile */
+bool mb_use_ext_pgs;		/* use EXT_PGS mbufs for sendfile & TLS */
 SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
     &mb_use_ext_pgs, 0,
-    "Use unmapped mbufs for sendfile(2)");
+    "Use unmapped mbufs for sendfile(2) and TLS offload");
 
 static quad_t maxmbufmem;	/* overall real memory limit for all mbufs */
 
