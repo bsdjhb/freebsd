@@ -1934,7 +1934,7 @@ aiotx_free_pgs(struct mbuf *m)
 
 	MBUF_EXT_PGS_ASSERT(m);
 	ext_pgs = m->m_ext.ext_pgs;
-	job = m->m_ext.ext_arg2;
+	job = m->m_ext.ext_arg1;
 #ifdef VERBOSE_TRACES
 	CTR3(KTR_CXGBE, "%s: completed %d bytes for tid %d", __func__,
 	    m->m_len, jobtotid(job));
@@ -2017,7 +2017,7 @@ alloc_aiotx_mbuf(struct kaiocb *job, int len)
 
 		m->m_len = mlen;
 		m->m_ext.ext_size = npages * PAGE_SIZE;
-		m->m_ext.ext_arg2 = job;
+		m->m_ext.ext_arg1 = job;
 		refcount_acquire(&job->aio_refs);
 
 #ifdef VERBOSE_TRACES
