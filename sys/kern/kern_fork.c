@@ -1083,6 +1083,7 @@ fork_return(struct thread *td, struct trapframe *frame)
 	struct proc *p;
 
 	p = td->td_proc;
+	td->td_errno = 0;
 	if (td->td_dbgflags & TDB_STOPATFORK) {
 		PROC_LOCK(p);
 		if ((p->p_flag & P_TRACED) != 0) {
