@@ -38,36 +38,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-i386_cloudabi32_fetch_args(struct trussinfo *trussinfo, unsigned int narg)
-{
-	struct current_syscall *cs;
-	struct ptrace_io_desc iorequest;
-	struct reg regs;
-	lwpid_t tid;
-
-	if (narg > 0) {
-		/* Fetch registers, containing the stack pointer. */
-		tid = trussinfo->curthread->tid;
-		if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) == -1) {
-			fprintf(trussinfo->outfile,
-			    "-- CANNOT READ REGISTERS --\n");
-			return (-1);
-		}
-
-		/* Fetch arguments. */
-		cs = &trussinfo->curthread->cs;
-		iorequest.piod_op = PIOD_READ_D;
-		iorequest.piod_offs = (void **)regs.r_esp + 1;
-		iorequest.piod_addr = cs->args;
-		iorequest.piod_len = sizeof(cs->args[0]) * narg;
-		if (ptrace(PT_IO, tid, (caddr_t)&iorequest, 0) == -1 ||
-		    iorequest.piod_len == 0)
-			return (-1);
-	}
-	return (0);
-}
-
-static int
 i386_cloudabi32_fetch_retval(struct trussinfo *trussinfo, long *retval,
     int *errorp)
 {
@@ -89,7 +59,6 @@ i386_cloudabi32_fetch_retval(struct trussinfo *trussinfo, long *retval,
 static struct procabi i386_cloudabi32 = {
 	"CloudABI ELF32",
 	SYSDECODE_ABI_CLOUDABI32,
-	i386_cloudabi32_fetch_args,
 	i386_cloudabi32_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(i386_cloudabi32.extra_syscalls),
 	{ NULL }

@@ -49,51 +49,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-i386_fetch_args(struct trussinfo *trussinfo, u_int narg)
-{
-	struct ptrace_io_desc iorequest;
-	struct reg regs;
-	struct current_syscall *cs;
-	lwpid_t tid;
-	unsigned int parm_offset;
-
-	tid = trussinfo->curthread->tid;
-	cs = &trussinfo->curthread->cs;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-	parm_offset = regs.r_esp + sizeof(int);
-
-	/*
-	 * FreeBSD has two special kinds of system call redirections --
-	 * SYS_syscall, and SYS___syscall.  The former is the old syscall()
-	 * routine, basically; the latter is for quad-aligned arguments.
-	 *
-	 * The system call argument count and code from ptrace() already
-	 * account for these, but we need to skip over the first argument.
-	 */
-	switch (regs.r_eax) {
-	case SYS_syscall:
-		parm_offset += sizeof(int);
-		break;
-	case SYS___syscall:
-		parm_offset += sizeof(quad_t);
-		break;
-	}
-
-	iorequest.piod_op = PIOD_READ_D;
-	iorequest.piod_offs = (void *)parm_offset;
-	iorequest.piod_addr = cs->args;
-	iorequest.piod_len = narg * sizeof(unsigned long);
-	ptrace(PT_IO, tid, (caddr_t)&iorequest, 0);
-	if (iorequest.piod_len == 0)
-		return (-1);
-
-	return (0);
-}
-
-static int
 i386_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 {
 	struct reg regs;
@@ -114,7 +69,6 @@ i386_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 static struct procabi i386_freebsd = {
 	"FreeBSD ELF32",
 	SYSDECODE_ABI_FREEBSD,
-	i386_fetch_args,
 	i386_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(i386_freebsd.extra_syscalls),
 	{ NULL }
@@ -125,7 +79,6 @@ PROCABI(i386_freebsd);
 static struct procabi i386_freebsd_aout = {
 	"FreeBSD a.out",
 	SYSDECODE_ABI_FREEBSD,
-	i386_fetch_args,
 	i386_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(i386_freebsd_aout.extra_syscalls),
 	{ NULL }

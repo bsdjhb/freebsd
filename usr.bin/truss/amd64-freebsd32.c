@@ -50,56 +50,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-amd64_freebsd32_fetch_args(struct trussinfo *trussinfo, u_int narg)
-{
-	struct ptrace_io_desc iorequest;
-	struct reg regs;
-	struct current_syscall *cs;
-	unsigned int args32[narg];
-	unsigned long parm_offset;
-	lwpid_t tid;
-	u_int i;
-
-	tid = trussinfo->curthread->tid;
-	cs = &trussinfo->curthread->cs;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-	parm_offset = regs.r_rsp + sizeof(int);
-
-	/*
-	 * FreeBSD has two special kinds of system call redirections --
-	 * SYS_syscall, and SYS___syscall.  The former is the old syscall()
-	 * routine, basically; the latter is for quad-aligned arguments.
-	 *
-	 * The system call argument count and code from ptrace() already
-	 * account for these, but we need to skip over the first argument.
-	 */
-	switch (regs.r_rax) {
-	case SYS_syscall:
-		parm_offset += sizeof(int);
-		break;
-	case SYS___syscall:
-		parm_offset += sizeof(quad_t);
-		break;
-	}
-
-	iorequest.piod_op = PIOD_READ_D;
-	iorequest.piod_offs = (void *)parm_offset;
-	iorequest.piod_addr = args32;
-	iorequest.piod_len = sizeof(args32);
-	ptrace(PT_IO, tid, (caddr_t)&iorequest, 0);
-	if (iorequest.piod_len == 0) {
-		return (-1);
-	}
-
-	for (i = 0; i < narg; i++)
-		 cs->args[i] = args32[i];
-	return (0);
-}
-
-static int
 amd64_freebsd32_fetch_retval(struct trussinfo *trussinfo, long *retval,
     int *errorp)
 {
@@ -121,7 +71,6 @@ amd64_freebsd32_fetch_retval(struct trussinfo *trussinfo, long *retval,
 static struct procabi amd64_freebsd32 = {
 	"FreeBSD ELF32",
 	SYSDECODE_ABI_FREEBSD32,
-	amd64_freebsd32_fetch_args,
 	amd64_freebsd32_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(amd64_freebsd32.extra_syscalls),
 	{ NULL }
@@ -132,7 +81,6 @@ PROCABI(amd64_freebsd32);
 static struct procabi amd64_freebsd32_aout = {
 	"FreeBSD a.out",
 	SYSDECODE_ABI_FREEBSD32,
-	amd64_freebsd32_fetch_args,
 	amd64_freebsd32_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(amd64_freebsd32.extra_syscalls),
 	{ NULL }

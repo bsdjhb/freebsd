@@ -38,26 +38,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-aarch64_cloudabi64_fetch_args(struct trussinfo *trussinfo, unsigned int narg)
-{
-	struct current_syscall *cs;
-	struct reg regs;
-	lwpid_t tid;
-	unsigned int i;
-
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) == -1) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	cs = &trussinfo->curthread->cs;
-	for (i = 0; i < narg && i < 8; i++)
-		cs->args[i] = regs.x[i];
-	return (0);
-}
-
-static int
 aarch64_cloudabi64_fetch_retval(struct trussinfo *trussinfo, long *retval,
     int *errorp)
 {
@@ -79,7 +59,6 @@ aarch64_cloudabi64_fetch_retval(struct trussinfo *trussinfo, long *retval,
 static struct procabi aarch64_cloudabi64 = {
 	"CloudABI ELF64",
 	SYSDECODE_ABI_CLOUDABI64,
-	aarch64_cloudabi64_fetch_args,
 	aarch64_cloudabi64_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(aarch64_cloudabi64.extra_syscalls),
 	{ NULL }

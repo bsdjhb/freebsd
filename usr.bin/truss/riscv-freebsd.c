@@ -41,42 +41,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-riscv_fetch_args(struct trussinfo *trussinfo, u_int narg)
-{
-	struct reg regs;
-	struct current_syscall *cs;
-	lwpid_t tid;
-	u_int i, reg, syscall_num;
-
-	tid = trussinfo->curthread->tid;
-	cs = &trussinfo->curthread->cs;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	/*
-	 * FreeBSD has two special kinds of system call redirections --
-	 * SYS_syscall, and SYS___syscall.  The former is the old syscall()
-	 * routine, basically; the latter is for quad-aligned arguments.
-	 *
-	 * The system call argument count and code from ptrace() already
-	 * account for these, but we need to skip over the first argument.
-	 */
-	syscall_num = regs.t[0];
-	if (syscall_num == SYS_syscall || syscall_num == SYS___syscall) {
-		reg = 1;
-		syscall_num = regs.a[0];
-	} else {
-		reg = 0;
-	}
-
-	for (i = 0; i < narg && reg < NARGREG; i++, reg++)
-		cs->args[i] = regs.a[reg];
-	return (0);
-}
-
-static int
 riscv_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 {
 	struct reg regs;
@@ -97,7 +61,6 @@ riscv_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 static struct procabi riscv_freebsd = {
 	"FreeBSD ELF64",
 	SYSDECODE_ABI_FREEBSD,
-	riscv_fetch_args,
 	riscv_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(riscv_freebsd.extra_syscalls),
 	{ NULL }

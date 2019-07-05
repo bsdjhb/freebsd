@@ -48,45 +48,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-i386_linux_fetch_args(struct trussinfo *trussinfo, u_int narg)
-{
-	struct reg regs;
-	struct current_syscall *cs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	cs = &trussinfo->curthread->cs;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	/*
-	 * Linux passes syscall arguments in registers, not
-	 * on the stack.  Fortunately, we've got access to the
-	 * register set.  Note that we don't bother checking the
-	 * number of arguments.	And what does linux do for syscalls
-	 * that have more than five arguments?
-	 */
-	switch (narg) {
-	default:
-		cs->args[5] = regs.r_ebp;	/* Unconfirmed */
-	case 5:
-		cs->args[4] = regs.r_edi;
-	case 4:
-		cs->args[3] = regs.r_esi;
-	case 3:
-		cs->args[2] = regs.r_edx;
-	case 2:
-		cs->args[1] = regs.r_ecx;
-	case 1:
-		cs->args[0] = regs.r_ebx;
-	}
-
-	return (0);
-}
-
-static int
 i386_linux_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 {
 	struct reg regs;
@@ -107,7 +68,6 @@ i386_linux_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 static struct procabi i386_linux = {
 	"Linux ELF",
 	SYSDECODE_ABI_LINUX,
-	i386_linux_fetch_args,
 	i386_linux_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(i386_linux.extra_syscalls),
 	{ NULL }

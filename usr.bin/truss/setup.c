@@ -376,7 +376,8 @@ enter_syscall(struct trussinfo *info, struct threadinfo *t,
 
 	alloc_syscall(t, pl);
 	narg = MIN(pl->pl_syscall_narg, nitems(t->cs.args));
-	if (narg != 0 && t->proc->abi->fetch_args(info, narg) != 0) {
+	if (narg != 0 && ptrace(PT_GET_SC_ARGS, t->tid, (caddr_t)t->cs.args,
+	    sizeof(t->cs.args)) != 0) {
 		free_syscall(t);
 		return;
 	}

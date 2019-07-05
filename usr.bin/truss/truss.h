@@ -59,7 +59,6 @@ struct extra_syscall {
 struct procabi {
 	const char *type;
 	enum sysdecode_abi abi;
-	int (*fetch_args)(struct trussinfo *, u_int);
 	int (*fetch_retval)(struct trussinfo *, long *, int *);
 	STAILQ_HEAD(, extra_syscall) extra_syscalls;
 	struct syscall *syscalls[SYSCALL_NORMAL_COUNT];

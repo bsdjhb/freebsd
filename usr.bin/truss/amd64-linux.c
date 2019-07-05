@@ -48,38 +48,6 @@ __FBSDID("$FreeBSD$");
 #include "truss.h"
 
 static int
-amd64_linux_fetch_args(struct trussinfo *trussinfo, u_int narg)
-{
-	struct reg regs;
-	struct current_syscall *cs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	cs = &trussinfo->curthread->cs;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	switch (narg) {
-	default:
-		cs->args[5] = regs.r_r9;
-	case 5:
-		cs->args[4] = regs.r_r8;
-	case 4:
-		cs->args[3] = regs.r_rcx;
-	case 3:
-		cs->args[2] = regs.r_rdx;
-	case 2:
-		cs->args[1] = regs.r_rsi;
-	case 1:
-		cs->args[0] = regs.r_rdi;
-	}
-
-	return (0);
-}
-
-static int
 amd64_linux_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 {
 	struct reg regs;
@@ -100,7 +68,6 @@ amd64_linux_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
 static struct procabi amd64_linux = {
 	"Linux ELF64",
 	SYSDECODE_ABI_LINUX,
-	amd64_linux_fetch_args,
 	amd64_linux_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(amd64_linux.extra_syscalls),
 	{ NULL }
