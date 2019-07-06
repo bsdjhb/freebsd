@@ -57,13 +57,13 @@ AcpiOsFree(void *Memory)
 void *
 AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length)
 {
-    return (pmap_mapphys((vm_offset_t)PhysicalAddress, Length));
+    return (pmap_mapbios((vm_offset_t)PhysicalAddress, Length));
 }
 
 void
 AcpiOsUnmapMemory(void *LogicalAddress, ACPI_SIZE Length)
 {
-    pmap_unmapphys((vm_offset_t)LogicalAddress, Length);
+    pmap_unmapbios((vm_offset_t)LogicalAddress, Length);
 }
 
 ACPI_STATUS

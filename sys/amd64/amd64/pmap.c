@@ -7279,13 +7279,6 @@ void *
 pmap_mapbios(vm_paddr_t pa, vm_size_t size)
 {
 
-	return (pmap_mapdev_attr(pa, size, PAT_WRITE_BACK));
-}
-
-void *
-pmap_mapphys(vm_paddr_t pa, vm_size_t size)
-{
-
 	return (pmap_mapdev_internal(pa, size, PAT_WRITE_BACK,
 	    MAPDEV_FLUSHCACHE));
 }
