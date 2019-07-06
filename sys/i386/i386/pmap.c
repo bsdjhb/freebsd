@@ -297,6 +297,9 @@ static struct mtx PMAP2mutex;
 #define	PMAP_ENTER_NORECLAIM	0x1000000	/* Don't reclaim PV entries. */
 #define	PMAP_ENTER_NOREPLACE	0x2000000	/* Don't replace mappings. */
 
+/* Internal flags for pmap_mapdev_attr(). */
+#define	MAPDEV_SETATTR		0x0000002	/* Modify existing attrs. */
+
 static void	free_pv_chunk(struct pv_chunk *pc);
 static void	free_pv_entry(pmap_t pmap, pv_entry_t pv);
 static pv_entry_t get_pv_entry(pmap_t pmap, boolean_t try);
@@ -5393,10 +5396,12 @@ pmap_pde_attr(pd_entry_t *pde, int cache_bits)
  * NOT real memory.
  */
 static void *
-__CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode)
+__CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode,
+    int flags)
 {
 	struct pmap_preinit_mapping *ppim;
 	vm_offset_t va, offset;
+	vm_page_t m;
 	vm_size_t tmpsize;
 	int i;
 
@@ -5429,15 +5434,24 @@ __CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode)
 		for (i = 0; i < PMAP_PREINIT_MAPPING_COUNT; i++) {
 			ppim = pmap_preinit_mapping + i;
 			if (ppim->pa == pa && ppim->sz == size &&
-			    ppim->mode == mode)
+			    (ppim->mode == mode || !(flags & MAPDEV_SETATTR)))
 				return ((void *)(ppim->va + offset));
 		}
 		va = kva_alloc(size);
 		if (va == 0)
 			panic("%s: Couldn't allocate KVA", __func__);
 	}
-	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE)
+	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE) {
+		if (!(flags & MAPDEV_SETATTR)) {
+			m = PHYS_TO_VM_PAGE(pa);
+			if (m != NULL) {
+				pmap_kenter_attr(va + tmpsize, pa + tmpsize,
+				    m->md.pat_mode);
+				continue;
+			}
+		}
 		pmap_kenter_attr(va + tmpsize, pa + tmpsize, mode);
+	}
 	pmap_invalidate_range_int(kernel_pmap, va, va + tmpsize);
 	pmap_invalidate_cache_range(va, va + size);
 	return ((void *)(va + offset));
