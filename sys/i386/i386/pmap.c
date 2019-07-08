@@ -5442,7 +5442,7 @@ __CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode,
 			panic("%s: Couldn't allocate KVA", __func__);
 	}
 	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE) {
-		if (!(flags & MAPDEV_SETATTR)) {
+		if (!(flags & MAPDEV_SETATTR) && pmap_initialized) {
 			m = PHYS_TO_VM_PAGE(pa);
 			if (m != NULL) {
 				pmap_kenter_attr(va + tmpsize, pa + tmpsize,
