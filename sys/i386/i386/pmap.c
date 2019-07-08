@@ -5409,9 +5409,11 @@ __CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode,
 	size = round_page(offset + size);
 	pa = pa & PG_FRAME;
 
-	if (pa < PMAP_MAP_LOW && pa + size <= PMAP_MAP_LOW)
+	if (pa < PMAP_MAP_LOW && pa + size <= PMAP_MAP_LOW) {
 		va = pa + PMAP_MAP_LOW;
-	else if (!pmap_initialized) {
+		if (!(flags & MAPDEV_SETATTR))
+			return ((void *)(va + offset));
+	} else if (!pmap_initialized) {
 		va = 0;
 		for (i = 0; i < PMAP_PREINIT_MAPPING_COUNT; i++) {
 			ppim = pmap_preinit_mapping + i;
