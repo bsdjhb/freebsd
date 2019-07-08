@@ -212,14 +212,13 @@ sbtlsdestroy(struct sockbuf *sb)
 }
 
 static inline int
-sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
-    uint8_t record_type)
+sbtls_frame(struct mbuf **m, struct sbtls_session *tls, uint8_t record_type)
 {
 	return (ENOTSUP);
 }
 
 static inline void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+sbtls_enqueue(struct mbuf *m, struct socket *so)
 {
 }
 
@@ -251,10 +250,10 @@ int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
 int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
 void sbtlsdestroy(struct sockbuf *sb);
 void sbtls_destroy(struct sbtls_session *tls);
-int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
+int sbtls_frame(struct mbuf **m, struct sbtls_session *tls,
     uint8_t record_type);
 void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
-void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
+void sbtls_enqueue(struct mbuf *m, struct socket *so);
 void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
 void sbtls_tcp_stack_changed(struct socket *so);
 int sbtls_set_tls_mode(struct socket *so, int mode);
