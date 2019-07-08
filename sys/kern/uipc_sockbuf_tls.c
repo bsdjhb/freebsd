@@ -1140,8 +1140,7 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 }
 
 int
-sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
-    uint8_t record_type)
+sbtls_frame(struct mbuf **top, struct sbtls_session *tls, uint8_t record_type)
 {
 	struct tls_record_layer *tlshdr;
 	struct mbuf *m;
@@ -1150,7 +1149,6 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 	int maxlen;
 
 	maxlen = tls->sb_params.sb_maxlen;
-	*enq_cnt = 0;
 	for (m = *top; m != NULL; m = m->m_next) {
 		/*
 		 * We expect whoever constructed the chain
@@ -1219,10 +1217,9 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
 
 		if (tls->sb_tls_crypt != NULL) {
-			/* mark mbuf not-ready, to be cleared when encrypted */
+			/* Mark mbuf not-ready, to be cleared when encrypted. */
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
-			*enq_cnt += pgs->npgs;
 		}
 	}
 	return (0);
@@ -1247,7 +1244,7 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 }
 
 void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+sbtls_enqueue(struct mbuf *m, struct socket *so)
 {
 	struct mbuf_ext_pgs *pgs;
 	struct sbtls_wq *wq;
@@ -1257,14 +1254,11 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 		(M_NOMAP | M_NOTREADY)),
 	    ("%p not unready & nomap mbuf\n", m));
 
-	if (page_count == 0)
-		panic("enq_cnt = 0\n");
-
 	pgs = m->m_ext.ext_pgs;
 
+	KASSERT(pgs->nrdy != 0, ("TLS mbuf without pending pages"));
 	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
 
-	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
 
 	/*
@@ -1286,15 +1280,14 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 static __noinline void
 sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 {
-	uint64_t seqno;
 	struct sbtls_session *tls;
 	struct socket *so;
 	struct mbuf *top, *m;
-	vm_paddr_t parray[1+ btoc(TLS_MAX_MSG_SIZE_V10_2)];
+	vm_paddr_t parray[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	vm_page_t pg;
-	int off, len, npages, page_count, error, i, wire_adj;
+	int error, i, len, npages, off, wire_adj;
 	bool is_anon;
 
 	so = pgs->so;
@@ -1305,13 +1298,10 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 	pgs->so = NULL;
 	pgs->mbuf = NULL;
 	npages = 0;
-	/*
-	 *  each TLS record is in a single mbuf.  Do
-	 *  one at a time
-	 */
-	page_count = pgs->enc_cnt;
+
+	/* Each TLS record is in a single mbuf.  Do one at a time. */
 	error = 0;
-	for (m = top; m != NULL && npages != page_count; m = m->m_next) {
+	for (m = top; m != NULL; m = m->m_next) {
 		pgs = m->m_ext.ext_pgs;
 
 		KASSERT(pgs->tls == tls,
@@ -1320,6 +1310,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 		KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 			(M_NOMAP | M_NOTREADY)),
 		    ("%p not unready & nomap mbuf (top = %p)\n", m, top));
+		KASSERT(pgs->nrdy == pgs->npgs, ("%p page count mismatch", m));
 
 		/*
 		 * If this is not a file-backed page, it can
@@ -1328,7 +1319,6 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 		is_anon = M_WRITABLE(m);
 
 		off = pgs->first_pg_off;
-		seqno = pgs->seqno;
 		wire_adj = 0;
 		for (i = 0; i < pgs->npgs; i++, off = 0) {
 			len = mbuf_ext_pg_len(pgs, i, off);
@@ -1365,9 +1355,8 @@ retry_page:
 
 		error = (*tls->sb_tls_crypt)(tls,
 		    (const struct tls_record_layer *)pgs->hdr,
-		    pgs->trail, src_iov, dst_iov, i, seqno);
+		    pgs->trail, src_iov, dst_iov, i, pgs->seqno);
 		if (error) {
-			/* WTF can we do..? */
 			counter_u64_add(sbtls_offload_failed_crypto, 1);
 			break;
 		}
@@ -1398,11 +1387,13 @@ retry_page:
 
 	CURVNET_SET(so->so_vnet);
 	if (error == 0) {
-		(void) (*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
+		(void)(*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
 	} else {
 		so->so_proto->pr_usrreqs->pru_abort(so);
 		so->so_error = EIO;
-		mb_free_notready(top, page_count);
+		for (m = m->m_next; m != NULL; m = m->m_next)
+			npages += m->m_ext.ext_pgs->nrdy;
+		mb_free_notready(top, npages);
 	}
 
 	SOCK_LOCK(so);
