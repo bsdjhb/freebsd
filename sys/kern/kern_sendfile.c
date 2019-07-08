@@ -266,12 +266,10 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 #ifdef INVARIANTS
 	if ((sfio->m->m_flags & M_EXT) != 0 &&
-	    sfio->m->m_ext.ext_type == EXT_PGS) {
-		struct mbuf_ext_pgs *ext_pgs;
-
-		ext_pgs = (struct mbuf_ext_pgs *)sfio->m->m_ext.ext_buf;
-		KASSERT(sfio->tls == ext_pgs->tls, ("TLS session mismatch"));
-	} else
+	    sfio->m->m_ext.ext_type == EXT_PGS)
+		KASSERT(sfio->tls == sfio->m->m_ext.ext_pgs->tls,
+		    ("TLS session mismatch"));
+	else
 		KASSERT(sfio->tls == NULL,
 		    ("non-ext_pgs mbuf with TLS session"));
 #endif
