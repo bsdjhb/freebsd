@@ -6208,12 +6208,12 @@ ethofld_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m0
 		 * As with ethofld_transmit(), hold an extra reference
 		 * so that the tag is stable across ethold_tx().
 		 */
-		m_snd_tag_ref(&cst->com);	
+		m_snd_tag_ref(&cst->com.com);	
 		m = mbufq_first(&cst->pending_tx);
 		if (m != NULL && cst->tx_credits >= mbuf_eo_len16(m))
 			ethofld_tx(cst);
 		mtx_unlock(&cst->lock);
-		m_snd_tag_rele(&cst->com);
+		m_snd_tag_rele(&cst->com.com);
 	} else {
 		/*
 		 * There shouldn't be any pending packets if the tag

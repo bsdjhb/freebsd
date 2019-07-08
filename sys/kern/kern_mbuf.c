@@ -289,10 +289,6 @@ SYSCTL_PROC(_kern_ipc, OID_AUTO, nmbufs, CTLTYPE_INT|CTLFLAG_RW,
 &nmbufs, 0, sysctl_nmbufs, "IU",
     "Maximum number of mbufs allowed");
 
-SYSCTL_BOOL(_kern_ipc, OID_AUTO, mb_use_ext_pgs, CTLFLAG_RWTUN,
-    &mb_use_ext_pgs, 0,
-    "Use bundles of pages for sendfile(2) and TLS");
-
 /*
  * Zones from which we allocate.
  */
