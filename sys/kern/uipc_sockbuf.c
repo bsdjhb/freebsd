@@ -113,7 +113,8 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 		MPASS((m->m_flags & M_NOTREADY) == 0);
 
 		/* Compress small unmapped mbufs into plain mbufs. */
-		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN) {
+		if ((m->m_flags & M_NOMAP) && m->m_len <= MLEN &&
+		    !mbuf_has_tls_session(m)) {
 			MPASS(m->m_flags & M_EXT);
 			ext_size = m->m_ext.ext_size;
 			if (mb_unmapped_compress(m) == 0) {
@@ -134,6 +135,8 @@ sbready_compress(struct sockbuf *sb, struct mbuf *m0, struct mbuf *end)
 		while ((n != NULL) && (n != end) && (m->m_flags & M_EOR) == 0 &&
 		    M_WRITABLE(m) &&
 		    (m->m_flags & M_NOMAP) == 0 &&
+		    !mbuf_has_tls_session(n) &&
+		    !mbuf_has_tls_session(m) &&
 		    n->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
 		    n->m_len <= M_TRAILINGSPACE(m) &&
 		    m->m_type == n->m_type) {
