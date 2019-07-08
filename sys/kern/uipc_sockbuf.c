@@ -1157,7 +1157,7 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		}
 		if (m->m_len <= MLEN && (m->m_flags & M_NOMAP) &&
 		    (m->m_flags & M_NOTREADY) == 0 &&
-		    m->m_ext.ext_pgs->tls == NULL)
+		    !mbuf_has_tls_session(m))
 			(void)mb_unmapped_compress(m);
 		if (n)
 			n->m_next = m;
