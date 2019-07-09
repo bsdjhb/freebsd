@@ -61,13 +61,89 @@ __FBSDID("$FreeBSD$");
 #include "syscall.h"
 #include "extern.h"
 
-SET_DECLARE(procabi, struct procabi);
+struct procabi_table {
+	const char *name;
+	struct procabi *abi;
+};
 
 static sig_atomic_t detaching;
 
 static void	enter_syscall(struct trussinfo *, struct threadinfo *,
 		    struct ptrace_lwpinfo *);
 static void	new_proc(struct trussinfo *, pid_t, lwpid_t);
+
+
+static struct procabi cloudabi32 = {
+	"CloudABI32",
+	SYSDECODE_ABI_CLOUDABI32,
+	STAILQ_HEAD_INITIALIZER(cloudabi32.extra_syscalls),
+	{ NULL }
+};
+
+static struct procabi cloudabi64 = {
+	"CloudABI64",
+	SYSDECODE_ABI_CLOUDABI64,
+	STAILQ_HEAD_INITIALIZER(cloudabi64.extra_syscalls),
+	{ NULL }
+};
+
+static struct procabi freebsd = {
+	"FreeBSD",
+	SYSDECODE_ABI_FREEBSD,
+	STAILQ_HEAD_INITIALIZER(freebsd.extra_syscalls),
+	{ NULL }
+};
+
+#ifdef __LP64__
+static struct procabi freebsd32 = {
+	"FreeBSD32",
+	SYSDECODE_ABI_FREEBSD32,
+	STAILQ_HEAD_INITIALIZER(freebsd32.extra_syscalls),
+	{ NULL }
+};
+#endif
+
+static struct procabi linux = {
+	"Linux",
+	SYSDECODE_ABI_LINUX,
+	STAILQ_HEAD_INITIALIZER(linux.extra_syscalls),
+	{ NULL }
+};
+
+#ifdef __LP64__
+static struct procabi linux32 = {
+	"Linux32",
+	SYSDECODE_ABI_LINUX32,
+	STAILQ_HEAD_INITIALIZER(linux32.extra_syscalls),
+	{ NULL }
+};
+#endif
+
+static struct procabi_table abis[] = {
+	{ "CloudABI ELF32", &cloudabi32 },
+	{ "CloudABI ELF64", &cloudabi64 },
+#ifdef __LP64__
+	{ "FreeBSD ELF64", &freebsd },
+	{ "FreeBSD ELF32", &freebsd32 },
+#else
+	{ "FreeBSD ELF32", &freebsd },
+#endif
+#if defined(__powerpc64__)
+	{ "FreeBSD ELF64 V2", &freebsd },
+#endif
+#if defined(__amd64__)
+	{ "FreeBSD a.out", &freebsd32 },
+#endif
+#if defined(__i386__)
+	{ "FreeBSD a.out", &freebsd },
+#endif
+#ifdef __LP64__
+	{ "Linux ELF64", &linux },
+	{ "Linux ELF32", &linux32 },
+#else
+	{ "Linux ELF", &linux },
+#endif
+};
 
 /*
  * setup_and_wait() is called to start a process.  All it really does
@@ -146,100 +222,6 @@ detach_proc(pid_t pid)
 	kill(pid, SIGCONT);
 }
 
-#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
-static struct procabi cloudabi32 = {
-	"CloudABI ELF32",
-	SYSDECODE_ABI_CLOUDABI32,
-	STAILQ_HEAD_INITIALIZER(cloudabi32.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(cloudabi32);
-#endif
-
-#if defined(__aarch64__) || defined(__amd64__)
-static struct procabi cloudabi64 = {
-	"CloudABI ELF64",
-	SYSDECODE_ABI_CLOUDABI64,
-	STAILQ_HEAD_INITIALIZER(cloudabi64.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(cloudabi64);
-#endif
-
-static struct procabi freebsd = {
-#ifdef __LP64__
-	"FreeBSD ELF64",
-#else
-	"FreeBSD ELF32",
-#endif
-	SYSDECODE_ABI_FREEBSD,
-	STAILQ_HEAD_INITIALIZER(freebsd.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(freebsd);
-
-#if defined(__amd64__) || defined(__mips_n64) || defined(__powerpc64__)
-static struct procabi freebsd32 = {
-	"FreeBSD ELF32",
-	SYSDECODE_ABI_FREEBSD32,
-	STAILQ_HEAD_INITIALIZER(freebsd32.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(freebsd32);
-#endif
-
-#if defined(__powerpc64__)
-static struct procabi freebsd_elfv2 = {
-	"FreeBSD ELF64 V2",
-	SYSDECODE_ABI_FREEBSD,
-	STAILQ_HEAD_INITIALIZER(freebsd_elfv2.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(freebsd_elfv2);
-#endif
-
-#if defined(__amd64__) || defined(__i386__)
-static struct procabi freebsd_aout = {
-	"FreeBSD a.out",
-	SYSDECODE_ABI_FREEBSD32,
-	STAILQ_HEAD_INITIALIZER(freebsd_aout.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(freebsd_aout);
-#endif
-
-#if defined(__amd64__) || defined(__i386__)
-static struct procabi linux = {
-#if defined(__i386__)
-	"Linux ELF",
-#else
-	"Linux ELF64",
-#endif
-	SYSDECODE_ABI_LINUX,
-	STAILQ_HEAD_INITIALIZER(linux.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(linux);
-#endif
-
-#if defined(__amd64__)
-static struct procabi linux32 = {
-	"Linux ELF32",
-	SYSDECODE_ABI_LINUX32,
-	STAILQ_HEAD_INITIALIZER(linux32.extra_syscalls),
-	{ NULL }
-};
-
-PROCABI(linux32);
-#endif
-
 /*
  * Determine the ABI.  This is called after every exec, and when
  * a process is first monitored.
@@ -247,8 +229,8 @@ PROCABI(linux32);
 static struct procabi *
 find_abi(pid_t pid)
 {
-	struct procabi **pabi;
 	size_t len;
+	unsigned int i;
 	int error;
 	int mib[4];
 	char progt[32];
@@ -262,9 +244,9 @@ find_abi(pid_t pid)
 	if (error != 0)
 		err(2, "can not get sysvec name");
 
-	SET_FOREACH(pabi, procabi) {
-		if (strcmp((*pabi)->type, progt) == 0)
-			return (*pabi);
+	for (i = 0; i < nitems(abis); i++) {
+		if (strcmp(abis[i].name, progt) == 0)
+			return (abis[i].abi);
 	}
 	warnx("ABI %s for pid %ld is not supported", progt, (long)pid);
 	return (NULL);
