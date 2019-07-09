@@ -48,26 +48,6 @@ __FBSDID("$FreeBSD$");
 
 #include "truss.h"
 
-static int
-mips_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
-{
-	struct reg regs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	/* XXX: Does not have special handling for __syscall(). */
-	retval[0] = regs.r_regs[V0];
-	retval[1] = regs.r_regs[V1];
-	*errorp = !!regs.r_regs[A3];
-	return (0);
-}
-
-
 static struct procabi mips_freebsd = {
 #ifdef __mips_n64
 	"FreeBSD ELF64",
@@ -75,7 +55,6 @@ static struct procabi mips_freebsd = {
 	"FreeBSD ELF32",
 #endif
 	SYSDECODE_ABI_FREEBSD,
-	mips_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(mips_freebsd.extra_syscalls),
 	{ NULL }
 };

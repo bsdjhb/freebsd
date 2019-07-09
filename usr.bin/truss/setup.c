@@ -409,7 +409,7 @@ enter_syscall(struct trussinfo *info, struct threadinfo *t,
 #endif
 		if (!(sc->args[i].type & OUT)) {
 			t->cs.s_args[i] = print_arg(&sc->args[i],
-			    t->cs.args, 0, info);
+			    t->cs.args, NULL, info);
 		}
 	}
 #if DEBUG
@@ -447,9 +447,8 @@ exit_syscall(struct trussinfo *info, struct ptrace_lwpinfo *pl)
 	struct threadinfo *t;
 	struct procinfo *p;
 	struct syscall *sc;
-	long retval[2];
+	struct ptrace_sc_ret psr;
 	u_int i;
-	int errorp;
 
 	t = info->curthread;
 	if (!t->in_syscall)
@@ -457,7 +456,7 @@ exit_syscall(struct trussinfo *info, struct ptrace_lwpinfo *pl)
 
 	clock_gettime(CLOCK_REALTIME, &t->after);
 	p = t->proc;
-	if (p->abi->fetch_retval(info, retval, &errorp) < 0) {
+	if (ptrace(PT_GET_SC_RET, t->tid, (caddr_t)&psr, sizeof(psr)) != 0) {
 		free_syscall(t);
 		return;
 	}
@@ -475,18 +474,18 @@ exit_syscall(struct trussinfo *info, struct ptrace_lwpinfo *pl)
 			 * If an error occurred, then don't bother
 			 * getting the data; it may not be valid.
 			 */
-			if (errorp) {
+			if (psr.sr_error != 0) {
 				asprintf(&temp, "0x%lx",
 				    t->cs.args[sc->args[i].offset]);
 			} else {
 				temp = print_arg(&sc->args[i],
-				    t->cs.args, retval, info);
+				    t->cs.args, psr.sr_retval, info);
 			}
 			t->cs.s_args[i] = temp;
 		}
 	}
 
-	print_syscall_ret(info, errorp, retval);
+	print_syscall_ret(info, psr.sr_error, psr.sr_retval);
 	free_syscall(t);
 
 	/*

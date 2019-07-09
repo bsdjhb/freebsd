@@ -48,28 +48,9 @@ __FBSDID("$FreeBSD$");
 
 #include "truss.h"
 
-static int
-amd64_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
-{
-	struct reg regs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	retval[0] = regs.r_rax;
-	retval[1] = regs.r_rdx;
-	*errorp = !!(regs.r_rflags & PSL_C);
-	return (0);
-}
-
 static struct procabi amd64_freebsd = {
 	"FreeBSD ELF64",
 	SYSDECODE_ABI_FREEBSD,
-	amd64_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(amd64_freebsd.extra_syscalls),
 	{ NULL }
 };

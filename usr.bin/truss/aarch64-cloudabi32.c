@@ -37,43 +37,9 @@ __FBSDID("$FreeBSD$");
 
 #include "truss.h"
 
-static int
-aarch64_cloudabi32_fetch_retval(struct trussinfo *trussinfo, long *retval,
-    int *errorp)
-{
-	struct ptrace_io_desc iorequest;
-	struct reg regs;
-	lwpid_t tid;
-
-	/* Fetch registers, containing the address of the return values. */
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) == -1) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	if ((regs.spsr & PSR_C) == 0) {
-		/* System call succeeded. Fetch return values. */
-		iorequest.piod_op = PIOD_READ_D;
-		iorequest.piod_offs = (void *)regs.x[2];
-		iorequest.piod_addr = retval;
-		iorequest.piod_len = sizeof(retval[0]) * 2;
-		if (ptrace(PT_IO, tid, (caddr_t)&iorequest, 0) == -1 ||
-		    iorequest.piod_len == 0)
-			return (-1);
-		*errorp = 0;
-	} else {
-		/* System call failed. Set error. */
-		retval[0] = regs.x[0];
-		*errorp = 1;
-	}
-	return (0);
-}
-
 static struct procabi aarch64_cloudabi32 = {
 	"CloudABI ELF32",
 	SYSDECODE_ABI_CLOUDABI32,
-	aarch64_cloudabi32_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(aarch64_cloudabi32.extra_syscalls),
 	{ NULL }
 };

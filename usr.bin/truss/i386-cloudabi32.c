@@ -37,29 +37,9 @@ __FBSDID("$FreeBSD$");
 
 #include "truss.h"
 
-static int
-i386_cloudabi32_fetch_retval(struct trussinfo *trussinfo, long *retval,
-    int *errorp)
-{
-	struct reg regs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) == -1) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	retval[0] = regs.r_eax;
-	retval[1] = regs.r_edx;
-	*errorp = (regs.r_eflags & PSL_C) != 0;
-	return (0);
-}
-
 static struct procabi i386_cloudabi32 = {
 	"CloudABI ELF32",
 	SYSDECODE_ABI_CLOUDABI32,
-	i386_cloudabi32_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(i386_cloudabi32.extra_syscalls),
 	{ NULL }
 };

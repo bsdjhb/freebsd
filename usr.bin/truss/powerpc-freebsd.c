@@ -42,29 +42,9 @@ __FBSDID("$FreeBSD$");
 
 #include "truss.h"
 
-static int
-powerpc_fetch_retval(struct trussinfo *trussinfo, long *retval, int *errorp)
-{
-	struct reg regs;
-	lwpid_t tid;
-
-	tid = trussinfo->curthread->tid;
-	if (ptrace(PT_GETREGS, tid, (caddr_t)&regs, 0) < 0) {
-		fprintf(trussinfo->outfile, "-- CANNOT READ REGISTERS --\n");
-		return (-1);
-	}
-
-	/* XXX: Does not have fixup for __syscall(). */
-	retval[0] = regs.fixreg[3];
-	retval[1] = regs.fixreg[4];
-	*errorp = !!(regs.cr & 0x10000000);
-	return (0);
-}
-
 static struct procabi powerpc_freebsd = {
 	"FreeBSD ELF32",
 	SYSDECODE_ABI_FREEBSD,
-	powerpc_fetch_retval,
 	STAILQ_HEAD_INITIALIZER(powerpc_freebsd.extra_syscalls),
 	{ NULL }
 };
