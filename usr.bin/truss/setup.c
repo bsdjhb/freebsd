@@ -146,6 +146,100 @@ detach_proc(pid_t pid)
 	kill(pid, SIGCONT);
 }
 
+#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
+static struct procabi cloudabi32 = {
+	"CloudABI ELF32",
+	SYSDECODE_ABI_CLOUDABI32,
+	STAILQ_HEAD_INITIALIZER(cloudabi32.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(cloudabi32);
+#endif
+
+#if defined(__aarch64__) || defined(__amd64__)
+static struct procabi cloudabi64 = {
+	"CloudABI ELF64",
+	SYSDECODE_ABI_CLOUDABI64,
+	STAILQ_HEAD_INITIALIZER(cloudabi64.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(cloudabi64);
+#endif
+
+static struct procabi freebsd = {
+#ifdef __LP64__
+	"FreeBSD ELF64",
+#else
+	"FreeBSD ELF32",
+#endif
+	SYSDECODE_ABI_FREEBSD,
+	STAILQ_HEAD_INITIALIZER(freebsd.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(freebsd);
+
+#if defined(__amd64__) || defined(__mips_n64) || defined(__powerpc64__)
+static struct procabi freebsd32 = {
+	"FreeBSD ELF32",
+	SYSDECODE_ABI_FREEBSD32,
+	STAILQ_HEAD_INITIALIZER(freebsd32.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(freebsd32);
+#endif
+
+#if defined(__powerpc64__)
+static struct procabi freebsd_elfv2 = {
+	"FreeBSD ELF64 V2",
+	SYSDECODE_ABI_FREEBSD,
+	STAILQ_HEAD_INITIALIZER(freebsd_elfv2.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(freebsd_elfv2);
+#endif
+
+#if defined(__amd64__) || defined(__i386__)
+static struct procabi freebsd_aout = {
+	"FreeBSD a.out",
+	SYSDECODE_ABI_FREEBSD32,
+	STAILQ_HEAD_INITIALIZER(freebsd_aout.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(freebsd_aout);
+#endif
+
+#if defined(__amd64__) || defined(__i386__)
+static struct procabi linux = {
+#if defined(__i386__)
+	"Linux ELF",
+#else
+	"Linux ELF64",
+#endif
+	SYSDECODE_ABI_LINUX,
+	STAILQ_HEAD_INITIALIZER(linux.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(linux);
+#endif
+
+#if defined(__amd64__)
+static struct procabi linux32 = {
+	"Linux ELF32",
+	SYSDECODE_ABI_LINUX32,
+	STAILQ_HEAD_INITIALIZER(linux32.extra_syscalls),
+	{ NULL }
+};
+
+PROCABI(linux32);
+#endif
+
 /*
  * Determine the ABI.  This is called after every exec, and when
  * a process is first monitored.
