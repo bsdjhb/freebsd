@@ -120,8 +120,7 @@ syscallenter(struct thread *td)
 	 */
 	if (IN_CAPABILITY_MODE(td) &&
 	    !(sa->callp->sy_flags & SYF_CAPENABLED)) {
-		error = ECAPMODE;
-		td->td_errno = error;
+		td->td_errno = error = ECAPMODE;
 		goto retval;
 	}
 #endif
@@ -172,7 +171,7 @@ syscallenter(struct thread *td)
 }
 
 static inline void
-syscallret(struct thread *td, int error)
+syscallret(struct thread *td, int error __unused)
 {
 	struct proc *p;
 	struct syscall_args *sa;
