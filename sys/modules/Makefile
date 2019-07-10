@@ -200,6 +200,7 @@ SUBDIR=	\
 	khelp \
 	krpc \
 	ksyms \
+	ktls_ocf \
 	le \
 	lge \
 	libalias \
