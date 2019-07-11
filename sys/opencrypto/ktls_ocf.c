@@ -30,6 +30,7 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#include <sys/counter.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
@@ -37,6 +38,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <sys/sockbuf_tls.h>
+#include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <opencrypto/cryptodev.h>
 
@@ -56,6 +58,16 @@ static MALLOC_DEFINE(M_SBTLS_OCF, "ktls_ocf", "OCF KTLS");
 
 SYSCTL_DECL(_kern_ipc_tls);
 SYSCTL_DECL(_kern_ipc_tls_counters);
+
+static counter_u64_t ocf_gcm_crypts;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, ocf_gcm_crypts, CTLFLAG_RD,
+    &ocf_gcm_crypts,
+    "Total number of OCF GCM encryption operations");
+
+static counter_u64_t ocf_retries;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, ocf_retries, CTLFLAG_RD,
+    &ocf_retries,
+    "Number of OCF encryption operation retries");
 
 static int
 sbtls_ocf_callback(struct cryptop *crp)
@@ -157,6 +169,7 @@ sbtls_ocf_crypt(struct sbtls_session *tls,
 	crde->crd_flags = CRD_F_ENCRYPT | CRD_F_IV_EXPLICIT | CRD_F_IV_PRESENT;
 	memcpy(crde->crd_iv, &nd, sizeof(nd));
 
+	counter_u64_add(ocf_gcm_crypts, 1);
 	for (;;) {
 		error = crypto_dispatch(crp);
 		if (error)
@@ -175,6 +188,7 @@ sbtls_ocf_crypt(struct sbtls_session *tls,
 		crp->crp_etype = 0;
 		crp->crp_flags &= ~CRYPTO_F_DONE;
 		oo->done = false;
+		counter_u64_add(ocf_retries, 1);
 	}
 
 	crypto_freereq(crp);
@@ -264,12 +278,20 @@ struct sbtls_crypto_backend ocf_backend = {
 static int
 sbtls_ocf_modevent(module_t mod, int what, void *arg)
 {
+	int error;
 
 	switch (what) {
 	case MOD_LOAD:
+		ocf_gcm_crypts = counter_u64_alloc(M_WAITOK);
+		ocf_retries = counter_u64_alloc(M_WAITOK);
 		return (sbtls_crypto_backend_register(&ocf_backend));
 	case MOD_UNLOAD:
-		return (sbtls_crypto_backend_deregister(&ocf_backend));
+		error = sbtls_crypto_backend_deregister(&ocf_backend);
+		if (error)
+			return (error);
+		counter_u64_free(ocf_gcm_crypts);
+		counter_u64_free(ocf_retries);
+		return (0);
 	default:
 		return (EOPNOTSUPP);
 	}
