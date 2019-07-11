@@ -7222,7 +7222,8 @@ pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, int flags)
 		for (i = 0; i < PMAP_PREINIT_MAPPING_COUNT; i++) {
 			ppim = pmap_preinit_mapping + i;
 			if (ppim->pa == pa && ppim->sz == size &&
-			    (ppim->mode == mode || !(flags & MAPDEV_SETATTR)))
+			    (ppim->mode == mode ||
+			    (flags & MAPDEV_SETATTR) == 0))
 				return ((void *)(ppim->va + offset));
 		}
 		/*
@@ -7231,7 +7232,7 @@ pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, int flags)
 		 */
 		if (pa < dmaplimit && pa + size <= dmaplimit) {
 			va = PHYS_TO_DMAP(pa);
-			if (flags & MAPDEV_SETATTR) {
+			if ((flags & MAPDEV_SETATTR) != 0) {
 				PMAP_LOCK(kernel_pmap);
 				i = pmap_change_attr_locked(va, size, mode, flags);
 				PMAP_UNLOCK(kernel_pmap);
@@ -7247,7 +7248,7 @@ pmap_mapdev_internal(vm_paddr_t pa, vm_size_t size, int mode, int flags)
 	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE)
 		pmap_kenter_attr(va + tmpsize, pa + tmpsize, mode);
 	pmap_invalidate_range(kernel_pmap, va, va + tmpsize);
-	if (flags & MAPDEV_FLUSHCACHE)
+	if ((flags & MAPDEV_FLUSHCACHE) != 0)
 		pmap_invalidate_cache_range(va, va + tmpsize);
 	return ((void *)(va + offset));
 }
@@ -7624,7 +7625,7 @@ pmap_change_attr_locked(vm_offset_t va, vm_size_t size, int mode, int flags)
 	 */
 	if (changed) {
 		pmap_invalidate_range(kernel_pmap, base, tmpva);
-		if (flags & MAPDEV_FLUSHCACHE)
+		if ((flags & MAPDEV_FLUSHCACHE) != 0)
 			pmap_invalidate_cache_range(base, tmpva);
 	}
 	return (error);
