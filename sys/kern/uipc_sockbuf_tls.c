@@ -1233,7 +1233,7 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 	int running;
 
 	/* Mark it for freeing. */
-	pgs->mbuf = NULL;
+	pgs->first = NULL;
 	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
@@ -1259,7 +1259,10 @@ sbtls_enqueue(struct mbuf *m, struct socket *so)
 	KASSERT(pgs->nrdy != 0, ("TLS mbuf without pending pages"));
 	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
 
-	pgs->mbuf = m;
+	pgs->first = m;
+	while (m->m_next != NULL)
+		m = m->m_next;
+	pgs->last = m;
 
 	/*
 	 * Save a pointer to the socket.  The caller is responsible
@@ -1282,7 +1285,7 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 {
 	struct sbtls_session *tls;
 	struct socket *so;
-	struct mbuf *top, *m;
+	struct mbuf *last, *m, *top;
 	vm_paddr_t parray[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
@@ -1292,16 +1295,28 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 
 	so = pgs->so;
 	tls = pgs->tls;
-	top = pgs->mbuf;
+	top = pgs->first;
+	last = pgs->last;
 	KASSERT(tls != NULL, ("tls = NULL, top = %p, pgs = %p\n", top, pgs));
 	KASSERT(so != NULL, ("so = NULL, top = %p, pgs = %p\n", top, pgs));
+#ifdef INVARIANTS
 	pgs->so = NULL;
-	pgs->mbuf = NULL;
+#endif
 	npages = 0;
 
-	/* Each TLS record is in a single mbuf.  Do one at a time. */
+	/*
+	 * Encrypt the TLS records associated in the chain of mbufs
+	 * from 'top' to 'last', inclusive.  Each mbuf holds an
+	 * entire TLS record.
+	 *
+	 * NB: These mbufs are queued in the socket buffer and
+	 * 'm_next' is traversing the mbufs in the socket buffer.  The
+	 * socket buffer lock is not held while traversing this chain.
+	 * However, since the mbufs are all marked M_NOTREADY their
+	 * 'm_next' pointers should be stable.
+	 */
 	error = 0;
-	for (m = top; m != NULL; m = m->m_next) {
+	for (m = top;; m = m->m_next) {
 		pgs = m->m_ext.ext_pgs;
 
 		KASSERT(pgs->tls == tls,
@@ -1383,6 +1398,9 @@ retry_page:
 		 */
 		pgs->tls = NULL;
 		sbtls_free(tls);
+
+		if (m == last)
+			break;
 	}
 
 	CURVNET_SET(so->so_vnet);
@@ -1391,8 +1409,13 @@ retry_page:
 	} else {
 		so->so_proto->pr_usrreqs->pru_abort(so);
 		so->so_error = EIO;
-		for (m = m->m_next; m != NULL; m = m->m_next)
-			npages += m->m_ext.ext_pgs->nrdy;
+		if (m != last) {
+			for (m = m->m_next;; m = m->m_next) {
+				npages += m->m_ext.ext_pgs->nrdy;
+				if (m == last)
+					break;
+			}
+		}
 		mb_free_notready(top, npages);
 	}
 
@@ -1424,7 +1447,7 @@ sbtls_work_thread(void *ctx)
 
 		STAILQ_FOREACH_SAFE(p, &local_head, stailq, n) {
 			/* encrypt or free each TLS record on the list */
-			if (p->mbuf != NULL) {
+			if (p->first != NULL) {
 				sbtls_encrypt(p);
 				counter_u64_add(sbtls_cnt_on, -1);
 			} else {
