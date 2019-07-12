@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
@@ -1217,6 +1218,9 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, uint8_t record_type)
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
 
 		if (tls->sb_tls_crypt != NULL) {
+			CTR4(KTR_SPARE3,
+			    "tid %d %s: setting NOTREADY on %p, pgs %p",
+			    curthread->td_tid, __func__, m, pgs);
 			/* Mark mbuf not-ready, to be cleared when encrypted. */
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
@@ -1231,6 +1235,8 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 {
 	struct sbtls_wq *wq;
 	int running;
+
+	CTR3(KTR_SPARE3, "tid %d %s(%p)", curthread->td_tid, __func__, pgs);
 
 	/* Mark it for freeing. */
 	pgs->first = NULL;
@@ -1258,6 +1264,9 @@ sbtls_enqueue(struct mbuf *m, struct socket *so)
 
 	KASSERT(pgs->nrdy != 0, ("TLS mbuf without pending pages"));
 	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
+
+	CTR5(KTR_SPARE3, "tid %d %s(%p, %p): pgs %p", curthread->td_tid,
+	    __func__, m, so, pgs);
 
 	pgs->first = m;
 	while (m->m_next != NULL)
@@ -1448,9 +1457,13 @@ sbtls_work_thread(void *ctx)
 		STAILQ_FOREACH_SAFE(p, &local_head, stailq, n) {
 			/* encrypt or free each TLS record on the list */
 			if (p->first != NULL) {
+				CTR3(KTR_SPARE3, "tid %d %s encrypting pgs %p",
+				    curthread->td_tid, __func__, p);
 				sbtls_encrypt(p);
 				counter_u64_add(sbtls_cnt_on, -1);
 			} else {
+				CTR3(KTR_SPARE3, "tid %d %s freeing pgs %p",
+				    curthread->td_tid, __func__, p);
 				/* records w/null mbuf are freed */
 				tls = p->tls;
 				sbtls_free(tls);

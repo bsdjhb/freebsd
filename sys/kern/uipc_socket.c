@@ -1635,6 +1635,11 @@ restart:
 			    (resid > 0 && space > 0) ? PRUS_MORETOCOME : 0;
 
 			pru_flag |= tls_pruflag;
+			if (tls != NULL)
+				CTR5(KTR_SPARE3,
+				    "tid %d %s: pru_send(%p, %#x, %p)",
+				    curthread->td_tid, __func__, so, pru_flag,
+				    top);
 
 			error = (*so->so_proto->pr_usrreqs->pru_send)(so,
 			    pru_flag, top, addr, control, td);

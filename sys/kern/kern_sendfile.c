@@ -345,6 +345,8 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 		mb_free_notready(sfio->m, sfio->npages);
 	} else {
+		CTR4(KTR_SPARE3, "tid %d %s: finished mbuf %p npages %d",
+		    curthread->td_tid, __func__, sfio->m, sfio->npages);
 		if (sfio->tls != NULL && sfio->tls->sb_tls_crypt != NULL) {
 			/*
 			 * I/O operation is complete, but we still

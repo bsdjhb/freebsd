@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/aio.h> /* for aio_swake proto */
 #include <sys/kernel.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
@@ -178,6 +179,9 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 	SOCKBUF_LOCK_ASSERT(sb);
 	KASSERT(sb->sb_fnrdy != NULL, ("%s: sb %p NULL fnrdy", __func__, sb));
 	KASSERT(count > 0, ("%s: invalid count %d", __func__, count));
+	if (sb->sb_tls_info != NULL)
+		CTR5(KTR_SPARE3, "tid %d %s(%p, %p, %d)", curthread->td_tid,
+		    __func__, sb, m0, count);
 
 	m = m0;
 	blocker = (sb->sb_fnrdy == m) ? M_BLOCKED : 0;
@@ -188,11 +192,19 @@ sbready(struct sockbuf *sb, struct mbuf *m0, int count)
 		if ((m->m_flags & M_EXT) != 0 &&
 		    m->m_ext.ext_type == EXT_PGS) {
 			if (count < m->m_ext.ext_pgs->nrdy) {
+				CTR6(KTR_SPARE3,
+				    "tid %d %s: m %p pgs %p nrdy %d -> %d",
+				    curthread->td_tid, __func__, m,
+				    m->m_ext.ext_pgs, m->m_ext.ext_pgs->nrdy,
+				    m->m_ext.ext_pgs->nrdy - count);
 				m->m_ext.ext_pgs->nrdy -= count;
 				count = 0;
 				break;
 			}
 			count -= m->m_ext.ext_pgs->nrdy;
+			CTR5(KTR_SPARE3, "tid %d %s: m %p pgs %p nrdy %d -> 0",
+			    curthread->td_tid, __func__, m, m->m_ext.ext_pgs,
+			    m->m_ext.ext_pgs->nrdy);
 			m->m_ext.ext_pgs->nrdy = 0;
 		} else
 			count--;
