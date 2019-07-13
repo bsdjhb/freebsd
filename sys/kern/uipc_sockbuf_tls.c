@@ -1140,7 +1140,8 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 }
 
 int
-sbtls_frame(struct mbuf **top, struct sbtls_session *tls, uint8_t record_type)
+sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
+    uint8_t record_type)
 {
 	struct tls_record_layer *tlshdr;
 	struct mbuf *m;
@@ -1149,6 +1150,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, uint8_t record_type)
 	int maxlen;
 
 	maxlen = tls->sb_params.sb_maxlen;
+	*enq_cnt = 0;
 	for (m = *top; m != NULL; m = m->m_next) {
 		/*
 		 * We expect whoever constructed the chain
@@ -1220,6 +1222,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, uint8_t record_type)
 			/* Mark mbuf not-ready, to be cleared when encrypted. */
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
+			*enq_cnt += pgs->npgs;
 		}
 	}
 	return (0);
@@ -1233,7 +1236,7 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 	int running;
 
 	/* Mark it for freeing. */
-	pgs->first = NULL;
+	pgs->mbuf = NULL;
 	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
@@ -1244,7 +1247,7 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 }
 
 void
-sbtls_enqueue(struct mbuf *m, struct socket *so)
+sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 	struct mbuf_ext_pgs *pgs;
 	struct sbtls_wq *wq;
@@ -1253,16 +1256,14 @@ sbtls_enqueue(struct mbuf *m, struct socket *so)
 	KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 		(M_NOMAP | M_NOTREADY)),
 	    ("%p not unready & nomap mbuf\n", m));
+	KASSERT(page_count != 0, ("enqueueing TLS mbuf with zero page count"));
 
 	pgs = m->m_ext.ext_pgs;
 
-	KASSERT(pgs->nrdy != 0, ("TLS mbuf without pending pages"));
 	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
 
-	pgs->first = m;
-	while (m->m_next != NULL)
-		m = m->m_next;
-	pgs->last = m;
+	pgs->enc_cnt = page_count;
+	pgs->mbuf = m;
 
 	/*
 	 * Save a pointer to the socket.  The caller is responsible
@@ -1285,38 +1286,45 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 {
 	struct sbtls_session *tls;
 	struct socket *so;
-	struct mbuf *last, *m, *top;
+	struct mbuf *m, *top;
 	vm_paddr_t parray[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	vm_page_t pg;
-	int error, i, len, npages, off, wire_adj;
+	int error, i, len, npages, off, total_pages, wire_adj;
 	bool is_anon;
 
 	so = pgs->so;
 	tls = pgs->tls;
-	top = pgs->first;
-	last = pgs->last;
+	top = pgs->mbuf;
 	KASSERT(tls != NULL, ("tls = NULL, top = %p, pgs = %p\n", top, pgs));
 	KASSERT(so != NULL, ("so = NULL, top = %p, pgs = %p\n", top, pgs));
 #ifdef INVARIANTS
 	pgs->so = NULL;
+	pgs->mbuf = NULL;
 #endif
+	total_pages = pgs->enc_cnt;
 	npages = 0;
 
 	/*
-	 * Encrypt the TLS records associated in the chain of mbufs
-	 * from 'top' to 'last', inclusive.  Each mbuf holds an
-	 * entire TLS record.
+	 * Encrypt the TLS records in the chain of mbufs starting with
+	 * 'top'.  'total_pages' gives us a total count of pages and is
+	 * used to know when we have finished encrypting the TLS
+	 * records originally queued with 'top'.
 	 *
 	 * NB: These mbufs are queued in the socket buffer and
 	 * 'm_next' is traversing the mbufs in the socket buffer.  The
 	 * socket buffer lock is not held while traversing this chain.
 	 * However, since the mbufs are all marked M_NOTREADY their
-	 * 'm_next' pointers should be stable.
+	 * 'm_next' pointers should be stable.  However, the 'm_next'
+	 * of the last mbuf encrypted is not necessarily NULL.  It can
+	 * point to other mbufs appended while 'top' was on the TLS
+	 * work queue.
+	 *
+	 * Each mbuf holds an entire TLS record.
 	 */
 	error = 0;
-	for (m = top;; m = m->m_next) {
+	for (m = top; npages != total_pages; m = m->m_next) {
 		pgs = m->m_ext.ext_pgs;
 
 		KASSERT(pgs->tls == tls,
@@ -1325,7 +1333,9 @@ sbtls_encrypt(struct mbuf_ext_pgs *pgs)
 		KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 			(M_NOMAP | M_NOTREADY)),
 		    ("%p not unready & nomap mbuf (top = %p)\n", m, top));
-		KASSERT(pgs->nrdy == pgs->npgs, ("%p page count mismatch", m));
+		KASSERT(npages + pgs->npgs <= total_pages,
+		    ("page count mismatch: top %p, total_pages %d, m %p", top,
+		    total_pages, m));
 
 		/*
 		 * If this is not a file-backed page, it can
@@ -1398,9 +1408,6 @@ retry_page:
 		 */
 		pgs->tls = NULL;
 		sbtls_free(tls);
-
-		if (m == last)
-			break;
 	}
 
 	CURVNET_SET(so->so_vnet);
@@ -1409,14 +1416,7 @@ retry_page:
 	} else {
 		so->so_proto->pr_usrreqs->pru_abort(so);
 		so->so_error = EIO;
-		if (m != last) {
-			for (m = m->m_next;; m = m->m_next) {
-				npages += m->m_ext.ext_pgs->nrdy;
-				if (m == last)
-					break;
-			}
-		}
-		mb_free_notready(top, npages);
+		mb_free_notready(top, total_pages);
 	}
 
 	SOCK_LOCK(so);
@@ -1447,7 +1447,7 @@ sbtls_work_thread(void *ctx)
 
 		STAILQ_FOREACH_SAFE(p, &local_head, stailq, n) {
 			/* encrypt or free each TLS record on the list */
-			if (p->first != NULL) {
+			if (p->mbuf != NULL) {
 				sbtls_encrypt(p);
 				counter_u64_add(sbtls_cnt_on, -1);
 			} else {

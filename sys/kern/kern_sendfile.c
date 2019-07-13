@@ -301,7 +301,7 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 			 * Donate the socket reference from sfio to
 			 * rather than explicitly invoking soref().
 			 */
-			sbtls_enqueue(sfio->m, so);
+			sbtls_enqueue(sfio->m, so, sfio->npages);
 			goto out_with_ref;
 		} else
 			(void)(so->so_proto->pr_usrreqs->pru_ready)(so,
@@ -560,7 +560,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	struct sendfile_sync *sfs;
 	struct vattr va;
 	off_t off, sbytes, rem, obj_size;
-	int bsize, error, ext_pgs_idx, hdrlen, max_pgs, softerr;
+	int bsize, error, ext_pgs_idx, hdrlen, max_pgs, softerr, tls_enq_cnt;
 	bool use_ext_pgs;
 
 	obj = NULL;
@@ -996,7 +996,8 @@ prepend_header:
 
 		CURVNET_SET(so->so_vnet);
 		if (tls != NULL) {
-			error = sbtls_frame(&m, tls, TLS_RLTYPE_APP);
+			error = sbtls_frame(&m, tls, &tls_enq_cnt,
+			    TLS_RLTYPE_APP);
 			if (error != 0)
 				goto done;
 		}
@@ -1012,7 +1013,7 @@ prepend_header:
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, PRUS_NOTREADY, m, NULL, NULL, td);
 				soref(so);
-				sbtls_enqueue(m, so);
+				sbtls_enqueue(m, so, tls_enq_cnt);
 			} else {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, 0, m, NULL, NULL, td);

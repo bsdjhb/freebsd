@@ -358,10 +358,10 @@ struct mbuf_ext_pgs {
 		char	trail[MBUF_PEXT_TRAIL_LEN]; /* TLS trailer */
 		struct {
 			struct socket *so;
-			struct mbuf *first;
+			struct mbuf *mbuf;
 			uint64_t seqno;
 			STAILQ_ENTRY(mbuf_ext_pgs) stailq;
-			struct mbuf *last;
+			int enc_cnt;
 		};
 	};
 };

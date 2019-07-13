@@ -1444,7 +1444,7 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	int clen = 0, error, dontroute;
 	int atomic = sosendallatonce(so) || top;
 	struct sbtls_session *tls;
-	int pru_flag, tls_pruflag;
+	int pru_flag, tls_pruflag, tls_enq_cnt;
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
 
 	tls = NULL;
@@ -1583,7 +1583,8 @@ restart:
 					    ((flags & MSG_EOR) ? M_EOR : 0));
 					if (top != NULL) {
 						error = sbtls_frame(&top,
-						    tls, tls_rtype);
+						    tls, &tls_enq_cnt,
+						    tls_rtype);
 						if (error) {
 							m_freem(top);
 							goto release;
@@ -1657,7 +1658,7 @@ restart:
 				 * did not append them to the sockbuf.
 				 */
 				soref(so);
-				sbtls_enqueue(top, so);
+				sbtls_enqueue(top, so, tls_enq_cnt);
 			}
 			clen = 0;
 			control = NULL;
