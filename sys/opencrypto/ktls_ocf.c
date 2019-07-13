@@ -231,9 +231,8 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 		default:
 			return (EINVAL);
 		}
-		crie.cri_alg = CRYPTO_AES_NIST_GCM_16;
 		cria.cri_key = tls->sb_params.crypt;
-		cria.cri_klen = tls->sb_params.crypt_key_len;
+		cria.cri_klen = tls->sb_params.crypt_key_len * 8;
 		break;
 	default:
 		return (EPROTONOSUPPORT);
@@ -249,8 +248,9 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 	if (os == NULL)
 		return (ENOMEM);
 
+	crie.cri_alg = tls->sb_params.crypt_algorithm;
 	crie.cri_key = tls->sb_params.crypt;
-	crie.cri_klen = tls->sb_params.crypt_key_len;
+	crie.cri_klen = tls->sb_params.crypt_key_len * 8;
 
 	crie.cri_next = &cria;
 	error = crypto_newsession(&os->sid, &crie,
