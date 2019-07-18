@@ -110,6 +110,11 @@ struct	sockbuf {
 	struct	task sb_aiotask; /* AIO task */
 };
 
+/*
+ * Constants for the Socket Buffer TLS state flags (sb_tls_flags).
+ */
+#define	SB_TLS_IFNET		0x0001	/* crypto performed at ifnet layer. */
+
 #endif	/* defined(_KERNEL) || defined(_WANT_SOCKET) */
 #ifdef _KERNEL
 

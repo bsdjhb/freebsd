@@ -48,11 +48,6 @@ struct tls_record_layer {
 #define TLS_RLTYPE_APP		23
 
 /*
- * Constants for the Socket Buffer TLS state flags (sb_tls_flags).
- */
-#define	SB_TLS_IFNET		0x0010	/* crypto performed at ifnet layer. */
-
-/*
  * Alert protoocol
  */
 struct tls_alert_protocol {
