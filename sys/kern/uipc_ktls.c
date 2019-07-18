@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/ktls.h>
 #include <sys/lock.h>
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
@@ -41,7 +42,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/refcount.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
-#include <sys/sockbuf_tls.h>
 #include <sys/sysctl.h>
 #include <sys/taskqueue.h>
 #include <sys/kthread.h>

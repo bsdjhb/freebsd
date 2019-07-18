@@ -33,11 +33,11 @@ __FBSDID("$FreeBSD$");
 #include <sys/counter.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
+#include <sys/ktls.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
-#include <sys/sockbuf_tls.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <opencrypto/cryptodev.h>

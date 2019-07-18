@@ -40,6 +40,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mbuf.h>
 #include <sys/socket.h>
 #include <sys/kernel.h>
+#include <sys/ktls.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
 #include <sys/sbuf.h>
@@ -48,7 +49,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sglist.h>
 #include <sys/sysctl.h>
 #include <sys/smp.h>
-#include <sys/sockbuf_tls.h>
 #include <sys/socketvar.h>
 #include <sys/counter.h>
 #include <net/bpf.h>

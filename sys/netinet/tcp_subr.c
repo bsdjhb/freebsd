@@ -51,6 +51,9 @@ __FBSDID("$FreeBSD$");
 #ifdef TCP_HHOOK
 #include <sys/khelp.h>
 #endif
+#ifdef KERN_TLS
+#include <sys/ktls.h>
+#endif
 #include <sys/sysctl.h>
 #include <sys/jail.h>
 #include <sys/malloc.h>
@@ -62,10 +65,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/priv.h>
 #include <sys/proc.h>
 #include <sys/sdt.h>
-#ifdef KERN_TLS
-#include <sys/sockbuf.h>
-#include <sys/sockbuf_tls.h>
-#endif
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/protosw.h>

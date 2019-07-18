@@ -42,6 +42,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/domain.h>
 #include <sys/eventhandler.h>
 #include <sys/kernel.h>
+#include <sys/ktls.h>
 #include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
@@ -51,9 +52,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
-#ifdef KERN_TLS
-#include <sys/sockbuf_tls.h>
-#endif
 #include <sys/sysctl.h>
 #include <sys/taskqueue.h>
 
