@@ -217,11 +217,11 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 	memset(&cria, 0, sizeof(cria));
 	memset(&crie, 0, sizeof(crie));
 
-	switch (tls->sb_params.crypt_algorithm) {
+	switch (tls->sb_params.cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
 		if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN)
 			return (EINVAL);
-		switch (tls->sb_params.crypt_key_len) {
+		switch (tls->sb_params.cipher_key_len) {
 		case 128 / 8:
 			cria.cri_alg = CRYPTO_AES_128_NIST_GMAC;
 			break;
@@ -231,8 +231,8 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 		default:
 			return (EINVAL);
 		}
-		cria.cri_key = tls->sb_params.crypt;
-		cria.cri_klen = tls->sb_params.crypt_key_len * 8;
+		cria.cri_key = tls->sb_params.cipher_key;
+		cria.cri_klen = tls->sb_params.cipher_key_len * 8;
 		break;
 	default:
 		return (EPROTONOSUPPORT);
@@ -248,9 +248,9 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 	if (os == NULL)
 		return (ENOMEM);
 
-	crie.cri_alg = tls->sb_params.crypt_algorithm;
-	crie.cri_key = tls->sb_params.crypt;
-	crie.cri_klen = tls->sb_params.crypt_key_len * 8;
+	crie.cri_alg = tls->sb_params.cipher_algorithm;
+	crie.cri_key = tls->sb_params.cipher_key;
+	crie.cri_klen = tls->sb_params.cipher_key_len * 8;
 
 	crie.cri_next = &cria;
 	error = crypto_newsession(&os->sid, &crie,

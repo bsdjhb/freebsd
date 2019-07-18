@@ -122,7 +122,7 @@ struct sockopt;
 struct uio;
 
 /* For TCP_TLS_ENABLE */
-struct tls_so_enable {
+struct tls_so_enable_old {
 	const uint8_t *hmac_key;
 	const uint8_t *crypt;
 	const uint8_t *iv;
@@ -136,16 +136,29 @@ struct tls_so_enable {
 	uint8_t tls_vminor;
 };
 
+struct tls_so_enable {
+	const uint8_t *cipher_key;
+	const uint8_t *iv;		/* Implicit IV. */
+	const uint8_t *auth_key;
+	int	cipher_algorithm;	/* e.g. CRYPTO_AES_CBC */
+	int	cipher_key_len;
+	int	iv_len;
+	int	auth_algorithm;		/* e.g. CRYPTO_SHA2_256_HMAC */
+	int	auth_key_len;
+	uint8_t tls_vmajor;
+	uint8_t tls_vminor;
+};
+
 struct tls_session_params {
-	uint8_t *hmac_key;
-	uint8_t *crypt;
+	uint8_t *cipher_key;
+	uint8_t *auth_key;
 	uint8_t iv[TLS_CBC_IMPLICIT_IV_LEN];
-	int crypt_algorithm;
-	int mac_algorithm;
-	uint16_t hmac_key_len;
-	uint16_t crypt_key_len;
+	int	cipher_algorithm;
+	int	auth_algorithm;
+	uint16_t cipher_key_len;
 	uint16_t iv_len;
-	uint16_t sb_maxlen;
+	uint16_t auth_key_len;
+	uint16_t max_frame_len;
 	uint8_t tls_vmajor;
 	uint8_t tls_vminor;
 	uint8_t tls_hlen;

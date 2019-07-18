@@ -1762,7 +1762,8 @@ tcp_default_ctloutput(struct socket *so, struct sockopt *sopt, struct inpcb *inp
 	u_int	ui;
 	struct	tcp_info ti;
 #ifdef KERN_TLS
-	struct  tls_so_enable tls;
+	struct tls_so_enable tls;
+	struct tls_so_enable_old tls_old;
 #endif
 	struct cc_algo *algo;
 	char	*pbuf, buf[TCP_LOG_ID_LEN];
@@ -1929,8 +1930,30 @@ unlock_and_done:
 #ifdef KERN_TLS
 		case TCP_TLS_ENABLE:
 			INP_WUNLOCK(inp);
-			error = sooptcopyin(sopt, &tls, sizeof(tls),
-			    sizeof(tls));
+			_Static_assert(sizeof(tls) != sizeof(tls_old),
+			    "Old TLS_SO_ENABLE has same size as new");
+			if (sopt->sopt_valsize == sizeof(tls_old)) {
+				error = sooptcopyin(sopt, &tls_old,
+				    sizeof(tls_old), sizeof(tls_old));
+				if (error == 0) {
+					tls.cipher_key = tls_old.crypt;
+					tls.iv = tls_old.iv;
+					tls.auth_key = tls_old.hmac_key;
+					tls.cipher_algorithm =
+					    tls_old.crypt_algorithm;
+					tls.cipher_key_len =
+					    tls_old.crypt_key_len;
+					tls.iv_len = tls_old.iv_len;
+					tls.auth_algorithm =
+					    tls_old.mac_algorithm;
+					tls.auth_key_len =
+					    tls_old.hmac_key_len;
+					tls.tls_vmajor = tls_old.tls_vmajor;
+					tls.tls_vminor = tls_old.tls_vminor;
+				}
+			} else
+				error = sooptcopyin(sopt, &tls, sizeof(tls),
+				    sizeof(tls));
 			if (error == 0)
 				error = sbtls_crypt_tls_enable(so, &tls);
 			break;

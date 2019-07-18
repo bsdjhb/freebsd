@@ -703,7 +703,7 @@ retry_space:
 				    space, 0, 0);
 			} else {
 				mh = m_uiotombuf(hdr_uio, M_WAITOK,
-				    space, tls->sb_params.sb_maxlen,
+				    space, tls->sb_params.max_frame_len,
 				    M_NOMAP);
 			}
 			hdrlen = m_length(mh, &mhtail);
@@ -814,7 +814,7 @@ retry_space:
 		    tls != NULL) {
 			use_ext_pgs = true;
 			if (tls != NULL)
-				max_pgs = num_pages(tls->sb_params.sb_maxlen);
+				max_pgs = num_pages(tls->sb_params.max_frame_len);
 			else
 				max_pgs = MBUF_PEXT_MAX_PGS;
 

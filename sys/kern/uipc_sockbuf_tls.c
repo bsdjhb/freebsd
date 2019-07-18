@@ -386,25 +386,25 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	    en->tls_vminor > TLS_MINOR_VER_TWO)
 		return (EINVAL);
 
-	if (en->hmac_key_len < 0 || en->hmac_key_len > TLS_MAX_PARAM_SIZE)
+	if (en->auth_key_len < 0 || en->auth_key_len > TLS_MAX_PARAM_SIZE)
 		return (EINVAL);
-	if (en->crypt_key_len < 0 || en->crypt_key_len > TLS_MAX_PARAM_SIZE)
+	if (en->cipher_key_len < 0 || en->cipher_key_len > TLS_MAX_PARAM_SIZE)
 		return (EINVAL);
 	if (en->iv_len < 0 || en->iv_len > TLS_MAX_PARAM_SIZE)
 		return (EINVAL);
 
 	/* All supported algorithms require a cipher key. */
-	if (en->crypt_key_len == 0)
+	if (en->cipher_key_len == 0)
 		return (EINVAL);
 
 	/* Common checks for supported algorithms. */
-	switch (en->crypt_algorithm) {
+	switch (en->cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
 		/*
-		 * mac_algorithm isn't used, but permit GMAC values
+		 * auth_algorithm isn't used, but permit GMAC values
 		 * for compatibility.
 		 */
-		switch (en->mac_algorithm) {
+		switch (en->auth_algorithm) {
 		case 0:
 		case CRYPTO_AES_128_NIST_GMAC:
 		case CRYPTO_AES_192_NIST_GMAC:
@@ -413,13 +413,13 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 		default:
 			return (EINVAL);
 		}
-		if (en->hmac_key_len != 0)
+		if (en->auth_key_len != 0)
 			return (EINVAL);
 		if (en->iv_len != TLS_AEAD_GCM_LEN)
 			return (EINVAL);
 		break;
 	case CRYPTO_AES_CBC:
-		switch (en->mac_algorithm) {
+		switch (en->auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			/*
 			 * TLS 1.0 requires an implicit IV.  TLS 1.1+
@@ -440,7 +440,7 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 		default:
 			return (EINVAL);
 		}
-		if (en->hmac_key_len == 0)
+		if (en->auth_key_len == 0)
 			return (EINVAL);
 		break;
 	default:
@@ -457,8 +457,8 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	/* cache cpu index */
 	tls->sb_tsk_instance = sbtls_get_cpu(so);
 
-	tls->sb_params.crypt_algorithm = en->crypt_algorithm;
-	tls->sb_params.mac_algorithm = en->mac_algorithm;
+	tls->sb_params.cipher_algorithm = en->cipher_algorithm;
+	tls->sb_params.auth_algorithm = en->auth_algorithm;
 	tls->sb_params.tls_vmajor = en->tls_vmajor;
 	tls->sb_params.tls_vminor = en->tls_vminor;
 
@@ -466,20 +466,20 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	 * Note that 1.3 was supposed to go to 64K, but that 
 	 * was shot down.
 	 */
-	tls->sb_params.sb_maxlen = TLS_MAX_MSG_SIZE_V10_2;
-	if (tls->sb_params.sb_maxlen > sbtls_maxlen)
-		tls->sb_params.sb_maxlen = sbtls_maxlen;
+	tls->sb_params.max_frame_len = TLS_MAX_MSG_SIZE_V10_2;
+	if (tls->sb_params.max_frame_len > sbtls_maxlen)
+		tls->sb_params.max_frame_len = sbtls_maxlen;
 
 	/* Set the header and trailer lengths. */
 	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
-	switch (en->crypt_algorithm) {
+	switch (en->cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
 		tls->sb_params.tls_hlen += 8;
 		tls->sb_params.tls_tlen = 16;
 		tls->sb_params.tls_bs = 1;
 		break;
 	case CRYPTO_AES_CBC:
-		switch (en->mac_algorithm) {
+		switch (en->auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
 				/* Implicit IV, no nonce. */
@@ -514,19 +514,21 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	    ("TLS trailer length too long: %d", tls->sb_params.tls_tlen));
 
 	/* Now lets get in the keys and such */
-	if (en->hmac_key_len != 0) {
-		tls->sb_params.hmac_key_len = en->hmac_key_len;
-		tls->sb_params.hmac_key = malloc(en->hmac_key_len,
+	if (en->auth_key_len != 0) {
+		tls->sb_params.auth_key_len = en->auth_key_len;
+		tls->sb_params.auth_key = malloc(en->auth_key_len,
 		    M_TLSSOBUF, M_WAITOK);
-		error = copyin(en->hmac_key, tls->sb_params.hmac_key,
-		    en->hmac_key_len);
+		error = copyin(en->auth_key, tls->sb_params.auth_key,
+		    en->auth_key_len);
 		if (error)
 			goto out;
 	}
 
-	tls->sb_params.crypt_key_len = en->crypt_key_len;
-	tls->sb_params.crypt = malloc(en->crypt_key_len, M_TLSSOBUF, M_WAITOK);
-	error = copyin(en->crypt, tls->sb_params.crypt, en->crypt_key_len);
+	tls->sb_params.cipher_key_len = en->cipher_key_len;
+	tls->sb_params.cipher_key = malloc(en->cipher_key_len, M_TLSSOBUF,
+	    M_WAITOK);
+	error = copyin(en->cipher_key, tls->sb_params.cipher_key,
+	    en->cipher_key_len);
 	if (error)
 		goto out;
 
@@ -567,17 +569,17 @@ sbtls_clone_session(struct sbtls_session *tls)
 	tls_new->sb_tsk_instance = tls->sb_tsk_instance;
 
 	/* Deep copy keys. */
-	if (tls_new->sb_params.hmac_key != NULL) {
-		tls_new->sb_params.hmac_key = malloc(
-		    tls->sb_params.hmac_key_len, M_TLSSOBUF, M_WAITOK);
-		memcpy(tls_new->sb_params.hmac_key, tls->sb_params.hmac_key,
-		    tls->sb_params.hmac_key_len);
+	if (tls_new->sb_params.auth_key != NULL) {
+		tls_new->sb_params.auth_key = malloc(
+		    tls->sb_params.auth_key_len, M_TLSSOBUF, M_WAITOK);
+		memcpy(tls_new->sb_params.auth_key, tls->sb_params.auth_key,
+		    tls->sb_params.auth_key_len);
 	}
 
-	tls_new->sb_params.crypt = malloc(tls->sb_params.crypt_key_len,
+	tls_new->sb_params.cipher_key = malloc(tls->sb_params.cipher_key_len,
 	    M_TLSSOBUF, M_WAITOK);
-	memcpy(tls_new->sb_params.crypt, tls->sb_params.crypt,
-	    tls->sb_params.crypt_key_len);
+	memcpy(tls_new->sb_params.cipher_key, tls->sb_params.cipher_key,
+	    tls->sb_params.cipher_key_len);
 
 	return (tls_new);
 }
@@ -589,7 +591,7 @@ sbtls_cleanup(struct sbtls_session *tls)
 	counter_u64_add(sbtls_offload_active, -1);
 	if (tls->sb_tls_free != NULL) {
 		MPASS(tls->be != NULL);
-		switch (tls->sb_params.crypt_algorithm) {
+		switch (tls->sb_params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
 			counter_u64_add(sbtls_sw_cbc, -1);
 			break;
@@ -599,7 +601,7 @@ sbtls_cleanup(struct sbtls_session *tls)
 		}
 		tls->sb_tls_free(tls);
 	} else if (tls->snd_tag != NULL) {
-		switch (tls->sb_params.crypt_algorithm) {
+		switch (tls->sb_params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
 			counter_u64_add(sbtls_ifnet_cbc, -1);
 			break;
@@ -609,19 +611,19 @@ sbtls_cleanup(struct sbtls_session *tls)
 		}
 		m_snd_tag_rele(tls->snd_tag);
 	}
-	if (tls->sb_params.hmac_key) {
-		explicit_bzero(tls->sb_params.hmac_key,
-		    tls->sb_params.hmac_key_len);
-		free(tls->sb_params.hmac_key, M_TLSSOBUF);
-		tls->sb_params.hmac_key = NULL;
-		tls->sb_params.hmac_key_len = 0;
+	if (tls->sb_params.auth_key != NULL) {
+		explicit_bzero(tls->sb_params.auth_key,
+		    tls->sb_params.auth_key_len);
+		free(tls->sb_params.auth_key, M_TLSSOBUF);
+		tls->sb_params.auth_key = NULL;
+		tls->sb_params.auth_key_len = 0;
 	}
-	if (tls->sb_params.crypt) {
-		explicit_bzero(tls->sb_params.crypt,
-		    tls->sb_params.crypt_key_len);
-		free(tls->sb_params.crypt, M_TLSSOBUF);
-		tls->sb_params.crypt = NULL;
-		tls->sb_params.crypt_key_len = 0;
+	if (tls->sb_params.cipher_key != NULL) {
+		explicit_bzero(tls->sb_params.cipher_key,
+		    tls->sb_params.cipher_key_len);
+		free(tls->sb_params.cipher_key, M_TLSSOBUF);
+		tls->sb_params.cipher_key = NULL;
+		tls->sb_params.cipher_key_len = 0;
 	}
 	explicit_bzero(tls->sb_params.iv, sizeof(tls->sb_params.iv));
 }
@@ -721,7 +723,7 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 	error = sbtls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
 	if (error == 0) {
 		tls->snd_tag = mst;
-		switch (tls->sb_params.crypt_algorithm) {
+		switch (tls->sb_params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
 			counter_u64_add(sbtls_ifnet_cbc, 1);
 			break;
@@ -768,7 +770,7 @@ sbtls_try_sw_tls(struct socket *so, struct sbtls_session *tls)
 		rm_runlock(&sbtls_backend_lock, &prio);
 	if (be == NULL)
 		return (EOPNOTSUPP);
-	switch (tls->sb_params.crypt_algorithm) {
+	switch (tls->sb_params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
 		counter_u64_add(sbtls_sw_cbc, 1);
 		break;
@@ -799,7 +801,7 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		return (EALREADY);
 	}
 
-	if (en->crypt_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
+	if (en->cipher_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
 		return (ENOTSUP);
 
 	/* TLS requires ext pgs */
@@ -1129,7 +1131,7 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 		 * Store the sequence number in the TLS header as the
 		 * explicit part of the IV for GCM.
 		 */
-		if (pgs->tls->sb_params.crypt_algorithm ==
+		if (pgs->tls->sb_params.cipher_algorithm ==
 		    CRYPTO_AES_NIST_GCM_16) {
 			tlshdr = (void *)pgs->hdr;
 			seqno = htobe64(pgs->seqno);
@@ -1149,7 +1151,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 	uint16_t tls_len;
 	int maxlen;
 
-	maxlen = tls->sb_params.sb_maxlen;
+	maxlen = tls->sb_params.max_frame_len;
 	*enq_cnt = 0;
 	for (m = *top; m != NULL; m = m->m_next) {
 		/*
@@ -1181,7 +1183,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 
 		pgs->hdr_len = tls->sb_params.tls_hlen;
 		pgs->trail_len = tls->sb_params.tls_tlen;
-		if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
+		if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC) {
 			int bs, delta;
 
 			/*
@@ -1214,7 +1216,7 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		 * header by sbtls_seq().  For CBC, a random nonce is
 		 * inserted for TLS 1.1+.
 		 */
-		if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC &&
+		if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC &&
 		    tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE)
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
 
