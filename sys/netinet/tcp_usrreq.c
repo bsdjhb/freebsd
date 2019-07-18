@@ -53,6 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/refcount.h>
 #include <sys/kernel.h>
+#include <sys/ktls.h>
 #include <sys/sysctl.h>
 #include <sys/mbuf.h>
 #ifdef INET6
@@ -60,7 +61,6 @@ __FBSDID("$FreeBSD$");
 #endif /* INET6 */
 #include <sys/socket.h>
 #include <sys/socketvar.h>
-#include <sys/sockbuf_tls.h>
 #include <sys/protosw.h>
 #include <sys/proc.h>
 #include <sys/jail.h>
