@@ -285,12 +285,12 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	choice = NULL;
-	switch (tls->sb_params.crypt_algorithm) {
+	switch (tls->sb_params.cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
 		if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN) {
 			return (EINVAL);
 		}
-		switch (tls->sb_params.crypt_key_len) {
+		switch (tls->sb_params.cipher_key_len) {
 		case 16:
 			choice = EVP_aead_aes_128_gcm();
 			break;
@@ -300,9 +300,9 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 		}
 		break;
 	case CRYPTO_AES_CBC:
-		switch (tls->sb_params.mac_algorithm) {
+		switch (tls->sb_params.auth_algorithm) {
 		case CRYPTO_SHA2_256_HMAC:
-			switch (tls->sb_params.crypt_key_len) {
+			switch (tls->sb_params.cipher_key_len) {
 			case 16:
 				choice = EVP_aead_aes_128_cbc_sha256_tls();
 				break;
@@ -312,7 +312,7 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 			}
 			break;
 		case CRYPTO_SHA2_384_HMAC:
-			switch (tls->sb_params.crypt_key_len) {
+			switch (tls->sb_params.cipher_key_len) {
 			case 32:
 				choice = EVP_aead_aes_256_cbc_sha384_tls();
 				break;
@@ -322,7 +322,7 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 			if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE) {
 				return (EINVAL);
 			}
-			switch (tls->sb_params.crypt_key_len) {
+			switch (tls->sb_params.cipher_key_len) {
 			case 16:
 				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
 					/* TLS 1.0 */
@@ -376,7 +376,7 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	}
 
 	tls->cipher = bssl;
-	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC)
+	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC)
 		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
 	else
 		tls->sb_tls_crypt = sbtls_crypt_boringssl_aead;
@@ -394,14 +394,14 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 	size_t keylen;
 
 
-	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_CBC) {
+	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC) {
 		/*
 		 * CBC has a merged key.  For TLS 1.0, the implicit IV
 		 * is placed after the keys.
 		 */
-		keylen = tls->sb_params.hmac_key_len +
-		    tls->sb_params.crypt_key_len + tls->sb_params.iv_len;
-		if (tls->sb_params.hmac_key == NULL || tls->sb_params.crypt == NULL) {
+		keylen = tls->sb_params.auth_key_len +
+		    tls->sb_params.cipher_key_len + tls->sb_params.iv_len;
+		if (tls->sb_params.auth_key == NULL || tls->sb_params.cipher_key == NULL) {
 			return (EINVAL);
 		}
 
@@ -409,16 +409,16 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 		if (mal == NULL) {
 			return (ENOMEM);
 		}
-		memcpy(mal, tls->sb_params.hmac_key, tls->sb_params.hmac_key_len);
-		memcpy(mal + tls->sb_params.hmac_key_len, tls->sb_params.crypt,
-		    tls->sb_params.crypt_key_len);
-		memcpy(mal + tls->sb_params.hmac_key_len +
-		    tls->sb_params.crypt_key_len, tls->sb_params.iv,
+		memcpy(mal, tls->sb_params.auth_key, tls->sb_params.auth_key_len);
+		memcpy(mal + tls->sb_params.auth_key_len, tls->sb_params.cipher_key,
+		    tls->sb_params.cipher_key_len);
+		memcpy(mal + tls->sb_params.auth_key_len +
+		    tls->sb_params.cipher_key_len, tls->sb_params.iv,
 		    tls->sb_params.iv_len);
 		key = mal;
 	} else {
-		key = tls->sb_params.crypt;
-		keylen = tls->sb_params.crypt_key_len;
+		key = tls->sb_params.cipher_key;
+		keylen = tls->sb_params.cipher_key_len;
 		if (key == NULL) {
 			return (EINVAL);
 		}

@@ -1578,7 +1578,7 @@ restart:
 				 */
 				if (tls != NULL) {
 					top = m_uiotombuf(uio, M_WAITOK, space,
-					    tls->sb_params.sb_maxlen,
+					    tls->sb_params.max_frame_len,
 					    M_NOMAP |
 					    ((flags & MSG_EOR) ? M_EOR : 0));
 					if (top != NULL) {

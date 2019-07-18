@@ -256,10 +256,10 @@ init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
 	else
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_2;
-	tlsp->cipher_secret_size = tls->sb_params.crypt_key_len;
+	tlsp->cipher_secret_size = tls->sb_params.cipher_key_len;
 	tlsp->tx_key_info_size = sizeof(struct tx_keyctx_hdr) +
 	    tlsp->cipher_secret_size;
-	if (tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
+	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		tlsp->auth_mode = SCMD_AUTH_MODE_GHASH;
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_GCM;
 		tlsp->iv_size = 4;
@@ -267,7 +267,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
 		tlsp->tx_key_info_size += GMAC_BLOCK_LEN;
 	} else {
-		switch (tls->sb_params.mac_algorithm) {
+		switch (tls->sb_params.auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			mac_key_size = roundup2(SHA1_HASH_LEN, 16);
 			tlsp->auth_mode = SCMD_AUTH_MODE_SHA1;
@@ -288,7 +288,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 		tlsp->tx_key_info_size += mac_key_size * 2;
 	}
 
-	tlsp->frag_size = tls->sb_params.sb_maxlen;
+	tlsp->frag_size = tls->sb_params.max_frame_len;
 }
 
 static int
@@ -541,10 +541,10 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 
 	/* Sanity check values in *tls. */
 	tls = params->tls.tls;
-	switch (tls->sb_params.crypt_algorithm) {
+	switch (tls->sb_params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
 		/* XXX: Explicitly ignore any provided IV. */
-		switch (tls->sb_params.crypt_key_len) {
+		switch (tls->sb_params.cipher_key_len) {
 		case 128 / 8:
 		case 192 / 8:
 		case 256 / 8:
@@ -552,7 +552,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		default:
 			return (EINVAL);
 		}
-		switch (tls->sb_params.mac_algorithm) {
+		switch (tls->sb_params.auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
@@ -564,7 +564,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	case CRYPTO_AES_NIST_GCM_16:
 		if (tls->sb_params.iv_len != SALT_SIZE)
 			return (EINVAL);
-		switch (tls->sb_params.crypt_key_len) {
+		switch (tls->sb_params.cipher_key_len) {
 		case 128 / 8:
 		case 192 / 8:
 		case 256 / 8:
@@ -886,16 +886,16 @@ sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
 		khdr->dualck_to_txvalid |= V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1);
 	khdr->dualck_to_txvalid = htobe16(khdr->dualck_to_txvalid);
 	key = kctx->keys.edkey;
-	memcpy(key, tls->sb_params.crypt, tls->sb_params.crypt_key_len);
+	memcpy(key, tls->sb_params.cipher_key, tls->sb_params.cipher_key_len);
 	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM) {
 		memcpy(khdr->txsalt, tls->sb_params.iv, SALT_SIZE);
-		init_sbtls_gmac_hash(tls->sb_params.crypt,
-		    tls->sb_params.crypt_key_len * 8,
-		    (char *)key + tls->sb_params.crypt_key_len);
+		init_sbtls_gmac_hash(tls->sb_params.cipher_key,
+		    tls->sb_params.cipher_key_len * 8,
+		    (char *)key + tls->sb_params.cipher_key_len);
 	} else {
 		init_sbtls_hmac_digest(axf, partial_digest_len,
-		    tls->sb_params.hmac_key, tls->sb_params.hmac_key_len * 8,
-		    (char *)key + tls->sb_params.crypt_key_len);
+		    tls->sb_params.auth_key, tls->sb_params.auth_key_len * 8,
+		    (char *)key + tls->sb_params.cipher_key_len);
 	}
 
 	if (tlsp->inline_key)

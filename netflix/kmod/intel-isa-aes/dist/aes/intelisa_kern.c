@@ -233,12 +233,12 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 	int error;
 
 	if (sbtls_use_intel_isa_gcm &&
-	    tls->sb_params.crypt_algorithm == CRYPTO_AES_NIST_GCM_16) {
+	    tls->sb_params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		isa = malloc(sizeof (*isa), M_INTEL_ISA, M_NOWAIT | M_ZERO);
 		if (isa == NULL) {
 			return (ENOMEM);
 		}
-		switch (tls->sb_params.crypt_key_len) {
+		switch (tls->sb_params.cipher_key_len) {
 		case 16:
 			isa->gcm_pre = aes_gcm_pre_128;
 			isa->gcm_init = aes_gcm_init_128;
@@ -258,7 +258,7 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 			return (EOPNOTSUPP);
 		}
 
-		error = sbtls_setup_isa_cipher(isa, tls->sb_params.crypt);
+		error = sbtls_setup_isa_cipher(isa, tls->sb_params.cipher_key);
 		if (error) {
 			free(isa, M_INTEL_ISA);
 			return (error);
