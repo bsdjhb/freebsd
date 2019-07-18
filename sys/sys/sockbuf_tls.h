@@ -122,6 +122,7 @@ struct sockopt;
 struct uio;
 
 /* For TCP_TLS_ENABLE */
+#ifdef _KERNEL
 struct tls_so_enable_old {
 	const uint8_t *hmac_key;
 	const uint8_t *crypt;
@@ -135,6 +136,7 @@ struct tls_so_enable_old {
 	uint8_t tls_vmajor;
 	uint8_t tls_vminor;
 };
+#endif
 
 struct tls_so_enable {
 	const uint8_t *cipher_key;
