@@ -49,7 +49,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #ifdef KERN_TLS
 #include <sys/ktls.h>
-#include <sys/ktr.h>
 #endif
 #include <sys/lock.h>
 #include <sys/mbuf.h>
@@ -224,6 +223,14 @@ tcp_output(struct tcpcb *tp)
 
 	isipv6 = (tp->t_inpcb->inp_vflag & INP_IPV6) != 0;
 #endif
+	bool hw_tls;
+
+#ifdef KERN_TLS
+	if (so->so_snd.sb_flags & SB_TLS_IFNET)
+		hw_tls = true;
+	else
+#endif
+ 		hw_tls = false;
 
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 
@@ -973,61 +980,6 @@ send:
 		struct sockbuf *msb;
 		u_int moff;
 
-		/*
-		 * Start the m_copy functions from the closest mbuf
-		 * to the offset in the socket buffer chain.
-		 */
-		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
-
-#ifdef KERN_TLS
-		/*
-		 * XXX: A gross hack to avoid mixing records between
-		 * different TLS sessions.
-		 */
-		if (so->so_snd.sb_flags & SB_TLS_IFNET) {
-			struct ktls_session *tls, *ntls;
-			struct mbuf *n;
-			u_int new_len;
-
-			/*
-			 * Walk forward to the first mbuf with data we
-			 * want to send.
-			 */
-			while (moff >= mb->m_len) {
-				moff -= mb->m_len;
-				mb = mb->m_next;
-			}
-			if (mb->m_flags & M_NOMAP)
-				tls = mb->m_ext.ext_pgs->tls;
-			else
-				tls = NULL;
-			new_len = mb->m_len - moff;
-			for (n = mb->m_next; new_len < len; n = n->m_next) {
-				if (n->m_flags & M_NOMAP)
-					ntls = n->m_ext.ext_pgs->tls;
-				else
-					ntls = NULL;
-				if (tls != ntls)
-					break;
-				new_len += n->m_len;
-			}
-			MPASS(new_len > 0);
-
-			if (new_len < len) {
-				/* XXX: KTR_CXGBE */
-				CTR3(KTR_SPARE3,
-				    "%s: truncating len from %u to %u",
-				    __func__, len, new_len);
-
-				flags &= ~TH_FIN;
-				if (new_len <= tp->t_maxseg - optlen)
-					tso = 0;
-				len = new_len;
-				sendalot = 1;
-			}
-		}
-#endif
-
 		if ((tp->t_flags & TF_FORCEDATA) && len == 1)
 			TCPSTAT_INC(tcps_sndprobe);
 		else if (SEQ_LT(tp->snd_nxt, tp->snd_max) || sack_rxmit) {
@@ -1055,8 +1007,12 @@ send:
 		m->m_data += max_linkhdr;
 		m->m_len = hdrlen;
 
-		if (len <= MHLEN - hdrlen - max_linkhdr &&
-		    !mbuf_has_tls_session(mb)) {
+		/*
+		 * Start the m_copy functions from the closest mbuf
+		 * to the offset in the socket buffer chain.
+		 */
+		mb = sbsndptr_noadv(&so->so_snd, off, &moff);
+		if (len <= MHLEN - hdrlen - max_linkhdr && !hw_tls) {
 			m_copydata(mb, moff, len,
 			    mtod(m, caddr_t) + hdrlen);
 			if (SEQ_LT(tp->snd_nxt, tp->snd_max))
@@ -1069,7 +1025,7 @@ send:
 				msb = &so->so_snd;
 			m->m_next = tcp_m_copym(mb, moff,
 			    &len, if_hw_tsomaxsegcount,
-			    if_hw_tsomaxsegsize, msb);
+			    if_hw_tsomaxsegsize, msb, hw_tls);
 			if (len <= (tp->t_maxseg - optlen)) {
 				/* 
 				 * Must have ran out of mbufs for the copy
@@ -1872,9 +1828,9 @@ tcp_addoptions(struct tcpopt *to, u_char *optp)
  */
 struct mbuf *
 tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
-    int32_t seglimit, int32_t segsize, struct sockbuf *sb)
+    int32_t seglimit, int32_t segsize, struct sockbuf *sb, bool hw_tls)
 {
-	struct mbuf *n, **np;
+	struct mbuf *n, **np, *start;
 	struct mbuf *top;
 	int32_t off = off0;
 	int32_t len = *plen;
@@ -1905,6 +1861,36 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 	np = &top;
 	top = NULL;
 	pkthdrlen = NULL;
+#ifdef KERN_TLS
+	/*
+	 * Avoid mixing TLS records with handshake data or TLS records
+	 * from different sessions.
+	 */
+	if (hw_tls) {
+		struct ktls_session *tls, *ntls;
+		u_int new_len;
+
+		new_len = m->m_len - off;
+		if (m->m_flags & M_NOMAP)
+			tls = m->m_ext.ext_pgs->tls;
+		else
+			tls = NULL;
+		for (n = m->m_next; new_len < len; n = n->m_next) {
+			if (n->m_flags & M_NOMAP)
+				ntls = n->m_ext.ext_pgs->tls;
+			else
+				ntls = NULL;
+			if (tls != ntls)
+				break;
+			new_len += n->m_len;
+		}
+		if (new_len < len) {
+			len = new_len;
+			*plen = new_len;
+		}
+	}
+#endif
+	start = m;
 	while (len > 0) {
 		if (m == NULL) {
 			KASSERT(len == M_COPYALL,
@@ -1914,6 +1900,20 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 				*pkthdrlen = len_cp;
 			break;
 		}
+#ifdef KERN_TLS
+		if (hw_tls && (m->m_flags & M_NOMAP) && (m != start)) {
+			/*
+			 * Make sure we don't end a send in the middle
+			 * of a TLS record.
+			 */
+			if (len < m->m_len) {
+				*plen = len_cp;
+				if (pkthdrlen != NULL)
+					*pkthdrlen = len_cp;
+				break;
+			}
+		}
+#endif
 		mlen = min(len, m->m_len - off);
 		if (seglimit) {
 			/*
