@@ -50,6 +50,7 @@
 #define	SB_AUTOSIZE	0x800		/* automatically size socket buffer */
 #define	SB_STOP		0x1000		/* backpressure indicator */
 #define	SB_AIO_RUNNING	0x2000		/* AIO operation running */
+#define	SB_TLS_IFNET	0x4000		/* has used / is using ifnet KTLS */
 
 #define	SBS_CANTSENDMORE	0x0010	/* can't send more data to peer */
 #define	SBS_CANTRCVMORE		0x0020	/* can't receive more data from peer */
@@ -102,18 +103,12 @@ struct	sockbuf {
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
 	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
 	struct	ktls_session *sb_tls_info; /* (a + b) TLS state */
-	u_int	sb_tls_flags;	/* (a + b) flags used by TLS */
 	short	sb_flags;	/* (a) flags, see above */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */
 	void	*sb_upcallarg;	/* (a) */
 	TAILQ_HEAD(, kaiocb) sb_aiojobq; /* (a) pending AIO ops */
 	struct	task sb_aiotask; /* AIO task */
 };
-
-/*
- * Constants for the Socket Buffer TLS state flags (sb_tls_flags).
- */
-#define	SB_TLS_IFNET		0x0001	/* crypto performed at ifnet layer. */
 
 #endif	/* defined(_KERNEL) || defined(_WANT_SOCKET) */
 #ifdef _KERNEL

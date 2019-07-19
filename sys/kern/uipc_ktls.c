@@ -831,7 +831,7 @@ ktls_enable(struct socket *so, struct tls_so_enable *en)
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls;
 	if (tls->sw_encrypt == NULL)
-		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+		so->so_snd.sb_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
 
@@ -931,7 +931,7 @@ ktls_set_tls_mode(struct socket *so, int mode)
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls_new;
 	if (tls_new->sw_encrypt == NULL)
-		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
+		so->so_snd.sb_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
 
@@ -1109,7 +1109,6 @@ sbdestroy_ktls(struct sockbuf *sb)
 
 	tls = sb->sb_tls_info;
 	sb->sb_tls_info = NULL;
-	sb->sb_tls_flags = 0;
 	if (tls != NULL)
 		ktls_free(tls);
 }
