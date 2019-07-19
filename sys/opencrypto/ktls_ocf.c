@@ -54,7 +54,7 @@ struct ocf_operation {
 	struct iovec iov[0];
 };
 
-static MALLOC_DEFINE(M_SBTLS_OCF, "ktls_ocf", "OCF KTLS");
+static MALLOC_DEFINE(M_KTLS_OCF, "ktls_ocf", "OCF KTLS");
 
 SYSCTL_DECL(_kern_ipc_tls);
 SYSCTL_DECL(_kern_ipc_tls_counters);
@@ -70,7 +70,7 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, ocf_retries, CTLFLAG_RD,
     "Number of OCF encryption operation retries");
 
 static int
-sbtls_ocf_callback(struct cryptop *crp)
+ktls_ocf_callback(struct cryptop *crp)
 {
 	struct ocf_operation *oo;
 
@@ -83,9 +83,9 @@ sbtls_ocf_callback(struct cryptop *crp)
 }
 
 static int
-sbtls_ocf_crypt(struct sbtls_session *tls,
-    const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
-    struct iovec *outiov, int iovcnt, uint64_t seqno)
+ktls_ocf_encrypt(struct ktls_session *tls, const struct tls_record_layer *hdr,
+    uint8_t *trailer, struct iovec *iniov, struct iovec *outiov, int iovcnt,
+    uint64_t seqno)
 {
 	struct uio uio;
 	struct tls_aead_data ad;
@@ -100,19 +100,19 @@ sbtls_ocf_crypt(struct sbtls_session *tls,
 
 	os = tls->cipher;
 
-	oo = malloc(sizeof(*oo) + (iovcnt + 2) * sizeof(*iov), M_SBTLS_OCF,
+	oo = malloc(sizeof(*oo) + (iovcnt + 2) * sizeof(*iov), M_KTLS_OCF,
 	    M_WAITOK | M_ZERO);
 	oo->os = os;
 	iov = oo->iov;
 
 	crp = crypto_getreq(2);
 	if (crp == NULL) {
-		free(oo, M_SBTLS_OCF);
+		free(oo, M_KTLS_OCF);
 		return (ENOMEM);
 	}
 
 	/* Setup the IV. */
-	memcpy(nd.fixed, tls->sb_params.iv, TLS_AEAD_GCM_LEN);
+	memcpy(nd.fixed, tls->params.iv, TLS_AEAD_GCM_LEN);
 	memcpy(&nd.seq, hdr + 1, sizeof(nd.seq));
 
 	/* Setup the AAD. */
@@ -153,7 +153,7 @@ sbtls_ocf_crypt(struct sbtls_session *tls,
 	crp->crp_flags = CRYPTO_F_IOV | CRYPTO_F_CBIMM;
 	crp->crp_uio = &uio;
 	crp->crp_opaque = oo;
-	crp->crp_callback = sbtls_ocf_callback;
+	crp->crp_callback = ktls_ocf_callback;
 
 	crde = crp->crp_desc;
 	crda = crde->crd_next;
@@ -192,23 +192,23 @@ sbtls_ocf_crypt(struct sbtls_session *tls,
 	}
 
 	crypto_freereq(crp);
-	free(oo, M_SBTLS_OCF);
+	free(oo, M_KTLS_OCF);
 	return (error);
 }
 
 static void
-sbtls_ocf_free(struct sbtls_session *tls)
+ktls_ocf_free(struct ktls_session *tls)
 {
 	struct ocf_session *os;
 
 	os = tls->cipher;
 	mtx_destroy(&os->lock);
 	explicit_bzero(os, sizeof(*os));
-	free(os, M_SBTLS_OCF);
+	free(os, M_KTLS_OCF);
 }
 
 static int
-sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
+ktls_ocf_try(struct socket *so, struct ktls_session *tls)
 {
 	struct cryptoini cria, crie;
 	struct ocf_session *os;
@@ -217,11 +217,11 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 	memset(&cria, 0, sizeof(cria));
 	memset(&crie, 0, sizeof(crie));
 
-	switch (tls->sb_params.cipher_algorithm) {
+	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
-		if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN)
+		if (tls->params.iv_len != TLS_AEAD_GCM_LEN)
 			return (EINVAL);
-		switch (tls->sb_params.cipher_key_len) {
+		switch (tls->params.cipher_key_len) {
 		case 128 / 8:
 			cria.cri_alg = CRYPTO_AES_128_NIST_GMAC;
 			break;
@@ -231,52 +231,52 @@ sbtls_try_ocf(struct socket *so, struct sbtls_session *tls)
 		default:
 			return (EINVAL);
 		}
-		cria.cri_key = tls->sb_params.cipher_key;
-		cria.cri_klen = tls->sb_params.cipher_key_len * 8;
+		cria.cri_key = tls->params.cipher_key;
+		cria.cri_klen = tls->params.cipher_key_len * 8;
 		break;
 	default:
 		return (EPROTONOSUPPORT);
 	}
 
 	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
-	if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE ||
-	    tls->sb_params.tls_vminor < TLS_MINOR_VER_ONE ||
-	    tls->sb_params.tls_vminor > TLS_MINOR_VER_TWO)
+	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+	    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
-	os = malloc(sizeof(*os), M_SBTLS_OCF, M_NOWAIT | M_ZERO);
+	os = malloc(sizeof(*os), M_KTLS_OCF, M_NOWAIT | M_ZERO);
 	if (os == NULL)
 		return (ENOMEM);
 
-	crie.cri_alg = tls->sb_params.cipher_algorithm;
-	crie.cri_key = tls->sb_params.cipher_key;
-	crie.cri_klen = tls->sb_params.cipher_key_len * 8;
+	crie.cri_alg = tls->params.cipher_algorithm;
+	crie.cri_key = tls->params.cipher_key;
+	crie.cri_klen = tls->params.cipher_key_len * 8;
 
 	crie.cri_next = &cria;
 	error = crypto_newsession(&os->sid, &crie,
 	    CRYPTO_FLAG_HARDWARE | CRYPTO_FLAG_SOFTWARE);
 	if (error) {
-		free(os, M_SBTLS_OCF);
+		free(os, M_KTLS_OCF);
 		return (error);
 	}
 
 	os->crda_alg = cria.cri_alg;
-	mtx_init(&os->lock, "sbtls_ocf", NULL, MTX_DEF);
+	mtx_init(&os->lock, "ktls_ocf", NULL, MTX_DEF);
 	tls->cipher = os;
-	tls->sb_tls_crypt = sbtls_ocf_crypt;
-	tls->sb_tls_free = sbtls_ocf_free;
+	tls->sw_encrypt = ktls_ocf_encrypt;
+	tls->free = ktls_ocf_free;
 	return (0);
 }
 
-struct sbtls_crypto_backend ocf_backend = {
+struct ktls_crypto_backend ocf_backend = {
 	.name = "OCF",
 	.prio = 100,
-	.api_version = SBTLS_API_VERSION,
-	.try = sbtls_try_ocf,
+	.api_version = KTLS_API_VERSION,
+	.try = ktls_ocf_try,
 };
 
 static int
-sbtls_ocf_modevent(module_t mod, int what, void *arg)
+ktls_ocf_modevent(module_t mod, int what, void *arg)
 {
 	int error;
 
@@ -284,9 +284,9 @@ sbtls_ocf_modevent(module_t mod, int what, void *arg)
 	case MOD_LOAD:
 		ocf_gcm_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_retries = counter_u64_alloc(M_WAITOK);
-		return (sbtls_crypto_backend_register(&ocf_backend));
+		return (ktls_crypto_backend_register(&ocf_backend));
 	case MOD_UNLOAD:
-		error = sbtls_crypto_backend_deregister(&ocf_backend);
+		error = ktls_crypto_backend_deregister(&ocf_backend);
 		if (error)
 			return (error);
 		counter_u64_free(ocf_gcm_crypts);
@@ -297,10 +297,10 @@ sbtls_ocf_modevent(module_t mod, int what, void *arg)
 	}
 }
 
-static moduledata_t sbtls_ocf_moduledata = {
+static moduledata_t ktls_ocf_moduledata = {
 	"ktls_ocf",
-	sbtls_ocf_modevent,
+	ktls_ocf_modevent,
 	NULL
 };
 
-DECLARE_MODULE(ktls_ocf, sbtls_ocf_moduledata, SI_SUB_PROTO_END, SI_ORDER_ANY);
+DECLARE_MODULE(ktls_ocf, ktls_ocf_moduledata, SI_SUB_PROTO_END, SI_ORDER_ANY);

@@ -196,8 +196,8 @@ struct tlspcb {
 	bool open_pending;
 };
 
-static int sbtls_setup_keys(struct tlspcb *tlsp,
-    const struct sbtls_session *tls, struct sge_txq *txq);
+static int ktls_setup_keys(struct tlspcb *tlsp,
+    const struct ktls_session *tls, struct sge_txq *txq);
 
 static inline struct tlspcb *
 mst_to_tls(struct m_snd_tag *t)
@@ -248,18 +248,18 @@ alloc_tlspcb(struct ifnet *ifp, struct vi_info *vi, int flags)
 }
 
 static void
-init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
+init_ktls_key_params(struct tlspcb *tlsp, const struct ktls_session *tls)
 {
 	int mac_key_size;
 
-	if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ONE)
+	if (tls->params.tls_vminor == TLS_MINOR_VER_ONE)
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
 	else
 		tlsp->proto_ver = SCMD_PROTO_VERSION_TLS_1_2;
-	tlsp->cipher_secret_size = tls->sb_params.cipher_key_len;
+	tlsp->cipher_secret_size = tls->params.cipher_key_len;
 	tlsp->tx_key_info_size = sizeof(struct tx_keyctx_hdr) +
 	    tlsp->cipher_secret_size;
-	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
+	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		tlsp->auth_mode = SCMD_AUTH_MODE_GHASH;
 		tlsp->enc_mode = SCMD_CIPH_MODE_AES_GCM;
 		tlsp->iv_size = 4;
@@ -267,7 +267,7 @@ init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 		tlsp->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
 		tlsp->tx_key_info_size += GMAC_BLOCK_LEN;
 	} else {
-		switch (tls->sb_params.auth_algorithm) {
+		switch (tls->params.auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 			mac_key_size = roundup2(SHA1_HASH_LEN, 16);
 			tlsp->auth_mode = SCMD_AUTH_MODE_SHA1;
@@ -288,11 +288,11 @@ init_sbtls_key_params(struct tlspcb *tlsp, const struct sbtls_session *tls)
 		tlsp->tx_key_info_size += mac_key_size * 2;
 	}
 
-	tlsp->frag_size = tls->sb_params.max_frame_len;
+	tlsp->frag_size = tls->params.max_frame_len;
 }
 
 static int
-sbtls_act_open_cpl_size(bool isipv6)
+ktls_act_open_cpl_size(bool isipv6)
 {
 
 	if (isipv6)
@@ -302,7 +302,7 @@ sbtls_act_open_cpl_size(bool isipv6)
 }
 
 static void
-mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
+mk_ktls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
     struct tlspcb *tlsp, int atid, void *dst)
 {
 	struct tcpcb *tp = intotcpcb(inp);
@@ -333,7 +333,7 @@ mk_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi, struct inpcb *inp,
 }
 
 static void
-mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
+mk_ktls_act_open_req6(struct adapter *sc, struct vi_info *vi,
     struct inpcb *inp, struct tlspcb *tlsp, int atid, void *dst)
 {
 	struct tcpcb *tp = intotcpcb(inp);
@@ -368,7 +368,7 @@ mk_sbtls_act_open_req6(struct adapter *sc, struct vi_info *vi,
 }
 
 static int
-send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
+send_ktls_act_open_req(struct adapter *sc, struct vi_info *vi,
     struct inpcb *inp, struct tlspcb *tlsp, int atid)
 {
 	struct wrqe *wr;
@@ -382,7 +382,7 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	}
 
 	/* XXX: Use start/commit? */
-	wr = alloc_wrqe(sbtls_act_open_cpl_size(isipv6), tlsp->ctrlq);
+	wr = alloc_wrqe(ktls_act_open_cpl_size(isipv6), tlsp->ctrlq);
 	if (wr == NULL) {
 		CTR2(KTR_CXGBE, "%s: atid %d failed to alloc WR", __func__,
 		    atid);
@@ -390,9 +390,9 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	}
 
 	if (isipv6)
-		mk_sbtls_act_open_req6(sc, vi, inp, tlsp, atid, wrtod(wr));
+		mk_ktls_act_open_req6(sc, vi, inp, tlsp, atid, wrtod(wr));
 	else
-		mk_sbtls_act_open_req(sc, vi, inp, tlsp, atid, wrtod(wr));
+		mk_ktls_act_open_req(sc, vi, inp, tlsp, atid, wrtod(wr));
 
 	tlsp->open_pending = true;
 	t4_wrq_tx(sc, wr);
@@ -400,7 +400,7 @@ send_sbtls_act_open_req(struct adapter *sc, struct vi_info *vi,
 };
 
 static int
-sbtls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
+ktls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
     struct mbuf *m)
 {
 	struct adapter *sc = iq->adapter;
@@ -465,7 +465,7 @@ write_set_tcb_field_ulp(struct tlspcb *tlsp, void *dst, struct sge_txq *txq,
 }
 
 static int
-sbtls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
+ktls_set_tcb_fields(struct tlspcb *tlsp, struct tcpcb *tp, struct sge_txq *txq)
 {
 	struct fw_ulptx_wr *wr;
 	struct mbuf *m;
@@ -530,7 +530,7 @@ int
 cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
     struct m_snd_tag **pt)
 {
-	const struct sbtls_session *tls;
+	const struct ktls_session *tls;
 	struct tlspcb *tlsp;
 	struct adapter *sc;
 	struct vi_info *vi;
@@ -541,10 +541,10 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 
 	/* Sanity check values in *tls. */
 	tls = params->tls.tls;
-	switch (tls->sb_params.cipher_algorithm) {
+	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
 		/* XXX: Explicitly ignore any provided IV. */
-		switch (tls->sb_params.cipher_key_len) {
+		switch (tls->params.cipher_key_len) {
 		case 128 / 8:
 		case 192 / 8:
 		case 256 / 8:
@@ -552,7 +552,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		default:
 			return (EINVAL);
 		}
-		switch (tls->sb_params.auth_algorithm) {
+		switch (tls->params.auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
@@ -562,9 +562,9 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		}
 		break;
 	case CRYPTO_AES_NIST_GCM_16:
-		if (tls->sb_params.iv_len != SALT_SIZE)
+		if (tls->params.iv_len != SALT_SIZE)
 			return (EINVAL);
-		switch (tls->sb_params.cipher_key_len) {
+		switch (tls->params.cipher_key_len) {
 		case 128 / 8:
 		case 192 / 8:
 		case 256 / 8:
@@ -578,9 +578,9 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	}
 
 	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
-	if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE ||
-	    tls->sb_params.tls_vminor < TLS_MINOR_VER_ONE ||
-	    tls->sb_params.tls_vminor > TLS_MINOR_VER_TWO)
+	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+	    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
 	vi = ifp->if_softc;
@@ -629,7 +629,7 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	} else
 		tlsp->using_timestamps = false;
 
-	error = send_sbtls_act_open_req(sc, vi, inp, tlsp, atid);
+	error = send_ktls_act_open_req(sc, vi, inp, tlsp, atid);
 	if (error) {
 		INP_RUNLOCK(inp);
 		goto failed;
@@ -665,14 +665,14 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		    vi->rsrv_noflowq);
 	tlsp->txq = txq;
 
-	error = sbtls_set_tcb_fields(tlsp, tp, txq);
+	error = ktls_set_tcb_fields(tlsp, tp, txq);
 	INP_RUNLOCK(inp);
 	if (error)
 		goto failed;
 
-	init_sbtls_key_params(tlsp, tls);
+	init_ktls_key_params(tlsp, tls);
 
-	error = sbtls_setup_keys(tlsp, tls, txq);
+	error = ktls_setup_keys(tlsp, tls, txq);
 	if (error)
 		goto failed;
 
@@ -736,7 +736,7 @@ failed:
 
 /* XXX: Should share this with ccr(4) eventually. */
 static void
-init_sbtls_gmac_hash(const char *key, int klen, char *ghash)
+init_ktls_gmac_hash(const char *key, int klen, char *ghash)
 {
 	static char zeroes[GMAC_BLOCK_LEN];
 	uint32_t keysched[4 * (RIJNDAEL_MAXNR + 1)];
@@ -748,7 +748,7 @@ init_sbtls_gmac_hash(const char *key, int klen, char *ghash)
 
 /* XXX: Should share this with ccr(4) eventually. */
 static void
-sbtls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
+ktls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
 {
 	uint32_t *u32;
 	uint64_t *u64;
@@ -773,7 +773,7 @@ sbtls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
 }
 
 static void
-init_sbtls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
+init_ktls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
     char *key, int klen, char *dst)
 {
 	union authctx auth_ctx;
@@ -807,16 +807,16 @@ init_sbtls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
 	 */
 	axf->Init(&auth_ctx);
 	axf->Update(&auth_ctx, ipad, axf->blocksize);
-	sbtls_copy_partial_hash(dst, axf->type, &auth_ctx);
+	ktls_copy_partial_hash(dst, axf->type, &auth_ctx);
 
 	dst += roundup2(partial_digest_len, 16);
 	axf->Init(&auth_ctx);
 	axf->Update(&auth_ctx, opad, axf->blocksize);
-	sbtls_copy_partial_hash(dst, axf->type, &auth_ctx);
+	ktls_copy_partial_hash(dst, axf->type, &auth_ctx);
 }
 
 static int
-sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
+ktls_setup_keys(struct tlspcb *tlsp, const struct ktls_session *tls,
     struct sge_txq *txq)
 {
 	struct auth_hash *axf;
@@ -886,16 +886,16 @@ sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
 		khdr->dualck_to_txvalid |= V_TLS_KEYCTX_TX_WR_TXOPAD_PRESENT(1);
 	khdr->dualck_to_txvalid = htobe16(khdr->dualck_to_txvalid);
 	key = kctx->keys.edkey;
-	memcpy(key, tls->sb_params.cipher_key, tls->sb_params.cipher_key_len);
+	memcpy(key, tls->params.cipher_key, tls->params.cipher_key_len);
 	if (tlsp->enc_mode == SCMD_CIPH_MODE_AES_GCM) {
-		memcpy(khdr->txsalt, tls->sb_params.iv, SALT_SIZE);
-		init_sbtls_gmac_hash(tls->sb_params.cipher_key,
-		    tls->sb_params.cipher_key_len * 8,
-		    (char *)key + tls->sb_params.cipher_key_len);
+		memcpy(khdr->txsalt, tls->params.iv, SALT_SIZE);
+		init_ktls_gmac_hash(tls->params.cipher_key,
+		    tls->params.cipher_key_len * 8,
+		    (char *)key + tls->params.cipher_key_len);
 	} else {
-		init_sbtls_hmac_digest(axf, partial_digest_len,
-		    tls->sb_params.auth_key, tls->sb_params.auth_key_len * 8,
-		    (char *)key + tls->sb_params.cipher_key_len);
+		init_ktls_hmac_digest(axf, partial_digest_len,
+		    tls->params.auth_key, tls->params.auth_key_len * 8,
+		    (char *)key + tls->params.cipher_key_len);
 	}
 
 	if (tlsp->inline_key)
@@ -956,7 +956,7 @@ sbtls_setup_keys(struct tlspcb *tlsp, const struct sbtls_session *tls,
 }
 
 static u_int
-sbtls_base_wr_size(struct tlspcb *tlsp)
+ktls_base_wr_size(struct tlspcb *tlsp)
 {
 	u_int wr_len;
 
@@ -976,7 +976,7 @@ sbtls_base_wr_size(struct tlspcb *tlsp)
 
 /* How many bytes of TCP payload to send for a given TLS record. */
 static u_int
-sbtls_tcp_payload_length(struct tlspcb *tlsp, struct mbuf *m_tls)
+ktls_tcp_payload_length(struct tlspcb *tlsp, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
@@ -1029,7 +1029,7 @@ sbtls_tcp_payload_length(struct tlspcb *tlsp, struct mbuf *m_tls)
  * a non-zero offset implies that a header will not be sent.
  */
 static u_int
-sbtls_payload_offset(struct tlspcb *tlsp, struct mbuf *m_tls)
+ktls_payload_offset(struct tlspcb *tlsp, struct mbuf *m_tls)
 {
 	struct mbuf_ext_pgs *ext_pgs;
 	struct tls_record_layer *hdr;
@@ -1065,7 +1065,7 @@ sbtls_payload_offset(struct tlspcb *tlsp, struct mbuf *m_tls)
 }
 
 static u_int
-sbtls_sgl_size(u_int nsegs)
+ktls_sgl_size(u_int nsegs)
 {
 	u_int wr_len;
 
@@ -1078,7 +1078,7 @@ sbtls_sgl_size(u_int nsegs)
 }
 
 static int
-sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
+ktls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
     int *nsegsp)
 {
 	struct mbuf_ext_pgs *ext_pgs;
@@ -1092,7 +1092,7 @@ sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
 	 * Determine the size of the TLS record payload to send
 	 * excluding header and trailer.
 	 */
-	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
+	tlen = ktls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
@@ -1122,12 +1122,12 @@ sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
 	plen = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len;
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(tlsp, m_tls);
+		offset = ktls_payload_offset(tlsp, m_tls);
 	} else
 		offset = 0;
 
 	/* Calculate the size of the work request. */
-	wr_len = sbtls_base_wr_size(tlsp);
+	wr_len = ktls_base_wr_size(tlsp);
 
 	/*
 	 * Full records and short records with an offset of 0 include
@@ -1144,7 +1144,7 @@ sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
 	/* TLS record payload via DSGL. */
 	*nsegsp = sglist_count_ext_pgs(ext_pgs, ext_pgs->hdr_len + offset,
 	    plen - (ext_pgs->hdr_len + offset));
-	wr_len += sbtls_sgl_size(*nsegsp);
+	wr_len += ktls_sgl_size(*nsegsp);
 
 	wr_len = roundup2(wr_len, 16);
 	return (wr_len);
@@ -1155,7 +1155,7 @@ sbtls_wr_len(struct tlspcb *tlsp, struct mbuf *m, struct mbuf *m_tls,
  * packet.
  */
 static int
-sbtls_has_tcp_options(struct tcphdr *tcp)
+ktls_has_tcp_options(struct tcphdr *tcp)
 {
 	u_char *cp;
 	int cnt, opt, optlen;
@@ -1190,7 +1190,7 @@ sbtls_has_tcp_options(struct tcphdr *tcp)
  * Find the TCP timestamp option.
  */
 static void *
-sbtls_find_tcp_timestamps(struct tcphdr *tcp)
+ktls_find_tcp_timestamps(struct tcphdr *tcp)
 {
 	u_char *cp;
 	int cnt, opt, optlen;
@@ -1217,7 +1217,7 @@ sbtls_find_tcp_timestamps(struct tcphdr *tcp)
 }
 
 int
-t6_sbtls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
+t6_ktls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
 {
 	struct tlspcb *tlsp;
 	struct ether_header *eh;
@@ -1303,7 +1303,7 @@ t6_sbtls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
 	for (m_tls = m->m_next; m_tls != NULL; m_tls = m_tls->m_next) {
 		MPASS(m_tls->m_flags & M_NOMAP);
 
-		wr_len = sbtls_wr_len(tlsp, m, m_tls, &nsegs);
+		wr_len = ktls_wr_len(tlsp, m, m_tls, &nsegs);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d wr_len %d nsegs %d", __func__,
 		    tlsp->tid, wr_len, nsegs);
@@ -1326,7 +1326,7 @@ t6_sbtls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
 	 * See if we have any TCP options or a FIN requiring a
 	 * dedicated packet.
 	 */
-	if ((tcp->th_flags & TH_FIN) != 0 || sbtls_has_tcp_options(tcp)) {
+	if ((tcp->th_flags & TH_FIN) != 0 || ktls_has_tcp_options(tcp)) {
 		wr_len = sizeof(struct fw_eth_tx_pkt_wr) +
 		    sizeof(struct cpl_tx_pkt_core) + roundup2(m->m_len, 16);
 		if (wr_len > SGE_MAX_WR_LEN) {
@@ -1436,7 +1436,7 @@ copy_to_txd(struct sge_eq *eq, caddr_t from, caddr_t *to, int len)
 }
 
 static int
-sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
+ktls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
     u_int available, u_int pidx)
 {
 	struct tx_sdesc *txsd;
@@ -1527,7 +1527,7 @@ sbtls_write_tcp_options(struct sge_txq *txq, void *dst, struct mbuf *m,
 }
 
 static int
-sbtls_write_tunnel_packet(struct sge_txq *txq, void *dst, struct mbuf *m,
+ktls_write_tunnel_packet(struct sge_txq *txq, void *dst, struct mbuf *m,
     struct mbuf *m_tls, u_int available, tcp_seq tcp_seqno, u_int pidx)
 {
 	struct tx_sdesc *txsd;
@@ -1635,7 +1635,7 @@ _Static_assert(W_TCB_SND_UNA_RAW == W_TCB_SND_NXT_RAW,
     "SND_NXT_RAW and SND_UNA_RAW are in different words");
 
 static int
-sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
+ktls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
     void *dst, struct mbuf *m, struct tcphdr *tcp, struct mbuf *m_tls,
     u_int nsegs, u_int available, tcp_seq tcp_seqno, uint32_t *tsopt,
     u_int pidx, bool set_l2t_idx)
@@ -1679,7 +1679,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 	plen = TLS_HEADER_LENGTH + ntohs(hdr->tls_length) - ext_pgs->trail_len;
 
 	/* Determine how much of the TLS record to send. */
-	tlen = sbtls_tcp_payload_length(tlsp, m_tls);
+	tlen = ktls_tcp_payload_length(tlsp, m_tls);
 	if (tlen <= ext_pgs->hdr_len) {
 		/*
 		 * For requests that only want to send the TLS header,
@@ -1689,12 +1689,12 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 		CTR3(KTR_CXGBE, "%s: tid %d header-only TLS record %u",
 		    __func__, tlsp->tid, (u_int)ext_pgs->seqno);
 #endif
-		return (sbtls_write_tunnel_packet(txq, dst, m, m_tls, available,
+		return (ktls_write_tunnel_packet(txq, dst, m, m_tls, available,
 		    tcp_seqno, pidx));
 	}
 	if (tlen < plen) {
 		plen = tlen;
-		offset = sbtls_payload_offset(tlsp, m_tls);
+		offset = ktls_payload_offset(tlsp, m_tls);
 #ifdef VERBOSE_TRACES
 		CTR4(KTR_CXGBE, "%s: tid %d short TLS record %u with offset %u",
 		    __func__, tlsp->tid, (u_int)ext_pgs->seqno, offset);
@@ -1711,7 +1711,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 	/*
 	 * This is the last work request for a given TLS mbuf chain if
 	 * it is the last mbuf in the chain and FIN is not set.  If
-	 * FIN is set, then sbtls_write_tcp_fin() will write out the
+	 * FIN is set, then ktls_write_tcp_fin() will write out the
 	 * last work request.
 	 */
 	last_wr = m_tls->m_next == NULL && (tcp->th_flags & TH_FIN) == 0;
@@ -1874,7 +1874,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 		    offset, plen - (ext_pgs->hdr_len + offset));
 
 	/* Calculate the size of the TLS work request. */
-	twr_len = sbtls_base_wr_size(tlsp);
+	twr_len = ktls_base_wr_size(tlsp);
 
 	imm_len = 0;
 	if (offset == 0)
@@ -1882,7 +1882,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 	if (plen == tlen)
 		imm_len += AES_BLOCK_LEN;
 	twr_len += roundup2(imm_len, 16);
-	twr_len += sbtls_sgl_size(nsegs);
+	twr_len += ktls_sgl_size(nsegs);
 
 	/*
 	 * If any field updates were required, determine if they can
@@ -2176,7 +2176,7 @@ sbtls_write_tls_wr(struct tlspcb *tlsp, struct sge_txq *txq,
 }
 
 static int
-sbtls_write_tcp_fin(struct sge_txq *txq, void *dst, struct mbuf *m,
+ktls_write_tcp_fin(struct sge_txq *txq, void *dst, struct mbuf *m,
     u_int available, tcp_seq tcp_seqno, u_int pidx)
 {
 	struct tx_sdesc *txsd;
@@ -2267,7 +2267,7 @@ sbtls_write_tcp_fin(struct sge_txq *txq, void *dst, struct mbuf *m,
 }
 
 int
-t6_sbtls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
+t6_ktls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
     u_int available)
 {
 	struct sge_eq *eq = &txq->eq;
@@ -2297,8 +2297,8 @@ t6_sbtls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
 	 * If this TLS record has a FIN, then we will send any
 	 * requested options as part of the FIN packet.
 	 */
-	if (!has_fin && sbtls_has_tcp_options(tcp)) {
-		ndesc = sbtls_write_tcp_options(txq, dst, m, available, pidx);
+	if (!has_fin && ktls_has_tcp_options(tcp)) {
+		ndesc = ktls_write_tcp_options(txq, dst, m, available, pidx);
 		totdesc += ndesc;
 		IDXINCR(pidx, ndesc, eq->sidx);
 		dst = &eq->desc[pidx];
@@ -2355,13 +2355,13 @@ t6_sbtls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
 			tcp_seqno = ntohl(tcp->th_seq) -
 			    mtod(m_tls, vm_offset_t);
 			if (tlsp->using_timestamps)
-				tsopt = sbtls_find_tcp_timestamps(tcp);
+				tsopt = ktls_find_tcp_timestamps(tcp);
 		} else {
 			MPASS(mtod(m_tls, vm_offset_t) == 0);
 			tcp_seqno = tlsp->prev_seq;
 		}
 
-		ndesc = sbtls_write_tls_wr(tlsp, txq, dst, m, tcp, m_tls,
+		ndesc = ktls_write_tls_wr(tlsp, txq, dst, m, tcp, m_tls,
 		    nsegs, available - totdesc, tcp_seqno, tsopt, pidx,
 		    set_l2t_idx);
 		totdesc += ndesc;
@@ -2387,7 +2387,7 @@ t6_sbtls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
 		 * uses the TCP sequence number after that reqeust as
 		 * the sequence number for the FIN packet.
 		 */
-		ndesc = sbtls_write_tcp_fin(txq, dst, m, available,
+		ndesc = ktls_write_tcp_fin(txq, dst, m, available,
 		    tlsp->prev_seq, pidx);
 		totdesc += ndesc;
 	}
@@ -2421,15 +2421,15 @@ cxgbe_tls_tag_free(struct m_snd_tag *mst)
 }
 
 void
-t6_sbtls_modload(void)
+t6_ktls_modload(void)
 {
 
-	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, sbtls_act_open_rpl,
+	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, ktls_act_open_rpl,
 	    CPL_COOKIE_KERN_TLS);
 }
 
 void
-t6_sbtls_modunload(void)
+t6_ktls_modunload(void)
 {
 
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,

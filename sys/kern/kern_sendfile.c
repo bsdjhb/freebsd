@@ -86,7 +86,7 @@ struct sf_io {
 	int		npages;
 	struct socket	*so;
 	struct mbuf	*m;
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	vm_page_t	pa[];
 };
 
@@ -345,7 +345,7 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 		mb_free_notready(sfio->m, sfio->npages);
 	} else {
-		if (sfio->tls != NULL && sfio->tls->sb_tls_crypt != NULL) {
+		if (sfio->tls != NULL && sfio->tls->sw_encrypt != NULL) {
 			/*
 			 * I/O operation is complete, but we still
 			 * need to encrypt.  We cannot do this in the
@@ -355,7 +355,7 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 			 * Donate the socket reference from sfio to
 			 * rather than explicitly invoking soref().
 			 */
-			sbtls_enqueue(sfio->m, so, sfio->npages);
+			ktls_enqueue(sfio->m, so, sfio->npages);
 			goto out_with_ref;
 		} else
 			(void)(so->so_proto->pr_usrreqs->pru_ready)(so,
@@ -597,7 +597,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	struct vnode *vp;
 	struct vm_object *obj;
 	struct socket *so;
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	struct mbuf_ext_pgs *ext_pgs;
 	struct mbuf *m, *mh, *mhtail;
 	struct sf_buf *sf;
@@ -649,7 +649,7 @@ vn_sendfile(struct file *fp, int sockfd, struct uio *hdr_uio,
 	 * we implement that, but possibly shouldn't.
 	 */
 	(void)sblock(&so->so_snd, SBL_WAIT | SBL_NOINTR);
-	tls = sbtls_hold(so->so_snd.sb_tls_info);
+	tls = ktls_hold(so->so_snd.sb_tls_info);
 
 	/*
 	 * Loop through the pages of the file, starting with the requested
@@ -747,9 +747,8 @@ retry_space:
 				mh = m_uiotombuf(hdr_uio, M_WAITOK,
 				    space, 0, 0);
 			} else {
-				mh = m_uiotombuf(hdr_uio, M_WAITOK,
-				    space, tls->sb_params.max_frame_len,
-				    M_NOMAP);
+				mh = m_uiotombuf(hdr_uio, M_WAITOK, space,
+				    tls->params.max_frame_len, M_NOMAP);
 			}
 			hdrlen = m_length(mh, &mhtail);
 			space -= hdrlen;
@@ -825,7 +824,7 @@ retry_space:
 		sfio->error = 0;
 
 		/*
-		 * This doesn't use sbtls_hold() because sfio->m will
+		 * This doesn't use ktls_hold() because sfio->m will
 		 * also have a reference on 'tls' that will be valid
 		 * for all of sfio's lifetime.
 		 */
@@ -853,7 +852,7 @@ retry_space:
 		    tls != NULL) {
 			use_ext_pgs = true;
 			if (tls != NULL)
-				max_pgs = num_pages(tls->sb_params.max_frame_len);
+				max_pgs = num_pages(tls->params.max_frame_len);
 			else
 				max_pgs = MBUF_PEXT_MAX_PGS;
 
@@ -1035,7 +1034,7 @@ prepend_header:
 
 		CURVNET_SET(so->so_vnet);
 		if (tls != NULL) {
-			error = sbtls_frame(&m, tls, &tls_enq_cnt,
+			error = ktls_frame(m, tls, &tls_enq_cnt,
 			    TLS_RLTYPE_APP);
 			if (error != 0)
 				goto done;
@@ -1048,11 +1047,11 @@ prepend_header:
 			 * PRUS_NOTREADY flag.
 			 */
 			free(sfio, M_TEMP);
-			if (tls != NULL && tls->sb_tls_crypt != NULL) {
+			if (tls != NULL && tls->sw_encrypt != NULL) {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, PRUS_NOTREADY, m, NULL, NULL, td);
 				soref(so);
-				sbtls_enqueue(m, so, tls_enq_cnt);
+				ktls_enqueue(m, so, tls_enq_cnt);
 			} else {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, 0, m, NULL, NULL, td);
@@ -1121,7 +1120,7 @@ out:
 		free(sfs, M_TEMP);
 	}
 	if (tls != NULL)
-		sbtls_free(tls);
+		ktls_free(tls);
 
 	if (error == ERESTART)
 		error = EINTR;

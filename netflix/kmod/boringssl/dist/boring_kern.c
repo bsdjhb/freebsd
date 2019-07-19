@@ -54,21 +54,36 @@ __FBSDID("$FreeBSD$");
 #include "openssl/internal_crypto.h"
 #include "openssl/internal_cipher.h"
 
+SYSCTL_DECL(_kern_ipc_tls_counters);
 
+static counter_u64_t ktls_offload_boring_aead;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bsslaead_crypts,
+    CTLFLAG_RD, &ktls_offload_boring_aead,
+    "Total number of BORING SSL TLS AEAD encrypts called");
 
-static counter_u64_t sbtls_offload_boring_aead;
-static counter_u64_t sbtls_offload_boring_cbc;
-static counter_u64_t sbtls_offload_boring_cbc_cp;
-static counter_u64_t sbtls_offload_boring_cbc_ok;
+static counter_u64_t ktls_offload_boring_cbc;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_crypts,
+    CTLFLAG_RD, &ktls_offload_boring_cbc,
+    "Total number of BORING SSL TLS CBC encrypts called");
+
+static counter_u64_t ktls_offload_boring_cbc_cp;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_cp,
+    CTLFLAG_RD, &ktls_offload_boring_cbc_cp,
+    "Total bytes copied fixing up CBC");
+
+static counter_u64_t ktls_offload_boring_cbc_ok;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_ok,
+    CTLFLAG_RD, &ktls_offload_boring_cbc_ok,
+    "Total bytes not copied fixing up CBC");
 
 static MALLOC_DEFINE(M_BORINGSSL, "boringssl", "boringssl");
 
-static int sbtls_setup_boring_cipher(struct sbtls_session *tls,
+static int ktls_boring_setup_cipher(struct ktls_session *tls,
     struct evp_aead_ctx_st *bssl);
-static void sbtls_clean_boring(struct sbtls_session *tls);
+static void ktls_boring_free(struct ktls_session *tls);
 
 static int
-sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
+ktls_boring_aead_encrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
@@ -83,10 +98,10 @@ sbtls_crypt_boringssl_aead(struct sbtls_session *tls,
 
 	bssl = (struct evp_aead_ctx_st *)tls->cipher;
 	KASSERT(bssl != NULL, ("Null cipher"));
-	counter_u64_add(sbtls_offload_boring_aead, 1);
+	counter_u64_add(ktls_offload_boring_aead, 1);
 
 	/* Setup the nonce */
-	memcpy(nd.fixed, tls->sb_params.iv, TLS_AEAD_GCM_LEN);
+	memcpy(nd.fixed, tls->params.iv, TLS_AEAD_GCM_LEN);
 	memcpy(&nd.seq, hdr + 1, sizeof(nd.seq));
 	noncelen = sizeof(nd);
 	/* Setup the associated data */
@@ -178,7 +193,7 @@ iov_pulldown(struct iovec *iov, size_t bytes)
  */
 
 static void
-sbtls_boring_cbc_fixup(struct sbtls_session *tls,
+ktls_boring_cbc_fixup(struct ktls_session *tls,
     struct iovec *iniov, struct iovec *outiov,
     uint8_t *trailer, int iovcnt, size_t taglen)
 {
@@ -224,12 +239,12 @@ sbtls_boring_cbc_fixup(struct sbtls_session *tls,
 		    ("boring wasn't fixed: in= %p, out= %p, work= %p, tls= %p",
 			iniov, outiov, work_iov, tls));
 	}
-	counter_u64_add(sbtls_offload_boring_cbc_ok, good);
-	counter_u64_add(sbtls_offload_boring_cbc_cp, bad);
+	counter_u64_add(ktls_offload_boring_cbc_ok, good);
+	counter_u64_add(ktls_offload_boring_cbc_cp, bad);
 }
 
 static int
-sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
+ktls_boring_cbc_encrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
@@ -243,7 +258,7 @@ sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
 
 	bssl = (struct evp_aead_ctx_st *)tls->cipher;
 	KASSERT(bssl != NULL, ("Null cipher"));
-	counter_u64_add(sbtls_offload_boring_cbc, 1);
+	counter_u64_add(ktls_offload_boring_cbc, 1);
 	taglen = bssl->aead->max_tag_len;
 	mac.type =  hdr->tls_type;
 	mac.tls_vmajor = hdr->tls_vmajor;
@@ -272,25 +287,25 @@ sbtls_crypt_boringssl_cbc(struct sbtls_session *tls,
 	 * move data in the output iovec back to the original
 	 * layout
 	 */
-	sbtls_boring_cbc_fixup(tls, iniov, outiov, trailer, iovcnt, taglen);
+	ktls_boring_cbc_fixup(tls, iniov, outiov, trailer, iovcnt, taglen);
 
 	return (0);
 }
 
 static int
-sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
+ktls_boring_try(struct socket *so, struct ktls_session *tls)
 {
 	struct evp_aead_ctx_st *bssl;
 	const EVP_AEAD *choice;
 	int error;
 
 	choice = NULL;
-	switch (tls->sb_params.cipher_algorithm) {
+	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
-		if (tls->sb_params.iv_len != TLS_AEAD_GCM_LEN) {
+		if (tls->params.iv_len != TLS_AEAD_GCM_LEN) {
 			return (EINVAL);
 		}
-		switch (tls->sb_params.cipher_key_len) {
+		switch (tls->params.cipher_key_len) {
 		case 16:
 			choice = EVP_aead_aes_128_gcm();
 			break;
@@ -300,9 +315,9 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 		}
 		break;
 	case CRYPTO_AES_CBC:
-		switch (tls->sb_params.auth_algorithm) {
+		switch (tls->params.auth_algorithm) {
 		case CRYPTO_SHA2_256_HMAC:
-			switch (tls->sb_params.cipher_key_len) {
+			switch (tls->params.cipher_key_len) {
 			case 16:
 				choice = EVP_aead_aes_128_cbc_sha256_tls();
 				break;
@@ -312,31 +327,31 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 			}
 			break;
 		case CRYPTO_SHA2_384_HMAC:
-			switch (tls->sb_params.cipher_key_len) {
+			switch (tls->params.cipher_key_len) {
 			case 32:
 				choice = EVP_aead_aes_256_cbc_sha384_tls();
 				break;
 			}
 			break;
 		case CRYPTO_SHA1_HMAC:
-			if (tls->sb_params.tls_vmajor != TLS_MAJOR_VER_ONE) {
+			if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE) {
 				return (EINVAL);
 			}
-			switch (tls->sb_params.cipher_key_len) {
+			switch (tls->params.cipher_key_len) {
 			case 16:
-				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
+				if (tls->params.tls_vminor == TLS_MINOR_VER_ZERO) {
 					/* TLS 1.0 */
 					choice = EVP_aead_aes_128_cbc_sha1_tls_implicit_iv();
-				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
+				} else if (tls->params.tls_vminor >= TLS_MINOR_VER_ONE) {
 					/* TLS 1.1 and > */
 					choice = EVP_aead_aes_128_cbc_sha1_tls();
 				}
 				break;
 			case 32:
-				if (tls->sb_params.tls_vminor == TLS_MINOR_VER_ZERO) {
+				if (tls->params.tls_vminor == TLS_MINOR_VER_ZERO) {
 					/* TLS 1.0 */
 					choice = EVP_aead_aes_256_cbc_sha1_tls_implicit_iv();
-				} else if (tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE) {
+				} else if (tls->params.tls_vminor >= TLS_MINOR_VER_ONE) {
 					/* TLS 1.1 and > */
 					choice = EVP_aead_aes_256_cbc_sha1_tls();
 				}
@@ -346,10 +361,10 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 		}
 
 		if (choice != NULL) {
-			KASSERT(tls->sb_params.tls_hlen ==
+			KASSERT(tls->params.tls_hlen ==
 			    sizeof(struct tls_record_layer) + choice->nonce_len,
 			    ("TLS header length mismatch"));
-			KASSERT(tls->sb_params.tls_tlen == choice->overhead,
+			KASSERT(tls->params.tls_tlen == choice->overhead,
 			    ("TLS trailer length mismatch"));
 		}
 		break;
@@ -369,23 +384,23 @@ sbtls_try_boring(struct socket *so, struct sbtls_session *tls)
 	}
 	bssl->aead = choice;
 
-	error = sbtls_setup_boring_cipher(tls, bssl);
+	error = ktls_boring_setup_cipher(tls, bssl);
 	if (error) {
 		free(bssl, M_BORINGSSL);
 		return (error);
 	}
 
 	tls->cipher = bssl;
-	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC)
-		tls->sb_tls_crypt = sbtls_crypt_boringssl_cbc;
+	if (tls->params.cipher_algorithm == CRYPTO_AES_CBC)
+		tls->sw_encrypt = ktls_boring_cbc_encrypt;
 	else
-		tls->sb_tls_crypt = sbtls_crypt_boringssl_aead;
-	tls->sb_tls_free = sbtls_clean_boring;
+		tls->sw_encrypt = ktls_boring_aead_encrypt;
+	tls->free = ktls_boring_free;
 	return (0);
 }
 
 static int
-sbtls_setup_boring_cipher(struct sbtls_session *tls,
+ktls_boring_setup_cipher(struct ktls_session *tls,
     struct evp_aead_ctx_st *bssl)
 {
 	int error, ret;
@@ -394,14 +409,15 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 	size_t keylen;
 
 
-	if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC) {
+	if (tls->params.cipher_algorithm == CRYPTO_AES_CBC) {
 		/*
 		 * CBC has a merged key.  For TLS 1.0, the implicit IV
 		 * is placed after the keys.
 		 */
-		keylen = tls->sb_params.auth_key_len +
-		    tls->sb_params.cipher_key_len + tls->sb_params.iv_len;
-		if (tls->sb_params.auth_key == NULL || tls->sb_params.cipher_key == NULL) {
+		keylen = tls->params.auth_key_len +
+		    tls->params.cipher_key_len + tls->params.iv_len;
+		if (tls->params.auth_key == NULL ||
+		    tls->params.cipher_key == NULL) {
 			return (EINVAL);
 		}
 
@@ -409,16 +425,16 @@ sbtls_setup_boring_cipher(struct sbtls_session *tls,
 		if (mal == NULL) {
 			return (ENOMEM);
 		}
-		memcpy(mal, tls->sb_params.auth_key, tls->sb_params.auth_key_len);
-		memcpy(mal + tls->sb_params.auth_key_len, tls->sb_params.cipher_key,
-		    tls->sb_params.cipher_key_len);
-		memcpy(mal + tls->sb_params.auth_key_len +
-		    tls->sb_params.cipher_key_len, tls->sb_params.iv,
-		    tls->sb_params.iv_len);
+		memcpy(mal, tls->params.auth_key, tls->params.auth_key_len);
+		memcpy(mal + tls->params.auth_key_len, tls->params.cipher_key,
+		    tls->params.cipher_key_len);
+		memcpy(mal + tls->params.auth_key_len +
+		    tls->params.cipher_key_len, tls->params.iv,
+		    tls->params.iv_len);
 		key = mal;
 	} else {
-		key = tls->sb_params.cipher_key;
-		keylen = tls->sb_params.cipher_key_len;
+		key = tls->params.cipher_key;
+		keylen = tls->params.cipher_key_len;
 		if (key == NULL) {
 			return (EINVAL);
 		}
@@ -451,45 +467,44 @@ out:
 }
 
 static void
-sbtls_clean_boring(struct sbtls_session *tls)
+ktls_boring_free(struct ktls_session *tls)
 {
 
 	EVP_AEAD_CTX_cleanup(tls->cipher);
 	free(tls->cipher, M_BORINGSSL);
 }
 
-SYSCTL_DECL(_kern_ipc_tls_counters);
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bsslaead_crypts, CTLFLAG_RD,
-    &sbtls_offload_boring_aead, "Total number of BORING SSL TLS AEAD encrypts called");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_crypts, CTLFLAG_RD,
-    &sbtls_offload_boring_cbc, "Total number of BORING SSL TLS CBC encrypts called");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_cp,
-    CTLFLAG_RD, &sbtls_offload_boring_cbc_cp,
-    "Total bytes copied fixing up CBC");
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_ok,
-    CTLFLAG_RD, &sbtls_offload_boring_cbc_ok,
-    "Total bytes not copied fixing up CBC");
-
-
-
-struct sbtls_crypto_backend bssl_backend  = {
+struct ktls_crypto_backend bssl_backend = {
 	.name = "Boring",
 	.prio = 10,
-	.api_version = SBTLS_API_VERSION,
-	.try = sbtls_try_boring,
+	.api_version = KTLS_API_VERSION,
+	.try = ktls_boring_try,
 };
 
 static int
-boringssl_init(void)
+boring_init(void)
 {
-	sbtls_offload_boring_aead = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_boring_cbc = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_boring_cbc_cp = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_boring_cbc_ok = counter_u64_alloc(M_WAITOK);
+	ktls_offload_boring_aead = counter_u64_alloc(M_WAITOK);
+	ktls_offload_boring_cbc = counter_u64_alloc(M_WAITOK);
+	ktls_offload_boring_cbc_cp = counter_u64_alloc(M_WAITOK);
+	ktls_offload_boring_cbc_ok = counter_u64_alloc(M_WAITOK);
 	CRYPTO_library_init();
-	return (sbtls_crypto_backend_register(&bssl_backend));
+	return (ktls_crypto_backend_register(&bssl_backend));
+}
+
+static int
+boring_unload(void)
+{
+	int error;
+
+	error = ktls_crypto_backend_deregister(&bssl_backend);
+	if (error)
+		return (error);
+	counter_u64_free(ktls_offload_boring_aead);
+	counter_u64_free(ktls_offload_boring_cbc);
+	counter_u64_free(ktls_offload_boring_cbc_cp);
+	counter_u64_free(ktls_offload_boring_cbc_ok);
+	return (0);
 }
 
 static int
@@ -497,9 +512,9 @@ boring_module_event_handler(module_t mod, int evt, void *arg)
 {
 	switch (evt) {
 	case MOD_LOAD:
-		return (boringssl_init());
+		return (boring_init());
 	case MOD_UNLOAD:
-		return (sbtls_crypto_backend_deregister(&bssl_backend));
+		return (boring_unload());
 	default:
 		return (EOPNOTSUPP);
 	}
@@ -510,7 +525,5 @@ static moduledata_t boring_moduledata = {
 	boring_module_event_handler,
 	NULL
 };
-
-
 
 DECLARE_MODULE(boring, boring_moduledata, SI_SUB_PROTO_END, SI_ORDER_ANY);

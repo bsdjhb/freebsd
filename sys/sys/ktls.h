@@ -165,21 +165,17 @@ struct tls_session_params {
 
 #ifdef _KERNEL
 
-#include <sys/malloc.h>
-
-MALLOC_DECLARE(M_TLSSOBUF);
-
-#define SBTLS_API_VERSION 5
+#define KTLS_API_VERSION 5
 
 struct m_snd_tag;
 struct mbuf;
 struct mbuf_ext_pgs;
-struct sbtls_session;
+struct ktls_session;
 struct iovec;
 
-struct sbtls_crypto_backend {
-	LIST_ENTRY(sbtls_crypto_backend) next;
-	int (*try)(struct socket *so, struct sbtls_session *tls);
+struct ktls_crypto_backend {
+	LIST_ENTRY(ktls_crypto_backend) next;
+	int (*try)(struct socket *so, struct ktls_session *tls);
 	void *old_setup_cipher;		/* no longer used */
 	void *old_clean_cipher;		/* no longer used */
 	int prio;
@@ -188,8 +184,8 @@ struct sbtls_crypto_backend {
 	const char *name;
 };
 
-struct sbtls_session {
-	int	(*sb_tls_crypt)(struct sbtls_session *tls,
+struct ktls_session {
+	int	(*sw_encrypt)(struct ktls_session *tls,
 	    const struct tls_record_layer *hdr, uint8_t *trailer,
 	    struct iovec *src, struct iovec *dst, int iovcnt,
 	    uint64_t seqno);
@@ -197,10 +193,10 @@ struct sbtls_session {
 		void *cipher;
 		struct m_snd_tag *snd_tag;
 	};
-	struct sbtls_crypto_backend *be;/* backend crypto impl. */
-	void (*sb_tls_free)(struct sbtls_session *tls);
-	struct tls_session_params sb_params;
-	u_int	sb_tsk_instance;	/* For task selection */
+	struct ktls_crypto_backend *be;
+	void (*free)(struct ktls_session *tls);
+	struct tls_session_params params;
+	u_int	wq_index;
 	volatile u_int refcount;
 
 	struct task reset_tag_task;
@@ -218,62 +214,62 @@ struct sbtls_session {
 /* TLS stubs so we can compile kernels without options KERN_TLS */
 
 static inline void
-sbtlsdestroy(struct sockbuf *sb)
+sbdestroy_ktls(struct sockbuf *sb)
 {
 }
 
 static inline int
-sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
+ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type)
 {
 	return (ENOTSUP);
 }
 
 static inline void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 }
 
 static inline void
-sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
+ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 {
 }
 
 static inline void
-sbtls_seq(struct sockbuf *sb, struct mbuf *m)
+ktls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 }
 
-static inline struct sbtls_session *
-sbtls_hold(struct sbtls_session *tls)
+static inline struct ktls_session *
+ktls_hold(struct ktls_session *tls)
 {
 	return (NULL);
 }
 
 static inline void
-sbtls_free(struct sbtls_session *tls)
+ktls_free(struct ktls_session *tls)
 {
 }
 
 #else
 
-int sbtls_crypto_backend_register(struct sbtls_crypto_backend *be);
-int sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *orig_be);
-int sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en);
-void sbtlsdestroy(struct sockbuf *sb);
-void sbtls_destroy(struct sbtls_session *tls);
-int sbtls_frame(struct mbuf **m, struct sbtls_session *tls, int *enqueue_cnt,
+int ktls_crypto_backend_register(struct ktls_crypto_backend *be);
+int ktls_crypto_backend_deregister(struct ktls_crypto_backend *be);
+int ktls_enable(struct socket *so, struct tls_so_enable *en);
+void sbdestroy_ktls(struct sockbuf *sb);
+void ktls_destroy(struct ktls_session *tls);
+int ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
-void sbtls_seq(struct sockbuf *sb, struct mbuf *m);
-void sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count);
-void sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
-void sbtls_tcp_stack_changed(struct socket *so);
-int sbtls_set_tls_mode(struct socket *so, int mode);
-int sbtls_get_tls_mode(struct socket *so);
-int sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls);
+void ktls_seq(struct sockbuf *sb, struct mbuf *m);
+void ktls_enqueue(struct mbuf *m, struct socket *so, int page_count);
+void ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
+void ktls_tcp_stack_changed(struct socket *so);
+int ktls_set_tls_mode(struct socket *so, int mode);
+int ktls_get_tls_mode(struct socket *so);
+int ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls);
 
-static inline struct sbtls_session *
-sbtls_hold(struct sbtls_session *tls)
+static inline struct ktls_session *
+ktls_hold(struct ktls_session *tls)
 {
 
 	if (tls != NULL)
@@ -282,11 +278,11 @@ sbtls_hold(struct sbtls_session *tls)
 }
 
 static inline void
-sbtls_free(struct sbtls_session *tls)
+ktls_free(struct ktls_session *tls)
 {
 
 	if (refcount_release(&tls->refcount))
-		sbtls_destroy(tls);
+		ktls_destroy(tls);
 }
 
 #endif /* KERN_TLS */

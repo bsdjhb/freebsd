@@ -63,12 +63,12 @@
 
 #define	SB_MAX		(2*1024*1024)	/* default for max chars in sockbuf */
 
+struct ktls_session;
 struct mbuf;
 struct sockaddr;
 struct socket;
 struct thread;
 struct selinfo;
-struct sbtls_session;
 
 /*
  * Variables for socket buffering.
@@ -101,7 +101,7 @@ struct	sockbuf {
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
 	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
-	struct	sbtls_session *sb_tls_info; /* (a + b) TLS state */
+	struct	ktls_session *sb_tls_info; /* (a + b) TLS state */
 	u_int	sb_tls_flags;	/* (a + b) flags used by TLS */
 	short	sb_flags;	/* (a) flags, see above */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */

@@ -212,7 +212,7 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, int flags,
 
 static int
 ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
-    const struct sockaddr_in *gw, struct route *ro, struct sbtls_session *tls)
+    const struct sockaddr_in *gw, struct route *ro, struct ktls_session *tls)
 {
 	struct m_snd_tag *mst;
 	int error;
@@ -265,7 +265,7 @@ done:
 	/* Check for route change invalidating send tags. */
 #ifdef KERN_TLS
 	if (error == EAGAIN && tls != NULL)
-		error = sbtls_output_eagain(inp, tls);
+		error = ktls_output_eagain(inp, tls);
 #endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
@@ -295,7 +295,7 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	struct ip *ip;
 	struct ifnet *ifp = NULL;	/* keep compiler happy */
 	struct mbuf *m0;
-	struct sbtls_session *tls = NULL;
+	struct ktls_session *tls = NULL;
 	int hlen = sizeof (struct ip);
 	int mtu;
 	int error = 0;
@@ -745,11 +745,11 @@ sendit:
 	/*
 	 * If this is an unencrypted TLS record, save a reference to
 	 * the record.  This local reference is used to call
-	 * sbtls_output_eagain after the mbuf has been freed (thus
+	 * ktls_output_eagain after the mbuf has been freed (thus
 	 * dropping the mbuf's reference) in if_output.
 	 */
 	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
-		tls = sbtls_hold(m->m_next->m_ext.ext_pgs->tls);
+		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
 #endif
 
 	/*
@@ -837,7 +837,7 @@ done:
 	NET_EPOCH_EXIT(et);
 #ifdef KERN_TLS
 	if (tls != NULL)
-		sbtls_free(tls);
+		ktls_free(tls);
 #endif
 	return (error);
  bad:

@@ -301,7 +301,7 @@ struct mbuf {
 	};
 };
 
-struct sbtls_session;
+struct ktls_session;
 struct socket;
 
 /*
@@ -345,7 +345,7 @@ struct mbuf_ext_pgs {
 	uint16_t	last_pg_len;		/* Length of last page */
 	vm_paddr_t	pa[MBUF_PEXT_MAX_PGS];	/* phys addrs of pages */
 	char		hdr[MBUF_PEXT_HDR_LEN];	/* TLS header */
-	struct sbtls_session *tls;		/* TLS session */
+	struct ktls_session *tls;		/* TLS session */
 #if defined(__i386__) || \
     (defined(__powerpc__) && !defined(__powerpc64__) && defined(BOOKE))
 	/*

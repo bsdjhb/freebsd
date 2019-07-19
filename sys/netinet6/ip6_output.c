@@ -281,7 +281,7 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 static int
 ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
     struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro,
-    struct sbtls_session *tls)
+    struct ktls_session *tls)
 {
 	struct m_snd_tag *mst;
 	int error;
@@ -334,7 +334,7 @@ done:
 	/* Check for route change invalidating send tags. */
 #ifdef KERN_TLS
 	if (error == EAGAIN && tls != NULL)
-		error = sbtls_output_eagain(inp, tls);
+		error = ktls_output_eagain(inp, tls);
 #endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
@@ -371,7 +371,7 @@ ip6_output(struct mbuf *m0, struct ip6_pktopts *opt,
 	struct ifnet *ifp, *origifp;
 	struct mbuf *m = m0;
 	struct mbuf *mprev = NULL;
-	struct sbtls_session *tls = NULL;
+	struct ktls_session *tls = NULL;
 	int hlen, tlen, len;
 	struct route_in6 ip6route;
 	struct rtentry *rt = NULL;
@@ -1017,11 +1017,11 @@ passout:
 	/*
 	 * If this is an unencrypted TLS record, save a reference to
 	 * the record.  This local reference is used to call
-	 * sbtls_output_eagain after the mbuf has been freed (thus
+	 * ktls_output_eagain after the mbuf has been freed (thus
 	 * dropping the mbuf's reference) in if_output.
 	 */
 	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
-		tls = sbtls_hold(m->m_next->m_ext.ext_pgs->tls);
+		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
 #endif
 	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
 	
@@ -1191,7 +1191,7 @@ done:
 		RO_RTFREE(ro);
 #ifdef KERN_TLS
 	if (tls != NULL)
-		sbtls_free(tls);
+		ktls_free(tls);
 #endif
 	return (error);
 
