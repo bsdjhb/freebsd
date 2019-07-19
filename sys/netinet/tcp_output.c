@@ -1832,6 +1832,9 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 {
 	struct mbuf *n, **np, *start;
 	struct mbuf *top;
+#ifdef KERN_TLS
+	struct ktls_session *tls, *ntls;
+#endif
 	int32_t off = off0;
 	int32_t len = *plen;
 	int32_t fragsize;
@@ -1862,33 +1865,10 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 	top = NULL;
 	pkthdrlen = NULL;
 #ifdef KERN_TLS
-	/*
-	 * Avoid mixing TLS records with handshake data or TLS records
-	 * from different sessions.
-	 */
-	if (hw_tls) {
-		struct ktls_session *tls, *ntls;
-		u_int new_len;
-
-		new_len = m->m_len - off;
-		if (m->m_flags & M_NOMAP)
-			tls = m->m_ext.ext_pgs->tls;
-		else
-			tls = NULL;
-		for (n = m->m_next; new_len < len; n = n->m_next) {
-			if (n->m_flags & M_NOMAP)
-				ntls = n->m_ext.ext_pgs->tls;
-			else
-				ntls = NULL;
-			if (tls != ntls)
-				break;
-			new_len += n->m_len;
-		}
-		if (new_len < len) {
-			len = new_len;
-			*plen = new_len;
-		}
-	}
+	if (m->m_flags & M_NOMAP)
+		tls = m->m_ext.ext_pgs->tls;
+	else
+		tls = NULL;
 #endif
 	start = m;
 	while (len > 0) {
@@ -1901,12 +1881,30 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 			break;
 		}
 #ifdef KERN_TLS
-		if (hw_tls && (m->m_flags & M_NOMAP) && (m != start)) {
+		if (hw_tls) {
+			if (m->m_flags & M_NOMAP)
+				ntls = n->m_ext.ext_pgs->tls;
+			else
+				ntls = NULL;
+
 			/*
-			 * Make sure we don't end a send in the middle
-			 * of a TLS record.
+			 * Avoid mixing TLS records with handshake
+			 * data or TLS records from different
+			 * sessions.
 			 */
-			if (len < m->m_len) {
+			if (tls != ntls) {
+				MPASS(m != start);
+				*plen = len_cp;
+				if (pkthdrlen != NULL)
+					*pkthdrlen = len_cp;
+				break;
+			}
+
+			/*
+			 * Don't end a send in the middle of a TLS
+			 * record if it spans multiple TLS records.
+			 */
+			if (tls != NULL && (m != start) && len < m->m_len) {
 				*plen = len_cp;
 				if (pkthdrlen != NULL)
 					*pkthdrlen = len_cp;
