@@ -34,6 +34,7 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_kern_tls.h"
 #include "opt_param.h"
 
 #include <sys/param.h>
@@ -672,7 +673,9 @@ sbdestroy(struct sockbuf *sb, struct socket *so)
 {
 
 	sbrelease_internal(sb, so);
+#ifdef KERN_TLS
 	sbdestroy_ktls(sb);
+#endif
 }
 
 /*
@@ -836,8 +839,10 @@ sbappendstream_locked(struct sockbuf *sb, struct mbuf *m, int flags)
 
 	SBLASTMBUFCHK(sb);
 
+#ifdef KERN_TLS
 	if (sb->sb_tls_info != NULL)
 		ktls_seq(sb, m);
+#endif
 
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */
 	m_demote(m, 1, flags & PRUS_NOTREADY ? M_NOTREADY : 0);
