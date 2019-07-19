@@ -984,7 +984,7 @@ send:
 		 * XXX: A gross hack to avoid mixing records between
 		 * different TLS sessions.
 		 */
-		if (so->so_snd.sb_tls_flags & SB_TLS_IFNET) {
+		if (so->so_snd.sb_flags & SB_TLS_IFNET) {
 			struct ktls_session *tls, *ntls;
 			struct mbuf *n;
 			u_int new_len;
