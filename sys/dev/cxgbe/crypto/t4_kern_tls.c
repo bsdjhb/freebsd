@@ -29,7 +29,6 @@
 
 #include "opt_kern_tls.h"
 
-#ifdef KERN_TLS
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -2435,4 +2434,3 @@ t6_ktls_modunload(void)
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
 	    CPL_COOKIE_KERN_TLS);
 }
-#endif
