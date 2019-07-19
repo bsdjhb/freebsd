@@ -188,8 +188,8 @@ struct if_encap_req {
  * m_snd_tag" comes from the network driver and it is free to allocate
  * as much additional space as it wants for its own use.
  */
+struct ktls_session;
 struct m_snd_tag;
-struct sbtls_session;
 
 #define	IF_SND_TAG_TYPE_RATE_LIMIT 0
 #define	IF_SND_TAG_TYPE_UNLIMITED 1
@@ -212,7 +212,7 @@ struct if_snd_tag_alloc_rate_limit {
 struct if_snd_tag_alloc_tls {
 	struct if_snd_tag_alloc_header hdr;
 	struct inpcb *inp;
-	const struct sbtls_session *tls;
+	const struct ktls_session *tls;
 };
 
 struct if_snd_tag_rate_limit_params {

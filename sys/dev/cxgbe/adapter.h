@@ -918,7 +918,7 @@ struct adapter {
 
 	int swintr;
 
-	struct callout sbtls_tick;
+	struct callout ktls_tick;
 };
 
 #define ADAPTER_LOCK(sc)		mtx_lock(&(sc)->sc_lock)
@@ -1197,11 +1197,11 @@ void t4_os_dump_devlog(struct adapter *);
 int cxgbe_tls_tag_alloc(struct ifnet *, union if_snd_tag_alloc_params *,
     struct m_snd_tag **);
 void cxgbe_tls_tag_free(struct m_snd_tag *);
-void t6_sbtls_modload(void);
-void t6_sbtls_modunload(void);
-int t6_sbtls_try(struct ifnet *, struct socket *, struct sbtls_session *);
-int t6_sbtls_parse_pkt(struct mbuf *, int *, int *);
-int t6_sbtls_write_wr(struct sge_txq *, void *, struct mbuf *, u_int, u_int);
+void t6_ktls_modload(void);
+void t6_ktls_modunload(void);
+int t6_ktls_try(struct ifnet *, struct socket *, struct ktls_session *);
+int t6_ktls_parse_pkt(struct mbuf *, int *, int *);
+int t6_ktls_write_wr(struct sge_txq *, void *, struct mbuf *, u_int, u_int);
 #endif
 
 #ifdef DEV_NETMAP

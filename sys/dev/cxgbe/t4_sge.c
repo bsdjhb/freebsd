@@ -2582,7 +2582,7 @@ restart:
 
 		cflags |= MC_TLS;
 		set_mbuf_cflags(m0, cflags);
-		rc = t6_sbtls_parse_pkt(m0, &nsegs, &len16);
+		rc = t6_ktls_parse_pkt(m0, &nsegs, &len16);
 		if (rc != 0)
 			goto fail;
 		set_mbuf_nsegs(m0, nsegs);
@@ -2956,7 +2956,7 @@ eth_tx(struct mp_ring *r, u_int cidx, u_int pidx)
 			total++;
 			remaining--;
 			ETHER_BPF_MTAP(ifp, m0);
-			n = t6_sbtls_write_wr(txq,(void *)wr, m0,
+			n = t6_ktls_write_wr(txq,(void *)wr, m0,
 			    mbuf_nsegs(m0), available);
 #endif
 		} else if (sc->flags & IS_VF) {

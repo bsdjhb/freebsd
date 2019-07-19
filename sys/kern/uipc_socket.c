@@ -1443,8 +1443,8 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	ssize_t resid;
 	int clen = 0, error, dontroute;
 	int atomic = sosendallatonce(so) || top;
-	struct sbtls_session *tls;
-	int pru_flag, tls_pruflag, tls_enq_cnt;
+	struct ktls_session *tls;
+	int pru_flag, tls_enq_cnt, tls_pruflag;
 	uint8_t tls_rtype = TLS_RLTYPE_APP;
 
 	tls = NULL;
@@ -1480,9 +1480,9 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		goto out;
 
 	tls_pruflag = 0;
-	tls = sbtls_hold(so->so_snd.sb_tls_info);
+	tls = ktls_hold(so->so_snd.sb_tls_info);
 	if (tls != NULL) {
-		if (tls->sb_tls_crypt != NULL)
+		if (tls->sw_encrypt != NULL)
 			tls_pruflag = PRUS_NOTREADY;
 
 		if (control != NULL) {
@@ -1578,13 +1578,12 @@ restart:
 				 */
 				if (tls != NULL) {
 					top = m_uiotombuf(uio, M_WAITOK, space,
-					    tls->sb_params.max_frame_len,
+					    tls->params.max_frame_len,
 					    M_NOMAP |
 					    ((flags & MSG_EOR) ? M_EOR : 0));
 					if (top != NULL) {
-						error = sbtls_frame(&top,
-						    tls, &tls_enq_cnt,
-						    tls_rtype);
+						error = ktls_frame(top, tls,
+						    &tls_enq_cnt, tls_rtype);
 						if (error) {
 							m_freem(top);
 							goto release;
@@ -1646,7 +1645,7 @@ restart:
 				SOCK_UNLOCK(so);
 			}
 
-			if (tls != NULL && tls->sb_tls_crypt != NULL) {
+			if (tls != NULL && tls->sw_encrypt != NULL) {
 				/*
 				 * Note that error is intentionally
 				 * ignored.
@@ -1658,7 +1657,7 @@ restart:
 				 * did not append them to the sockbuf.
 				 */
 				soref(so);
-				sbtls_enqueue(top, so, tls_enq_cnt);
+				ktls_enqueue(top, so, tls_enq_cnt);
 			}
 			clen = 0;
 			control = NULL;
@@ -1672,7 +1671,7 @@ release:
 	sbunlock(&so->so_snd);
 out:
 	if (tls != NULL)
-		sbtls_free(tls);
+		ktls_free(tls);
 	if (top != NULL)
 		m_freem(top);
 	if (control != NULL)

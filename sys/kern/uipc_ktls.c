@@ -30,6 +30,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_rss.h"
+
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/ktls.h>
@@ -40,50 +42,43 @@ __FBSDID("$FreeBSD$");
 #include <sys/proc.h>
 #include <sys/protosw.h>
 #include <sys/refcount.h>
+#include <sys/smp.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
 #include <sys/taskqueue.h>
 #include <sys/kthread.h>
+#include <sys/uio.h>
+#include <sys/vmmeter.h>
 #include <machine/fpu.h>
 #include <machine/vmparam.h>
-#include <netinet/in.h>
-#include <netinet/in_pcb.h>
-#include <netinet/tcp_var.h>
-#include <sys/smp.h>
-#include <sys/uio.h>
-#include <vm/vm.h>
-#include <vm/vm_pageout.h>
-#include <sys/vmmeter.h>
-#include <vm/vm_page.h>
-
-#include "opt_rss.h"
 #ifdef RSS
 #include <net/netisr.h>
 #include <net/rss_config.h>
-static int sbtls_bind_threads = 1;
-#else
-static int sbtls_bind_threads;
 #endif
-
-
-
+#include <netinet/in.h>
+#include <netinet/in_pcb.h>
+#include <netinet/tcp_var.h>
 #include <opencrypto/xform.h>
-#ifndef EVP_AEAD_AES_GCM_TAG_LEN
-#define EVP_AEAD_AES_GCM_TAG_LEN 16
-#endif
+#include <vm/uma_dbg.h>
+#include <vm/vm.h>
+#include <vm/vm_pageout.h>
+#include <vm/vm_page.h>
 
-static int sbtls_offload_disable = 1;
-static struct proc *sbtls_proc = NULL;
-static struct rmlock sbtls_backend_lock;
+struct ktls_wq {
+	struct mtx	mtx;
+	STAILQ_HEAD(, mbuf_ext_pgs) head;
+	int		running;
+} __aligned(CACHE_LINE_SIZE);
 
-int sbtls_allow_unload;
-LIST_HEAD(sbtls_backend_head, sbtls_crypto_backend) sbtls_backend_head =
-    LIST_HEAD_INITIALIZER(sbtls_backend_head);
-static uma_zone_t zone_tlssock;
-static int sbtls_number_threads;
-static int sbtls_maxlen = 16384;
-static uint16_t sbtls_cpuid_lookup[MAXCPU];
+static struct ktls_wq *ktls_wq;
+static struct proc *ktls_proc;
+static struct rmlock ktls_backends_lock;
+
+LIST_HEAD(, ktls_crypto_backend) ktls_backends;
+static uma_zone_t ktls_session_zone;
+static int ktls_number_threads;
+static uint16_t ktls_cpuid_lookup[MAXCPU];
 
 SYSCTL_DECL(_kern_ipc);
 
@@ -94,174 +89,180 @@ SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, stats, CTLFLAG_RW, 0,
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, counters, CTLFLAG_RW, 0,
     "TLS offload counters");
 
+static int ktls_allow_unload;
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, allow_unload, CTLFLAG_RDTUN,
-    &sbtls_allow_unload, 0, "Allow software crypto modules to unload");
+    &ktls_allow_unload, 0, "Allow software crypto modules to unload");
 
+#ifdef RSS
+static int ktls_bind_threads = 1;
+#else
+static int ktls_bind_threads;
+#endif
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, bind_threads, CTLFLAG_RDTUN,
-    &sbtls_bind_threads, 0,
+    &ktls_bind_threads, 0,
     "Bind crypto threads to cores or domains at boot");
 
+static int ktls_maxlen = 16384;
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, maxlen, CTLFLAG_RWTUN,
-    &sbtls_maxlen, 0, "Maximum TLS record size");
+    &ktls_maxlen, 0, "Maximum TLS record size");
 
 SYSCTL_INT(_kern_ipc_tls_stats, OID_AUTO, threads, CTLFLAG_RD,
-    &sbtls_number_threads, 0,
+    &ktls_number_threads, 0,
     "Number of TLS threads in thread-pool");
 
+static int ktls_offload_disable = 1;
 SYSCTL_UINT(_kern_ipc_tls, OID_AUTO, disable, CTLFLAG_RW,
-    &sbtls_offload_disable, 0,
-    "Disable Support of KERNEL TLS offload");
+    &ktls_offload_disable, 0,
+    "Disable Support of kernel TLS offload");
 
-static int sbtls_cbc_disable;
-
+static int ktls_cbc_disable;
 SYSCTL_UINT(_kern_ipc_tls, OID_AUTO, cbc_disable, CTLFLAG_RW,
-    &sbtls_cbc_disable, 1,
+    &ktls_cbc_disable, 1,
     "Disable Support of AES-CBC crypto");
 
-static counter_u64_t sbtls_tasks_active;
-
+static counter_u64_t ktls_tasks_active;
 SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
-    &sbtls_tasks_active, "Number of active tasks");
+    &ktls_tasks_active, "Number of active tasks");
 
-static counter_u64_t sbtls_cnt_on;
-
+static counter_u64_t ktls_cnt_on;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, so_inqueue, CTLFLAG_RD,
-    &sbtls_cnt_on, "Number of TLS records in queue to tasks for SW crypto");
+    &ktls_cnt_on, "Number of TLS records in queue to tasks for SW crypto");
 
-/* Sysctl counters */
-static counter_u64_t sbtls_offload_total;
-static counter_u64_t sbtls_offload_enable_calls;
-static counter_u64_t sbtls_offload_active;
-static counter_u64_t sbtls_offload_failed_crypto;
-static counter_u64_t sbtls_switch_to_ifnet;
-static counter_u64_t sbtls_switch_to_sw;
-static counter_u64_t sbtls_switch_failed;
-static counter_u64_t sbtls_sw_cbc;
-static counter_u64_t sbtls_sw_gcm;
-static counter_u64_t sbtls_ifnet_cbc;
-static counter_u64_t sbtls_ifnet_gcm;
-static counter_u64_t sbtls_ifnet_reset;
-static counter_u64_t sbtls_ifnet_reset_dropped;
-static counter_u64_t sbtls_ifnet_reset_failed;
-
+static counter_u64_t ktls_offload_total;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, offload_total,
-    CTLFLAG_RD, &sbtls_offload_total,
+    CTLFLAG_RD, &ktls_offload_total,
     "Total successful TLS setups (parameters set)");
+
+static counter_u64_t ktls_offload_enable_calls;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, enable_calls,
-    CTLFLAG_RD, &sbtls_offload_enable_calls,
+    CTLFLAG_RD, &ktls_offload_enable_calls,
     "Total number of TLS enable calls made");
+
+static counter_u64_t ktls_offload_active;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, active, CTLFLAG_RD,
-    &sbtls_offload_active, "Total Active TLS sessions");
+    &ktls_offload_active, "Total Active TLS sessions");
+
+static counter_u64_t ktls_offload_failed_crypto;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, failed_crypto, CTLFLAG_RD,
-    &sbtls_offload_failed_crypto, "Total TLS crypto failures");
+    &ktls_offload_failed_crypto, "Total TLS crypto failures");
+
+static counter_u64_t ktls_switch_to_ifnet;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_ifnet, CTLFLAG_RD,
-    &sbtls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
+    &ktls_switch_to_ifnet, "TLS sessions switched from SW to ifnet");
+
+static counter_u64_t ktls_switch_to_sw;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_to_sw, CTLFLAG_RD,
-    &sbtls_switch_to_sw, "TLS sessions switched from ifnet to SW");
+    &ktls_switch_to_sw, "TLS sessions switched from ifnet to SW");
+
+static counter_u64_t ktls_switch_failed;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, switch_failed, CTLFLAG_RD,
-    &sbtls_switch_failed, "TLS sessions unable to switch between SW and ifnet");
+    &ktls_switch_failed, "TLS sessions unable to switch between SW and ifnet");
 
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, sw, CTLFLAG_RD, 0,
     "Software TLS session stats");
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, ifnet, CTLFLAG_RD, 0,
     "Hardware (ifnet) TLS session stats");
 
-SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, cbc, CTLFLAG_RD, &sbtls_sw_cbc,
+static counter_u64_t ktls_sw_cbc;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, cbc, CTLFLAG_RD, &ktls_sw_cbc,
     "Active number of software TLS sessions using AES-CBC");
-SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, gcm, CTLFLAG_RD, &sbtls_sw_gcm,
+
+static counter_u64_t ktls_sw_gcm;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, gcm, CTLFLAG_RD, &ktls_sw_gcm,
     "Active number of software TLS sessions using AES-GCM");
+
+static counter_u64_t ktls_ifnet_cbc;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, cbc, CTLFLAG_RD,
-    &sbtls_ifnet_cbc,
+    &ktls_ifnet_cbc,
     "Active number of ifnet TLS sessions using AES-CBC");
+
+static counter_u64_t ktls_ifnet_gcm;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, gcm, CTLFLAG_RD,
-    &sbtls_ifnet_gcm,
+    &ktls_ifnet_gcm,
     "Active number of ifnet TLS sessions using AES-GCM");
+
+static counter_u64_t ktls_ifnet_reset;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset, CTLFLAG_RD,
-    &sbtls_ifnet_reset, "TLS sessions updated to a new ifnet send tag");
+    &ktls_ifnet_reset, "TLS sessions updated to a new ifnet send tag");
+
+static counter_u64_t ktls_ifnet_reset_dropped;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset_dropped, CTLFLAG_RD,
-    &sbtls_ifnet_reset_dropped,
+    &ktls_ifnet_reset_dropped,
     "TLS sessions dropped after failing to update ifnet send tag");
+
+static counter_u64_t ktls_ifnet_reset_failed;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset_failed, CTLFLAG_RD,
-    &sbtls_ifnet_reset_failed,
+    &ktls_ifnet_reset_failed,
     "TLS sessions that failed to allocate a new ifnet send tag");
 
-static int sbtls_ifnet_permitted;
-
+static int ktls_ifnet_permitted;
 SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, permitted, CTLFLAG_RWTUN,
-    &sbtls_ifnet_permitted, 1,
+    &ktls_ifnet_permitted, 1,
     "Whether to permit hardware (ifnet) TLS sessions: 0 = never, 1 = always, "
     "2 = defer to TCP stack flag");
 
-MALLOC_DEFINE(M_TLSSOBUF, "tls_sobuf", "TLS Socket Buffer");
+static MALLOC_DEFINE(M_KTLS, "ktls", "Kernel TLS");
 
-
-struct sbtls_wq {
-	struct mtx			mtx;
-	STAILQ_HEAD(, mbuf_ext_pgs)	head;
-	int				running;
-} __aligned(CACHE_LINE_SIZE);
-
-
-static struct sbtls_wq *sbtls_wq;
-
-static void sbtls_cleanup(struct sbtls_session *tls);
-static void sbtls_reset_send_tag(void *context, int pending);
-static void sbtls_work_thread(void *ctx);
+static void ktls_cleanup(struct ktls_session *tls);
+static void ktls_reset_send_tag(void *context, int pending);
+static void ktls_work_thread(void *ctx);
 
 int
-sbtls_crypto_backend_register(struct sbtls_crypto_backend *be)
+ktls_crypto_backend_register(struct ktls_crypto_backend *be)
 {
-	struct sbtls_crypto_backend *curr_be, *tmp;
+	struct ktls_crypto_backend *curr_be, *tmp;
 
-	if (be->api_version != SBTLS_API_VERSION) {
+	if (be->api_version != KTLS_API_VERSION) {
 		printf("API version mismatch (%d vs %d) for %s\n",
-		    be->api_version, SBTLS_API_VERSION,
+		    be->api_version, KTLS_API_VERSION,
 		    be->name);
-		return EINVAL;
+		return (EINVAL);
 	}
 
-	rm_wlock(&sbtls_backend_lock);
+	rm_wlock(&ktls_backends_lock);
 	printf("Registering crypto method: %s with prio %d\n",
 	       be->name, be->prio);
-	if (LIST_EMPTY(&sbtls_backend_head)) {
-		LIST_INSERT_HEAD(&sbtls_backend_head, be, next);
+	if (LIST_EMPTY(&ktls_backends)) {
+		LIST_INSERT_HEAD(&ktls_backends, be, next);
 	} else {
-		LIST_FOREACH_SAFE(curr_be, &sbtls_backend_head, next, tmp) {
+		LIST_FOREACH_SAFE(curr_be, &ktls_backends, next, tmp) {
 			if (curr_be->prio < be->prio) {
 				LIST_INSERT_BEFORE(curr_be, be, next);
 				break;
 			}
-			if (LIST_NEXT(curr_be, next) == NULL)
+			if (LIST_NEXT(curr_be, next) == NULL) {
 				LIST_INSERT_AFTER(curr_be, be, next);
+				break;
+			}
 		}
 	}
-	rm_wunlock(&sbtls_backend_lock);
-	return 0;
+	rm_wunlock(&ktls_backends_lock);
+	return (0);
 }
 
 int
-sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *be)
+ktls_crypto_backend_deregister(struct ktls_crypto_backend *be)
 {
-	struct sbtls_crypto_backend *tmp;
+	struct ktls_crypto_backend *tmp;
 	int err = 0;
 
 	/*
 	 * Don't error if the backend isn't registered.  This permits
 	 * MOD_UNLOAD handlers to use this function unconditionally.
 	 */
-	rm_wlock(&sbtls_backend_lock);
-	LIST_FOREACH(tmp, &sbtls_backend_head, next) {
+	rm_wlock(&ktls_backends_lock);
+	LIST_FOREACH(tmp, &ktls_backends, next) {
 		if (tmp == be)
 			break;
 	}
 	if (tmp == NULL) {
-		rm_wunlock(&sbtls_backend_lock);
+		rm_wunlock(&ktls_backends_lock);
 		return (0);
 	}
 
-	if (!sbtls_allow_unload) {
-		rm_wunlock(&sbtls_backend_lock);
-		printf("deregistering crypto method %s is not supported\n",
+	if (!ktls_allow_unload) {
+		rm_wunlock(&ktls_backends_lock);
+		printf("Deregistering crypto method %s is not supported\n",
 		    be->name);
 		return (EBUSY);
 	}
@@ -271,12 +272,12 @@ sbtls_crypto_backend_deregister(struct sbtls_crypto_backend *be)
 	} else {
 		LIST_REMOVE(be, next);
 	}
-	rm_wunlock(&sbtls_backend_lock);
+	rm_wunlock(&ktls_backends_lock);
 	return (err);
 }
 
 static uint16_t
-sbtls_get_cpu(struct socket *so)
+ktls_get_cpu(struct socket *so)
 {
 	uint16_t cpuid;
 	struct inpcb *inp;
@@ -292,91 +293,93 @@ sbtls_get_cpu(struct socket *so)
 	 * Note that some crypto backends rely on the serialization provided by
 	 * having the same connection use the same queue.
 	 */
-	cpuid = sbtls_cpuid_lookup[inp->inp_flowid % sbtls_number_threads];
+	cpuid = ktls_cpuid_lookup[inp->inp_flowid % ktls_number_threads];
 	return (cpuid);
 
 }
 
 
 static void
-sbtls_init(void *st __unused)
+ktls_init(void *dummy __unused)
 {
-	int error, i;
-	cpuset_t mask;
+	struct thread *td;
 	struct pcpu *pc;
-	struct thread *sbtls_td;
+	cpuset_t mask;
+	int error, i;
 
-	/*
-	 * Initialize the task's to run the TLS work. We create a task
-	 * per cpu. Each task is separate with a separate queue.
-	 */
+	ktls_tasks_active = counter_u64_alloc(M_WAITOK);
+	ktls_cnt_on = counter_u64_alloc(M_WAITOK);
+	ktls_offload_total = counter_u64_alloc(M_WAITOK);
+	ktls_offload_enable_calls = counter_u64_alloc(M_WAITOK);
+	ktls_offload_active = counter_u64_alloc(M_WAITOK);
+	ktls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
+	ktls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
+	ktls_switch_to_sw = counter_u64_alloc(M_WAITOK);
+	ktls_switch_failed = counter_u64_alloc(M_WAITOK);
+	ktls_sw_cbc = counter_u64_alloc(M_WAITOK);
+	ktls_sw_gcm = counter_u64_alloc(M_WAITOK);
+	ktls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
+	ktls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
+	ktls_ifnet_reset = counter_u64_alloc(M_WAITOK);
+	ktls_ifnet_reset_dropped = counter_u64_alloc(M_WAITOK);
+	ktls_ifnet_reset_failed = counter_u64_alloc(M_WAITOK);
 
-	/* Init counters */
-	sbtls_tasks_active = counter_u64_alloc(M_WAITOK);
-	sbtls_cnt_on = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_total = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_enable_calls = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_active = counter_u64_alloc(M_WAITOK);
-	sbtls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
-	sbtls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
-	sbtls_switch_to_sw = counter_u64_alloc(M_WAITOK);
-	sbtls_switch_failed = counter_u64_alloc(M_WAITOK);
-	sbtls_sw_cbc = counter_u64_alloc(M_WAITOK);
-	sbtls_sw_gcm = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_cbc = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_gcm = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_reset = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_reset_dropped = counter_u64_alloc(M_WAITOK);
-	sbtls_ifnet_reset_failed = counter_u64_alloc(M_WAITOK);
+	rm_init(&ktls_backends_lock, "ktls backends");
+	LIST_INIT(&ktls_backends);
 
-	rm_init(&sbtls_backend_lock, "sbtls crypto backend lock");
-
-	sbtls_wq = malloc(sizeof(*sbtls_wq) * (mp_maxid + 1), M_TLSSOBUF,
+	ktls_wq = malloc(sizeof(*ktls_wq) * (mp_maxid + 1), M_KTLS,
 	    M_WAITOK | M_ZERO);
 
-	zone_tlssock = uma_zcreate("sbtls_session",
-	    sizeof(struct sbtls_session),
-	    NULL, NULL, NULL, NULL, UMA_ALIGN_CACHE, 0);
+	ktls_session_zone = uma_zcreate("ktls_session",
+	    sizeof(struct ktls_session),
+#ifdef INVARIANTS
+	    trash_ctor, trash_dtor, trash_init, trash_fini,
+#else
+	    NULL, NULL, NULL, NULL,
+#endif
+	    UMA_ALIGN_CACHE, 0);
 
+	/*
+	 * Initialize the workqueues to run the TLS work.  We create a
+	 * work queue for each CPU.
+	 */
 	CPU_FOREACH(i) {
-		STAILQ_INIT(&sbtls_wq[i].head);
-		mtx_init(&sbtls_wq[i].mtx, "sbtls work queue lock",
-		    "tls_wqlock", MTX_DEF);
-		error = kproc_kthread_add(sbtls_work_thread, &sbtls_wq[i],
-		    &sbtls_proc, &sbtls_td, 0, 0, "TLS_proc", "tls_thr_%d", i);
+		STAILQ_INIT(&ktls_wq[i].head);
+		mtx_init(&ktls_wq[i].mtx, "ktls work queue", NULL, MTX_DEF);
+		error = kproc_kthread_add(ktls_work_thread, &ktls_wq[i],
+		    &ktls_proc, &td, 0, 0, "KTLS", "ktls_thr_%d", i);
 		if (error)
-			panic("Can't add TLS_thread %d err:%d", i, error);
+			panic("Can't add KTLS thread %d err:%d", i, error);
 
 		/*
-		 * Bind threads to cores.  If sbtls_bind_threads is >
+		 * Bind threads to cores.  If ktls_bind_threads is >
 		 * 1, then we bind to the NUMA domain.
 		 */
-		if (sbtls_bind_threads) {
-			if (sbtls_bind_threads > 1) {
+		if (ktls_bind_threads) {
+			if (ktls_bind_threads > 1) {
 				pc = pcpu_find(i);
 				CPU_COPY(&cpuset_domain[pc->pc_domain], &mask);
 			} else {
 				CPU_SETOF(i, &mask);
 			}
-			error = cpuset_setthread(sbtls_td->td_tid, &mask);
+			error = cpuset_setthread(td->td_tid, &mask);
 			if (error)
 				printf(
 				    "Unable to bind KTLS thread for CPU %d.\n",
 				    i);
 		}
-		sbtls_cpuid_lookup[sbtls_number_threads] = i;
-		sbtls_number_threads++;
+		ktls_cpuid_lookup[ktls_number_threads] = i;
+		ktls_number_threads++;
 	}
-	printf("SBTLS: Initialized %d threads\n", sbtls_number_threads);
+	printf("KTLS: Initialized %d threads\n", ktls_number_threads);
 }
-
-SYSINIT(sbtls, SI_SUB_SMP + 1, SI_ORDER_ANY, sbtls_init, NULL);
+SYSINIT(ktls, SI_SUB_SMP + 1, SI_ORDER_ANY, ktls_init, NULL);
 
 static int
-sbtls_create_session(struct socket *so, struct tls_so_enable *en,
-    struct sbtls_session **tlsp)
+ktls_create_session(struct socket *so, struct tls_so_enable *en,
+    struct ktls_session **tlsp)
 {
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	int error;
 
 	/* Only TLS 1.0 - 1.2 are supported. */
@@ -447,36 +450,36 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 		return (EINVAL);
 	}
 
-	tls = uma_zalloc(zone_tlssock, M_WAITOK | M_ZERO);
+	tls = uma_zalloc(ktls_session_zone, M_WAITOK | M_ZERO);
 
-	counter_u64_add(sbtls_offload_active, 1);
+	counter_u64_add(ktls_offload_active, 1);
 
 	refcount_init(&tls->refcount, 1);
-	TASK_INIT(&tls->reset_tag_task, 0, sbtls_reset_send_tag, tls);
+	TASK_INIT(&tls->reset_tag_task, 0, ktls_reset_send_tag, tls);
 
 	/* cache cpu index */
-	tls->sb_tsk_instance = sbtls_get_cpu(so);
+	tls->wq_index = ktls_get_cpu(so);
 
-	tls->sb_params.cipher_algorithm = en->cipher_algorithm;
-	tls->sb_params.auth_algorithm = en->auth_algorithm;
-	tls->sb_params.tls_vmajor = en->tls_vmajor;
-	tls->sb_params.tls_vminor = en->tls_vminor;
+	tls->params.cipher_algorithm = en->cipher_algorithm;
+	tls->params.auth_algorithm = en->auth_algorithm;
+	tls->params.tls_vmajor = en->tls_vmajor;
+	tls->params.tls_vminor = en->tls_vminor;
 
 	/* 
 	 * Note that 1.3 was supposed to go to 64K, but that 
 	 * was shot down.
 	 */
-	tls->sb_params.max_frame_len = TLS_MAX_MSG_SIZE_V10_2;
-	if (tls->sb_params.max_frame_len > sbtls_maxlen)
-		tls->sb_params.max_frame_len = sbtls_maxlen;
+	tls->params.max_frame_len = TLS_MAX_MSG_SIZE_V10_2;
+	if (tls->params.max_frame_len > ktls_maxlen)
+		tls->params.max_frame_len = ktls_maxlen;
 
 	/* Set the header and trailer lengths. */
-	tls->sb_params.tls_hlen = sizeof(struct tls_record_layer);
+	tls->params.tls_hlen = sizeof(struct tls_record_layer);
 	switch (en->cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
-		tls->sb_params.tls_hlen += 8;
-		tls->sb_params.tls_tlen = 16;
-		tls->sb_params.tls_bs = 1;
+		tls->params.tls_hlen += 8;
+		tls->params.tls_tlen = 16;
+		tls->params.tls_bs = 1;
 		break;
 	case CRYPTO_AES_CBC:
 		switch (en->auth_algorithm) {
@@ -484,50 +487,49 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
 				/* Implicit IV, no nonce. */
 			} else {
-				tls->sb_params.tls_hlen += AES_BLOCK_LEN;
+				tls->params.tls_hlen += AES_BLOCK_LEN;
 			}
-			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			tls->params.tls_tlen = AES_BLOCK_LEN +
 			    SHA1_HASH_LEN;
 			break;
 		case CRYPTO_SHA2_256_HMAC:
-			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
-			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			tls->params.tls_hlen += AES_BLOCK_LEN;
+			tls->params.tls_tlen = AES_BLOCK_LEN +
 			    SHA2_256_HASH_LEN;
 			break;
 		case CRYPTO_SHA2_384_HMAC:
-			tls->sb_params.tls_hlen += AES_BLOCK_LEN;
-			tls->sb_params.tls_tlen = AES_BLOCK_LEN +
+			tls->params.tls_hlen += AES_BLOCK_LEN;
+			tls->params.tls_tlen = AES_BLOCK_LEN +
 			    SHA2_384_HASH_LEN;
 			break;
 		default:
 			panic("invalid hmac");
 		}
-		tls->sb_params.tls_bs = AES_BLOCK_LEN;
+		tls->params.tls_bs = AES_BLOCK_LEN;
 		break;
 	default:
 		panic("invalid cipher");
 	}
 
-	KASSERT(tls->sb_params.tls_hlen <= MBUF_PEXT_HDR_LEN,
-	    ("TLS header length too long: %d", tls->sb_params.tls_hlen));
-	KASSERT(tls->sb_params.tls_tlen <= MBUF_PEXT_TRAIL_LEN,
-	    ("TLS trailer length too long: %d", tls->sb_params.tls_tlen));
+	KASSERT(tls->params.tls_hlen <= MBUF_PEXT_HDR_LEN,
+	    ("TLS header length too long: %d", tls->params.tls_hlen));
+	KASSERT(tls->params.tls_tlen <= MBUF_PEXT_TRAIL_LEN,
+	    ("TLS trailer length too long: %d", tls->params.tls_tlen));
 
 	/* Now lets get in the keys and such */
 	if (en->auth_key_len != 0) {
-		tls->sb_params.auth_key_len = en->auth_key_len;
-		tls->sb_params.auth_key = malloc(en->auth_key_len,
-		    M_TLSSOBUF, M_WAITOK);
-		error = copyin(en->auth_key, tls->sb_params.auth_key,
+		tls->params.auth_key_len = en->auth_key_len;
+		tls->params.auth_key = malloc(en->auth_key_len, M_KTLS,
+		    M_WAITOK);
+		error = copyin(en->auth_key, tls->params.auth_key,
 		    en->auth_key_len);
 		if (error)
 			goto out;
 	}
 
-	tls->sb_params.cipher_key_len = en->cipher_key_len;
-	tls->sb_params.cipher_key = malloc(en->cipher_key_len, M_TLSSOBUF,
-	    M_WAITOK);
-	error = copyin(en->cipher_key, tls->sb_params.cipher_key,
+	tls->params.cipher_key_len = en->cipher_key_len;
+	tls->params.cipher_key = malloc(en->cipher_key_len, M_KTLS, M_WAITOK);
+	error = copyin(en->cipher_key, tls->params.cipher_key,
 	    en->cipher_key_len);
 	if (error)
 		goto out;
@@ -535,12 +537,12 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	/*
 	 * This holds the implicit portion of the nonce for GCM and
 	 * the initial implicit IV for TLS 1.0.  The explicit portions
-	 * of the IV are generated in sbtls_frame() and sbtls_seq().
+	 * of the IV are generated in ktls_frame() and ktls_seq().
 	 */
 	if (en->iv_len != 0) {
-		MPASS(en->iv_len <= sizeof(tls->sb_params.iv));
-		tls->sb_params.iv_len = en->iv_len;
-		error = copyin(en->iv, tls->sb_params.iv, en->iv_len);
+		MPASS(en->iv_len <= sizeof(tls->params.iv));
+		tls->params.iv_len = en->iv_len;
+		error = copyin(en->iv, tls->params.iv, en->iv_len);
 		if (error)
 			goto out;
 	}
@@ -549,87 +551,86 @@ sbtls_create_session(struct socket *so, struct tls_so_enable *en,
 	return (0);
 
 out:
-	sbtls_cleanup(tls);
+	ktls_cleanup(tls);
 	return (error);
 }
 
-static struct sbtls_session *
-sbtls_clone_session(struct sbtls_session *tls)
+static struct ktls_session *
+ktls_clone_session(struct ktls_session *tls)
 {
-	struct sbtls_session *tls_new;
+	struct ktls_session *tls_new;
 
-	tls_new = uma_zalloc(zone_tlssock, M_WAITOK | M_ZERO);
+	tls_new = uma_zalloc(ktls_session_zone, M_WAITOK | M_ZERO);
 
-	counter_u64_add(sbtls_offload_active, 1);
+	counter_u64_add(ktls_offload_active, 1);
 
 	refcount_init(&tls_new->refcount, 1);
 
 	/* Copy fields from existing session. */
-	tls_new->sb_params = tls->sb_params;
-	tls_new->sb_tsk_instance = tls->sb_tsk_instance;
+	tls_new->params = tls->params;
+	tls_new->wq_index = tls->wq_index;
 
 	/* Deep copy keys. */
-	if (tls_new->sb_params.auth_key != NULL) {
-		tls_new->sb_params.auth_key = malloc(
-		    tls->sb_params.auth_key_len, M_TLSSOBUF, M_WAITOK);
-		memcpy(tls_new->sb_params.auth_key, tls->sb_params.auth_key,
-		    tls->sb_params.auth_key_len);
+	if (tls_new->params.auth_key != NULL) {
+		tls_new->params.auth_key = malloc(tls->params.auth_key_len,
+		    M_KTLS, M_WAITOK);
+		memcpy(tls_new->params.auth_key, tls->params.auth_key,
+		    tls->params.auth_key_len);
 	}
 
-	tls_new->sb_params.cipher_key = malloc(tls->sb_params.cipher_key_len,
-	    M_TLSSOBUF, M_WAITOK);
-	memcpy(tls_new->sb_params.cipher_key, tls->sb_params.cipher_key,
-	    tls->sb_params.cipher_key_len);
+	tls_new->params.cipher_key = malloc(tls->params.cipher_key_len, M_KTLS,
+	    M_WAITOK);
+	memcpy(tls_new->params.cipher_key, tls->params.cipher_key,
+	    tls->params.cipher_key_len);
 
 	return (tls_new);
 }
 
 static void
-sbtls_cleanup(struct sbtls_session *tls)
+ktls_cleanup(struct ktls_session *tls)
 {
 
-	counter_u64_add(sbtls_offload_active, -1);
-	if (tls->sb_tls_free != NULL) {
+	counter_u64_add(ktls_offload_active, -1);
+	if (tls->free != NULL) {
 		MPASS(tls->be != NULL);
-		switch (tls->sb_params.cipher_algorithm) {
+		switch (tls->params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
-			counter_u64_add(sbtls_sw_cbc, -1);
+			counter_u64_add(ktls_sw_cbc, -1);
 			break;
 		case CRYPTO_AES_NIST_GCM_16:
-			counter_u64_add(sbtls_sw_gcm, -1);
+			counter_u64_add(ktls_sw_gcm, -1);
 			break;
 		}
-		tls->sb_tls_free(tls);
+		tls->free(tls);
 	} else if (tls->snd_tag != NULL) {
-		switch (tls->sb_params.cipher_algorithm) {
+		switch (tls->params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
-			counter_u64_add(sbtls_ifnet_cbc, -1);
+			counter_u64_add(ktls_ifnet_cbc, -1);
 			break;
 		case CRYPTO_AES_NIST_GCM_16:
-			counter_u64_add(sbtls_ifnet_gcm, -1);
+			counter_u64_add(ktls_ifnet_gcm, -1);
 			break;
 		}
 		m_snd_tag_rele(tls->snd_tag);
 	}
-	if (tls->sb_params.auth_key != NULL) {
-		explicit_bzero(tls->sb_params.auth_key,
-		    tls->sb_params.auth_key_len);
-		free(tls->sb_params.auth_key, M_TLSSOBUF);
-		tls->sb_params.auth_key = NULL;
-		tls->sb_params.auth_key_len = 0;
+	if (tls->params.auth_key != NULL) {
+		explicit_bzero(tls->params.auth_key, tls->params.auth_key_len);
+		free(tls->params.auth_key, M_KTLS);
+		tls->params.auth_key = NULL;
+		tls->params.auth_key_len = 0;
 	}
-	if (tls->sb_params.cipher_key != NULL) {
-		explicit_bzero(tls->sb_params.cipher_key,
-		    tls->sb_params.cipher_key_len);
-		free(tls->sb_params.cipher_key, M_TLSSOBUF);
-		tls->sb_params.cipher_key = NULL;
-		tls->sb_params.cipher_key_len = 0;
+	if (tls->params.cipher_key != NULL) {
+		explicit_bzero(tls->params.cipher_key,
+		    tls->params.cipher_key_len);
+		free(tls->params.cipher_key, M_KTLS);
+		tls->params.cipher_key = NULL;
+		tls->params.cipher_key_len = 0;
 	}
-	explicit_bzero(tls->sb_params.iv, sizeof(tls->sb_params.iv));
+	explicit_bzero(tls->params.iv, sizeof(tls->params.iv));
 }
 
 static int
-sbtls_alloc_snd_tag(struct inpcb *inp, struct sbtls_session *tls, bool force,
+ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
     struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
@@ -658,12 +659,12 @@ sbtls_alloc_snd_tag(struct inpcb *inp, struct sbtls_session *tls, bool force,
 	 * ifnet TLS should be denied.
 	 *
 	 * - Always permit 'force' requests.
-	 * - sbtls_ifnet_permitted == 0: always deny.
-	 * - sbtls_ifnet_permitted == 1: always permit.
-	 * - sbtls_ifnet_permitted == 2: honor TCP stack flag.
+	 * - ktls_ifnet_permitted == 0: always deny.
+	 * - ktls_ifnet_permitted == 1: always permit.
+	 * - ktls_ifnet_permitted == 2: honor TCP stack flag.
 	 */
-	if (!force && (sbtls_ifnet_permitted == 0 ||
-	    (sbtls_ifnet_permitted == 2 &&
+	if (!force && (ktls_ifnet_permitted == 0 ||
+	    (ktls_ifnet_permitted == 2 &&
 	    (tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0))) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
@@ -715,20 +716,20 @@ out:
 }
 
 static int
-sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
+ktls_try_ifnet(struct socket *so, struct ktls_session *tls, bool force)
 {
 	struct m_snd_tag *mst;
 	int error;
 
-	error = sbtls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
+	error = ktls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
 	if (error == 0) {
 		tls->snd_tag = mst;
-		switch (tls->sb_params.cipher_algorithm) {
+		switch (tls->params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
-			counter_u64_add(sbtls_ifnet_cbc, 1);
+			counter_u64_add(ktls_ifnet_cbc, 1);
 			break;
 		case CRYPTO_AES_NIST_GCM_16:
-			counter_u64_add(sbtls_ifnet_gcm, 1);
+			counter_u64_add(ktls_ifnet_gcm, 1);
 			break;
 		}
 	}
@@ -736,10 +737,10 @@ sbtls_try_ifnet_tls(struct socket *so, struct sbtls_session *tls, bool force)
 }
 
 static int
-sbtls_try_sw_tls(struct socket *so, struct sbtls_session *tls)
+ktls_try_sw(struct socket *so, struct ktls_session *tls)
 {
 	struct rm_priotracker prio;
-	struct sbtls_crypto_backend *be;
+	struct ktls_crypto_backend *be;
 
 	/*
 	 * Now lets find the algorithms if possible. The idea here is we
@@ -753,44 +754,44 @@ sbtls_try_sw_tls(struct socket *so, struct sbtls_session *tls)
 	 * intergrate the intel QAT card.
 	 */
 
-	if (sbtls_allow_unload)
-		rm_rlock(&sbtls_backend_lock, &prio);
-	LIST_FOREACH(be, &sbtls_backend_head, next) {
+	if (ktls_allow_unload)
+		rm_rlock(&ktls_backends_lock, &prio);
+	LIST_FOREACH(be, &ktls_backends, next) {
 		if (be->try(so, tls) == 0)
 			break;
 		KASSERT(tls->cipher == NULL,
-		    ("sbtls backend leaked a cipher pointer"));
+		    ("ktls backend leaked a cipher pointer"));
 	}
 	if (be != NULL) {
-		if (sbtls_allow_unload)
+		if (ktls_allow_unload)
 			be->use_count++;
 		tls->be = be;
 	}
-	if (sbtls_allow_unload)
-		rm_runlock(&sbtls_backend_lock, &prio);
+	if (ktls_allow_unload)
+		rm_runlock(&ktls_backends_lock, &prio);
 	if (be == NULL)
 		return (EOPNOTSUPP);
-	switch (tls->sb_params.cipher_algorithm) {
+	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
-		counter_u64_add(sbtls_sw_cbc, 1);
+		counter_u64_add(ktls_sw_cbc, 1);
 		break;
 	case CRYPTO_AES_NIST_GCM_16:
-		counter_u64_add(sbtls_sw_gcm, 1);
+		counter_u64_add(ktls_sw_gcm, 1);
 		break;
 	}
 	return (0);
 }
 
 int
-sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
+ktls_enable(struct socket *so, struct tls_so_enable *en)
 {
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	int error;
 
-	if (sbtls_offload_disable) {
+	if (ktls_offload_disable) {
 		return (ENOTSUP);
 	}
-	counter_u64_add(sbtls_offload_enable_calls, 1);
+	counter_u64_add(ktls_offload_enable_calls, 1);
 	if (so->so_proto->pr_protocol != IPPROTO_TCP) {
 		/* We can only support TCP for now */
 		return (EINVAL);
@@ -801,48 +802,48 @@ sbtls_crypt_tls_enable(struct socket *so, struct tls_so_enable *en)
 		return (EALREADY);
 	}
 
-	if (en->cipher_algorithm == CRYPTO_AES_CBC && sbtls_cbc_disable)
+	if (en->cipher_algorithm == CRYPTO_AES_CBC && ktls_cbc_disable)
 		return (ENOTSUP);
 
 	/* TLS requires ext pgs */
 	if (mb_use_ext_pgs == 0)
 		return (ENXIO);
 
-	error = sbtls_create_session(so, en, &tls);
+	error = ktls_create_session(so, en, &tls);
 	if (error)
 		return (error);
 
-	error = sbtls_try_ifnet_tls(so, tls, false);
+	error = ktls_try_ifnet(so, tls, false);
 	if (error)
-		error = sbtls_try_sw_tls(so, tls);
+		error = ktls_try_sw(so, tls);
 
 	if (error) {
-		sbtls_cleanup(tls);
+		ktls_cleanup(tls);
 		return (error);
 	}
 
 	error = sblock(&so->so_snd, SBL_WAIT);
 	if (error) {
-		sbtls_cleanup(tls);
+		ktls_cleanup(tls);
 		return (error);
 	}
 
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls;
-	if (tls->sb_tls_crypt == NULL)
+	if (tls->sw_encrypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
 
-	counter_u64_add(sbtls_offload_total, 1);
+	counter_u64_add(ktls_offload_total, 1);
 
 	return (0);
 }
 
 int
-sbtls_get_tls_mode(struct socket *so)
+ktls_get_tls_mode(struct socket *so)
 {
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	struct inpcb *inp;
 	int mode;
 
@@ -852,7 +853,7 @@ sbtls_get_tls_mode(struct socket *so)
 	tls = so->so_snd.sb_tls_info;
 	if (tls == NULL)
 		mode = TCP_TLS_MODE_NONE;
-	else if (tls->sb_tls_crypt != NULL)
+	else if (tls->sw_encrypt != NULL)
 		mode = TCP_TLS_MODE_SW;
 	else
 		mode = TCP_TLS_MODE_IFNET;
@@ -864,9 +865,9 @@ sbtls_get_tls_mode(struct socket *so)
  * Switch between SW and ifnet TLS sessions as requested.
  */
 int
-sbtls_set_tls_mode(struct socket *so, int mode)
+ktls_set_tls_mode(struct socket *so, int mode)
 {
-	struct sbtls_session *tls, *tls_new;
+	struct ktls_session *tls, *tls_new;
 	struct inpcb *inp;
 	int error;
 
@@ -881,35 +882,35 @@ sbtls_set_tls_mode(struct socket *so, int mode)
 		return (0);
 	}
 
-	if ((tls->sb_tls_crypt != NULL && mode == TCP_TLS_MODE_SW) ||
-	    (tls->sb_tls_crypt == NULL && mode == TCP_TLS_MODE_IFNET)) {
+	if ((tls->sw_encrypt != NULL && mode == TCP_TLS_MODE_SW) ||
+	    (tls->sw_encrypt == NULL && mode == TCP_TLS_MODE_IFNET)) {
 		SOCKBUF_UNLOCK(&so->so_snd);
 		return (0);
 	}
 
-	tls = sbtls_hold(tls);
+	tls = ktls_hold(tls);
 	SOCKBUF_UNLOCK(&so->so_snd);
 	INP_WUNLOCK(inp);
 
-	tls_new = sbtls_clone_session(tls);
+	tls_new = ktls_clone_session(tls);
 
 	if (mode == TCP_TLS_MODE_IFNET)
-		error = sbtls_try_ifnet_tls(so, tls_new, true);
+		error = ktls_try_ifnet(so, tls_new, true);
 	else
-		error = sbtls_try_sw_tls(so, tls_new);
+		error = ktls_try_sw(so, tls_new);
 	if (error) {
-		counter_u64_add(sbtls_switch_failed, 1);
-		sbtls_free(tls_new);
-		sbtls_free(tls);
+		counter_u64_add(ktls_switch_failed, 1);
+		ktls_free(tls_new);
+		ktls_free(tls);
 		INP_WLOCK(inp);
 		return (error);
 	}
 
 	error = sblock(&so->so_snd, SBL_WAIT);
 	if (error) {
-		counter_u64_add(sbtls_switch_failed, 1);
-		sbtls_free(tls_new);
-		sbtls_free(tls);
+		counter_u64_add(ktls_switch_failed, 1);
+		ktls_free(tls_new);
+		ktls_free(tls);
 		INP_WLOCK(inp);
 		return (error);
 	}
@@ -919,41 +920,41 @@ sbtls_set_tls_mode(struct socket *so, int mode)
 	 * session.
 	 */
 	if (tls != so->so_snd.sb_tls_info) {
-		counter_u64_add(sbtls_switch_failed, 1);
+		counter_u64_add(ktls_switch_failed, 1);
 		sbunlock(&so->so_snd);
-		sbtls_free(tls_new);
-		sbtls_free(tls);
+		ktls_free(tls_new);
+		ktls_free(tls);
 		INP_WLOCK(inp);
 		return (EBUSY);
 	}
 
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls_new;
-	if (tls_new->sb_tls_crypt == NULL)
+	if (tls_new->sw_encrypt == NULL)
 		so->so_snd.sb_tls_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
 
 	/*
 	 * Drop two references on 'tls'.  The first is for the
-	 * sbtls_hold() above.  The second drops the reference from
-	 * the socket buffer.
+	 * ktls_hold() above.  The second drops the reference from the
+	 * socket buffer.
 	 */
 	KASSERT(tls->refcount >= 2, ("too few references on old session"));
-	sbtls_free(tls);
-	sbtls_free(tls);
+	ktls_free(tls);
+	ktls_free(tls);
 
 	if (mode == TCP_TLS_MODE_IFNET)
-		counter_u64_add(sbtls_switch_to_ifnet, 1);
+		counter_u64_add(ktls_switch_to_ifnet, 1);
 	else
-		counter_u64_add(sbtls_switch_to_sw, 1);
+		counter_u64_add(ktls_switch_to_sw, 1);
 
 	INP_WLOCK(inp);
 	return (0);
 }
 
 void
-sbtls_tcp_stack_changed(struct socket *so)
+ktls_tcp_stack_changed(struct socket *so)
 {
 	struct inpcb *inp;
 	struct tcpcb *tp;
@@ -967,7 +968,7 @@ sbtls_tcp_stack_changed(struct socket *so)
 	 * flag, check the stack flag to determine what mode the
 	 * session should be using with the new stack.
 	 */
-	if (sbtls_ifnet_permitted != 2)
+	if (ktls_ifnet_permitted != 2)
 		return;
 
 	tp = intotcpcb(inp);
@@ -975,7 +976,7 @@ sbtls_tcp_stack_changed(struct socket *so)
 		mode = TCP_TLS_MODE_IFNET;
 	else
 		mode = TCP_TLS_MODE_SW;
-	(void)sbtls_set_tls_mode(so, mode);
+	(void)ktls_set_tls_mode(so, mode);
 }
 
 /*
@@ -987,10 +988,10 @@ sbtls_tcp_stack_changed(struct socket *so)
  * connection.
  */
 static void
-sbtls_reset_send_tag(void *context, int pending)
+ktls_reset_send_tag(void *context, int pending)
 {
 	struct epoch_tracker et;
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	struct m_snd_tag *old, *new;
 	struct inpcb *inp;
 	struct tcpcb *tp;
@@ -1018,7 +1019,7 @@ sbtls_reset_send_tag(void *context, int pending)
 	if (old != NULL)
 		m_snd_tag_rele(old);
 
-	error = sbtls_alloc_snd_tag(inp, tls, true, &new);
+	error = ktls_alloc_snd_tag(inp, tls, true, &new);
 
 	if (error == 0) {
 		INP_WLOCK(inp);
@@ -1029,7 +1030,7 @@ sbtls_reset_send_tag(void *context, int pending)
 		if (!in_pcbrele_wlocked(inp))
 			INP_WUNLOCK(inp);
 
-		counter_u64_add(sbtls_ifnet_reset, 1);
+		counter_u64_add(ktls_ifnet_reset, 1);
 
 		/*
 		 * XXX: Should we kick tcp_output explicitly now that
@@ -1045,13 +1046,13 @@ sbtls_reset_send_tag(void *context, int pending)
 				tp = tcp_drop(tp, ECONNABORTED);
 				if (tp != NULL)
 					INP_WUNLOCK(inp);
-				counter_u64_add(sbtls_ifnet_reset_dropped, 1);
+				counter_u64_add(ktls_ifnet_reset_dropped, 1);
 			} else
 				INP_WUNLOCK(inp);
 		}
 		INP_INFO_RUNLOCK_ET(&V_tcbinfo, et);
 
-		counter_u64_add(sbtls_ifnet_reset_failed, 1);
+		counter_u64_add(ktls_ifnet_reset_failed, 1);
 
 		/*
 		 * Leave reset_pending true to avoid future tasks while
@@ -1059,11 +1060,11 @@ sbtls_reset_send_tag(void *context, int pending)
 		 */
 	}
 
-	sbtls_free(tls);
+	ktls_free(tls);
 }
 
 int
-sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls)
+ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls)
 {
 
 	if (inp == NULL)
@@ -1077,7 +1078,7 @@ sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls)
 	 */
 	mtx_pool_lock(mtxpool_sleep, tls);
 	if (!tls->reset_pending) {
-		(void) sbtls_hold(tls);
+		(void) ktls_hold(tls);
 		in_pcbref(inp);
 		tls->inp = inp;
 		tls->reset_pending = true;
@@ -1088,33 +1089,33 @@ sbtls_output_eagain(struct inpcb *inp, struct sbtls_session *tls)
 }
 
 void
-sbtls_destroy(struct sbtls_session *tls)
+ktls_destroy(struct ktls_session *tls)
 {
 	struct rm_priotracker prio;
 
-	sbtls_cleanup(tls);
-	if (tls->be != NULL && sbtls_allow_unload) {
-		rm_rlock(&sbtls_backend_lock, &prio);
+	ktls_cleanup(tls);
+	if (tls->be != NULL && ktls_allow_unload) {
+		rm_rlock(&ktls_backends_lock, &prio);
 		tls->be->use_count--;
-		rm_runlock(&sbtls_backend_lock, &prio);
+		rm_runlock(&ktls_backends_lock, &prio);
 	}
-	uma_zfree(zone_tlssock, tls);
+	uma_zfree(ktls_session_zone, tls);
 }
 
 void
-sbtlsdestroy(struct sockbuf *sb)
+sbdestroy_ktls(struct sockbuf *sb)
 {
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 
 	tls = sb->sb_tls_info;
 	sb->sb_tls_info = NULL;
 	sb->sb_tls_flags = 0;
 	if (tls != NULL)
-		sbtls_free(tls);
+		ktls_free(tls);
 }
 
 void
-sbtls_seq(struct sockbuf *sb, struct mbuf *m)
+ktls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf_ext_pgs *pgs;
 	struct tls_record_layer *tlshdr;
@@ -1131,7 +1132,7 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 		 * Store the sequence number in the TLS header as the
 		 * explicit part of the IV for GCM.
 		 */
-		if (pgs->tls->sb_params.cipher_algorithm ==
+		if (pgs->tls->params.cipher_algorithm ==
 		    CRYPTO_AES_NIST_GCM_16) {
 			tlshdr = (void *)pgs->hdr;
 			seqno = htobe64(pgs->seqno);
@@ -1142,7 +1143,7 @@ sbtls_seq(struct sockbuf *sb, struct mbuf *m)
 }
 
 int
-sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
+ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
     uint8_t record_type)
 {
 	struct tls_record_layer *tlshdr;
@@ -1151,9 +1152,9 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 	uint16_t tls_len;
 	int maxlen;
 
-	maxlen = tls->sb_params.max_frame_len;
+	maxlen = tls->params.max_frame_len;
 	*enq_cnt = 0;
-	for (m = *top; m != NULL; m = m->m_next) {
+	for (m = top; m != NULL; m = m->m_next) {
 		/*
 		 * We expect whoever constructed the chain
 		 * to have put no more than maxlen in each
@@ -1166,24 +1167,20 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 		tls_len = m->m_len;
 
 		/*
-		 * we don't yet support inserting framing into
-		 * normal mbuf chains.  For now, just panic if
-		 * we see one.  Eventually, we'll be sticking
-		 * a tls hdr mbuf at the start, which is why
-		 * top is a pointer to a pointer
+		 * TLS frames require unmapped mbufs to store session
+		 * info.
 		 */
 		KASSERT(((m->m_flags & M_NOMAP) == M_NOMAP),
-		    ("Can't Frame %p: not nomap mbuf(top = %p)\n", m, *top));
-
+		    ("Can't frame %p: not nomap mbuf(top = %p)\n", m, top));
 
 		pgs = m->m_ext.ext_pgs;
 
 		/* Save a reference to the session. */
-		pgs->tls = sbtls_hold(tls);
+		pgs->tls = ktls_hold(tls);
 
-		pgs->hdr_len = tls->sb_params.tls_hlen;
-		pgs->trail_len = tls->sb_params.tls_tlen;
-		if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC) {
+		pgs->hdr_len = tls->params.tls_hlen;
+		pgs->trail_len = tls->params.tls_tlen;
+		if (tls->params.cipher_algorithm == CRYPTO_AES_CBC) {
 			int bs, delta;
 
 			/*
@@ -1192,35 +1189,34 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 			 * trailer len will be.  Note that the padding
 			 * calculation must include the digest len, as
 			 * it is not always a multiple of the block
-			 * size.  tls->sb_params.sb_tls_tlen is the
-			 * max possible len (padding + digest), so
-			 * what we're doing here is actually removing
+			 * size.  tls->params.sb_tls_tlen is the max
+			 * possible len (padding + digest), so what
+			 * we're doing here is actually removing
 			 * padding.
 			 */
-			bs = tls->sb_params.tls_bs;
-			delta = (tls_len + tls->sb_params.tls_tlen) &
-			    (bs - 1);
+			bs = tls->params.tls_bs;
+			delta = (tls_len + tls->params.tls_tlen) & (bs - 1);
 			pgs->trail_len -= delta;
 		}
 		m->m_len += pgs->hdr_len + pgs->trail_len;
 
 		/* Populate the TLS header. */
 		tlshdr = (void *)pgs->hdr;
-		tlshdr->tls_vmajor = tls->sb_params.tls_vmajor;
-		tlshdr->tls_vminor = tls->sb_params.tls_vminor;
+		tlshdr->tls_vmajor = tls->params.tls_vmajor;
+		tlshdr->tls_vminor = tls->params.tls_vminor;
 		tlshdr->tls_type = record_type;
 		tlshdr->tls_length = htons(m->m_len - sizeof(*tlshdr));
 
 		/*
 		 * For GCM, the sequence number is stored in the
-		 * header by sbtls_seq().  For CBC, a random nonce is
+		 * header by ktls_seq().  For CBC, a random nonce is
 		 * inserted for TLS 1.1+.
 		 */
-		if (tls->sb_params.cipher_algorithm == CRYPTO_AES_CBC &&
-		    tls->sb_params.tls_vminor >= TLS_MINOR_VER_ONE)
+		if (tls->params.cipher_algorithm == CRYPTO_AES_CBC &&
+		    tls->params.tls_vminor >= TLS_MINOR_VER_ONE)
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
 
-		if (tls->sb_tls_crypt != NULL) {
+		if (tls->sw_encrypt != NULL) {
 			/* Mark mbuf not-ready, to be cleared when encrypted. */
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
@@ -1232,14 +1228,14 @@ sbtls_frame(struct mbuf **top, struct sbtls_session *tls, int *enq_cnt,
 
 
 void
-sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
+ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 {
-	struct sbtls_wq *wq;
+	struct ktls_wq *wq;
 	int running;
 
 	/* Mark it for freeing. */
 	pgs->mbuf = NULL;
-	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
+	wq = &ktls_wq[pgs->tls->wq_index];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
 	running = wq->running;
@@ -1249,10 +1245,10 @@ sbtls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 }
 
 void
-sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
+ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 	struct mbuf_ext_pgs *pgs;
-	struct sbtls_wq *wq;
+	struct ktls_wq *wq;
 	int running;
 
 	KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
@@ -1262,7 +1258,7 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 
 	pgs = m->m_ext.ext_pgs;
 
-	KASSERT(pgs->tls->sb_tls_crypt != NULL, ("ifnet TLS mbuf"));
+	KASSERT(pgs->tls->sw_encrypt != NULL, ("ifnet TLS mbuf"));
 
 	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
@@ -1273,20 +1269,20 @@ sbtls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	 */
 	pgs->so = so;
 
-	wq = &sbtls_wq[pgs->tls->sb_tsk_instance];
+	wq = &ktls_wq[pgs->tls->wq_index];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->head, pgs, stailq);
 	running = wq->running;
 	mtx_unlock(&wq->mtx);
 	if (!running)
 		wakeup(wq);
-	counter_u64_add(sbtls_cnt_on, 1);
+	counter_u64_add(ktls_cnt_on, 1);
 }
 
 static __noinline void
-sbtls_encrypt(struct mbuf_ext_pgs *pgs)
+ktls_encrypt(struct mbuf_ext_pgs *pgs)
 {
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	struct socket *so;
 	struct mbuf *m, *top;
 	vm_paddr_t parray[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
@@ -1380,11 +1376,11 @@ retry_page:
 		if (wire_adj)
 			vm_wire_add(wire_adj);
 
-		error = (*tls->sb_tls_crypt)(tls,
+		error = (*tls->sw_encrypt)(tls,
 		    (const struct tls_record_layer *)pgs->hdr,
 		    pgs->trail, src_iov, dst_iov, i, pgs->seqno);
 		if (error) {
-			counter_u64_add(sbtls_offload_failed_crypto, 1);
+			counter_u64_add(ktls_offload_failed_crypto, 1);
 			break;
 		}
 		if (!is_anon) {
@@ -1409,7 +1405,7 @@ retry_page:
 		 * session.
 		 */
 		pgs->tls = NULL;
-		sbtls_free(tls);
+		ktls_free(tls);
 	}
 
 	CURVNET_SET(so->so_vnet);
@@ -1427,11 +1423,11 @@ retry_page:
 }
 
 static void
-sbtls_work_thread(void *ctx)
+ktls_work_thread(void *ctx)
 {
-	struct sbtls_wq *wq = ctx;
+	struct ktls_wq *wq = ctx;
 	struct mbuf_ext_pgs *p, *n;
-	struct sbtls_session *tls;
+	struct ktls_session *tls;
 	STAILQ_HEAD(, mbuf_ext_pgs) local_head;
 
 	fpu_kern_thread(0);
@@ -1439,7 +1435,7 @@ sbtls_work_thread(void *ctx)
 	for (;;) {
 		while (STAILQ_EMPTY(&wq->head)) {
 			wq->running = 0;
-			mtx_sleep(wq, &wq->mtx, 0, "sbtls wq", 0);
+			mtx_sleep(wq, &wq->mtx, 0, "-", 0);
 			wq->running = 1;
 		}
 
@@ -1450,12 +1446,12 @@ sbtls_work_thread(void *ctx)
 		STAILQ_FOREACH_SAFE(p, &local_head, stailq, n) {
 			/* encrypt or free each TLS record on the list */
 			if (p->mbuf != NULL) {
-				sbtls_encrypt(p);
-				counter_u64_add(sbtls_cnt_on, -1);
+				ktls_encrypt(p);
+				counter_u64_add(ktls_cnt_on, -1);
 			} else {
 				/* records w/null mbuf are freed */
 				tls = p->tls;
-				sbtls_free(tls);
+				ktls_free(tls);
 				uma_zfree(zone_extpgs, p);
 			}
 		}

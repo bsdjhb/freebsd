@@ -672,7 +672,7 @@ sbdestroy(struct sockbuf *sb, struct socket *so)
 {
 
 	sbrelease_internal(sb, so);
-	sbtlsdestroy(sb);
+	sbdestroy_ktls(sb);
 }
 
 /*
@@ -837,7 +837,7 @@ sbappendstream_locked(struct sockbuf *sb, struct mbuf *m, int flags)
 	SBLASTMBUFCHK(sb);
 
 	if (sb->sb_tls_info != NULL)
-		sbtls_seq(sb, m);
+		ktls_seq(sb, m);
 
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */
 	m_demote(m, 1, flags & PRUS_NOTREADY ? M_NOTREADY : 0);

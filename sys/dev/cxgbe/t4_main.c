@@ -1037,7 +1037,7 @@ t4_attach(device_t dev)
 	sc->policy = NULL;
 	rw_init(&sc->policy_lock, "connection offload policy");
 
-	callout_init(&sc->sbtls_tick, 1);
+	callout_init(&sc->ktls_tick, 1);
 
 	rc = t4_map_bars_0_and_4(sc);
 	if (rc != 0)
@@ -1615,7 +1615,7 @@ t4_detach_common(device_t dev)
 		mtx_destroy(&sc->sc_lock);
 	}
 
-	callout_drain(&sc->sbtls_tick);
+	callout_drain(&sc->ktls_tick);
 	callout_drain(&sc->sfl_callout);
 	if (mtx_initialized(&sc->tids.ftid_lock)) {
 		mtx_destroy(&sc->tids.ftid_lock);
@@ -4579,7 +4579,7 @@ get_params__post_init(struct adapter *sc)
 
 #ifdef KERN_TLS
 static void
-sbtls_tick(void *arg)
+ktls_tick(void *arg)
 {
 	struct adapter *sc;
 	uint32_t tstamp;
@@ -4590,7 +4590,7 @@ sbtls_tick(void *arg)
 	t4_write_reg(sc, A_TP_SYNC_TIME_HI, tstamp >> 1);
 	t4_write_reg(sc, A_TP_SYNC_TIME_LO, tstamp << 31);
 	
-	callout_schedule_sbt(&sc->sbtls_tick, SBT_1MS, 0, C_HARDCLOCK);
+	callout_schedule_sbt(&sc->ktls_tick, SBT_1MS, 0, C_HARDCLOCK);
 }
 
 static void
@@ -5560,7 +5560,7 @@ adapter_full_init(struct adapter *sc)
 		t4_intr_enable(sc);
 #ifdef KERN_TLS
 	if (sc->flags & KERN_TLS_OK)
-		callout_reset_sbt(&sc->sbtls_tick, SBT_1MS, 0, sbtls_tick, sc,
+		callout_reset_sbt(&sc->ktls_tick, SBT_1MS, 0, ktls_tick, sc,
 		    C_HARDCLOCK);
 #endif
 	sc->flags |= FULL_INIT_DONE;
@@ -11022,7 +11022,7 @@ mod_event(module_t mod, int cmd, void *arg)
 			t4_clip_modload();
 #endif
 #ifdef KERN_TLS
-			t6_sbtls_modload();
+			t6_ktls_modload();
 #endif
 			t4_tracer_modload();
 			tweak_tunables();
@@ -11064,7 +11064,7 @@ mod_event(module_t mod, int cmd, void *arg)
 			if (t4_sge_extfree_refs() == 0) {
 				t4_tracer_modunload();
 #ifdef KERN_TLS
-				t6_sbtls_modunload();
+				t6_ktls_modunload();
 #endif
 #ifdef INET6
 				t4_clip_modunload();

@@ -1727,7 +1727,7 @@ tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 #endif
 #ifdef KERN_TLS
 		if (so->so_snd.sb_tls_info != NULL)
-			sbtls_tcp_stack_changed(so);
+			ktls_tcp_stack_changed(so);
 #endif
 err_out:
 		INP_WUNLOCK(inp);
@@ -1955,7 +1955,7 @@ unlock_and_done:
 				error = sooptcopyin(sopt, &tls, sizeof(tls),
 				    sizeof(tls));
 			if (error == 0)
-				error = sbtls_crypt_tls_enable(so, &tls);
+				error = ktls_enable(so, &tls);
 			break;
 		case TCP_TLS_MODE:
 			INP_WUNLOCK(inp);
@@ -1966,7 +1966,7 @@ unlock_and_done:
 				return (EINVAL);
 
 			INP_WLOCK_RECHECK(inp);
-			error = sbtls_set_tls_mode(so, ui);
+			error = ktls_set_tls_mode(so, ui);
 			INP_WUNLOCK(inp);
 			break;
 #endif
@@ -2254,7 +2254,7 @@ unlock_and_done:
 #endif
 #ifdef KERN_TLS
 		case TCP_TLS_MODE:
-			optval = sbtls_get_tls_mode(so);
+			optval = ktls_get_tls_mode(so);
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof(optval));
 			break;

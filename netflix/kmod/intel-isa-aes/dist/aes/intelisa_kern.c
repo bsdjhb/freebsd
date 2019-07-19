@@ -50,7 +50,7 @@ __FBSDID("$FreeBSD$");
 #include "aes_gcm.h"
 #include "aes_cbc.h"
 
-#define SBTLS_INTELISA_AEAD_TAGLEN	16
+#define KTLS_INTELISA_AEAD_TAGLEN	16
 
 struct isa_gcm_struct {
 	struct gcm_key_data key_data;
@@ -77,14 +77,39 @@ struct isa_gcm_struct {
 	    uint64_t tag_len);	/* Pulls out the tag */
 };
 
+SYSCTL_DECL(_kern_ipc_tls);
 
-int sbtls_use_intel_isa_gcm = 1;
+static int ktls_use_intel_isa_gcm = 1;
+SYSCTL_INT(_kern_ipc_tls, OID_AUTO, isa_gcm, CTLFLAG_RW,
+    &ktls_use_intel_isa_gcm, 1,
+    "Should we use the Intel ISA GCM if available");
 
-static counter_u64_t sbtls_offload_isa_aead;
-static counter_u64_t intelisa_aligned_mem;
-static counter_u64_t intelisa_aligned_mem_b;
-static counter_u64_t intelisa_unaligned_mem;
+SYSCTL_DECL(_kern_ipc_tls_counters);
+
+static counter_u64_t ktls_offload_isa_aead;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aead_crypts,
+    CTLFLAG_RD, &ktls_offload_isa_aead,
+    "Total number of Intel ISA TLS AEAD encrypts called");
+
 static counter_u64_t intelisa_unaligned_mem_b;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned_bytes,
+    CTLFLAG_RD, &intelisa_unaligned_mem_b,
+    "Byte cnt of intel isa unaligned");
+
+static counter_u64_t intelisa_aligned_mem_b;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned_bytes,
+    CTLFLAG_RD, &intelisa_aligned_mem_b,
+    "Byte cnt of intel isa aligned");
+
+static counter_u64_t intelisa_unaligned_mem;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned,
+    CTLFLAG_RD, &intelisa_unaligned_mem,
+    "Call cnt of intel isa unaligned");
+
+static counter_u64_t intelisa_aligned_mem;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned,
+    CTLFLAG_RD, &intelisa_aligned_mem,
+    "Call cnt of intel isa aligned");
 
 static MALLOC_DEFINE(M_INTEL_ISA, "isal_tls", "Intel ISA-L TLS");
 
@@ -96,7 +121,6 @@ intel_isa_seal(struct isa_gcm_struct *isa,
     uint8_t * ad, int adlen,
     uint8_t * tagout, size_t *taglen)
 {
-
 	int i;
 	bool nt = true;
 	bool misaligned_len, misaligned_start;
@@ -158,7 +182,7 @@ fixup_done:
 }
 
 static int
-sbtls_crypt_intelisa_aead(struct sbtls_session *tls,
+ktls_intelisa_aead_encrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno)
 {
@@ -172,16 +196,16 @@ sbtls_crypt_intelisa_aead(struct sbtls_session *tls,
 	isa = (struct isa_gcm_struct *)tls->cipher;
 
 	KASSERT(isa != NULL, ("Null cipher"));
-	counter_u64_add(sbtls_offload_isa_aead, 1);
-	taglen = SBTLS_INTELISA_AEAD_TAGLEN;
+	counter_u64_add(ktls_offload_isa_aead, 1);
+	taglen = KTLS_INTELISA_AEAD_TAGLEN;
 
 	/* Setup the nonce */
-	memcpy(nd.fixed, tls->sb_params.iv, TLS_AEAD_GCM_LEN);
+	memcpy(nd.fixed, tls->params.iv, TLS_AEAD_GCM_LEN);
 	memcpy(&nd.seq, hdr + 1, sizeof(nd.seq));
 	noncelen = sizeof(nd);
 	/* Setup the associated data */
 	tls_comp_len = ntohs(hdr->tls_length) -
-	    (SBTLS_INTELISA_AEAD_TAGLEN + sizeof(nd.seq));
+	    (KTLS_INTELISA_AEAD_TAGLEN + sizeof(nd.seq));
 	ad.seq = htobe64(seqno);
 	ad.type = hdr->tls_type;
 	ad.tls_vmajor = hdr->tls_vmajor;
@@ -197,10 +221,9 @@ sbtls_crypt_intelisa_aead(struct sbtls_session *tls,
 
 
 static int
-sbtls_setup_isa_cipher(struct isa_gcm_struct *isa, uint8_t *key)
+ktls_intelisa_setup_cipher(struct isa_gcm_struct *isa, uint8_t *key)
 {
 	struct fpu_kern_ctx *fpu_ctx;
-
 
 	if (key == NULL) {
 		return (EINVAL);
@@ -217,7 +240,7 @@ sbtls_setup_isa_cipher(struct isa_gcm_struct *isa, uint8_t *key)
 }
 
 static void
-sbtls_intelisa_free(struct sbtls_session *tls)
+ktls_intelisa_free(struct ktls_session *tls)
 {
 	struct isa_gcm_struct *isa;
 
@@ -227,18 +250,18 @@ sbtls_intelisa_free(struct sbtls_session *tls)
 }
 
 static int
-sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
+ktls_intelisa_try(struct socket *so, struct ktls_session *tls)
 {
 	struct isa_gcm_struct *isa;
 	int error;
 
-	if (sbtls_use_intel_isa_gcm &&
-	    tls->sb_params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
+	if (ktls_use_intel_isa_gcm &&
+	    tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		isa = malloc(sizeof (*isa), M_INTEL_ISA, M_NOWAIT | M_ZERO);
 		if (isa == NULL) {
 			return (ENOMEM);
 		}
-		switch (tls->sb_params.cipher_key_len) {
+		switch (tls->params.cipher_key_len) {
 		case 16:
 			isa->gcm_pre = aes_gcm_pre_128;
 			isa->gcm_init = aes_gcm_init_128;
@@ -258,59 +281,52 @@ sbtls_try_intelisa(struct socket *so, struct sbtls_session *tls)
 			return (EOPNOTSUPP);
 		}
 
-		error = sbtls_setup_isa_cipher(isa, tls->sb_params.cipher_key);
+		error = ktls_intelisa_setup_cipher(isa, tls->params.cipher_key);
 		if (error) {
 			free(isa, M_INTEL_ISA);
 			return (error);
 		}
 
 		tls->cipher = isa;
-		tls->sb_tls_crypt = sbtls_crypt_intelisa_aead;
-		tls->sb_tls_free = sbtls_intelisa_free;
+		tls->sw_encrypt = ktls_intelisa_aead_encrypt;
+		tls->free = ktls_intelisa_free;
 		return (0);
 	}
 	return (EOPNOTSUPP);
 }
 
-SYSCTL_DECL(_kern_ipc_tls);
-SYSCTL_DECL(_kern_ipc_tls_counters);
-
-SYSCTL_INT(_kern_ipc_tls, OID_AUTO, isa_gcm, CTLFLAG_RW,
-    &sbtls_use_intel_isa_gcm, 1,
-    "Should we use the Intel ISA GCM if available");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aead_crypts, CTLFLAG_RD,
-    &sbtls_offload_isa_aead, "Total number of Intel ISA TLS AEAD encrypts called");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned_bytes,
-   CTLFLAG_RD, &intelisa_unaligned_mem_b, "Byte cnt of intel isa unaligned");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned_bytes,
-   CTLFLAG_RD, &intelisa_aligned_mem_b, "Byte cnt of intel isa aligned");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned,
-   CTLFLAG_RD, &intelisa_unaligned_mem, "Call cnt of intel isa unaligned");
-
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned,
-   CTLFLAG_RD, &intelisa_aligned_mem, "Call cnt of intel isa aligned");
-
-
-struct sbtls_crypto_backend intelisa_backend  = {
+struct ktls_crypto_backend intelisa_backend  = {
 	.name = "Intel ISA-L",
 	.prio = 20,
-	.api_version = SBTLS_API_VERSION,
-	.try = sbtls_try_intelisa,
+	.api_version = KTLS_API_VERSION,
+	.try = ktls_intelisa_try,
 };
 
 static int
 intelisa_init(void)
 {
-	sbtls_offload_isa_aead = counter_u64_alloc(M_WAITOK);
+	ktls_offload_isa_aead = counter_u64_alloc(M_WAITOK);
 	intelisa_aligned_mem = counter_u64_alloc(M_WAITOK);
 	intelisa_aligned_mem_b = counter_u64_alloc(M_WAITOK);
 	intelisa_unaligned_mem = counter_u64_alloc(M_WAITOK);
 	intelisa_unaligned_mem_b = counter_u64_alloc(M_WAITOK);
-	return (sbtls_crypto_backend_register(&intelisa_backend));
+	return (ktls_crypto_backend_register(&intelisa_backend));
+}
+
+static int
+intelisa_unload(void)
+{
+	int error;
+
+	error = ktls_crypto_backend_deregister(&intelisa_backend);
+	if (error)
+		return (error);
+	counter_u64_free(ktls_offload_isa_aead);
+	counter_u64_free(intelisa_aligned_mem);
+	counter_u64_free(intelisa_aligned_mem_b);
+	counter_u64_free(intelisa_unaligned_mem);
+	counter_u64_free(intelisa_unaligned_mem_b);
+	return (0);
 }
 
 static int
@@ -320,7 +336,7 @@ intelisa_module_event_handler(module_t mod, int evt, void *arg)
 	case MOD_LOAD:
 		return (intelisa_init());
 	case MOD_UNLOAD:
-		return (sbtls_crypto_backend_deregister(&intelisa_backend));
+		return (intelisa_unload());
 	default:
 		return (EOPNOTSUPP);
 	}
