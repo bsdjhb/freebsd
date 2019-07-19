@@ -204,55 +204,6 @@ struct ktls_session {
 	bool reset_pending;
 } __aligned(CACHE_LINE_SIZE);
 
-
-#ifndef KERN_TLS
-#include "opt_kern_tls.h"
-#endif
-
-#ifndef KERN_TLS
-
-/* TLS stubs so we can compile kernels without options KERN_TLS */
-
-static inline void
-sbdestroy_ktls(struct sockbuf *sb)
-{
-}
-
-static inline int
-ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
-    uint8_t record_type)
-{
-	return (ENOTSUP);
-}
-
-static inline void
-ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
-{
-}
-
-static inline void
-ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
-{
-}
-
-static inline void
-ktls_seq(struct sockbuf *sb, struct mbuf *m)
-{
-}
-
-static inline struct ktls_session *
-ktls_hold(struct ktls_session *tls)
-{
-	return (NULL);
-}
-
-static inline void
-ktls_free(struct ktls_session *tls)
-{
-}
-
-#else
-
 int ktls_crypto_backend_register(struct ktls_crypto_backend *be);
 int ktls_crypto_backend_deregister(struct ktls_crypto_backend *be);
 int ktls_enable(struct socket *so, struct tls_so_enable *en);
@@ -285,6 +236,5 @@ ktls_free(struct ktls_session *tls)
 		ktls_destroy(tls);
 }
 
-#endif /* KERN_TLS */
-#endif /* _KERNEL */
-#endif /* _SYS_SOCKBUF_TLS_H_ */
+#endif /* !_KERNEL */
+#endif /* !_SYS_SOCKBUF_TLS_H_ */

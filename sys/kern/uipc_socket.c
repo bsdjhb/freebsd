@@ -107,6 +107,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_kern_tls.h"
 #include "opt_sctp.h"
 
 #include <sys/param.h>
@@ -1443,11 +1444,15 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	ssize_t resid;
 	int clen = 0, error, dontroute;
 	int atomic = sosendallatonce(so) || top;
+	int pru_flag;
+#ifdef KERN_TLS
 	struct ktls_session *tls;
-	int pru_flag, tls_enq_cnt, tls_pruflag;
-	uint8_t tls_rtype = TLS_RLTYPE_APP;
+	int tls_enq_cnt, tls_pruflag;
+	uint8_t tls_rtype;
 
 	tls = NULL;
+	tls_rtype = TLS_RLTYPE_APP;
+#endif
 	if (uio != NULL)
 		resid = uio->uio_resid;
 	else
@@ -1479,6 +1484,7 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	if (error)
 		goto out;
 
+#ifdef KERN_TLS
 	tls_pruflag = 0;
 	tls = ktls_hold(so->so_snd.sb_tls_info);
 	if (tls != NULL) {
@@ -1498,6 +1504,7 @@ sosend_generic(struct socket *so, struct sockaddr *addr, struct uio *uio,
 			}
 		}
 	}
+#endif
 
 restart:
 	do {
@@ -1576,6 +1583,7 @@ restart:
 				 * is a workaround to prevent protocol send
 				 * methods to panic.
 				 */
+#ifdef KERN_TLS
 				if (tls != NULL) {
 					top = m_uiotombuf(uio, M_WAITOK, space,
 					    tls->params.max_frame_len,
@@ -1590,12 +1598,12 @@ restart:
 						}
 					}
 					tls_rtype = TLS_RLTYPE_APP;
-				} else {
+				} else
+#endif
 					top = m_uiotombuf(uio, M_WAITOK, space,
 					    (atomic ? max_hdr : 0),
 					    (atomic ? M_PKTHDR : 0) |
 					    ((flags & MSG_EOR) ? M_EOR : 0));
-				}
 				if (top == NULL) {
 					error = EFAULT; /* only possible error */
 					goto release;
@@ -1634,7 +1642,9 @@ restart:
 			    (flags & MSG_MORETOCOME) ||
 			    (resid > 0 && space > 0) ? PRUS_MORETOCOME : 0;
 
+#ifdef KERN_TLS
 			pru_flag |= tls_pruflag;
+#endif
 
 			error = (*so->so_proto->pr_usrreqs->pru_send)(so,
 			    pru_flag, top, addr, control, td);
@@ -1645,6 +1655,7 @@ restart:
 				SOCK_UNLOCK(so);
 			}
 
+#ifdef KERN_TLS
 			if (tls != NULL && tls->sw_encrypt != NULL) {
 				/*
 				 * Note that error is intentionally
@@ -1659,6 +1670,7 @@ restart:
 				soref(so);
 				ktls_enqueue(top, so, tls_enq_cnt);
 			}
+#endif
 			clen = 0;
 			control = NULL;
 			top = NULL;
@@ -1670,8 +1682,10 @@ restart:
 release:
 	sbunlock(&so->so_snd);
 out:
+#ifdef KERN_TLS
 	if (tls != NULL)
 		ktls_free(tls);
+#endif
 	if (top != NULL)
 		m_freem(top);
 	if (control != NULL)
