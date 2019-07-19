@@ -200,7 +200,7 @@ SUBDIR=	\
 	khelp \
 	krpc \
 	ksyms \
-	ktls_ocf \
+	${_ktls_ocf} \
 	le \
 	lge \
 	libalias \
@@ -413,6 +413,7 @@ _crypto=	crypto
 _cryptodev=	cryptodev
 _random_fortuna=random_fortuna
 _random_other=	random_other
+_ktls_ocf=	ktls_ocf
 .endif
 .endif
 
