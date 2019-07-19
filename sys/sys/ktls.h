@@ -207,7 +207,6 @@ struct ktls_session {
 int ktls_crypto_backend_register(struct ktls_crypto_backend *be);
 int ktls_crypto_backend_deregister(struct ktls_crypto_backend *be);
 int ktls_enable(struct socket *so, struct tls_so_enable *en);
-void sbdestroy_ktls(struct sockbuf *sb);
 void ktls_destroy(struct ktls_session *tls);
 int ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type);

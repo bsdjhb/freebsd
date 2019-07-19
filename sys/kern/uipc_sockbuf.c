@@ -674,7 +674,9 @@ sbdestroy(struct sockbuf *sb, struct socket *so)
 
 	sbrelease_internal(sb, so);
 #ifdef KERN_TLS
-	sbdestroy_ktls(sb);
+	if (sb->sb_tls_info != NULL)
+		ktls_free(sb->sb_tls_info);
+	sb->sb_tls_info = NULL;
 #endif
 }
 

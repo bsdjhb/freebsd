@@ -1103,17 +1103,6 @@ ktls_destroy(struct ktls_session *tls)
 }
 
 void
-sbdestroy_ktls(struct sockbuf *sb)
-{
-	struct ktls_session *tls;
-
-	tls = sb->sb_tls_info;
-	sb->sb_tls_info = NULL;
-	if (tls != NULL)
-		ktls_free(tls);
-}
-
-void
 ktls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf_ext_pgs *pgs;
