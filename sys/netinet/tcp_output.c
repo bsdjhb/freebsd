@@ -1883,7 +1883,7 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 #ifdef KERN_TLS
 		if (hw_tls) {
 			if (m->m_flags & M_NOMAP)
-				ntls = n->m_ext.ext_pgs->tls;
+				ntls = m->m_ext.ext_pgs->tls;
 			else
 				ntls = NULL;
 
