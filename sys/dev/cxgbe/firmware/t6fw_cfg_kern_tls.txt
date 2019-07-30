@@ -160,7 +160,7 @@
 	nserver = 64
 	nhpfilter = 0
 	nhash = 524288
-	protocol = ofld, tlskeys
+	protocol = ofld, tlskeys, crypto_lookaside
 	tp_l2t = 4096
 	tp_ddp = 2
 	tp_ddp_iscsi = 2
@@ -272,7 +272,7 @@
 
 [fini]
 	version = 0x1
-	checksum = 0x87dc404d
+	checksum = 0xa737b06f
 #
 # $FreeBSD$
 #
