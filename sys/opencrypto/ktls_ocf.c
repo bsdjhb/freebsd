@@ -125,7 +125,7 @@ ktls_ocf_encrypt(struct ktls_session *tls, const struct tls_record_layer *hdr,
 	ad.tls_length = htons(tls_comp_len);
 	iov[0].iov_base = &ad;
 	iov[0].iov_len = sizeof(ad);
-	crp->crp_ilen = sizeof(ad);
+	uio.uio_resid = sizeof(ad);
 	
 	/*
 	 * OCF always does encryption in place, so copy the data if
@@ -136,12 +136,12 @@ ktls_ocf_encrypt(struct ktls_session *tls, const struct tls_record_layer *hdr,
 		if (iniov[i].iov_base != outiov[i].iov_base)
 			memcpy(outiov[i].iov_base, iniov[i].iov_base,
 			    outiov[i].iov_len);
-		crp->crp_ilen += outiov[i].iov_len;
+		uio.uio_resid += outiov[i].iov_len;
 	}
 
 	iov[iovcnt + 1].iov_base = trailer;
 	iov[iovcnt + 1].iov_len = AES_GMAC_HASH_LEN;
-	crp->crp_ilen += AES_GMAC_HASH_LEN;
+	uio.uio_resid += AES_GMAC_HASH_LEN;
 
 	uio.uio_iov = iov;
 	uio.uio_iovcnt = iovcnt + 2;
@@ -152,6 +152,7 @@ ktls_ocf_encrypt(struct ktls_session *tls, const struct tls_record_layer *hdr,
 	crp->crp_session = os->sid;
 	crp->crp_flags = CRYPTO_F_IOV | CRYPTO_F_CBIMM;
 	crp->crp_uio = &uio;
+	crp->crp_ilen = uio.uio_resid;
 	crp->crp_opaque = oo;
 	crp->crp_callback = ktls_ocf_callback;
 
