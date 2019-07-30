@@ -271,7 +271,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls)
 
 struct ktls_crypto_backend ocf_backend = {
 	.name = "OCF",
-	.prio = 100,
+	.prio = 5,
 	.api_version = KTLS_API_VERSION,
 	.try = ktls_ocf_try,
 };
