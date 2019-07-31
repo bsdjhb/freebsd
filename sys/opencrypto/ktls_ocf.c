@@ -57,15 +57,15 @@ struct ocf_operation {
 static MALLOC_DEFINE(M_KTLS_OCF, "ktls_ocf", "OCF KTLS");
 
 SYSCTL_DECL(_kern_ipc_tls);
-SYSCTL_DECL(_kern_ipc_tls_counters);
+SYSCTL_DECL(_kern_ipc_tls_stats);
 
 static counter_u64_t ocf_gcm_crypts;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, ocf_gcm_crypts, CTLFLAG_RD,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, ocf_gcm_crypts, CTLFLAG_RD,
     &ocf_gcm_crypts,
     "Total number of OCF GCM encryption operations");
 
 static counter_u64_t ocf_retries;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, ocf_retries, CTLFLAG_RD,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, ocf_retries, CTLFLAG_RD,
     &ocf_retries,
     "Number of OCF encryption operation retries");
 

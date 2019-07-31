@@ -86,8 +86,6 @@ SYSCTL_NODE(_kern_ipc, OID_AUTO, tls, CTLFLAG_RW, 0,
     "TLS offload IPC calls");
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, stats, CTLFLAG_RW, 0,
     "TLS offload stats");
-SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, counters, CTLFLAG_RW, 0,
-    "TLS offload counters");
 
 static int ktls_allow_unload;
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, allow_unload, CTLFLAG_RDTUN,
@@ -129,12 +127,12 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, so_inqueue, CTLFLAG_RD,
     &ktls_cnt_on, "Number of TLS records in queue to tasks for SW crypto");
 
 static counter_u64_t ktls_offload_total;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, offload_total,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, offload_total,
     CTLFLAG_RD, &ktls_offload_total,
     "Total successful TLS setups (parameters set)");
 
 static counter_u64_t ktls_offload_enable_calls;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, enable_calls,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, enable_calls,
     CTLFLAG_RD, &ktls_offload_enable_calls,
     "Total number of TLS enable calls made");
 
