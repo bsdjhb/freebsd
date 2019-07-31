@@ -83,9 +83,9 @@ static uint16_t ktls_cpuid_lookup[MAXCPU];
 SYSCTL_DECL(_kern_ipc);
 
 SYSCTL_NODE(_kern_ipc, OID_AUTO, tls, CTLFLAG_RW, 0,
-    "TLS offload IPC calls");
+    "Kernel TLS offload");
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, stats, CTLFLAG_RW, 0,
-    "TLS offload stats");
+    "Kernel TLS offload stats");
 
 static int ktls_allow_unload;
 SYSCTL_INT(_kern_ipc_tls, OID_AUTO, allow_unload, CTLFLAG_RDTUN,
@@ -108,15 +108,15 @@ SYSCTL_INT(_kern_ipc_tls_stats, OID_AUTO, threads, CTLFLAG_RD,
     &ktls_number_threads, 0,
     "Number of TLS threads in thread-pool");
 
-static int ktls_offload_disable = 1;
-SYSCTL_UINT(_kern_ipc_tls, OID_AUTO, disable, CTLFLAG_RW,
-    &ktls_offload_disable, 0,
-    "Disable Support of kernel TLS offload");
+static bool ktls_offload_enable;
+SYSCTL_BOOL(_kern_ipc_tls, OID_AUTO, enable, CTLFLAG_RW,
+    &ktls_offload_enable, 0,
+    "Enable support for kernel TLS offload");
 
-static int ktls_cbc_disable;
-SYSCTL_UINT(_kern_ipc_tls, OID_AUTO, cbc_disable, CTLFLAG_RW,
-    &ktls_cbc_disable, 1,
-    "Disable Support of AES-CBC crypto");
+static bool ktls_cbc_enable = true;
+SYSCTL_BOOL(_kern_ipc_tls, OID_AUTO, cbc_enable, CTLFLAG_RW,
+    &ktls_cbc_enable, 1,
+    "Enable Support of AES-CBC crypto for kernel TLS");
 
 static counter_u64_t ktls_tasks_active;
 SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
@@ -786,7 +786,7 @@ ktls_enable(struct socket *so, struct tls_so_enable *en)
 	struct ktls_session *tls;
 	int error;
 
-	if (ktls_offload_disable) {
+	if (!ktls_offload_enable) {
 		return (ENOTSUP);
 	}
 	counter_u64_add(ktls_offload_enable_calls, 1);
@@ -800,7 +800,7 @@ ktls_enable(struct socket *so, struct tls_so_enable *en)
 		return (EALREADY);
 	}
 
-	if (en->cipher_algorithm == CRYPTO_AES_CBC && ktls_cbc_disable)
+	if (en->cipher_algorithm == CRYPTO_AES_CBC && !ktls_cbc_enable)
 		return (ENOTSUP);
 
 	/* TLS requires ext pgs */
