@@ -1025,7 +1025,6 @@ passout:
 	}
 #endif
 	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
-	
 	tlen = m->m_pkthdr.len;
 
 	if ((opt && (opt->ip6po_flags & IP6PO_DONTFRAG)) || tso)
