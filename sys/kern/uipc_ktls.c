@@ -68,7 +68,7 @@ __FBSDID("$FreeBSD$");
 struct ktls_wq {
 	struct mtx	mtx;
 	STAILQ_HEAD(, mbuf_ext_pgs) head;
-	int		running;
+	bool		running;
 } __aligned(CACHE_LINE_SIZE);
 
 static struct ktls_wq *ktls_wq;
@@ -1217,7 +1217,7 @@ void
 ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs)
 {
 	struct ktls_wq *wq;
-	int running;
+	bool running;
 
 	/* Mark it for freeing. */
 	pgs->mbuf = NULL;
@@ -1235,7 +1235,7 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
 	struct mbuf_ext_pgs *pgs;
 	struct ktls_wq *wq;
-	int running;
+	bool running;
 
 	KASSERT(((m->m_flags & (M_NOMAP | M_NOTREADY)) ==
 		(M_NOMAP | M_NOTREADY)),
@@ -1420,9 +1420,9 @@ ktls_work_thread(void *ctx)
 	mtx_lock(&wq->mtx);
 	for (;;) {
 		while (STAILQ_EMPTY(&wq->head)) {
-			wq->running = 0;
+			wq->running = false;
 			mtx_sleep(wq, &wq->mtx, 0, "-", 0);
-			wq->running = 1;
+			wq->running = true;
 		}
 
 		STAILQ_INIT(&local_head);
