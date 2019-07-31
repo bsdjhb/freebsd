@@ -1830,11 +1830,12 @@ struct mbuf *
 tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
     int32_t seglimit, int32_t segsize, struct sockbuf *sb, bool hw_tls)
 {
-	struct mbuf *n, **np, *start;
-	struct mbuf *top;
 #ifdef KERN_TLS
 	struct ktls_session *tls, *ntls;
+	struct mbuf *start;
 #endif
+	struct mbuf *n, **np;
+	struct mbuf *top;
 	int32_t off = off0;
 	int32_t len = *plen;
 	int32_t fragsize;
@@ -1869,8 +1870,8 @@ tcp_m_copym(struct mbuf *m, int32_t off0, int32_t *plen,
 		tls = m->m_ext.ext_pgs->tls;
 	else
 		tls = NULL;
-#endif
 	start = m;
+#endif
 	while (len > 0) {
 		if (m == NULL) {
 			KASSERT(len == M_COPYALL,
