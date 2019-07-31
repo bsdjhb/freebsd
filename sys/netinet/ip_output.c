@@ -212,8 +212,11 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, int flags,
 
 static int
 ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
-    const struct sockaddr_in *gw, struct route *ro, struct ktls_session *tls)
+    const struct sockaddr_in *gw, struct route *ro)
 {
+#ifdef KERN_TLS
+	struct ktls_session *tls = NULL;
+#endif
 	struct m_snd_tag *mst;
 	int error;
 
@@ -221,7 +224,14 @@ ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
 	mst = NULL;
 
 #ifdef KERN_TLS
-	if (tls != NULL) {
+	/*
+	 * If this is an unencrypted TLS record, save a reference to
+	 * the record.  This local reference is used to call
+	 * ktls_output_eagain after the mbuf has been freed (thus
+	 * dropping the mbuf's reference) in if_output.
+	 */
+	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next)) {
+		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
 		mst = tls->snd_tag;
 
 		/*
@@ -264,8 +274,11 @@ ip_output_send(struct inpcb *inp, struct ifnet *ifp, struct mbuf *m,
 done:
 	/* Check for route change invalidating send tags. */
 #ifdef KERN_TLS
-	if (error == EAGAIN && tls != NULL)
-		error = ktls_output_eagain(inp, tls);
+	if (tls != NULL) {
+		if (error == EAGAIN)
+			error = ktls_output_eagain(inp, tls);
+		ktls_free(tls);
+	}
 #endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
@@ -295,7 +308,6 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	struct ip *ip;
 	struct ifnet *ifp = NULL;	/* keep compiler happy */
 	struct mbuf *m0;
-	struct ktls_session *tls = NULL;
 	int hlen = sizeof (struct ip);
 	int mtu;
 	int error = 0;
@@ -741,16 +753,6 @@ sendit:
 		m->m_pkthdr.csum_flags &= ~CSUM_SCTP;
 	}
 #endif
-#if defined(KERN_TLS)
-	/*
-	 * If this is an unencrypted TLS record, save a reference to
-	 * the record.  This local reference is used to call
-	 * ktls_output_eagain after the mbuf has been freed (thus
-	 * dropping the mbuf's reference) in if_output.
-	 */
-	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
-		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
-#endif
 
 	/*
 	 * If small enough for interface, or the interface will take
@@ -789,7 +791,7 @@ sendit:
 		 */
 		m_clrprotoflags(m);
 		IP_PROBE(send, NULL, NULL, ip, ifp, ip, NULL);
-		error = ip_output_send(inp, ifp, m, gw, ro, tls);
+		error = ip_output_send(inp, ifp, m, gw, ro);
 		goto done;
 	}
 
@@ -825,7 +827,7 @@ sendit:
 
 			IP_PROBE(send, NULL, NULL, mtod(m, struct ip *), ifp,
 			    mtod(m, struct ip *), NULL);
-			error = ip_output_send(inp, ifp, m, gw, ro, tls);
+			error = ip_output_send(inp, ifp, m, gw, ro);
 		} else
 			m_freem(m);
 	}
@@ -835,10 +837,6 @@ sendit:
 
 done:
 	NET_EPOCH_EXIT(et);
-#ifdef KERN_TLS
-	if (tls != NULL)
-		ktls_free(tls);
-#endif
 	return (error);
  bad:
 	m_freem(m);
