@@ -54,25 +54,25 @@ __FBSDID("$FreeBSD$");
 #include "openssl/internal_crypto.h"
 #include "openssl/internal_cipher.h"
 
-SYSCTL_DECL(_kern_ipc_tls_counters);
+SYSCTL_DECL(_kern_ipc_tls_stats);
 
 static counter_u64_t ktls_offload_boring_aead;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bsslaead_crypts,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, bsslaead_crypts,
     CTLFLAG_RD, &ktls_offload_boring_aead,
     "Total number of BORING SSL TLS AEAD encrypts called");
 
 static counter_u64_t ktls_offload_boring_cbc;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_crypts,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, bssl_cbc_crypts,
     CTLFLAG_RD, &ktls_offload_boring_cbc,
     "Total number of BORING SSL TLS CBC encrypts called");
 
 static counter_u64_t ktls_offload_boring_cbc_cp;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_cp,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, bssl_cbc_cp,
     CTLFLAG_RD, &ktls_offload_boring_cbc_cp,
     "Total bytes copied fixing up CBC");
 
 static counter_u64_t ktls_offload_boring_cbc_ok;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, bssl_cbc_ok,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, bssl_cbc_ok,
     CTLFLAG_RD, &ktls_offload_boring_cbc_ok,
     "Total bytes not copied fixing up CBC");
 

@@ -84,30 +84,30 @@ SYSCTL_INT(_kern_ipc_tls, OID_AUTO, isa_gcm, CTLFLAG_RW,
     &ktls_use_intel_isa_gcm, 1,
     "Should we use the Intel ISA GCM if available");
 
-SYSCTL_DECL(_kern_ipc_tls_counters);
+SYSCTL_DECL(_kern_ipc_tls_stats);
 
 static counter_u64_t ktls_offload_isa_aead;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aead_crypts,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, isa_aead_crypts,
     CTLFLAG_RD, &ktls_offload_isa_aead,
     "Total number of Intel ISA TLS AEAD encrypts called");
 
 static counter_u64_t intelisa_unaligned_mem_b;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned_bytes,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, isa_unaligned_bytes,
     CTLFLAG_RD, &intelisa_unaligned_mem_b,
     "Byte cnt of intel isa unaligned");
 
 static counter_u64_t intelisa_aligned_mem_b;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned_bytes,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, isa_aligned_bytes,
     CTLFLAG_RD, &intelisa_aligned_mem_b,
     "Byte cnt of intel isa aligned");
 
 static counter_u64_t intelisa_unaligned_mem;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_unaligned,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, isa_unaligned,
     CTLFLAG_RD, &intelisa_unaligned_mem,
     "Call cnt of intel isa unaligned");
 
 static counter_u64_t intelisa_aligned_mem;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_counters, OID_AUTO, isa_aligned,
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, isa_aligned,
     CTLFLAG_RD, &intelisa_aligned_mem,
     "Call cnt of intel isa aligned");
 
