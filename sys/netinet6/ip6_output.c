@@ -280,9 +280,11 @@ ip6_fragment(struct ifnet *ifp, struct mbuf *m0, int hlen, u_char nextproto,
 
 static int
 ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
-    struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro,
-    struct ktls_session *tls)
+    struct mbuf *m, struct sockaddr_in6 *dst, struct route_in6 *ro)
 {
+#ifdef KERN_TLS
+	struct ktls_session *tls = NULL;
+#endif
 	struct m_snd_tag *mst;
 	int error;
 
@@ -290,7 +292,14 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 	mst = NULL;
 
 #ifdef KERN_TLS
-	if (tls != NULL) {
+	/*
+	 * If this is an unencrypted TLS record, save a reference to
+	 * the record.  This local reference is used to call
+	 * ktls_output_eagain after the mbuf has been freed (thus
+	 * dropping the mbuf's reference) in if_output.
+	 */
+	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next)) {
+		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
 		mst = tls->snd_tag;
 
 		/*
@@ -333,8 +342,11 @@ ip6_output_send(struct inpcb *inp, struct ifnet *ifp, struct ifnet *origifp,
 done:
 	/* Check for route change invalidating send tags. */
 #ifdef KERN_TLS
-	if (error == EAGAIN && tls != NULL)
-		error = ktls_output_eagain(inp, tls);
+	if (tls != NULL) {
+		if (error == EAGAIN)
+			error = ktls_output_eagain(inp, tls);
+		ktls_free(tls);
+	}
 #endif
 #ifdef RATELIMIT
 	if (error == EAGAIN)
@@ -371,7 +383,6 @@ ip6_output(struct mbuf *m0, struct ip6_pktopts *opt,
 	struct ifnet *ifp, *origifp;
 	struct mbuf *m = m0;
 	struct mbuf *mprev = NULL;
-	struct ktls_session *tls = NULL;
 	int hlen, tlen, len;
 	struct route_in6 ip6route;
 	struct rtentry *rt = NULL;
@@ -1013,16 +1024,6 @@ passout:
 		sctp_delayed_cksum(m, sizeof(struct ip6_hdr));
 	}
 #endif
-#if defined(KERN_TLS)
-	/*
-	 * If this is an unencrypted TLS record, save a reference to
-	 * the record.  This local reference is used to call
-	 * ktls_output_eagain after the mbuf has been freed (thus
-	 * dropping the mbuf's reference) in if_output.
-	 */
-	if (m->m_next != NULL && mbuf_has_tls_session(m->m_next))
-		tls = ktls_hold(m->m_next->m_ext.ext_pgs->tls);
-#endif
 	m->m_pkthdr.csum_flags &= ifp->if_hwassist;
 	
 	tlen = m->m_pkthdr.len;
@@ -1066,7 +1067,7 @@ passout:
 			    m->m_pkthdr.len);
 			ifa_free(&ia6->ia_ifa);
 		}
-		error = ip6_output_send(inp, ifp, origifp, m, dst, ro, tls);
+		error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
 		goto done;
 	}
 
@@ -1177,8 +1178,7 @@ sendorfree:
 				counter_u64_add(ia->ia_ifa.ifa_obytes,
 				    m->m_pkthdr.len);
 			}
-			error = ip6_output_send(inp, ifp, origifp, m, dst, ro,
-			    tls);
+			error = ip6_output_send(inp, ifp, origifp, m, dst, ro);
 		} else
 			m_freem(m);
 	}
@@ -1189,10 +1189,6 @@ sendorfree:
 done:
 	if (ro == &ip6route)
 		RO_RTFREE(ro);
-#ifdef KERN_TLS
-	if (tls != NULL)
-		ktls_free(tls);
-#endif
 	return (error);
 
 freehdrs:
