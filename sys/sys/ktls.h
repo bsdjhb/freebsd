@@ -25,8 +25,8 @@
  *
  * $FreeBSD$
  */
-#ifndef _SYS_SOCKBUF_TLS_H_
-#define _SYS_SOCKBUF_TLS_H_
+#ifndef _SYS_KTLS_H_
+#define _SYS_KTLS_H_
 
 #include <sys/refcount.h>
 #include <sys/_task.h>
@@ -48,73 +48,42 @@ struct tls_record_layer {
 #define TLS_RLTYPE_APP		23
 
 /*
- * Alert protoocol
- */
-struct tls_alert_protocol {
-	uint8_t	level;
-	uint8_t desc;
-} __attribute__ ((packed)); 
-
-/*
- * AEAD nonce for GCM data.
+ * Nonce for GCM.
  */
 struct tls_nonce_data {
 	uint8_t fixed[TLS_AEAD_GCM_LEN];
 	uint64_t seq;
-} __attribute__ ((packed)); 
+} __packed; 
 
 /*
- * AEAD added data format per RFC.
+ * AEAD additional data format per RFC.
  */
 struct tls_aead_data {
 	uint64_t seq;	/* In network order */
-	uint8_t type;
-	uint8_t  tls_vmajor;
-	uint8_t  tls_vminor;
+	uint8_t	type;
+	uint8_t tls_vmajor;
+	uint8_t tls_vminor;
 	uint16_t tls_length;	
-} __attribute__ ((packed));
+} __packed;
 
 /*
- * Stream Cipher MAC input not sent on wire
- * but put into the MAC.
+ * Stream Cipher MAC additional data input.  This does not match the
+ * exact data on the wire (the sequence number is not placed on the
+ * wire, and any explicit IV after the record header is not covered by
+ * the MAC).
  */
 struct tls_mac_data {
 	uint64_t seq;
 	uint8_t type;
-	uint8_t  tls_vmajor;
-	uint8_t  tls_vminor;
+	uint8_t tls_vmajor;
+	uint8_t tls_vminor;
 	uint16_t tls_length;	
-} __attribute__ ((packed));
-
-/* Not used but here is the layout
- * of what is on the wire for
- * a TLS record that is a stream cipher.
- *
-struct tls_ss_format {
-	uint8_t IV[record_iv_len]; TLS pre 1.1 this is missing.
-	uint8_t content[len];
-	uint8_t MAC[maclen];
-	uint8_t padding[padlen];
-	uint8_t padlen;
-};
-*
-* We don't support in-kernel pre-1.1 TLS so if the
-* user requests that, we error during SO_TLS_ENABLE.
-* Each pad byte in padding must contain the same value
-* as padlen. Also note that content <-> padlen should
-* be mod 0 to the blocklen of the cipher. I am guessing
-* the IV is a length of the multiple of the cipher as
-* well.
-*/
+} __packed;
 
 #define TLS_MAJOR_VER_ONE	3
 #define TLS_MINOR_VER_ZERO	1	/* 3, 1 */
 #define TLS_MINOR_VER_ONE	2	/* 3, 2 */
 #define TLS_MINOR_VER_TWO	3	/* 3, 3 */
-
-struct sockbuf;
-struct sockopt;
-struct uio;
 
 /* For TCP_TLS_ENABLE */
 #ifdef _KERNEL
@@ -167,11 +136,13 @@ struct tls_session_params {
 
 #define KTLS_API_VERSION 5
 
+struct iovec;
+struct ktls_session;
 struct m_snd_tag;
 struct mbuf;
 struct mbuf_ext_pgs;
-struct ktls_session;
-struct iovec;
+struct sockbuf;
+struct socket;
 
 struct ktls_crypto_backend {
 	LIST_ENTRY(ktls_crypto_backend) next;
@@ -236,4 +207,4 @@ ktls_free(struct ktls_session *tls)
 }
 
 #endif /* !_KERNEL */
-#endif /* !_SYS_SOCKBUF_TLS_H_ */
+#endif /* !_SYS_KTLS_H_ */
