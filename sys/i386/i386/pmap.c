@@ -5444,7 +5444,7 @@ __CONCAT(PMTYPE, mapdev_attr)(vm_paddr_t pa, vm_size_t size, int mode,
 	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE) {
 		if ((flags & MAPDEV_SETATTR) == 0 && pmap_initialized) {
 			m = PHYS_TO_VM_PAGE(pa);
-			if (m != NULL) {
+			if (m != NULL && VM_PAGE_TO_PHYS(m) == pa) {
 				pmap_kenter_attr(va + tmpsize, pa + tmpsize,
 				    m->md.pat_mode);
 				continue;
