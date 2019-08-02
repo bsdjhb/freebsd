@@ -787,9 +787,7 @@ crypto_newsession(crypto_session_t *cses,
 	res->cap = cap;
 	res->softc = malloc(cap->cc_session_size, M_CRYPTO_DATA, M_WAITOK |
 	    M_ZERO);
-#ifdef INVARIANTS
 	res->csp = *csp;
-#endif
 
 	/* Call the driver initialization routine. */
 	err = CRYPTODEV_NEWSESSION(cap->cc_dev, res, csp);
