@@ -55,7 +55,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/md5.h>
 
 #include <opencrypto/cryptodev.h>
-#include <opencrypto/cryptosoft.h>
 #include <opencrypto/xform.h>
 
 #include <sys/kobj.h>
@@ -63,8 +62,8 @@ __FBSDID("$FreeBSD$");
 #include "cryptodev_if.h"
 
 struct swcr_auth {
-	uint8_t		*sw_ictx;
-	uint8_t		*sw_octx;
+	void		*sw_ictx;
+	void		*sw_octx;
 	struct auth_hash *sw_axf;
 	uint16_t	sw_klen;
 	uint16_t	sw_mlen;
