@@ -354,7 +354,7 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	ESPSTAT_ADD(esps_ibytes, m->m_pkthdr.len - (skip + hlen + alen));
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq();
+	crp = crypto_getreq(cryptoid);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptors\n",
 			__func__));
@@ -391,7 +391,6 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	crp->crp_mbuf = m;
 	crp->crp_buf_type = CRYPTO_BUF_MBUF;
 	crp->crp_callback = esp_input_cb;
-	crp->crp_session = cryptoid;
 	crp->crp_opaque = xd;
 
 	/* These are passed as-is to the callback */
@@ -789,7 +788,7 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	m_copyback(m, protoff, sizeof(u_int8_t), (u_char *) &prot);
 
 	/* Get crypto descriptor. */
-	crp = crypto_getreq();
+	crp = crypto_getreq(cryptoid);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",
 			__func__));
@@ -853,7 +852,6 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	crp->crp_buf_type = CRYPTO_BUF_MBUF;
 	crp->crp_callback = esp_output_cb;
 	crp->crp_opaque = xd;
-	crp->crp_session = cryptoid;
 
 	if (esph) {
 		/* Authentication descriptor. */

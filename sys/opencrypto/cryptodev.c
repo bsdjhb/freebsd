@@ -924,7 +924,7 @@ cryptodev_op(
 
 	cod = cod_alloc(cse, cop->len + cse->hashsize, td);
 
-	crp = crypto_getreq();
+	crp = crypto_getreq(cse->cses);
 	if (crp == NULL) {
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		error = ENOMEM;
@@ -936,7 +936,6 @@ cryptodev_op(
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 		goto bail;
 	}
-
 	crp->crp_payload_start = 0;
 	crp->crp_payload_length = cop->len;
 	if (cse->hashsize)
@@ -1011,7 +1010,6 @@ cryptodev_op(
 	crp->crp_buf = cod->buf;
 	crp->crp_buf_type = CRYPTO_BUF_CONTIG;
 	crp->crp_callback = cryptodev_cb;
-	crp->crp_session = cse->cses;
 	crp->crp_opaque = cod;
 
 	if (cop->iv) {
@@ -1126,7 +1124,7 @@ cryptodev_aead(
 
 	cod = cod_alloc(cse, caead->aadlen + caead->len + cse->hashsize, td);
 
-	crp = crypto_getreq();
+	crp = crypto_getreq(cse->cses);
 	if (crp == NULL) {
 		error = ENOMEM;
 		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
@@ -1194,7 +1192,6 @@ cryptodev_aead(
 	crp->crp_buf = cod->buf;
 	crp->crp_buf_type = CRYPTO_BUF_CONTIG;
 	crp->crp_callback = cryptodev_cb;
-	crp->crp_session = cse->cses;
 	crp->crp_opaque = cod;
 
 	if (caead->iv) {

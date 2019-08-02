@@ -114,12 +114,6 @@ struct cryptocap {
 	uint32_t	cc_hid;
 	u_int32_t	cc_sessions;		/* (d) # of sessions */
 	u_int32_t	cc_koperations;		/* (d) # os asym operations */
-	/*
-	 * Largest possible operator length (in bits) for each type of
-	 * encryption algorithm. XXX not used
-	 */
-	u_int16_t	cc_max_op_len[CRYPTO_ALGORITHM_MAX + 1];
-	u_int8_t	cc_alg[CRYPTO_ALGORITHM_MAX + 1];
 	u_int8_t	cc_kalg[CRK_ALGORITHM_MAX + 1];
 
 	int		cc_flags;		/* (d) flags */
@@ -1487,9 +1481,14 @@ crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint)
 		 *      session?
 		 *
 		 * XXX: Real solution is to make sessions refcounted
-		 * and force callers to hold a refernce when assigning
-		 * to crp_session.  Could maybe change crypto_getreq to
-		 * accept a session pointer to make that work.
+		 * and force callers to hold a reference when
+		 * assigning to crp_session.  Could maybe change
+		 * crypto_getreq to accept a session pointer to make
+		 * that work.  Alternatively, we could abandon the
+		 * notion of rewriting crp_session in requests forcing
+		 * the caller to deal with allocating a new session.
+		 * Perhaps provide a method to allow a crp's session to
+		 * be swapped that callers could use.
 		 */
 		csp = crp->crp_session->csp;
 		crypto_freesession(crp->crp_session);
@@ -1556,10 +1555,13 @@ crypto_freereq(struct cryptop *crp)
 }
 
 struct cryptop *
-crypto_getreq(void)
+crypto_getreq(crypto_session_t cses)
 {
+	struct cryptop *crp;
 
-	return (uma_zalloc(cryptop_zone, M_NOWAIT | M_ZERO));
+	crp = uma_zalloc(cryptop_zone, M_NOWAIT | M_ZERO);
+	crp->crp_session = cses;
+	return (crp);
 }
 
 /*

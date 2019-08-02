@@ -198,6 +198,7 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	struct xform_data *xd;
 	struct cryptop *crp;
 	struct ipcomp *ipcomp;
+	crypto_session_t cryptoid;
 	caddr_t addr;
 	int error, hlen = IPCOMP_HLENGTH;
 
@@ -222,8 +223,12 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 		goto bad;
 	}
 
+	SECASVAR_LOCK(sav);
+	cryptoid = sav->tdb_cryptoid;
+	SECASVAR_UNLOCK(sav);
+
 	/* Get crypto descriptors */
-	crp = crypto_getreq();
+	crp = crypto_getreq(cryptoid);
 	if (crp == NULL) {
 		DPRINTF(("%s: no crypto descriptors\n", __func__));
 		IPCOMPSTAT_INC(ipcomps_crypto);
@@ -256,6 +261,7 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	xd->protoff = protoff;
 	xd->skip = skip;
 	xd->vnet = curvnet;
+	xd->cryptoid = cryptoid;
 
 	SECASVAR_LOCK(sav);
 	crp->crp_session = xd->cryptoid = sav->tdb_cryptoid;
@@ -395,6 +401,7 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	const struct comp_algo *ipcompx;
 	struct cryptop *crp;
 	struct xform_data *xd;
+	crypto_session_t cryptoid;
 	int error, ralen, maxpacketsize;
 
 	IPSEC_ASSERT(sav != NULL, ("null SA"));
@@ -462,9 +469,12 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	}
 
 	/* Ok now, we can pass to the crypto processing. */
+	SECASVAR_LOCK(sav);
+	cryptoid = sav->tdb_cryptoid;
+	SECASVAR_UNLOCK(sav);
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq();
+	crp = crypto_getreq(cryptoid);
 	if (crp == NULL) {
 		IPCOMPSTAT_INC(ipcomps_crypto);
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",__func__));
@@ -493,6 +503,7 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	xd->skip = skip;
 	xd->protoff = protoff;
 	xd->vnet = curvnet;
+	xd->cryptoid = cryptoid;
 
 	/* Crypto operation descriptor */
 	crp->crp_ilen = m->m_pkthdr.len;	/* Total input length */
@@ -501,10 +512,6 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	crp->crp_buf_type = CRYPTO_BUF_MBUF;
 	crp->crp_callback = ipcomp_output_cb;
 	crp->crp_opaque = xd;
-
-	SECASVAR_LOCK(sav);
-	crp->crp_session = xd->cryptoid = sav->tdb_cryptoid;
-	SECASVAR_UNLOCK(sav);
 
 	return crypto_dispatch(crp);
 bad:
