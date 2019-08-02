@@ -419,44 +419,6 @@ struct crypto_session_params {
 					   0 means all. */
 };
 
-#if 0
-/* Standard initialization structure beginning */
-struct cryptoini {
-	int		cri_alg;	/* Algorithm to use */
-	int		cri_klen;	/* Key length, in bits */
-	int		cri_mlen;	/* Number of bytes we want from the
-					   entire hash. 0 means all. */
-	caddr_t		cri_key;	/* key to use */
-	u_int8_t	cri_iv[EALG_MAX_BLOCK_LEN];	/* IV to use */
-	struct cryptoini *cri_next;
-};
-
-/* Describe boundaries of a single crypto operation */
-struct cryptodesc {
-	int		crd_skip;	/* How many bytes to ignore from start */
-	int		crd_len;	/* How many bytes to process */
-	int		crd_inject;	/* Where to inject results, if applicable */
-	int		crd_flags;
-
-#define	CRD_F_ENCRYPT		0x01	/* Set when doing encryption */
-#define	CRD_F_IV_PRESENT	0x02	/* When encrypting, IV is already in
-					   place, so don't copy. */
-#define	CRD_F_IV_EXPLICIT	0x04	/* IV explicitly provided */
-#define	CRD_F_DSA_SHA_NEEDED	0x08	/* Compute SHA-1 of buffer for DSA */
-#define	CRD_F_COMP		0x0f    /* Set when doing compression */
-#define	CRD_F_KEY_EXPLICIT	0x10	/* Key explicitly provided */
-
-	struct cryptoini	CRD_INI; /* Initialization/context data */
-#define	crd_esn		CRD_INI.cri_esn
-#define	crd_iv		CRD_INI.cri_iv
-#define	crd_key		CRD_INI.cri_key
-#define	crd_alg		CRD_INI.cri_alg
-#define	crd_klen	CRD_INI.cri_klen
-
-	struct cryptodesc *crd_next;
-};
-#endif
-
 /* Structure describing complete operation */
 struct cryptop {
 	TAILQ_ENTRY(cryptop) crp_next;
@@ -479,10 +441,6 @@ struct cryptop {
 					 */
 	int		crp_flags;
 
-#if 0
-#define	CRYPTO_F_IMBUF		0x0001	/* Input/output are mbuf chains */
-#define	CRYPTO_F_IOV		0x0002	/* Input/output are uio */
-#endif
 #define	CRYPTO_F_BATCH		0x0008	/* Batch op if possible */
 #define	CRYPTO_F_CBIMM		0x0010	/* Do callback immediately */
 #define	CRYPTO_F_DONE		0x0020	/* Operation completed */
@@ -526,9 +484,6 @@ struct cryptop {
 	int		crp_auth_klen;
 
 	void		*crp_opaque;	/* Opaque pointer, passed along */
-#if 0
-	struct cryptodesc *crp_desc;	/* Linked list of processing descriptors */
-#endif
 
 	int (*crp_callback)(struct cryptop *); /* Callback function */
 
@@ -560,7 +515,6 @@ struct cryptop {
 #define	CRYPTO_OP_DECOMPRESS		CRYPTO_OP_DECRYPT
 #define	CRYPTO_OP_COMPRESS		CRYPTO_OP_ENCRYPT
 #define	CRYPTO_OP_IS_COMPRESS(op)	((op) & CRYPTO_OP_COMPRESS)
-
 
 /*
  * Hints passed to process methods.
