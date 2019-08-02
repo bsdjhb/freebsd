@@ -94,7 +94,7 @@ SDT_PROVIDER_DEFINE(opencrypto);
 /*
  * Crypto drivers register themselves by allocating a slot in the
  * crypto_drivers table with crypto_get_driverid() and then registering
- * each algorithm they support with crypto_register() and crypto_kregister().
+ * each asym algorithm they support with crypto_kregister().
  */
 static	struct mtx crypto_drivers_mtx;		/* lock on driver table */
 #define	CRYPTO_DRIVER_LOCK()	mtx_lock(&crypto_drivers_mtx)
@@ -822,7 +822,8 @@ crypto_freesession(crypto_session_t cses)
 }
 
 /*
- * Return a new driver id.  Used by drivers prior to register.
+ * Return a new driver id.  Registers a driver with the system so that
+ * it can be probed by subsequent sessions.
  */
 int32_t
 crypto_get_driverid(device_t dev, size_t sessionsize, int flags)
