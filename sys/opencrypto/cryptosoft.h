@@ -26,8 +26,6 @@
 #define _CRYPTO_CRYPTOSOFT_H_
 
 #ifdef _KERNEL
-extern u_int8_t hmac_ipad_buffer[];
-extern u_int8_t hmac_opad_buffer[];
 #endif /* _KERNEL */
 
 #endif /* _CRYPTO_CRYPTO_H_ */

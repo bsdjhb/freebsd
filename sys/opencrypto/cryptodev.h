@@ -573,6 +573,12 @@ extern	int crypto_userasymcrypto;	/* userland may do asym crypto reqs */
 extern	int crypto_devallowsoft;	/* only use hardware crypto */
 
 /*
+ * Read-only buffers filled with IPAD and OPAD values used with HMAC.
+ */
+extern uint8_t hmac_ipad_buffer[];
+extern uint8_t hmac_opad_buffer[];
+
+/*
  * Crypto-related utility routines used mainly by drivers.
  *
  * XXX these don't really belong here; but for now they're

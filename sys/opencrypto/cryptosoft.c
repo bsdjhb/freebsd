@@ -91,9 +91,6 @@ struct swcr_session {
 
 static	int32_t swcr_id;
 
-u_int8_t hmac_ipad_buffer[HMAC_MAX_BLOCK_LEN];
-u_int8_t hmac_opad_buffer[HMAC_MAX_BLOCK_LEN];
-
 static	void swcr_freesession(device_t dev, crypto_session_t cses);
 
 /* Used for CRYPTO_NULL_CBC. */
@@ -1591,8 +1588,6 @@ swcr_probe(device_t dev)
 static int
 swcr_attach(device_t dev)
 {
-	memset(hmac_ipad_buffer, HMAC_IPAD_VAL, HMAC_MAX_BLOCK_LEN);
-	memset(hmac_opad_buffer, HMAC_OPAD_VAL, HMAC_MAX_BLOCK_LEN);
 
 	swcr_id = crypto_get_driverid(dev, sizeof(struct swcr_session),
 			CRYPTOCAP_F_SOFTWARE | CRYPTOCAP_F_SYNC);
