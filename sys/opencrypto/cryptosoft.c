@@ -62,6 +62,33 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include "cryptodev_if.h"
 
+struct swcr_auth {
+	uint8_t		*sw_ictx;
+	uint8_t		*sw_octx;
+	struct auth_hash *sw_axf;
+	uint16_t	sw_klen;
+	uint16_t	sw_mlen;
+	uint16_t	sw_octx_len;
+};
+
+struct swcr_encdec {
+	uint8_t		*sw_kschedule;
+	struct enc_xform *sw_exf;
+};
+
+struct swcr_compdec {
+	struct comp_algo *sw_cxf;
+};
+
+struct swcr_session {
+	struct mtx	swcr_lock;
+	int	(*swcr_process)(struct swcr_session *, struct cryptop *);
+
+	struct swcr_auth swcr_auth;
+	struct swcr_encdec swcr_encdec;
+	struct swcr_compdec swcr_compdec;
+};
+
 static	int32_t swcr_id;
 
 u_int8_t hmac_ipad_buffer[HMAC_MAX_BLOCK_LEN];

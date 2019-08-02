@@ -25,34 +25,6 @@
 #ifndef _CRYPTO_CRYPTOSOFT_H_
 #define _CRYPTO_CRYPTOSOFT_H_
 
-/* Software session entry */
-struct swcr_auth {
-	uint8_t		*sw_ictx;
-	uint8_t		*sw_octx;
-	struct auth_hash *sw_axf;
-	uint16_t	sw_klen;
-	uint16_t	sw_mlen;
-	uint16_t	sw_octx_len;
-};
-
-struct swcr_encdec {
-	uint8_t		*sw_kschedule;
-	struct enc_xform *sw_exf;
-};
-
-struct swcr_compdec {
-	struct comp_algo *sw_cxf;
-};
-
-struct swcr_session {
-	struct mtx	swcr_lock;
-	int	(*swcr_process)(struct swcr_session *, struct cryptop *);
-
-	struct swcr_auth swcr_auth;
-	struct swcr_encdec swcr_encdec;
-	struct swcr_compdec swcr_compdec;
-};
-
 #ifdef _KERNEL
 extern u_int8_t hmac_ipad_buffer[];
 extern u_int8_t hmac_opad_buffer[];
