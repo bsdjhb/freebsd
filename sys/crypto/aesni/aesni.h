@@ -59,13 +59,18 @@ struct aesni_session {
 	/* Same as the SHA256 Blocksize. */
 	uint8_t hmac_key[SHA1_BLOCK_LEN] __aligned(16);
 	int algo;
+	int ivlen;
 	int rounds;
 	/* uint8_t *ses_ictx; */
 	/* uint8_t *ses_octx; */
-	/* int ses_mlen; */
 	int used;
 	int auth_algo;
 	int mlen;
+	bool hmac;
+	int hash_len;
+	void (*hash_init)(void *);
+	void (*hash_update)(void *, const void *, unsigned);
+	void (*hash_finalize)(void *, void *);
 };
 
 /*
