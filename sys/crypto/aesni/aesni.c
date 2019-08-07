@@ -550,8 +550,8 @@ aesni_cipher_setup(struct aesni_session *ses,
 			ses->hash_update = intel_sha256_update;
 			ses->hash_finalize = SHA256_Finalize_fn;
 			break;
-		default:
 #ifdef INVARIANTS
+		default:
 			panic("invalid auth alg");
 #endif
 		}

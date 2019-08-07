@@ -2334,7 +2334,6 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 	struct auth_hash *auth_hash;
 	unsigned int auth_mode, cipher_mode, mk_size;
 	unsigned int partial_digest_len;
-	int error;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA1:
@@ -2383,10 +2382,9 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 	cipher_mode = ccr_cipher_mode(csp);
 
 #ifdef INVARIANTS
-	if (csp->csp_cipher_key != NULL) {
-		error = ccr_aes_check_keylen(cipher_mode, csp->csp_cipher_klen);
-		KASSERT(error == 0, ("bad cipher key length"));
-	}
+	if (csp->csp_cipher_key != NULL)
+		KASSERT(ccr_aes_check_keylen(cipher_mode,
+		    csp->csp_cipher_klen) == 0, ("bad cipher key length"));
 
 	switch (csp->csp_mode) {
 	case CSP_MODE_CIPHER:
