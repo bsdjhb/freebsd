@@ -711,11 +711,11 @@ t4_free_etid_table(struct adapter *sc)
 }
 
 /* etid services */
-static int alloc_etid(struct adapter *, struct cxgbe_rate_tag *);
+static int alloc_etid(struct adapter *, struct cxgbe_snd_tag *);
 static void free_etid(struct adapter *, int);
 
 static int
-alloc_etid(struct adapter *sc, struct cxgbe_rate_tag *cst)
+alloc_etid(struct adapter *sc, struct cxgbe_snd_tag *cst)
 {
 	struct tid_info *t = &sc->tids;
 	int etid = -1;
@@ -733,7 +733,7 @@ alloc_etid(struct adapter *sc, struct cxgbe_rate_tag *cst)
 	return (etid);
 }
 
-struct cxgbe_rate_tag *
+struct cxgbe_snd_tag *
 lookup_etid(struct adapter *sc, int etid)
 {
 	struct tid_info *t = &sc->tids;
@@ -755,16 +755,17 @@ free_etid(struct adapter *sc, int etid)
 }
 
 int
-cxgbe_rate_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
+cxgbe_snd_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
     struct m_snd_tag **pt)
 {
 	int rc, schedcl;
 	struct vi_info *vi = ifp->if_softc;
 	struct port_info *pi = vi->pi;
 	struct adapter *sc = pi->adapter;
-	struct cxgbe_rate_tag *cst;
+	struct cxgbe_snd_tag *cst;
 
-	MPASS(params->hdr.type == IF_SND_TAG_TYPE_RATE_LIMIT);
+	if (params->hdr.type != IF_SND_TAG_TYPE_RATE_LIMIT)
+		return (ENOTSUP);
 
 	rc = t4_reserve_cl_rl_kbps(sc, pi->port_id,
 	    (params->rate_limit.max_rate * 8ULL / 1000), &schedcl);
@@ -788,7 +789,7 @@ failed:
 	mtx_init(&cst->lock, "cst_lock", NULL, MTX_DEF);
 	mbufq_init(&cst->pending_tx, INT_MAX);
 	mbufq_init(&cst->pending_fwack, INT_MAX);
-	cxgbe_snd_tag_init(&cst->com, ifp, IF_SND_TAG_TYPE_RATE_LIMIT);
+	m_snd_tag_init(&cst->com, ifp);
 	cst->flags |= EO_FLOWC_PENDING | EO_SND_TAG_REF;
 	cst->adapter = sc;
 	cst->port_id = pi->port_id;
@@ -805,7 +806,7 @@ failed:
 	 * Queues will be selected later when the connection flowid is available.
 	 */
 
-	*pt = &cst->com.com;
+	*pt = &cst->com;
 	return (0);
 }
 
@@ -813,11 +814,11 @@ failed:
  * Change in parameters, no change in ifp.
  */
 int
-cxgbe_rate_tag_modify(struct m_snd_tag *mst,
+cxgbe_snd_tag_modify(struct m_snd_tag *mst,
     union if_snd_tag_modify_params *params)
 {
 	int rc, schedcl;
-	struct cxgbe_rate_tag *cst = mst_to_crt(mst);
+	struct cxgbe_snd_tag *cst = mst_to_cst(mst);
 	struct adapter *sc = cst->adapter;
 
 	/* XXX: is schedcl -1 ok here? */
@@ -839,10 +840,10 @@ cxgbe_rate_tag_modify(struct m_snd_tag *mst,
 }
 
 int
-cxgbe_rate_tag_query(struct m_snd_tag *mst,
+cxgbe_snd_tag_query(struct m_snd_tag *mst,
     union if_snd_tag_query_params *params)
 {
-	struct cxgbe_rate_tag *cst = mst_to_crt(mst);
+	struct cxgbe_snd_tag *cst = mst_to_cst(mst);
 
 	params->rate_limit.max_rate = cst->max_rate;
 
@@ -857,7 +858,7 @@ cxgbe_rate_tag_query(struct m_snd_tag *mst,
  * Unlocks cst and frees it.
  */
 void
-cxgbe_rate_tag_free_locked(struct cxgbe_rate_tag *cst)
+cxgbe_snd_tag_free_locked(struct cxgbe_snd_tag *cst)
 {
 	struct adapter *sc = cst->adapter;
 
@@ -878,9 +879,9 @@ cxgbe_rate_tag_free_locked(struct cxgbe_rate_tag *cst)
 }
 
 void
-cxgbe_rate_tag_free(struct m_snd_tag *mst)
+cxgbe_snd_tag_free(struct m_snd_tag *mst)
 {
-	struct cxgbe_rate_tag *cst = mst_to_crt(mst);
+	struct cxgbe_snd_tag *cst = mst_to_cst(mst);
 
 	mtx_lock(&cst->lock);
 
@@ -895,7 +896,7 @@ cxgbe_rate_tag_free(struct m_snd_tag *mst)
 		 * credits for the etid otherwise.
 		 */
 		if (cst->tx_credits == cst->tx_total) {
-			cxgbe_rate_tag_free_locked(cst);
+			cxgbe_snd_tag_free_locked(cst);
 			return;	/* cst is gone. */
 		}
 		send_etid_flush_wr(cst);

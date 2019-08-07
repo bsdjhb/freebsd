@@ -2638,17 +2638,8 @@ tcp_keyed_hash(struct in_conninfo *inc, u_char *key, u_int len)
 uint32_t
 tcp_new_ts_offset(struct in_conninfo *inc)
 {
-	uint32_t tsoff;
-
-	tsoff = tcp_keyed_hash(inc, V_ts_offset_secret,
-	    sizeof(V_ts_offset_secret));
-
-	/*
-	 * XXX: The T6 TP only permits an offset in the upper 4 bits
-	 * of the timestamp field.
-	 */
-	tsoff &= 0xf0000000;
-	return (tsoff);
+	return (tcp_keyed_hash(inc, V_ts_offset_secret,
+	    sizeof(V_ts_offset_secret)));
 }
 
 /*

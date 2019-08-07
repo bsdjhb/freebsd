@@ -79,7 +79,7 @@ union aopen_entry {
 	union aopen_entry *next;
 };
 
-/* cxgbe_rate_tag flags */
+/* cxgbe_snd_tag flags */
 enum {
 	EO_FLOWC_PENDING	= (1 << 0),	/* flowc needs to be sent */
 	EO_FLOWC_RPL_PENDING	= (1 << 1),	/* flowc credits due back */
@@ -89,11 +89,6 @@ enum {
 
 struct cxgbe_snd_tag {
 	struct m_snd_tag com;
-	int type;
-};
-
-struct cxgbe_rate_tag {
-	struct cxgbe_snd_tag com;
 	struct adapter *adapter;
 	u_int flags;
 	struct mtx lock;
@@ -119,14 +114,8 @@ mst_to_cst(struct m_snd_tag *t)
 	return (__containerof(t, struct cxgbe_snd_tag, com));
 }
 
-static inline struct cxgbe_rate_tag *
-mst_to_crt(struct m_snd_tag *t)
-{
-	return ((struct cxgbe_rate_tag *)mst_to_cst(t));
-}
-
 union etid_entry {
-	struct cxgbe_rate_tag *cst;
+	struct cxgbe_snd_tag *cst;
 	union etid_entry *next;
 };
 
@@ -243,17 +232,10 @@ struct tom_tunables {
 	int cop_managed_offloading;
 	int autorcvbuf_inc;
 };
-
 /* iWARP driver tunables */
 struct iw_tunables {
 	int wc_en;
 };
-
-struct tls_tunables {
-	int inline_keys;
-	int combo_wrs;
-};
-
 #ifdef TCP_OFFLOAD
 int t4_register_uld(struct uld_info *);
 int t4_unregister_uld(struct uld_info *);
