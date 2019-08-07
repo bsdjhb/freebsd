@@ -1,6 +1,7 @@
 /*-
- * Copyright (c) 2014
- *	Netflix Inc.
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
+ * Copyright (c) 2014-2019 Netflix Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,7 +27,7 @@
  * $FreeBSD$
  */
 #ifndef _SYS_KTLS_H_
-#define _SYS_KTLS_H_
+#define	_SYS_KTLS_H_
 
 #include <sys/refcount.h>
 #include <sys/_task.h>
@@ -39,13 +40,13 @@ struct tls_record_layer {
 	uint8_t  tls_data[0];
 } __attribute__ ((packed));
 
-#define TLS_MAX_MSG_SIZE_V10_2	16384
-#define TLS_MAX_PARAM_SIZE	1024	/* Max key/mac/iv in sockopt */
-#define TLS_AEAD_GCM_LEN	4
+#define	TLS_MAX_MSG_SIZE_V10_2	16384
+#define	TLS_MAX_PARAM_SIZE	1024	/* Max key/mac/iv in sockopt */
+#define	TLS_AEAD_GCM_LEN	4
 #define	TLS_CBC_IMPLICIT_IV_LEN	16
 
 /* Type values for the record layer */
-#define TLS_RLTYPE_APP		23
+#define	TLS_RLTYPE_APP		23
 
 /*
  * Nonce for GCM.
@@ -80,10 +81,10 @@ struct tls_mac_data {
 	uint16_t tls_length;	
 } __packed;
 
-#define TLS_MAJOR_VER_ONE	3
-#define TLS_MINOR_VER_ZERO	1	/* 3, 1 */
-#define TLS_MINOR_VER_ONE	2	/* 3, 2 */
-#define TLS_MINOR_VER_TWO	3	/* 3, 3 */
+#define	TLS_MAJOR_VER_ONE	3
+#define	TLS_MINOR_VER_ZERO	1	/* 3, 1 */
+#define	TLS_MINOR_VER_ONE	2	/* 3, 2 */
+#define	TLS_MINOR_VER_TWO	3	/* 3, 3 */
 
 /* For TCP_TLS_ENABLE */
 #ifdef _KERNEL
@@ -134,7 +135,7 @@ struct tls_session_params {
 
 #ifdef _KERNEL
 
-#define KTLS_API_VERSION 5
+#define	KTLS_API_VERSION 5
 
 struct iovec;
 struct ktls_session;
