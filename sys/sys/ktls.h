@@ -148,11 +148,9 @@ struct socket;
 struct ktls_crypto_backend {
 	LIST_ENTRY(ktls_crypto_backend) next;
 	int (*try)(struct socket *so, struct ktls_session *tls);
-	void *old_setup_cipher;		/* no longer used */
-	void *old_clean_cipher;		/* no longer used */
 	int prio;
 	int api_version;
-	int use_count;                  /* dev testing */
+	int use_count;
 	const char *name;
 };
 
