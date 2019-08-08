@@ -1725,10 +1725,6 @@ tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 			     sopt->sopt_name);
 		}
 #endif
-#ifdef KERN_TLS
-		if (so->so_snd.sb_tls_info != NULL)
-			ktls_tcp_stack_changed(so);
-#endif
 err_out:
 		INP_WUNLOCK(inp);
 		return (error);
