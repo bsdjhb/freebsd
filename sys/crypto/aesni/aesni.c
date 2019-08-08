@@ -267,6 +267,7 @@ aesni_probesession(device_t dev, const struct crypto_session_params *csp)
 		default:
 			return (EINVAL);
 		}
+		break;
 	case CSP_MODE_ETA:
 		if (!aesni_auth_supported(sc, csp) ||
 		    !aesni_cipher_supported(sc, csp))
