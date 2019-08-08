@@ -2305,6 +2305,7 @@ ccr_probesession(device_t dev, const struct crypto_session_params *csp)
 		default:
 			return (EINVAL);
 		}
+		break;
 	case CSP_MODE_ETA:
 		if (!ccr_auth_supported(csp) || !ccr_cipher_supported(csp))
 			return (EINVAL);
