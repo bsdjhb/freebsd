@@ -86,9 +86,8 @@ struct tls_mac_data {
 #define	TLS_MINOR_VER_ONE	2	/* 3, 2 */
 #define	TLS_MINOR_VER_TWO	3	/* 3, 3 */
 
-/* For TCP_TLS_ENABLE */
-#ifdef _KERNEL
-struct tls_so_enable_old {
+/* For legacy TCP_TLS_ENABLE */
+struct tls_so_enable {
 	const uint8_t *hmac_key;
 	const uint8_t *crypt;
 	const uint8_t *iv;
@@ -101,9 +100,9 @@ struct tls_so_enable_old {
 	uint8_t tls_vmajor;
 	uint8_t tls_vminor;
 };
-#endif
 
-struct tls_so_enable {
+/* For TCP_TXTLS_ENABLE */
+struct tls_enable {
 	const uint8_t *cipher_key;
 	const uint8_t *iv;		/* Implicit IV. */
 	const uint8_t *auth_key;
@@ -112,6 +111,7 @@ struct tls_so_enable {
 	int	iv_len;
 	int	auth_algorithm;		/* e.g. CRYPTO_SHA2_256_HMAC */
 	int	auth_key_len;
+	int	flags;
 	uint8_t tls_vmajor;
 	uint8_t tls_vminor;
 };
@@ -131,6 +131,7 @@ struct tls_session_params {
 	uint8_t tls_hlen;
 	uint8_t tls_tlen;
 	uint8_t tls_bs;
+	uint8_t flags;
 };
 
 #ifdef _KERNEL
@@ -176,7 +177,7 @@ struct ktls_session {
 
 int ktls_crypto_backend_register(struct ktls_crypto_backend *be);
 int ktls_crypto_backend_deregister(struct ktls_crypto_backend *be);
-int ktls_enable(struct socket *so, struct tls_so_enable *en);
+int ktls_enable_tx(struct socket *so, struct tls_enable *en);
 void ktls_destroy(struct ktls_session *tls);
 int ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
@@ -184,8 +185,8 @@ void ktls_seq(struct sockbuf *sb, struct mbuf *m);
 void ktls_enqueue(struct mbuf *m, struct socket *so, int page_count);
 void ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
 void ktls_tcp_stack_changed(struct socket *so);
-int ktls_set_tls_mode(struct socket *so, int mode);
-int ktls_get_tls_mode(struct socket *so);
+int ktls_set_tx_mode(struct socket *so, int mode);
+int ktls_get_tx_mode(struct socket *so);
 int ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls);
 
 static inline struct ktls_session *
