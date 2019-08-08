@@ -372,7 +372,7 @@ ktls_init(void *dummy __unused)
 SYSINIT(ktls, SI_SUB_SMP + 1, SI_ORDER_ANY, ktls_init, NULL);
 
 static int
-ktls_create_session(struct socket *so, struct tls_so_enable *en,
+ktls_create_session(struct socket *so, struct tls_enable *en,
     struct ktls_session **tlsp)
 {
 	struct ktls_session *tls;
@@ -394,6 +394,10 @@ ktls_create_session(struct socket *so, struct tls_so_enable *en,
 
 	/* All supported algorithms require a cipher key. */
 	if (en->cipher_key_len == 0)
+		return (EINVAL);
+
+	/* No flags are currently supported. */
+	if (en->flags != 0)
 		return (EINVAL);
 
 	/* Common checks for supported algorithms. */
@@ -459,6 +463,7 @@ ktls_create_session(struct socket *so, struct tls_so_enable *en,
 	tls->params.auth_algorithm = en->auth_algorithm;
 	tls->params.tls_vmajor = en->tls_vmajor;
 	tls->params.tls_vminor = en->tls_vminor;
+	tls->params.flags = en->flags;
 	tls->params.max_frame_len = min(TLS_MAX_MSG_SIZE_V10_2, ktls_maxlen);
 
 	/* Set the header and trailer lengths. */
@@ -773,7 +778,7 @@ ktls_try_sw(struct socket *so, struct ktls_session *tls)
 }
 
 int
-ktls_enable(struct socket *so, struct tls_so_enable *en)
+ktls_enable_tx(struct socket *so, struct tls_enable *en)
 {
 	struct ktls_session *tls;
 	int error;
@@ -837,7 +842,7 @@ ktls_enable(struct socket *so, struct tls_so_enable *en)
 }
 
 int
-ktls_get_tls_mode(struct socket *so)
+ktls_get_tx_mode(struct socket *so)
 {
 	struct ktls_session *tls;
 	struct inpcb *inp;
@@ -861,7 +866,7 @@ ktls_get_tls_mode(struct socket *so)
  * Switch between SW and ifnet TLS sessions as requested.
  */
 int
-ktls_set_tls_mode(struct socket *so, int mode)
+ktls_set_tx_mode(struct socket *so, int mode)
 {
 	struct ktls_session *tls, *tls_new;
 	struct inpcb *inp;
@@ -972,7 +977,7 @@ ktls_tcp_stack_changed(struct socket *so)
 		mode = TCP_TLS_MODE_IFNET;
 	else
 		mode = TCP_TLS_MODE_SW;
-	(void)ktls_set_tls_mode(so, mode);
+	(void)ktls_set_tx_mode(so, mode);
 }
 
 /*

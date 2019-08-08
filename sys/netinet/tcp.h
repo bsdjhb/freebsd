@@ -174,6 +174,8 @@ struct tcphdr {
 #define	TCP_LOGDUMP	37	/* dump connection log events to device */
 #define	TCP_LOGDUMPID	38	/* dump events from connections with same ID to
 				   device */
+#define	TCP_TXTLS_ENABLE 39	/* TLS framing and encryption for transmit */
+#define	TCP_TXTLS_MODE	40	/* Transmit TLS mode */
 #define	TCP_CONGESTION	64	/* get/set congestion control algorithm */
 #define	TCP_CCALGOOPT	65	/* get/set cc algorithm specific options */
 #define TCP_DELACK  	72	/* socket option for delayed ack */
@@ -182,8 +184,8 @@ struct tcphdr {
 #define	TCP_KEEPINTVL	512	/* L,N interval between keepalives */
 #define	TCP_KEEPCNT	1024	/* L,N number of keepalives before close */
 #define	TCP_FASTOPEN	1025	/* enable TFO / was created via TFO */
-#define	TCP_TLS_ENABLE	1026	/* TLS Crypt enable */
-#define	TCP_TLS_MODE	1027	/* TLS mode */
+#define	TCP_TLS_ENABLE	1026	/* TLS Crypt enable -- legacy */
+#define	TCP_TLS_MODE	1027	/* TLS mode -- legacy */
 #define	TCP_PCAP_OUT	2048	/* number of output packets to keep */
 #define	TCP_PCAP_IN	4096	/* number of input packets to keep */
 #define TCP_FUNCTION_BLK 8192	/* Set the tcp function pointers to the specified stack */

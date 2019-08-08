@@ -1762,8 +1762,8 @@ tcp_default_ctloutput(struct socket *so, struct sockopt *sopt, struct inpcb *inp
 	u_int	ui;
 	struct	tcp_info ti;
 #ifdef KERN_TLS
-	struct tls_so_enable tls;
-	struct tls_so_enable_old tls_old;
+	struct tls_enable tls;
+	struct tls_so_enable tls_old;
 #endif
 	struct cc_algo *algo;
 	char	*pbuf, buf[TCP_LOG_ID_LEN];
@@ -1928,35 +1928,35 @@ unlock_and_done:
 			break;
 
 #ifdef KERN_TLS
+		case TCP_TXTLS_ENABLE:
+			INP_WUNLOCK(inp);
+			error = sooptcopyin(sopt, &tls, sizeof(tls),
+			    sizeof(tls));
+			if (error)
+				break;
+			error = ktls_enable_tx(so, &tls);
+			break;
 		case TCP_TLS_ENABLE:
 			INP_WUNLOCK(inp);
-			_Static_assert(sizeof(tls) != sizeof(tls_old),
-			    "Old TLS_SO_ENABLE has same size as new");
-			if (sopt->sopt_valsize == sizeof(tls_old)) {
-				error = sooptcopyin(sopt, &tls_old,
-				    sizeof(tls_old), sizeof(tls_old));
-				if (error == 0) {
-					tls.cipher_key = tls_old.crypt;
-					tls.iv = tls_old.iv;
-					tls.auth_key = tls_old.hmac_key;
-					tls.cipher_algorithm =
-					    tls_old.crypt_algorithm;
-					tls.cipher_key_len =
-					    tls_old.crypt_key_len;
-					tls.iv_len = tls_old.iv_len;
-					tls.auth_algorithm =
-					    tls_old.mac_algorithm;
-					tls.auth_key_len =
-					    tls_old.hmac_key_len;
-					tls.tls_vmajor = tls_old.tls_vmajor;
-					tls.tls_vminor = tls_old.tls_vminor;
-				}
-			} else
-				error = sooptcopyin(sopt, &tls, sizeof(tls),
-				    sizeof(tls));
-			if (error == 0)
-				error = ktls_enable(so, &tls);
+			error = sooptcopyin(sopt, &tls_old, sizeof(tls_old),
+			    sizeof(tls_old));
+			if (error)
+				break;
+
+			tls.cipher_key = tls_old.crypt;
+			tls.iv = tls_old.iv;
+			tls.auth_key = tls_old.hmac_key;
+			tls.cipher_algorithm = tls_old.crypt_algorithm;
+			tls.cipher_key_len = tls_old.crypt_key_len;
+			tls.iv_len = tls_old.iv_len;
+			tls.auth_algorithm = tls_old.mac_algorithm;
+			tls.auth_key_len = tls_old.hmac_key_len;
+			tls.flags = 0;
+			tls.tls_vmajor = tls_old.tls_vmajor;
+			tls.tls_vminor = tls_old.tls_vminor;
+			error = ktls_enable_tx(so, &tls);
 			break;
+		case TCP_TXTLS_MODE:
 		case TCP_TLS_MODE:
 			INP_WUNLOCK(inp);
 			error = sooptcopyin(sopt, &ui, sizeof(ui), sizeof(ui));
@@ -1966,7 +1966,7 @@ unlock_and_done:
 				return (EINVAL);
 
 			INP_WLOCK_RECHECK(inp);
-			error = ktls_set_tls_mode(so, ui);
+			error = ktls_set_tx_mode(so, ui);
 			INP_WUNLOCK(inp);
 			break;
 #endif
@@ -2253,8 +2253,9 @@ unlock_and_done:
 			break;
 #endif
 #ifdef KERN_TLS
+		case TCP_TXTLS_MODE:
 		case TCP_TLS_MODE:
-			optval = ktls_get_tls_mode(so);
+			optval = ktls_get_tx_mode(so);
 			INP_WUNLOCK(inp);
 			error = sooptcopyout(sopt, &optval, sizeof(optval));
 			break;

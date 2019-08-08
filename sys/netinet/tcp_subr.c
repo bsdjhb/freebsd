@@ -3183,7 +3183,7 @@ sysctl_switch_tls(SYSCTL_HANDLER_ARGS)
 	
 			so = inp->inp_socket;
 			soref(so);
-			error = ktls_set_tls_mode(so,
+			error = ktls_set_tx_mode(so,
 			    arg2 == 0 ? TCP_TLS_MODE_SW : TCP_TLS_MODE_IFNET);
 			INP_WUNLOCK(inp);
 			SOCK_LOCK(so);
