@@ -169,7 +169,6 @@ int ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
 void ktls_seq(struct sockbuf *sb, struct mbuf *m);
 void ktls_enqueue(struct mbuf *m, struct socket *so, int page_count);
 void ktls_enqueue_to_free(struct mbuf_ext_pgs *pgs);
-void ktls_tcp_stack_changed(struct socket *so);
 int ktls_set_tx_mode(struct socket *so, int mode);
 int ktls_get_tx_mode(struct socket *so);
 int ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls);

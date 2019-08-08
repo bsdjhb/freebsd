@@ -197,8 +197,7 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, reset_failed, CTLFLAG_RD,
 static int ktls_ifnet_permitted;
 SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, permitted, CTLFLAG_RWTUN,
     &ktls_ifnet_permitted, 1,
-    "Whether to permit hardware (ifnet) TLS sessions: 0 = never, 1 = always, "
-    "2 = defer to TCP stack flag");
+    "Whether to permit hardware (ifnet) TLS sessions");
 
 static MALLOC_DEFINE(M_KTLS, "ktls", "Kernel TLS");
 
@@ -668,12 +667,8 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	 *
 	 * - Always permit 'force' requests.
 	 * - ktls_ifnet_permitted == 0: always deny.
-	 * - ktls_ifnet_permitted == 1: always permit.
-	 * - ktls_ifnet_permitted == 2: honor TCP stack flag.
 	 */
-	if (!force && (ktls_ifnet_permitted == 0 ||
-	    (ktls_ifnet_permitted == 2 &&
-	    (tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK) == 0))) {
+	if (!force && ktls_ifnet_permitted == 0) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
@@ -962,32 +957,6 @@ ktls_set_tx_mode(struct socket *so, int mode)
 
 	INP_WLOCK(inp);
 	return (0);
-}
-
-void
-ktls_tcp_stack_changed(struct socket *so)
-{
-	struct inpcb *inp;
-	struct tcpcb *tp;
-	int mode;
-
-	inp = so->so_pcb;
-	INP_WLOCK_ASSERT(inp);
-
-	/*
-	 * If the TCP stack has changed and we are honoring the stack
-	 * flag, check the stack flag to determine what mode the
-	 * session should be using with the new stack.
-	 */
-	if (ktls_ifnet_permitted != 2)
-		return;
-
-	tp = intotcpcb(inp);
-	if (tp->t_fb->tfb_flags & TCP_FUNC_IFNET_TLS_OK)
-		mode = TCP_TLS_MODE_IFNET;
-	else
-		mode = TCP_TLS_MODE_SW;
-	(void)ktls_set_tx_mode(so, mode);
 }
 
 /*
