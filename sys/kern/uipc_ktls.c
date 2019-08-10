@@ -29,6 +29,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_inet.h"
+#include "opt_inet6.h"
 #include "opt_rss.h"
 
 #include <sys/param.h>
@@ -55,8 +57,10 @@ __FBSDID("$FreeBSD$");
 #include <net/netisr.h>
 #include <net/rss_config.h>
 #endif
+#if defined(INET) || defined(INET6)
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
+#endif
 #include <netinet/tcp_var.h>
 #include <opencrypto/xform.h>
 #include <vm/uma_dbg.h>
@@ -200,7 +204,9 @@ SYSCTL_UINT(_kern_ipc_tls_ifnet, OID_AUTO, permitted, CTLFLAG_RWTUN,
 static MALLOC_DEFINE(M_KTLS, "ktls", "Kernel TLS");
 
 static void ktls_cleanup(struct ktls_session *tls);
+#if defined(INET) || defined(INET6)
 static void ktls_reset_send_tag(void *context, int pending);
+#endif
 static void ktls_work_thread(void *ctx);
 
 int
@@ -273,6 +279,7 @@ ktls_crypto_backend_deregister(struct ktls_crypto_backend *be)
 	return (0);
 }
 
+#if defined(INET) || defined(INET6)
 static uint16_t
 ktls_get_cpu(struct socket *so)
 {
@@ -294,6 +301,7 @@ ktls_get_cpu(struct socket *so)
 	cpuid = ktls_cpuid_lookup[inp->inp_flowid % ktls_number_threads];
 	return (cpuid);
 }
+#endif
 
 static void
 ktls_init(void *dummy __unused)
@@ -371,6 +379,7 @@ ktls_init(void *dummy __unused)
 }
 SYSINIT(ktls, SI_SUB_SMP + 1, SI_ORDER_ANY, ktls_init, NULL);
 
+#if defined(INET) || defined(INET6)
 static int
 ktls_create_session(struct socket *so, struct tls_enable *en,
     struct ktls_session **tlsp)
@@ -577,6 +586,7 @@ ktls_clone_session(struct ktls_session *tls)
 
 	return (tls_new);
 }
+#endif
 
 static void
 ktls_cleanup(struct ktls_session *tls)
@@ -621,6 +631,7 @@ ktls_cleanup(struct ktls_session *tls)
 	explicit_bzero(tls->params.iv, sizeof(tls->params.iv));
 }
 
+#if defined(INET) || defined(INET6)
 /*
  * Common code used when first enabling ifnet TLS on a connection or
  * when allocating a new ifnet TLS session due to a routing change.
@@ -1088,6 +1099,7 @@ ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls)
 	mtx_pool_unlock(mtxpool_sleep, tls);
 	return (ENOBUFS);
 }
+#endif
 
 void
 ktls_destroy(struct ktls_session *tls)
