@@ -27,6 +27,8 @@
  * SUCH DAMAGE.
  */
 
+#include "opt_inet.h"
+#include "opt_inet6.h"
 #include "opt_kern_tls.h"
 
 #include <sys/cdefs.h>
@@ -55,6 +57,8 @@ __FBSDID("$FreeBSD$");
 #include "t4_clip.h"
 #include "t4_mp_ring.h"
 #include "crypto/t4_crypto.h"
+
+#if defined(INET) || defined(INET6)
 
 #define SALT_SIZE		4
 
@@ -2434,3 +2438,43 @@ t6_ktls_modunload(void)
 	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL,
 	    CPL_COOKIE_KERN_TLS);
 }
+
+#else
+
+int
+cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
+    struct m_snd_tag **pt)
+{
+	return (ENXIO);
+}
+
+int
+t6_ktls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
+{
+	return (EINVAL);
+}
+
+int
+t6_ktls_write_wr(struct sge_txq *txq, void *dst, struct mbuf *m, u_int nsegs,
+    u_int available)
+{
+	panic("can't happen");
+}
+
+void
+cxgbe_tls_tag_free(struct m_snd_tag *mst)
+{
+	panic("can't happen");
+}
+
+void
+t6_ktls_modload(void)
+{
+}
+
+void
+t6_ktls_modunload(void)
+{
+}
+
+#endif
