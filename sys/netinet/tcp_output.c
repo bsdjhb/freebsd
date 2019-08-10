@@ -230,7 +230,7 @@ tcp_output(struct tcpcb *tp)
 		hw_tls = true;
 	else
 #endif
- 		hw_tls = false;
+		hw_tls = false;
 
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 
