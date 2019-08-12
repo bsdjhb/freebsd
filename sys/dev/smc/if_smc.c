@@ -45,7 +45,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/syslog.h>
-#include <sys/taskqueue.h>
 
 #include <sys/module.h>
 #include <sys/bus.h>
@@ -84,10 +83,6 @@ __FBSDID("$FreeBSD$");
 #define	SMC_UNLOCK(sc)		mtx_unlock(&(sc)->smc_mtx)
 #define	SMC_ASSERT_LOCKED(sc)	mtx_assert(&(sc)->smc_mtx, MA_OWNED)
 
-#define	SMC_INTR_PRIORITY	0
-#define	SMC_RX_PRIORITY		5
-#define	SMC_TX_PRIORITY		10
-
 devclass_t	smc_devclass;
 
 static const char *smc_chip_ids[16] = {
@@ -109,19 +104,18 @@ static void	smc_stop(struct smc_softc *);
 static int	smc_ioctl(struct ifnet *, u_long, caddr_t);
 
 static void	smc_init_locked(struct smc_softc *);
+static void	smc_intr_locked(struct smc_softc *);
 static void	smc_start_locked(struct ifnet *);
 static void	smc_reset(struct smc_softc *);
+static void	smc_rx(struct smc_softc *);
+static void	smc_tx(struct smc_softc *);
 static int	smc_mii_ifmedia_upd(struct ifnet *);
 static void	smc_mii_ifmedia_sts(struct ifnet *, struct ifmediareq *);
 static void	smc_mii_tick(void *);
 static void	smc_mii_mediachg(struct smc_softc *);
 static int	smc_mii_mediaioctl(struct smc_softc *, struct ifreq *, u_long);
 
-static void	smc_task_intr(void *, int);
-static void	smc_task_rx(void *, int);
-static void	smc_task_tx(void *, int);
-
-static driver_filter_t	smc_intr;
+static void	smc_intr(void *);
 static timeout_t	smc_watchdog;
 #ifdef DEVICE_POLLING
 static poll_handler_t	smc_poll;
@@ -393,22 +387,13 @@ smc_attach(device_t dev)
 
 	ether_ifattach(ifp, eaddr);
 
-	/* Set up taskqueue */
-	TASK_INIT(&sc->smc_intr, SMC_INTR_PRIORITY, smc_task_intr, ifp);
-	TASK_INIT(&sc->smc_rx, SMC_RX_PRIORITY, smc_task_rx, ifp);
-	TASK_INIT(&sc->smc_tx, SMC_TX_PRIORITY, smc_task_tx, ifp);
-	sc->smc_tq = taskqueue_create_fast("smc_taskq", M_NOWAIT,
-	    taskqueue_thread_enqueue, &sc->smc_tq);
-	taskqueue_start_threads(&sc->smc_tq, 1, PI_NET, "%s taskq",
-	    device_get_nameunit(sc->smc_dev));
-
 	/* Mask all interrupts. */
 	sc->smc_mask = 0;
 	smc_write_1(sc, MSK, 0);
 
 	/* Wire up interrupt */
 	error = bus_setup_intr(dev, sc->smc_irq,
-	    INTR_TYPE_NET|INTR_MPSAFE, smc_intr, NULL, sc, &sc->smc_ih);
+	    INTR_TYPE_NET|INTR_MPSAFE, NULL, smc_intr, sc, &sc->smc_ih);
 	if (error != 0)
 		goto done;
 
@@ -443,14 +428,6 @@ smc_detach(device_t dev)
 
 	if (sc->smc_ih != NULL)
 		bus_teardown_intr(sc->smc_dev, sc->smc_irq, sc->smc_ih);
-
-	if (sc->smc_tq != NULL) {
-		taskqueue_drain(sc->smc_tq, &sc->smc_intr);
-		taskqueue_drain(sc->smc_tq, &sc->smc_rx);
-		taskqueue_drain(sc->smc_tq, &sc->smc_tx);
-		taskqueue_free(sc->smc_tq);
-		sc->smc_tq = NULL;
-	}
 
 	if (sc->smc_ifp != NULL) {
 		if_free(sc->smc_ifp);
@@ -501,6 +478,7 @@ smc_start_locked(struct ifnet *ifp)
 	sc = ifp->if_softc;
 	SMC_ASSERT_LOCKED(sc);
 
+next_packet:
 	if (ifp->if_drv_flags & IFF_DRV_OACTIVE)
 		return;
 	if (IFQ_IS_EMPTY(&ifp->if_snd))
@@ -562,29 +540,24 @@ smc_start_locked(struct ifnet *ifp)
 		return;
 	}
 
-	taskqueue_enqueue(sc->smc_tq, &sc->smc_tx);
+	smc_tx(sc);
+	goto next_packet;
 }
 
 static void
-smc_task_tx(void *context, int pending)
+smc_tx(struct smc_softc *sc)
 {
 	struct ifnet		*ifp;
-	struct smc_softc	*sc;
 	struct mbuf		*m, *m0;
 	u_int			packet, len;
 	int			last_len;
 	uint8_t			*data;
 
-	(void)pending;
-	ifp = (struct ifnet *)context;
-	sc = ifp->if_softc;
-
-	SMC_LOCK(sc);
+	SMC_ASSERT_LOCKED(sc);
+	ifp = sc->smc_ifp;
 	
-	if (sc->smc_pending == NULL) {
-		SMC_UNLOCK(sc);
-		goto next_packet;
-	}
+	if (sc->smc_pending == NULL)
+		return;
 
 	m = m0 = sc->smc_pending;
 	sc->smc_pending = NULL;
@@ -602,8 +575,6 @@ smc_task_tx(void *context, int pending)
 		IFQ_DRV_PREPEND(&ifp->if_snd, m);
 		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-		smc_start_locked(ifp);
-		SMC_UNLOCK(sc);
 		return;
 	}
 
@@ -659,32 +630,22 @@ smc_task_tx(void *context, int pending)
 	 */
 	if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	SMC_UNLOCK(sc);
 	BPF_MTAP(ifp, m0);
 	m_freem(m0);
-
-next_packet:
-	/*
-	 * See if there's anything else to do.
-	 */
-	smc_start(ifp);
 }
 
 static void
-smc_task_rx(void *context, int pending)
+smc_rx(struct smc_softc *sc)
 {
 	u_int			packet, status, len;
 	uint8_t			*data;
 	struct ifnet		*ifp;
-	struct smc_softc	*sc;
 	struct mbuf		*m, *mhead, *mtail;
 
-	(void)pending;
-	ifp = (struct ifnet *)context;
-	sc = ifp->if_softc;
-	mhead = mtail = NULL;
+	SMC_ASSERT_LOCKED(sc);
 
-	SMC_LOCK(sc);
+	ifp = sc->smc_ifp;
+	mhead = mtail = NULL;
 
 	packet = smc_read_1(sc, FIFO_RX);
 	while ((packet & FIFO_EMPTY) == 0) {
@@ -766,11 +727,8 @@ smc_task_rx(void *context, int pending)
 			mtail = m;
 		}
 		packet = smc_read_1(sc, FIFO_RX);
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 	}
-
-	sc->smc_mask |= RCV_INT;
-	if ((ifp->if_capenable & IFCAP_POLLING) == 0)
-		smc_write_1(sc, MSK, sc->smc_mask);
 
 	SMC_UNLOCK(sc);
 
@@ -778,9 +736,10 @@ smc_task_rx(void *context, int pending)
 		m = mhead;
 		mhead = mhead->m_next;
 		m->m_next = NULL;
-		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		(*ifp->if_input)(ifp, m);
 	}
+
+	SMC_LOCK(sc);
 }
 
 #ifdef DEVICE_POLLING
@@ -796,53 +755,39 @@ smc_poll(struct ifnet *ifp, enum poll_cmd cmd, int count)
 		SMC_UNLOCK(sc);
 		return (0);
 	}
-	SMC_UNLOCK(sc);
 
 	if (cmd == POLL_AND_CHECK_STATUS)
-		taskqueue_enqueue(sc->smc_tq, &sc->smc_intr);
+		smc_intr_locked(sc);
+	SMC_UNLOCK(sc);
+
         return (0);
 }
 #endif
 
-static int
+static void
 smc_intr(void *context)
 {
 	struct smc_softc	*sc;
-	uint32_t curbank;
 
 	sc = (struct smc_softc *)context;
 
-	/*
-	 * Save current bank and restore later in this function
-	 */
-	curbank = (smc_read_2(sc, BSR) & BSR_BANK_MASK);
-
-	/*
-	 * Block interrupts in order to let smc_task_intr to kick in
-	 */
-	smc_select_bank(sc, 2);
-	smc_write_1(sc, MSK, 0);
-
-	/* Restore bank */
-	smc_select_bank(sc, curbank);
-
-	taskqueue_enqueue(sc->smc_tq, &sc->smc_intr);
-	return (FILTER_HANDLED);
+	SMC_LOCK(sc);
+	smc_intr_locked(sc);
+	SMC_UNLOCK(sc);
 }
 
 static void
-smc_task_intr(void *context, int pending)
+smc_intr_locked(struct smc_softc *sc)
 {
-	struct smc_softc	*sc;
 	struct ifnet		*ifp;
 	u_int			status, packet, counter, tcr;
+	bool			restart_tx;
 
-	(void)pending;
-	ifp = (struct ifnet *)context;
-	sc = ifp->if_softc;
+	SMC_ASSERT_LOCKED(sc);
 
-	SMC_LOCK(sc);
-	
+	restart_tx = false;
+	ifp = sc->smc_ifp;
+
 	smc_select_bank(sc, 2);
 
 	/*
@@ -880,7 +825,7 @@ smc_task_intr(void *context, int pending)
 			tcr |= TCR_TXENA | TCR_PAD_EN;
 			smc_write_2(sc, TCR, tcr);
 			smc_select_bank(sc, 2);
-			taskqueue_enqueue(sc->smc_tq, &sc->smc_tx);
+			restart_tx = true;
 		}
 
 		/*
@@ -894,8 +839,7 @@ smc_task_intr(void *context, int pending)
 	 */
 	if (status & RCV_INT) {
 		smc_write_1(sc, ACK, RCV_INT);
-		sc->smc_mask &= ~RCV_INT;
-		taskqueue_enqueue(sc->smc_tq, &sc->smc_rx);
+		smc_rx(sc);
 	}
 
 	/*
@@ -904,7 +848,8 @@ smc_task_intr(void *context, int pending)
 	if (status & ALLOC_INT) {
 		smc_write_1(sc, ACK, ALLOC_INT);
 		sc->smc_mask &= ~ALLOC_INT;
-		taskqueue_enqueue(sc->smc_tq, &sc->smc_tx);
+		smc_tx(sc);
+		restart_tx = true;
 	}
 
 	/*
@@ -932,21 +877,24 @@ smc_task_intr(void *context, int pending)
 		if_inc_counter(ifp, IFCOUNTER_COLLISIONS,
 		    ((counter & ECR_SNGLCOL_MASK) >> ECR_SNGLCOL_SHIFT) +
 		    ((counter & ECR_MULCOL_MASK) >> ECR_MULCOL_SHIFT));
+		restart_tx = true;
+	}
+
+	/*
+	 * Update the interrupt mask.  Note that only TX interrupts
+	 * managing the state of ALLOC_INT and TX_EMPTY_INT adjust the
+	 * mask.
+	 */
+	if (restart_tx) {
+		smc_select_bank(sc, 2);
+		if ((ifp->if_capenable & IFCAP_POLLING) == 0)
+			smc_write_1(sc, MSK, sc->smc_mask);
 
 		/*
 		 * See if there are any packets to transmit.
 		 */
-		taskqueue_enqueue(sc->smc_tq, &sc->smc_tx);
+		smc_start_locked(ifp);
 	}
-
-	/*
-	 * Update the interrupt mask.
-	 */
-	smc_select_bank(sc, 2);
-	if ((ifp->if_capenable & IFCAP_POLLING) == 0)
-		smc_write_1(sc, MSK, sc->smc_mask);
-
-	SMC_UNLOCK(sc);
 }
 
 static uint32_t
@@ -1234,8 +1182,9 @@ smc_watchdog(void *arg)
 	struct smc_softc	*sc;
 	
 	sc = (struct smc_softc *)arg;
+	SMC_ASSERT_LOCKED(sc);
 	device_printf(sc->smc_dev, "watchdog timeout\n");
-	taskqueue_enqueue(sc->smc_tq, &sc->smc_intr);
+	smc_intr_locked(sc);
 }
 
 static void

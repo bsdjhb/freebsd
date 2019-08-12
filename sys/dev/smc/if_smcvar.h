@@ -46,11 +46,6 @@ struct smc_softc {
 	struct resource		*smc_irq;
 	void			*smc_ih;
 
-	/* Tasks */
-	struct taskqueue	*smc_tq;
-	struct task		smc_intr;
-	struct task		smc_rx;
-	struct task		smc_tx;
 	struct mbuf		*smc_pending;
 	struct callout		smc_watchdog;
 	
