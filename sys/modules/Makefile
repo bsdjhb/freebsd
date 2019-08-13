@@ -634,7 +634,7 @@ _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
-#_blake2=	blake2
+_blake2=	blake2
 .endif
 _bytgpio=	bytgpio
 _chvgpio=	chvgpio
