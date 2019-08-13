@@ -457,6 +457,12 @@ crypto_get_driver_session(crypto_session_t crypto_session)
 	return (crypto_session->softc);
 }
 
+const struct crypto_session_params *
+crypto_get_params(crypto_session_t crypto_session)
+{
+	return (&crypto_session->csp);
+}
+
 static struct cryptocap *
 crypto_checkdriver(u_int32_t hid)
 {

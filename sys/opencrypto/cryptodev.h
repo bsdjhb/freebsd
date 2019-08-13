@@ -538,6 +538,8 @@ struct cryptkop {
 uint32_t crypto_ses2hid(crypto_session_t crypto_session);
 uint32_t crypto_ses2caps(crypto_session_t crypto_session);
 void *crypto_get_driver_session(crypto_session_t crypto_session);
+const struct crypto_session_params *crypto_get_params(
+    crypto_session_t crypto_session);
 
 MALLOC_DECLARE(M_CRYPTO_DATA);
 
