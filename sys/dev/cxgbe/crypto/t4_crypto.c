@@ -2233,23 +2233,19 @@ ccr_auth_supported(const struct crypto_session_params *csp)
 static bool
 ccr_cipher_supported(const struct crypto_session_params *csp)
 {
-	unsigned int cipher_mode;
 
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
 		if (csp->csp_ivlen != AES_BLOCK_LEN)
 			return (false);
-		cipher_mode = SCMD_CIPH_MODE_AES_CBC;
 		break;
 	case CRYPTO_AES_ICM:
 		if (csp->csp_ivlen != AES_BLOCK_LEN)
 			return (false);
-		cipher_mode = SCMD_CIPH_MODE_AES_CTR;
 		break;
 	case CRYPTO_AES_XTS:
 		if (csp->csp_ivlen != AES_XTS_IV_LEN)
 			return (false);
-		cipher_mode = SCMD_CIPH_MODE_AES_XTS;
 		break;
 	default:
 		return (false);
