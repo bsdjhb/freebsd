@@ -1460,7 +1460,9 @@ ktls_work_thread(void *ctx)
 	struct ktls_session *tls;
 	STAILQ_HEAD(, mbuf_ext_pgs) local_head;
 
+#if defined(__amd64__) || defined(__i386__) || defined(__aarch64__)
 	fpu_kern_thread(0);
+#endif
 	for (;;) {
 		mtx_lock(&wq->mtx);
 		while (STAILQ_EMPTY(&wq->head)) {
