@@ -696,7 +696,7 @@ _x86bios=	x86bios
 
 .if ${MACHINE_CPUARCH} == "amd64"
 _amdgpio=	amdgpio
-#_ccp=		ccp
+_ccp=		ccp
 _efirt=		efirt
 _iavf=		iavf
 _ioat=		ioat
