@@ -51,7 +51,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/kthread.h>
 #include <sys/uio.h>
 #include <sys/vmmeter.h>
-#include <machine/fpu.h>
+#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
+#include <machine/pcb.h>
+#endif
 #include <machine/vmparam.h>
 #ifdef RSS
 #include <net/netisr.h>
@@ -1460,7 +1462,7 @@ ktls_work_thread(void *ctx)
 	struct ktls_session *tls;
 	STAILQ_HEAD(, mbuf_ext_pgs) local_head;
 
-#if defined(__amd64__) || defined(__i386__) || defined(__aarch64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
 	fpu_kern_thread(0);
 #endif
 	for (;;) {
