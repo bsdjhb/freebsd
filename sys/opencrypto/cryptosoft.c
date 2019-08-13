@@ -65,7 +65,6 @@ struct swcr_auth {
 	void		*sw_ictx;
 	void		*sw_octx;
 	struct auth_hash *sw_axf;
-	uint16_t	sw_klen;
 	uint16_t	sw_mlen;
 	uint16_t	sw_octx_len;
 };
