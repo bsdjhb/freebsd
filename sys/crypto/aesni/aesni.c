@@ -557,7 +557,8 @@ aesni_cipher_setup(struct aesni_session *ses,
 #endif
 		}
 
-		if (csp->csp_auth_mlen > ses->hash_len)
+		if (csp->csp_auth_mlen < 0 ||
+		    csp->csp_auth_mlen > ses->hash_len)
 			return (EINVAL);
 		if (csp->csp_auth_mlen == 0)
 			ses->mlen = ses->hash_len;

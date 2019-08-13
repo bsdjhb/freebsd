@@ -651,11 +651,10 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 
 	/* Validate tag */
 	if (!CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-		/* XXX: swa_mlen? */
-		crypto_copydata(crp, crp->crp_digest_start, axf->hashsize,
+		crypto_copydata(crp, crp->crp_digest_start, swa->sw_mlen,
 		    uaalg);
 
-		r = timingsafe_bcmp(aalg, uaalg, axf->hashsize);
+		r = timingsafe_bcmp(aalg, uaalg, swa->sw_mlen);
 		if (r != 0)
 			return (EBADMSG);
 		
@@ -672,7 +671,7 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 		}
 	} else {
 		/* Inject the authentication data */
-		crypto_copyback(crp, crp->crp_digest_start, axf->hashsize,
+		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen,
 		    aalg);
 	}
 
@@ -819,11 +818,10 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 
 	/* Validate tag */
 	if (!CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-		/* XXX: swa_mlen? */
-		crypto_copydata(crp, crp->crp_digest_start, axf->hashsize,
+		crypto_copydata(crp, crp->crp_digest_start, swa->sw_mlen,
 		    uaalg);
 
-		r = timingsafe_bcmp(aalg, uaalg, axf->hashsize);
+		r = timingsafe_bcmp(aalg, uaalg, swa->sw_mlen);
 		if (r != 0)
 			return (EBADMSG);
 		
@@ -841,7 +839,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 		}
 	} else {
 		/* Inject the authentication data */
-		crypto_copyback(crp, crp->crp_digest_start, axf->hashsize,
+		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen,
 		    aalg);
 	}
 
@@ -1088,7 +1086,7 @@ swcr_setup_auth(struct swcr_session *ses,
 
 	axf = swcr_lookup_hash(csp->csp_auth_alg, csp->csp_auth_klen);
 	swa->sw_axf = axf;
-	if (csp->csp_auth_mlen > axf->hashsize)
+	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > axf->hashsize)
 		return (EINVAL);
 	if (csp->csp_auth_mlen == 0)
 		swa->sw_mlen = axf->hashsize;
@@ -1229,8 +1227,12 @@ swcr_setup_gcm(struct swcr_session *ses,
 		return (EINVAL);
 	}
 	swa->sw_axf = axf;
-	/* XXX: swcr_gcm ignores mlen */
-	swa->sw_mlen = csp->csp_auth_mlen;
+	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > axf->hashsize)
+		return (EINVAL);
+	if (csp->csp_auth_mlen == 0)
+		swa->sw_mlen = axf->hashsize;
+	else
+		swa->sw_mlen = csp->csp_auth_mlen;
 	swa->sw_ictx = malloc(axf->ctxsize, M_CRYPTO_DATA, M_NOWAIT);
 	if (swa->sw_ictx == NULL)
 		return (ENOBUFS);
@@ -1282,8 +1284,12 @@ swcr_setup_ccm(struct swcr_session *ses,
 		return (EINVAL);
 	}
 	swa->sw_axf = axf;
-	/* XXX: swcr_ccm ignores mlen */
-	swa->sw_mlen = csp->csp_auth_mlen;
+	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > axf->hashsize)
+		return (EINVAL);
+	if (csp->csp_auth_mlen == 0)
+		swa->sw_mlen = axf->hashsize;
+	else
+		swa->sw_mlen = csp->csp_auth_mlen;
 	swa->sw_ictx = malloc(axf->ctxsize, M_CRYPTO_DATA, M_NOWAIT);
 	if (swa->sw_ictx == NULL)
 		return (ENOBUFS);

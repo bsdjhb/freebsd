@@ -1856,7 +1856,7 @@ ccp_gcm_done(struct ccp_queue *qp, struct ccp_session *s, void *vcrp,
 		goto out;
 
 	/* Copy in message tag. */
-	crypto_copydata(crp, crp->crp_digest_start, sizeof(tag), tag);
+	crypto_copydata(crp, crp->crp_digest_start, s->gmac.hash_len, tag);
 
 	/* Verify tag against computed GMAC */
 	if (timingsafe_bcmp(tag, s->gmac.final_block, s->gmac.hash_len) != 0)
