@@ -50,10 +50,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 struct blake2_session {
-	int algo;
-	size_t klen;
 	size_t mlen;
-	uint8_t key[BLAKE2B_KEYBYTES];
 };
 CTASSERT((size_t)BLAKE2B_KEYBYTES > (size_t)BLAKE2S_KEYBYTES);
 
@@ -212,7 +209,6 @@ blake2_newsession(device_t dev, crypto_session_t cses,
 	}
 	rw_runlock(&sc->lock);
 
-	ses->algo = csp->csp_auth_alg;
 	error = blake2_cipher_setup(ses, csp);
 	if (error != 0) {
 		CRYPTDEB("setup failed");
@@ -260,18 +256,33 @@ DRIVER_MODULE(blake2, nexus, blake2_driver, blake2_devclass, 0, 0);
 MODULE_VERSION(blake2, 1);
 MODULE_DEPEND(blake2, crypto, 1, 1, 1);
 
+static bool
+blake2_check_klen(const struct crypto_session_params *csp, unsigned klen)
+{
+
+	if (klen % 8 != 0)
+		return (false);
+	if (csp->csp_auth_alg == CRYPTO_BLAKE2S)
+		return (klen / 8 <= BLAKE2S_KEYBYTES);
+	else
+		return (klen / 8 <= BLAKE2B_KEYBYTES);
+}
+
 static int
 blake2_cipher_setup(struct blake2_session *ses,
     const struct crypto_session_params *csp)
 {
-	int hashlen, keylen;
+	int hashlen;
 
 	CTASSERT((size_t)BLAKE2S_OUTBYTES <= (size_t)BLAKE2B_OUTBYTES);
+
+	if (!blake2_check_klen(csp, csp->csp_auth_klen))
+		return (EINVAL);
 
 	if (csp->csp_auth_mlen < 0)
 		return (EINVAL);
 
-	switch (ses->algo) {
+	switch (csp->csp_auth_alg) {
 	case CRYPTO_BLAKE2S:
 		hashlen = BLAKE2S_OUTBYTES;
 		break;
@@ -285,14 +296,6 @@ blake2_cipher_setup(struct blake2_session *ses,
 	if (csp->csp_auth_mlen > hashlen)
 		return (EINVAL);
 
-	if (csp->csp_auth_klen % 8 != 0)
-		return (EINVAL);
-	keylen = csp->csp_auth_klen / 8;
-	if (keylen > sizeof(ses->key) ||
-	    (ses->algo == CRYPTO_BLAKE2S && keylen > BLAKE2S_KEYBYTES))
-		return (EINVAL);
-	ses->klen = keylen;
-	memcpy(ses->key, csp->csp_auth_key, keylen);
 	if (csp->csp_auth_mlen == 0)
 		ses->mlen = hashlen;
 	else
@@ -330,10 +333,13 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 		blake2s_state ss;
 	} bctx;
 	char res[BLAKE2B_OUTBYTES], res2[BLAKE2B_OUTBYTES];
+	const struct crypto_session_params *csp;
 	struct fpu_kern_ctx *ctx;
+	void *key;
 	int ctxidx;
 	bool kt;
 	int error, rc;
+	unsigned klen;
 
 	ctx = NULL;
 	ctxidx = 0;
@@ -346,11 +352,20 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 		    FPU_KERN_NORMAL | FPU_KERN_KTHR);
 	}
 
-	switch (ses->algo) {
+	csp = crypto_get_params(crp->crp_session);
+	if (crp->crp_auth_key != NULL) {
+		if (!blake2_check_klen(csp, crp->crp_auth_klen))
+			goto out;
+		key = crp->crp_auth_key;
+		klen = crp->crp_auth_klen / 8;
+	} else {
+		key = csp->csp_auth_key;
+		klen = csp->csp_auth_klen / 8;
+	}
+	switch (csp->csp_auth_alg) {
 	case CRYPTO_BLAKE2B:
-		if (ses->klen > 0)
-			rc = blake2b_init_key(&bctx.sb, ses->mlen, ses->key,
-			    ses->klen);
+		if (klen > 0)
+			rc = blake2b_init_key(&bctx.sb, ses->mlen, key, klen);
 		else
 			rc = blake2b_init(&bctx.sb, ses->mlen);
 		if (rc != 0)
@@ -366,9 +381,8 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 		}
 		break;
 	case CRYPTO_BLAKE2S:
-		if (ses->klen > 0)
-			rc = blake2s_init_key(&bctx.ss, ses->mlen, ses->key,
-			    ses->klen);
+		if (klen > 0)
+			rc = blake2s_init_key(&bctx.ss, ses->mlen, key, klen);
 		else
 			rc = blake2s_init(&bctx.ss, ses->mlen);
 		if (rc != 0)
