@@ -354,7 +354,7 @@ struct tcp_function_set {
 	uint32_t pcbcnt;
 };
 
-/* TLS modes for TCP_TLS_MODE */
+/* TLS modes for TCP_TXTLS_MODE */
 #define	TCP_TLS_MODE_NONE	0
 #define	TCP_TLS_MODE_SW		1
 #define	TCP_TLS_MODE_IFNET	2

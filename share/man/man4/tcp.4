@@ -293,7 +293,7 @@ If an SADB entry cannot be found for the destination,
 the system does not send any outgoing segments and drops any inbound segments.
 .Pp
 Each dropped segment is taken into account in the TCP protocol statistics.
-.It Dv TCP_TLS_ENABLE
+.It Dv TCP_TXTLS_ENABLE
 Enable in-kernel Transport Layer Security (TLS) for data written to this
 socket.
 The
@@ -320,12 +320,12 @@ a TLS-aware consumer.
 .Pp
 At present, only a single key may be set on a socket.
 As such, users of this option must disable rekeying.
-.It Dv TCP_TLS_MODE
+.It Dv TCP_TXTLS_MODE
 The integer argument can be used to get or set the current TLS mode of a
 socket.
 Setting the mode can only used to toggle between software and NIC TLS after
 TLS has been initially enabled via the
-.Dv TCP_TLS_ENABLE
+.Dv TCP_TXTLS_ENABLE
 option.
 The available modes are:
 .Bl -tag -width "Dv TCP_TLS_MODE_IFNET"
