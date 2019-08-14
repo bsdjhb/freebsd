@@ -83,8 +83,6 @@ static struct rmlock ktls_backends_lock;
 static uma_zone_t ktls_session_zone;
 static uint16_t ktls_cpuid_lookup[MAXCPU];
 
-SYSCTL_DECL(_kern_ipc);
-
 SYSCTL_NODE(_kern_ipc, OID_AUTO, tls, CTLFLAG_RW, 0,
     "Kernel TLS offload");
 SYSCTL_NODE(_kern_ipc_tls, OID_AUTO, stats, CTLFLAG_RW, 0,
