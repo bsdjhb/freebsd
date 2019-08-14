@@ -1349,43 +1349,39 @@ ccp_blkcipher_done(struct ccp_queue *qp, struct ccp_session *s, void *vcrp,
 }
 
 static void
-ccp_collect_iv(struct ccp_session *s, struct cryptop *crp)
-{
+ccp_collect_iv(struct cryptop *crp, const struct crypto_session_params *csp,
+    char *iv)
+{	
 
 	if (crp->crp_flags & CRYPTO_F_IV_GENERATE) {
-		arc4rand(s->blkcipher.iv, s->blkcipher.iv_len, 0);
-		crypto_copyback(crp, crp->crp_iv_start, s->blkcipher.iv_len,
-		    s->blkcipher.iv);
+		arc4rand(iv, csp->csp_ivlen, 0);
+		crypto_copyback(crp, crp->crp_iv_start, csp->csp_ivlen, iv);
 	} else if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
-		memcpy(s->blkcipher.iv, crp->crp_iv, s->blkcipher.iv_len);
+		memcpy(iv, crp->crp_iv, csp->csp_ivlen);
 	else
-		crypto_copydata(crp, crp->crp_iv_start, s->blkcipher.iv_len,
-		    s->blkcipher.iv);
+		crypto_copydata(crp, crp->crp_iv_start, csp->csp_ivlen, iv);
 
 	/*
 	 * If the input IV is 12 bytes, append an explicit counter of 1.
 	 */
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_NIST_GCM_16 &&
-	    s->blkcipher.iv_len == 12) {
-		*(uint32_t *)&s->blkcipher.iv[12] = htobe32(1);
-		s->blkcipher.iv_len = AES_BLOCK_LEN;
-	}
+	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16 &&
+	    csp->csp_ivlen == 12)
+		*(uint32_t *)&iv[12] = htobe32(1);
 
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_XTS &&
-	    s->blkcipher.iv_len < AES_BLOCK_LEN)
-		memset(&s->blkcipher.iv[s->blkcipher.iv_len], 0,
-		    AES_BLOCK_LEN - s->blkcipher.iv_len);
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS &&
+	    csp->csp_ivlen < AES_BLOCK_LEN)
+		memset(&iv[csp->csp_ivlen], 0, AES_BLOCK_LEN - csp->csp_ivlen);
 
 	/* Reverse order of IV material for HW */
-	INSECURE_DEBUG(NULL, "%s: IV: %16D len: %u\n", __func__,
-	    s->blkcipher.iv, " ", s->blkcipher.iv_len);
+	INSECURE_DEBUG(NULL, "%s: IV: %16D len: %u\n", __func__, iv, " ",
+	    csp->csp_ivlen);
 
 	/*
 	 * For unknown reasons, XTS mode expects the IV in the reverse byte
 	 * order to every other AES mode.
 	 */
-	if (s->blkcipher.cipher_alg != CRYPTO_AES_XTS)
-		ccp_byteswap(s->blkcipher.iv, s->blkcipher.iv_len);
+	if (csp->csp_cipher_alg != CRYPTO_AES_XTS)
+		ccp_byteswap(iv, AES_BLOCK_LEN);
 }
 
 static int __must_check
@@ -1478,6 +1474,7 @@ static int __must_check
 ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
     struct cryptop *crp, const struct ccp_completion_ctx *cctx)
 {
+	const struct crypto_session_params *csp;
 	struct ccp_desc *desc;
 	char *keydata;
 	device_t dev;
@@ -1511,9 +1508,10 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 		}
 
 	/* Gather IV/nonce data */
-	ccp_collect_iv(s, crp);
-	iv_len = s->blkcipher.iv_len;
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_XTS)
+	csp = crypto_get_params(crp->crp_session);
+	ccp_collect_iv(crp, csp, s->blkcipher.iv);
+	iv_len = csp->csp_ivlen;
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		iv_len = AES_BLOCK_LEN;
 
 	if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
@@ -1534,7 +1532,7 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 	keydata_len = 0;
 	keydata = NULL;
 
-	switch (s->blkcipher.cipher_alg) {
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_XTS:
 		for (j = 0; j < nitems(ccp_xts_unitsize_map); j++)
 			if (ccp_xts_unitsize_map[j].cxu_size ==
@@ -1556,14 +1554,14 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 
 	INSECURE_DEBUG(dev, "%s: KEY(%zu): %16D\n", __func__, keydata_len,
 	    keydata, " ");
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_XTS)
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		INSECURE_DEBUG(dev, "%s: KEY(XTS): %64D\n", __func__, keydata, " ");
 
 	/* Reverse order of key material for HW */
 	ccp_byteswap(keydata, keydata_len);
 
 	/* Store key material into LSB to avoid page boundaries */
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_XTS) {
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS) {
 		/*
 		 * XTS mode uses 2 256-bit vectors for the primary key and the
 		 * tweak key.  For 128-bit keys, the vectors are zero-padded.
@@ -1619,7 +1617,7 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 	if (ccp_queue_get_ring_space(qp) < qp->cq_sg_ulptx->sg_nseg)
 		return (EAGAIN);
 
-	if (s->blkcipher.cipher_alg == CRYPTO_AES_XTS)
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		return (ccp_do_xts(qp, s, crp, dir, cctx));
 
 	for (i = 0; i < qp->cq_sg_ulptx->sg_nseg; i++) {
@@ -1643,7 +1641,7 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 		desc->aes.encrypt = dir;
 		desc->aes.mode = s->blkcipher.cipher_mode;
 		desc->aes.type = s->blkcipher.cipher_type;
-		if (s->blkcipher.cipher_alg == CRYPTO_AES_ICM)
+		if (csp->csp_cipher_alg == CRYPTO_AES_ICM)
 			/*
 			 * Size of CTR value in bits, - 1.  ICM mode uses all
 			 * 128 bits as counter.
@@ -1871,6 +1869,7 @@ out:
 int __must_check
 ccp_gcm(struct ccp_queue *qp, struct ccp_session *s, struct cryptop *crp)
 {
+	const struct crypto_session_params *csp;
 	struct ccp_completion_ctx ctx;
 	enum ccp_cipher_dir dir;
 	device_t dev;
@@ -1891,7 +1890,8 @@ ccp_gcm(struct ccp_queue *qp, struct ccp_session *s, struct cryptop *crp)
 	memset(s->blkcipher.iv, 0, sizeof(s->blkcipher.iv));
 
 	/* Gather IV data */
-	ccp_collect_iv(s, crp);
+	csp = crypto_get_params(crp->crp_session);
+	ccp_collect_iv(crp, csp, s->blkcipher.iv);
 
 	/* Reverse order of key material for HW */
 	ccp_byteswap(s->blkcipher.enckey, s->blkcipher.key_len);
@@ -1975,7 +1975,7 @@ ccp_gcm(struct ccp_queue *qp, struct ccp_session *s, struct cryptop *crp)
 
 	/* Send just initial IV (not GHASH!) to LSB again */
 	error = ccp_do_pst_to_lsb(qp, ccp_queue_lsb_address(qp, LSB_ENTRY_IV),
-	    s->blkcipher.iv, s->blkcipher.iv_len);
+	    s->blkcipher.iv, AES_BLOCK_LEN);
 	if (error != 0)
 		return (error);
 

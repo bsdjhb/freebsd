@@ -589,9 +589,7 @@ ccp_newsession(device_t dev, crypto_session_t cses,
 		ccp_init_hmac_digest(s, csp->csp_auth_key, csp->csp_auth_klen);
 	}
 	if (cipher_mode != CCP_AES_MODE_ECB) {
-		s->blkcipher.cipher_alg = csp->csp_cipher_alg;
 		s->blkcipher.cipher_mode = cipher_mode;
-		s->blkcipher.iv_len = csp->csp_ivlen;
 		if (csp->csp_cipher_key != NULL)
 			ccp_aes_setkey(s, csp->csp_cipher_alg,
 			    csp->csp_cipher_key, csp->csp_cipher_klen);
@@ -620,6 +618,7 @@ ccp_freesession(device_t dev, crypto_session_t cses)
 static int
 ccp_process(device_t dev, struct cryptop *crp, int hint)
 {
+	const struct crypto_session_params *csp;
 	struct ccp_softc *sc;
 	struct ccp_queue *qp;
 	struct ccp_session *s;
@@ -648,11 +647,12 @@ ccp_process(device_t dev, struct cryptop *crp, int hint)
 		ccp_init_hmac_digest(s, crp->crp_auth_key, crp->crp_auth_klen);
 	}
 	if (crp->crp_cipher_key != NULL) {
-		error = ccp_aes_check_keylen(s->blkcipher.cipher_alg,
+		csp = crypto_get_params(crp->crp_session);
+		error = ccp_aes_check_keylen(csp->csp_cipher_alg,
 		    crp->crp_cipher_klen);
 		if (error != 0)
 			goto out;
-		ccp_aes_setkey(s, s->blkcipher.cipher_alg, crp->crp_cipher_key,
+		ccp_aes_setkey(s, csp->csp_cipher_alg, crp->crp_cipher_key,
 		    crp->crp_cipher_klen);
 	}
 

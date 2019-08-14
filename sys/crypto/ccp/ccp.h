@@ -68,7 +68,6 @@ struct ccp_session_hmac {
 	int hash_len;
 	unsigned int partial_digest_len;
 	unsigned int auth_mode;
-	unsigned int mk_size;
 	char ipad[CCP_HASH_MAX_BLOCK_SIZE];
 	char opad[CCP_HASH_MAX_BLOCK_SIZE];
 	char res[CCP_HASH_MAX_BLOCK_SIZE];
@@ -80,11 +79,9 @@ struct ccp_session_gmac {
 };
 
 struct ccp_session_blkcipher {
-	int cipher_alg;
 	unsigned cipher_mode;
 	unsigned cipher_type;
 	unsigned key_len;
-	unsigned iv_len;
 	char enckey[CCP_AES_MAX_KEY_LEN];
 	char iv[CCP_MAX_CRYPTO_IV_LEN];
 };
