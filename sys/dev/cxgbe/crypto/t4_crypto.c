@@ -566,13 +566,20 @@ static int
 ccr_hash_done(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
     const struct cpl_fw6_pld *cpl, int error)
 {
+	uint8_t hash[HASH_MAX_LEN];
 
-	if (error == 0) {
+	if (error)
+		return (error);
+
+	if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
+		crypto_copydata(crp, crp->crp_digest_start, s->hmac.hash_len,
+		    hash);
+		if (timingsafe_bcmp((cpl + 1), hash, s->hmac.hash_len) != 0)
+			return (EBADMSG);
+	} else
 		crypto_copyback(crp, crp->crp_digest_start, s->hmac.hash_len,
 		    (cpl + 1));
-	}
-
-	return (error);
+	return (0);
 }
 
 static int
