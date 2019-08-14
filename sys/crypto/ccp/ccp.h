@@ -66,7 +66,6 @@ enum sha_version {
 struct ccp_session_hmac {
 	struct auth_hash *auth_hash;
 	int hash_len;
-	unsigned int partial_digest_len;
 	unsigned int auth_mode;
 	char ipad[CCP_HASH_MAX_BLOCK_SIZE];
 	char opad[CCP_HASH_MAX_BLOCK_SIZE];

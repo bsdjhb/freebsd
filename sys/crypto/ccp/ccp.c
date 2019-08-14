@@ -489,7 +489,6 @@ ccp_newsession(device_t dev, crypto_session_t cses,
 	struct auth_hash *auth_hash;
 	enum ccp_aes_mode cipher_mode;
 	unsigned auth_mode;
-	unsigned partial_digest_len;
 	unsigned q;
 
 	/* XXX reconcile auth_mode with use by ccp_sha */
@@ -497,27 +496,22 @@ ccp_newsession(device_t dev, crypto_session_t cses,
 	case CRYPTO_SHA1_HMAC:
 		auth_hash = &auth_hash_hmac_sha1;
 		auth_mode = SHA1;
-		partial_digest_len = SHA1_HASH_LEN;
 		break;
 	case CRYPTO_SHA2_256_HMAC:
 		auth_hash = &auth_hash_hmac_sha2_256;
 		auth_mode = SHA2_256;
-		partial_digest_len = SHA2_256_HASH_LEN;
 		break;
 	case CRYPTO_SHA2_384_HMAC:
 		auth_hash = &auth_hash_hmac_sha2_384;
 		auth_mode = SHA2_384;
-		partial_digest_len = SHA2_512_HASH_LEN;
 		break;
 	case CRYPTO_SHA2_512_HMAC:
 		auth_hash = &auth_hash_hmac_sha2_512;
 		auth_mode = SHA2_512;
-		partial_digest_len = SHA2_512_HASH_LEN;
 		break;
 	default:
 		auth_hash = NULL;
 		auth_mode = 0;
-		partial_digest_len = 0;
 		break;
 	}
 
@@ -581,7 +575,6 @@ ccp_newsession(device_t dev, crypto_session_t cses,
 	} else if (auth_hash != NULL) {
 		s->hmac.auth_hash = auth_hash;
 		s->hmac.auth_mode = auth_mode;
-		s->hmac.partial_digest_len = partial_digest_len;
 		if (csp->csp_auth_mlen == 0)
 			s->hmac.hash_len = auth_hash->hashsize;
 		else
