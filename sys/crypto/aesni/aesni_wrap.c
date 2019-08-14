@@ -436,14 +436,14 @@ aesni_decrypt_xts(int rounds, const void *data_schedule,
 }
 
 int
-aesni_cipher_setup_common(struct aesni_session *ses, const uint8_t *key,
-    int keylen)
+aesni_cipher_setup_common(struct aesni_session *ses,
+    const struct crypto_session_params *csp, const uint8_t *key, int keylen)
 {
 	int decsched;
 
 	decsched = 1;
 
-	switch (ses->algo) {
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_ICM:
 	case CRYPTO_AES_NIST_GCM_16:
 	case CRYPTO_AES_CCM_16:
@@ -487,7 +487,7 @@ aesni_cipher_setup_common(struct aesni_session *ses, const uint8_t *key,
 		aesni_set_deckey(ses->enc_schedule, ses->dec_schedule,
 		    ses->rounds);
 
-	if (ses->algo == CRYPTO_AES_XTS)
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		aesni_set_enckey(key + keylen / 16, ses->xts_schedule,
 		    ses->rounds);
 

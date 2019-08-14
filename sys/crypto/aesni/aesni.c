@@ -91,8 +91,10 @@ struct aesni_softc {
 static int aesni_cipher_setup(struct aesni_session *ses,
     const struct crypto_session_params *csp);
 static int aesni_cipher_process(struct aesni_session *ses, struct cryptop *crp);
-static int aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp);
-static int aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp);
+static int aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp);
+static int aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp);
 
 MALLOC_DEFINE(M_AESNI, "aesni_data", "AESNI Data");
 
@@ -203,18 +205,46 @@ static bool
 aesni_auth_supported(struct aesni_softc *sc,
     const struct crypto_session_params *csp)
 {
+	int hashlen;
+
+	if (!sc->has_sha)
+		return (false);
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_SHA1:
+	case CRYPTO_SHA2_224:
+	case CRYPTO_SHA2_256:
+		if (csp->csp_auth_key != NULL)
+			return (false);
+		break;
+	case CRYPTO_SHA1_HMAC:
+	case CRYPTO_SHA2_224_HMAC:
+	case CRYPTO_SHA2_256_HMAC:
+		if (csp->csp_auth_key == NULL)
+			return (false);
+		break;
+	default:
+		return (false);
+	}
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA1:
 	case CRYPTO_SHA1_HMAC:
+		hashlen = SHA1_HASH_LEN;
+		break;
 	case CRYPTO_SHA2_224:
 	case CRYPTO_SHA2_224_HMAC:
+		hashlen = SHA2_224_HASH_LEN;
+		break;
 	case CRYPTO_SHA2_256:
 	case CRYPTO_SHA2_256_HMAC:
-		return (sc->has_sha);
-	default:
-		return (false);
+		hashlen = SHA2_256_HASH_LEN;
+		break;
 	}
+
+	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
+		return (false);
+	return (true);
 }
 
 static bool
@@ -255,11 +285,17 @@ aesni_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_AEAD:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_NIST_GCM_16:
+			if (csp->csp_auth_mlen != 0 &&
+			    csp->csp_auth_mlen != GMAC_DIGEST_LEN)
+				return (EINVAL);
 			if (csp->csp_ivlen != AES_GCM_IV_LEN ||
 			    !sc->has_aes)
 				return (EINVAL);
 			break;
 		case CRYPTO_AES_CCM_16:
+			if (csp->csp_auth_mlen != 0 &&
+			    csp->csp_auth_mlen != AES_CBC_MAC_HASH_LEN)
+				return (EINVAL);
 			if (csp->csp_ivlen != AES_CCM_IV_LEN ||
 			    !sc->has_aes)
 				return (EINVAL);
@@ -294,17 +330,9 @@ aesni_newsession(device_t dev, crypto_session_t cses,
 
 	switch (csp->csp_mode) {
 	case CSP_MODE_DIGEST:
-		ses->auth_algo = csp->csp_auth_alg;
-		break;
 	case CSP_MODE_CIPHER:
 	case CSP_MODE_AEAD:
-		ses->algo = csp->csp_cipher_alg;
-		ses->ivlen = csp->csp_ivlen;
-		break;
 	case CSP_MODE_ETA:
-		ses->algo = csp->csp_cipher_alg;
-		ses->ivlen = csp->csp_ivlen;
-		ses->auth_algo = csp->csp_auth_alg;
 		break;
 	default:
 		return (EINVAL);
@@ -326,18 +354,8 @@ aesni_process(device_t dev, struct cryptop *crp, int hint __unused)
 
 	ses = crypto_get_driver_session(crp->crp_session);
 
-	/* CBC & XTS can only handle full blocks for now */
-	switch (ses->algo) {
-	case CRYPTO_AES_CBC:
-	case CRYPTO_AES_XTS:
-		if ((crp->crp_payload_length % AES_BLOCK_LEN) != 0) {
-			error = EINVAL;
-			goto out;
-		}
-	}
-
 	error = aesni_cipher_process(ses, crp);
-out:
+
 	crp->crp_etype = error;
 	crypto_done(crp);
 	return (0);
@@ -500,18 +518,17 @@ SHA256_Finalize_fn(void *digest, void *ctx)
 }
 
 static int
-aesni_authprepare(struct aesni_session *ses, int klen, const void *cri_key)
+aesni_authprepare(struct aesni_session *ses, int klen)
 {
 	int keylen;
 
 	if (klen % 8 != 0)
 		return (EINVAL);
 	keylen = klen / 8;
-	if (keylen > sizeof(ses->hmac_key))
+	if (keylen > SHA1_BLOCK_LEN)
 		return (EINVAL);
-	if (ses->auth_algo == CRYPTO_SHA1 && keylen > 0)
+	if ((ses->hmac && klen == 0) || (!ses->hmac && klen != 0))
 		return (EINVAL);
-	memcpy(ses->hmac_key, cri_key, keylen);
 	return (0);
 }
 
@@ -522,56 +539,48 @@ aesni_cipher_setup(struct aesni_session *ses,
 	struct fpu_kern_ctx *ctx;
 	int kt, ctxidx, error;
 
-	if (ses->auth_algo != 0) {
-		switch (ses->auth_algo) {
-		case CRYPTO_SHA1_HMAC:
-			ses->hmac = true;
-			/* FALLTHROUGH */
-		case CRYPTO_SHA1:
-			ses->hash_len = SHA1_HASH_LEN;
-			ses->hash_init = SHA1_Init_fn;
-			ses->hash_update = intel_sha1_update;
-			ses->hash_finalize = SHA1_Finalize_fn;
-			break;
-		case CRYPTO_SHA2_224_HMAC:
-			ses->hmac = true;
-			/* FALLTHROUGH */
-		case CRYPTO_SHA2_224:
-			ses->hash_len = SHA2_224_HASH_LEN;
-			ses->hash_init = SHA224_Init_fn;
-			ses->hash_update = intel_sha256_update;
-			ses->hash_finalize = SHA224_Finalize_fn;
-			break;
-		case CRYPTO_SHA2_256_HMAC:
-			ses->hmac = true;
-			/* FALLTHROUGH */
-		case CRYPTO_SHA2_256:
-			ses->hash_len = SHA2_256_HASH_LEN;
-			ses->hash_init = SHA256_Init_fn;
-			ses->hash_update = intel_sha256_update;
-			ses->hash_finalize = SHA256_Finalize_fn;
-			break;
-#ifdef INVARIANTS
-		default:
-			panic("invalid auth alg");
-#endif
-		}
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_SHA1_HMAC:
+		ses->hmac = true;
+		/* FALLTHROUGH */
+	case CRYPTO_SHA1:
+		ses->hash_len = SHA1_HASH_LEN;
+		ses->hash_init = SHA1_Init_fn;
+		ses->hash_update = intel_sha1_update;
+		ses->hash_finalize = SHA1_Finalize_fn;
+		break;
+	case CRYPTO_SHA2_224_HMAC:
+		ses->hmac = true;
+		/* FALLTHROUGH */
+	case CRYPTO_SHA2_224:
+		ses->hash_len = SHA2_224_HASH_LEN;
+		ses->hash_init = SHA224_Init_fn;
+		ses->hash_update = intel_sha256_update;
+		ses->hash_finalize = SHA224_Finalize_fn;
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		ses->hmac = true;
+		/* FALLTHROUGH */
+	case CRYPTO_SHA2_256:
+		ses->hash_len = SHA2_256_HASH_LEN;
+		ses->hash_init = SHA256_Init_fn;
+		ses->hash_update = intel_sha256_update;
+		ses->hash_finalize = SHA256_Finalize_fn;
+		break;
+	}
 
-		if (csp->csp_auth_mlen < 0 ||
-		    csp->csp_auth_mlen > ses->hash_len)
-			return (EINVAL);
+	if (ses->hash_len != 0) {
 		if (csp->csp_auth_mlen == 0)
 			ses->mlen = ses->hash_len;
 		else
 			ses->mlen = csp->csp_auth_mlen;
 
-		error = aesni_authprepare(ses, csp->csp_auth_klen,
-		    csp->csp_auth_key);
+		error = aesni_authprepare(ses, csp->csp_auth_klen);
 		if (error != 0)
 			return (error);
 	}
 
-	kt = is_fpu_kern_thread(0) || (ses->algo != 0);
+	kt = is_fpu_kern_thread(0) || (csp->csp_cipher_alg != 0);
 	if (!kt) {
 		ACQUIRE_CTX(ctxidx, ctx);
 		fpu_kern_enter(curthread, ctx,
@@ -579,8 +588,8 @@ aesni_cipher_setup(struct aesni_session *ses,
 	}
 
 	error = 0;
-	if (ses->algo != 0)
-		error = aesni_cipher_setup_common(ses, csp->csp_cipher_key,
+	if (csp->csp_cipher_alg != 0)
+		error = aesni_cipher_setup_common(ses, csp, csp->csp_cipher_key,
 		    csp->csp_cipher_klen);
 
 	if (!kt) {
@@ -593,16 +602,25 @@ aesni_cipher_setup(struct aesni_session *ses,
 static int
 aesni_cipher_process(struct aesni_session *ses, struct cryptop *crp)
 {
+	const struct crypto_session_params *csp;
 	struct fpu_kern_ctx *ctx;
 	int error, ctxidx;
 	bool kt;
 
-	switch (ses->algo) {
+	csp = crypto_get_params(crp->crp_session);
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_ICM:
 	case CRYPTO_AES_NIST_GCM_16:
 	case CRYPTO_AES_CCM_16:
 		if ((crp->crp_flags & CRYPTO_F_IV_SEPARATE) == 0)
 			return (EINVAL);
+		break;
+	case CRYPTO_AES_CBC:
+	case CRYPTO_AES_XTS:
+		/* CBC & XTS can only handle full blocks for now */
+		if ((crp->crp_payload_length % AES_BLOCK_LEN) != 0)
+			return (EINVAL);
+		break;
 	}
 
 	ctx = NULL;
@@ -616,20 +634,20 @@ aesni_cipher_process(struct aesni_session *ses, struct cryptop *crp)
 	}
 
 	/* Do work */
-	if (ses->algo != 0 && ses->auth_algo != 0) {
+	if (csp->csp_mode == CSP_MODE_ETA) {
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-			error = aesni_cipher_crypt(ses, crp);
+			error = aesni_cipher_crypt(ses, crp, csp);
 			if (error == 0)
-				error = aesni_cipher_mac(ses, crp);
+				error = aesni_cipher_mac(ses, crp, csp);
 		} else {
-			error = aesni_cipher_mac(ses, crp);
+			error = aesni_cipher_mac(ses, crp, csp);
 			if (error == 0)
-				error = aesni_cipher_crypt(ses, crp);
+				error = aesni_cipher_crypt(ses, crp, csp);
 		}
-	} else if (ses->algo != 0)
-		error = aesni_cipher_crypt(ses, crp);
+	} else if (csp->csp_mode == CSP_MODE_DIGEST)
+		error = aesni_cipher_mac(ses, crp, csp);
 	else
-		error = aesni_cipher_mac(ses, crp);
+		error = aesni_cipher_crypt(ses, crp, csp);
 
 	if (!kt) {
 		fpu_kern_leave(curthread, ctx);
@@ -639,7 +657,8 @@ aesni_cipher_process(struct aesni_session *ses, struct cryptop *crp)
 }
 
 static int
-aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
+aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp)
 {
 	uint8_t iv[AES_BLOCK_LEN], tag[GMAC_DIGEST_LEN], *buf, *authbuf;
 	int error;
@@ -652,8 +671,8 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 
 	authallocated = false;
 	authbuf = NULL;
-	if (ses->algo == CRYPTO_AES_NIST_GCM_16 ||
-	    ses->algo == CRYPTO_AES_CCM_16) {
+	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16 ||
+	    csp->csp_cipher_alg == CRYPTO_AES_CCM_16) {
 		authbuf = aesni_cipher_alloc(crp, crp->crp_aad_start,
 		    crp->crp_aad_length, &authallocated);
 		if (authbuf == NULL) {
@@ -665,7 +684,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 	error = 0;
 	encflag = CRYPTO_OP_IS_ENCRYPT(crp->crp_op);
 	if (crp->crp_cipher_key != NULL) {
-		error = aesni_cipher_setup_common(ses, crp->crp_cipher_key,
+		error = aesni_cipher_setup_common(ses, csp, crp->crp_cipher_key,
 		    crp->crp_cipher_klen);
 		if (error != 0)
 			goto out;
@@ -673,14 +692,14 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 
 	/* Setup iv */
 	if (crp->crp_flags & CRYPTO_F_IV_GENERATE) {
-		arc4rand(iv, ses->ivlen, 0);
-		crypto_copyback(crp, crp->crp_iv_start, ses->ivlen, iv);
+		arc4rand(iv, csp->csp_ivlen, 0);
+		crypto_copyback(crp, crp->crp_iv_start, csp->csp_ivlen, iv);
 	} else if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
-		memcpy(iv, crp->crp_iv, ses->ivlen);
+		memcpy(iv, crp->crp_iv, csp->csp_ivlen);
 	else
-		crypto_copydata(crp, crp->crp_iv_start, ses->ivlen, iv);
+		crypto_copydata(crp, crp->crp_iv_start, csp->csp_ivlen, iv);
 
-	switch (ses->algo) {
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
 		if (encflag)
 			aesni_encrypt_cbc(ses->rounds, ses->enc_schedule,
@@ -709,7 +728,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 			memset(tag, 0, sizeof(tag));
 			AES_GCM_encrypt(buf, buf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    ses->ivlen, ses->enc_schedule, ses->rounds);
+			    csp->csp_ivlen, ses->enc_schedule, ses->rounds);
 			crypto_copyback(crp, crp->crp_digest_start, sizeof(tag),
 			    tag);
 		} else {
@@ -717,7 +736,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 			    tag);
 			if (!AES_GCM_decrypt(buf, buf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    ses->ivlen, ses->enc_schedule, ses->rounds))
+			    csp->csp_ivlen, ses->enc_schedule, ses->rounds))
 				error = EBADMSG;
 		}
 		break;
@@ -726,7 +745,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 			memset(tag, 0, sizeof(tag));			
 			AES_CCM_encrypt(buf, buf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    ses->ivlen, ses->enc_schedule, ses->rounds);
+			    csp->csp_ivlen, ses->enc_schedule, ses->rounds);
 			crypto_copyback(crp, crp->crp_digest_start, sizeof(tag),
 			    tag);
 		} else {
@@ -734,7 +753,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp)
 			    tag);
 			if (!AES_CCM_decrypt(buf, buf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    ses->ivlen, ses->enc_schedule, ses->rounds))
+			    csp->csp_ivlen, ses->enc_schedule, ses->rounds))
 				error = EBADMSG;
 		}
 		break;
@@ -756,7 +775,8 @@ out:
 }
 
 static int
-aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp)
+aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp)
 {
 	union {
 		struct SHA256Context sha2 __aligned(16);
@@ -765,20 +785,27 @@ aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp)
 	uint8_t hmac_key[SHA1_BLOCK_LEN] __aligned(16);
 	uint32_t res[SHA2_256_HASH_LEN / sizeof(uint32_t)];
 	uint32_t res2[SHA2_256_HASH_LEN / sizeof(uint32_t)];
-	int error, i;
+	uint8_t *key;
+	int error, i, keylen;
 
 	if (crp->crp_auth_key != NULL) {
-		error = aesni_authprepare(ses, crp->crp_auth_klen,
-		    crp->crp_auth_key);
+		error = aesni_authprepare(ses, crp->crp_auth_klen);
 		if (error != 0)
 			return (error);
+		key = crp->crp_auth_key;
+		keylen = crp->crp_auth_klen / 8;
+	} else {
+		key = csp->csp_auth_key;
+		keylen = csp->csp_auth_klen / 8;
 	}
 
 	if (ses->hmac) {
 		/* Inner hash: (K ^ IPAD) || data */
 		ses->hash_init(&sctx);
-		for (i = 0; i < sizeof(hmac_key); i++)
-			hmac_key[i] = ses->hmac_key[i] ^ HMAC_IPAD_VAL;
+		for (i = 0; i < keylen; i++)
+			hmac_key[i] = key[i] ^ HMAC_IPAD_VAL;
+		for (i = keylen; i < sizeof(hmac_key); i++)
+			hmac_key[i] = 0 ^ HMAC_IPAD_VAL;
 		ses->hash_update(&sctx, hmac_key, sizeof(hmac_key));
 
 		crypto_apply(crp, crp->crp_aad_start, crp->crp_aad_length,
@@ -792,8 +819,11 @@ aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp)
 
 		/* Outer hash: (K ^ OPAD) || inner hash */
 		ses->hash_init(&sctx);
-		for (i = 0; i < sizeof(hmac_key); i++)
-			hmac_key[i] = ses->hmac_key[i] ^ HMAC_OPAD_VAL;
+		for (i = 0; i < keylen; i++)
+			hmac_key[i] = key[i] ^ HMAC_OPAD_VAL;
+		for (i = keylen; i < sizeof(hmac_key); i++)
+			hmac_key[i] = 0 ^ HMAC_OPAD_VAL;
+		ses->hash_update(&sctx, hmac_key, sizeof(hmac_key));
 		ses->hash_update(&sctx, res, ses->hash_len);
 		ses->hash_finalize(res, &sctx);
 	} else {
