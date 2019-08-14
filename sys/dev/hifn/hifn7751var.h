@@ -105,7 +105,6 @@ struct hifn_dma {
 
 
 struct hifn_session {
-	u_int8_t hs_iv[HIFN_MAX_IV_LENGTH];
 	int hs_mlen;
 };
 
@@ -160,6 +159,7 @@ struct hifn_softc {
 	int			sc_cmdk, sc_srck, sc_dstk, sc_resk;
 
 	int32_t			sc_cid;
+	uint16_t		sc_ena;
 	int			sc_maxses;
 	int			sc_ramsize;
 	int			sc_flags;
@@ -278,7 +278,6 @@ struct hifn_command {
 
 	struct hifn_softc *softc;
 	struct cryptop *crp;
-	struct cryptodesc *enccrd, *maccrd;
 };
 
 #define	src_m		src.u.m

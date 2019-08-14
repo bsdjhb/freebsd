@@ -127,6 +127,7 @@ SUBDIR=	\
 	${_glxiic} \
 	${_glxsb} \
 	gpio \
+	hifn \
 	hme \
 	${_hpt27xx} \
 	${_hptiop} \
@@ -388,7 +389,6 @@ SUBDIR=	\
 
 # XXX: Disabled in this branch until ported
 XXX=	\
-	hifn \
 	kgssapi_krb5 \
 	ubsec \
 
