@@ -682,7 +682,7 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	 * XXX: Use the cached route in the inpcb to find the
 	 * interface.  This should perhaps instead use
 	 * rtalloc1_fib(dst, 0, 0, fibnum).  Since KTLS is only
-	 * enabled after a connection has completed key negotation in
+	 * enabled after a connection has completed key negotiation in
 	 * userland, the cached route will be present in practice.
 	 */
 	rt = inp->inp_route.ro_rt;
