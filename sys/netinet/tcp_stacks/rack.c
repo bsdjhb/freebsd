@@ -6971,7 +6971,11 @@ rack_output(struct tcpcb *tp)
 	struct ip6_hdr *ip6 = NULL;
 	int32_t isipv6;
 #endif
-	bool hw_tls;
+#ifdef KERN_TLS
+	const bool hw_tls = (so->so_snd.sb_flags & SB_TLS_IFNET) != 0;
+#else
+	const bool hw_tls = false;
+#endif
 
 	/* setup and take the cache hits here */
 	rack = (struct tcp_rack *)tp->t_fb_ptr;
@@ -6981,13 +6985,6 @@ rack_output(struct tcpcb *tp)
 	kern_prefetch(sb, &do_a_prefetch);
 	do_a_prefetch = 1;
 	
-#ifdef KERN_TLS
-	if (so->so_snd.sb_flags & SB_TLS_IFNET)
-		hw_tls = true;
-	else
-#endif
-		hw_tls = false;
-
 	INP_WLOCK_ASSERT(inp);
 #ifdef TCP_OFFLOAD
 	if (tp->t_flags & TF_TOE)

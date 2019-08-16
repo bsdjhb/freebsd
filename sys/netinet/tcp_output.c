@@ -223,14 +223,11 @@ tcp_output(struct tcpcb *tp)
 
 	isipv6 = (tp->t_inpcb->inp_vflag & INP_IPV6) != 0;
 #endif
-	bool hw_tls;
-
 #ifdef KERN_TLS
-	if (so->so_snd.sb_flags & SB_TLS_IFNET)
-		hw_tls = true;
-	else
+	const bool hw_tls = (so->so_snd.sb_flags & SB_TLS_IFNET) != 0;
+#else
+	const bool hw_tls = false;
 #endif
-		hw_tls = false;
 
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 
