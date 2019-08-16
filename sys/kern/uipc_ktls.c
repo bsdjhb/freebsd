@@ -1311,7 +1311,7 @@ ktls_encrypt(struct mbuf_ext_pgs *pgs)
 	struct iovec src_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	struct iovec dst_iov[1 + btoc(TLS_MAX_MSG_SIZE_V10_2)];
 	vm_page_t pg;
-	int error, i, len, npages, off, total_pages, wire_adj;
+	int error, i, len, npages, off, total_pages;
 	bool is_anon;
 
 	so = pgs->so;
@@ -1368,7 +1368,6 @@ ktls_encrypt(struct mbuf_ext_pgs *pgs)
 		is_anon = M_WRITABLE(m);
 
 		off = pgs->first_pg_off;
-		wire_adj = 0;
 		for (i = 0; i < pgs->npgs; i++, off = 0) {
 			len = mbuf_ext_pg_len(pgs, i, off);
 			src_iov[i].iov_len = len;
@@ -1381,16 +1380,12 @@ ktls_encrypt(struct mbuf_ext_pgs *pgs)
 				continue;
 			}
 retry_page:
-			pg = vm_page_alloc(NULL, 0, VM_ALLOC_SYSTEM |
-			    VM_ALLOC_NOOBJ | VM_ALLOC_NODUMP);
+			pg = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL |
+			    VM_ALLOC_NOOBJ | VM_ALLOC_NODUMP | VM_ALLOC_WIRED);
 			if (pg == NULL) {
-				if (wire_adj)
-					vm_wire_add(wire_adj);
-				wire_adj = 0;
 				vm_wait(NULL);
 				goto retry_page;
 			}
-			wire_adj++;
 			parray[i] = VM_PAGE_TO_PHYS(pg);
 			dst_iov[i].iov_base =
 			    (char *)(void *)PHYS_TO_DMAP(parray[i]) + off;
@@ -1398,8 +1393,6 @@ retry_page:
 		}
 
 		npages += i;
-		if (wire_adj)
-			vm_wire_add(wire_adj);
 
 		error = (*tls->sw_encrypt)(tls,
 		    (const struct tls_record_layer *)pgs->hdr,
