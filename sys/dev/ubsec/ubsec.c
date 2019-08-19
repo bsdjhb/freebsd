@@ -1103,7 +1103,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 
 	if (csp->csp_mode == CSP_MODE_ETA) {
 		/*
-		 * ubsecr only supports ETA requests where there is no
+		 * ubsec only supports ETA requests where there is no
 		 * gap between the AAD and payload.
 		 */
 		if (crp->crp_aad_length != 0 &&
