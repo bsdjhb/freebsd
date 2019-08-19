@@ -608,7 +608,7 @@ _pccard=	pccard
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _rdma=		rdma
 .endif
-#_safe=		safe
+_safe=		safe
 _speaker=	speaker
 _splash=	splash
 _sppp=		sppp

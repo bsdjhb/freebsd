@@ -112,7 +112,6 @@ struct safe_ringentry {
 
 	int			unused;
 	int			re_flags;
-#define	SAFE_QFLAGS_COPYOUTIV	0x1		/* copy back on completion */
 #define	SAFE_QFLAGS_COPYOUTICV	0x2		/* copy back on completion */
 };
 
@@ -138,7 +137,6 @@ struct safe_session {
 	u_int32_t	ses_mlen;		/* hmac length in bytes */
 	u_int32_t	ses_hminner[5];		/* hmac inner state */
 	u_int32_t	ses_hmouter[5];		/* hmac outer state */
-	u_int32_t	ses_iv[4];		/* DES/3DES/AES iv */
 };
 
 struct safe_softc {
@@ -157,6 +155,7 @@ struct safe_softc {
 	int			sc_suspended;
 	int			sc_needwakeup;	/* notify crypto layer */
 	int32_t			sc_cid;		/* crypto tag */
+	uint32_t		sc_devinfo;
 	struct safe_dma_alloc	sc_ringalloc;	/* PE ring allocation state */
 	struct safe_ringentry	*sc_ring;	/* PE ring */
 	struct safe_ringentry	*sc_ringtop;	/* PE ring top */
