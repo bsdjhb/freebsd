@@ -672,7 +672,7 @@ _nvd=		nvd
 _nvme=		nvme
 _nvram=		nvram
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
-#_padlock=	padlock
+_padlock=	padlock
 _padlock_rng=	padlock_rng
 _rdrand_rng=	rdrand_rng
 .endif
