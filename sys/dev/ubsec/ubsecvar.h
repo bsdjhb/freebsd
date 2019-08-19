@@ -215,7 +215,6 @@ struct ubsec_session {
 	u_int32_t	ses_mlen;		/* hmac length */
 	u_int32_t	ses_hminner[5];		/* hmac inner state */
 	u_int32_t	ses_hmouter[5];		/* hmac outer state */
-	u_int32_t	ses_iv[2];		/* [3]DES iv */
 };
 #endif /* _KERNEL */
 

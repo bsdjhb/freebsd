@@ -354,6 +354,7 @@ SUBDIR=	\
 	twe \
 	tws \
 	uart \
+	ubsec \
 	udf \
 	udf_iconv \
 	ufs \
@@ -387,10 +388,6 @@ SUBDIR=	\
 	xl \
 	xz \
 	zlib
-
-# XXX: Disabled in this branch until ported
-XXX=	\
-	ubsec \
 
 .if ${MK_AUTOFS} != "no" || defined(ALL_MODULES)
 _autofs=	autofs
