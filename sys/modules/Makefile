@@ -195,6 +195,7 @@ SUBDIR=	\
 	jme \
 	kbdmux \
 	kgssapi \
+	kgssapi_krb5 \
 	khelp \
 	krpc \
 	ksyms \
@@ -389,7 +390,6 @@ SUBDIR=	\
 
 # XXX: Disabled in this branch until ported
 XXX=	\
-	kgssapi_krb5 \
 	ubsec \
 
 .if ${MK_AUTOFS} != "no" || defined(ALL_MODULES)
