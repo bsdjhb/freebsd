@@ -151,7 +151,9 @@ g_eli_auth_read_done(struct cryptop *crp)
 			bp->bio_error = crp->crp_etype;
 	}
 	sc = bp->bio_to->geom->softc;
-	g_eli_key_drop(sc, crp->crp_desc->crd_next->crd_key);
+	if (crp->crp_cipher_key != NULL)
+		g_eli_key_drop(sc, crp->crp_cipher_key);
+	crypto_freereq(crp);
 	/*
 	 * Do we have all sectors already?
 	 */
@@ -277,7 +279,9 @@ g_eli_auth_write_done(struct cryptop *crp)
 			bp->bio_error = crp->crp_etype;
 	}
 	sc = bp->bio_to->geom->softc;
-	g_eli_key_drop(sc, crp->crp_desc->crd_key);
+	if (crp->crp_cipher_key != NULL)
+		g_eli_key_drop(sc, crp->crp_cipher_key);
+	crypto_freereq(crp);
 	/*
 	 * All sectors are already encrypted?
 	 */
@@ -362,8 +366,6 @@ g_eli_auth_read(struct g_eli_softc *sc, struct bio *bp)
 	cbp->bio_length = cp->provider->sectorsize * nsec;
 	size = cbp->bio_length;
 	size += sc->sc_alen * nsec;
-	size += sizeof(struct cryptop) * nsec;
-	size += sizeof(struct cryptodesc) * nsec * 2;
 	size += G_ELI_AUTH_SECKEYLEN * nsec;
 	cbp->bio_offset = (bp->bio_offset / bp->bio_to->sectorsize) * sc->sc_bytes_per_sector;
 	bp->bio_driver2 = malloc(size, M_ELI, M_WAITOK);
@@ -408,7 +410,6 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 {
 	struct g_eli_softc *sc;
 	struct cryptop *crp;
-	struct cryptodesc *crde, *crda;
 	u_int i, lsec, nsec, data_secsize, decr_secsize, encr_secsize;
 	off_t dstoff;
 	u_char *p, *data, *auth, *authkey, *plaindata;
@@ -443,9 +444,6 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 		size_t size;
 
 		size = encr_secsize * nsec;
-		size += sizeof(*crp) * nsec;
-		size += sizeof(*crde) * nsec;
-		size += sizeof(*crda) * nsec;
 		size += G_ELI_AUTH_SECKEYLEN * nsec;
 		size += sizeof(uintptr_t);	/* Space for alignment. */
 		data = malloc(size, M_ELI, M_WAITOK);
@@ -460,9 +458,7 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 #endif
 
 	for (i = 1; i <= nsec; i++, dstoff += encr_secsize) {
-		crp = (struct cryptop *)p;	p += sizeof(*crp);
-		crde = (struct cryptodesc *)p;	p += sizeof(*crde);
-		crda = (struct cryptodesc *)p;	p += sizeof(*crda);
+		crp = crypto_getreq(wr->w_sid, M_WAITOK);
 		authkey = (u_char *)p;		p += G_ELI_AUTH_SECKEYLEN;
 
 		data_secsize = sc->sc_data_per_sector;
@@ -488,10 +484,9 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 			plaindata += data_secsize;
 		}
 
-		crp->crp_session = wr->w_sid;
 		crp->crp_ilen = sc->sc_alen + data_secsize;
-		crp->crp_olen = data_secsize;
 		crp->crp_opaque = (void *)bp;
+		crp->crp_buf_type = CRYPTO_BUF_CONTIG;
 		crp->crp_buf = (void *)data;
 		data += encr_secsize;
 		crp->crp_flags = CRYPTO_F_CBIFSYNC;
@@ -499,41 +494,32 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 			crp->crp_flags |= CRYPTO_F_BATCH;
 		if (bp->bio_cmd == BIO_WRITE) {
 			crp->crp_callback = g_eli_auth_write_done;
-			crp->crp_desc = crde;
-			crde->crd_next = crda;
-			crda->crd_next = NULL;
+			crp->crp_op = CRYPTO_OP_ENCRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
 		} else {
 			crp->crp_callback = g_eli_auth_read_done;
-			crp->crp_desc = crda;
-			crda->crd_next = crde;
-			crde->crd_next = NULL;
+			crp->crp_op = CRYPTO_OP_DECRYPT |
+			    CRYPTO_OP_COMPUTE_DIGEST;
 		}
 
-		crde->crd_skip = sc->sc_alen;
-		crde->crd_len = data_secsize;
-		crde->crd_flags = CRD_F_IV_EXPLICIT | CRD_F_IV_PRESENT;
-		if ((sc->sc_flags & G_ELI_FLAG_FIRST_KEY) == 0)
-			crde->crd_flags |= CRD_F_KEY_EXPLICIT;
-		if (bp->bio_cmd == BIO_WRITE)
-			crde->crd_flags |= CRD_F_ENCRYPT;
-		crde->crd_alg = sc->sc_ealgo;
-		crde->crd_key = g_eli_key_hold(sc, dstoff, encr_secsize);
-		crde->crd_klen = sc->sc_ekeylen;
-		if (sc->sc_ealgo == CRYPTO_AES_XTS)
-			crde->crd_klen <<= 1;
-		g_eli_crypto_ivgen(sc, dstoff, crde->crd_iv,
-		    sizeof(crde->crd_iv));
+		crp->crp_digest_start = 0;
+		crp->crp_payload_start = sc->sc_alen;
+		crp->crp_payload_length = data_secsize;
+		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
+		if ((sc->sc_flags & G_ELI_FLAG_FIRST_KEY) == 0) {
+			crp->crp_cipher_key = g_eli_key_hold(sc, dstoff,
+			    encr_secsize);
+			crp->crp_cipher_klen = sc->sc_ekeylen;
+			if (sc->sc_ealgo == CRYPTO_AES_XTS)
+				crp->crp_cipher_klen <<= 1;
+		}
+		g_eli_crypto_ivgen(sc, dstoff, crp->crp_iv,
+		    sizeof(crp->crp_iv));
 
-		crda->crd_skip = sc->sc_alen;
-		crda->crd_len = data_secsize;
-		crda->crd_inject = 0;
-		crda->crd_flags = CRD_F_KEY_EXPLICIT;
-		crda->crd_alg = sc->sc_aalgo;
 		g_eli_auth_keygen(sc, dstoff, authkey);
-		crda->crd_key = authkey;
-		crda->crd_klen = G_ELI_AUTH_SECKEYLEN * 8;
+		crp->crp_auth_key = authkey;
+		crp->crp_auth_klen = G_ELI_AUTH_SECKEYLEN * 8;
 
-		crp->crp_etype = 0;
 		error = crypto_dispatch(crp);
 		KASSERT(error == 0, ("crypto_dispatch() failed (error=%d)",
 		    error));
