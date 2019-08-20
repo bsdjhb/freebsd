@@ -785,7 +785,7 @@ aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp,
 	uint8_t hmac_key[SHA1_BLOCK_LEN] __aligned(16);
 	uint32_t res[SHA2_256_HASH_LEN / sizeof(uint32_t)];
 	uint32_t res2[SHA2_256_HASH_LEN / sizeof(uint32_t)];
-	uint8_t *key;
+	const uint8_t *key;
 	int error, i, keylen;
 
 	if (crp->crp_auth_key != NULL) {

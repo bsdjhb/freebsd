@@ -490,6 +490,7 @@ g_eli_newsession(struct g_eli_worker *wr)
 	struct g_eli_softc *sc;
 	struct crypto_session_params csp;
 	int error;
+	void *key;
 
 	sc = wr->w_softc;
 
@@ -501,9 +502,11 @@ g_eli_newsession(struct g_eli_worker *wr)
 	if (sc->sc_ealgo == CRYPTO_AES_XTS)
 		csp.csp_cipher_klen <<= 1;
 	if ((sc->sc_flags & G_ELI_FLAG_FIRST_KEY) != 0) {
-		csp.csp_cipher_key = g_eli_key_hold(sc, 0,
+		key = g_eli_key_hold(sc, 0,
 		    LIST_FIRST(&sc->sc_geom->consumer)->provider->sectorsize);
+		csp.csp_cipher_key = key;
 	} else {
+		key = NULL;
 		csp.csp_cipher_key = sc->sc_ekey;
 	}
 	if (sc->sc_flags & G_ELI_FLAG_AUTH) {
@@ -545,9 +548,9 @@ g_eli_newsession(struct g_eli_worker *wr)
 
 	if ((sc->sc_flags & G_ELI_FLAG_FIRST_KEY) != 0) {
 		if (error)
-			g_eli_key_drop(sc, csp.csp_cipher_key);
+			g_eli_key_drop(sc, key);
 		else
-			wr->w_first_key = csp.csp_cipher_key;
+			wr->w_first_key = key;
 	}
 
 	return (error);

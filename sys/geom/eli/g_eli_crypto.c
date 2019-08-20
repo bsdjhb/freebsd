@@ -73,7 +73,7 @@ g_eli_crypto_cipher(u_int algo, int enc, u_char *data, size_t datasize,
 	csp.csp_mode = CSP_MODE_CIPHER;
 	csp.csp_cipher_alg = algo;
 	csp.csp_ivlen = g_eli_ivlen(algo);
-	csp.csp_cipher_key = __DECONST(void *, key);
+	csp.csp_cipher_key = key;
 	csp.csp_cipher_klen = keysize;
 	error = crypto_newsession(&sid, &csp, CRYPTOCAP_F_SOFTWARE);
 	if (error != 0)
@@ -88,8 +88,6 @@ g_eli_crypto_cipher(u_int algo, int enc, u_char *data, size_t datasize,
 	crp->crp_payload_length = datasize;
 	crp->crp_flags = CRYPTO_F_CBIFSYNC | CRYPTO_F_IV_SEPARATE;
 	crp->crp_op = enc ? CRYPTO_OP_ENCRYPT : CRYPTO_OP_DECRYPT;
-	crp->crp_cipher_key = __DECONST(void *, key);
-	crp->crp_cipher_klen = keysize;
 	memset(crp->crp_iv, 0, sizeof(crp->crp_iv));
 
 	crp->crp_opaque = NULL;

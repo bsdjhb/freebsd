@@ -98,7 +98,7 @@ padlock_cbc(void *in, void *out, size_t count, void *key, union padlock_cw *cw,
 }
 
 static void
-padlock_cipher_key_setup(struct padlock_session *ses, caddr_t key, int klen)
+padlock_cipher_key_setup(struct padlock_session *ses, const void *key, int klen)
 {
 	union padlock_cw *cw;
 	int i;

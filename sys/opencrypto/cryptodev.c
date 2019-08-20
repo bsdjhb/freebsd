@@ -274,8 +274,8 @@ struct csession {
 	int		ivsize;
 	int		mode;
 
-	caddr_t		key;
-	caddr_t		mackey;
+	void		*key;
+	void		*mackey;
 };
 
 struct cryptop_data {
@@ -322,7 +322,8 @@ static struct fileops cryptofops = {
 static struct csession *csefind(struct fcrypt *, u_int);
 static bool csedelete(struct fcrypt *, u_int);
 static struct csession *csecreate(struct fcrypt *, crypto_session_t,
-    struct crypto_session_params *, struct enc_xform *, struct auth_hash *);
+    struct crypto_session_params *, struct enc_xform *, void *,
+    struct auth_hash *, void *);
 static void csefree(struct csession *);
 
 static	int cryptodev_op(struct csession *, struct crypt_op *,
@@ -377,6 +378,8 @@ cryptof_ioctl(
 	struct crypt_aead *caead;
 	struct enc_xform *txform = NULL;
 	struct auth_hash *thash = NULL;
+	void *key = NULL;
+	void *mackey = NULL;
 	struct crypt_kop *kop;
 	crypto_session_t cses;
 	u_int32_t ses;
@@ -617,17 +620,16 @@ cryptof_ioctl(
 				goto bail;
 			}
 
-			csp.csp_cipher_key = malloc(csp.csp_cipher_klen / 8,
-			    M_XDATA, M_WAITOK);
-			error = copyin(sop->key, csp.csp_cipher_key,
-			    csp.csp_cipher_klen / 8);
+			key = malloc(csp.csp_cipher_klen / 8, M_XDATA,
+			    M_WAITOK);
+			error = copyin(sop->key, key, csp.csp_cipher_klen / 8);
 			if (error) {
 				CRYPTDEB("invalid key");
 				SDT_PROBE1(opencrypto, dev, ioctl, error,
 				    __LINE__);
 				goto bail;
 			}
-
+			csp.csp_cipher_key = key;
 			csp.csp_ivlen = txform->ivsize;
 		}
 
@@ -644,9 +646,9 @@ cryptof_ioctl(
 			}
 
 			if (csp.csp_auth_klen) {
-				csp.csp_auth_key = malloc(csp.csp_auth_klen / 8,
+				mackey = malloc(csp.csp_auth_klen / 8,
 				    M_XDATA, M_WAITOK);
-				error = copyin(sop->mackey, csp.csp_auth_key,
+				error = copyin(sop->mackey, mackey,
 				    csp.csp_auth_klen / 8);
 				if (error) {
 					CRYPTDEB("invalid mac key");
@@ -654,6 +656,7 @@ cryptof_ioctl(
 					    error, __LINE__);
 					goto bail;
 				}
+				csp.csp_auth_key = mackey;
 			}
 
 			if (csp.csp_auth_alg == CRYPTO_AES_NIST_GMAC)
@@ -685,7 +688,7 @@ cryptof_ioctl(
 			goto bail;
 		}
 
-		cse = csecreate(fcr, cses, &csp, txform, thash);
+		cse = csecreate(fcr, cses, &csp, txform, key, thash, mackey);
 
 		if (cse == NULL) {
 			crypto_freesession(cses);
@@ -705,8 +708,8 @@ cryptof_ioctl(
 		}
 bail:
 		if (error) {
-			free(csp.csp_cipher_key, M_XDATA);
-			free(csp.csp_auth_key, M_XDATA);
+			free(key, M_XDATA);
+			free(mackey, M_XDATA);
 		}
 #ifdef COMPAT_FREEBSD32
 		else {
@@ -1521,7 +1524,7 @@ csedelete(struct fcrypt *fcr, u_int ses)
 struct csession *
 csecreate(struct fcrypt *fcr, crypto_session_t cses,
     struct crypto_session_params *csp, struct enc_xform *txform,
-    struct auth_hash *thash)
+    void *key, struct auth_hash *thash, void *mackey)
 {
 	struct csession *cse;
 
@@ -1530,8 +1533,8 @@ csecreate(struct fcrypt *fcr, crypto_session_t cses,
 		return NULL;
 	mtx_init(&cse->lock, "cryptodev", "crypto session lock", MTX_DEF);
 	refcount_init(&cse->refs, 1);
-	cse->key = csp->csp_cipher_key;
-	cse->mackey = csp->csp_auth_key;
+	cse->key = key;
+	cse->mackey = mackey;
 	cse->mode = csp->csp_mode;
 	cse->cses = cses;
 	cse->txform = txform;

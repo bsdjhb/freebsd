@@ -284,7 +284,7 @@ ccp_detach(device_t dev)
 }
 
 static void
-ccp_init_hmac_digest(struct ccp_session *s, char *key, int klen)
+ccp_init_hmac_digest(struct ccp_session *s, const char *key, int klen)
 {
 	union authctx auth_ctx;
 	struct auth_hash *axf;

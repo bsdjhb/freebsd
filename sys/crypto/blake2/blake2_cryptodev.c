@@ -335,7 +335,7 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 	char res[BLAKE2B_OUTBYTES], res2[BLAKE2B_OUTBYTES];
 	const struct crypto_session_params *csp;
 	struct fpu_kern_ctx *ctx;
-	void *key;
+	const void *key;
 	int ctxidx;
 	bool kt;
 	int error, rc;

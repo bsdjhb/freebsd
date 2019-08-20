@@ -152,7 +152,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 	}
 	sc = bp->bio_to->geom->softc;
 	if (crp->crp_cipher_key != NULL)
-		g_eli_key_drop(sc, crp->crp_cipher_key);
+		g_eli_key_drop(sc, __DECONST(void *, crp->crp_cipher_key));
 	crypto_freereq(crp);
 	/*
 	 * Do we have all sectors already?
@@ -280,7 +280,7 @@ g_eli_auth_write_done(struct cryptop *crp)
 	}
 	sc = bp->bio_to->geom->softc;
 	if (crp->crp_cipher_key != NULL)
-		g_eli_key_drop(sc, crp->crp_cipher_key);
+		g_eli_key_drop(sc, __DECONST(void *, crp->crp_cipher_key));
 	crypto_freereq(crp);
 	/*
 	 * All sectors are already encrypted?

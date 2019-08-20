@@ -248,8 +248,10 @@ padlock_free_ctx(struct auth_hash *axf, void *ctx)
 }
 
 static void
-padlock_hash_key_setup(struct padlock_session *ses, caddr_t key, int klen)
+padlock_hash_key_setup(struct padlock_session *ses, const uint8_t *key,
+    int klen)
 {
+	uint8_t hmackey[HMAC_MAX_BLOCK_LEN];
 	struct auth_hash *axf;
 	int i;
 
@@ -265,21 +267,18 @@ padlock_hash_key_setup(struct padlock_session *ses, caddr_t key, int klen)
 	padlock_free_ctx(axf, ses->ses_octx);
 
 	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_IPAD_VAL;
+		hmackey[i] = key[i] ^ HMAC_IPAD_VAL;
 
 	axf->Init(ses->ses_ictx);
-	axf->Update(ses->ses_ictx, key, klen);
+	axf->Update(ses->ses_ictx, hmackey, klen);
 	axf->Update(ses->ses_ictx, hmac_ipad_buffer, axf->blocksize - klen);
 
 	for (i = 0; i < klen; i++)
-		key[i] ^= (HMAC_IPAD_VAL ^ HMAC_OPAD_VAL);
+		hmackey[i] = key[i] ^ HMAC_OPAD_VAL;
 
 	axf->Init(ses->ses_octx);
-	axf->Update(ses->ses_octx, key, klen);
+	axf->Update(ses->ses_octx, hmackey, klen);
 	axf->Update(ses->ses_octx, hmac_opad_buffer, axf->blocksize - klen);
-
-	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_OPAD_VAL;
 }
 
 /*

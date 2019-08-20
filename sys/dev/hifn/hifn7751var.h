@@ -269,7 +269,8 @@ struct hifn_operand {
 struct hifn_command {
 	struct hifn_session *session;
 	u_int16_t base_masks, cry_masks, mac_masks;
-	u_int8_t iv[HIFN_MAX_IV_LENGTH], *ck, mac[HIFN_MAC_KEY_LENGTH];
+	u_int8_t iv[HIFN_MAX_IV_LENGTH], mac[HIFN_MAC_KEY_LENGTH];
+	const uint8_t *ck;
 	int cklen;
 	int sloplen, slopidx;
 

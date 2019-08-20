@@ -2452,7 +2452,7 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 	const struct crypto_session_params *csp;
 	struct hifn_softc *sc = device_get_softc(dev);
 	struct hifn_command *cmd = NULL;
-	void *mackey;
+	const void *mackey;
 	int err, ivlen, keylen;
 	struct hifn_session *ses;
 

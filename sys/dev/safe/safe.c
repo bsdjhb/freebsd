@@ -623,7 +623,7 @@ safe_feed(struct safe_softc *sc, struct safe_ringentry *re)
 
 #define	N(a)	(sizeof(a) / sizeof (a[0]))
 static void
-safe_setup_enckey(struct safe_session *ses, caddr_t key)
+safe_setup_enckey(struct safe_session *ses, const void *key)
 {
 	int i;
 
@@ -635,47 +635,46 @@ safe_setup_enckey(struct safe_session *ses, caddr_t key)
 }
 
 static void
-safe_setup_mackey(struct safe_session *ses, int algo, caddr_t key, int klen)
+safe_setup_mackey(struct safe_session *ses, int algo, const uint8_t *key,
+    int klen)
 {
+	uint8_t hmackey[HMAC_MAX_BLOCK_LEN];
 	MD5_CTX md5ctx;
 	SHA1_CTX sha1ctx;
 	int i;
 
 
 	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_IPAD_VAL;
+		hmackey[i] = key[i] ^ HMAC_IPAD_VAL;
 
 	if (algo == CRYPTO_MD5_HMAC) {
 		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, key, klen);
+		MD5Update(&md5ctx, hmackey, klen);
 		MD5Update(&md5ctx, hmac_ipad_buffer, MD5_BLOCK_LEN - klen);
 		bcopy(md5ctx.state, ses->ses_hminner, sizeof(md5ctx.state));
 	} else {
 		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, key, klen);
+		SHA1Update(&sha1ctx, hmackey, klen);
 		SHA1Update(&sha1ctx, hmac_ipad_buffer,
 		    SHA1_BLOCK_LEN - klen);
 		bcopy(sha1ctx.h.b32, ses->ses_hminner, sizeof(sha1ctx.h.b32));
 	}
 
 	for (i = 0; i < klen; i++)
-		key[i] ^= (HMAC_IPAD_VAL ^ HMAC_OPAD_VAL);
+		hmackey[i] = key[i] ^ HMAC_OPAD_VAL;
 
 	if (algo == CRYPTO_MD5_HMAC) {
 		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, key, klen);
+		MD5Update(&md5ctx, hmackey, klen);
 		MD5Update(&md5ctx, hmac_opad_buffer, MD5_BLOCK_LEN - klen);
 		bcopy(md5ctx.state, ses->ses_hmouter, sizeof(md5ctx.state));
 	} else {
 		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, key, klen);
+		SHA1Update(&sha1ctx, hmackey, klen);
 		SHA1Update(&sha1ctx, hmac_opad_buffer,
 		    SHA1_BLOCK_LEN - klen);
 		bcopy(sha1ctx.h.b32, ses->ses_hmouter, sizeof(sha1ctx.h.b32));
 	}
-
-	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_OPAD_VAL;
 
 	/* PE is little-endian, insure proper byte order */
 	for (i = 0; i < N(ses->ses_hminner); i++) {

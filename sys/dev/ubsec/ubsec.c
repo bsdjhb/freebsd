@@ -831,7 +831,7 @@ feed1:
 }
 
 static void
-ubsec_setup_enckey(struct ubsec_session *ses, int algo, caddr_t key)
+ubsec_setup_enckey(struct ubsec_session *ses, int algo, const void *key)
 {
 
 	/* Go ahead and compute key in ubsec's byte order */
@@ -851,41 +851,41 @@ ubsec_setup_enckey(struct ubsec_session *ses, int algo, caddr_t key)
 }
 
 static void
-ubsec_setup_mackey(struct ubsec_session *ses, int algo, const char *auth_key,
+ubsec_setup_mackey(struct ubsec_session *ses, int algo, const char *key,
     int klen)
 {
-	char key[SHA1_BLOCK_LEN];
+	char hmackey[SHA1_BLOCK_LEN];
 	MD5_CTX md5ctx;
 	SHA1_CTX sha1ctx;
 	int i;
 
 	for (i = 0; i < klen; i++)
-		key[i] = auth_key[i] ^ HMAC_IPAD_VAL;
+		hmackey[i] = key[i] ^ HMAC_IPAD_VAL;
 
 	if (algo == CRYPTO_MD5_HMAC) {
 		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, key, klen);
+		MD5Update(&md5ctx, hmackey, klen);
 		MD5Update(&md5ctx, hmac_ipad_buffer, MD5_BLOCK_LEN - klen);
 		bcopy(md5ctx.state, ses->ses_hminner, sizeof(md5ctx.state));
 	} else {
 		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, key, klen);
+		SHA1Update(&sha1ctx, hmackey, klen);
 		SHA1Update(&sha1ctx, hmac_ipad_buffer,
 		    SHA1_BLOCK_LEN - klen);
 		bcopy(sha1ctx.h.b32, ses->ses_hminner, sizeof(sha1ctx.h.b32));
 	}
 
 	for (i = 0; i < klen; i++)
-		key[i] = auth_key[i] ^ HMAC_OPAD_VAL;
+		hmackey[i] = key[i] ^ HMAC_OPAD_VAL;
 
 	if (algo == CRYPTO_MD5_HMAC) {
 		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, key, klen);
+		MD5Update(&md5ctx, hmackey, klen);
 		MD5Update(&md5ctx, hmac_opad_buffer, MD5_BLOCK_LEN - klen);
 		bcopy(md5ctx.state, ses->ses_hmouter, sizeof(md5ctx.state));
 	} else {
 		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, key, klen);
+		SHA1Update(&sha1ctx, hmackey, klen);
 		SHA1Update(&sha1ctx, hmac_opad_buffer,
 		    SHA1_BLOCK_LEN - klen);
 		bcopy(sha1ctx.h.b32, ses->ses_hmouter, sizeof(sha1ctx.h.b32));
