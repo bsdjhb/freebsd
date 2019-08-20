@@ -1067,7 +1067,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_auth_key != NULL) {
 			ubsec_setup_mackey(ses, csp->csp_auth_alg,
-			    csp->csp_auth_key, csp->csp_auth_klen);
+			    crp->crp_auth_key, crp->crp_auth_klen);
 		}
 
 		if (csp->csp_auth_alg == CRYPTO_MD5_HMAC)
