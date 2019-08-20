@@ -100,7 +100,7 @@ ccp_populate_sglist(struct sglist *sg, struct cryptop *crp)
 	case CRYPTO_BUF_MBUF:
 		error = sglist_append_mbuf(sg, crp->crp_mbuf);
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		error = sglist_append_uio(sg, crp->crp_uio);
 		break;
 	case CRYPTO_BUF_CONTIG:

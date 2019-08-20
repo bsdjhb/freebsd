@@ -164,7 +164,7 @@ crypto_copyback(struct cryptop *crp, int off, int size, const void *src)
 	case CRYPTO_BUF_MBUF:
 		m_copyback(crp->crp_mbuf, off, size, src);
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		cuio_copyback(crp->crp_uio, off, size, src);
 		break;
 	case CRYPTO_BUF_CONTIG:
@@ -183,7 +183,7 @@ crypto_copydata(struct cryptop *crp, int off, int size, void *dst)
 	case CRYPTO_BUF_MBUF:
 		m_copydata(crp->crp_mbuf, off, size, dst);
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		cuio_copydata(crp->crp_uio, off, size, dst);
 		break;
 	case CRYPTO_BUF_CONTIG:
@@ -204,7 +204,7 @@ crypto_apply(struct cryptop *crp, int off, int len,
 	case CRYPTO_BUF_MBUF:
 		error = m_apply(crp->crp_mbuf, off, len, f, arg);
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		error = cuio_apply(crp->crp_uio, off, len, f, arg);
 		break;
 	case CRYPTO_BUF_CONTIG:
@@ -306,7 +306,7 @@ crypto_contiguous_subsegment(struct cryptop *crp, size_t skip, size_t len)
 	switch (crp->crp_buf_type) {
 	case CRYPTO_BUF_MBUF:
 		return (m_contiguous_subsegment(crp->crp_mbuf, skip, len));
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		return (cuio_contiguous_segment(crp->crp_uio, skip, len));
 	case CRYPTO_BUF_CONTIG:
 		return (crp->crp_buf + skip);

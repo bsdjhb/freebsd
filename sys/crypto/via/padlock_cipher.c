@@ -172,7 +172,7 @@ padlock_cipher_alloc(struct cryptop *crp, int *allocated)
 	switch (crp->crp_buf_type) {
 	case CRYPTO_BUF_MBUF:
 		break;
-	case CRYPTO_BUF_IOV: {
+	case CRYPTO_BUF_UIO: {
 		struct uio *uio;
 		struct iovec *iov;
 

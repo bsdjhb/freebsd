@@ -166,7 +166,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 		uio->uio_iov = iov;
 		uio->uio_iovcnt = iovcnt;
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		uio = crp->crp_uio;
 		break;
 	case CRYPTO_BUF_CONTIG:
@@ -918,7 +918,7 @@ swcr_compdec(struct swcr_session *ses, struct cryptop *crp)
 			adj = result - crp->crp_payload_length;
 			m_adj(crp->crp_mbuf, adj);
 			break;
-		case CRYPTO_BUF_IOV: {
+		case CRYPTO_BUF_UIO: {
 			struct uio *uio = crp->crp_uio;
 			int ind;
 

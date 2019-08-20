@@ -853,7 +853,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 		re->re_src_m = crp->crp_mbuf;
 		re->re_dst_m = crp->crp_mbuf;
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		re->re_src_io = crp->crp_uio;
 		re->re_dst_io = crp->crp_uio;
 		break;
@@ -1073,7 +1073,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 			goto errout;
 		}
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		if (bus_dmamap_load_uio(sc->sc_srcdmat, re->re_src_map,
 		    re->re_src_io, safe_op_cb,
 		    &re->re_src, BUS_DMA_NOWAIT) != 0) {
@@ -1121,7 +1121,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 		 */
 	} else {
 		switch (crp->crp_buf_type) {
-		case CRYPTO_BUF_IOV:
+		case CRYPTO_BUF_UIO:
 			if (!nicealign) {
 				safestats.st_iovmisaligned++;
 				err = EINVAL;

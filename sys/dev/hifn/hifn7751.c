@@ -1838,7 +1838,7 @@ hifn_crypto(
 			goto err_srcmap1;
 		}
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		if (bus_dmamap_load_uio(sc->sc_dmat, cmd->src_map,
 		    cmd->src_io, hifn_op_cb, &cmd->src, BUS_DMA_NOWAIT)) {
 			hifnstats.hst_nomem_load++;
@@ -1855,7 +1855,7 @@ hifn_crypto(
 		cmd->sloplen = cmd->src_mapsize & 3;
 		cmd->dst = cmd->src;
 	} else {
-		if (crp->crp_buf_type == CRYPTO_BUF_IOV) {
+		if (crp->crp_buf_type == CRYPTO_BUF_UIO) {
 			err = EINVAL;
 			goto err_srcmap;
 		} else if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
@@ -1950,7 +1950,7 @@ hifn_crypto(
 				goto err_dstmap1;
 			}
 			break;
-		case CRYPTO_BUF_IOV:
+		case CRYPTO_BUF_UIO:
 			if (bus_dmamap_load_uio(sc->sc_dmat, cmd->dst_map,
 			    cmd->dst_io, hifn_op_cb, &cmd->dst, BUS_DMA_NOWAIT)) {
 				hifnstats.hst_nomem_load++;
@@ -2470,7 +2470,7 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 		cmd->src_m = crp->crp_mbuf;
 		cmd->dst_m = crp->crp_mbuf;
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		cmd->src_io = crp->crp_uio;
 		cmd->dst_io = crp->crp_uio;
 		break;

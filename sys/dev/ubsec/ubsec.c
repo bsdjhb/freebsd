@@ -1031,7 +1031,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 		q->q_src_m = crp->crp_mbuf;
 		q->q_dst_m = crp->crp_mbuf;
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		q->q_src_io = crp->crp_uio;
 		q->q_dst_io = crp->crp_uio;
 		break;
@@ -1162,7 +1162,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 			goto errout;
 		}
 		break;
-	case CRYPTO_BUF_IOV:
+	case CRYPTO_BUF_UIO:
 		if (bus_dmamap_load_uio(sc->sc_dmat, q->q_src_map,
 		    q->q_src_io, ubsec_op_cb, &q->q_src, BUS_DMA_NOWAIT) != 0) {
 			bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
@@ -1240,7 +1240,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 #endif
 	} else {
 		switch (crp->crp_buf_type) {
-		case CRYPTO_BUF_IOV:
+		case CRYPTO_BUF_UIO:
 			if (!nicealign) {
 				ubsecstats.hst_iovmisaligned++;
 				err = EINVAL;

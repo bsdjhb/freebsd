@@ -503,7 +503,7 @@ struct cryptop {
 	(crp)->crp_flags & CRYPTO_F_ASYNC_KEEPORDER)
 
 #define	CRYPTO_BUF_CONTIG	0x0
-#define	CRYPTO_BUF_IOV		0x1
+#define	CRYPTO_BUF_UIO		0x1
 #define	CRYPTO_BUF_MBUF		0x2
 
 /* Flags in crp_op. */
