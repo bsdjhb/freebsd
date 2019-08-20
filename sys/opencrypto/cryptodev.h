@@ -580,6 +580,14 @@ extern	int crypto_devallowsoft;	/* only use hardware crypto */
 extern uint8_t hmac_ipad_buffer[];
 extern uint8_t hmac_opad_buffer[];
 
+/* Helper routines for drivers to initialize auth contexts for HMAC. */
+struct auth_hash;
+
+void	hmac_init_ipad(struct auth_hash *axf, const char *key, int klen,
+    void *auth_ctx);
+void	hmac_init_opad(struct auth_hash *axf, const char *key, int klen,
+    void *auth_ctx);
+
 /*
  * Crypto-related utility routines used mainly by drivers.
  *

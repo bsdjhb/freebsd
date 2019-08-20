@@ -56,9 +56,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/rman.h>
 
-#include <crypto/sha1.h>
 #include <opencrypto/cryptodev.h>
-#include <sys/md5.h>
+#include <opencrypto/xform_auth.h>
 #include <sys/random.h>
 #include <sys/kobj.h>
 
@@ -638,42 +637,26 @@ static void
 safe_setup_mackey(struct safe_session *ses, int algo, const uint8_t *key,
     int klen)
 {
-	uint8_t hmackey[HMAC_MAX_BLOCK_LEN];
 	MD5_CTX md5ctx;
 	SHA1_CTX sha1ctx;
 	int i;
 
-
-	for (i = 0; i < klen; i++)
-		hmackey[i] = key[i] ^ HMAC_IPAD_VAL;
-
 	if (algo == CRYPTO_MD5_HMAC) {
-		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, hmackey, klen);
-		MD5Update(&md5ctx, hmac_ipad_buffer, MD5_BLOCK_LEN - klen);
+		hmac_init_ipad(&auth_hash_hmac_md5, key, klen, &md5ctx);
 		bcopy(md5ctx.state, ses->ses_hminner, sizeof(md5ctx.state));
-	} else {
-		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, hmackey, klen);
-		SHA1Update(&sha1ctx, hmac_ipad_buffer,
-		    SHA1_BLOCK_LEN - klen);
-		bcopy(sha1ctx.h.b32, ses->ses_hminner, sizeof(sha1ctx.h.b32));
-	}
 
-	for (i = 0; i < klen; i++)
-		hmackey[i] = key[i] ^ HMAC_OPAD_VAL;
-
-	if (algo == CRYPTO_MD5_HMAC) {
-		MD5Init(&md5ctx);
-		MD5Update(&md5ctx, hmackey, klen);
-		MD5Update(&md5ctx, hmac_opad_buffer, MD5_BLOCK_LEN - klen);
+		hmac_init_opad(&auth_hash_hmac_md5, key, klen, &md5ctx);
 		bcopy(md5ctx.state, ses->ses_hmouter, sizeof(md5ctx.state));
+
+		explicit_bzero(&md5ctx, sizeof(md5ctx));
 	} else {
-		SHA1Init(&sha1ctx);
-		SHA1Update(&sha1ctx, hmackey, klen);
-		SHA1Update(&sha1ctx, hmac_opad_buffer,
-		    SHA1_BLOCK_LEN - klen);
+		hmac_init_ipad(&auth_hash_hmac_sha1, key, klen, &sha1ctx);
+		bcopy(sha1ctx.h.b32, ses->ses_hminner, sizeof(sha1ctx.h.b32));
+
+		hmac_init_opad(&auth_hash_hmac_sha1, key, klen, &sha1ctx);
 		bcopy(sha1ctx.h.b32, ses->ses_hmouter, sizeof(sha1ctx.h.b32));
+
+		explicit_bzero(&sha1ctx, sizeof(sha1ctx));
 	}
 
 	/* PE is little-endian, insure proper byte order */
@@ -796,7 +779,7 @@ safe_newsession(device_t dev, crypto_session_t cses,
 
 		if (csp->csp_auth_key != NULL) {
 			safe_setup_mackey(ses, csp->csp_auth_alg,
-			    csp->csp_auth_key, csp->csp_auth_klen / 8);
+			    csp->csp_auth_key, csp->csp_auth_klen);
 		}
 	}
 
@@ -953,7 +936,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_auth_key != NULL) {
 			safe_setup_mackey(ses, csp->csp_auth_alg,
-			    crp->crp_auth_key, crp->crp_auth_klen / 8);
+			    crp->crp_auth_key, crp->crp_auth_klen);
 		}
 
 		switch (csp->csp_auth_alg) {

@@ -345,8 +345,6 @@ static int __result_use_check
 swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw,
     const uint8_t *key, int klen)
 {
-	uint8_t hmac_key[HMAC_MAX_BLOCK_LEN];
-	int k;
 
 	klen /= 8;
 
@@ -359,19 +357,8 @@ swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw,
 	case CRYPTO_SHA2_512_HMAC:
 	case CRYPTO_NULL_HMAC:
 	case CRYPTO_RIPEMD160_HMAC:
-		for (k = 0; k < klen; k++)
-			hmac_key[k] = key[k] ^ HMAC_IPAD_VAL;
-	
-		axf->Init(sw->sw_ictx);
-		axf->Update(sw->sw_ictx, hmac_key, klen);
-		axf->Update(sw->sw_ictx, hmac_ipad_buffer, axf->blocksize - klen);
-	
-		for (k = 0; k < klen; k++)
-			hmac_key[k] = key[k] ^ HMAC_OPAD_VAL;
-	
-		axf->Init(sw->sw_octx);
-		axf->Update(sw->sw_octx, hmac_key, klen);
-		axf->Update(sw->sw_octx, hmac_opad_buffer, axf->blocksize - klen);
+		hmac_init_ipad(axf, key, klen * 8, sw->sw_ictx);
+		hmac_init_ipad(axf, key, klen * 8, sw->sw_octx);
 		break;
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
