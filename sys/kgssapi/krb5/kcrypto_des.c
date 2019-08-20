@@ -169,7 +169,7 @@ des1_encrypt_1(const struct krb5_key_state *ks, int buf_type, void *buf,
 	struct cryptop *crp;
 	int error;
 
-	crp = crypto_getreq(ds->ds_session);
+	crp = crypto_getreq(ds->ds_session, M_WAITOK);
 
 	crp->crp_payload_start = skip;
 	crp->crp_payload_length = len;

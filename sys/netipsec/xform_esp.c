@@ -354,7 +354,7 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	ESPSTAT_ADD(esps_ibytes, m->m_pkthdr.len - (skip + hlen + alen));
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptors\n",
 			__func__));
@@ -788,7 +788,7 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	m_copyback(m, protoff, sizeof(u_int8_t), (u_char *) &prot);
 
 	/* Get crypto descriptor. */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",
 			__func__));

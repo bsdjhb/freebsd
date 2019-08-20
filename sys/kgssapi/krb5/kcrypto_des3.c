@@ -187,7 +187,7 @@ des3_encrypt_1(const struct krb5_key_state *ks, struct mbuf *inout,
 	struct cryptop *crp;
 	int error;
 
-	crp = crypto_getreq(ds->ds_cipher_session);
+	crp = crypto_getreq(ds->ds_cipher_session, M_WAITOK);
 
 	crp->crp_payload_start = skip;
 	crp->crp_payload_length = len;
@@ -239,7 +239,7 @@ des3_checksum(const struct krb5_key_state *ks, int usage,
 	struct cryptop *crp;
 	int error;
 
-	crp = crypto_getreq(ds->ds_hmac_session);
+	crp = crypto_getreq(ds->ds_hmac_session, M_WAITOK);
 
 	crp->crp_payload_start = skip;
 	crp->crp_payload_length = inlen;

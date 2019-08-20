@@ -566,7 +566,7 @@ extern	void crypto_kdone(struct cryptkop *);
 extern	int crypto_getfeat(int *);
 
 extern	void crypto_freereq(struct cryptop *crp);
-extern	struct cryptop *crypto_getreq(crypto_session_t cses);
+extern	struct cryptop *crypto_getreq(crypto_session_t cses, int how);
 extern	void crypto_freekreq(struct cryptop *crp);
 extern	struct cryptkop *crypto_getkreq(uint32_t crid);
 

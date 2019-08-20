@@ -627,7 +627,7 @@ ah_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	AHSTAT_ADD(ahs_ibytes, m->m_pkthdr.len - skip - hl);
 
 	/* Get crypto descriptors. */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",
 		    __func__));
@@ -979,7 +979,7 @@ ah_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	SECASVAR_UNLOCK(sav);
 
 	/* Get crypto descriptors. */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptors\n",
 			__func__));

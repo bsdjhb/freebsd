@@ -924,12 +924,7 @@ cryptodev_op(
 
 	cod = cod_alloc(cse, cop->len + cse->hashsize, td);
 
-	crp = crypto_getreq(cse->cses);
-	if (crp == NULL) {
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		error = ENOMEM;
-		goto bail;
-	}
+	crp = crypto_getreq(cse->cses, M_WAITOK);
 
 	error = copyin(cop->src, cod->buf, cop->len);
 	if (error) {
@@ -1124,12 +1119,7 @@ cryptodev_aead(
 
 	cod = cod_alloc(cse, caead->aadlen + caead->len + cse->hashsize, td);
 
-	crp = crypto_getreq(cse->cses);
-	if (crp == NULL) {
-		error = ENOMEM;
-		SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-		goto bail;
-	}
+	crp = crypto_getreq(cse->cses, M_WAITOK);
 
 	error = copyin(caead->aad, cod->buf, caead->aadlen);
 	if (error) {

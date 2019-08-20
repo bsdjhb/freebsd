@@ -228,7 +228,7 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	SECASVAR_UNLOCK(sav);
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		DPRINTF(("%s: no crypto descriptors\n", __func__));
 		IPCOMPSTAT_INC(ipcomps_crypto);
@@ -474,7 +474,7 @@ ipcomp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 	SECASVAR_UNLOCK(sav);
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(cryptoid);
+	crp = crypto_getreq(cryptoid, M_NOWAIT);
 	if (crp == NULL) {
 		IPCOMPSTAT_INC(ipcomps_crypto);
 		DPRINTF(("%s: failed to acquire crypto descriptor\n",__func__));

@@ -144,7 +144,7 @@ aes_encrypt_1(const struct krb5_key_state *ks, int buftype, void *buf,
 	struct cryptop *crp;
 	int error;
 
-	crp = crypto_getreq(as->as_session_aes);
+	crp = crypto_getreq(as->as_session_aes, M_WAITOK);
 
 	crp->crp_payload_start = skip;
 	crp->crp_payload_length = len;
@@ -321,7 +321,7 @@ aes_checksum(const struct krb5_key_state *ks, int usage,
 	struct cryptop *crp;
 	int error;
 
-	crp = crypto_getreq(as->as_session_sha1);
+	crp = crypto_getreq(as->as_session_sha1, M_WAITOK);
 
 	crp->crp_payload_start = skip;
 	crp->crp_payload_length = inlen;

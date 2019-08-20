@@ -1566,11 +1566,12 @@ crypto_freereq(struct cryptop *crp)
 }
 
 struct cryptop *
-crypto_getreq(crypto_session_t cses)
+crypto_getreq(crypto_session_t cses, int how)
 {
 	struct cryptop *crp;
 
-	crp = uma_zalloc(cryptop_zone, M_NOWAIT | M_ZERO);
+	MPASS(how == M_WAITOK || how == M_NOWAIT);
+	crp = uma_zalloc(cryptop_zone, how | M_ZERO);
 	crp->crp_session = cses;
 	return (crp);
 }
