@@ -358,7 +358,7 @@ swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw,
 	case CRYPTO_NULL_HMAC:
 	case CRYPTO_RIPEMD160_HMAC:
 		hmac_init_ipad(axf, key, klen * 8, sw->sw_ictx);
-		hmac_init_ipad(axf, key, klen * 8, sw->sw_octx);
+		hmac_init_opad(axf, key, klen * 8, sw->sw_octx);
 		break;
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
