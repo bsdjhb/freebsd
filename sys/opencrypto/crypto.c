@@ -56,6 +56,7 @@ __FBSDID("$FreeBSD$");
 
 #define	CRYPTO_TIMING				/* enable timing support */
 
+#include "opt_compat.h"
 #include "opt_ddb.h"
 
 #include <sys/param.h>
@@ -148,6 +149,12 @@ static	struct mtx crypto_q_mtx;
 #define	CRYPTO_Q_LOCK()		mtx_lock(&crypto_q_mtx)
 #define	CRYPTO_Q_UNLOCK()	mtx_unlock(&crypto_q_mtx)
 
+static SYSCTL_NODE(_kern, OID_AUTO, crypto, CTLFLAG_RW, 0,
+    "In-kernel cryptography");
+
+static SYSCTL_NODE(_kern_crypto, OID_AUTO, user, CTLFLAG_RW, 0,
+    "User-mode crypto via /dev/crypto");
+
 /*
  * Taskqueue used to dispatch the crypto requests
  * that have the CRYPTO_F_ASYNC flag
@@ -184,21 +191,37 @@ static struct crypto_ret_worker *crypto_ret_workers = NULL;
 	(TAILQ_EMPTY(&w->crp_ret_q) && TAILQ_EMPTY(&w->crp_ret_kq) && TAILQ_EMPTY(&w->crp_ordered_ret_q))
 
 static int crypto_workers_num = 0;
+SYSCTL_INT(_kern_crypto, OID_AUTO, num_workers, CTLFLAG_RDTUN,
+	   &crypto_workers_num, 0,
+	   "Number of crypto workers used to dispatch crypto jobs");
+#ifdef COMPAT_FREEBSD12
 SYSCTL_INT(_kern, OID_AUTO, crypto_workers_num, CTLFLAG_RDTUN,
 	   &crypto_workers_num, 0,
 	   "Number of crypto workers used to dispatch crypto jobs");
+#endif
 
 static	uma_zone_t cryptop_zone;
 static	uma_zone_t cryptoses_zone;
 
-int	crypto_userasymcrypto = 1;	/* userland may do asym crypto reqs */
+int	crypto_userasymcrypto = 1;
+SYSCTL_INT(_kern_crypto, OID_AUTO, asym_enable, CTLFLAG_RW,
+	   &crypto_userasymcrypto, 0,
+	   "Enable user-mode access to asymmetric crypto support");
+#ifdef COMPAT_FREEBSD12
 SYSCTL_INT(_kern, OID_AUTO, userasymcrypto, CTLFLAG_RW,
 	   &crypto_userasymcrypto, 0,
 	   "Enable/disable user-mode access to asymmetric crypto support");
-int	crypto_devallowsoft = 0;	/* only use hardware crypto */
+#endif
+
+int	crypto_devallowsoft = 0;
+SYSCTL_INT(_kern_crypto_user, OID_AUTO, allow_soft, CTLFLAG_RW,
+	   &crypto_devallowsoft, 0,
+	   "Enable use of software crypto by /dev/crypto");
+#ifdef COMPAT_FREEBSD12
 SYSCTL_INT(_kern, OID_AUTO, cryptodevallowsoft, CTLFLAG_RW,
 	   &crypto_devallowsoft, 0,
 	   "Enable/disable use of software crypto by /dev/crypto");
+#endif
 
 MALLOC_DEFINE(M_CRYPTO_DATA, "crypto", "crypto session records");
 
@@ -212,7 +235,7 @@ static	void crypto_task_invoke(void *ctx, int pending);
 static void crypto_batch_enqueue(struct cryptop *crp);
 
 static	struct cryptostats cryptostats;
-SYSCTL_STRUCT(_kern, OID_AUTO, crypto_stats, CTLFLAG_RW, &cryptostats,
+SYSCTL_STRUCT(_kern_crypto, OID_AUTO, stats, CTLFLAG_RW, &cryptostats,
 	    cryptostats, "Crypto system statistics");
 
 #ifdef CRYPTO_TIMING
