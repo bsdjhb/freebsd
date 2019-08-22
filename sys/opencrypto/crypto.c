@@ -152,9 +152,6 @@ static	struct mtx crypto_q_mtx;
 static SYSCTL_NODE(_kern, OID_AUTO, crypto, CTLFLAG_RW, 0,
     "In-kernel cryptography");
 
-static SYSCTL_NODE(_kern_crypto, OID_AUTO, user, CTLFLAG_RW, 0,
-    "User-mode crypto via /dev/crypto");
-
 /*
  * Taskqueue used to dispatch the crypto requests
  * that have the CRYPTO_F_ASYNC flag
@@ -214,7 +211,7 @@ SYSCTL_INT(_kern, OID_AUTO, userasymcrypto, CTLFLAG_RW,
 #endif
 
 int	crypto_devallowsoft = 0;
-SYSCTL_INT(_kern_crypto_user, OID_AUTO, allow_soft, CTLFLAG_RW,
+SYSCTL_INT(_kern_crypto, OID_AUTO, allow_soft, CTLFLAG_RW,
 	   &crypto_devallowsoft, 0,
 	   "Enable use of software crypto by /dev/crypto");
 #ifdef COMPAT_FREEBSD12
