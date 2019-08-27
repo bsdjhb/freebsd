@@ -86,6 +86,21 @@ struct tls_mac_data {
 #define	TLS_MINOR_VER_ONE	2	/* 3, 2 */
 #define	TLS_MINOR_VER_TWO	3	/* 3, 3 */
 
+/* For legacy TCP_TLS_ENABLE */
+struct tls_so_enable {
+	const uint8_t *hmac_key;
+	const uint8_t *crypt;
+	const uint8_t *iv;
+	uint32_t crypt_algorithm; /* e.g. CRYPTO_AES_CBC */
+	uint32_t mac_algorithm;	  /* e.g. CRYPTO_SHA2_256_HMAC */
+	uint32_t key_size;	  /* Length of the key */
+	int hmac_key_len;
+	int crypt_key_len;
+	int iv_len;
+	uint8_t tls_vmajor;
+	uint8_t tls_vminor;
+};
+
 /* For TCP_TXTLS_ENABLE */
 struct tls_enable {
 	const uint8_t *cipher_key;

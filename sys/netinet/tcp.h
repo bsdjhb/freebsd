@@ -184,6 +184,8 @@ struct tcphdr {
 #define	TCP_KEEPINTVL	512	/* L,N interval between keepalives */
 #define	TCP_KEEPCNT	1024	/* L,N number of keepalives before close */
 #define	TCP_FASTOPEN	1025	/* enable TFO / was created via TFO */
+#define	TCP_TLS_ENABLE	1026	/* TLS Crypt enable -- legacy */
+#define	TCP_TLS_MODE	1027	/* TLS mode -- legacy */
 #define	TCP_PCAP_OUT	2048	/* number of output packets to keep */
 #define	TCP_PCAP_IN	4096	/* number of input packets to keep */
 #define TCP_FUNCTION_BLK 8192	/* Set the tcp function pointers to the specified stack */
