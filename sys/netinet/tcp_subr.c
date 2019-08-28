@@ -2653,6 +2653,7 @@ uint32_t
 tcp_new_ts_offset(struct in_conninfo *inc)
 {
 	struct in_conninfo inc_store, *local_inc;
+	uint32_t tsoff;
 
 	if (!V_tcp_ts_offset_per_conn) {
 		memcpy(&inc_store, inc, sizeof(struct in_conninfo));
@@ -2662,8 +2663,15 @@ tcp_new_ts_offset(struct in_conninfo *inc)
 	} else {
 		local_inc = inc;
 	}
-	return (tcp_keyed_hash(local_inc, V_ts_offset_secret,
-	    sizeof(V_ts_offset_secret)));
+	tsoff = tcp_keyed_hash(local_inc, V_ts_offset_secret,
+	    sizeof(V_ts_offset_secret));
+
+	/*
+	 * XXX: The T6 TP only permits an offset in the upper 4 bits
+	 * of the timestamp field.
+	 */
+	tsoff &= 0xf0000000;
+	return (tsoff);
 }
 
 /*
