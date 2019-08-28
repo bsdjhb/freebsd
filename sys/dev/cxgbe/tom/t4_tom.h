@@ -371,6 +371,8 @@ void t4_uninit_connect_cpl_handlers(void);
 int t4_connect(struct toedev *, struct socket *, struct rtentry *,
     struct sockaddr *);
 void act_open_failure_cleanup(struct adapter *, u_int, u_int);
+int alloc_atid(struct adapter *, void *);
+void free_atid(struct adapter *, int);
 
 /* t4_listen.c */
 void t4_init_listen_cpl_handlers(void);
