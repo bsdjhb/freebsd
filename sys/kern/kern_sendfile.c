@@ -295,7 +295,7 @@ sendfile_iodone(void *arg, vm_page_t *pg, int count, int error)
 
 		mb_free_notready(sfio->m, sfio->npages);
 #ifdef KERN_TLS
-	} else if (sfio->tls != NULL && sfio->tls->sw_encrypt != NULL) {
+	} else if (sfio->tls != NULL && sfio->tls->mode == TCP_TLS_MODE_SW) {
 		/*
 		 * I/O operation is complete, but we still need to
 		 * encrypt.  We cannot do this in the interrupt thread
@@ -1034,7 +1034,7 @@ prepend_header:
 			 */
 			free(sfio, M_TEMP);
 #ifdef KERN_TLS
-			if (tls != NULL && tls->sw_encrypt != NULL) {
+			if (tls != NULL && tls->mode == TCP_TLS_MODE_SW) {
 				error = (*so->so_proto->pr_usrreqs->pru_send)
 				    (so, PRUS_NOTREADY, m, NULL, NULL, td);
 				soref(so);
