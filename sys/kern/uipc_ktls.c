@@ -645,7 +645,6 @@ ktls_cleanup(struct ktls_session *tls)
 			counter_u64_add(ktls_toe_gcm, -1);
 			break;
 		}
-		tls->free(tls);
 		break;
 #endif
 	}
