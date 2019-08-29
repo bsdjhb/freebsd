@@ -877,7 +877,13 @@ ktls_set_tx_mode(struct socket *so, int mode)
 	struct inpcb *inp;
 	int error;
 
-	MPASS(mode == TCP_TLS_MODE_SW || mode == TCP_TLS_MODE_IFNET);
+	switch (mode) {
+	case TCP_TLS_MODE_SW:
+	case TCP_TLS_MODE_IFNET:
+		break;
+	default:
+		return (EINVAL);
+	}
 
 	inp = so->so_pcb;
 	INP_WLOCK_ASSERT(inp);
