@@ -154,6 +154,7 @@ struct ktls_session {
 	struct tls_session_params params;
 	u_int	wq_index;
 	volatile u_int refcount;
+	int mode;
 
 	struct task reset_tag_task;
 	struct inpcb *inp;

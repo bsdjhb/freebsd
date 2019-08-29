@@ -728,6 +728,7 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, bool force)
 
 	error = ktls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
 	if (error == 0) {
+		tls->mode = TCP_TLS_MODE_IFNET;
 		tls->snd_tag = mst;
 		switch (tls->params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
@@ -771,6 +772,7 @@ ktls_try_sw(struct socket *so, struct ktls_session *tls)
 		rm_runlock(&ktls_backends_lock, &prio);
 	if (be == NULL)
 		return (EOPNOTSUPP);
+	tls->mode = TCP_TLS_MODE_SW;
 	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
 		counter_u64_add(ktls_sw_cbc, 1);
@@ -836,7 +838,7 @@ ktls_enable_tx(struct socket *so, struct tls_enable *en)
 
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls;
-	if (tls->sw_encrypt == NULL)
+	if (tls->mode != TCP_TLS_MODE_SW)
 		so->so_snd.sb_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
@@ -859,10 +861,8 @@ ktls_get_tx_mode(struct socket *so)
 	tls = so->so_snd.sb_tls_info;
 	if (tls == NULL)
 		mode = TCP_TLS_MODE_NONE;
-	else if (tls->sw_encrypt != NULL)
-		mode = TCP_TLS_MODE_SW;
 	else
-		mode = TCP_TLS_MODE_IFNET;
+		mode = tls->mode;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	return (mode);
 }
@@ -888,8 +888,7 @@ ktls_set_tx_mode(struct socket *so, int mode)
 		return (0);
 	}
 
-	if ((tls->sw_encrypt != NULL && mode == TCP_TLS_MODE_SW) ||
-	    (tls->sw_encrypt == NULL && mode == TCP_TLS_MODE_IFNET)) {
+	if (tls->mode == mode) {
 		SOCKBUF_UNLOCK(&so->so_snd);
 		return (0);
 	}
@@ -936,7 +935,7 @@ ktls_set_tx_mode(struct socket *so, int mode)
 
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_info = tls_new;
-	if (tls_new->sw_encrypt == NULL)
+	if (tls->mode != TCP_TLS_MODE_SW)
 		so->so_snd.sb_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
 	sbunlock(&so->so_snd);
@@ -1209,7 +1208,7 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 		 * When using ifnet TLS, unencrypted TLS records are
 		 * sent down the stack to the NIC.
 		 */
-		if (tls->sw_encrypt != NULL) {
+		if (tls->mode == TCP_TLS_MODE_SW) {
 			m->m_flags |= M_NOTREADY;
 			pgs->nrdy = pgs->npgs;
 			*enq_cnt += pgs->npgs;
@@ -1249,7 +1248,7 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 
 	pgs = m->m_ext.ext_pgs;
 
-	KASSERT(pgs->tls->sw_encrypt != NULL, ("ifnet TLS mbuf"));
+	KASSERT(pgs->tls->mode == TCP_TLS_MODE_SW, ("!SW TLS mbuf"));
 
 	pgs->enc_cnt = page_count;
 	pgs->mbuf = m;
