@@ -1802,7 +1802,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 			drop = 0;
 		}
 
-		m = sb->sb_sndptr ? sb->sb_sndptr->m_next : sb->sb_mb;
+		m = sb->sb_sndptr != NULL ? sb->sb_sndptr->m_next : sb->sb_mb;
 
 		/*
 		 * Send a FIN if requested, but only if there's no
@@ -1819,10 +1819,10 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 		}
 
 		/*
-		 * If this mbuf is not yet ready, wait for it to be
-		 * marked ready.
+		 * If there is no ready data to send, wait until more
+		 * data arrives.
 		 */
-		if ((m->m_flags & M_NOTREADY) != 0) {
+		if (m == NULL || (m->m_flags & M_NOTREADY) != 0) {
 			if (sowwakeup)
 				sowwakeup_locked(so);
 			else
@@ -1937,7 +1937,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 		tp->snd_max += m->m_len;
 
 		SOCKBUF_LOCK(sb);
-		sb->sb_sndptr = m->m_next;
+		sb->sb_sndptr = m;
 		SOCKBUF_UNLOCK(sb);
 
 		toep->flags |= TPF_TX_DATA_SENT;
