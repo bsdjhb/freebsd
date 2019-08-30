@@ -63,6 +63,9 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_pcb.h>
 #endif
 #include <netinet/tcp_var.h>
+#ifdef TCP_OFFLOAD
+#include <netinet/tcp_offload.h>
+#endif
 #include <opencrypto/xform.h>
 #include <vm/uma_dbg.h>
 #include <vm/vm.h>
@@ -671,6 +674,7 @@ static int
 ktls_try_toe(struct socket *so, struct ktls_session *tls)
 {
 	struct inpcb *inp;
+	struct tcpcb *tp;
 	int error;
 
 	inp = so->so_pcb;

@@ -56,6 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/vnode.h>
 
 #include <net/vnet.h>
+#include <netinet/tcp.h>
 
 #include <security/audit/audit.h>
 #include <security/mac/mac_framework.h>
