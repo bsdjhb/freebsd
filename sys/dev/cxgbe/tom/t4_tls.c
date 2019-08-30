@@ -1102,17 +1102,11 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 	if (error)
 		return (error);
 
-#if 0
-	unsigned short pdus_per_ulp;
-
-	toep->tls.fcplenmax = get_tp_plen_max(tls_ofld);
-	toep->tls.expn_per_ulp = tls_expansion_size(toep,
-				toep->tls.fcplenmax, 1, &pdus_per_ulp);
-	toep->tls.pdus_per_ulp = pdus_per_ulp;
-	toep->tls.adjusted_plen = toep->tls.pdus_per_ulp *
-			((toep->tls.expn_per_ulp/toep->tls.pdus_per_ulp) +
-			 toep->tls.k_ctx.frag_size);
-#endif
+	toep->tls.fcplenmax = get_tp_plen_max(&toep->tls);
+	toep->tls.expn_per_ulp = tls->params.tls_hlen + tls->params.tls_tlen;
+	toep->tls.pdus_per_ulp = 1;
+	toep->tls.adjusted_plen = toep->tls.expn_per_ulp +
+	    toep->tls.k_ctx.frag_size;
 
 	toep->tls.mode = TLS_MODE_KTLS;
 
@@ -1650,6 +1644,322 @@ t4_push_tls_records(struct adapter *sc, struct toepcb *toep, int drop)
 		t4_l2t_send(sc, wr, toep->l2te);
 	}
 }
+
+#ifdef KERN_TLS
+static int
+count_ext_pgs_segs(struct mbuf_ext_pgs *ext_pgs)
+{
+	vm_paddr_t nextpa;
+	u_int i, nsegs;
+
+	MPASS(ext_pgs->npgs > 0);
+	nsegs = 1;
+	nextpa = ext_pgs->pa[0] + PAGE_SIZE;
+	for (i = 1; i < ext_pgs->npgs; i++) {
+		if (nextpa != ext_pgs->pa[i])
+			nsegs++;
+		nextpa = ext_pgs->pa[i] + PAGE_SIZE;
+	}
+	return (nsegs);
+}
+
+static void
+write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
+{
+	struct ulptx_sgl *usgl = dst;
+	vm_paddr_t pa;
+	uint32_t len;
+	int i, j;
+
+	KASSERT(nsegs > 0, ("%s: nsegs 0", __func__));
+
+	usgl->cmd_nsge = htobe32(V_ULPTX_CMD(ULP_TX_SC_DSGL) |
+	    V_ULPTX_NSGE(nsegs));
+
+	/* Figure out the first first S/G length. */
+	pa = ext_pgs->pa[0] + ext_pgs->first_pg_off;
+	usgl->addr0 = htobe64(pa);
+	len = mbuf_ext_pg_len(ext_pgs, 0, ext_pgs->first_pg_off);
+	pa += len;
+	for (i = 1; i < ext_pgs->npgs; i++) {
+		if (ext_pgs->pa[i] != pa)
+			break;
+		len += mbuf_ext_pg_len(ext_pgs, i, 0);
+		pa += mbuf_ext_pg_len(ext_pgs, i, 0);
+	}
+	usgl->len0 = htobe32(len);
+#ifdef INVARIANTS
+	nsegs--;
+#endif
+
+	j = -1;
+	for (; i < ext_pgs->npgs; i++) {
+		if (j == -1 || ext_pgs->pa[i] != pa) {
+			if (j >= 0)
+				usgl->sge[j / 2].len[j & 2] = htobe32(len);
+			j++;
+#ifdef INVARIANTS
+			nsegs--;
+#endif
+			pa = ext_pgs->pa[i];
+			usgl->sge[j / 2].addr[j & 2] = htobe64(pa);
+			len = mbuf_ext_pg_len(ext_pgs, i, 0);
+			pa += len;
+		} else {
+			len += mbuf_ext_pg_len(ext_pgs, i, 0);
+			pa += mbuf_ext_pg_len(ext_pgs, i, 0);
+		}
+	}
+	if (j >= 0)
+		usgl->sge[j / 2].len[j & 2] = htobe32(len);
+	
+	if (j >= 0 && (j & 1) != 0)
+		usgl->sge[j / 2].len[1] = htobe32(0);
+	KASSERT(nsegs == 0, ("%s: nsegs %d, ext_pgs %p", __func__, nsegs,
+	    ext_pgs));
+}
+
+/*
+ * Similar to t4_push_frames() but handles sockets that contain TLS record
+ * mbufs.  Unlike TLSOM, each mbuf is a complete TLS record and we can
+ * dispatch a work request for each mbuf.
+ */
+void
+t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
+{
+	struct tls_hdr *thdr;
+	struct fw_tlstx_data_wr *txwr;
+	struct cpl_tx_tls_sfo *cpl;
+	struct wrqe *wr;
+	struct mbuf *m;
+	u_int nsegs, credits, wr_len;
+	u_int expn_size;
+	struct inpcb *inp = toep->inp;
+	struct tcpcb *tp = intotcpcb(inp);
+	struct socket *so = inp->inp_socket;
+	struct sockbuf *sb = &so->so_snd;
+	int tls_size, tx_credits, shove, sowwakeup;
+	struct ofld_tx_sdesc *txsd;
+	char *buf;
+
+	INP_WLOCK_ASSERT(inp);
+	KASSERT(toep->flags & TPF_FLOWC_WR_SENT,
+	    ("%s: flowc_wr not sent for tid %u.", __func__, toep->tid));
+
+	KASSERT(ulp_mode(toep) == ULP_MODE_NONE ||
+	    ulp_mode(toep) == ULP_MODE_TCPDDP,
+	    ("%s: ulp_mode %u for toep %p", __func__, ulp_mode(toep), toep));
+	KASSERT(tls_tx_key(toep),
+	    ("%s: TX key not set for toep %p", __func__, toep));
+
+#ifdef VERBOSE_TRACES
+	CTR4(KTR_CXGBE, "%s: tid %d toep flags %#x tp flags %#x drop %d",
+	    __func__, toep->tid, toep->flags, tp->t_flags);
+#endif
+	if (__predict_false(toep->flags & TPF_ABORT_SHUTDOWN))
+		return;
+
+#ifdef RATELIMIT
+	if (__predict_false(inp->inp_flags2 & INP_RATE_LIMIT_CHANGED) &&
+	    (update_tx_rate_limit(sc, toep, so->so_max_pacing_rate) == 0)) {
+		inp->inp_flags2 &= ~INP_RATE_LIMIT_CHANGED;
+	}
+#endif
+
+	/*
+	 * This function doesn't resume by itself.  Someone else must clear the
+	 * flag and call this function.
+	 */
+	if (__predict_false(toep->flags & TPF_TX_SUSPENDED)) {
+		KASSERT(drop == 0,
+		    ("%s: drop (%d) != 0 but tx is suspended", __func__, drop));
+		return;
+	}
+
+	txsd = &toep->txsd[toep->txsd_pidx];
+	for (;;) {
+		tx_credits = min(toep->tx_credits, MAX_OFLD_TX_CREDITS);
+
+#if 0
+		space = max_imm_tls_space(tx_credits);
+		wr_len = sizeof(struct fw_tlstx_data_wr) +
+		    sizeof(struct cpl_tx_tls_sfo) + key_size(toep);
+		if (wr_len + CIPHER_BLOCK_SIZE + 1 > space) {
+#ifdef VERBOSE_TRACES
+			CTR5(KTR_CXGBE,
+			    "%s: tid %d tx_credits %d min_wr %d space %d",
+			    __func__, toep->tid, tx_credits, wr_len +
+			    CIPHER_BLOCK_SIZE + 1, space);
+#endif
+			return;
+		}
+#endif
+
+		SOCKBUF_LOCK(sb);
+		sowwakeup = drop;
+		if (drop) {
+			sbdrop_locked(sb, drop);
+			drop = 0;
+		}
+
+		m = sb->sb_sndptr ? sb->sb_sndptr->m_next : sb->sb_mb;
+
+		/*
+		 * Send a FIN if requested, but only if there's no
+		 * more data to send.
+		 */
+		if (m == NULL && toep->flags & TPF_SEND_FIN) {
+			if (sowwakeup)
+				sowwakeup_locked(so);
+			else
+				SOCKBUF_UNLOCK(sb);
+			SOCKBUF_UNLOCK_ASSERT(sb);
+			t4_close_conn(sc, toep);
+			return;
+		}
+
+		/*
+		 * If this mbuf is not yet ready, wait for it to be
+		 * marked ready.
+		 */
+		if ((m->m_flags & M_NOTREADY) != 0) {
+			if (sowwakeup)
+				sowwakeup_locked(so);
+			else
+				SOCKBUF_UNLOCK(sb);
+			SOCKBUF_UNLOCK_ASSERT(sb);
+#ifdef VERBOSE_TRACES
+			CTR2(KTR_CXGBE, "%s: tid %d mbuf is not ready",
+			    __func__, toep->tid);
+#endif
+			return;
+		}
+
+		KASSERT(m->m_flags & M_NOMAP, ("%s: mbuf %p is not NOMAP",
+		    __func__, m));
+		KASSERT(m->m_ext.ext_pgs->tls != NULL,
+		    ("%s: mbuf %p doesn't have TLS session", __func__, m));
+
+		/* Calculate WR length. */
+		wr_len = sizeof(struct fw_tlstx_data_wr) +
+		    sizeof(struct cpl_tx_tls_sfo) + key_size(toep);
+
+		/* Explicit IV is 16 bytes for AES-CBC and 8 for AES-GCM. */
+		wr_len += CIPHER_BLOCK_SIZE;
+
+		/* Account for SGL in work request length. */
+		nsegs = count_ext_pgs_segs(m->m_ext.ext_pgs);
+		wr_len += sizeof(struct ulptx_sgl) +
+		    ((3 * (nsegs - 1)) / 2 + ((nsegs - 1) & 1)) * 8;
+
+		/* Not enough credits for this work request. */
+		if (howmany(wr_len, EQ_ESIZE) > tx_credits) {
+			if (sowwakeup)
+				sowwakeup_locked(so);
+			else
+				SOCKBUF_UNLOCK(sb);
+			SOCKBUF_UNLOCK_ASSERT(sb);
+#ifdef VERBOSE_TRACES
+			CTR5(KTR_CXGBE,
+	    "%s: tid %d mbuf %p requires %d credits, but only %d available",
+			    __func__, tid, m, howmany(wr_len, EQ_ESIZE),
+			    tx_credits);
+#endif
+			return;
+		}
+	
+		/* Shove if there is no additional data pending. */
+		shove = ((m->m_next == NULL ||
+		    (m->m_next->m_flags & M_NOTREADY) != 0)) &&
+		    (tp->t_flags & TF_MORETOCOME) == 0;
+
+		if (sb->sb_flags & SB_AUTOSIZE &&
+		    V_tcp_do_autosndbuf &&
+		    sb->sb_hiwat < V_tcp_autosndbuf_max &&
+		    sbused(sb) >= sb->sb_hiwat * 7 / 8) {
+			int newsize = min(sb->sb_hiwat + V_tcp_autosndbuf_inc,
+			    V_tcp_autosndbuf_max);
+
+			if (!sbreserve_locked(sb, newsize, so, NULL))
+				sb->sb_flags &= ~SB_AUTOSIZE;
+			else
+				sowwakeup = 1;	/* room available */
+		}
+		if (sowwakeup)
+			sowwakeup_locked(so);
+		else
+			SOCKBUF_UNLOCK(sb);
+		SOCKBUF_UNLOCK_ASSERT(sb);
+
+		if (__predict_false(toep->flags & TPF_FIN_SENT))
+			panic("%s: excess tx.", __func__);
+
+		wr = alloc_wrqe(roundup2(wr_len, 16), toep->ofld_txq);
+		if (wr == NULL) {
+			/* XXX: how will we recover from this? */
+			toep->flags |= TPF_TX_SUSPENDED;
+			return;
+		}
+
+		thdr = (struct tls_hdr *)m->m_ext.ext_pgs->hdr;
+#ifdef VERBOSE_TRACES
+		CTR5(KTR_CXGBE, "%s: tid %d TLS record %ju type %d len %#x",
+		    __func__, toep->tid, m->m_ext.ext_pgs->seqno, thdr->type,
+		    m->m_len, pdus);
+#endif
+		txwr = wrtod(wr);
+		cpl = (struct cpl_tx_tls_sfo *)(txwr + 1);
+		memset(txwr, 0, roundup2(wr_len, 16));
+		credits = howmany(wr_len, 16);
+		expn_size = m->m_ext.ext_pgs->hdr_len +
+		    m->m_ext.ext_pgs->trail_len;
+		tls_size = m->m_len - expn_size;
+		write_tlstx_wr(txwr, toep, 0,
+		    tls_size, expn_size, 1, credits, shove, 1);
+		toep->tls.tx_seq_no = m->m_ext.ext_pgs->seqno;
+		write_tlstx_cpl(cpl, toep, thdr, tls_size, 1);
+		tls_copy_tx_key(toep, cpl + 1);
+
+		/* Copy IV. */
+		buf = (char *)(cpl + 1) + key_size(toep);
+		memcpy(buf, thdr + 1, CIPHER_BLOCK_SIZE);
+		buf += CIPHER_BLOCK_SIZE;
+
+		write_ktlstx_sgl(buf, m->m_ext.ext_pgs, nsegs);
+
+		KASSERT(toep->tx_credits >= credits,
+			("%s: not enough credits", __func__));
+
+		toep->tx_credits -= credits;
+
+		tp->snd_nxt += m->m_len;
+		tp->snd_max += m->m_len;
+
+		SOCKBUF_LOCK(sb);
+		sb->sb_sndptr = m->m_next;
+		SOCKBUF_UNLOCK(sb);
+
+		toep->flags |= TPF_TX_DATA_SENT;
+		if (toep->tx_credits < MIN_OFLD_TLSTX_CREDITS(toep))
+			toep->flags |= TPF_TX_SUSPENDED;
+
+		KASSERT(toep->txsd_avail > 0, ("%s: no txsd", __func__));
+		txsd->plen = m->m_len;
+		txsd->tx_credits = credits;
+		txsd++;
+		if (__predict_false(++toep->txsd_pidx == toep->txsd_total)) {
+			toep->txsd_pidx = 0;
+			txsd = &toep->txsd[0];
+		}
+		toep->txsd_avail--;
+
+		atomic_add_long(&toep->vi->pi->tx_tls_records, 1);
+		atomic_add_long(&toep->vi->pi->tx_tls_octets, m->m_len);
+
+		t4_l2t_send(sc, wr, toep->l2te);
+	}
+}
+#endif
 
 /*
  * For TLS data we place received mbufs received via CPL_TLS_DATA into
