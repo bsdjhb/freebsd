@@ -1853,7 +1853,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 		    ((3 * (nsegs - 1)) / 2 + ((nsegs - 1) & 1)) * 8;
 
 		/* Not enough credits for this work request. */
-		if (howmany(wr_len, EQ_ESIZE) > tx_credits) {
+		if (howmany(wr_len, 16) > tx_credits) {
 			if (sowwakeup)
 				sowwakeup_locked(so);
 			else
@@ -1862,9 +1862,10 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 #ifdef VERBOSE_TRACES
 			CTR5(KTR_CXGBE,
 	    "%s: tid %d mbuf %p requires %d credits, but only %d available",
-			    __func__, tid, m, howmany(wr_len, EQ_ESIZE),
+			    __func__, toep->tid, m, howmany(wr_len, 16),
 			    tx_credits);
 #endif
+			toep->flags |= TPF_TX_SUSPENDED;
 			return;
 		}
 	
@@ -1905,7 +1906,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 #ifdef VERBOSE_TRACES
 		CTR5(KTR_CXGBE, "%s: tid %d TLS record %ju type %d len %#x",
 		    __func__, toep->tid, m->m_ext.ext_pgs->seqno, thdr->type,
-		    m->m_len, pdus);
+		    m->m_len);
 #endif
 		txwr = wrtod(wr);
 		cpl = (struct cpl_tx_tls_sfo *)(txwr + 1);
