@@ -28,12 +28,16 @@
  */
 
 #include "opt_inet.h"
+#include "opt_kern_tls.h"
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/ktr.h>
+#ifdef KERN_TLS
+#include <sys/ktls.h>
+#endif
 #include <sys/sglist.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -42,6 +46,10 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_pcb.h>
 #include <netinet/tcp_var.h>
 #include <netinet/toecore.h>
+#ifdef KERN_TLS
+#include <opencrypto/cryptodev.h>
+#include <opencrypto/xform.h>
+#endif
 
 #ifdef TCP_OFFLOAD
 #include "common/common.h"
@@ -784,11 +792,19 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	case SOPT_SET:
 		switch (sopt->sopt_name) {
 		case TCP_TLSOM_SET_TLS_CONTEXT:
-			error = program_key_context(tp, toep, &uk_ctx);
+			if (toep->tls.mode == TLS_MODE_KTLS)
+				error = EINVAL;
+			else {
+				error = program_key_context(tp, toep, &uk_ctx);
+				if (error == 0)
+					toep->tls.mode = TLS_MODE_TLSOM;
+			}
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_TLS_TOM:
-			if (ulp_mode(toep) == ULP_MODE_TLS) {
+			if (toep->tls.mode == TLS_MODE_KTLS)
+				error = EINVAL;
+			else if (ulp_mode(toep) == ULP_MODE_TLS) {
 				CTR2(KTR_CXGBE, "%s: tid %d CLR_TLS_TOM",
 				    __func__, toep->tid);
 				tls_clr_ofld_mode(toep);
@@ -797,7 +813,9 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			INP_WUNLOCK(inp);
 			break;
 		case TCP_TLSOM_CLR_QUIES:
-			if (ulp_mode(toep) == ULP_MODE_TLS) {
+			if (toep->tls.mode == TLS_MODE_KTLS)
+				error = EINVAL;
+			else if (ulp_mode(toep) == ULP_MODE_TLS) {
 				CTR2(KTR_CXGBE, "%s: tid %d CLR_QUIES",
 				    __func__, toep->tid);
 				tls_clr_quiesce(toep);
@@ -819,7 +837,8 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 			 * TLS RX requires a TLS ULP mode.
 			 */
 			optval = TLS_TOM_NONE;
-			if (can_tls_offload(td_adapter(toep->td))) {
+			if (can_tls_offload(td_adapter(toep->td)) &&
+			    toep->tls.mode != TLS_MODE_KTLS) {
 				switch (ulp_mode(toep)) {
 				case ULP_MODE_NONE:
 				case ULP_MODE_TCPDDP:
@@ -845,11 +864,268 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 	return (error);
 }
 
+#ifdef KERN_TLS
+/* XXX: Should share this with ccr(4) eventually. */
+static void
+init_ktls_gmac_hash(const char *key, int klen, char *ghash)
+{
+	static char zeroes[GMAC_BLOCK_LEN];
+	uint32_t keysched[4 * (RIJNDAEL_MAXNR + 1)];
+	int rounds;
+
+	rounds = rijndaelKeySetupEnc(keysched, key, klen);
+	rijndaelEncrypt(keysched, rounds, zeroes, ghash);
+}
+
+/* XXX: Should share this with ccr(4) eventually. */
+static void
+ktls_copy_partial_hash(void *dst, int cri_alg, union authctx *auth_ctx)
+{
+	uint32_t *u32;
+	uint64_t *u64;
+	u_int i;
+
+	u32 = (uint32_t *)dst;
+	u64 = (uint64_t *)dst;
+	switch (cri_alg) {
+	case CRYPTO_SHA1_HMAC:
+		for (i = 0; i < SHA1_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha1ctx.h.b32[i]);
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		for (i = 0; i < SHA2_256_HASH_LEN / 4; i++)
+			u32[i] = htobe32(auth_ctx->sha256ctx.state[i]);
+		break;
+	case CRYPTO_SHA2_384_HMAC:
+		for (i = 0; i < SHA2_512_HASH_LEN / 8; i++)
+			u64[i] = htobe64(auth_ctx->sha384ctx.state[i]);
+		break;
+	}
+}
+
+static void
+init_ktls_hmac_digest(struct auth_hash *axf, u_int partial_digest_len,
+    char *key, int klen, char *dst)
+{
+	union authctx auth_ctx;
+	char ipad[SHA2_512_BLOCK_LEN], opad[SHA2_512_BLOCK_LEN];
+	u_int i;
+
+	/*
+	 * If the key is larger than the block size, use the digest of
+	 * the key as the key instead.
+	 */
+	klen /= 8;
+	if (klen > axf->blocksize) {
+		axf->Init(&auth_ctx);
+		axf->Update(&auth_ctx, key, klen);
+		axf->Final(ipad, &auth_ctx);
+		klen = axf->hashsize;
+	} else
+		memcpy(ipad, key, klen);
+
+	memset(ipad + klen, 0, axf->blocksize - klen);
+	memcpy(opad, ipad, axf->blocksize);
+
+	for (i = 0; i < axf->blocksize; i++) {
+		ipad[i] ^= HMAC_IPAD_VAL;
+		opad[i] ^= HMAC_OPAD_VAL;
+	}
+
+	/*
+	 * Hash the raw ipad and opad and store the partial results in
+	 * the key context.
+	 */
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, ipad, axf->blocksize);
+	ktls_copy_partial_hash(dst, axf->type, &auth_ctx);
+
+	dst += roundup2(partial_digest_len, 16);
+	axf->Init(&auth_ctx);
+	axf->Update(&auth_ctx, opad, axf->blocksize);
+	ktls_copy_partial_hash(dst, axf->type, &auth_ctx);
+}
+
+static void
+init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx)
+{
+	struct auth_hash *axf;
+	u_int mac_key_size;
+	char *hash;
+
+	k_ctx->l_p_key = V_KEY_GET_LOC(KEY_WRITE_TX);
+	if (tls->params.tls_vminor == TLS_MINOR_VER_ONE)
+		k_ctx->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
+	else
+		k_ctx->proto_ver = SCMD_PROTO_VERSION_TLS_1_2;
+	k_ctx->cipher_secret_size = tls->params.cipher_key_len;
+	k_ctx->tx_key_info_size = sizeof(struct tx_keyctx_hdr) +
+	    k_ctx->cipher_secret_size;
+	memcpy(k_ctx->tx.key, tls->params.cipher_key,
+	    tls->params.cipher_key_len);
+	hash = k_ctx->tx.key + tls->params.cipher_key_len;
+	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
+		k_ctx->state.auth_mode = SCMD_AUTH_MODE_GHASH;
+		k_ctx->state.enc_mode = SCMD_CIPH_MODE_AES_GCM;
+		k_ctx->iv_size = 4;
+		k_ctx->mac_first = 0;
+		k_ctx->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
+		k_ctx->tx_key_info_size += GMAC_BLOCK_LEN;
+		memcpy(k_ctx->tx.salt, tls->params.iv, SALT_SIZE);
+		init_ktls_gmac_hash(tls->params.cipher_key,
+		    tls->params.cipher_key_len * 8, hash);
+	} else {
+		switch (tls->params.auth_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+			axf = &auth_hash_hmac_sha1;
+			mac_key_size = SHA1_HASH_LEN;
+			k_ctx->state.auth_mode = SCMD_AUTH_MODE_SHA1;
+			break;
+		case CRYPTO_SHA2_256_HMAC:
+			axf = &auth_hash_hmac_sha2_256;
+			mac_key_size = SHA2_256_HASH_LEN;
+			k_ctx->state.auth_mode = SCMD_AUTH_MODE_SHA256;
+			break;
+		case CRYPTO_SHA2_384_HMAC:
+			axf = &auth_hash_hmac_sha2_384;
+			mac_key_size = SHA2_512_HASH_LEN;
+			k_ctx->state.auth_mode = SCMD_AUTH_MODE_SHA512_384;
+			break;
+		default:
+			panic("bad auth mode");
+		}
+		k_ctx->state.enc_mode = SCMD_CIPH_MODE_AES_CBC;
+		k_ctx->iv_size = 8; /* for CBC, iv is 16B, unit of 2B */
+		k_ctx->mac_first = 1;
+		k_ctx->hmac_ctrl = SCMD_HMAC_CTRL_NO_TRUNC;
+		k_ctx->tx_key_info_size += roundup2(mac_key_size, 16) * 2;
+		k_ctx->mac_secret_size = mac_key_size;
+		init_ktls_hmac_digest(axf, mac_key_size, tls->params.auth_key,
+		    tls->params.auth_key_len * 8, hash);
+	}
+
+	k_ctx->frag_size = tls->params.max_frame_len;
+	k_ctx->iv_ctrl = 0;
+}
+
+int
+tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
+{
+	struct tls_key_context *k_ctx;
+	int error;
+
+	if (toep->tls.mode == TLS_MODE_TLSOM)
+		return (EINVAL);
+	if (!can_tls_offload(td_adapter(toep->td)))
+		return (EINVAL);
+	switch (ulp_mode(toep)) {
+	case ULP_MODE_NONE:
+	case ULP_MODE_TCPDDP:
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	switch (tls->params.cipher_algorithm) {
+	case CRYPTO_AES_CBC:
+		/* XXX: Explicitly ignore any provided IV. */
+		switch (tls->params.cipher_key_len) {
+		case 128 / 8:
+		case 192 / 8:
+		case 256 / 8:
+			break;
+		default:
+			return (EINVAL);
+		}
+		switch (tls->params.auth_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+		case CRYPTO_SHA2_256_HMAC:
+		case CRYPTO_SHA2_384_HMAC:
+			break;
+		default:
+			return (EPROTONOSUPPORT);
+		}
+		break;
+	case CRYPTO_AES_NIST_GCM_16:
+		if (tls->params.iv_len != SALT_SIZE)
+			return (EINVAL);
+		switch (tls->params.cipher_key_len) {
+		case 128 / 8:
+		case 192 / 8:
+		case 256 / 8:
+			break;
+		default:
+			return (EINVAL);
+		}
+		break;
+	default:
+		return (EPROTONOSUPPORT);
+	}
+
+	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
+	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+	    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
+		return (EPROTONOSUPPORT);
+
+	/*
+	 * XXX: This assumes no key renegotation.  If KTLS ever supports
+	 * that we will want to allocate TLS sessions dynamically rather
+	 * than as a static member of toep.
+	 */
+	k_ctx = &toep->tls.k_ctx;
+	init_ktls_key_context(tls, k_ctx);
+
+	/* XXX? */
+	toep->flags &= ~TPF_FORCE_CREDITS;
+
+	toep->tls.scmd0.seqno_numivs =
+		(V_SCMD_SEQ_NO_CTRL(3) |
+		 V_SCMD_PROTO_VERSION(get_proto_ver(k_ctx->proto_ver)) |
+		 V_SCMD_ENC_DEC_CTRL(SCMD_ENCDECCTRL_ENCRYPT) |
+		 V_SCMD_CIPH_AUTH_SEQ_CTRL((k_ctx->mac_first == 0)) |
+		 V_SCMD_CIPH_MODE(k_ctx->state.enc_mode) |
+		 V_SCMD_AUTH_MODE(k_ctx->state.auth_mode) |
+		 V_SCMD_HMAC_CTRL(k_ctx->hmac_ctrl) |
+		 V_SCMD_IV_SIZE(k_ctx->iv_size));
+
+	toep->tls.scmd0.ivgen_hdrlen =
+		(V_SCMD_IV_GEN_CTRL(k_ctx->iv_ctrl) |
+		 V_SCMD_KEY_CTX_INLINE(0) |
+		 V_SCMD_TLS_FRAG_ENABLE(0));
+
+	toep->tls.mac_length = k_ctx->mac_secret_size;
+
+	toep->tls.tx_key_addr = -1;
+
+	error = tls_program_key_id(toep, k_ctx);
+	if (error)
+		return (error);
+
+#if 0
+	unsigned short pdus_per_ulp;
+
+	toep->tls.fcplenmax = get_tp_plen_max(tls_ofld);
+	toep->tls.expn_per_ulp = tls_expansion_size(toep,
+				toep->tls.fcplenmax, 1, &pdus_per_ulp);
+	toep->tls.pdus_per_ulp = pdus_per_ulp;
+	toep->tls.adjusted_plen = toep->tls.pdus_per_ulp *
+			((toep->tls.expn_per_ulp/toep->tls.pdus_per_ulp) +
+			 toep->tls.k_ctx.frag_size);
+#endif
+
+	toep->tls.mode = TLS_MODE_KTLS;
+
+	return (0);
+}
+#endif
+
 void
 tls_init_toep(struct toepcb *toep)
 {
 	struct tls_ofld_info *tls_ofld = &toep->tls;
 
+	tls_ofld->mode = TLS_MODE_OFF;
 	tls_ofld->key_location = TLS_SFO_WR_CONTEXTLOC_DDR;
 	tls_ofld->rx_key_addr = -1;
 	tls_ofld->tx_key_addr = -1;

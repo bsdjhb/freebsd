@@ -254,6 +254,12 @@ struct tls_scmd {
 	__be32 ivgen_hdrlen;
 };
 
+enum tls_mode {
+	TLS_MODE_OFF,
+	TLS_MODE_TLSOM,
+	TLS_MODE_KTLS,
+};
+
 struct tls_ofld_info {
 	struct tls_key_context k_ctx;
 	int key_location;
@@ -266,6 +272,7 @@ struct tls_ofld_info {
 	unsigned short expn_per_ulp;
 	unsigned short pdus_per_ulp;
 	struct tls_scmd scmd0;
+	enum tls_mode mode;
 	u_int sb_off;
 	struct callout handshake_timer;
 	u_int rcv_over;
