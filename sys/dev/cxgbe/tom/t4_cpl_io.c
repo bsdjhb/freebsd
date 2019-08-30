@@ -1787,7 +1787,8 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			    tid, plen);
 #endif
 			sbdrop_locked(sb, plen);
-			if (tls_tx_key(toep)) {
+			if (tls_tx_key(toep) &&
+			    toep->tls.mode == TLS_MODE_TLSOM) {
 				struct tls_ofld_info *tls_ofld = &toep->tls;
 
 				MPASS(tls_ofld->sb_off >= plen);
