@@ -1081,7 +1081,7 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 
 	toep->tls.scmd0.seqno_numivs =
 		(V_SCMD_SEQ_NO_CTRL(3) |
-		 V_SCMD_PROTO_VERSION(get_proto_ver(k_ctx->proto_ver)) |
+		 V_SCMD_PROTO_VERSION(k_ctx->proto_ver) |
 		 V_SCMD_ENC_DEC_CTRL(SCMD_ENCDECCTRL_ENCRYPT) |
 		 V_SCMD_CIPH_AUTH_SEQ_CTRL((k_ctx->mac_first == 0)) |
 		 V_SCMD_CIPH_MODE(k_ctx->state.enc_mode) |
@@ -1093,6 +1093,11 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 		(V_SCMD_IV_GEN_CTRL(k_ctx->iv_ctrl) |
 		 V_SCMD_KEY_CTX_INLINE(0) |
 		 V_SCMD_TLS_FRAG_ENABLE(0));
+
+	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16)
+		toep->tls.iv_len = 8;
+	else
+		toep->tls.iv_len = AES_BLOCK_LEN;
 
 	toep->tls.mac_length = k_ctx->mac_secret_size;
 
@@ -1829,7 +1834,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 				SOCKBUF_UNLOCK(sb);
 			SOCKBUF_UNLOCK_ASSERT(sb);
 #ifdef VERBOSE_TRACES
-			CTR2(KTR_CXGBE, "%s: tid %d mbuf is not ready",
+			CTR2(KTR_CXGBE, "%s: tid %d no ready data to send",
 			    __func__, toep->tid);
 #endif
 			return;
@@ -1844,8 +1849,9 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 		wr_len = sizeof(struct fw_tlstx_data_wr) +
 		    sizeof(struct cpl_tx_tls_sfo) + key_size(toep);
 
-		/* Explicit IV is 16 bytes for AES-CBC and 8 for AES-GCM. */
-		wr_len += CIPHER_BLOCK_SIZE;
+		/* Explicit IVs for AES-CBC and AES-GCM are <= 16. */
+		MPASS(toep->tls.iv_len <= AES_BLOCK_LEN);
+		wr_len += AES_BLOCK_LEN;
 
 		/* Account for SGL in work request length. */
 		nsegs = count_ext_pgs_segs(m->m_ext.ext_pgs);
@@ -1923,8 +1929,8 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 
 		/* Copy IV. */
 		buf = (char *)(cpl + 1) + key_size(toep);
-		memcpy(buf, thdr + 1, CIPHER_BLOCK_SIZE);
-		buf += CIPHER_BLOCK_SIZE;
+		memcpy(buf, thdr + 1, toep->tls.iv_len);
+		buf += AES_BLOCK_LEN;
 
 		write_ktlstx_sgl(buf, m->m_ext.ext_pgs, nsegs);
 
