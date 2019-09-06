@@ -1005,7 +1005,7 @@ init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx)
 	}
 
 	k_ctx->frag_size = tls->params.max_frame_len;
-	k_ctx->iv_ctrl = 0;
+	k_ctx->iv_ctrl = 1;
 }
 
 int
@@ -1092,7 +1092,7 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 	toep->tls.scmd0.ivgen_hdrlen =
 		(V_SCMD_IV_GEN_CTRL(k_ctx->iv_ctrl) |
 		 V_SCMD_KEY_CTX_INLINE(0) |
-		 V_SCMD_TLS_FRAG_ENABLE(0));
+		 V_SCMD_TLS_FRAG_ENABLE(1));
 
 	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16)
 		toep->tls.iv_len = 8;
@@ -1236,8 +1236,8 @@ write_tlstx_wr(struct fw_tlstx_data_wr *txwr, struct toepcb *toep,
 	    V_FW_TLSTX_DATA_WR_ADJUSTEDPLEN(tls_ofld->adjusted_plen));
 	txwr->expinplenmax_pkd = htobe16(
 	    V_FW_TLSTX_DATA_WR_EXPINPLENMAX(tls_ofld->expn_per_ulp));
-	txwr->pdusinplenmax_pkd = htobe16(
-	    V_FW_TLSTX_DATA_WR_PDUSINPLENMAX(tls_ofld->pdus_per_ulp));
+	txwr->pdusinplenmax_pkd = 
+	    V_FW_TLSTX_DATA_WR_PDUSINPLENMAX(tls_ofld->pdus_per_ulp);
 }
 
 static void
