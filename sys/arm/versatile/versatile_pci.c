@@ -462,24 +462,6 @@ versatile_pci_unmap_resource(device_t bus, device_t child, int type,
 }
 
 static int
-versatile_pci_setup_intr(device_t bus, device_t child, struct resource *ires,
-	    int flags, driver_filter_t *filt, driver_intr_t *handler,
-	    void *arg, void **cookiep)
-{
-
-	return BUS_SETUP_INTR(device_get_parent(bus), bus, ires, flags,
-	    filt, handler, arg, cookiep);
-}
-
-static int
-versatile_pci_teardown_intr(device_t dev, device_t child, struct resource *ires,
-    void *cookie)
-{
-
-	return BUS_TEARDOWN_INTR(device_get_parent(dev), dev, ires, cookie);
-}
-
-static int
 versatile_pci_maxslots(device_t dev)
 {
 
@@ -611,8 +593,8 @@ static device_method_t versatile_pci_methods[] = {
 	DEVMETHOD(bus_deactivate_resource, versatile_pci_deactivate_resource),
 	DEVMETHOD(bus_map_resource,	versatile_pci_map_resource),
 	DEVMETHOD(bus_unmap_resource,	versatile_pci_unmap_resource),
-	DEVMETHOD(bus_setup_intr,	versatile_pci_setup_intr),
-	DEVMETHOD(bus_teardown_intr,	versatile_pci_teardown_intr),
+	DEVMETHOD(bus_setup_intr,	bus_generic_setup_intr),
+	DEVMETHOD(bus_teardown_intr,	bus_generic_teardown_intr),
 
 	/* pcib interface */
 	DEVMETHOD(pcib_maxslots,	versatile_pci_maxslots),
