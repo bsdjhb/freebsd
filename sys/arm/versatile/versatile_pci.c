@@ -305,76 +305,160 @@ versatile_pci_write_ivar(device_t dev, device_t child, int which,
 	return (ENOENT);
 }
 
+static struct rman *
+versatile_pci_get_rman(device_t bus, int type, u_int flags)
+{
+	struct versatile_pci_softc *sc = device_get_softc(bus);
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+		return (&sc->io_rman);
+	case SYS_RES_MEMORY:
+		return (&sc->mem_rman);
+	default:
+		return (NULL);
+	}
+}
+
 static struct resource *
 versatile_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
 
-	struct versatile_pci_softc *sc = device_get_softc(bus);
-	struct resource *rv;
-	struct rman *rm;
-
 	dprintf("Alloc resources %d, %08lx..%08lx, %ld\n", type, start, end, count);
 
 	switch (type) {
 	case SYS_RES_IOPORT:
-		rm = &sc->io_rman;
-		break;
-	case SYS_RES_IRQ:
-		rm = NULL;
-		break;
 	case SYS_RES_MEMORY:
-		rm = &sc->mem_rman;
-		break;
+		return (bus_generic_rman_alloc_resource(bus, child, type, rid,
+		    start, end, count, flags));
+	case SYS_RES_IRQ:
+		return (BUS_ALLOC_RESOURCE(device_get_parent(bus),
+		    child, type, rid, start, end, count, flags));
 	default:
 		return (NULL);
 	}
+}
 
-	if (rm == NULL)
-		return (BUS_ALLOC_RESOURCE(device_get_parent(bus),
-		    child, type, rid, start, end, count, flags));
+static int
+versatile_pci_adjust_resource(device_t bus, device_t child, int type,
+    struct resource *r, rman_res_t start, rman_res_t end)
+{
 
-	rv = rman_reserve_resource(rm, start, end, count, flags, child);
-	if (rv == NULL)
-		return (NULL);
-
-	rman_set_rid(rv, *rid);
-
-	if (flags & RF_ACTIVE) {
-		if (bus_activate_resource(child, type, *rid, rv)) {
-			rman_release_resource(rv);
-			return (NULL);
-		}
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_adjust_resource(bus, child, type, r,
+		    start, end));
+	case SYS_RES_IRQ:
+		return (bus_generic_adjust_resource(bus, child, type, r, start,
+		    end));
+	default:
+		return (EINVAL);
 	}
-	return (rv);
+}
+
+static int
+versatile_pci_release_resource(device_t bus, device_t child, int type,
+    int rid, struct resource *r)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_release_resource(bus, child, type,
+		    rid, r));
+	case SYS_RES_IRQ:
+		return (bus_generic_release_resource(bus, child, type, rid,
+		    r));
+	default:
+		return (EINVAL);
+	}
 }
 
 static int
 versatile_pci_activate_resource(device_t bus, device_t child, int type, int rid,
     struct resource *r)
 {
-	vm_offset_t vaddr;
-	int res;
 
-	switch(type) {
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_activate_resource(bus, child, type,
+		    rid, r));
+	case SYS_RES_IRQ:
+		return (bus_generic_activate_resource(bus, child, type, rid,
+		    r));
+	default:
+		return (EINVAL);
+	}
+}
+
+static int
+versatile_pci_deactivate_resource(device_t bus, device_t child, int type,
+    int rid, struct resource *r)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_deactivate_resource(bus, child, type,
+		    rid, r));
+	case SYS_RES_IRQ:
+		return (bus_generic_deactivate_resource(bus, child, type, rid,
+		    r));
+	default:
+		return (EINVAL);
+	}
+}
+
+static int
+versatile_pci_map_resource(device_t bus, device_t child, int type,
+    struct resource *r, struct resource_map_request *argsp,
+    struct resource_map *map)
+{
+	struct resource_map_request args;
+	rman_res_t length, start;
+	int error;
+
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
+
+	/* Mappings are only supported on I/O and memory resources. */
+	switch (type) {
 	case SYS_RES_MEMORY:
 	case SYS_RES_IOPORT:
-		vaddr = (vm_offset_t)pmap_mapdev(rman_get_start(r),
-				rman_get_size(r));
-		rman_set_bushandle(r, vaddr);
-		rman_set_bustag(r, fdtbus_bs_tag);
-		res = rman_activate_resource(r);
-		break;
-	case SYS_RES_IRQ:
-		res = (BUS_ACTIVATE_RESOURCE(device_get_parent(bus),
-		    child, type, rid, r));
 		break;
 	default:
-		res = ENXIO;
-		break;
+		return (EINVAL);
 	}
 
-	return (res);
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
+
+	map->r_vaddr = pmap_mapdev(start, length);
+	map->r_bustag = fdtbus_bs_tag;
+	map->r_bushandle = (vm_offset_t)map->r_vaddr;
+	map->r_size = length;
+	return (0);
+}
+
+static int
+versatile_pci_unmap_resource(device_t bus, device_t child, int type,
+    struct resource *r, struct resource_map *map)
+{
+
+	switch (type) {
+	case SYS_RES_MEMORY:
+	case SYS_RES_IOPORT:
+		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
+		return (0);
+	default:
+		return (EINVAL);
+	}
 }
 
 static int
@@ -520,10 +604,13 @@ static device_method_t versatile_pci_methods[] = {
 	/* Bus interface */
 	DEVMETHOD(bus_read_ivar,	versatile_pci_read_ivar),
 	DEVMETHOD(bus_write_ivar,	versatile_pci_write_ivar),
+	DEVMETHOD(bus_get_rman,		versatile_pci_get_rman),
 	DEVMETHOD(bus_alloc_resource,	versatile_pci_alloc_resource),
-	DEVMETHOD(bus_release_resource,	bus_generic_release_resource),
+	DEVMETHOD(bus_release_resource,	versatile_pci_release_resource),
 	DEVMETHOD(bus_activate_resource, versatile_pci_activate_resource),
-	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
+	DEVMETHOD(bus_deactivate_resource, versatile_pci_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	versatile_pci_map_resource),
+	DEVMETHOD(bus_unmap_resource,	versatile_pci_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	versatile_pci_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	versatile_pci_teardown_intr),
 
