@@ -67,8 +67,8 @@ static device_probe_t nexus_probe;
 static device_attach_t nexus_attach;
 static bus_setup_intr_t nexus_setup_intr;
 static bus_teardown_intr_t nexus_teardown_intr;
-static bus_activate_resource_t nexus_activate_resource;
-static bus_deactivate_resource_t nexus_deactivate_resource;
+static bus_map_resource_t nexus_map_resource;
+static bus_unmap_resource_t nexus_unmap_resource;
 static bus_space_tag_t nexus_get_bus_tag(device_t, device_t);
 static int nexus_get_cpus(device_t, device_t, enum cpu_sets, size_t,
     cpuset_t *);
@@ -85,8 +85,8 @@ static device_method_t nexus_methods[] = {
 
 	/* Bus interface */
 	DEVMETHOD(bus_add_child,	bus_generic_add_child),
-	DEVMETHOD(bus_activate_resource,	nexus_activate_resource),
-	DEVMETHOD(bus_deactivate_resource,	nexus_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	nexus_map_resource),
+	DEVMETHOD(bus_unmap_resource,	nexus_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	nexus_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	nexus_teardown_intr),
 #ifdef SMP
@@ -228,43 +228,60 @@ nexus_ofw_map_intr(device_t dev, device_t child, phandle_t iparent, int icells,
 }
 
 static int
-nexus_activate_resource(device_t bus __unused, device_t child __unused,
-    int type, int rid __unused, struct resource *r)
+nexus_map_resource(device_t bus __unused, device_t child __unused, int type,
+    struct resource *r, struct resource_map_request *argsp,
+    struct resource_map *map)
 {
+	struct resource_map_request args;
+	rman_res_t length, start;
+	int error;
 
-	if (type == SYS_RES_MEMORY) {
-		vm_paddr_t start;
-		void *p;
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
 
-		start = (vm_paddr_t) rman_get_start(r);
-		if (bootverbose)
-			printf("nexus mapdev: start %jx, len %jd\n",
-			    (uintmax_t)start, rman_get_size(r));
-
-		p = pmap_mapdev(start, (vm_size_t) rman_get_size(r));
-		if (p == NULL)
-			return (ENOMEM);
-		rman_set_virtual(r, p);
-		rman_set_bustag(r, &bs_be_tag);
-		rman_set_bushandle(r, (u_long)p);
+	/* Mappings are only supported on I/O and memory resources. */
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		break;
+	default:
+		return (EINVAL);
 	}
-	return (rman_activate_resource(r));
+
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
+	
+	if (bootverbose)
+		printf("nexus mapdev: start %jx, len %jd\n",
+		    (uintmax_t)start, (uintmax_t)length);
+
+	map->r_vaddr = pmap_mapdev_attr(start, length, args.memattr);
+	if (map->r_vaddr == NULL)
+		return (ENOMEM);
+	map->r_bustag = &bs_be_tag;
+	map->r_size = length;
+	map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
+	return (0);
 }
 
 static int
-nexus_deactivate_resource(device_t bus __unused, device_t child __unused,
-    int type __unused, int rid __unused, struct resource *r)
+nexus_unmap_resource(device_t bus __unused, device_t child __unused,
+    int type, struct resource *r, struct resource_map *map)
 {
 
 	/*
 	 * If this is a memory resource, unmap it.
 	 */
-	if ((type == SYS_RES_MEMORY) || (type == SYS_RES_IOPORT)) {
-		bus_size_t psize;
-
-		psize = rman_get_size(r);
-		pmap_unmapdev((vm_offset_t)rman_get_virtual(r), psize);
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
+		break;
+	default:
+		return (EINVAL);
 	}
-
-	return (rman_deactivate_resource(r));
+	return (0);
 }
