@@ -25,6 +25,8 @@
  * SUCH DAMAGE.
  */
 
+#define USE_BUSDMA
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -175,6 +177,13 @@ struct ccr_session {
 	struct ccr_session_blkcipher blkcipher;
 };
 
+#ifdef USE_BUSDMA
+struct ccr_op {
+	bus_dmamap_t dma_map;
+	struct cryptop *crp;
+};
+#endif
+
 struct ccr_softc {
 	struct adapter *adapter;
 	device_t dev;
@@ -184,6 +193,11 @@ struct ccr_softc {
 	bool detaching;
 	struct sge_wrq *txq;
 	struct sge_rxq *rxq;
+
+#ifdef USE_BUSDMA
+	bus_dma_tag_t dma_tag;
+	struct ccr_op *cur_op;
+#endif
 
 	/*
 	 * Pre-allocate S/G lists used when preparing a work request.
@@ -246,6 +260,65 @@ struct ccr_softc {
  * operation buffer that is then used to construct the other
  * scatter/gather lists.
  */
+#ifdef USE_BUSDMA
+struct ccr_dma_cb {
+	struct sglist *sg;
+	int error;
+};
+
+static void
+ccr_dma_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
+{
+	struct ccr_dma_cb *cb;
+	int i;
+
+	cb = arg;
+	cb->error = error;
+	if (error)
+		return;
+
+	sglist_reset(cb->sg);
+	for (i = 0; i < nseg; i++) {
+		error = sglist_append_phys(cb->sg, segs[i].ds_addr,
+		    segs[i].ds_len);
+		if (error) {
+			cb->error = error;
+			return;
+		}
+	}
+}
+
+static void
+ccr_dma_cb2(void *arg, bus_dma_segment_t *segs, int nseg, bus_size_t mapsize,
+    int error)
+{
+
+	ccr_dma_cb(arg, segs, nseg, error);
+}
+
+static int
+ccr_populate_sglist(struct sglist *sg, struct cryptop *crp, bus_dma_tag_t tag,
+    bus_dmamap_t map)
+{
+	struct ccr_dma_cb cb;
+	int error;
+
+	cb.sg = sg;
+	if (crp->crp_flags & CRYPTO_F_IMBUF)
+		error = bus_dmamap_load_mbuf(tag, map, crp->crp_mbuf,
+		    ccr_dma_cb2, &cb, BUS_DMA_NOWAIT);
+	else if (crp->crp_flags & CRYPTO_F_IOV)
+		error = bus_dmamap_load_uio(tag, map, crp->crp_uio,
+		    ccr_dma_cb2, &cb, BUS_DMA_NOWAIT);
+	else
+		error = bus_dmamap_load(tag, map, crp->crp_buf, crp->crp_ilen,
+		    ccr_dma_cb, &cb, BUS_DMA_NOWAIT);
+	MPASS(error != EINPROGRESS);
+	if (error)
+		return (error);
+	return (cb.error);
+}
+#else
 static int
 ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 {
@@ -260,6 +333,7 @@ ccr_populate_sglist(struct sglist *sg, struct cryptop *crp)
 		error = sglist_append(sg, crp->crp_buf, crp->crp_ilen);
 	return (error);
 }
+#endif
 
 /*
  * Segments in 'sg' larger than 'maxsegsize' are counted as multiple
@@ -414,7 +488,11 @@ ccr_populate_wreq(struct ccr_softc *sc, struct chcr_wr *crwr, u_int kctx_len,
 	crwr->wreq.pld_size_hash_size = htobe32(
 	    V_FW_CRYPTO_LOOKASIDE_WR_PLD_SIZE(sgl_len) |
 	    V_FW_CRYPTO_LOOKASIDE_WR_HASH_SIZE(hash_size));
+#ifdef USE_BUSDMA
+	crwr->wreq.cookie = htobe64((uintptr_t)sc->cur_op);
+#else
 	crwr->wreq.cookie = htobe64((uintptr_t)crp);
+#endif
 
 	crwr->ulptx.cmd_dest = htobe32(V_ULPTX_CMD(ULP_TX_PKT) |
 	    V_ULP_TXPKT_DATAMODIFY(0) |
@@ -554,6 +632,11 @@ ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		    crd->crd_len, dst);
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
+
+#ifdef USE_BUSDMA
+	bus_dmamap_sync(sc->dma_tag, sc->cur_op->dma_map, BUS_DMASYNC_PREREAD |
+	    BUS_DMASYNC_PREWRITE);
+#endif
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -741,6 +824,11 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		    crd->crd_len, dst);
 	else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
+
+#ifdef USE_BUSDMA
+	bus_dmamap_sync(sc->dma_tag, sc->cur_op->dma_map, BUS_DMASYNC_PREREAD |
+	    BUS_DMASYNC_PREWRITE);
+#endif
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -1092,6 +1180,11 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 
+#ifdef USE_BUSDMA
+	bus_dmamap_sync(sc->dma_tag, sc->cur_op->dma_map, BUS_DMASYNC_PREREAD |
+	    BUS_DMASYNC_PREWRITE);
+#endif
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -1408,6 +1501,11 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 			    crda->crd_inject, hash_size_in_response, dst);
 	} else
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
+
+#ifdef USE_BUSDMA
+	bus_dmamap_sync(sc->dma_tag, sc->cur_op->dma_map, BUS_DMASYNC_PREREAD |
+	    BUS_DMASYNC_PREWRITE);
+#endif
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -1890,6 +1988,11 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp,
 		ccr_write_ulptx_sgl(sc, dst, sgl_nsegs);
 	}
 
+#ifdef USE_BUSDMA
+	bus_dmamap_sync(sc->dma_tag, sc->cur_op->dma_map, BUS_DMASYNC_PREREAD |
+	    BUS_DMASYNC_PREWRITE);
+#endif
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -2140,6 +2243,9 @@ ccr_attach(device_t dev)
 {
 	struct ccr_softc *sc;
 	int32_t cid;
+#ifdef USE_BUSDMA
+	int error;
+#endif
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -2154,6 +2260,17 @@ ccr_attach(device_t dev)
 	}
 	sc->cid = cid;
 	sc->adapter->ccr_softc = sc;
+
+#ifdef USE_BUSDMA
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL,
+	    BUS_SPACE_MAXSIZE, TX_SGL_SEGS, BUS_SPACE_MAXSIZE, 0, NULL, NULL,
+	    &sc->dma_tag);
+	if (error) {
+		device_printf(dev, "Unable to create dma tag: %d\n", error);
+		return (error);
+	}
+#endif
 
 	/* XXX: TODO? */
 	sc->tx_channel_id = 0;
@@ -2207,6 +2324,9 @@ ccr_detach(device_t dev)
 	sglist_free(sc->sg_dsgl);
 	sglist_free(sc->sg_ulptx);
 	sglist_free(sc->sg_crp);
+#ifdef USE_BUSDMA
+	bus_dma_tag_destroy(sc->dma_tag);
+#endif
 	sc->adapter->ccr_softc = NULL;
 	return (0);
 }
@@ -2670,6 +2790,9 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	struct ccr_softc *sc;
 	struct ccr_session *s;
 	struct cryptodesc *crd, *crda, *crde;
+#ifdef USE_BUSDMA
+	struct ccr_op *co;
+#endif
 	int error;
 
 	if (crp == NULL)
@@ -2679,12 +2802,35 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	s = crypto_get_driver_session(crp->crp_session);
 	sc = device_get_softc(dev);
 
-	mtx_lock(&sc->lock);
-	error = ccr_populate_sglist(sc->sg_crp, crp);
+#ifdef USE_BUSDMA
+	co = malloc(sizeof(*co), M_CCR, M_NOWAIT | M_ZERO);
+	if (co == NULL)
+		return (ENOMEM);
+	co->crp = crp;
+	error = bus_dmamap_create(sc->dma_tag, 0, &co->dma_map);
 	if (error) {
+		free(co, M_CCR);
+		return (error);
+	}
+#endif
+	mtx_lock(&sc->lock);
+#ifdef USE_BUSDMA
+	error = ccr_populate_sglist(sc->sg_crp, crp, sc->dma_tag, co->dma_map);
+#else
+	error = ccr_populate_sglist(sc->sg_crp, crp);
+#endif
+	if (error) {
+#ifdef USE_BUSDMA
+		bus_dmamap_destroy(sc->dma_tag, co->dma_map);
+		free(co, M_CCR);
+		co = NULL;
+#endif
 		sc->stats_sglist_error++;
 		goto out;
 	}
+#ifdef USE_BUSDMA
+	sc->cur_op = co;
+#endif
 
 	switch (s->mode) {
 	case HASH:
@@ -2788,7 +2934,15 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		error = ccr_gcm(sc, s, crp, crda, crde);
 		if (error == EMSGSIZE) {
 			sc->stats_sw_fallback++;
+#ifdef USE_BUSDMA
+			sc->cur_op = NULL;
+#endif
 			mtx_unlock(&sc->lock);
+#ifdef USE_BUSDMA
+			bus_dmamap_unload(sc->dma_tag, co->dma_map);
+			bus_dmamap_destroy(sc->dma_tag, co->dma_map);
+			free(co, M_CCR);
+#endif
 			ccr_gcm_soft(s, crp, crda, crde);
 			return (0);
 		}
@@ -2818,8 +2972,16 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		}
 		error = ccr_ccm(sc, s, crp, crda, crde);
 		if (error == EMSGSIZE) {
+#ifdef USE_BUSDMA
+			sc->cur_op = NULL;
+#endif
 			sc->stats_sw_fallback++;
 			mtx_unlock(&sc->lock);
+#ifdef USE_BUSDMA
+			bus_dmamap_unload(sc->dma_tag, co->dma_map);
+			bus_dmamap_destroy(sc->dma_tag, co->dma_map);
+			free(co, M_CCR);
+#endif
 			ccr_ccm_soft(s, crp, crda, crde);
 			return (0);
 		}
@@ -2832,6 +2994,9 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		break;
 	}
 
+#ifdef USE_BUSDMA
+	sc->cur_op = NULL;
+#endif
 	if (error == 0) {
 		s->pending++;
 		sc->stats_inflight++;
@@ -2840,8 +3005,14 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 
 out:
 	mtx_unlock(&sc->lock);
-
 	if (error) {
+#ifdef USE_BUSDMA
+		if (co != NULL) {
+			bus_dmamap_unload(sc->dma_tag, co->dma_map);
+			bus_dmamap_destroy(sc->dma_tag, co->dma_map);
+			free(co, M_CCR);
+		}
+#endif
 		crp->crp_etype = error;
 		crypto_done(crp);
 	}
@@ -2856,6 +3027,9 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	struct ccr_softc *sc = iq->adapter->ccr_softc;
 	struct ccr_session *s;
 	const struct cpl_fw6_pld *cpl;
+#ifdef USE_BUSDMA
+	struct ccr_op *co;
+#endif
 	struct cryptop *crp;
 	uint32_t status;
 	int error;
@@ -2865,7 +3039,17 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	else
 		cpl = (const void *)(rss + 1);
 
+#ifdef USE_BUSDMA
+	co = (struct ccr_op *)(uintptr_t)be64toh(cpl->data[1]);
+	crp = co->crp;
+	bus_dmamap_sync(sc->dma_tag, co->dma_map, BUS_DMASYNC_POSTREAD |
+	    BUS_DMASYNC_POSTWRITE);
+	bus_dmamap_unload(sc->dma_tag, co->dma_map);
+	bus_dmamap_destroy(sc->dma_tag, co->dma_map);
+	free(co, M_CCR);
+#else
 	crp = (struct cryptop *)(uintptr_t)be64toh(cpl->data[1]);
+#endif
 	s = crypto_get_driver_session(crp->crp_session);
 	status = be64toh(cpl->data[0]);
 	if (CHK_MAC_ERR_BIT(status) || CHK_PAD_ERR_BIT(status))
