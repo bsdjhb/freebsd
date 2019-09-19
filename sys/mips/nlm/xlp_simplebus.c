@@ -72,8 +72,14 @@ __FBSDID("$FreeBSD$");
 static int		xlp_simplebus_probe(device_t dev);
 static struct resource *xlp_simplebus_alloc_resource(device_t, device_t, int,
     int *, rman_res_t, rman_res_t, rman_res_t, u_int);
+static int		xlp_simplebus_adjust_resource(device_t, device_t, int,
+    struct resource *, rman_res_t, rman_res_t);
 static int		xlp_simplebus_activate_resource(device_t, device_t, int,
     int, struct resource *);
+static int		xlp_simplebus_map_resource(device_t, device_t, int,
+    struct resource *, struct resource_map_request *, struct resource_map *);
+static int		xlp_simplebus_unmap_resource(device_t, device_t, int,
+    struct resource *, struct resource_map *);
 static int		xlp_simplebus_setup_intr(device_t, device_t,
     struct resource *, int, driver_filter_t *, driver_intr_t *, void *, void **);
 
@@ -89,7 +95,10 @@ static device_method_t xlp_simplebus_methods[] = {
 	DEVMETHOD(device_probe,		xlp_simplebus_probe),
 
 	DEVMETHOD(bus_alloc_resource,	xlp_simplebus_alloc_resource),
+	DEVMETHOD(bus_adjust_resource,	xlp_simplebus_adjust_resource),
 	DEVMETHOD(bus_activate_resource, xlp_simplebus_activate_resource),
+	DEVMETHOD(bus_map_resource,	xlp_simplebus_map_resource),
+	DEVMETHOD(bus_unmap_resource,	xlp_simplebus_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	xlp_simplebus_setup_intr),
 
 	DEVMETHOD(ofw_bus_map_intr,	xlp_simplebus_ofw_map_intr),
@@ -163,6 +172,33 @@ xlp_simplebus_probe(device_t dev)
 	return (BUS_PROBE_SPECIFIC);
 }
 
+/*
+ * Because this driver uses 3 rman's for SYS_RES_MEMORY, it can't implement
+ * BUS_GET_RMAN().
+ */
+static struct rman *
+xlp_simplebus_get_rman(int type, rman_res_t start, rman_res_t end)
+{
+
+	switch (type) {
+	case SYS_RES_IRQ:
+		return (&irq_rman);
+	case SYS_RES_IOPORT:
+		return (&port_rman);
+		break;
+	case SYS_RES_MEMORY:
+		if (start >= GBU_MEM_BASE && end <= GBU_MEM_LIMIT)
+			return (&gbu_rman);
+		if (start >= PCI_ECFG_BASE && end <= PCI_ECFG_LIMIT)
+			return (&pci_ecfg_rman);
+		if (start >= PCIE_MEM_BASE && end <= PCIE_MEM_LIMIT)
+			return (&mem_rman);
+		return (NULL);
+	default:
+		return (NULL);
+	}
+}
+
 static struct resource *
 xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
@@ -172,7 +208,6 @@ xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	struct resource_list_entry	*rle;
 	struct simplebus_softc		*sc;
 	struct simplebus_devinfo	*di;
-	bus_space_tag_t			bustag;
 	int j, isdefault, passthrough, needsactivate;
 
 	passthrough = (device_get_parent(child) != bus);
@@ -180,7 +215,6 @@ xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	sc = device_get_softc(bus);
         di = device_get_ivars(child);
 	rle = NULL;
-	bustag = NULL;
 
 	if (!passthrough) {
 		isdefault = RMAN_IS_DEFAULT_RANGE(start, end);
@@ -214,32 +248,14 @@ xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 			}
 		}
 	}
-	switch (type) {
-	case SYS_RES_IRQ:
-		rm = &irq_rman;
-		break;
-	case SYS_RES_IOPORT:
-		rm = &port_rman;
-		bustag = rmi_bus_space;
-		break;
-	case SYS_RES_MEMORY:
-		if (start >= GBU_MEM_BASE && end <= GBU_MEM_LIMIT) {
-			rm = &gbu_rman;
-			bustag = rmi_bus_space;
-		} else if (start >= PCI_ECFG_BASE && end <= PCI_ECFG_LIMIT) {
-			rm = &pci_ecfg_rman;
-			bustag = rmi_uart_bus_space;
-		} else if (start >= PCIE_MEM_BASE && end <= PCIE_MEM_LIMIT) {
-			rm = &mem_rman;
-			bustag = rmi_bus_space;
-		} else {
+
+	rm = xlp_simplebus_get_rman(type, start, end);
+	if (rm == NULL) {
+		if (type == SYS_RES_MEMORY) {
 			if (bootverbose)
 				device_printf(bus, "Invalid MEM range"
 					    "%#jx-%#jx\n", start, end);
-			return (NULL);
 		}
-		break;
-	default:
 		return (NULL);
 	}
 
@@ -251,8 +267,6 @@ xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	}
 
 	rman_set_rid(rv, *rid);
-	if (bustag != NULL)
-		rman_set_bustag(rv, bustag);
 
 	if (needsactivate) {
 		if (bus_activate_resource(child, type, *rid, rv)) {
@@ -267,26 +281,108 @@ xlp_simplebus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 }
 
 static int
+xlp_simplebus_adjust_resource(device_t dev, device_t child, int type,
+    struct resource *r, rman_res_t start, rman_res_t end)
+{
+	struct rman *rm;
+
+	rm = xlp_simplebus_get_rman(type, rman_get_start(r),
+	    rman_get_end(r));
+	if (rm == NULL)
+		return (ENXIO);
+	if (!rman_is_region_manager(r, rm))
+		return (EINVAL);
+	return (rman_adjust_resource(r, start, end));
+}
+
+static int
 xlp_simplebus_activate_resource(device_t bus, device_t child, int type, int rid,
     struct resource *r)
 {
-	void *vaddr;
-	vm_paddr_t paddr;
-	vm_size_t psize;
+	struct resource_map map;
+#ifdef INVARIANTS
+	struct rman *rm;
+#endif
+	int error;
 
-	/*
-	 * If this is a memory resource, use pmap_mapdev to map it.
-	 */
-	if (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT) {
-		paddr = rman_get_start(r);
-		psize = rman_get_size(r);
-		vaddr = pmap_mapdev(paddr, psize);
+#ifdef INVARIANTS
+	rm = xlp_simplebus_get_rman(type, rman_get_start(r),
+	    rman_get_end(r));
+	KASSERT(rman_is_region_manager(r, rm),
+	    ("%s: rman %p doesn't match for resource %p", __func__, rm, r));
+#endif
 
-		rman_set_virtual(r, vaddr);
-		rman_set_bushandle(r, (bus_space_handle_t)(uintptr_t)vaddr);
+	error = rman_activate_resource(r);
+	if (error)
+		return (error);
+
+	if ((rman_get_flags(r) & RF_UNMAPPED) == 0 &&
+	    (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT)) {
+		error = BUS_MAP_RESOURCE(bus, child, type, r, NULL, &map);
+		if (error) {
+			rman_deactivate_resource(r);
+			return (error);
+		}
+
+		rman_set_mapping(r, &map);
+	}
+	return (0);
+}
+
+static int
+xlp_simplebus_map_resource(device_t bus, device_t child, int type,
+    struct resource *r, struct resource_map_request *argsp,
+    struct resource_map *map)
+{
+	struct resource_map_request args;
+	rman_res_t length, start;
+	int error;
+
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
+
+	/* Mappings are only supported on I/O and memory resources. */
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		break;
+	default:
+		return (EINVAL);
 	}
 
-	return (rman_activate_resource(r));
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
+
+	/* Lookup bus space tag. */
+	if (type == SYS_RES_MEMORY && start >= PCI_ECFG_BASE &&
+	    start <= PCI_ECFG_LIMIT)
+		map->r_bustag = rmi_uart_bus_space;
+	else
+		map->r_bustag = rmi_bus_space;
+
+	map->r_vaddr = pmap_mapdev(start, length);
+	map->r_size = length;
+	map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
+	return (0);
+}
+
+static int
+xlp_simplebus_unmap_resource(device_t bus, device_t child, int type,
+    struct resource *r, struct resource_map *map)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		pmap_unmapdev((vm_offset_t)map->r_vaddr, map->r_size);
+		break;
+	default:
+		return (EINVAL);
+	}
+	return (0);
 }
 
 static int
