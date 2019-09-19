@@ -120,8 +120,8 @@ struct gt_pci_softc {
 	struct rman		sc_mem_rman;
 	struct rman		sc_io_rman;
 	struct rman		sc_irq_rman;
-	unsigned long		sc_mem;
-	bus_space_handle_t	sc_io;
+	bus_addr_t		sc_mem;
+	bus_addr_t		sc_io;
 
 	struct resource		*sc_irq;
 	struct intr_event	*sc_eventstab[ICU_LEN];
@@ -138,8 +138,10 @@ static void gt_pci_set_icus(struct gt_pci_softc *);
 static int gt_pci_intr(void *v);
 static int gt_pci_probe(device_t);
 static int gt_pci_attach(device_t);
-static int gt_pci_activate_resource(device_t, device_t, int, int, 
-    struct resource *);
+static int gt_pci_map_resource(device_t, device_t, int, struct resource *,
+    struct resource_map_request *, struct resource_map *);
+static int gt_pci_unmap_resource(device_t, device_t, int, struct resource *,
+    struct resource_map *);
 static int gt_pci_setup_intr(device_t, device_t, struct resource *, 
     int, driver_filter_t *, driver_intr_t *, void *, void **);
 static int gt_pci_teardown_intr(device_t, device_t, struct resource *, void*);
@@ -150,8 +152,6 @@ static uint32_t gt_pci_read_config(device_t, u_int, u_int, u_int, u_int, int);
 static void gt_pci_write_config(device_t, u_int, u_int, u_int, u_int, 
     uint32_t, int);
 static int gt_pci_route_interrupt(device_t pcib, device_t dev, int pin);
-static struct resource * gt_pci_alloc_resource(device_t, device_t, int, 
-    int *, rman_res_t, rman_res_t, rman_res_t, u_int);
 
 static void
 gt_pci_mask_irq(void *source)
@@ -629,65 +629,80 @@ gt_write_ivar(device_t dev, device_t child, int which, uintptr_t result)
 	return (ENOENT);
 }
 
-static struct resource *
-gt_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
-    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
+static struct rman *
+gt_pci_get_rman(device_t bus, int type, u_int flags)
 {
 	struct gt_pci_softc *sc = device_get_softc(bus);	
-	struct resource *rv = NULL;
-	struct rman *rm;
-	bus_space_handle_t bh = 0;
 
 	switch (type) {
 	case SYS_RES_IRQ:
-		rm = &sc->sc_irq_rman;
-		break;
+		return (&sc->sc_irq_rman);
 	case SYS_RES_MEMORY:
-		rm = &sc->sc_mem_rman;
-		bh = sc->sc_mem;
-		break;
+		return (&sc->sc_mem_rman);
 	case SYS_RES_IOPORT:
-		rm = &sc->sc_io_rman;
-		bh = sc->sc_io;
-		break;
+		return (&sc->sc_io_rman);
 	default:
 		return (NULL);
 	}
-
-	rv = rman_reserve_resource(rm, start, end, count, flags, child);
-	if (rv == NULL)
-		return (NULL);
-	rman_set_rid(rv, *rid);
-	if (type != SYS_RES_IRQ) {
-		bh += (rman_get_start(rv));
-
-		rman_set_bustag(rv, gt_pci_bus_space);
-		rman_set_bushandle(rv, bh);
-		if (flags & RF_ACTIVE) {
-			if (bus_activate_resource(child, type, *rid, rv)) {
-				rman_release_resource(rv);
-				return (NULL);
-			}
-		} 
-	}
-	return (rv);
 }
 
 static int
-gt_pci_activate_resource(device_t bus, device_t child, int type, int rid,
-    struct resource *r)
+gt_pci_map_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map_request *argsp, struct resource_map *map)
 {
-	bus_space_handle_t p;
+	struct gt_pci_softc *sc = device_get_softc(bus);	
+	struct resource_map_request args;
+	rman_res_t length, start;
 	int error;
 
-	if ((type == SYS_RES_MEMORY) || (type == SYS_RES_IOPORT)) {
-		error = bus_space_map(rman_get_bustag(r),
-		    rman_get_bushandle(r), rman_get_size(r), 0, &p);
-		if (error) 
-			return (error);
-		rman_set_bushandle(r, p);
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
+
+	/* Mappings are only supported on I/O and memory resources. */
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		break;
+	default:
+		return (EINVAL);
 	}
-	return (rman_activate_resource(r));
+
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
+
+	if (type == SYS_RES_IOPORT)
+		start += sc->sc_io;
+	else
+		start += sc->sc_mem;
+
+	error = bus_space_map(gt_pci_bus_space, start, length, 0,
+	    &map->r_bushandle);
+	if (error)
+		return (error);
+
+	map->r_bustag = gt_pci_bus_space;
+	map->r_size = length;
+	map->r_vaddr = NULL;
+	return (0);
+}
+
+static int
+gt_pci_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map *map)
+{
+	
+	switch (type) {
+	case SYS_RES_MEMORY:
+	case SYS_RES_IOPORT:
+		bus_space_unmap(map->r_bustag, map->r_bushandle, map->r_size);
+		break;
+	default:
+		return (EINVAL);
+	}
+	return (0);
 }
 
 static int
@@ -747,10 +762,14 @@ static device_method_t gt_pci_methods[] = {
 	/* Bus interface */
 	DEVMETHOD(bus_read_ivar,	gt_read_ivar),
 	DEVMETHOD(bus_write_ivar,	gt_write_ivar),
-	DEVMETHOD(bus_alloc_resource,	gt_pci_alloc_resource),
-	DEVMETHOD(bus_release_resource,	bus_generic_release_resource),
-	DEVMETHOD(bus_activate_resource, gt_pci_activate_resource),
-	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
+	DEVMETHOD(bus_get_rman,		gt_pci_get_rman),
+	DEVMETHOD(bus_alloc_resource,	bus_generic_rman_alloc_resource),
+	DEVMETHOD(bus_adjust_resource,	bus_generic_rman_adjust_resource),
+	DEVMETHOD(bus_release_resource,	bus_generic_rman_release_resource),
+	DEVMETHOD(bus_activate_resource, bus_generic_rman_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, bus_generic_rman_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	gt_pci_map_resource),
+	DEVMETHOD(bus_unmap_resource,	gt_pci_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	gt_pci_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	gt_pci_teardown_intr),
 
