@@ -231,100 +231,178 @@ octopci_read_ivar(device_t dev, device_t child, int which, uintptr_t *result)
 	return (ENOENT);
 }
 
-static struct resource *
-octopci_alloc_resource(device_t bus, device_t child, int type, int *rid,
-    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
+static struct rman *
+octopci_get_rman(device_t bus, int type, u_int flags)
 {
 	struct octopci_softc *sc;
-	struct resource *res;
-	struct rman *rm;
-	int error;
 
 	sc = device_get_softc(bus);
 
 	switch (type) {
-	case SYS_RES_IRQ:
-		res = bus_generic_alloc_resource(bus, child, type, rid, start,
-		    end, count, flags);
-		if (res != NULL)
-			return (res);
-		return (NULL);
 	case SYS_RES_MEMORY:
-		rm = &sc->sc_mem1;
-		break;
+		return (&sc->sc_mem1);
 	case SYS_RES_IOPORT:
-		rm = &sc->sc_io;
-		break;
+		return (&sc->sc_io);
 	default:
 		return (NULL);
 	}
+}
 
-	res = rman_reserve_resource(rm, start, end, count, flags, child);
-	if (res == NULL)
-		return (NULL);
-
-	rman_set_rid(res, *rid);
-	rman_set_bustag(res, octopci_bus_space);
+static struct resource *
+octopci_alloc_resource(device_t bus, device_t child, int type, int *rid,
+    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
+{
 
 	switch (type) {
-	case SYS_RES_MEMORY:
-		rman_set_bushandle(res, sc->sc_mem1_base + rman_get_start(res));
-		break;
 	case SYS_RES_IOPORT:
-		rman_set_bushandle(res, sc->sc_io_base + rman_get_start(res));
-#if __mips_n64
-		rman_set_virtual(res, (void *)rman_get_bushandle(res));
-#else
-		/*
-		 * XXX
-		 * We can't access ports via a 32-bit pointer.
-		 */
-		rman_set_virtual(res, NULL);
-#endif
-		break;
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_alloc_resource(bus, child, type, rid,
+		    start, end, count, flags));
+	case SYS_RES_IRQ:
+		return (bus_generic_alloc_resource(bus, child, type, rid, start,
+		    end, count, flags));
+	default:
+		return (NULL);
 	}
+}
 
-	if ((flags & RF_ACTIVE) != 0) {
-		error = bus_activate_resource(child, type, *rid, res);
-		if (error != 0) {
-			rman_release_resource(res);
-			return (NULL);
-		}
+static int
+octopci_adjust_resource(device_t bus, device_t child, int type,
+    struct resource *r, rman_res_t start, rman_res_t end)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_adjust_resource(bus, child, type, r,
+		    start, end));
+	case SYS_RES_IRQ:
+		return (bus_generic_adjust_resource(bus, child, type, r, start,
+		    end));
+	default:
+		return (EINVAL);
 	}
+}
 
-	return (res);
+static int
+octopci_release_resource(device_t bus, device_t child, int type, int rid,
+    struct resource *res)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_release_resource(bus, child, type, rid,
+		    res));
+	case SYS_RES_IRQ:
+		return (bus_generic_release_resource(bus, child, type, rid,
+		    res));
+	default:
+		return (EINVAL);
+	}
 }
 
 static int
 octopci_activate_resource(device_t bus, device_t child, int type, int rid,
     struct resource *res)
 {
-	bus_space_handle_t bh;
-	int error;
 
 	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_activate_resource(bus, child, type,
+		    rid, res));
 	case SYS_RES_IRQ:
-		error = bus_generic_activate_resource(bus, child, type, rid,
-						      res);
-		if (error != 0)
-			return (error);
-		return (0);
+		return (bus_generic_activate_resource(bus, child, type, rid,
+		    res));
+	default:
+		return (EINVAL);
+	}
+}
+
+static int
+octopci_deactivate_resource(device_t bus, device_t child, int type, int rid,
+    struct resource *res)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+	case SYS_RES_MEMORY:
+		return (bus_generic_rman_deactivate_resource(bus, child, type,
+		    rid, res));
+	case SYS_RES_IRQ:
+		return (bus_generic_deactivate_resource(bus, child, type, rid,
+		    res));
+	default:
+		return (EINVAL);
+	}
+}
+
+static int
+octopci_map_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map_request *argsp, struct resource_map *map)
+{
+	struct resource_map_request args;
+	struct octopci_softc *sc;
+	rman_res_t length, start;
+	int error;
+
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
+
+	switch (type) {
 	case SYS_RES_MEMORY:
 	case SYS_RES_IOPORT:
-		error = bus_space_map(rman_get_bustag(res),
-		    rman_get_bushandle(res), rman_get_size(res), 0, &bh);
-		if (error != 0)
-			return (error);
-		rman_set_bushandle(res, bh);
 		break;
 	default:
-		return (ENXIO);
+		return (EINVAL);
 	}
 
-	error = rman_activate_resource(res);
-	if (error != 0)
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
 		return (error);
+
+	sc = device_get_softc(bus);
+	if (type == SYS_RES_IOPORT)
+		start += sc->sc_io_base;
+	else
+		start += sc->sc_mem1_base;
+
+	error = bus_space_map(octopci_bus_space, start, length, 0,
+	    &map->r_bushandle);
+	if (error)
+		return (error);
+
+	map->r_bustag = octopci_bus_space;
+	map->r_size = length;
+	map->r_vaddr = NULL;
+#ifdef __mips_n64
+	/*
+	 * XXX: This matches earlier changes in this driver, but it
+	 * seems really odd to provide a vaddr mapping for I/O port
+	 * resources when we don't provide them for memory resources.
+	 */
+	if (type == SYS_RES_IOPORT)
+		map->r_vaddr = (void *)map->r_bushandle;
+#endif
 	return (0);
+}
+
+static int
+octopci_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map *map)
+{
+
+	switch (type) {
+	case SYS_RES_MEMORY:
+	case SYS_RES_IOPORT:
+		bus_space_unmap(map->r_bustag, map->r_bushandle, map->r_size);
+		return (0);
+	default:
+		return (EINVAL);
+	}
 }
 
 static int
@@ -966,10 +1044,14 @@ static device_method_t octopci_methods[] = {
 
 	/* Bus interface */
 	DEVMETHOD(bus_read_ivar,	octopci_read_ivar),
+	DEVMETHOD(bus_get_rman,		octopci_get_rman),
 	DEVMETHOD(bus_alloc_resource,	octopci_alloc_resource),
-	DEVMETHOD(bus_release_resource,	bus_generic_release_resource),
+	DEVMETHOD(bus_adjust_resource,	octopci_adjust_resource),
+	DEVMETHOD(bus_release_resource,	octopci_release_resource),
 	DEVMETHOD(bus_activate_resource,octopci_activate_resource),
-	DEVMETHOD(bus_deactivate_resource,bus_generic_deactivate_resource),
+	DEVMETHOD(bus_deactivate_resource, octopci_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	octopci_map_resource),
+	DEVMETHOD(bus_unmap_resource,	octopci_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	bus_generic_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	bus_generic_teardown_intr),
 

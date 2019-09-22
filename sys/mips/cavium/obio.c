@@ -119,15 +119,25 @@ obio_attach(device_t dev)
 	return (0);
 }
 
+static struct rman *
+obio_get_rman(device_t bus, int type, u_int flags)
+{
+	struct obio_softc *sc = device_get_softc(bus);
+
+	switch (type) {
+	case SYS_RES_IRQ:
+		return (&sc->oba_irq_rman);
+	case SYS_RES_IOPORT:
+		return (&sc->oba_rman);
+	default:
+		return (NULL);
+	}
+}
+
 static struct resource *
 obio_alloc_resource(device_t bus, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
-	struct resource *rv;
-	struct rman *rm;
-	bus_space_tag_t bt = 0;
-	bus_space_handle_t bh = 0;
-	struct obio_softc *sc = device_get_softc(bus);
 
 	switch (type) {
 	case SYS_RES_IRQ:
@@ -141,47 +151,65 @@ obio_alloc_resource(device_t bus, device_t child, int type, int *rid,
 		default:
 			return (NULL);
 		}
-		rm = &sc->oba_irq_rman;
 		break;
-	case SYS_RES_MEMORY:
-		return (NULL);
 	case SYS_RES_IOPORT:
-		rm = &sc->oba_rman;
-		bt = &octeon_uart_tag;
-		bh = CVMX_MIO_UARTX_RBR(device_get_unit(child));
-		start = bh;
+		start = CVMX_MIO_UARTX_RBR(device_get_unit(child));
 		break;
 	default:
 		return (NULL);
 	}
 
-	rv = rman_reserve_resource(rm, start, end, count, flags, child);
-	if (rv == NULL)  {
-		return (NULL);
-        }
-	if (type == SYS_RES_IRQ) {
-		return (rv);
-        }
-	rman_set_rid(rv, *rid);
-	rman_set_bustag(rv, bt);
-	rman_set_bushandle(rv, bh);
-
-	if (0) {
-		if (bus_activate_resource(child, type, *rid, rv)) {
-			rman_release_resource(rv);
-			return (NULL);
-		}
-	}
-	return (rv);
-
+	return (bus_generic_rman_alloc_resource(bus, child, type, rid, start,
+	    end, count, flags));
 }
 
 static int
-obio_activate_resource(device_t bus, device_t child, int type, int rid,
-    struct resource *r)
+obio_map_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map_request *argsp, struct resource_map *map)
 {
+	struct obio_softc *sc = device_get_softc(bus);
+	struct resource_map_request args;
+	rman_res_t length, start;
+	int error;
+
+	/* Resources must be active to be mapped. */
+	if (!(rman_get_flags(r) & RF_ACTIVE))
+		return (ENXIO);
+
+	/* Mappings are only supported on I/O resources. */
+	switch (type) {
+	case SYS_RES_IOPORT:
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	resource_init_map_request(&args);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
+
+	map->r_bustag = sc->oba_st;
+	map->r_bushandle = start;
+	map->r_size = length;
+	map->r_vaddr = NULL;
 	return (0);
 }
+
+static int
+obio_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map *map)
+{
+
+	switch (type) {
+	case SYS_RES_IOPORT:
+		break;
+	default:
+		return (EINVAL);
+	}
+	return (0);
+}
+
 static device_method_t obio_methods[] = {
 	/* Device methods */
 	DEVMETHOD(device_identify,	obio_identify),
@@ -189,8 +217,14 @@ static device_method_t obio_methods[] = {
 	DEVMETHOD(device_attach,	obio_attach),
 
 	/* Bus methods */
+	DEVMETHOD(bus_get_rman,		obio_get_rman),
 	DEVMETHOD(bus_alloc_resource,	obio_alloc_resource),
-	DEVMETHOD(bus_activate_resource,obio_activate_resource),
+	DEVMETHOD(bus_adjust_resource,	bus_generic_rman_adjust_resource),
+	DEVMETHOD(bus_release_resource,	bus_generic_rman_release_resource),
+	DEVMETHOD(bus_activate_resource, bus_generic_rman_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, bus_generic_rman_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	obio_map_resource),
+	DEVMETHOD(bus_unmap_resource,	obio_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	bus_generic_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	bus_generic_teardown_intr),
 
