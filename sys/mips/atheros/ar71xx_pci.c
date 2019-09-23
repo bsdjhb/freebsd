@@ -498,58 +498,34 @@ ar71xx_pci_write_ivar(device_t dev, device_t child, int which,
 	return (ENOENT);
 }
 
-static struct resource *
-ar71xx_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
-    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
+static struct rman *
+ar71xx_pci_get_rman(device_t bus, int type, u_int flags)
 {
-
 	struct ar71xx_pci_softc *sc = device_get_softc(bus);
-	struct resource *rv;
-	struct rman *rm;
 
 	switch (type) {
 	case SYS_RES_IRQ:
-		rm = &sc->sc_irq_rman;
+		return (&sc->sc_irq_rman);
 		break;
 	case SYS_RES_MEMORY:
-		rm = &sc->sc_mem_rman;
+		return (&sc->sc_mem_rman);
 		break;
 	default:
 		return (NULL);
 	}
-
-	rv = rman_reserve_resource(rm, start, end, count, flags, child);
-
-	if (rv == NULL)
-		return (NULL);
-
-	rman_set_rid(rv, *rid);
-
-	if (flags & RF_ACTIVE) {
-		if (bus_activate_resource(child, type, *rid, rv)) {
-			rman_release_resource(rv);
-			return (NULL);
-		}
-	}
-	return (rv);
 }
 
 static int
-ar71xx_pci_activate_resource(device_t bus, device_t child, int type, int rid,
-    struct resource *r)
+ar71xx_pci_map_resource(device_t bus, device_t child, int type,
+    struct resource *r, struct resource_map_request *argsp,
+    struct resource_map *map)
 {
-	int res = (BUS_ACTIVATE_RESOURCE(device_get_parent(bus),
-	    child, type, rid, r));
-
-	if (!res) {
-		switch(type) {
-		case SYS_RES_MEMORY:
-		case SYS_RES_IOPORT:
-			rman_set_bustag(r, ar71xx_bus_space_pcimem);
-			break;
-		}
-	}
-	return (res);
+	int error;
+	
+	error = bus_generic_map_resource(bus, child, type, r, argsp, map);
+	if (error == 0)
+		map->r_bustag = ar71xx_bus_space_pcimem;
+	return (error);
 }
 
 static int
@@ -678,10 +654,14 @@ static device_method_t ar71xx_pci_methods[] = {
 	/* Bus interface */
 	DEVMETHOD(bus_read_ivar,	ar71xx_pci_read_ivar),
 	DEVMETHOD(bus_write_ivar,	ar71xx_pci_write_ivar),
-	DEVMETHOD(bus_alloc_resource,	ar71xx_pci_alloc_resource),
-	DEVMETHOD(bus_release_resource,	bus_generic_release_resource),
-	DEVMETHOD(bus_activate_resource, ar71xx_pci_activate_resource),
-	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
+	DEVMETHOD(bus_get_rman,		ar71xx_pci_get_rman),
+	DEVMETHOD(bus_alloc_resource,	bus_generic_rman_alloc_resource),
+	DEVMETHOD(bus_adjust_resource,	bus_generic_rman_adjust_resource),
+	DEVMETHOD(bus_release_resource,	bus_generic_rman_release_resource),
+	DEVMETHOD(bus_activate_resource, bus_generic_rman_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, bus_generic_rman_deactivate_resource),
+	DEVMETHOD(bus_map_resource,	ar71xx_pci_map_resource),
+	DEVMETHOD(bus_unmap_resource,	bus_generic_unmap_resource),
 	DEVMETHOD(bus_setup_intr,	ar71xx_pci_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	ar71xx_pci_teardown_intr),
 
