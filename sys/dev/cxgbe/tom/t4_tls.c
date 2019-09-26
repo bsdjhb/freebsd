@@ -1681,7 +1681,7 @@ write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
 	usgl->cmd_nsge = htobe32(V_ULPTX_CMD(ULP_TX_SC_DSGL) |
 	    V_ULPTX_NSGE(nsegs));
 
-	/* Figure out the first first S/G length. */
+	/* Figure out the first S/G length. */
 	pa = ext_pgs->pa[0] + ext_pgs->first_pg_off;
 	usgl->addr0 = htobe64(pa);
 	len = mbuf_ext_pg_len(ext_pgs, 0, ext_pgs->first_pg_off);
@@ -1701,13 +1701,13 @@ write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
 	for (; i < ext_pgs->npgs; i++) {
 		if (j == -1 || ext_pgs->pa[i] != pa) {
 			if (j >= 0)
-				usgl->sge[j / 2].len[j & 2] = htobe32(len);
+				usgl->sge[j / 2].len[j & 1] = htobe32(len);
 			j++;
 #ifdef INVARIANTS
 			nsegs--;
 #endif
 			pa = ext_pgs->pa[i];
-			usgl->sge[j / 2].addr[j & 2] = htobe64(pa);
+			usgl->sge[j / 2].addr[j & 1] = htobe64(pa);
 			len = mbuf_ext_pg_len(ext_pgs, i, 0);
 			pa += len;
 		} else {
@@ -1716,7 +1716,7 @@ write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
 		}
 	}
 	if (j >= 0)
-		usgl->sge[j / 2].len[j & 2] = htobe32(len);
+		usgl->sge[j / 2].len[j & 1] = htobe32(len);
 	
 	if (j >= 0 && (j & 1) != 0)
 		usgl->sge[j / 2].len[1] = htobe32(0);
@@ -1827,7 +1827,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 		 * If there is no ready data to send, wait until more
 		 * data arrives.
 		 */
-		if (m == NULL || (m->m_flags & M_NOTREADY) != 0) {
+		if (m == NULL || (m->m_flags & M_NOTAVAIL) != 0) {
 			if (sowwakeup)
 				sowwakeup_locked(so);
 			else
@@ -1877,7 +1877,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 	
 		/* Shove if there is no additional data pending. */
 		shove = ((m->m_next == NULL ||
-		    (m->m_next->m_flags & M_NOTREADY) != 0)) &&
+		    (m->m_next->m_flags & M_NOTAVAIL) != 0)) &&
 		    (tp->t_flags & TF_MORETOCOME) == 0;
 
 		if (sb->sb_flags & SB_AUTOSIZE &&
