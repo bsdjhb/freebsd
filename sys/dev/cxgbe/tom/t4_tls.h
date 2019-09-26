@@ -272,9 +272,10 @@ struct tls_ofld_info {
 	unsigned short expn_per_ulp;
 	unsigned short pdus_per_ulp;
 	struct tls_scmd scmd0;
+	u_int iv_len;
 	enum tls_mode mode;
-	u_int sb_off;
 	struct callout handshake_timer;
+	u_int sb_off;
 	u_int rcv_over;
 };
 
