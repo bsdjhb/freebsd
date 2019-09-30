@@ -1715,11 +1715,12 @@ write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
 			pa += mbuf_ext_pg_len(ext_pgs, i, 0);
 		}
 	}
-	if (j >= 0)
+	if (j >= 0) {
 		usgl->sge[j / 2].len[j & 1] = htobe32(len);
-	
-	if (j >= 0 && (j & 1) != 0)
-		usgl->sge[j / 2].len[1] = htobe32(0);
+
+		if ((j & 1) == 0)
+			usgl->sge[j / 2].len[1] = htobe32(0);
+	}
 	KASSERT(nsegs == 0, ("%s: nsegs %d, ext_pgs %p", __func__, nsegs,
 	    ext_pgs));
 }
