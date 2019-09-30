@@ -66,11 +66,6 @@ __FBSDID("$FreeBSD$");
 
 #include "ps3bus.h"
 
-struct ps3_ehci_softc {
-	ehci_softc_t            base;
-	struct bus_space         tag;
-};
-
 static void
 ehci_ps3_post_reset(struct ehci_softc *ehci_softc)
 {
