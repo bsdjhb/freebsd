@@ -1723,9 +1723,9 @@ write_ktlstx_sgl(void *dst, struct mbuf_ext_pgs *ext_pgs, int nsegs)
 }
 
 /*
- * Similar to t4_push_frames() but handles sockets that contain TLS record
- * mbufs.  Unlike TLSOM, each mbuf is a complete TLS record and we can
- * dispatch a work request for each mbuf.
+ * Similar to t4_push_frames() but handles sockets that contain TLS
+ * record mbufs.  Unlike TLSOM, each mbuf is a complete TLS record and
+ * corresponds to a single work request.
  */
 void
 t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
