@@ -1076,9 +1076,6 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 	k_ctx = &toep->tls.k_ctx;
 	init_ktls_key_context(tls, k_ctx);
 
-	/* XXX? */
-	toep->flags &= ~TPF_FORCE_CREDITS;
-
 	toep->tls.scmd0.seqno_numivs =
 		(V_SCMD_SEQ_NO_CTRL(3) |
 		 V_SCMD_PROTO_VERSION(k_ctx->proto_ver) |
@@ -1785,21 +1782,6 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 	txsd = &toep->txsd[toep->txsd_pidx];
 	for (;;) {
 		tx_credits = min(toep->tx_credits, MAX_OFLD_TX_CREDITS);
-
-#if 0
-		space = max_imm_tls_space(tx_credits);
-		wr_len = sizeof(struct fw_tlstx_data_wr) +
-		    sizeof(struct cpl_tx_tls_sfo) + key_size(toep);
-		if (wr_len + CIPHER_BLOCK_SIZE + 1 > space) {
-#ifdef VERBOSE_TRACES
-			CTR5(KTR_CXGBE,
-			    "%s: tid %d tx_credits %d min_wr %d space %d",
-			    __func__, toep->tid, tx_credits, wr_len +
-			    CIPHER_BLOCK_SIZE + 1, space);
-#endif
-			return;
-		}
-#endif
 
 		SOCKBUF_LOCK(sb);
 		sowwakeup = drop;
