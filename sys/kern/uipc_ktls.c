@@ -703,10 +703,10 @@ ktls_try_toe(struct socket *so, struct ktls_session *tls)
 		tls->mode = TCP_TLS_MODE_TOE;
 		switch (tls->params.cipher_algorithm) {
 		case CRYPTO_AES_CBC:
-			counter_u64_add(ktls_ifnet_cbc, 1);
+			counter_u64_add(ktls_toe_cbc, 1);
 			break;
 		case CRYPTO_AES_NIST_GCM_16:
-			counter_u64_add(ktls_ifnet_gcm, 1);
+			counter_u64_add(ktls_toe_gcm, 1);
 			break;
 		}
 	}
