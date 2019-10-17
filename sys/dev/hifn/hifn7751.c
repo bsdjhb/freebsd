@@ -2327,12 +2327,14 @@ hifn_auth_supported(struct hifn_softc *sc,
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5:
 	case CRYPTO_SHA1:
-		if (csp->csp_auth_key != NULL)
+		if (csp->csp_auth_klen != 0)
 			return (false);
 		break;
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
-		if (csp->csp_auth_key == NULL)
+		if (csp->csp_auth_klen == 0 ||
+		    csp->csp_auth_klen % 8 != 0 ||
+		    csp->csp_auth_klen / 8 > HIFN_MAC_KEY_LENGTH)
 			return (false);
 		break;
 	default:
@@ -2360,14 +2362,28 @@ hifn_cipher_supported(struct hifn_softc *sc,
     const struct crypto_session_params *csp)
 {
 
+	if (csp->csp_cipher_klen == 0)
+		return (false);
+	if (csp->csp_ivlen > HIFN_MAX_IV_LENGTH)
+		return (false);
 	switch (sc->sc_ena) {
 	case HIFN_PUSTAT_ENA_2:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_3DES_CBC:
 		case CRYPTO_ARC4:
-			return (true);
+			break;
 		case CRYPTO_AES_CBC:
-			return (sc->sc_flags & HIFN_HAS_AES);
+			if ((sc->sc_flags & HIFN_HAS_AES) == 0)
+				return (false);
+			switch (csp->csp_cipher_klen) {
+			case 128:
+			case 192:
+			case 256:
+				break;
+			default:
+				return (false);
+			}
+			return (true);
 		}
 		/*FALLTHROUGH*/
 	case HIFN_PUSTAT_ENA_1:
@@ -2534,13 +2550,11 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 				    cmd->iv);
 		}
 
-		if (crp->crp_cipher_key != NULL) {
+		if (crp->crp_cipher_key != NULL)
 			cmd->ck = crp->crp_cipher_key;
-			cmd->cklen = crp->crp_cipher_klen >> 3;
-		} else {
+		else
 			cmd->ck = csp->csp_cipher_key;
-			cmd->cklen = csp->csp_cipher_klen >> 3;
-		}
+		cmd->cklen = csp->csp_cipher_klen >> 3;
 		cmd->cry_masks |= HIFN_CRYPT_CMD_NEW_KEY;
 
 		/* 
@@ -2597,13 +2611,11 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 		if (csp->csp_auth_alg == CRYPTO_SHA1_HMAC ||
 		    csp->csp_auth_alg == CRYPTO_MD5_HMAC) {
 			cmd->mac_masks |= HIFN_MAC_CMD_NEW_KEY;
-			if (crp->crp_auth_key != NULL) {
+			if (crp->crp_auth_key != NULL)
 				mackey = crp->crp_auth_key;
-				keylen = crp->crp_auth_klen >> 3;
-			} else {
+			else
 				mackey = csp->csp_auth_key;
-				keylen = csp->csp_auth_klen >> 3;
-			}
+			keylen = csp->csp_auth_klen >> 3;
 			bcopy(mackey, cmd->mac, keylen);
 			bzero(cmd->mac + keylen, HIFN_MAC_KEY_LENGTH - keylen);
 		}

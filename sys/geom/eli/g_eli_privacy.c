@@ -287,9 +287,6 @@ g_eli_crypto_run(struct g_eli_worker *wr, struct bio *bp)
 		if ((sc->sc_flags & G_ELI_FLAG_SINGLE_KEY) == 0) {
 			crp->crp_cipher_key = g_eli_key_hold(sc, dstoff,
 			    secsize);
-			crp->crp_cipher_klen = sc->sc_ekeylen;
-			if (sc->sc_ealgo == CRYPTO_AES_XTS)
-				crp->crp_cipher_klen <<= 1;
 		}
 		g_eli_crypto_ivgen(sc, dstoff, crp->crp_iv,
 		    sizeof(crp->crp_iv));

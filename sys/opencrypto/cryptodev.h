@@ -480,8 +480,6 @@ struct cryptop {
 
 	const void	*crp_cipher_key; /* New cipher key if non-NULL. */
 	const void	*crp_auth_key;	/* New auth key if non-NULL. */
-	int		crp_cipher_klen;
-	int		crp_auth_klen;
 
 	void		*crp_opaque;	/* Opaque pointer, passed along */
 

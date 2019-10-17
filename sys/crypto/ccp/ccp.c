@@ -314,7 +314,7 @@ ccp_init_hmac_digest(struct ccp_session *s, const char *key, int klen)
 	}
 }
 
-static int
+static bool
 ccp_aes_check_keylen(int alg, int klen)
 {
 
@@ -322,18 +322,18 @@ ccp_aes_check_keylen(int alg, int klen)
 	case 128:
 	case 192:
 		if (alg == CRYPTO_AES_XTS)
-			return (EINVAL);
+			return (false);
 		break;
 	case 256:
 		break;
 	case 512:
 		if (alg != CRYPTO_AES_XTS)
-			return (EINVAL);
+			return (false);
 		break;
 	default:
-		return (EINVAL);
+		return (false);
 	}
-	return (0);
+	return (true);
 }
 
 static void
@@ -427,7 +427,8 @@ ccp_cipher_supported(struct ccp_softc *sc,
 	default:
 		return (false);
 	}
-	return (true);
+	return (ccp_aes_check_keylen(csp->csp_cipher_alg,
+	    csp->csp_cipher_klen));
 }
 
 static int
@@ -468,13 +469,6 @@ ccp_probesession(device_t dev, const struct crypto_session_params *csp)
 		break;
 	default:
 		return (EINVAL);
-	}
-
-	if (csp->csp_cipher_key != NULL) {
-		error = ccp_aes_check_keylen(csp->csp_cipher_alg,
-		    csp->csp_cipher_klen);
-		if (error)
-			return (error);
 	}
 
 	return (CRYPTODEV_PROBE_HARDWARE);
@@ -621,6 +615,7 @@ ccp_process(device_t dev, struct cryptop *crp, int hint)
 	qpheld = false;
 	qp = NULL;
 
+	csp = crypto_get_params(crp->crp_session);
 	s = crypto_get_driver_session(crp->crp_session);
 	sc = device_get_softc(dev);
 	mtx_lock(&sc->lock);
@@ -637,17 +632,11 @@ ccp_process(device_t dev, struct cryptop *crp, int hint)
 
 	if (crp->crp_auth_key != NULL) {
 		KASSERT(s->hmac.auth_hash != NULL, ("auth key without HMAC"));
-		ccp_init_hmac_digest(s, crp->crp_auth_key, crp->crp_auth_klen);
+		ccp_init_hmac_digest(s, crp->crp_auth_key, csp->csp_auth_klen);
 	}
-	if (crp->crp_cipher_key != NULL) {
-		csp = crypto_get_params(crp->crp_session);
-		error = ccp_aes_check_keylen(csp->csp_cipher_alg,
-		    crp->crp_cipher_klen);
-		if (error != 0)
-			goto out;
+	if (crp->crp_cipher_key != NULL)
 		ccp_aes_setkey(s, csp->csp_cipher_alg, crp->crp_cipher_key,
-		    crp->crp_cipher_klen);
-	}
+		    csp->csp_cipher_klen);
 
 	switch (s->mode) {
 	case HMAC:

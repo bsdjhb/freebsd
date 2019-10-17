@@ -512,8 +512,7 @@ g_eli_newsession(struct g_eli_worker *wr)
 	if (sc->sc_flags & G_ELI_FLAG_AUTH) {
 		csp.csp_mode = CSP_MODE_ETA;
 		csp.csp_auth_alg = sc->sc_aalgo;
-		csp.csp_auth_klen = sc->sc_akeylen;
-		csp.csp_auth_key = sc->sc_akey;
+		csp.csp_auth_klen = G_ELI_AUTH_SECKEYLEN * 8;
 	}
 
 	switch (sc->sc_crypto) {

@@ -80,12 +80,12 @@ struct padlock_session {
 int	padlock_cipher_setup(struct padlock_session *ses,
 	    const struct crypto_session_params *csp);
 int	padlock_cipher_process(struct padlock_session *ses,
-	    struct cryptop *crp);
+	    struct cryptop *crp, const struct crypto_session_params *csp);
 bool	padlock_hash_check(const struct crypto_session_params *csp);
 int	padlock_hash_setup(struct padlock_session *ses,
 	    const struct crypto_session_params *csp);
 int	padlock_hash_process(struct padlock_session *ses,
-	    struct cryptop *crp);
+	    struct cryptop *crp, const struct crypto_session_params *csp);
 void	padlock_hash_free(struct padlock_session *ses);
 
 #endif	/* !_PADLOCK_H_ */

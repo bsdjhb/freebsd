@@ -692,16 +692,12 @@ csp_sanity(const struct crypto_session_params *csp)
 	case CSP_MODE_CIPHER:
 		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
 		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
-		if (csp->csp_cipher_key == NULL)
-			KASSERT(csp->csp_cipher_klen == 0,
-			    ("NULL encryption key with non-zero length"));
-		else {
+		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
 			/* XXX: Multiple of NBBY? */
 			KASSERT(csp->csp_cipher_klen > 0,
 			    ("zero length encryption key"));
-		}
-		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC)
 			KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+		}
 		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
 		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(csp->csp_auth_alg == 0 &&
@@ -721,15 +717,19 @@ csp_sanity(const struct crypto_session_params *csp)
 		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(alg_is_digest(csp->csp_auth_alg),
 		    ("invalid digest algorithm %d", csp->csp_auth_alg));
-		if (csp->csp_auth_key == NULL)
-			KASSERT(csp->csp_auth_klen == 0,
-			    ("NULL auth key with non-zero length"));
-		else {
-			KASSERT(alg_is_keyed_digest(csp->csp_auth_alg),
-			    ("authentication key for non-keyed digest"));
+		/* Key is optional for BLAKE2 digests. */
+		if (csp->csp_auth_alg == CRYPTO_BLAKE2B ||
+		    csp->csp_auth_alg == CRYPTO_BLAKE2S)
+			;
+		else if (alg_is_keyed_digest(csp->csp_auth_alg))
 			KASSERT(csp->csp_auth_klen > 0,
 			    ("zero length authentication key"));
-		}
+		else
+			KASSERT(csp->csp_auth_klen == 0,
+			    ("non-zero authentication key length"));
+		if (csp->csp_auth_klen == 0)
+			KASSERT(csp->csp_auth_key == NULL,
+			    ("authentication key for non-keyed digest"));
 		/* XXX? */
 		KASSERT(csp->csp_auth_mlen >= 0 &&
 		    csp->csp_auth_mlen <= HASH_MAX_LEN,
@@ -761,28 +761,29 @@ csp_sanity(const struct crypto_session_params *csp)
 	case CSP_MODE_ETA:
 		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
 		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
-		if (csp->csp_cipher_key == NULL)
-			KASSERT(csp->csp_cipher_klen == 0,
-			    ("NULL encryption key with non-zero length"));
-		else {
+		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
 			/* XXX: Multiple of NBBY? */
 			KASSERT(csp->csp_cipher_klen > 0,
 			    ("zero length encryption key"));
+			KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
 		}
-		KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
 		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
 		    ("IV too large: %d", csp->csp_ivlen));
 		KASSERT(alg_is_digest(csp->csp_auth_alg),
 		    ("invalid digest algorithm %d", csp->csp_auth_alg));
-		if (csp->csp_auth_key == NULL)
-			KASSERT(csp->csp_auth_klen == 0,
-			    ("NULL auth key with non-zero length"));
-		else {
-			KASSERT(alg_is_keyed_digest(csp->csp_auth_alg),
-			    ("authentication key for non-keyed digest"));
+		/* Key is optional for BLAKE2 digests. */
+		if (csp->csp_auth_alg == CRYPTO_BLAKE2B ||
+		    csp->csp_auth_alg == CRYPTO_BLAKE2S)
+			;
+		else if (alg_is_keyed_digest(csp->csp_auth_alg))
 			KASSERT(csp->csp_auth_klen > 0,
 			    ("zero length authentication key"));
-		}
+		else
+			KASSERT(csp->csp_auth_klen == 0,
+			    ("non-zero authentication key length"));
+		if (csp->csp_auth_klen == 0)
+			KASSERT(csp->csp_auth_key == NULL,
+			    ("authentication key for non-keyed digest"));
 		/* XXX? */
 		KASSERT(csp->csp_auth_mlen >= 0 &&
 		    csp->csp_auth_mlen <= HASH_MAX_LEN,
@@ -1229,10 +1230,13 @@ crp_sanity(struct cryptop *crp)
 		KASSERT(crp->crp_digest_start == 0,
 		    ("non-zero digest start for request without a digest"));
 	}
-	KASSERT(crp->crp_cipher_key == NULL || crp->crp_cipher_klen != 0,
-	    ("new cipher key with zero length"));
-	KASSERT(crp->crp_auth_key == NULL || crp->crp_auth_klen != 0,
-	    ("new auth key with zero length"));
+	if (csp->csp_cipher_klen != 0)
+		KASSERT(csp->csp_cipher_key != NULL ||
+		    crp->crp_cipher_key != NULL,
+		    ("cipher request without a key"));
+	if (csp->csp_auth_klen != 0)
+		KASSERT(csp->csp_auth_key != NULL || crp->crp_auth_key != NULL,
+		    ("auth request without a key"));
 	KASSERT(crp->crp_callback != NULL, ("incoming crp without callback"));
 }
 #endif

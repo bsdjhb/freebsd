@@ -353,15 +353,11 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 	}
 
 	csp = crypto_get_params(crp->crp_session);
-	if (crp->crp_auth_key != NULL) {
-		if (!blake2_check_klen(csp, crp->crp_auth_klen))
-			goto out;
+	if (crp->crp_auth_key != NULL)
 		key = crp->crp_auth_key;
-		klen = crp->crp_auth_klen / 8;
-	} else {
+	else
 		key = csp->csp_auth_key;
-		klen = csp->csp_auth_klen / 8;
-	}
+	klen = csp->csp_auth_klen / 8;
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_BLAKE2B:
 		if (klen > 0)

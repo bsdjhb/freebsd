@@ -2112,26 +2112,26 @@ ccr_init_hash_digest(struct ccr_session *s)
 	t4_copy_partial_hash(axf->type, &auth_ctx, s->hmac.pads);
 }
 
-static int
-ccr_aes_check_keylen(int cipher_mode, int klen)
+static bool
+ccr_aes_check_keylen(int alg, int klen)
 {
 
 	switch (klen) {
 	case 128:
 	case 192:
-		if (cipher_mode == SCMD_CIPH_MODE_AES_XTS)
-			return (EINVAL);
+		if (alg == CRYPTO_AES_XTS)
+			return (false);
 		break;
 	case 256:
 		break;
 	case 512:
-		if (cipher_mode != SCMD_CIPH_MODE_AES_XTS)
-			return (EINVAL);
+		if (alg != CRYPTO_AES_XTS)
+			return (false);
 		break;
 	default:
-		return (EINVAL);
+		return (false);
 	}
-	return (0);
+	return (true);
 }
 
 static void
@@ -2285,7 +2285,8 @@ ccr_cipher_supported(const struct crypto_session_params *csp)
 	default:
 		return (false);
 	}
-	return (true);
+	return (ccr_aes_check_keylen(csp->csp_cipher_alg,
+	    csp->csp_cipher_klen));
 }
 
 static int
@@ -2351,13 +2352,10 @@ ccr_probesession(device_t dev, const struct crypto_session_params *csp)
 		return (EINVAL);
 	}
 
-	if (csp->csp_cipher_key != NULL) {
+	if (csp->csp_cipher_klen != 0) {
 		cipher_mode = ccr_cipher_mode(csp);
 		if (cipher_mode == SCMD_CIPH_MODE_NOP)
 			return (EINVAL);
-		error = ccr_aes_check_keylen(cipher_mode, csp->csp_cipher_klen);
-		if (error)
-			return (error);
 	}
 
 	return (CRYPTODEV_PROBE_HARDWARE);
@@ -2420,10 +2418,6 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 	cipher_mode = ccr_cipher_mode(csp);
 
 #ifdef INVARIANTS
-	if (csp->csp_cipher_key != NULL)
-		KASSERT(ccr_aes_check_keylen(cipher_mode,
-		    csp->csp_cipher_klen) == 0, ("bad cipher key length"));
-
 	switch (csp->csp_mode) {
 	case CSP_MODE_CIPHER:
 		if (cipher_mode == SCMD_CIPH_MODE_NOP ||
@@ -2580,20 +2574,15 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		if (crp->crp_auth_key != NULL)
 			t4_init_hmac_digest(s->hmac.auth_hash,
 			    s->hmac.partial_digest_len, crp->crp_auth_key,
-			    crp->crp_auth_klen, s->hmac.pads);
+			    csp->csp_auth_klen, s->hmac.pads);
 		error = ccr_hash(sc, s, crp);
 		if (error == 0)
 			sc->stats_hmac++;
 		break;
 	case BLKCIPHER:
-		if (crp->crp_cipher_key != NULL) {
-			error = ccr_aes_check_keylen(s->blkcipher.cipher_mode,
-			    crp->crp_cipher_klen);
-			if (error)
-				break;
+		if (crp->crp_cipher_key != NULL)
 			ccr_aes_setkey(s, crp->crp_cipher_key,
-			    crp->crp_cipher_klen);
-		}
+			    csp->csp_cipher_klen);
 		error = ccr_blkcipher(sc, s, crp);
 		if (error == 0) {
 			if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
@@ -2606,15 +2595,10 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		if (crp->crp_auth_key != NULL)
 			t4_init_hmac_digest(s->hmac.auth_hash,
 			    s->hmac.partial_digest_len, crp->crp_auth_key,
-			    crp->crp_auth_klen, s->hmac.pads);
+			    csp->csp_auth_klen, s->hmac.pads);
 		if (crp->crp_cipher_key != NULL) {
-			error = ccr_aes_check_keylen(s->blkcipher.cipher_mode,
-			    crp->crp_cipher_klen);
-			if (error)
-				break;
 			ccr_aes_setkey(s, crp->crp_cipher_key,
-			    crp->crp_cipher_klen);
-		}
+			    csp->csp_cipher_klen);
 		error = ccr_authenc(sc, s, crp);
 		if (error == 0) {
 			if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
@@ -2625,14 +2609,10 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		break;
 	case GCM:
 		if (crp->crp_cipher_key != NULL) {
-			error = ccr_aes_check_keylen(s->blkcipher.cipher_mode,
-			    crp->crp_cipher_klen);
-			if (error)
-				break;
 			t4_init_gmac_hash(crp->crp_cipher_key,
-			    crp->crp_cipher_klen, s->gmac.ghash_h);
+			    csp->csp_cipher_klen, s->gmac.ghash_h);
 			ccr_aes_setkey(s, crp->crp_cipher_key,
-			    crp->crp_cipher_klen);
+			    csp->csp_cipher_klen);
 		}
 		if (crp->crp_payload_length == 0) {
 			mtx_unlock(&sc->lock);
@@ -2655,12 +2635,8 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		break;
 	case CCM:
 		if (crp->crp_cipher_key != NULL) {
-			error = ccr_aes_check_keylen(s->blkcipher.cipher_mode,
-			    crp->crp_cipher_klen);
-			if (error)
-				break;
 			ccr_aes_setkey(s, crp->crp_cipher_key,
-			    crp->crp_cipher_klen);
+			    csp->csp_cipher_klen);
 		}
 		error = ccr_ccm(sc, s, crp);
 		if (error == EMSGSIZE) {

@@ -240,19 +240,19 @@ padlock_process(device_t dev, struct cryptop *crp, int hint __unused)
 	/* Perform data authentication if requested before decryption. */
 	if (csp->csp_mode == CSP_MODE_ETA &&
 	    !CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-		error = padlock_hash_process(ses, crp);
+		error = padlock_hash_process(ses, crp, csp);
 		if (error != 0)
 			goto out;
 	}
 
-	error = padlock_cipher_process(ses, crp);
+	error = padlock_cipher_process(ses, crp, csp);
 	if (error != 0)
 		goto out;
 
 	/* Perform data authentication if requested after encryption. */
 	if (csp->csp_mode == CSP_MODE_ETA &&
 	    CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-		error = padlock_hash_process(ses, crp);
+		error = padlock_hash_process(ses, crp, csp);
 		if (error != 0)
 			goto out;
 	}

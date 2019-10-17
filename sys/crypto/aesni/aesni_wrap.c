@@ -435,7 +435,7 @@ aesni_decrypt_xts(int rounds, const void *data_schedule,
 	    iv, 0);
 }
 
-int
+void
 aesni_cipher_setup_common(struct aesni_session *ses,
     const struct crypto_session_params *csp, const uint8_t *key, int keylen)
 {
@@ -448,38 +448,24 @@ aesni_cipher_setup_common(struct aesni_session *ses,
 	case CRYPTO_AES_NIST_GCM_16:
 	case CRYPTO_AES_CCM_16:
 		decsched = 0;
-		/* FALLTHROUGH */
-	case CRYPTO_AES_CBC:
-		switch (keylen) {
-		case 128:
-			ses->rounds = AES128_ROUNDS;
-			break;
-		case 192:
-			ses->rounds = AES192_ROUNDS;
-			break;
-		case 256:
-			ses->rounds = AES256_ROUNDS;
-			break;
-		default:
-			CRYPTDEB("invalid CBC/ICM/GCM key length");
-			return (EINVAL);
-		}
 		break;
-	case CRYPTO_AES_XTS:
-		switch (keylen) {
-		case 256:
-			ses->rounds = AES128_ROUNDS;
-			break;
-		case 512:
-			ses->rounds = AES256_ROUNDS;
-			break;
-		default:
-			CRYPTDEB("invalid XTS key length");
-			return (EINVAL);
-		}
+	}
+
+	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
+		keylen /= 2;
+
+	switch (keylen) {
+	case 128:
+		ses->rounds = AES128_ROUNDS;
+		break;
+	case 192:
+		ses->rounds = AES192_ROUNDS;
+		break;
+	case 256:
+		ses->rounds = AES256_ROUNDS;
 		break;
 	default:
-		return (EINVAL);
+		panic("shouldn't happen");
 	}
 
 	aesni_set_enckey(key, ses->enc_schedule, ses->rounds);
@@ -488,7 +474,7 @@ aesni_cipher_setup_common(struct aesni_session *ses,
 		    ses->rounds);
 
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
-		aesni_set_enckey(key + keylen / 16, ses->xts_schedule,
+		aesni_set_enckey(key + keylen / 8, ses->xts_schedule,
 		    ses->rounds);
 
 	return (0);

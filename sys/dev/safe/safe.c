@@ -936,7 +936,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_auth_key != NULL) {
 			safe_setup_mackey(ses, csp->csp_auth_alg,
-			    crp->crp_auth_key, crp->crp_auth_klen);
+			    crp->crp_auth_key, csp->csp_auth_klen);
 		}
 
 		switch (csp->csp_auth_alg) {

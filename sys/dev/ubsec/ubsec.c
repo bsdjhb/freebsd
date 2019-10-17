@@ -882,6 +882,8 @@ ubsec_auth_supported(const struct crypto_session_params *csp)
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
+		if (csp->csp_auth_klen == 0)
+			return (false);
 		return (true);
 	default:
 		return (false);
@@ -1067,7 +1069,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_auth_key != NULL) {
 			ubsec_setup_mackey(ses, csp->csp_auth_alg,
-			    crp->crp_auth_key, crp->crp_auth_klen);
+			    crp->crp_auth_key, csp->csp_auth_klen);
 		}
 
 		if (csp->csp_auth_alg == CRYPTO_MD5_HMAC)

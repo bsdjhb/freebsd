@@ -509,16 +509,12 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 		if ((sc->sc_flags & G_ELI_FLAG_FIRST_KEY) == 0) {
 			crp->crp_cipher_key = g_eli_key_hold(sc, dstoff,
 			    encr_secsize);
-			crp->crp_cipher_klen = sc->sc_ekeylen;
-			if (sc->sc_ealgo == CRYPTO_AES_XTS)
-				crp->crp_cipher_klen <<= 1;
 		}
 		g_eli_crypto_ivgen(sc, dstoff, crp->crp_iv,
 		    sizeof(crp->crp_iv));
 
 		g_eli_auth_keygen(sc, dstoff, authkey);
 		crp->crp_auth_key = authkey;
-		crp->crp_auth_klen = G_ELI_AUTH_SECKEYLEN * 8;
 
 		error = crypto_dispatch(crp);
 		KASSERT(error == 0, ("crypto_dispatch() failed (error=%d)",

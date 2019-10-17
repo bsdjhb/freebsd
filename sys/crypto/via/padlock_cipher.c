@@ -200,7 +200,8 @@ padlock_cipher_alloc(struct cryptop *crp, int *allocated)
 }
 
 int
-padlock_cipher_process(struct padlock_session *ses, struct cryptop *crp)
+padlock_cipher_process(struct padlock_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp)
 {
 	union padlock_cw *cw;
 	struct thread *td;
@@ -217,7 +218,7 @@ padlock_cipher_process(struct padlock_session *ses, struct cryptop *crp)
 
 	if (crp->crp_cipher_key != NULL) {
 		padlock_cipher_key_setup(ses, crp->crp_cipher_key,
-		    crp->crp_cipher_klen);
+		    csp->csp_cipher_klen);
 	}
 
 	cw = &ses->ses_cw;

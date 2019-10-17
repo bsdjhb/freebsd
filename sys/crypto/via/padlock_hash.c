@@ -393,7 +393,8 @@ padlock_hash_setup(struct padlock_session *ses,
 }
 
 int
-padlock_hash_process(struct padlock_session *ses, struct cryptop *crp)
+padlock_hash_process(struct padlock_session *ses, struct cryptop *crp,
+    const struct crypto_session_params *csp)
 {
 	struct thread *td;
 	int error;
@@ -402,7 +403,7 @@ padlock_hash_process(struct padlock_session *ses, struct cryptop *crp)
 	fpu_kern_enter(td, ses->ses_fpu_ctx, FPU_KERN_NORMAL | FPU_KERN_KTHR);
 	if (crp->crp_auth_key != NULL)
 		padlock_hash_key_setup(ses, crp->crp_auth_key,
-		    crp->crp_auth_klen);
+		    csp->csp_auth_klen);
 
 	error = padlock_authcompute(ses, crp);
 	fpu_kern_leave(td, ses->ses_fpu_ctx);
