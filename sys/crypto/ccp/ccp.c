@@ -435,7 +435,6 @@ static int
 ccp_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 	struct ccp_softc *sc;
-	int error;
 
 	sc = device_get_softc(dev);
 	switch (csp->csp_mode) {

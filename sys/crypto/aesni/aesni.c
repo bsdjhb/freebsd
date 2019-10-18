@@ -564,6 +564,7 @@ aesni_cipherprepare(const struct crypto_session_params *csp)
 	default:
 		return (EINVAL);
 	}
+	return (0);
 }
 
 static int
@@ -821,7 +822,7 @@ aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp,
 	uint32_t res[SHA2_256_HASH_LEN / sizeof(uint32_t)];
 	uint32_t res2[SHA2_256_HASH_LEN / sizeof(uint32_t)];
 	const uint8_t *key;
-	int error, i, keylen;
+	int i, keylen;
 
 	if (crp->crp_auth_key != NULL)
 		key = crp->crp_auth_key;

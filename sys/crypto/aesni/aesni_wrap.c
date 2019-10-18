@@ -476,6 +476,4 @@ aesni_cipher_setup_common(struct aesni_session *ses,
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		aesni_set_enckey(key + keylen / 8, ses->xts_schedule,
 		    ses->rounds);
-
-	return (0);
 }

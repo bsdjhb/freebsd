@@ -2313,7 +2313,6 @@ static int
 ccr_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 	unsigned int cipher_mode;
-	int error;
 
 	switch (csp->csp_mode) {
 	case CSP_MODE_DIGEST:
@@ -2550,10 +2549,12 @@ ccr_freesession(device_t dev, crypto_session_t cses)
 static int
 ccr_process(device_t dev, struct cryptop *crp, int hint)
 {
+	const struct crypto_session_params *csp;
 	struct ccr_softc *sc;
 	struct ccr_session *s;
 	int error;
 
+	csp = crypto_get_params(crp->crp_session);
 	s = crypto_get_driver_session(crp->crp_session);
 	sc = device_get_softc(dev);
 

@@ -107,6 +107,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 {
 	unsigned char iv[EALG_MAX_BLOCK_LEN], blk[EALG_MAX_BLOCK_LEN];
 	unsigned char *ivp, *nivp, iv2[EALG_MAX_BLOCK_LEN];
+	const struct crypto_session_params *csp;
 	struct swcr_encdec *sw;
 	struct enc_xform *exf;
 	int i, j, k, blks, ind, count, ivlen;
@@ -142,11 +143,10 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 		crypto_copydata(crp, crp->crp_iv_start, ivlen, iv);
 
 	if (crp->crp_cipher_key != NULL) {
-		int error; 
-
 		if (sw->sw_kschedule)
 			exf->zerokey(&(sw->sw_kschedule));
 
+		csp = crypto_get_params(crp->crp_session);
 		error = exf->setkey(&sw->sw_kschedule,
 		    crp->crp_cipher_key, csp->csp_cipher_klen / 8);
 		if (error)
@@ -400,6 +400,7 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 {
 	u_char aalg[HASH_MAX_LEN];
 	u_char uaalg[HASH_MAX_LEN];
+	const struct crypto_session_params *csp;
 	struct swcr_auth *sw;
 	struct auth_hash *axf;
 	union authctx ctx;
@@ -410,6 +411,7 @@ swcr_authcompute(struct swcr_session *ses, struct cryptop *crp)
 	axf = sw->sw_axf;
 
 	if (crp->crp_auth_key != NULL) {
+		csp = crypto_get_params(crp->crp_session);
 		swcr_authprepare(axf, sw, crp->crp_auth_key,
 		    csp->csp_auth_klen);
 	}
@@ -1052,7 +1054,6 @@ swcr_setup_auth(struct swcr_session *ses,
 {
 	struct swcr_auth *swa;
 	struct auth_hash *axf;
-	int error;
 
 	swa = &ses->swcr_auth;
 
