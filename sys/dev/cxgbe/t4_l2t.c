@@ -172,8 +172,8 @@ t4_write_l2e(struct l2t_entry *e, int sync)
 {
 	struct sge_wrq *wrq;
 	struct adapter *sc;
-	struct cpl_l2t_write_req *req;
 	struct wrq_cookie cookie;
+	struct cpl_l2t_write_req *req;
 
 	mtx_assert(&e->lock, MA_OWNED);
 	MPASS(e->wrq != NULL);
