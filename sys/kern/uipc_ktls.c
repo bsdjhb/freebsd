@@ -593,7 +593,7 @@ ktls_create_session(struct socket *so, struct tls_enable *en,
 		 */
 		if (en->cipher_algorithm == CRYPTO_AES_NIST_GCM_16 &&
 		    en->tls_vminor == TLS_MINOR_VER_TWO)
-			arc4rand(en->iv + 8, sizeof(uint64_t), 0);
+			arc4rand(tls->params.iv + 8, sizeof(uint64_t), 0);
 	}
 
 	*tlsp = tls;
@@ -1207,8 +1207,6 @@ void
 ktls_seq(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf_ext_pgs *pgs;
-	struct tls_record_layer *tlshdr;
-	uint64_t seqno;
 
 	for (; m != NULL; m = m->m_next) {
 		KASSERT((m->m_flags & M_NOMAP) != 0,
@@ -1240,6 +1238,7 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 	struct tls_record_layer *tlshdr;
 	struct mbuf *m;
 	struct mbuf_ext_pgs *pgs;
+	uint64_t *nonce;
 	uint16_t tls_len;
 	int maxlen;
 
@@ -1326,8 +1325,9 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 		 */
 		if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16 &&
 		    tls->params.tls_vminor == TLS_MINOR_VER_TWO) {
-			memcpy(tlshdr + 1, en->iv + 8, sizeof(uint64_t));
-			*((uint64_t *)(en->iv + 8))++;
+			nonce = (uint64_t *)(tls->params.iv + 8);
+			memcpy(tlshdr + 1, nonce, sizeof(*nonce));
+			(*nonce)++;
 		} else if (tls->params.cipher_algorithm == CRYPTO_AES_CBC &&
 		    tls->params.tls_vminor >= TLS_MINOR_VER_ONE)
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
