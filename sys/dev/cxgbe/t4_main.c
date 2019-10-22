@@ -1956,8 +1956,6 @@ cxgbe_ioctl(struct ifnet *ifp, unsigned long cmd, caddr_t data)
 		if (mask & IFCAP_RXCSUM_IPV6)
 			ifp->if_capenable ^= IFCAP_RXCSUM_IPV6;
 
-		if (mask & IFCAP_NOMAP)
-			ifp->if_capenable ^= IFCAP_NOMAP;
 		/*
 		 * Note that we leave CSUM_TSO alone (it is always set).  The
 		 * kernel takes both IFCAP_TSOx and CSUM_TSO into account before
@@ -6465,7 +6463,6 @@ t4_sysctls(struct adapter *sc)
 
 #ifdef KERN_TLS
 	if (sc->flags & KERN_TLS_OK) {
-
 		/*
 		 * dev.t4nex.0.tls.
 		 */
