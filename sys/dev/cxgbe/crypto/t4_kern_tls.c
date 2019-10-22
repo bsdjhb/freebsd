@@ -384,7 +384,6 @@ send_ktls_act_open_req(struct adapter *sc, struct vi_info *vi,
 			return (ENOENT);
 	}
 
-	/* XXX: Use start/commit? */
 	wr = alloc_wrqe(ktls_act_open_cpl_size(isipv6), tlsp->ctrlq);
 	if (wr == NULL) {
 		CTR2(KTR_CXGBE, "%s: atid %d failed to alloc WR", __func__,
@@ -400,7 +399,7 @@ send_ktls_act_open_req(struct adapter *sc, struct vi_info *vi,
 	tlsp->open_pending = true;
 	t4_wrq_tx(sc, wr);
 	return (0);
-};
+}
 
 static int
 ktls_act_open_rpl(struct sge_iq *iq, const struct rss_header *rss,
@@ -542,8 +541,15 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	struct sge_txq *txq;
 	int atid, error, keyid;
 
-	/* Sanity check values in *tls. */
 	tls = params->tls.tls;
+
+	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
+	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+	    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
+		return (EPROTONOSUPPORT);
+
+	/* Sanity check values in *tls. */
 	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_CBC:
 		/* XXX: Explicitly ignore any provided IV. */
@@ -579,12 +585,6 @@ cxgbe_tls_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 	default:
 		return (EPROTONOSUPPORT);
 	}
-
-	/* Only TLS 1.1 and TLS 1.2 are currently supported. */
-	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
-	    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
-	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
-		return (EPROTONOSUPPORT);
 
 	vi = ifp->if_softc;
 	sc = vi->pi->adapter;
@@ -1233,6 +1233,7 @@ t6_ktls_parse_pkt(struct mbuf *m, int *nsegsp, int *len16p)
 
 	/*
 	 * Locate headers in initial mbuf.
+	 *
 	 * XXX: This assumes all of the headers are in the initial mbuf.
 	 * Could perhaps use m_advance() like parse_pkt() if that turns
 	 * out to not be true.
