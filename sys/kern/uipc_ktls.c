@@ -1238,7 +1238,7 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 	struct tls_record_layer *tlshdr;
 	struct mbuf *m;
 	struct mbuf_ext_pgs *pgs;
-	uint64_t *nonce;
+	uint64_t *noncep;
 	uint16_t tls_len;
 	int maxlen;
 
@@ -1325,9 +1325,9 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 		 */
 		if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16 &&
 		    tls->params.tls_vminor == TLS_MINOR_VER_TWO) {
-			nonce = (uint64_t *)(tls->params.iv + 8);
-			memcpy(tlshdr + 1, nonce, sizeof(*nonce));
-			(*nonce)++;
+			noncep = (uint64_t *)(tls->params.iv + 8);
+			be64enc(tlshdr + 1, *noncep);
+			(*noncep)++;
 		} else if (tls->params.cipher_algorithm == CRYPTO_AES_CBC &&
 		    tls->params.tls_vminor >= TLS_MINOR_VER_ONE)
 			arc4rand(tlshdr + 1, AES_BLOCK_LEN, 0);
