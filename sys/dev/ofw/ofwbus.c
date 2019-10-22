@@ -77,9 +77,11 @@ static device_identify_t ofwbus_identify;
 #endif
 static device_probe_t ofwbus_probe;
 static device_attach_t ofwbus_attach;
+static bus_get_rman_t ofwbus_get_rman;
 static bus_alloc_resource_t ofwbus_alloc_resource;
-static bus_adjust_resource_t ofwbus_adjust_resource;
 static bus_release_resource_t ofwbus_release_resource;
+static bus_activate_resource_t ofwbus_activate_resource;
+static bus_deactivate_resource_t ofwbus_deactivate_resource;
 
 static device_method_t ofwbus_methods[] = {
 	/* Device interface */
@@ -90,9 +92,12 @@ static device_method_t ofwbus_methods[] = {
 	DEVMETHOD(device_attach,	ofwbus_attach),
 
 	/* Bus interface */
+	DEVMETHOD(bus_get_rman,		ofwbus_get_rman),
 	DEVMETHOD(bus_alloc_resource,	ofwbus_alloc_resource),
-	DEVMETHOD(bus_adjust_resource,	ofwbus_adjust_resource),
+	DEVMETHOD(bus_adjust_resource,	bus_generic_rman_adjust_resource),
 	DEVMETHOD(bus_release_resource,	ofwbus_release_resource),
+	DEVMETHOD(bus_activate_resource, ofwbus_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, ofwbus_deactivate_resource),
 
 	DEVMETHOD_END
 };
@@ -179,19 +184,32 @@ ofwbus_attach(device_t dev)
 	return (bus_generic_attach(dev));
 }
 
+static struct rman *
+ofwbus_get_rman(device_t bus, int type, u_int flags)
+{
+	struct ofwbus_softc *sc;
+
+	sc = device_get_softc(bus);
+	switch (type) {
+	case SYS_RES_IRQ:
+		return (&sc->sc_intr_rman);
+	case SYS_RES_MEMORY:
+		return (&sc->sc_mem_rman);
+	default:
+		return (NULL);
+	}
+}
+
 static struct resource *
 ofwbus_alloc_resource(device_t bus, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
-	struct ofwbus_softc *sc;
-	struct rman *rm;
 	struct resource *rv;
 	struct resource_list_entry *rle;
 	int isdefault, passthrough;
 
 	isdefault = RMAN_IS_DEFAULT_RANGE(start, end);
 	passthrough = (device_get_parent(child) != bus);
-	sc = device_get_softc(bus);
 	rle = NULL;
 	if (!passthrough && isdefault) {
 		rle = resource_list_find(BUS_GET_RESOURCE_LIST(bus, child),
@@ -207,28 +225,10 @@ ofwbus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 		end = ummax(rle->end, start + count - 1);
 	}
 
-	switch (type) {
-	case SYS_RES_IRQ:
-		rm = &sc->sc_intr_rman;
-		break;
-	case SYS_RES_MEMORY:
-		rm = &sc->sc_mem_rman;
-		break;
-	default:
-		return (NULL);
-	}
-
-	rv = rman_reserve_resource(rm, start, end, count, flags & ~RF_ACTIVE,
-	    child);
+	rv = bus_generic_rman_alloc_resource(bus, child, type, rid, start, end,
+	    count, flags);
 	if (rv == NULL)
 		return (NULL);
-	rman_set_rid(rv, *rid);
-
-	if ((flags & RF_ACTIVE) != 0 && bus_activate_resource(child, type,
-	    *rid, rv) != 0) {
-		rman_release_resource(rv);
-		return (NULL);
-	}
 
 	if (!passthrough && rle != NULL) {
 		rle->res = rv;
@@ -241,55 +241,59 @@ ofwbus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 }
 
 static int
-ofwbus_adjust_resource(device_t bus, device_t child __unused, int type,
-    struct resource *r, rman_res_t start, rman_res_t end)
-{
-	struct ofwbus_softc *sc;
-	struct rman *rm;
-	device_t ofwbus;
-
-	ofwbus = bus;
-	while (strcmp(device_get_name(device_get_parent(ofwbus)), "root") != 0)
-		ofwbus = device_get_parent(ofwbus);
-	sc = device_get_softc(ofwbus);
-	switch (type) {
-	case SYS_RES_IRQ:
-		rm = &sc->sc_intr_rman;
-		break;
-	case SYS_RES_MEMORY:
-		rm = &sc->sc_mem_rman;
-		break;
-	default:
-		return (EINVAL);
-	}
-	if (rm == NULL)
-		return (ENXIO);
-	if (rman_is_region_manager(r, rm) == 0)
-		return (EINVAL);
-	return (rman_adjust_resource(r, start, end));
-}
-
-static int
 ofwbus_release_resource(device_t bus, device_t child, int type,
     int rid, struct resource *r)
 {
 	struct resource_list_entry *rle;
 	int passthrough;
-	int error;
 
 	passthrough = (device_get_parent(child) != bus);
 	if (!passthrough) {
 		/* Clean resource list entry */
 		rle = resource_list_find(BUS_GET_RESOURCE_LIST(bus, child),
 		    type, rid);
-		if (rle != NULL)
+		if (rle != NULL) {
+			KASSERT(rle->res == r, ("%s: resource mismatch", __func__));
 			rle->res = NULL;
+		}
 	}
 
-	if ((rman_get_flags(r) & RF_ACTIVE) != 0) {
-		error = bus_deactivate_resource(child, type, rid, r);
-		if (error)
-			return (error);
+	return (bus_generic_rman_release_resource(bus, child, type, rid, r));
+}
+
+/*
+ * XXX: This relies on parent drivers activating interrupts in their
+ * activate_resource even though we aren't allocating the IRQ resource
+ * from that parent.  This is wrong, but has to work for now.  Not clear
+ * why we can't just allocate the IRQ resource from the parent directly
+ * instead of using a private rman.
+ */
+static int
+ofwbus_activate_resource(device_t bus, device_t child, int type, int rid,
+    struct resource *r)
+{
+
+	switch (type) {
+	case SYS_RES_IRQ:
+		return (bus_generic_activate_resource(bus, child, type, rid,
+		    r));
+	default:
+		return (bus_generic_rman_activate_resource(bus, child, type,
+		    rid, r));
 	}
-	return (rman_release_resource(r));
+}
+
+static int
+ofwbus_deactivate_resource(device_t bus, device_t child, int type, int rid,
+    struct resource *r)
+{
+
+	switch (type) {
+	case SYS_RES_IRQ:
+		return (bus_generic_deactivate_resource(bus, child, type, rid,
+		    r));
+	default:
+		return (bus_generic_rman_deactivate_resource(bus, child, type,
+		    rid, r));
+	}
 }
