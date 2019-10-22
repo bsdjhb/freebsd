@@ -58,6 +58,10 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 #include <machine/resource.h>
 
+#ifndef __riscv
+#define	USE_RMANS
+#endif
+
 /*
  * The ofwbus (which is a pseudo-bus actually) iterates over the nodes that
  * hang from the Open Firmware root node and adds them as devices to this bus
@@ -68,8 +72,10 @@ __FBSDID("$FreeBSD$");
 
 struct ofwbus_softc {
 	struct simplebus_softc simplebus_sc;
+#ifdef USE_RMANS
 	struct rman	sc_intr_rman;
 	struct rman	sc_mem_rman;
+#endif
 };
 
 #ifndef __aarch64__
@@ -77,11 +83,13 @@ static device_identify_t ofwbus_identify;
 #endif
 static device_probe_t ofwbus_probe;
 static device_attach_t ofwbus_attach;
+#ifdef USE_RMANS
 static bus_get_rman_t ofwbus_get_rman;
 static bus_alloc_resource_t ofwbus_alloc_resource;
 static bus_release_resource_t ofwbus_release_resource;
 static bus_activate_resource_t ofwbus_activate_resource;
 static bus_deactivate_resource_t ofwbus_deactivate_resource;
+#endif
 
 static device_method_t ofwbus_methods[] = {
 	/* Device interface */
@@ -92,12 +100,17 @@ static device_method_t ofwbus_methods[] = {
 	DEVMETHOD(device_attach,	ofwbus_attach),
 
 	/* Bus interface */
+#ifdef USE_RMANS
 	DEVMETHOD(bus_get_rman,		ofwbus_get_rman),
 	DEVMETHOD(bus_alloc_resource,	ofwbus_alloc_resource),
 	DEVMETHOD(bus_adjust_resource,	bus_generic_rman_adjust_resource),
 	DEVMETHOD(bus_release_resource,	ofwbus_release_resource),
 	DEVMETHOD(bus_activate_resource, ofwbus_activate_resource),
 	DEVMETHOD(bus_deactivate_resource, ofwbus_deactivate_resource),
+#else
+	DEVMETHOD(bus_alloc_resource,	bus_generic_rl_alloc_resource),
+	DEVMETHOD(bus_release_resource,	bus_generic_rl_release_resource),
+#endif
 
 	DEVMETHOD_END
 };
@@ -158,6 +171,7 @@ ofwbus_attach(device_t dev)
 	 * ofw_bus_devinfo from it. Pass node to simplebus_init directly.
 	 */
 	simplebus_init(dev, node);
+#ifdef USE_RMANS
 	sc->sc_intr_rman.rm_type = RMAN_ARRAY;
 	sc->sc_intr_rman.rm_descr = "Interrupts";
 	sc->sc_mem_rman.rm_type = RMAN_ARRAY;
@@ -167,6 +181,7 @@ ofwbus_attach(device_t dev)
 	    rman_manage_region(&sc->sc_intr_rman, 0, ~0) != 0 ||
 	    rman_manage_region(&sc->sc_mem_rman, 0, BUS_SPACE_MAXADDR) != 0)
 		panic("%s: failed to set up rmans.", __func__);
+#endif
 
 	/*
 	 * Allow devices to identify.
@@ -184,6 +199,7 @@ ofwbus_attach(device_t dev)
 	return (bus_generic_attach(dev));
 }
 
+#ifdef USE_RMANS
 static struct rman *
 ofwbus_get_rman(device_t bus, int type, u_int flags)
 {
@@ -297,3 +313,4 @@ ofwbus_deactivate_resource(device_t bus, device_t child, int type, int rid,
 		    rid, r));
 	}
 }
+#endif
