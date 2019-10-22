@@ -2,6 +2,8 @@
 # $FreeBSD$
 #
 
+.include <kmod.opts.mk>
+
 CXGBE=	${SRCTOP}/sys/dev/cxgbe
 .PATH: ${CXGBE} ${CXGBE}/common ${CXGBE}/crypto ${CXGBE}/cudbg
 
