@@ -848,8 +848,10 @@ cryptodev_warn(struct csession *cse)
 {
 	static struct timeval arc4warn, blfwarn, castwarn, deswarn, md5warn;
 	static struct timeval skipwarn, tdeswarn;
+	const struct crypto_session_params *csp;
 
-	switch (cse->cipher) {
+	csp = crypto_get_params(cse->cses);
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_DES_CBC:
 		if (ratecheck(&deswarn, &warninterval))
 			gone_in(13, "DES cipher via /dev/crypto");
@@ -876,7 +878,7 @@ cryptodev_warn(struct csession *cse)
 		break;
 	}
 
-	switch (cse->mac) {
+	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5_HMAC:
 		if (ratecheck(&md5warn, &warninterval))
 			gone_in(13, "MD5-HMAC authenticator via /dev/crypto");
