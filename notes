@@ -137,13 +137,70 @@ session and crypto op parameters.
     - tcp-md5
       - needs kernel with TCP_SIGNATURE
 
-- Not converted yet:
+- Tested with cryptocheck (todo)
+  - cryptosoft
   - aesni
   - blake2
+  - ccr
+
+- Needs testing:
   - ccp
-  - geom
+  - aesni with sha
   - hifn
   - kgssapi_krb5
+  - ubsec
   - padlock
   - safe
-  - ubsec
+  - geom
+
+- Not converted yet:
+  - armv8_crypto
+  - sec
+  - glxsb
+  - cesa
+  - cryptocteon
+  - nlmsec
+
+- Benchmarks
+  - aes-gcm setup
+    - frodo
+      - kldload ipsec
+      - ifconfig cc0 inet 172.16.0.1/24 alias
+      - setkey -f /mnt/jhb/work/git/netperf/IPSEC/Configs/source-aes-gcm-256.conf
+      - netperf -H 172.16.0.2 -cC
+    - sam
+      - kldload ipsec
+      - ifconfig cc0 inet 172.16.0.2/24 alias
+      - setkey -f /mnt/jhb/work/git/netperf/IPSEC/Configs/dut-aes-gcm-256.conf
+      - netserver
+  - clean svn (r348883)
+    - no ipsec		44000	18%	25%
+    - null		5500	28%	28%
+    - aes-gcm
+      - cryptosoft	550	26%	17%
+      - aesni		3000	28%	26%
+      - ccr		4300	45%	45%
+  - ocf_rework (r348883)
+    - no ipsec		44000	18%	25%
+    - null		5800	28%	28%
+    - aes-gcm
+      - cryptosoft	580	26%	17%
+      - aesni		3000	28%	26%
+      - ccr		4300	45%	45%
+
+- steps to convert a driver
+  - add probesession
+  - cri -> csp
+  - crd -> crp fields
+  - axe crypto_register
+
++ rename CRYPTO_BUF_IOV -> CRYPTO_BUF_UIO
++ make key pointers const in csp and crp
+  (keep drivers from XOR'ing keys with IPAD/OPAD)
++ kill klen in crp (assume they match session)
+  + allow NULL keys during setup but require klen to be
+    set during probesession / newsession, also have to require a key
+    when processing
+- sysctl node to list crypto drivers
+  - update python test to use this
+- update places for new sysctl names
