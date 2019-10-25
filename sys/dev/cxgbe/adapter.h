@@ -1204,6 +1204,14 @@ int t6_ktls_parse_pkt(struct mbuf *, int *, int *);
 int t6_ktls_write_wr(struct sge_txq *, void *, struct mbuf *, u_int, u_int);
 #endif
 
+/* t4_keyctx.c */
+struct auth_hash;
+union authctx;
+
+void t4_init_gmac_hash(const char *, int, char *);
+void t4_copy_partial_hash(int, union authctx *, void *);
+void t4_init_hmac_digest(struct auth_hash *, u_int, char *, int, char *);
+
 #ifdef DEV_NETMAP
 /* t4_netmap.c */
 struct sge_nm_rxq;
