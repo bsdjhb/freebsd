@@ -152,14 +152,14 @@ session and crypto op parameters.
   - padlock
   - safe
   - geom
+  - armv8_crypto (aarch64)
+  - glxsb (i386)
 
 - Not converted yet:
-  - armv8_crypto
-  - sec
-  - glxsb
-  - cesa
-  - cryptocteon
-  - nlmsec
+  - sec (ppc)
+  - cesa (armv7)
+  - cryptocteon (mips)
+  - nlmsec (mips)
 
 - Benchmarks
   - aes-gcm setup
