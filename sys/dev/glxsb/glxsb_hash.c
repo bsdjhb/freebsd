@@ -33,7 +33,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/malloc.h>
 
-#include <opencrypto/cryptosoft.h> /* for hmac_ipad_buffer and hmac_opad_buffer */
 #include <opencrypto/xform.h>
 
 #include "glxsb.h"
@@ -51,38 +50,20 @@ __FBSDID("$FreeBSD$");
 MALLOC_DECLARE(M_GLXSB);
 
 static void
-glxsb_hash_key_setup(struct glxsb_session *ses, caddr_t key, int klen)
+glxsb_hash_key_setup(struct glxsb_session *ses, const char *key, int klen)
 {
 	struct auth_hash *axf;
-	int i;
 
-	klen /= 8;
 	axf = ses->ses_axf;
-
-	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_IPAD_VAL;
-
-	axf->Init(ses->ses_ictx);
-	axf->Update(ses->ses_ictx, key, klen);
-	axf->Update(ses->ses_ictx, hmac_ipad_buffer, axf->blocksize - klen);
-
-	for (i = 0; i < klen; i++)
-		key[i] ^= (HMAC_IPAD_VAL ^ HMAC_OPAD_VAL);
-
-	axf->Init(ses->ses_octx);
-	axf->Update(ses->ses_octx, key, klen);
-	axf->Update(ses->ses_octx, hmac_opad_buffer, axf->blocksize - klen);
-
-	for (i = 0; i < klen; i++)
-		key[i] ^= HMAC_OPAD_VAL;
+	hmac_init_ipad(axf, key, klen, ses->ses_ictx);
+	hmac_init_ipad(axf, key, klen, ses->ses_octx);
 }
 
 /*
  * Compute keyed-hash authenticator.
  */
 static int
-glxsb_authcompute(struct glxsb_session *ses, struct cryptodesc *crd,
-    caddr_t buf, int flags)
+glxsb_authcompute(struct glxsb_session *ses, struct cryptop *crp)
 {
 	u_char hash[HASH_MAX_LEN];
 	struct auth_hash *axf;
@@ -91,10 +72,16 @@ glxsb_authcompute(struct glxsb_session *ses, struct cryptodesc *crd,
 
 	axf = ses->ses_axf;
 	bcopy(ses->ses_ictx, &ctx, axf->ctxsize);
-	error = crypto_apply(flags, buf, crd->crd_skip, crd->crd_len,
+	error = crypto_apply(crp, crp->crp_aad_start, crp->crp_aad_length,
 	    (int (*)(void *, void *, unsigned int))axf->Update, (caddr_t)&ctx);
 	if (error != 0)
 		return (error);
+	error = crypto_apply(crp, crp->crp_payload_start,
+	    crp->crp_payload_length, 
+	    (int (*)(void *, void *, unsigned int))axf->Update, (caddr_t)&ctx);
+	if (error != 0)
+		return (error);
+	
 	axf->Final(hash, &ctx);
 
 	bcopy(ses->ses_octx, &ctx, axf->ctxsize);
@@ -102,19 +89,17 @@ glxsb_authcompute(struct glxsb_session *ses, struct cryptodesc *crd,
 	axf->Final(hash, &ctx);
 
 	/* Inject the authentication data */
-	crypto_copyback(flags, buf, crd->crd_inject,
-	ses->ses_mlen == 0 ? axf->hashsize : ses->ses_mlen, hash);
+	crypto_copyback(crp, crp->crp_digest_start, ses->ses_mlen, hash);
 	return (0);
 }
 
 int
-glxsb_hash_setup(struct glxsb_session *ses, struct cryptoini *macini)
+glxsb_hash_setup(struct glxsb_session *ses,
+    const struct crypto_session_params *csp)
 {
 
-	ses->ses_mlen = macini->cri_mlen;
-
 	/* Find software structure which describes HMAC algorithm. */
-	switch (macini->cri_alg) {
+	switch (csp->csp_auth_alg) {
 	case CRYPTO_NULL_HMAC:
 		ses->ses_axf = &auth_hash_null;
 		break;
@@ -138,6 +123,11 @@ glxsb_hash_setup(struct glxsb_session *ses, struct cryptoini *macini)
 		break;
 	}
 
+	if (csp->csp_auth_mlen == 0)
+		ses->ses_mlen = ses->ses_axf->hashsize;
+	else
+		ses->ses_mlen = csp->csp_auth_mlen;
+
 	/* Allocate memory for HMAC inner and outer contexts. */
 	ses->ses_ictx = malloc(ses->ses_axf->ctxsize, M_GLXSB,
 	    M_ZERO | M_NOWAIT);
@@ -147,23 +137,24 @@ glxsb_hash_setup(struct glxsb_session *ses, struct cryptoini *macini)
 		return (ENOMEM);
 
 	/* Setup key if given. */
-	if (macini->cri_key != NULL) {
-		glxsb_hash_key_setup(ses, macini->cri_key,
-		    macini->cri_klen);
+	if (csp->csp_auth_key != NULL) {
+		glxsb_hash_key_setup(ses, csp->csp_auth_key,
+		    csp->csp_auth_klen);
 	}
 	return (0);
 }
 
 int
-glxsb_hash_process(struct glxsb_session *ses, struct cryptodesc *maccrd,
-    struct cryptop *crp)
+glxsb_hash_process(struct glxsb_session *ses,
+    const struct crypto_session_params *csp, struct cryptop *crp)
 {
 	int error;
 
-	if ((maccrd->crd_flags & CRD_F_KEY_EXPLICIT) != 0)
-		glxsb_hash_key_setup(ses, maccrd->crd_key, maccrd->crd_klen);
+	if (crp->crp_auth_key != NULL)
+		glxsb_hash_key_setup(ses, crp->crp_auth_key,
+		    csp->csp_auth_klen);
 
-	error = glxsb_authcompute(ses, maccrd, crp->crp_buf, crp->crp_flags);
+	error = glxsb_authcompute(ses, crp);
 	return (error);
 }
 
