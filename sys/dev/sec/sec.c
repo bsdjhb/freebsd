@@ -82,48 +82,43 @@ static int	sec_enqueue_desc(struct sec_softc *sc, struct sec_desc *desc,
     int channel);
 static int	sec_eu_channel(struct sec_softc *sc, int eu);
 static int	sec_make_pointer(struct sec_softc *sc, struct sec_desc *desc,
-    u_int n, void *data, bus_size_t doffset, bus_size_t dsize, int dtype);
+    u_int n, struct cryptop *crp, bus_size_t doffset, bus_size_t dsize);
 static int	sec_make_pointer_direct(struct sec_softc *sc,
     struct sec_desc *desc, u_int n, bus_addr_t data, bus_size_t dsize);
+static int	sec_probesession(device_t dev,
+    const struct crypto_session_params *csp);
 static int	sec_newsession(device_t dev, crypto_session_t cses,
-    struct cryptoini *cri);
+    const struct crypto_session_params *csp);
 static int	sec_process(device_t dev, struct cryptop *crp, int hint);
-static int	sec_split_cri(struct cryptoini *cri, struct cryptoini **enc,
-    struct cryptoini **mac);
-static int	sec_split_crp(struct cryptop *crp, struct cryptodesc **enc,
-    struct cryptodesc **mac);
 static int	sec_build_common_ns_desc(struct sec_softc *sc,
-    struct sec_desc *desc, struct sec_session *ses, struct cryptop *crp,
-    struct cryptodesc *enc, int buftype);
+    struct sec_desc *desc, const struct crypto_session_params *csp,
+    struct cryptop *crp);
 static int	sec_build_common_s_desc(struct sec_softc *sc,
-    struct sec_desc *desc, struct sec_session *ses, struct cryptop *crp,
-    struct cryptodesc *enc, struct cryptodesc *mac, int buftype);
+    struct sec_desc *desc, const struct crypto_session_params *csp,
+    struct cryptop *crp);
 
 static struct sec_desc *sec_find_desc(struct sec_softc *sc, bus_addr_t paddr);
 
 /* AESU */
-static int	sec_aesu_newsession(struct sec_softc *sc,
-    struct sec_session *ses, struct cryptoini *enc, struct cryptoini *mac);
+static bool	sec_aesu_newsession(const struct crypto_session_params *csp);
 static int	sec_aesu_make_desc(struct sec_softc *sc,
-    struct sec_session *ses, struct sec_desc *desc, struct cryptop *crp,
-    int buftype);
+    const struct crypto_session_params *csp, struct sec_desc *desc,
+    struct cryptop *crp);
 
 /* DEU */
-static int	sec_deu_newsession(struct sec_softc *sc,
-    struct sec_session *ses, struct cryptoini *enc, struct cryptoini *mac);
+static bool	sec_deu_newsession(const struct crypto_session_params *csp);
 static int	sec_deu_make_desc(struct sec_softc *sc,
-    struct sec_session *ses, struct sec_desc *desc, struct cryptop *crp,
-    int buftype);
+    const struct crypto_session_params *csp, struct sec_desc *desc,
+    struct cryptop *crp);
 
 /* MDEU */
-static int	sec_mdeu_can_handle(u_int alg);
-static int	sec_mdeu_config(struct cryptodesc *crd,
+static bool	sec_mdeu_can_handle(u_int alg);
+static int	sec_mdeu_config(const struct crypto_session_params *csp,
     u_int *eu, u_int *mode, u_int *hashlen);
-static int	sec_mdeu_newsession(struct sec_softc *sc,
-    struct sec_session *ses, struct cryptoini *enc, struct cryptoini *mac);
+static bool	sec_mdeu_newsession(const struct crypto_session_params *csp);
 static int	sec_mdeu_make_desc(struct sec_softc *sc,
-    struct sec_session *ses, struct sec_desc *desc, struct cryptop *crp,
-    int buftype);
+    const struct crypto_session_params *csp, struct sec_desc *desc,
+    struct cryptop *crp);
 
 static device_method_t sec_methods[] = {
 	/* Device interface */
@@ -136,6 +131,7 @@ static device_method_t sec_methods[] = {
 	DEVMETHOD(device_shutdown,	sec_shutdown),
 
 	/* Crypto methods */
+	DEVMETHOD(cryptodev_probesession, sec_probesession),
 	DEVMETHOD(cryptodev_newsession,	sec_newsession),
 	DEVMETHOD(cryptodev_process,	sec_process),
 
@@ -361,24 +357,6 @@ sec_attach(device_t dev)
 
 	if (error)
 		goto fail6;
-
-	/* Register in OCF (AESU) */
-	crypto_register(sc->sc_cid, CRYPTO_AES_CBC, 0, 0);
-
-	/* Register in OCF (DEU) */
-	crypto_register(sc->sc_cid, CRYPTO_DES_CBC, 0, 0);
-	crypto_register(sc->sc_cid, CRYPTO_3DES_CBC, 0, 0);
-
-	/* Register in OCF (MDEU) */
-	crypto_register(sc->sc_cid, CRYPTO_MD5, 0, 0);
-	crypto_register(sc->sc_cid, CRYPTO_MD5_HMAC, 0, 0);
-	crypto_register(sc->sc_cid, CRYPTO_SHA1, 0, 0);
-	crypto_register(sc->sc_cid, CRYPTO_SHA1_HMAC, 0, 0);
-	crypto_register(sc->sc_cid, CRYPTO_SHA2_256_HMAC, 0, 0);
-	if (sc->sc_version >= 3) {
-		crypto_register(sc->sc_cid, CRYPTO_SHA2_384_HMAC, 0, 0);
-		crypto_register(sc->sc_cid, CRYPTO_SHA2_512_HMAC, 0, 0);
-	}
 
 	return (0);
 
@@ -860,12 +838,12 @@ sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem, void *mem,
 		return (EBUSY);
 
 	switch (type) {
-	case SEC_MEMORY:
+	case CRYPTO_BUF_CONTIG:
 		break;
-	case SEC_UIO:
+	case CRYPTO_BUF_UIO:
 		size = SEC_FREE_LT_CNT(sc) * SEC_MAX_DMA_BLOCK_SIZE;
 		break;
-	case SEC_MBUF:
+	case CRYPTO_BUF_MBUF:
 		size = m_length((struct mbuf*)mem, NULL);
 		break;
 	default:
@@ -900,15 +878,15 @@ sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem, void *mem,
 	}
 
 	switch (type) {
-	case SEC_MEMORY:
+	case CRYPTO_BUF_CONTIG:
 		error = bus_dmamap_load(dma_mem->dma_tag, dma_mem->dma_map,
 		    mem, size, sec_dma_map_desc_cb, sdmi, BUS_DMA_NOWAIT);
 		break;
-	case SEC_UIO:
+	case CRYPTO_BUF_UIO:
 		error = bus_dmamap_load_uio(dma_mem->dma_tag, dma_mem->dma_map,
 		    mem, sec_dma_map_desc_cb2, sdmi, BUS_DMA_NOWAIT);
 		break;
-	case SEC_MBUF:
+	case CRYPTO_BUF_MBUF:
 		error = bus_dmamap_load_mbuf(dma_mem->dma_tag, dma_mem->dma_map,
 		    mem, sec_dma_map_desc_cb2, sdmi, BUS_DMA_NOWAIT);
 		break;
@@ -1130,22 +1108,33 @@ sec_make_pointer_direct(struct sec_softc *sc, struct sec_desc *desc, u_int n,
 
 static int
 sec_make_pointer(struct sec_softc *sc, struct sec_desc *desc,
-    u_int n, void *data, bus_size_t doffset, bus_size_t dsize, int dtype)
+    u_int n, struct cryptop *crp, bus_size_t doffset, bus_size_t dsize)
 {
 	struct sec_desc_map_info sdmi = { sc, dsize, doffset, NULL, NULL, 0 };
 	struct sec_hw_desc_ptr *ptr;
+	void *data;
 	int error;
 
 	SEC_LOCK_ASSERT(sc, descriptors);
 
 	/* For flat memory map only requested region */
-	if (dtype == SEC_MEMORY) {
-		 data = (uint8_t*)(data) + doffset;
-		 sdmi.sdmi_offset = 0;
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_CONTIG:
+		data = (uint8_t *)crp->crp_buf + doffset;
+		sdmi.sdmi_offset = 0;
+		break;
+	case CRYPTO_BUF_UIO:
+		data = crp->crp_uio;
+		break;
+	case CRYPTO_BUF_MBUF:
+		data = crp->crp_mbuf;
+		break;
+	default:
+		return (EINVAL);
 	}
 
 	error = sec_desc_map_dma(sc, &(desc->sd_ptr_dmem[n]), data, dsize,
-	    dtype, &sdmi);
+	    crp->crp_buf_type, &sdmi);
 
 	if (error)
 		return (error);
@@ -1162,115 +1151,137 @@ sec_make_pointer(struct sec_softc *sc, struct sec_desc *desc,
 	return (0);
 }
 
-static int
-sec_split_cri(struct cryptoini *cri, struct cryptoini **enc,
-    struct cryptoini **mac)
+static bool
+sec_cipher_supported(const struct crypto_session_params *csp)
 {
-	struct cryptoini *e, *m;
 
-	e = cri;
-	m = cri->cri_next;
-
-	/* We can haldle only two operations */
-	if (m && m->cri_next)
-		return (EINVAL);
-
-	if (sec_mdeu_can_handle(e->cri_alg)) {
-		cri = m;
-		m = e;
-		e = cri;
+	switch (csp->csp_cipher_alg) {
+	case CRYPTO_AES_CBC:
+		/* AESU */
+		if (csp->csp_ivlen != AES_BLOCK_LEN)
+			return (false);
+		break;
+	case CRYPTO_DES_CBC:
+	case CRYPTO_3DES_CBC:
+		/* DEU */
+		if (csp->csp_ivlen != DES_BLOCK_LEN)
+			return (false);
+		break;
+	default:
+		return (false);
 	}
 
-	if (m && !sec_mdeu_can_handle(m->cri_alg))
-		return (EINVAL);
+	if (csp->csp_cipher_klen == 0 ||
+	    csp->csp_cipher_klen / 8 > SEC_MAX_KEY_LEN)
+		return (false);
 
-	*enc = e;
-	*mac = m;
+	return (true);
+}
 
-	return (0);
+static bool
+sec_auth_supported(struct sec_softc *sc,
+    const struct crypto_session_params *csp)
+{
+	int hashlen;
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_SHA2_384_HMAC:
+	case CRYPTO_SHA2_512_HMAC:
+		if (sc->sc_version < 3)
+			return (false);
+		/* FALLTHROUGH */
+	case CRYPTO_MD5_HMAC:
+	case CRYPTO_SHA1_HMAC:
+	case CRYPTO_SHA2_256_HMAC:
+		if (csp->csp_auth_klen == 0 ||
+		    csp->csp_auth_klen / 8 > SEC_MAX_KEY_LEN)
+			return (false);
+		break;
+	case CRYPTO_MD5:
+	case CRYPTO_SHA1:
+		if (csp->csp_auth_klen != 0)
+			return (false);
+		break;
+	default:
+		return (false);
+	}
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_MD5:
+	case CRYPTO_MD5_HMAC:
+		hashlen = MD5_HASH_LEN;
+		break;
+	case CRYPTO_SHA1:
+	case CRYPTO_SHA1_HMAC:
+		hashlen = SHA1_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		hashlen = SHA2_256_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_384_HMAC:
+		hashlen = SHA2_384_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_512_HMAC:
+		hashlen = SHA2_512_HASH_LEN;
+		break;
+	}
+
+	/* sec(4) does not support truncated hash lengths? */
+	if (csp->csp_auth_mlen != 0 && csp->csp_auth_mlen != hashlen)
+		return (false);
+
+	return (true);
 }
 
 static int
-sec_split_crp(struct cryptop *crp, struct cryptodesc **enc,
-    struct cryptodesc **mac)
-{
-	struct cryptodesc *e, *m, *t;
-
-	e = crp->crp_desc;
-	m = e->crd_next;
-
-	/* We can haldle only two operations */
-	if (m && m->crd_next)
-		return (EINVAL);
-
-	if (sec_mdeu_can_handle(e->crd_alg)) {
-		t = m;
-		m = e;
-		e = t;
-	}
-
-	if (m && !sec_mdeu_can_handle(m->crd_alg))
-		return (EINVAL);
-
-	*enc = e;
-	*mac = m;
-
-	return (0);
-}
-
-static int
-sec_newsession(device_t dev, crypto_session_t cses, struct cryptoini *cri)
+sec_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 	struct sec_softc *sc = device_get_softc(dev);
+
+	switch (csp->csp_mode) {
+	case CSP_MODE_DIGEST:
+		if (!sec_auth_supported(sc, csp))
+			return (EINVAL);
+		break;
+	case CSP_MODE_CIPHER:
+		if (!sec_cipher_supported(csp))
+			return (EINVAL);
+		break;
+	case CSP_MODE_ETA:
+		if (!sec_auth_supported(sc, csp) || !sec_cipher_supported(csp))
+			return (EINVAL);
+		break;
+	default:
+		return (EINVAL);
+	}
+	return (CRYPTODEV_PROBE_HARDWARE);
+}
+
+static int
+sec_newsession(device_t dev, crypto_session_t cses,
+    const struct crypto_session_params *csp)
+{
 	struct sec_eu_methods *eu = sec_eus;
-	struct cryptoini *enc = NULL;
-	struct cryptoini *mac = NULL;
 	struct sec_session *ses;
-	int error = -1;
-
-	error = sec_split_cri(cri, &enc, &mac);
-	if (error)
-		return (error);
-
-	/* Check key lengths */
-	if (enc && enc->cri_key && (enc->cri_klen / 8) > SEC_MAX_KEY_LEN)
-		return (E2BIG);
-
-	if (mac && mac->cri_key && (mac->cri_klen / 8) > SEC_MAX_KEY_LEN)
-		return (E2BIG);
-
-	/* Only SEC 3.0 supports digests larger than 256 bits */
-	if (sc->sc_version < 3 && mac && mac->cri_klen > 256)
-		return (E2BIG);
 
 	ses = crypto_get_driver_session(cses);
 
 	/* Find EU for this session */
 	while (eu->sem_make_desc != NULL) {
-		error = eu->sem_newsession(sc, ses, enc, mac);
-		if (error >= 0)
+		if (eu->sem_newsession(csp))
 			break;
-
 		eu++;
 	}
-
-	/* If not found, return EINVAL */
-	if (error < 0)
-		return (EINVAL);
+	KASSERT(eu->sem_make_desc != NULL, ("failed to find eu for session"));
 
 	/* Save cipher key */
-	if (enc && enc->cri_key) {
-		ses->ss_klen = enc->cri_klen / 8;
-		memcpy(ses->ss_key, enc->cri_key, ses->ss_klen);
-	}
+	if (csp->csp_cipher_key != NULL)
+		memcpy(ses->ss_key, csp->csp_cipher_key, csp->csp_cipher_klen);
 
 	/* Save digest key */
-	if (mac && mac->cri_key) {
-		ses->ss_mklen = mac->cri_klen / 8;
-		memcpy(ses->ss_mkey, mac->cri_key, ses->ss_mklen);
-	}
+	if (csp->csp_auth_key != NULL)
+		memcpy(ses->ss_mkey, csp->csp_auth_key, csp->csp_auth_klen);
 
-	ses->ss_eu = eu;
 	return (0);
 }
 
@@ -1279,22 +1290,16 @@ sec_process(device_t dev, struct cryptop *crp, int hint)
 {
 	struct sec_softc *sc = device_get_softc(dev);
 	struct sec_desc *desc = NULL;
-	struct cryptodesc *mac, *enc;
+	const struct crypto_session_params *csp;
 	struct sec_session *ses;
-	int buftype, error = 0;
+	int error = 0;
 
 	ses = crypto_get_driver_session(crp->crp_session);
+	csp = crypto_get_params(crp->crp_session);
 
 	/* Check for input length */
 	if (crp->crp_ilen > SEC_MAX_DMA_BLOCK_SIZE) {
 		crp->crp_etype = E2BIG;
-		crypto_done(crp);
-		return (0);
-	}
-
-	/* Get descriptors */
-	if (sec_split_crp(crp, &enc, &mac)) {
-		crp->crp_etype = EINVAL;
 		crypto_done(crp);
 		return (0);
 	}
@@ -1315,56 +1320,29 @@ sec_process(device_t dev, struct cryptop *crp, int hint)
 	desc->sd_error = 0;
 	desc->sd_crp = crp;
 
-	if (crp->crp_flags & CRYPTO_F_IOV)
-		buftype = SEC_UIO;
-	else if (crp->crp_flags & CRYPTO_F_IMBUF)
-		buftype = SEC_MBUF;
-	else
-		buftype = SEC_MEMORY;
-
-	if (enc && enc->crd_flags & CRD_F_ENCRYPT) {
-		if (enc->crd_flags & CRD_F_IV_EXPLICIT)
-			memcpy(desc->sd_desc->shd_iv, enc->crd_iv,
-			    ses->ss_ivlen);
-		else
-			arc4rand(desc->sd_desc->shd_iv, ses->ss_ivlen, 0);
-
-		if ((enc->crd_flags & CRD_F_IV_PRESENT) == 0)
-			crypto_copyback(crp->crp_flags, crp->crp_buf,
-			    enc->crd_inject, ses->ss_ivlen,
+	if (csp->csp_cipher_alg != 0) {
+		if (crp->crp_flags & CRYPTO_F_IV_GENERATE) {
+			arc4rand(desc->sd_desc->shd_iv, csp->csp_ivlen, 0);
+			crypto_copyback(crp, crp->crp_iv_start, csp->csp_ivlen,
 			    desc->sd_desc->shd_iv);
-	} else if (enc) {
-		if (enc->crd_flags & CRD_F_IV_EXPLICIT)
-			memcpy(desc->sd_desc->shd_iv, enc->crd_iv,
-			    ses->ss_ivlen);
+		} else if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
+			memcpy(desc->sd_desc->shd_iv, crp->crp_iv,
+			    csp->csp_ivlen);
 		else
-			crypto_copydata(crp->crp_flags, crp->crp_buf,
-			    enc->crd_inject, ses->ss_ivlen,
+			crypto_copydata(crp, crp->crp_iv_start, csp->csp_ivlen,
 			    desc->sd_desc->shd_iv);
 	}
 
-	if (enc && enc->crd_flags & CRD_F_KEY_EXPLICIT) {
-		if ((enc->crd_klen / 8) <= SEC_MAX_KEY_LEN) {
-			ses->ss_klen = enc->crd_klen / 8;
-			memcpy(ses->ss_key, enc->crd_key, ses->ss_klen);
-		} else
-			error = E2BIG;
-	}
+	if (crp->crp_cipher_key != NULL)
+		memcpy(ses->ss_key, crp->crp_cipher_key, csp->csp_cipher_klen);
 
-	if (!error && mac && mac->crd_flags & CRD_F_KEY_EXPLICIT) {
-		if ((mac->crd_klen / 8) <= SEC_MAX_KEY_LEN) {
-			ses->ss_mklen = mac->crd_klen / 8;
-			memcpy(ses->ss_mkey, mac->crd_key, ses->ss_mklen);
-		} else
-			error = E2BIG;
-	}
+	if (crp->crp_auth_key != NULL)
+		memcpy(ses->ss_mkey, crp->crp_auth_key, csp->csp_auth_klen);
 
-	if (!error) {
-		memcpy(desc->sd_desc->shd_key, ses->ss_key, ses->ss_klen);
-		memcpy(desc->sd_desc->shd_mkey, ses->ss_mkey, ses->ss_mklen);
+	memcpy(desc->sd_desc->shd_key, ses->ss_key, csp->csp_cipher_klen);
+	memcpy(desc->sd_desc->shd_mkey, ses->ss_mkey, csp->csp_auth_klen);
 
-		error = ses->ss_eu->sem_make_desc(sc, ses, desc, crp, buftype);
-	}
+	error = ses->ss_eu->sem_make_desc(sc, csp, desc, crp);
 
 	if (error) {
 		SEC_DESC_FREE_POINTERS(desc);
@@ -1400,8 +1378,7 @@ sec_process(device_t dev, struct cryptop *crp, int hint)
 
 static int
 sec_build_common_ns_desc(struct sec_softc *sc, struct sec_desc *desc,
-    struct sec_session *ses, struct cryptop *crp, struct cryptodesc *enc,
-    int buftype)
+    const struct crypto_session_params *csp, struct cryptop *crp)
 {
 	struct sec_hw_desc *hd = desc->sd_desc;
 	int error;
@@ -1417,25 +1394,25 @@ sec_build_common_ns_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 1: IV IN */
 	error = sec_make_pointer_direct(sc, desc, 1, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_iv), ses->ss_ivlen);
+	    offsetof(struct sec_hw_desc, shd_iv), csp->csp_ivlen);
 	if (error)
 		return (error);
 
 	/* Pointer 2: Cipher Key */
 	error = sec_make_pointer_direct(sc, desc, 2, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_key), ses->ss_klen);
+	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen);
  	if (error)
 		return (error);
 
 	/* Pointer 3: Data IN */
-	error = sec_make_pointer(sc, desc, 3, crp->crp_buf, enc->crd_skip,
-	    enc->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 3, crp, crp->crp_payload_start,
+	    crp->crp_payload_length);
 	if (error)
 		return (error);
 
 	/* Pointer 4: Data OUT */
-	error = sec_make_pointer(sc, desc, 4, crp->crp_buf, enc->crd_skip,
-	    enc->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 4, crp, crp->crp_payload_start,
+	    crp->crp_payload_length);
 	if (error)
 		return (error);
 
@@ -1452,20 +1429,13 @@ sec_build_common_ns_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 static int
 sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
-    struct sec_session *ses, struct cryptop *crp, struct cryptodesc *enc,
-    struct cryptodesc *mac, int buftype)
+    const struct crypto_session_params *csp, struct cryptop *crp)
 {
 	struct sec_hw_desc *hd = desc->sd_desc;
 	u_int eu, mode, hashlen;
 	int error;
 
-	if (mac->crd_len < enc->crd_len)
-		return (EINVAL);
-
-	if (mac->crd_skip + mac->crd_len != enc->crd_skip + enc->crd_len)
-		return (EINVAL);
-
-	error = sec_mdeu_config(mac, &eu, &mode, &hashlen);
+	error = sec_mdeu_config(csp, &eu, &mode, &hashlen);
 	if (error)
 		return (error);
 
@@ -1475,144 +1445,107 @@ sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 0: HMAC Key */
 	error = sec_make_pointer_direct(sc, desc, 0, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_mkey), ses->ss_mklen);
+	    offsetof(struct sec_hw_desc, shd_mkey), csp->csp_auth_klen);
 	if (error)
 		return (error);
 
 	/* Pointer 1: HMAC-Only Data IN */
-	error = sec_make_pointer(sc, desc, 1, crp->crp_buf, mac->crd_skip,
-	    mac->crd_len - enc->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 1, crp, crp->crp_aad_start,
+	    crp->crp_aad_length);
 	if (error)
 		return (error);
 
 	/* Pointer 2: Cipher Key */
 	error = sec_make_pointer_direct(sc, desc, 2, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_key), ses->ss_klen);
+	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen);
  	if (error)
 		return (error);
 
 	/* Pointer 3: IV IN */
 	error = sec_make_pointer_direct(sc, desc, 3, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_iv), ses->ss_ivlen);
+	    offsetof(struct sec_hw_desc, shd_iv), csp->csp_ivlen);
 	if (error)
 		return (error);
 
 	/* Pointer 4: Data IN */
-	error = sec_make_pointer(sc, desc, 4, crp->crp_buf, enc->crd_skip,
-	    enc->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 4, crp, crp->crp_payload_start,
+	    crp->crp_payload_length);
 	if (error)
 		return (error);
 
 	/* Pointer 5: Data OUT */
-	error = sec_make_pointer(sc, desc, 5, crp->crp_buf, enc->crd_skip,
-	    enc->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 5, crp, crp->crp_payload_start,
+	    crp->crp_payload_length);
 	if (error)
 		return (error);
 
 	/* Pointer 6: HMAC OUT */
-	error = sec_make_pointer(sc, desc, 6, crp->crp_buf, mac->crd_inject,
-	    hashlen, buftype);
+	error = sec_make_pointer(sc, desc, 6, crp, crp->crp_digest_start,
+	    hashlen);
 
 	return (error);
 }
 
 /* AESU */
 
-static int
-sec_aesu_newsession(struct sec_softc *sc, struct sec_session *ses,
-    struct cryptoini *enc, struct cryptoini *mac)
+static bool
+sec_aesu_newsession(const struct crypto_session_params *csp)
 {
 
-	if (enc == NULL)
-		return (-1);
-
-	if (enc->cri_alg != CRYPTO_AES_CBC)
-		return (-1);
-
-	ses->ss_ivlen = AES_BLOCK_LEN;
-
-	return (0);
+	return (csp->csp_cipher_alg == CRYPTO_AES_CBC);
 }
 
 static int
-sec_aesu_make_desc(struct sec_softc *sc, struct sec_session *ses,
-    struct sec_desc *desc, struct cryptop *crp, int buftype)
+sec_aesu_make_desc(struct sec_softc *sc,
+    const struct crypto_session_params *csp, struct sec_desc *desc,
+    struct cryptop *crp)
 {
 	struct sec_hw_desc *hd = desc->sd_desc;
-	struct cryptodesc *enc, *mac;
 	int error;
-
-	error = sec_split_crp(crp, &enc, &mac);
-	if (error)
-		return (error);
-
-	if (!enc)
-		return (EINVAL);
 
 	hd->shd_eu_sel0 = SEC_EU_AESU;
 	hd->shd_mode0 = SEC_AESU_MODE_CBC;
 
-	if (enc->crd_alg != CRYPTO_AES_CBC)
-		return (EINVAL);
-
-	if (enc->crd_flags & CRD_F_ENCRYPT) {
+	if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
 		hd->shd_mode0 |= SEC_AESU_MODE_ED;
 		hd->shd_dir = 0;
 	} else
 		hd->shd_dir = 1;
 
-	if (mac)
-		error = sec_build_common_s_desc(sc, desc, ses, crp, enc, mac,
-		    buftype);
+	if (csp->csp_mode == CSP_MODE_ETA)
+		error = sec_build_common_s_desc(sc, desc, csp, crp);
 	else
-		error = sec_build_common_ns_desc(sc, desc, ses, crp, enc,
-		    buftype);
+		error = sec_build_common_ns_desc(sc, desc, csp, crp);
 
 	return (error);
 }
 
 /* DEU */
 
-static int
-sec_deu_newsession(struct sec_softc *sc, struct sec_session *ses,
-    struct cryptoini *enc, struct cryptoini *mac)
+static bool
+sec_deu_newsession(const struct crypto_session_params *csp)
 {
 
-	if (enc == NULL)
-		return (-1);
-
-	switch (enc->cri_alg) {
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_DES_CBC:
 	case CRYPTO_3DES_CBC:
-		break;
+		return (true);
 	default:
-		return (-1);
+		return (false);
 	}
-
-	ses->ss_ivlen = DES_BLOCK_LEN;
-
-	return (0);
 }
 
 static int
-sec_deu_make_desc(struct sec_softc *sc, struct sec_session *ses,
-    struct sec_desc *desc, struct cryptop *crp, int buftype)
+sec_deu_make_desc(struct sec_softc *sc, const struct crypto_session_params *csp,
+    struct sec_desc *desc, struct cryptop *crp)
 {
 	struct sec_hw_desc *hd = desc->sd_desc;
-	struct cryptodesc *enc, *mac;
 	int error;
-
-	error = sec_split_crp(crp, &enc, &mac);
-	if (error)
-		return (error);
-
-	if (!enc)
-		return (EINVAL);
 
 	hd->shd_eu_sel0 = SEC_EU_DEU;
 	hd->shd_mode0 = SEC_DEU_MODE_CBC;
 
-	switch (enc->crd_alg) {
+	switch (csp->csp_cipher_alg) {
 	case CRYPTO_3DES_CBC:
 		hd->shd_mode0 |= SEC_DEU_MODE_TS;
 		break;
@@ -1622,25 +1555,23 @@ sec_deu_make_desc(struct sec_softc *sc, struct sec_session *ses,
 		return (EINVAL);
 	}
 
-	if (enc->crd_flags & CRD_F_ENCRYPT) {
+	if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
 		hd->shd_mode0 |= SEC_DEU_MODE_ED;
 		hd->shd_dir = 0;
 	} else
 		hd->shd_dir = 1;
 
-	if (mac)
-		error = sec_build_common_s_desc(sc, desc, ses, crp, enc, mac,
-		    buftype);
+	if (csp->csp_mode == CSP_MODE_ETA)
+		error = sec_build_common_s_desc(sc, desc, csp, crp);
 	else
-		error = sec_build_common_ns_desc(sc, desc, ses, crp, enc,
-		    buftype);
+		error = sec_build_common_ns_desc(sc, desc, csp, crp);
 
 	return (error);
 }
 
 /* MDEU */
 
-static int
+static bool
 sec_mdeu_can_handle(u_int alg)
 {
 	switch (alg) {
@@ -1651,20 +1582,21 @@ sec_mdeu_can_handle(u_int alg)
 	case CRYPTO_SHA2_256_HMAC:
 	case CRYPTO_SHA2_384_HMAC:
 	case CRYPTO_SHA2_512_HMAC:
-		return (1);
+		return (true);
 	default:
-		return (0);
+		return (false);
 	}
 }
 
 static int
-sec_mdeu_config(struct cryptodesc *crd, u_int *eu, u_int *mode, u_int *hashlen)
+sec_mdeu_config(const struct crypto_session_params *csp, u_int *eu, u_int *mode,
+    u_int *hashlen)
 {
 
 	*mode = SEC_MDEU_MODE_PD | SEC_MDEU_MODE_INIT;
 	*eu = SEC_EU_NONE;
 
-	switch (crd->crd_alg) {
+	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5_HMAC:
 		*mode |= SEC_MDEU_MODE_HMAC;
 		/* FALLTHROUGH */
@@ -1703,34 +1635,23 @@ sec_mdeu_config(struct cryptodesc *crd, u_int *eu, u_int *mode, u_int *hashlen)
 	return (0);
 }
 
-static int
-sec_mdeu_newsession(struct sec_softc *sc, struct sec_session *ses,
-    struct cryptoini *enc, struct cryptoini *mac)
+static bool
+sec_mdeu_newsession(const struct crypto_session_params *csp)
 {
 
-	if (mac && sec_mdeu_can_handle(mac->cri_alg))
-		return (0);
-
-	return (-1);
+	return (sec_mdeu_can_handle(csp->csp_auth_alg));
 }
 
 static int
-sec_mdeu_make_desc(struct sec_softc *sc, struct sec_session *ses,
-    struct sec_desc *desc, struct cryptop *crp, int buftype)
+sec_mdeu_make_desc(struct sec_softc *sc,
+    const struct crypto_session_params *csp,
+    struct sec_desc *desc, struct cryptop *crp)
 {
-	struct cryptodesc *enc, *mac;
 	struct sec_hw_desc *hd = desc->sd_desc;
 	u_int eu, mode, hashlen;
 	int error;
 
-	error = sec_split_crp(crp, &enc, &mac);
-	if (error)
-		return (error);
-
-	if (enc)
-		return (EINVAL);
-
-	error = sec_mdeu_config(mac, &eu, &mode, &hashlen);
+	error = sec_mdeu_config(csp, &eu, &mode, &hashlen);
 	if (error)
 		return (error);
 
@@ -1754,7 +1675,7 @@ sec_mdeu_make_desc(struct sec_softc *sc, struct sec_session *ses,
 	if (hd->shd_mode0 & SEC_MDEU_MODE_HMAC)
 		error = sec_make_pointer_direct(sc, desc, 2,
 		    desc->sd_desc_paddr + offsetof(struct sec_hw_desc,
-		    shd_mkey), ses->ss_mklen);
+		    shd_mkey), csp->csp_auth_klen);
 	else
 		error = sec_make_pointer_direct(sc, desc, 2, 0, 0);
 
@@ -1762,8 +1683,8 @@ sec_mdeu_make_desc(struct sec_softc *sc, struct sec_session *ses,
 		return (error);
 
 	/* Pointer 3: Input Data */
-	error = sec_make_pointer(sc, desc, 3, crp->crp_buf, mac->crd_skip,
-	    mac->crd_len, buftype);
+	error = sec_make_pointer(sc, desc, 3, crp, crp->crp_payload_start,
+	    crp->crp_payload_length);
 	if (error)
 		return (error);
 
@@ -1773,8 +1694,8 @@ sec_mdeu_make_desc(struct sec_softc *sc, struct sec_session *ses,
 		return (error);
 
 	/* Pointer 5: Hash out */
-	error = sec_make_pointer(sc, desc, 5, crp->crp_buf,
-	    mac->crd_inject, hashlen, buftype);
+	error = sec_make_pointer(sc, desc, 5, crp, crp->crp_digest_start,
+	    hashlen);
 	if (error)
 		return (error);
 
