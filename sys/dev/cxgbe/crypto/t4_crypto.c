@@ -2222,7 +2222,7 @@ ccr_auth_supported(const struct crypto_session_params *csp)
 	case CRYPTO_SHA2_256:
 	case CRYPTO_SHA2_384:
 	case CRYPTO_SHA2_512:
-		if (csp->csp_auth_key != NULL)
+		if (csp->csp_auth_klen != 0)
 			return (false);
 		break;
 	case CRYPTO_SHA1_HMAC:
@@ -2230,7 +2230,7 @@ ccr_auth_supported(const struct crypto_session_params *csp)
 	case CRYPTO_SHA2_256_HMAC:
 	case CRYPTO_SHA2_384_HMAC:
 	case CRYPTO_SHA2_512_HMAC:
-		if (csp->csp_auth_key == NULL)
+		if (csp->csp_auth_klen == 0)
 			return (false);
 		break;
 	default:
@@ -2478,7 +2478,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 		s->mode = AUTHENC;
 		break;
 	case CSP_MODE_DIGEST:
-		if (csp->csp_auth_key != NULL)
+		if (csp->csp_auth_klen != 0)
 			s->mode = HMAC;
 		else
 			s->mode = HASH;
