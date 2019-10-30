@@ -313,6 +313,7 @@ ktls_ocf_free(struct ktls_session *tls)
 	struct ocf_session *os;
 
 	os = tls->cipher;
+	crypto_freesession(os->sid);
 	mtx_destroy(&os->lock);
 	explicit_bzero(os, sizeof(*os));
 	free(os, M_KTLS_OCF);
