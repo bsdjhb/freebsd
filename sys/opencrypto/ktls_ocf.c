@@ -153,6 +153,7 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_td = curthread;
 
+	crp->crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crp->crp_buf_type = CRYPTO_BUF_UIO;
 	crp->crp_uio = &uio;
@@ -339,6 +340,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls)
 		csp.csp_cipher_alg = CRYPTO_AES_NIST_GCM_16;
 		csp.csp_cipher_key = tls->params.cipher_key;
 		csp.csp_cipher_klen = tls->params.cipher_key_len * 8;
+		csp.csp_ivlen = AES_GCM_IV_LEN;
 		break;
 	default:
 		return (EPROTONOSUPPORT);
