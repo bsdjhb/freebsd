@@ -42,7 +42,7 @@ if [ -z "$ioctl_includes" ]; then
 fi
 
 awk -v x="$ioctl_includes" 'BEGIN {print x}' |
-	$CPP -nostdinc -I$includedir -dM -DCOMPAT_43TTY - |
+	$CPP $CFLAGS -dM -DCOMPAT_43TTY - |
 	awk -v ioctl_includes="$ioctl_includes" '
 BEGIN {
 	print "/* XXX obnoxious prerequisites. */"

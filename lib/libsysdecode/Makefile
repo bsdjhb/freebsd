@@ -108,10 +108,6 @@ MLINKS+=sysdecode_mask.3 sysdecode_accessmode.3 \
 
 CLEANFILES= ioctl.c ioctl.c.tmp tables.h
 
-.if defined(COMPAT_32BIT)
-CPP+=	-m32
-.endif
-
 .if ${MK_PF} != "no"
 CFLAGS+=-DPF
 .endif
@@ -131,7 +127,7 @@ tables.h: mktables
 ioctl.c.tmp: .PHONY
 .endif
 ioctl.c.tmp: mkioctls .META
-	env CPP="${CPP}" MK_PF="${MK_PF}" \
+	env CPP="${CPP}" CFLAGS="${CFLAGS}" MK_PF="${MK_PF}" \
 	    /bin/sh ${.CURDIR}/mkioctls ${SYSROOT:U${DESTDIR}}${INCLUDEDIR} > ${.TARGET}
 
 ioctl.c: ioctl.c.tmp
