@@ -866,13 +866,14 @@ t4_ctloutput_tls(struct socket *so, struct sockopt *sopt)
 
 #ifdef KERN_TLS
 static void
-init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx)
+init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx,
+    bool transmit)
 {
 	struct auth_hash *axf;
 	u_int mac_key_size;
 	char *hash;
 
-	k_ctx->l_p_key = V_KEY_GET_LOC(KEY_WRITE_TX);
+	k_ctx->l_p_key = V_KEY_GET_LOC(transmit ? KEY_WRITE_TX : KEY_WRITE_RX);
 	if (tls->params.tls_vminor == TLS_MINOR_VER_ONE)
 		k_ctx->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
 	else
@@ -928,18 +929,23 @@ init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx)
 }
 
 int
-tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
+tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls, bool transmit)
 {
+	struct adapter *sc = td_adapter(toep->td);
 	struct tls_key_context *k_ctx;
-	int error;
+	int error, key_offset;
 
 	if (toep->tls.mode == TLS_MODE_TLSOM)
 		return (EINVAL);
 	if (!can_tls_offload(td_adapter(toep->td)))
 		return (EINVAL);
 	switch (ulp_mode(toep)) {
+	case ULP_MODE_TLS:
+		break;
 	case ULP_MODE_NONE:
 	case ULP_MODE_TCPDDP:
+		if (!transmit)
+			return (EINVAL);
 		break;
 	default:
 		return (EINVAL);
@@ -987,47 +993,75 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls)
 	    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
 		return (EPROTONOSUPPORT);
 
+	/* Bail if we already have a key. */
+	if (transmit) {
+		if (toep->tls.tx_key_addr != -1)
+			return (EOPNOTSUPP);
+	} else {
+		if (toep->tls.rx_key_addr != -1)
+			return (EOPNOTSUPP);
+	}
+
 	/*
 	 * XXX: This assumes no key renegotation.  If KTLS ever supports
 	 * that we will want to allocate TLS sessions dynamically rather
 	 * than as a static member of toep.
 	 */
 	k_ctx = &toep->tls.k_ctx;
-	init_ktls_key_context(tls, k_ctx);
-
-	toep->tls.scmd0.seqno_numivs =
-		(V_SCMD_SEQ_NO_CTRL(3) |
-		 V_SCMD_PROTO_VERSION(k_ctx->proto_ver) |
-		 V_SCMD_ENC_DEC_CTRL(SCMD_ENCDECCTRL_ENCRYPT) |
-		 V_SCMD_CIPH_AUTH_SEQ_CTRL((k_ctx->mac_first == 0)) |
-		 V_SCMD_CIPH_MODE(k_ctx->state.enc_mode) |
-		 V_SCMD_AUTH_MODE(k_ctx->state.auth_mode) |
-		 V_SCMD_HMAC_CTRL(k_ctx->hmac_ctrl) |
-		 V_SCMD_IV_SIZE(k_ctx->iv_size));
-
-	toep->tls.scmd0.ivgen_hdrlen =
-		(V_SCMD_IV_GEN_CTRL(k_ctx->iv_ctrl) |
-		 V_SCMD_KEY_CTX_INLINE(0) |
-		 V_SCMD_TLS_FRAG_ENABLE(1));
-
-	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16)
-		toep->tls.iv_len = 8;
-	else
-		toep->tls.iv_len = AES_BLOCK_LEN;
-
-	toep->tls.mac_length = k_ctx->mac_secret_size;
-
-	toep->tls.tx_key_addr = -1;
+	init_ktls_key_context(tls, k_ctx, transmit);
 
 	error = tls_program_key_id(toep, k_ctx);
 	if (error)
 		return (error);
 
-	toep->tls.fcplenmax = get_tp_plen_max(&toep->tls);
-	toep->tls.expn_per_ulp = tls->params.tls_hlen + tls->params.tls_tlen;
-	toep->tls.pdus_per_ulp = 1;
-	toep->tls.adjusted_plen = toep->tls.expn_per_ulp +
-	    toep->tls.k_ctx.frag_size;
+	if (transmit) {
+		toep->tls.scmd0.seqno_numivs =
+			(V_SCMD_SEQ_NO_CTRL(3) |
+			 V_SCMD_PROTO_VERSION(k_ctx->proto_ver) |
+			 V_SCMD_ENC_DEC_CTRL(SCMD_ENCDECCTRL_ENCRYPT) |
+			 V_SCMD_CIPH_AUTH_SEQ_CTRL((k_ctx->mac_first == 0)) |
+			 V_SCMD_CIPH_MODE(k_ctx->state.enc_mode) |
+			 V_SCMD_AUTH_MODE(k_ctx->state.auth_mode) |
+			 V_SCMD_HMAC_CTRL(k_ctx->hmac_ctrl) |
+			 V_SCMD_IV_SIZE(k_ctx->iv_size));
+
+		toep->tls.scmd0.ivgen_hdrlen =
+			(V_SCMD_IV_GEN_CTRL(k_ctx->iv_ctrl) |
+			 V_SCMD_KEY_CTX_INLINE(0) |
+			 V_SCMD_TLS_FRAG_ENABLE(1));
+
+		if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16)
+			toep->tls.iv_len = 8;
+		else
+			toep->tls.iv_len = AES_BLOCK_LEN;
+
+		toep->tls.mac_length = k_ctx->mac_secret_size;
+
+		toep->tls.fcplenmax = get_tp_plen_max(&toep->tls);
+		toep->tls.expn_per_ulp = tls->params.tls_hlen +
+		    tls->params.tls_tlen;
+		toep->tls.pdus_per_ulp = 1;
+		toep->tls.adjusted_plen = toep->tls.expn_per_ulp +
+		    toep->tls.k_ctx.frag_size;
+	} else {
+		/*
+		 * RX key tags are an index into the key portion of MA
+		 * memory stored as an offset from the base address in
+		 * units of 64 bytes.
+		 */
+		key_offset = toep->tls.rx_key_addr - sc->vres.key.start;
+		t4_set_tls_keyid(toep, key_offset / 64);
+		t4_set_tls_tcb_field(toep, W_TCB_ULP_RAW,
+				 V_TCB_ULP_RAW(M_TCB_ULP_RAW),
+				 V_TCB_ULP_RAW((V_TF_TLS_KEY_SIZE(3) |
+						V_TF_TLS_CONTROL(1) |
+						V_TF_TLS_ACTIVE(1) |
+						V_TF_TLS_ENABLE(1))));
+		t4_set_tls_tcb_field(toep, W_TCB_TLS_SEQ,
+				 V_TCB_TLS_SEQ(M_TCB_TLS_SEQ),
+				 V_TCB_TLS_SEQ(0));
+		t4_clear_rx_quiesce(toep);
+	}
 
 	toep->tls.mode = TLS_MODE_KTLS;
 
