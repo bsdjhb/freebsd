@@ -232,9 +232,7 @@ nexus_get_rman(device_t bus, int type, u_int flags)
 
 	switch (type) {
 	case SYS_RES_IRQ:
-		rm = &irq_rman;
-		break;
-
+		return (&irq_rman);
 	case SYS_RES_MEMORY:
 	case SYS_RES_IOPORT:
 		return (&mem_rman);
