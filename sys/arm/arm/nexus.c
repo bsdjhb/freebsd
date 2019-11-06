@@ -79,6 +79,7 @@ struct nexus_device {
 #define DEVTONX(dev)	((struct nexus_device *)device_get_ivars(dev))
 
 static struct rman mem_rman;
+static struct rman irq_rman;
 
 static	int nexus_probe(device_t);
 static	int nexus_attach(device_t);
@@ -178,6 +179,13 @@ nexus_attach(device_t dev)
 	if (rman_init(&mem_rman) ||
 	    rman_manage_region(&mem_rman, 0, BUS_SPACE_MAXADDR))
 		panic("nexus_probe mem_rman");
+	irq_rman.rm_start = 0;
+	irq_rman.rm_end = ~0;
+	irq_rman.rm_type = RMAN_ARRAY;
+	irq_rman.rm_descr = "Interrupts";
+	if (rman_init(&irq_rman) || rman_manage_region(&irq_rman, 0, ~0))
+		panic("nexus_attach irq_rman");
+
 
 	/*
 	 * First, deal with the children we know about already
@@ -223,6 +231,8 @@ nexus_get_rman(device_t bus, int type, u_int flags)
 {
 
 	switch (type) {
+	case SYS_RES_IRQ:
+		return (&irq_rman);
 	case SYS_RES_MEMORY:
 	case SYS_RES_IOPORT:
 		return (&mem_rman);
