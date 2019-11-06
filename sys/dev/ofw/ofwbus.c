@@ -58,7 +58,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#ifndef __riscv
+#if !(defined(__aarch64__) || defined(__riscv))
 #define	USE_RMANS
 #endif
 
