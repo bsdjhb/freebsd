@@ -1986,6 +1986,10 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct socket *so;
 	struct sockbuf *sb;
 	struct mbuf *tls_data;
+#ifdef KERN_TLS
+	struct tls_get_record *tgr;
+	struct mbuf *control;
+#endif
 	int len, pdu_length, rx_credits;
 
 	KASSERT(toep->tid == tid, ("%s: toep tid/atid mismatch", __func__));
@@ -2012,6 +2016,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	pdu_length = G_CPL_RX_TLS_CMP_PDULENGTH(be32toh(cpl->pdulength_length));
 
+	so = inp_inpcbtosocket(inp);
 	tp = intotcpcb(inp);
 
 #ifdef VERBOSE_TRACES
@@ -2036,19 +2041,6 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	    ("%s: payload too small", __func__));
 	tls_hdr_pkt = mtod(m, void *);
 
-	/*
-	 * Only the TLS header is sent to OpenSSL, so report errors by
-	 * altering the record type.
-	 */
-	if ((tls_hdr_pkt->res_to_mac_error & M_TLSRX_HDR_PKT_ERROR) != 0)
-		tls_hdr_pkt->type = CONTENT_TYPE_ERROR;
-
-	/* Trim this CPL's mbuf to only include the TLS header. */
-	KASSERT(m->m_len == len && m->m_next == NULL,
-	    ("%s: CPL spans multiple mbufs", __func__));
-	m->m_len = TLS_HEADER_LENGTH;
-	m->m_pkthdr.len = TLS_HEADER_LENGTH;
-
 	tls_data = mbufq_dequeue(&toep->ulp_pdu_reclaimq);
 	if (tls_data != NULL) {
 		KASSERT(be32toh(cpl->seq) == tls_data->m_pkthdr.tls_tcp_seq,
@@ -2059,12 +2051,79 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		 * the payload data.
 		 */
 		tls_hdr_pkt->length = htobe16(tls_data->m_pkthdr.len);
-
-		m->m_next = tls_data;
-		m->m_pkthdr.len += tls_data->m_len;
 	}
 
-	so = inp_inpcbtosocket(inp);
+#ifdef KERN_TLS
+	if (toep->tls.mode == TLS_MODE_KTLS) {
+		/* Report decryption errors as EBADMSG. */
+		if ((tls_hdr_pkt->res_to_mac_error & M_TLSRX_HDR_PKT_ERROR) !=
+		    0) {
+			m_freem(m);
+			m_freem(tls_data);
+
+			CURVNET_SET(toep->vnet);
+			so->so_error = EBADMSG;
+			sorwakeup(so);
+
+			INP_WUNLOCK(inp);
+			CURVNET_RESTORE();
+
+			return (0);
+		}
+
+		/* Allocate the control message mbuf. */
+		control = sbcreatecontrol(NULL, sizeof(*tgr), TLS_GET_RECORD,
+		    IPPROTO_TCP);
+		if (control == NULL) {
+			m_freem(m);
+			m_freem(tls_data);
+
+			CURVNET_SET(toep->vnet);
+			so->so_error = ENOBUFS;
+			sorwakeup(so);
+
+			INP_WUNLOCK(inp);
+			CURVNET_RESTORE();
+
+			return (0);
+		}
+
+		tgr = (struct tls_get_record *)
+		    CMSG_DATA(mtod(control, struct cmsghdr *));
+		tgr->tls_type = tls_hdr_pkt->type;
+		tgr->tls_vmajor = be16toh(tls_hdr_pkt->version) >> 8;
+		tgr->tls_vminor = be16toh(tls_hdr_pkt->version) & 0xff;
+		tgr->tls_length = tls_hdr_pkt->length;
+
+		m_freem(m);
+		m = tls_data;
+	} else
+#endif
+	{
+		/*
+		 * Only the TLS header is sent to OpenSSL, so report
+		 * errors by altering the record type.
+		 */
+		if ((tls_hdr_pkt->res_to_mac_error & M_TLSRX_HDR_PKT_ERROR) !=
+		    0)
+			tls_hdr_pkt->type = CONTENT_TYPE_ERROR;
+
+		/* Trim this CPL's mbuf to only include the TLS header. */
+		KASSERT(m->m_len == len && m->m_next == NULL,
+		    ("%s: CPL spans multiple mbufs", __func__));
+		m->m_len = TLS_HEADER_LENGTH;
+		m->m_pkthdr.len = TLS_HEADER_LENGTH;
+
+		if (tls_data != NULL) {
+			m->m_next = tls_data;
+			m->m_pkthdr.len += tls_data->m_len;
+		}
+
+#ifdef KERN_TLS
+		control = NULL;
+#endif
+	}
+
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
 
@@ -2074,6 +2133,9 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CTR3(KTR_CXGBE, "%s: tid %u, excess rx (%d bytes)",
 		    __func__, tid, pdu_length);
 		m_freem(m);
+#ifdef KERN_TLS
+		m_freem(control);
+#endif
 		SOCKBUF_UNLOCK(sb);
 		INP_WUNLOCK(inp);
 
@@ -2110,7 +2172,12 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			sb->sb_flags &= ~SB_AUTOSIZE;
 	}
 
-	sbappendstream_locked(sb, m, 0);
+#ifdef KERN_TLS
+	if (control != NULL)
+		sbappendcontrol_locked(sb, m, control);
+	else
+#endif
+		sbappendstream_locked(sb, m, 0);
 	rx_credits = sbspace(sb) > tp->rcv_wnd ? sbspace(sb) - tp->rcv_wnd : 0;
 #ifdef VERBOSE_TRACES
 	CTR4(KTR_CXGBE, "%s: tid %u rx_credits %u rcv_wnd %u",
