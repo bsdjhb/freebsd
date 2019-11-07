@@ -1811,23 +1811,6 @@ t4_aio_queue_tom(struct socket *so, struct kaiocb *job)
 	return (t4_aio_queue_aiotx(so, job));
 }
 
-#ifdef KERN_TLS
-static int
-t4_soreceive_tom(struct socket *so, struct sockaddr **psa, struct uio *uio,
-    struct mbuf **mp0, struct mbuf **controlp, int *flagsp)
-{
-	struct tcpcb *tp = so_sototcpcb(so);
-	struct toepcb *toep = tp->t_toe;
-
-	if (ulp_mode(toep) == ULP_MODE_TLS &&
-	    toep->tls.mode == TLS_MODE_KTLS)
-		return (soreceive_generic(so, psa, uio, mp0, controlp,
-		    flagsp));
-	else
-		return (soreceive_stream(so, psa, uio, mp0, controlp, flagsp));
-}
-#endif
-
 static int
 t4_ctloutput_tom(struct socket *so, struct sockopt *sopt)
 {
@@ -1868,9 +1851,6 @@ t4_tom_mod_load(void)
 	bcopy(tcp_protosw, &toe_protosw, sizeof(toe_protosw));
 	bcopy(tcp_protosw->pr_usrreqs, &toe_usrreqs, sizeof(toe_usrreqs));
 	toe_usrreqs.pru_aio_queue = t4_aio_queue_tom;
-#ifdef KERN_TLS
-	toe_usrreqs.pru_soreceive = t4_soreceive_tom;
-#endif
 	toe_protosw.pr_ctloutput = t4_ctloutput_tom;
 	toe_protosw.pr_usrreqs = &toe_usrreqs;
 
@@ -1880,9 +1860,6 @@ t4_tom_mod_load(void)
 	bcopy(tcp6_protosw, &toe6_protosw, sizeof(toe6_protosw));
 	bcopy(tcp6_protosw->pr_usrreqs, &toe6_usrreqs, sizeof(toe6_usrreqs));
 	toe6_usrreqs.pru_aio_queue = t4_aio_queue_tom;
-#ifdef KERN_TLS
-	toe6_usrreqs.pru_soreceive = t4_soreceive_tom;
-#endif
 	toe6_protosw.pr_ctloutput = t4_ctloutput_tom;
 	toe6_protosw.pr_usrreqs = &toe6_usrreqs;
 
