@@ -939,10 +939,7 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 		return (error);
 	}
 
-	/*
-	 * This reference is currently only used for
-	 * ktls_get_rx_mode().
-	 */
+	/* Mark the socket as using TLS offload. */
 	SOCKBUF_LOCK(&so->so_rcv);
 	so->so_rcv.sb_tls_info = tls;
 	SOCKBUF_UNLOCK(&so->so_rcv);
