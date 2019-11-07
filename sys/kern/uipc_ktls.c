@@ -913,7 +913,7 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 	 * XXX: Don't overwrite existing sessions.  We should permit
 	 * this to support rekeying in the future.
 	 */
-	if (so->so_snd.sb_tls_info != NULL)
+	if (so->so_rcv.sb_tls_info != NULL)
 		return (EALREADY);
 
 	if (en->cipher_algorithm == CRYPTO_AES_CBC && !ktls_cbc_enable)
