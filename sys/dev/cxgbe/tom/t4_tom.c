@@ -817,9 +817,6 @@ t4_alloc_tls_session(struct toedev *tod, struct tcpcb *tp,
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 	MPASS(tls != NULL);
 
-	if (!transmit)
-		return (EOPNOTSUPP);
-
 	return (tls_alloc_ktls(toep, tls, transmit));
 }
 #endif
