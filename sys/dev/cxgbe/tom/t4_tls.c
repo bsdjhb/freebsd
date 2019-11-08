@@ -2093,10 +2093,40 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		tgr->tls_type = tls_hdr_pkt->type;
 		tgr->tls_vmajor = be16toh(tls_hdr_pkt->version) >> 8;
 		tgr->tls_vminor = be16toh(tls_hdr_pkt->version) & 0xff;
-		tgr->tls_length = tls_hdr_pkt->length;
 
 		m_freem(m);
+
+#if 0
+		if (__predict_false(tls_data == NULL)) {
+			/*
+			 * Allocate an empty mbuf to serve as the EOR
+			 * marker.
+			 */
+			tls_data = m_gethdr(M_NOWAIT, MT_DATA);
+			if (tls_data == NULL) {
+				CURVNET_SET(toep->vnet);
+				so->so_error = ENOBUFS;
+				sorwakeup(so);
+
+				INP_WUNLOCK(inp);
+				CURVNET_RESTORE();
+				
+				return (0);
+			}
+		}
+
+		m_last(tls_data)->m_flags |= M_EOR;
 		m = tls_data;
+
+		tgr->tls_length = htobe16(m->m_pkthdr.len);
+#else
+		if (tls_data != NULL) {
+			m_last(tls_data)->m_flags |= M_EOR;
+			tgr->tls_length = htobe16(tls_data->m_pkthdr.len);
+		} else
+			tgr->tls_length = 0;
+		m = tls_data;
+#endif
 	} else
 #endif
 	{
@@ -2115,6 +2145,12 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		m->m_pkthdr.len = TLS_HEADER_LENGTH;
 
 		if (tls_data != NULL) {
+			/*
+			 * Update the TLS header length to be the length of
+			 * the payload data.
+			 */
+			tls_hdr_pkt->length = htobe16(tls_data->m_pkthdr.len);
+
 			m->m_next = tls_data;
 			m->m_pkthdr.len += tls_data->m_len;
 		}
