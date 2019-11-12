@@ -379,7 +379,7 @@ prepare_rxkey_wr(struct tls_keyctx *kwr, struct tls_key_context *kctx)
 	int proto_ver = kctx->proto_ver;
 
 	kwr->u.rxhdr.flitcnt_hmacctrl =
-		((kctx->tx_key_info_size >> 4) << 3) | kctx->hmac_ctrl;
+		((kctx->rx_key_info_size >> 4) << 3) | kctx->hmac_ctrl;
 
 	kwr->u.rxhdr.protover_ciphmode =
 		V_TLS_KEYCTX_TX_WR_PROTOVER(get_proto_ver(proto_ver)) |
@@ -408,7 +408,7 @@ prepare_rxkey_wr(struct tls_keyctx *kwr, struct tls_key_context *kctx)
 		       (IPAD_SIZE + OPAD_SIZE));
 	} else {
 		memcpy(kwr->keys.edkey, kctx->rx.key,
-		       (kctx->tx_key_info_size - SALT_SIZE));
+		       (kctx->rx_key_info_size - SALT_SIZE));
 		memcpy(kwr->u.rxhdr.rxsalt, kctx->rx.salt, SALT_SIZE);
 	}
 }
@@ -674,6 +674,13 @@ program_key_context(struct tcpcb *tp, struct toepcb *toep,
 
 	if ((G_KEY_GET_LOC(k_ctx->l_p_key) == KEY_WRITE_RX) ||
 	    (tls_ofld->key_location == TLS_SFO_WR_CONTEXTLOC_DDR)) {
+
+		/*
+		 * XXX: The userland library sets tx_key_info_size, not
+		 * rx_key_info_size.
+		 */
+		k_ctx->rx_key_info_size = k_ctx->tx_key_info_size;
+
 		error = tls_program_key_id(toep, k_ctx);
 		if (error) {
 			/* XXX: Only clear quiesce for KEY_WRITE_RX? */
@@ -870,28 +877,32 @@ init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx,
     bool transmit)
 {
 	struct auth_hash *axf;
-	u_int mac_key_size;
-	char *hash;
+	u_int key_info_size, mac_key_size;
+	char *hash, *key;
 
 	k_ctx->l_p_key = V_KEY_GET_LOC(transmit ? KEY_WRITE_TX : KEY_WRITE_RX);
-	if (tls->params.tls_vminor == TLS_MINOR_VER_ONE)
-		k_ctx->proto_ver = SCMD_PROTO_VERSION_TLS_1_1;
-	else
-		k_ctx->proto_ver = SCMD_PROTO_VERSION_TLS_1_2;
+	k_ctx->proto_ver = tls->params.tls_vmajor << 8 | tls->params.tls_vminor;
 	k_ctx->cipher_secret_size = tls->params.cipher_key_len;
-	k_ctx->tx_key_info_size = sizeof(struct tx_keyctx_hdr) +
+	key_info_size = sizeof(struct tx_keyctx_hdr) +
 	    k_ctx->cipher_secret_size;
-	memcpy(k_ctx->tx.key, tls->params.cipher_key,
-	    tls->params.cipher_key_len);
-	hash = k_ctx->tx.key + tls->params.cipher_key_len;
+	if (transmit)
+		key = k_ctx->tx.key;
+	else
+		key = k_ctx->rx.key;
+	memcpy(key, tls->params.cipher_key, tls->params.cipher_key_len);
+	hash = key + tls->params.cipher_key_len;
 	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
 		k_ctx->state.auth_mode = SCMD_AUTH_MODE_GHASH;
 		k_ctx->state.enc_mode = SCMD_CIPH_MODE_AES_GCM;
 		k_ctx->iv_size = 4;
 		k_ctx->mac_first = 0;
 		k_ctx->hmac_ctrl = SCMD_HMAC_CTRL_NOP;
-		k_ctx->tx_key_info_size += GMAC_BLOCK_LEN;
-		memcpy(k_ctx->tx.salt, tls->params.iv, SALT_SIZE);
+		key_info_size += GMAC_BLOCK_LEN;
+		k_ctx->mac_secret_size = 0;
+		if (transmit)
+			memcpy(k_ctx->tx.salt, tls->params.iv, SALT_SIZE);
+		else
+			memcpy(k_ctx->rx.salt, tls->params.iv, SALT_SIZE);
 		t4_init_gmac_hash(tls->params.cipher_key,
 		    tls->params.cipher_key_len * 8, hash);
 	} else {
@@ -918,12 +929,16 @@ init_ktls_key_context(struct ktls_session *tls, struct tls_key_context *k_ctx,
 		k_ctx->iv_size = 8; /* for CBC, iv is 16B, unit of 2B */
 		k_ctx->mac_first = 1;
 		k_ctx->hmac_ctrl = SCMD_HMAC_CTRL_NO_TRUNC;
-		k_ctx->tx_key_info_size += roundup2(mac_key_size, 16) * 2;
+		key_info_size += roundup2(mac_key_size, 16) * 2;
 		k_ctx->mac_secret_size = mac_key_size;
 		t4_init_hmac_digest(axf, mac_key_size, tls->params.auth_key,
 		    tls->params.auth_key_len * 8, hash);
 	}
 
+	if (transmit)
+		k_ctx->tx_key_info_size = key_info_size;
+	else
+		k_ctx->rx_key_info_size = key_info_size;
 	k_ctx->frag_size = tls->params.max_frame_len;
 	k_ctx->iv_ctrl = 1;
 }
@@ -1017,7 +1032,7 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls, bool transmit)
 	if (transmit) {
 		toep->tls.scmd0.seqno_numivs =
 			(V_SCMD_SEQ_NO_CTRL(3) |
-			 V_SCMD_PROTO_VERSION(k_ctx->proto_ver) |
+			 V_SCMD_PROTO_VERSION(get_proto_ver(k_ctx->proto_ver)) |
 			 V_SCMD_ENC_DEC_CTRL(SCMD_ENCDECCTRL_ENCRYPT) |
 			 V_SCMD_CIPH_AUTH_SEQ_CTRL((k_ctx->mac_first == 0)) |
 			 V_SCMD_CIPH_MODE(k_ctx->state.enc_mode) |
@@ -1044,6 +1059,11 @@ tls_alloc_ktls(struct toepcb *toep, struct ktls_session *tls, bool transmit)
 		toep->tls.adjusted_plen = toep->tls.expn_per_ulp +
 		    toep->tls.k_ctx.frag_size;
 	} else {
+		/* Stop timer on handshake completion */
+		tls_stop_handshake_timer(toep);
+
+		toep->flags &= ~TPF_FORCE_CREDITS;
+
 		/*
 		 * RX key tags are an index into the key portion of MA
 		 * memory stored as an offset from the base address in
@@ -1703,7 +1723,7 @@ t4_push_ktls(struct adapter *sc, struct toepcb *toep, int drop)
 	    ("%s: flowc_wr not sent for tid %u.", __func__, toep->tid));
 
 	KASSERT(ulp_mode(toep) == ULP_MODE_NONE ||
-	    ulp_mode(toep) == ULP_MODE_TCPDDP,
+	    ulp_mode(toep) == ULP_MODE_TCPDDP || ulp_mode(toep) == ULP_MODE_TLS,
 	    ("%s: ulp_mode %u for toep %p", __func__, ulp_mode(toep), toep));
 	KASSERT(tls_tx_key(toep),
 	    ("%s: TX key not set for toep %p", __func__, toep));
