@@ -335,7 +335,7 @@ __DEFAULT_YES_OPTIONS+=LLVM_LIBUNWIND
 __DEFAULT_NO_OPTIONS+=LLVM_LIBUNWIND
 .endif
 .if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "armv6" || \
-    ${__T} == "armv7" || ${__T} == "i386"
+    ${__T} == "armv7" || ${__T} == "i386" || ${__TT} == "riscv"
 __DEFAULT_YES_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
 .else
 __DEFAULT_NO_OPTIONS+=LLD_BOOTSTRAP LLD_IS_LD
