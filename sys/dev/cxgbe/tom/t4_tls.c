@@ -2065,12 +2065,6 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	if (tls_data != NULL) {
 		KASSERT(be32toh(cpl->seq) == tls_data->m_pkthdr.tls_tcp_seq,
 		    ("%s: sequence mismatch", __func__));
-
-		/*
-		 * Update the TLS header length to be the length of
-		 * the payload data.
-		 */
-		tls_hdr_pkt->length = htobe16(tls_data->m_pkthdr.len);
 	}
 
 #ifdef KERN_TLS
@@ -2116,37 +2110,12 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 		m_freem(m);
 
-#if 0
-		if (__predict_false(tls_data == NULL)) {
-			/*
-			 * Allocate an empty mbuf to serve as the EOR
-			 * marker.
-			 */
-			tls_data = m_gethdr(M_NOWAIT, MT_DATA);
-			if (tls_data == NULL) {
-				CURVNET_SET(toep->vnet);
-				so->so_error = ENOBUFS;
-				sorwakeup(so);
-
-				INP_WUNLOCK(inp);
-				CURVNET_RESTORE();
-				
-				return (0);
-			}
-		}
-
-		m_last(tls_data)->m_flags |= M_EOR;
-		m = tls_data;
-
-		tgr->tls_length = htobe16(m->m_pkthdr.len);
-#else
 		if (tls_data != NULL) {
 			m_last(tls_data)->m_flags |= M_EOR;
 			tgr->tls_length = htobe16(tls_data->m_pkthdr.len);
 		} else
 			tgr->tls_length = 0;
 		m = tls_data;
-#endif
 	} else
 #endif
 	{
