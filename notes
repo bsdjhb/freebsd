@@ -143,7 +143,7 @@ session and crypto op parameters.
   - blake2
   - ccr
 
-- Needs testing:
+- Needs testing: (audit for VERIFY_DIGEST)
   - ccp
   - aesni with sha
   - hifn
@@ -154,12 +154,10 @@ session and crypto op parameters.
   - geom
   - armv8_crypto (aarch64)
   - glxsb (i386)
-
-- Not converted yet:
   - sec (ppc)
   - cesa (armv7)
-  - cryptocteon (mips)
-  - nlmsec (mips)
+  - cryptocteon (mips64)
+  - nlmsec (mips64)
 
 - Benchmarks
   - aes-gcm setup
@@ -188,6 +186,22 @@ session and crypto op parameters.
       - aesni		3000	28%	26%
       - ccr		4300	45%	45%
 
+  - ktls using aes-gcm
+    - frodo
+      - ktls.sh
+      - kldload ktls_ocf
+      - service nginx start
+    - sam
+      - normal ktls client
+  - clean svn (r354096)
+    - cryptosoft	2.9 Gbps	76-80% CPU
+    - aesni		27 Gbps		63-66% CPU
+    - ccr		30 Gbps		46-44% CPU
+  - ocf_rework (r354096)
+    - cryptosoft	2.9 Gbps	100% CPU
+    - aesni		27 Gbps		63-66% CPU
+    - ccr		30 Gbps		40-44% CPU
+
 - steps to convert a driver
   - add probesession
   - cri -> csp
@@ -201,6 +215,10 @@ session and crypto op parameters.
   + allow NULL keys during setup but require klen to be
     set during probesession / newsession, also have to require a key
     when processing
+- change klen to bytes?
 - sysctl node to list crypto drivers
   - update python test to use this
 - update places for new sysctl names
+
+- csp_lookup_hash() returns auth_hash *?
+- csp_lookup_cipher() returns enc_xform *?
