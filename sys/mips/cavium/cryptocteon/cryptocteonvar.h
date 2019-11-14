@@ -34,8 +34,8 @@
 
 struct octo_sess;
 
-typedef	int octo_encrypt_t(struct octo_sess *od, struct iovec *iov, size_t iovcnt, size_t iovlen, int auth_off, int auth_len, int crypt_off, int crypt_len, int icv_off, uint8_t *ivp);
-typedef	int octo_decrypt_t(struct octo_sess *od, struct iovec *iov, size_t iovcnt, size_t iovlen, int auth_off, int auth_len, int crypt_off, int crypt_len, int icv_off, uint8_t *ivp);
+typedef	int octo_encrypt_t(struct octo_sess *od, struct iovec *iov, size_t iovcnt, size_t iovlen, int auth_off, int auth_len, int crypt_off, int crypt_len, uint8_t *icv, uint8_t *ivp);
+typedef	int octo_decrypt_t(struct octo_sess *od, struct iovec *iov, size_t iovcnt, size_t iovlen, int auth_off, int auth_len, int crypt_off, int crypt_len, uint8_t *icv, uint8_t *ivp);
 
 struct octo_sess {
 	int					 octo_encalg;
