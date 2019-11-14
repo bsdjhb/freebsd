@@ -200,7 +200,6 @@ cryptocteon_newsession(device_t dev, crypto_session_t cses,
 		memcpy(ocd->octo_enckey, csp->csp_cipher_key,
 		    ocd->octo_encklen);
 
-	ocd->octo_macklen = csp->csp_auth_klen / 8;
 	if (csp->csp_auth_key != NULL)
 		cryptocteon_calc_hash(csp, csp->csp_auth_key, ocd);
 
