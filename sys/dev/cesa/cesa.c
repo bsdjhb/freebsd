@@ -1501,6 +1501,7 @@ cesa_intr(void *arg)
 	struct cesa_request *cr, *tmp;
 	struct cesa_softc *sc;
 	uint32_t ecr, icr;
+	uint8_t hash[HASH_MAX_LEN];
 	int blocked;
 
 	sc = arg;
@@ -1561,11 +1562,19 @@ cesa_intr(void *arg)
 		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 		cr->cr_crp->crp_etype = sc->sc_error;
-		if (cr->cr_cs->cs_hlen != 0)
-			crypto_copyback(cr->cr_crp,
-			    cr->cr_crp->crp_digest_start,
-			    cr->cr_cs->cs_hlen, cr->cr_csd->csd_hash);
-
+		if (cr->cr_cs->cs_hlen != 0 && cr->cr_crp->crp_etype == 0) {
+			if (cr->cr_crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
+				crypto_copydata(cr->cr_crp,
+				    cr->cr_crp->crp_digest_start,
+				    cr->cr_cs->cs_hlen, hash);
+				if (timingsafe_bcmp(hash, cr->cr_csd->csd_hash,
+				    cr->cr_cs->cs_hlen) != 0)
+					cr->cr_crp->crp_etype = EBADMSG;
+			} else
+				crypto_copyback(cr->cr_crp,
+				    cr->cr_crp->crp_digest_start,
+				    cr->cr_cs->cs_hlen, cr->cr_csd->csd_hash);
+		}
 		crypto_done(cr->cr_crp);
 		cesa_free_request(sc, cr);
 	}
