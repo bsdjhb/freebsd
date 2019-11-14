@@ -523,9 +523,12 @@ sec_release_intr(struct sec_softc *sc, struct resource *ires, void *ihand,
 static void
 sec_primary_intr(void *arg)
 {
+	struct sec_session *ses;
 	struct sec_softc *sc = arg;
 	struct sec_desc *desc;
+	struct cryptop *crp;
 	uint64_t isr;
+	uint8_t hash[HASH_MAX_LEN];
 	int i, wakeup = 0;
 
 	SEC_LOCK(sc, controller);
@@ -573,7 +576,26 @@ sec_primary_intr(void *arg)
 		SEC_DESC_SYNC_POINTERS(desc, BUS_DMASYNC_PREREAD |
 		    BUS_DMASYNC_PREWRITE);
 
-		desc->sd_crp->crp_etype = desc->sd_error;
+		crp = desc->sd_crp;
+		crp->crp_etype = desc->sd_error;
+		if (crp->crp_etype == 0) {
+			ses = crypto_get_driver_session(crp->crp_session);
+			if (ses->ss_mlen != 0) {
+				if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
+					crypto_copydata(crp,
+					    crp->crp_digest_start,
+					    ses->ss_mlen, hash);
+					if (timingsafe_bcmp(
+					    desc->sd_desc->shd_digest,
+					    hash, ses->ss_mlen) != 0)
+						crp->crp_etype = EBADMSG;
+				} else
+					crypto_copyback(crp,
+					    crp->crp_digest_start,
+					    ses->ss_mlen,
+					    desc->sd_desc->shd_digest);
+			}
+		}
 		crypto_done(desc->sd_crp);
 
 		SEC_DESC_FREE_POINTERS(desc);
@@ -1226,8 +1248,7 @@ sec_auth_supported(struct sec_softc *sc,
 		break;
 	}
 
-	/* sec(4) does not support truncated hash lengths? */
-	if (csp->csp_auth_mlen != 0 && csp->csp_auth_mlen != hashlen)
+	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
 		return (false);
 
 	return (true);
@@ -1263,6 +1284,7 @@ sec_newsession(device_t dev, crypto_session_t cses,
 {
 	struct sec_eu_methods *eu = sec_eus;
 	struct sec_session *ses;
+	u_int hashlen;
 
 	ses = crypto_get_driver_session(cses);
 
@@ -1282,6 +1304,33 @@ sec_newsession(device_t dev, crypto_session_t cses,
 	/* Save digest key */
 	if (csp->csp_auth_key != NULL)
 		memcpy(ses->ss_mkey, csp->csp_auth_key, csp->csp_auth_klen / 8);
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_MD5:
+	case CRYPTO_MD5_HMAC:
+		hashlen = MD5_HASH_LEN;
+		break;
+	case CRYPTO_SHA1:
+	case CRYPTO_SHA1_HMAC:
+		hashlen = SHA1_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		hashlen = SHA2_256_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_384_HMAC:
+		hashlen = SHA2_384_HASH_LEN;
+		break;
+	case CRYPTO_SHA2_512_HMAC:
+		hashlen = SHA2_512_HASH_LEN;
+		break;
+	default:
+		hashlen = 0;
+		break;
+	}
+	if (csp->csp_auth_mlen == 0)
+		ses->ss_mlen = hashlen;
+	else
+		ses->ss_mlen = csp->csp_auth_mlen;
 
 	return (0);
 }
@@ -1482,8 +1531,8 @@ sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
 		return (error);
 
 	/* Pointer 6: HMAC OUT */
-	error = sec_make_pointer(sc, desc, 6, crp, crp->crp_digest_start,
-	    hashlen);
+	error = sec_make_pointer_direct(sc, desc, 6, desc->sd_desc_paddr +
+	    offsetof(struct sec_hw_desc, shd_digest), hashlen);
 
 	return (error);
 }
@@ -1696,8 +1745,8 @@ sec_mdeu_make_desc(struct sec_softc *sc,
 		return (error);
 
 	/* Pointer 5: Hash out */
-	error = sec_make_pointer(sc, desc, 5, crp, crp->crp_digest_start,
-	    hashlen);
+	error = sec_make_pointer_direct(sc, desc, 5, desc->sd_desc_paddr +
+	    offsetof(struct sec_hw_desc, shd_digest), hashlen);
 	if (error)
 		return (error);
 

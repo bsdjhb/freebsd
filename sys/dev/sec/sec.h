@@ -98,6 +98,7 @@ struct sec_hw_desc {
 	uint8_t			shd_iv[SEC_MAX_IV_LEN];
 	uint8_t			shd_key[SEC_MAX_KEY_LEN];
 	uint8_t			shd_mkey[SEC_MAX_KEY_LEN];
+	uint8_t			shd_digest[HASH_MAX_LEN];
 } __packed__;
 
 #define shd_eu_sel0		shd_control.request.eu_sel0
@@ -154,6 +155,7 @@ struct sec_session {
 	struct sec_eu_methods	*ss_eu;
 	uint8_t			ss_key[SEC_MAX_KEY_LEN];
 	uint8_t			ss_mkey[SEC_MAX_KEY_LEN];
+	int			ss_mlen;
 };
 
 struct sec_desc_map_info {
