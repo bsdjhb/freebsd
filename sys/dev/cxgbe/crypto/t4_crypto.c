@@ -2597,7 +2597,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 			t4_init_hmac_digest(s->hmac.auth_hash,
 			    s->hmac.partial_digest_len, crp->crp_auth_key,
 			    csp->csp_auth_klen, s->hmac.pads);
-		if (crp->crp_cipher_key != NULL) {
+		if (crp->crp_cipher_key != NULL)
 			ccr_aes_setkey(s, crp->crp_cipher_key,
 			    csp->csp_cipher_klen);
 		error = ccr_authenc(sc, s, crp);
