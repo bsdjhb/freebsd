@@ -919,114 +919,6 @@ swcr_compdec(struct swcr_session *ses, struct cryptop *crp)
 	return 0;
 }
 
-static struct auth_hash *
-swcr_lookup_hash(int alg, int klen)
-{
-
-	switch (alg) {
-	case CRYPTO_MD5_HMAC:
-		return (&auth_hash_hmac_md5);
-	case CRYPTO_SHA1_HMAC:
-		return (&auth_hash_hmac_sha1);
-	case CRYPTO_SHA2_224_HMAC:
-		return (&auth_hash_hmac_sha2_224);
-	case CRYPTO_SHA2_256_HMAC:
-		return (&auth_hash_hmac_sha2_256);
-	case CRYPTO_SHA2_384_HMAC:
-		return (&auth_hash_hmac_sha2_384);
-	case CRYPTO_SHA2_512_HMAC:
-		return (&auth_hash_hmac_sha2_512);
-	case CRYPTO_NULL_HMAC:
-		return (&auth_hash_null);
-	case CRYPTO_RIPEMD160_HMAC:
-		return (&auth_hash_hmac_ripemd_160);
-	case CRYPTO_MD5_KPDK:
-		return (&auth_hash_key_md5);
-	case CRYPTO_SHA1_KPDK:
-		return (&auth_hash_key_sha1);
-#ifdef notdef
-	case CRYPTO_MD5:
-		return (&auth_hash_md5);
-#endif
-	case CRYPTO_SHA1:
-		return (&auth_hash_sha1);
-	case CRYPTO_SHA2_224:
-		return (&auth_hash_sha2_224);
-	case CRYPTO_SHA2_256:
-		return (&auth_hash_sha2_256);
-	case CRYPTO_SHA2_384:
-		return (&auth_hash_sha2_384);
-	case CRYPTO_SHA2_512:
-		return (&auth_hash_sha2_512);
-	case CRYPTO_AES_NIST_GMAC:
-		switch (klen) {
-		case 128:
-			return (&auth_hash_nist_gmac_aes_128);
-		case 192:
-			return (&auth_hash_nist_gmac_aes_192);
-		case 256:
-			return (&auth_hash_nist_gmac_aes_256);
-		default:
-			return (NULL);
-		}
-	case CRYPTO_BLAKE2B:
-		return (&auth_hash_blake2b);
-	case CRYPTO_BLAKE2S:
-		return (&auth_hash_blake2s);
-	case CRYPTO_POLY1305:
-		return (&auth_hash_poly1305);
-	case CRYPTO_AES_CCM_CBC_MAC:
-		switch (klen) {
-		case 128:
-			return (&auth_hash_ccm_cbc_mac_128);
-		case 192:
-			return (&auth_hash_ccm_cbc_mac_192);
-		case 256:
-			return (&auth_hash_ccm_cbc_mac_256);
-		default:
-			return (NULL);
-		}
-	default:
-		return (NULL);
-	}
-}
-
-static struct enc_xform *
-swcr_lookup_cipher(int alg)
-{
-
-	switch (alg) {
-	case CRYPTO_DES_CBC:
-		return (&enc_xform_des);
-	case CRYPTO_3DES_CBC:
-		return (&enc_xform_3des);
-	case CRYPTO_BLF_CBC:
-		return (&enc_xform_blf);
-	case CRYPTO_CAST_CBC:
-		return (&enc_xform_cast5);
-	case CRYPTO_SKIPJACK_CBC:
-		return (&enc_xform_skipjack);
-	case CRYPTO_RIJNDAEL128_CBC:
-		return (&enc_xform_rijndael128);
-	case CRYPTO_AES_XTS:
-		return (&enc_xform_aes_xts);
-	case CRYPTO_AES_ICM:
-		return (&enc_xform_aes_icm);
-	case CRYPTO_AES_NIST_GCM_16:
-		return (&enc_xform_aes_nist_gcm);
-	case CRYPTO_CAMELLIA_CBC:
-		return (&enc_xform_camellia);
-	case CRYPTO_NULL_CBC:
-		return (&enc_xform_null);
-	case CRYPTO_CHACHA20:
-		return (&enc_xform_chacha20);
-	case CRYPTO_AES_CCM_16:
-		return (&enc_xform_ccm);
-	default:
-		return (NULL);
-	}
-}
-
 static int
 swcr_setup_encdec(struct swcr_session *ses,
     const struct crypto_session_params *csp)
@@ -1036,7 +928,7 @@ swcr_setup_encdec(struct swcr_session *ses,
 	int error;
 
 	swe = &ses->swcr_encdec;
-	txf = swcr_lookup_cipher(csp->csp_cipher_alg);
+	txf = crypto_cipher(csp);
 	MPASS(txf->ivsize == csp->csp_ivlen);
 	if (csp->csp_cipher_key != NULL) {
 		error = txf->setkey(&swe->sw_kschedule,
@@ -1057,7 +949,7 @@ swcr_setup_auth(struct swcr_session *ses,
 
 	swa = &ses->swcr_auth;
 
-	axf = swcr_lookup_hash(csp->csp_auth_alg, csp->csp_auth_klen);
+	axf = crypto_auth_hash(csp);
 	swa->sw_axf = axf;
 	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > axf->hashsize)
 		return (EINVAL);
@@ -1273,7 +1165,7 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 {
 	struct auth_hash *axf;
 
-	axf = swcr_lookup_hash(csp->csp_auth_alg, csp->csp_auth_klen);
+	axf = crypto_auth_hash(csp);
 	if (axf == NULL)
 		return (false);
 	switch (csp->csp_auth_alg) {
@@ -1287,8 +1179,6 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 	case CRYPTO_RIPEMD160_HMAC:
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
-		if (csp->csp_auth_klen == 0)
-			return (false);
 		break;
 	case CRYPTO_AES_NIST_GMAC:
 		switch (csp->csp_auth_klen) {
@@ -1331,7 +1221,7 @@ swcr_cipher_supported(const struct crypto_session_params *csp)
 {
 	struct enc_xform *txf;
 
-	txf = swcr_lookup_cipher(csp->csp_cipher_alg);
+	txf = crypto_cipher(csp);
 	if (txf == NULL)
 		return (false);
 	if (csp->csp_cipher_alg != CRYPTO_NULL_CBC &&

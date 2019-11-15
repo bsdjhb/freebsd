@@ -71,6 +71,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/rman.h>
 
 #include <opencrypto/cryptodev.h>
+#include <opencrypto/xform_auth.h>
 #include <sys/random.h>
 #include <sys/kobj.h>
 
@@ -2314,7 +2315,6 @@ static bool
 hifn_auth_supported(struct hifn_softc *sc,
     const struct crypto_session_params *csp)
 {
-	int hashlen;
 
 	switch (sc->sc_ena) {
 	case HIFN_PUSTAT_ENA_2:
@@ -2327,33 +2327,16 @@ hifn_auth_supported(struct hifn_softc *sc,
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5:
 	case CRYPTO_SHA1:
-		if (csp->csp_auth_klen != 0)
-			return (false);
 		break;
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
-		if (csp->csp_auth_klen == 0 ||
-		    csp->csp_auth_klen % 8 != 0 ||
-		    csp->csp_auth_klen / 8 > HIFN_MAC_KEY_LENGTH)
+		if (csp->csp_auth_klen / 8 > HIFN_MAC_KEY_LENGTH)
 			return (false);
 		break;
 	default:
 		return (false);
 	}
 
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_MD5_HMAC:
-		hashlen = MD5_HASH_LEN;
-		break;
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	}
-
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
-		return (false);
 	return (true);	
 }
 
@@ -2431,28 +2414,15 @@ hifn_newsession(device_t dev, crypto_session_t cses,
     const struct crypto_session_params *csp)
 {
 	struct hifn_session *ses;
-	int hashlen;
 
 	ses = crypto_get_driver_session(cses);
 
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_MD5_HMAC:
-		hashlen = MD5_HASH_LEN;
-		break;
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	default:
-		hashlen = 0;
-		break;
+	if (csp->csp_auth_alg != 0) {
+		if (csp->csp_auth_mlen == 0)
+			ses->hs_mlen = crypto_auth_hash(csp)->hashsize;
+		else
+			ses->hs_mlen = csp->csp_auth_mlen;
 	}
-
-	if (csp->csp_auth_mlen == 0)
-		ses->hs_mlen = hashlen;
-	else
-		ses->hs_mlen = csp->csp_auth_mlen;
 
 	return (0);
 }

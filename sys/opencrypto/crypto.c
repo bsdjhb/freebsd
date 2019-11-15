@@ -82,6 +82,7 @@ __FBSDID("$FreeBSD$");
 #include <crypto/intake.h>
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform_auth.h>
+#include <opencrypto/xform_enc.h>
 
 #include <sys/kobj.h>
 #include <sys/bus.h>
@@ -532,6 +533,114 @@ crypto_get_params(crypto_session_t crypto_session)
 	return (&crypto_session->csp);
 }
 
+struct auth_hash *
+crypto_auth_hash(const struct crypto_session_params *csp)
+{
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_MD5_HMAC:
+		return (&auth_hash_hmac_md5);
+	case CRYPTO_SHA1_HMAC:
+		return (&auth_hash_hmac_sha1);
+	case CRYPTO_SHA2_224_HMAC:
+		return (&auth_hash_hmac_sha2_224);
+	case CRYPTO_SHA2_256_HMAC:
+		return (&auth_hash_hmac_sha2_256);
+	case CRYPTO_SHA2_384_HMAC:
+		return (&auth_hash_hmac_sha2_384);
+	case CRYPTO_SHA2_512_HMAC:
+		return (&auth_hash_hmac_sha2_512);
+	case CRYPTO_NULL_HMAC:
+		return (&auth_hash_null);
+	case CRYPTO_RIPEMD160_HMAC:
+		return (&auth_hash_hmac_ripemd_160);
+	case CRYPTO_MD5_KPDK:
+		return (&auth_hash_key_md5);
+	case CRYPTO_SHA1_KPDK:
+		return (&auth_hash_key_sha1);
+#ifdef notyet
+	case CRYPTO_MD5:
+		return (&auth_hash_md5);
+#endif
+	case CRYPTO_SHA1:
+		return (&auth_hash_sha1);
+	case CRYPTO_SHA2_224:
+		return (&auth_hash_sha2_224);
+	case CRYPTO_SHA2_256:
+		return (&auth_hash_sha2_256);
+	case CRYPTO_SHA2_384:
+		return (&auth_hash_sha2_384);
+	case CRYPTO_SHA2_512:
+		return (&auth_hash_sha2_512);
+	case CRYPTO_AES_NIST_GMAC:
+		switch (csp->csp_auth_klen) {
+		case 128:
+			return (&auth_hash_nist_gmac_aes_128);
+		case 192:
+			return (&auth_hash_nist_gmac_aes_192);
+		case 256:
+			return (&auth_hash_nist_gmac_aes_256);
+		default:
+			return (NULL);
+		}
+	case CRYPTO_BLAKE2B:
+		return (&auth_hash_blake2b);
+	case CRYPTO_BLAKE2S:
+		return (&auth_hash_blake2s);
+	case CRYPTO_POLY1305:
+		return (&auth_hash_poly1305);
+	case CRYPTO_AES_CCM_CBC_MAC:
+		switch (csp->csp_auth_klen) {
+		case 128:
+			return (&auth_hash_ccm_cbc_mac_128);
+		case 192:
+			return (&auth_hash_ccm_cbc_mac_192);
+		case 256:
+			return (&auth_hash_ccm_cbc_mac_256);
+		default:
+			return (NULL);
+		}
+	default:
+		return (NULL);
+	}
+}
+
+struct enc_xform *
+crypto_cipher(const struct crypto_session_params *csp)
+{
+
+	switch (csp->csp_cipher_alg) {
+	case CRYPTO_DES_CBC:
+		return (&enc_xform_des);
+	case CRYPTO_3DES_CBC:
+		return (&enc_xform_3des);
+	case CRYPTO_BLF_CBC:
+		return (&enc_xform_blf);
+	case CRYPTO_CAST_CBC:
+		return (&enc_xform_cast5);
+	case CRYPTO_SKIPJACK_CBC:
+		return (&enc_xform_skipjack);
+	case CRYPTO_RIJNDAEL128_CBC:
+		return (&enc_xform_rijndael128);
+	case CRYPTO_AES_XTS:
+		return (&enc_xform_aes_xts);
+	case CRYPTO_AES_ICM:
+		return (&enc_xform_aes_icm);
+	case CRYPTO_AES_NIST_GCM_16:
+		return (&enc_xform_aes_nist_gcm);
+	case CRYPTO_CAMELLIA_CBC:
+		return (&enc_xform_camellia);
+	case CRYPTO_NULL_CBC:
+		return (&enc_xform_null);
+	case CRYPTO_CHACHA20:
+		return (&enc_xform_chacha20);
+	case CRYPTO_AES_CCM_16:
+		return (&enc_xform_ccm);
+	default:
+		return (NULL);
+	}
+}
+
 static struct cryptocap *
 crypto_checkdriver(u_int32_t hid)
 {
@@ -583,7 +692,6 @@ crypto_select_driver(const struct crypto_session_params *csp, int flags)
 	return best;
 }
 
-#ifdef INVARIANTS
 static bool
 alg_is_compression(int alg)
 {
@@ -668,132 +776,141 @@ alg_is_aead(int alg)
 }
 
 /* Various sanity checks on crypto session parameters. */
-static void
-csp_sanity(const struct crypto_session_params *csp)
+static bool
+check_csp(const struct crypto_session_params *csp)
 {
+	struct auth_hash *axf;
 
-	KASSERT((csp->csp_flags & ~CSP_IV_VALID) == 0,
-	    ("invalid session flags %x", csp->csp_flags));
+	/* Mode-independent checks. */
+	if ((csp->csp_flags & ~CSP_IV_VALID) != 0)
+		return (false);
+	if (csp->csp_ivlen < 0 || csp->csp_cipher_klen < 0 ||
+	    csp->csp_auth_klen < 0 || csp->csp_auth_mlen < 0)
+		return (false);
+	if (csp->csp_auth_key != NULL && csp->csp_auth_klen == 0)
+		return (false);
+	if (csp->csp_cipher_key != NULL && csp->csp_cipher_klen == 0)
+		return (false);
+	if (csp->csp_cipher_klen % 8 != 0 || csp->csp_auth_klen % 8 != 0)
+		return (false);
+
 	switch (csp->csp_mode) {
 	case CSP_MODE_COMPRESS:
-		KASSERT(alg_is_compression(csp->csp_cipher_alg),
-		    ("invalid compression algorithm %d", csp->csp_cipher_alg));
-		KASSERT(csp->csp_flags == 0,
-		    ("invalid session flags %x", csp->csp_flags));
-		KASSERT(csp->csp_cipher_klen == 0 &&
-		    csp->csp_cipher_key == NULL &&
-		    csp->csp_ivlen == 0 &&
-		    csp->csp_auth_alg == 0 &&
-		    csp->csp_auth_klen == 0 &&
-		    csp->csp_auth_key == NULL &&
-		    csp->csp_auth_mlen == 0,
-		    ("invalid parameters for compression session"));
+		if (!alg_is_compression(csp->csp_cipher_alg))
+			return (false);
+		if (csp->csp_flags != 0)
+			return (false);
+		if (csp->csp_cipher_klen != 0 || csp->csp_ivlen != 0 ||
+		    csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0 ||
+		    csp->csp_auth_mlen != 0)
+			return (false);
 		break;
 	case CSP_MODE_CIPHER:
-		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
-		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
+		if (!alg_is_cipher(csp->csp_cipher_alg))
+			return (false);
 		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
-			/* XXX: Multiple of NBBY? */
-			KASSERT(csp->csp_cipher_klen > 0,
-			    ("zero length encryption key"));
-			KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+			if (csp->csp_cipher_klen == 0)
+				return (false);
+			if (csp->csp_cipher_alg != CRYPTO_ARC4) {
+				if (csp->csp_ivlen == 0)
+					return (false);
+			}
 		}
-		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_ivlen));
-		KASSERT(csp->csp_auth_alg == 0 &&
-		    csp->csp_auth_klen == 0 &&
-		    csp->csp_auth_key == NULL &&
-		    csp->csp_auth_mlen == 0,
-		    ("non-empty auth parameters for cipher session"));
+		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
+			return (false);
+		if (csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0 ||
+		    csp->csp_auth_mlen != 0)
+			return (false);
 		break;
 	case CSP_MODE_DIGEST:
-		KASSERT(csp->csp_cipher_alg == 0 &&
-		    csp->csp_cipher_klen == 0 &&
-		    csp->csp_cipher_key == NULL,
-		    ("non-empty encryption parameters for digest session"));
+		if (csp->csp_cipher_alg != 0 || csp->csp_cipher_klen != 0)
+			return (false);
+
 		/* IV is optional for digests (e.g. GMAC). */
-		KASSERT(csp->csp_ivlen >= 0, ("-ve length IV"));
-		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_ivlen));
-		KASSERT(alg_is_digest(csp->csp_auth_alg),
-		    ("invalid digest algorithm %d", csp->csp_auth_alg));
+		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
+			return (false);
+		if (!alg_is_digest(csp->csp_auth_alg))
+			return (false);
+
 		/* Key is optional for BLAKE2 digests. */
 		if (csp->csp_auth_alg == CRYPTO_BLAKE2B ||
 		    csp->csp_auth_alg == CRYPTO_BLAKE2S)
 			;
-		else if (alg_is_keyed_digest(csp->csp_auth_alg))
-			KASSERT(csp->csp_auth_klen > 0,
-			    ("zero length authentication key"));
-		else
-			KASSERT(csp->csp_auth_klen == 0,
-			    ("non-zero authentication key length"));
-		if (csp->csp_auth_klen == 0)
-			KASSERT(csp->csp_auth_key == NULL,
-			    ("authentication key for non-keyed digest"));
-		/* XXX? */
-		KASSERT(csp->csp_auth_mlen >= 0 &&
-		    csp->csp_auth_mlen <= HASH_MAX_LEN,
-		    ("invalid digest length: %d", csp->csp_auth_mlen));
+		else if (alg_is_keyed_digest(csp->csp_auth_alg)) {
+			if (csp->csp_auth_klen == 0)
+				return (false);
+		} else {
+			if (csp->csp_auth_klen != 0)
+				return (false);
+		}
+		if (csp->csp_auth_mlen != 0) {
+			axf = crypto_auth_hash(csp);
+			if (axf == NULL || csp->csp_auth_mlen > axf->hashsize)
+				return (false);
+		}
 		break;
 	case CSP_MODE_AEAD:
-		KASSERT(alg_is_aead(csp->csp_cipher_alg),
-		    ("invalid AEAD algorithm %d", csp->csp_cipher_alg));
-		if (csp->csp_cipher_key == NULL)
-			KASSERT(csp->csp_cipher_klen == 0,
-			    ("NULL encryption key with non-zero length"));
-		else {
-			/* XXX: Multiple of NBBY? */
-			KASSERT(csp->csp_cipher_klen > 0,
-			    ("zero length encryption key"));
+		if (!alg_is_aead(csp->csp_cipher_alg))
+			return (false);
+		if (csp->csp_cipher_klen == 0)
+			return (false);
+		if (csp->csp_ivlen == 0 ||
+		    csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
+			return (false);
+		if (csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0)
+			return (false);
+
+		/*
+		 * XXX: Would be nice to have a better way to get this
+		 * value.
+		 */
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
+			if (csp->csp_auth_mlen > 16)
+				return (false);
+			break;
 		}
-		KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
-		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_ivlen));
-		KASSERT(csp->csp_auth_alg == 0 &&
-		    csp->csp_auth_klen == 0 &&
-		    csp->csp_auth_key == NULL,
-		    ("non-empty auth parameters for AEAD session"));
-		/* XXX? */
-		KASSERT(csp->csp_auth_mlen >= 0 &&
-		    csp->csp_auth_mlen <= HASH_MAX_LEN,
-		    ("invalid digest length: %d", csp->csp_auth_mlen));
 		break;
 	case CSP_MODE_ETA:
-		KASSERT(alg_is_cipher(csp->csp_cipher_alg),
-		    ("invalid encryption algorithm %d", csp->csp_cipher_alg));
+		if (!alg_is_cipher(csp->csp_cipher_alg))
+			return (false);
 		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
-			/* XXX: Multiple of NBBY? */
-			KASSERT(csp->csp_cipher_klen > 0,
-			    ("zero length encryption key"));
-			KASSERT(csp->csp_ivlen > 0, ("zero length IV"));
+			if (csp->csp_cipher_klen == 0)
+				return (false);
+			if (csp->csp_cipher_alg != CRYPTO_ARC4) {
+				if (csp->csp_ivlen == 0)
+					return (false);
+			}
 		}
-		KASSERT(csp->csp_ivlen < EALG_MAX_BLOCK_LEN,
-		    ("IV too large: %d", csp->csp_ivlen));
-		KASSERT(alg_is_digest(csp->csp_auth_alg),
-		    ("invalid digest algorithm %d", csp->csp_auth_alg));
+		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
+			return (false);
+		if (!alg_is_digest(csp->csp_auth_alg))
+			return (false);
+
 		/* Key is optional for BLAKE2 digests. */
 		if (csp->csp_auth_alg == CRYPTO_BLAKE2B ||
 		    csp->csp_auth_alg == CRYPTO_BLAKE2S)
 			;
-		else if (alg_is_keyed_digest(csp->csp_auth_alg))
-			KASSERT(csp->csp_auth_klen > 0,
-			    ("zero length authentication key"));
-		else
-			KASSERT(csp->csp_auth_klen == 0,
-			    ("non-zero authentication key length"));
-		if (csp->csp_auth_klen == 0)
-			KASSERT(csp->csp_auth_key == NULL,
-			    ("authentication key for non-keyed digest"));
-		/* XXX? */
-		KASSERT(csp->csp_auth_mlen >= 0 &&
-		    csp->csp_auth_mlen <= HASH_MAX_LEN,
-		    ("invalid digest length: %d", csp->csp_auth_mlen));
+		else if (alg_is_keyed_digest(csp->csp_auth_alg)) {
+			if (csp->csp_auth_klen == 0)
+				return (false);
+		} else {
+			if (csp->csp_auth_klen != 0)
+				return (false);
+		}
+		if (csp->csp_auth_mlen != 0) {
+			axf = crypto_auth_hash(csp);
+			if (axf == NULL || csp->csp_auth_mlen > axf->hashsize)
+				return (false);
+		}
 		break;
 	default:
-		panic("invalid session mode %d", csp->csp_mode);
+		return (false);
 	}
+
+	return (true);
 }
-#endif
 
 /*
  * Delete a session after it has been detached from its driver.
@@ -831,9 +948,9 @@ crypto_newsession(crypto_session_t *cses,
 	struct cryptocap *cap;
 	int err;
 
-#ifdef INVARIANTS
-	csp_sanity(csp);
-#endif
+	if (!check_csp(csp))
+		return (EINVAL);
+
 	res = NULL;
 
 	CRYPTO_DRIVER_LOCK();

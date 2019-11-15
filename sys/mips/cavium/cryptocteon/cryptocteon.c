@@ -111,9 +111,7 @@ cryptocteon_auth_supported(const struct crypto_session_params *csp)
 		return (false);
 	}
 
-	if (csp->csp_auth_klen == 0 || csp->csp_auth_klen > hash_len)
-		return (false);
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hash_len)
+	if (csp->csp_auth_klen > hash_len)
 		return (false);
 	return (true);
 }

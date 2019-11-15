@@ -882,8 +882,6 @@ ubsec_auth_supported(const struct crypto_session_params *csp)
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
-		if (csp->csp_auth_klen == 0)
-			return (false);
 		return (true);
 	default:
 		return (false);

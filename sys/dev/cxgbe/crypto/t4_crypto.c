@@ -2214,7 +2214,6 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 static bool
 ccr_auth_supported(const struct crypto_session_params *csp)
 {
-	int hashlen;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA1:
@@ -2222,46 +2221,15 @@ ccr_auth_supported(const struct crypto_session_params *csp)
 	case CRYPTO_SHA2_256:
 	case CRYPTO_SHA2_384:
 	case CRYPTO_SHA2_512:
-		if (csp->csp_auth_klen != 0)
-			return (false);
-		break;
 	case CRYPTO_SHA1_HMAC:
 	case CRYPTO_SHA2_224_HMAC:
 	case CRYPTO_SHA2_256_HMAC:
 	case CRYPTO_SHA2_384_HMAC:
 	case CRYPTO_SHA2_512_HMAC:
-		if (csp->csp_auth_klen == 0)
-			return (false);
 		break;
 	default:
 		return (false);
 	}
-
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_224:
-	case CRYPTO_SHA2_224_HMAC:
-		hashlen = SHA2_224_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_256:
-	case CRYPTO_SHA2_256_HMAC:
-		hashlen = SHA2_256_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_384:
-	case CRYPTO_SHA2_384_HMAC:
-		hashlen = SHA2_384_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_512:
-	case CRYPTO_SHA2_512_HMAC:
-		hashlen = SHA2_512_HASH_LEN;
-		break;
-	}
-
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
-		return (false);
 	return (true);
 }
 

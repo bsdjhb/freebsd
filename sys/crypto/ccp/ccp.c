@@ -368,7 +368,6 @@ static bool
 ccp_auth_supported(struct ccp_softc *sc,
     const struct crypto_session_params *csp)
 {
-	int hashlen;
 	
 	if ((sc->hw_features & VERSION_CAP_SHA) == 0)
 		return (false);
@@ -383,24 +382,6 @@ ccp_auth_supported(struct ccp_softc *sc,
 	default:
 		return (false);
 	}
-
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_256_HMAC:
-		hashlen = SHA2_256_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_384_HMAC:
-		hashlen = SHA2_384_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_512_HMAC:
-		hashlen = SHA2_512_HASH_LEN;
-		break;
-	}
-
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
-		return (false);
 	return (true);
 }
 

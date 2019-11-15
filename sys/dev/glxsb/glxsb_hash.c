@@ -56,7 +56,7 @@ glxsb_hash_key_setup(struct glxsb_session *ses, const char *key, int klen)
 
 	axf = ses->ses_axf;
 	hmac_init_ipad(axf, key, klen, ses->ses_ictx);
-	hmac_init_ipad(axf, key, klen, ses->ses_octx);
+	hmac_init_opad(axf, key, klen, ses->ses_octx);
 }
 
 /*
@@ -105,31 +105,7 @@ glxsb_hash_setup(struct glxsb_session *ses,
     const struct crypto_session_params *csp)
 {
 
-	/* Find software structure which describes HMAC algorithm. */
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_NULL_HMAC:
-		ses->ses_axf = &auth_hash_null;
-		break;
-	case CRYPTO_MD5_HMAC:
-		ses->ses_axf = &auth_hash_hmac_md5;
-		break;
-	case CRYPTO_SHA1_HMAC:
-		ses->ses_axf = &auth_hash_hmac_sha1;
-		break;
-	case CRYPTO_RIPEMD160_HMAC:
-		ses->ses_axf = &auth_hash_hmac_ripemd_160;
-		break;
-	case CRYPTO_SHA2_256_HMAC:
-		ses->ses_axf = &auth_hash_hmac_sha2_256;
-		break;
-	case CRYPTO_SHA2_384_HMAC:
-		ses->ses_axf = &auth_hash_hmac_sha2_384;
-		break;
-	case CRYPTO_SHA2_512_HMAC:
-		ses->ses_axf = &auth_hash_hmac_sha2_512;
-		break;
-	}
-
+	ses->ses_axf = crypto_auth_hash(csp);
 	if (csp->csp_auth_mlen == 0)
 		ses->ses_mlen = ses->ses_axf->hashsize;
 	else

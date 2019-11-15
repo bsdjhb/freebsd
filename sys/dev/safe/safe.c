@@ -671,24 +671,19 @@ static bool
 safe_auth_supported(struct safe_softc *sc,
     const struct crypto_session_params *csp)
 {
-	u_int hash_len;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5_HMAC:
 		if ((sc->sc_devinfo & SAFE_DEVINFO_MD5) == 0)
 			return (false);
-		hash_len = MD5_HASH_LEN;
 		break;
 	case CRYPTO_SHA1_HMAC:
 		if ((sc->sc_devinfo & SAFE_DEVINFO_SHA1) == 0)
 			return (false);
-		hash_len = SHA1_HASH_LEN;
 		break;
 	default:
 		return (false);
 	}
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hash_len)
-		return (false);
 	return (true);
 }
 

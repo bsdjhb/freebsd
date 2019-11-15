@@ -52,6 +52,7 @@ __FBSDID("$FreeBSD$");
 #include <dev/pci/pcivar.h>
 
 #include <opencrypto/cryptodev.h>
+#include <opencrypto/xform_auth.h>
 
 #include "cryptodev_if.h"
 
@@ -373,37 +374,16 @@ xlp_sec_detach(device_t dev)
 static bool
 xlp_sec_auth_supported(const struct crypto_session_params *csp)
 {
-	u_int hashlen;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_MD5:
 	case CRYPTO_SHA1:
-		if (csp->csp_auth_klen != 0)
-			return (false);
-		break;
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
-		if (csp->csp_auth_klen == 0)
-			return (false);
 		break;
 	default:
 		return (false);
 	}
-
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_MD5_HMAC:
-		hashlen = MD5_HASH_LEN;
-		break;
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	}
-
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
-		return (false);
-
 	return (true);
 }
 
@@ -464,18 +444,11 @@ xlp_sec_newsession(device_t dev, crypto_session_t cses,
 
 	ses = crypto_get_driver_session(cses);
 
-	ses->hs_mlen = csp->csp_auth_mlen;
-	if (ses->hs_mlen == 0) {
-		switch (csp->csp_auth_alg) {
-		case CRYPTO_MD5:
-		case CRYPTO_MD5_HMAC:
-			ses->hs_mlen = MD5_HASH_LEN;
-			break;
-		case CRYPTO_SHA1:
-		case CRYPTO_SHA1_HMAC:
-			ses->hs_mlen = SHA1_HASH_LEN;
-			break;
-		}
+	if (csp->csp_auth_alg != 0) {
+		if (csp->csp_auth_mlen == 0)
+			ses->hs_mlen = crypto_auth_hash(csp)->hashsize;
+		else
+			ses->hs_mlen = csp->csp_auth_mlen;
 	}
 
 	return (0);

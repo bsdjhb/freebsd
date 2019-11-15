@@ -51,6 +51,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/resource.h>
 
 #include <opencrypto/cryptodev.h>
+#include <opencrypto/xform_auth.h>
 #include "cryptodev_if.h"
 
 #include <dev/ofw/ofw_bus_subr.h>
@@ -1204,7 +1205,6 @@ static bool
 sec_auth_supported(struct sec_softc *sc,
     const struct crypto_session_params *csp)
 {
-	int hashlen;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA2_384_HMAC:
@@ -1215,42 +1215,15 @@ sec_auth_supported(struct sec_softc *sc,
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
 	case CRYPTO_SHA2_256_HMAC:
-		if (csp->csp_auth_klen == 0 ||
-		    csp->csp_auth_klen / 8 > SEC_MAX_KEY_LEN)
+		if (csp->csp_auth_klen / 8 > SEC_MAX_KEY_LEN)
 			return (false);
 		break;
 	case CRYPTO_MD5:
 	case CRYPTO_SHA1:
-		if (csp->csp_auth_klen != 0)
-			return (false);
 		break;
 	default:
 		return (false);
 	}
-
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_MD5_HMAC:
-		hashlen = MD5_HASH_LEN;
-		break;
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_256_HMAC:
-		hashlen = SHA2_256_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_384_HMAC:
-		hashlen = SHA2_384_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_512_HMAC:
-		hashlen = SHA2_512_HASH_LEN;
-		break;
-	}
-
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > hashlen)
-		return (false);
-
 	return (true);
 }
 
@@ -1284,7 +1257,6 @@ sec_newsession(device_t dev, crypto_session_t cses,
 {
 	struct sec_eu_methods *eu = sec_eus;
 	struct sec_session *ses;
-	u_int hashlen;
 
 	ses = crypto_get_driver_session(cses);
 
@@ -1305,32 +1277,12 @@ sec_newsession(device_t dev, crypto_session_t cses,
 	if (csp->csp_auth_key != NULL)
 		memcpy(ses->ss_mkey, csp->csp_auth_key, csp->csp_auth_klen / 8);
 
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_MD5_HMAC:
-		hashlen = MD5_HASH_LEN;
-		break;
-	case CRYPTO_SHA1:
-	case CRYPTO_SHA1_HMAC:
-		hashlen = SHA1_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_256_HMAC:
-		hashlen = SHA2_256_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_384_HMAC:
-		hashlen = SHA2_384_HASH_LEN;
-		break;
-	case CRYPTO_SHA2_512_HMAC:
-		hashlen = SHA2_512_HASH_LEN;
-		break;
-	default:
-		hashlen = 0;
-		break;
+	if (csp->csp_auth_alg != 0) {
+		if (csp->csp_auth_mlen == 0)
+			ses->ss_mlen = crypto_auth_hash(csp)->hashsize;
+		else
+			ses->ss_mlen = csp->csp_auth_mlen;
 	}
-	if (csp->csp_auth_mlen == 0)
-		ses->ss_mlen = hashlen;
-	else
-		ses->ss_mlen = csp->csp_auth_mlen;
 
 	return (0);
 }

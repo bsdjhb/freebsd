@@ -355,14 +355,8 @@ padlock_hash_lookup(int alg)
 bool
 padlock_hash_check(const struct crypto_session_params *csp)
 {
-	struct auth_hash *axf;
 
-	axf = padlock_hash_lookup(csp->csp_auth_alg);
-	if (axf == NULL)
-		return (false);
-	if (csp->csp_auth_mlen < 0 || csp->csp_auth_mlen > axf->hashsize)
-		return (false);
-	return (true);
+	return (padlock_hash_lookup(csp->csp_auth_alg) != NULL);
 }
 
 int
