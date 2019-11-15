@@ -137,13 +137,13 @@ session and crypto op parameters.
     - tcp-md5
       - needs kernel with TCP_SIGNATURE
 
-- Tested with cryptocheck (todo)
+- Tested with cryptocheck (re-check)
   - cryptosoft
   - aesni
   - blake2
   - ccr
 
-- Needs testing: (audit for VERIFY_DIGEST)
+- Needs testing:
   - ccp
   - aesni with sha
   - hifn
@@ -220,5 +220,9 @@ session and crypto op parameters.
   - update python test to use this
 - update places for new sysctl names
 
-- csp_lookup_hash() returns auth_hash *?
-- csp_lookup_cipher() returns enc_xform *?
++ csp_lookup_hash() returns auth_hash *?
++ csp_lookup_cipher() returns enc_xform *?
+
++ pull checks into crypto_newsession
+  + checks on mlen
+  + csp_auth_klen 0 vs !0
