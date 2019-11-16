@@ -723,7 +723,7 @@ linux_exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 static int
 linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 {
-	int argc, envc;
+	int argc, envc, error;
 	u_int32_t *vectp;
 	char *stringp, *destp;
 	struct linux32_ps_strings *arginfo;
@@ -774,7 +774,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	vectp -= imgp->args->argc + 1 + imgp->args->envc + 1;
 
 	/* vectp also becomes our initial stack base. */
-	*stack_base = vectp;
+	*stack_base = (register_t *)vectp;
 
 	stringp = imgp->args->begin_argv;
 	argc = imgp->args->argc;

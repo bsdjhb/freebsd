@@ -221,7 +221,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	char canary[LINUX_AT_RANDOM_LEN];
 	size_t execpath_len;
 	struct proc *p;
-	int argc, envc;
+	int argc, envc, error;
 
 	/* Calculate string base and vector table pointers. */
 	if (imgp->execpath != NULL && imgp->auxargs != NULL)

@@ -295,7 +295,7 @@ linux_fixup_elf(register_t **stack_base, struct image_params *imgp)
 static int
 linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 {
-	int argc, envc;
+	int argc, envc, error;
 	char **vectp;
 	char *stringp, *destp;
 	struct ps_strings *arginfo;
