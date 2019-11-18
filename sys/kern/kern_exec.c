@@ -1604,7 +1604,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 		destp = rounddown2(destp, sizeof(void *));
 		error = copyout(p->p_sysent->sv_sigcode, (void *)destp,
 		    szsigcode);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -1616,7 +1616,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 		destp = rounddown2(destp, sizeof(void *));
 		imgp->execpathp = destp;
 		error = copyout(imgp->execpath, (void *)destp, execpath_len);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -1627,7 +1627,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	destp -= sizeof(canary);
 	imgp->canary = destp;
 	error = copyout(canary, (void *)destp, sizeof(canary));
-	if (error)
+	if (error != 0)
 		return (error);
 	imgp->canarylen = sizeof(canary);
 
@@ -1638,7 +1638,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	destp = rounddown2(destp, sizeof(void *));
 	imgp->pagesizes = destp;
 	error = copyout(pagesizes, (void *)destp, szps);
-	if (error)
+	if (error != 0)
 		return (error);
 	imgp->pagesizeslen = szps;
 
@@ -1652,7 +1652,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
 		    (u_long *)&vectp);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -1676,7 +1676,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	 */
 	error = copyout(stringp, (void *)destp,
 	    ARG_MAX - imgp->args->stringspace);
-	if (error)
+	if (error != 0)
 		return (error);
 
 	/*

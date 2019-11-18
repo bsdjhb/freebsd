@@ -320,7 +320,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 		imgp->execpathp = (uintptr_t)arginfo - execpath_len;
 		error = copyout(imgp->execpath, (void *)imgp->execpathp,
 		    execpath_len);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -330,7 +330,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	    roundup(execpath_len, sizeof(char *)) -
 	    roundup(sizeof(canary), sizeof(char *));
 	error = copyout(canary, (void *)imgp->canary, sizeof(canary));
-	if (error)
+	if (error != 0)
 		return (error);
 
 	vectp = (char **)destp;
@@ -344,7 +344,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
 		    (u_long *)&vectp);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -363,7 +363,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 
 	/* Copy out strings - arguments and environment. */
 	error = copyout(stringp, destp, ARG_MAX - imgp->args->stringspace);
-	if (error)
+	if (error != 0)
 		return (error);
 
 	/* Fill in "ps_strings" struct for ps, w, etc. */

@@ -3156,7 +3156,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 		destp = rounddown2(destp, sizeof(uint32_t));
 		error = copyout(imgp->proc->p_sysent->sv_sigcode, (void *)destp,
 		    szsigcode);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -3167,7 +3167,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 		destp -= execpath_len;
 		imgp->execpathp = destp;
 		error = copyout(imgp->execpath, (void *)destp, execpath_len);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -3178,7 +3178,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	destp -= sizeof(canary);
 	imgp->canary = destp;
 	error = copyout(canary, (void *)destp, sizeof(canary));
-	if (error)
+	if (error != 0)
 		return (error);
 	imgp->canarylen = sizeof(canary);
 
@@ -3191,7 +3191,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	destp = rounddown2(destp, sizeof(uint32_t));
 	imgp->pagesizes = destp;
 	error = copyout(pagesizes32, (void *)destp, sizeof(pagesizes32));
-	if (error)
+	if (error != 0)
 		return (error);
 	imgp->pagesizeslen = sizeof(pagesizes32);
 
@@ -3205,7 +3205,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
 		    (u_long *)&vectp);
-		if (error)
+		if (error != 0)
 			return (error);
 	}
 
@@ -3228,7 +3228,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	 */
 	error = copyout(stringp, (void *)destp,
 	    ARG_MAX - imgp->args->stringspace);
-	if (error)
+	if (error != 0)
 		return (error);
 
 	/*
