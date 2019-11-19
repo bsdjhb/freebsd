@@ -226,3 +226,7 @@ session and crypto op parameters.
 + pull checks into crypto_newsession
   + checks on mlen
   + csp_auth_klen 0 vs !0
+
++ kill CSP_IV_VALID and update drivers to all bail for flags != 0 to
+  permit adding new flags in the future
+- update crypto.9
