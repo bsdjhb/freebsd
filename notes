@@ -151,7 +151,7 @@ session and crypto op parameters.
   - ubsec
   - padlock
   - safe
-  - geom
+  - GELI
   - armv8_crypto (aarch64)
   - glxsb (i386)
   - sec (ppc)
@@ -215,7 +215,7 @@ session and crypto op parameters.
   + allow NULL keys during setup but require klen to be
     set during probesession / newsession, also have to require a key
     when processing
-- change klen to bytes?
++ change klen to bytes?
 - sysctl node to list crypto drivers
   - update python test to use this
 - update places for new sysctl names
