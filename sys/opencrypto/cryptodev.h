@@ -400,11 +400,9 @@ struct crypto_session_params {
 #define	CSP_MODE_CIPHER		2	/* Encrypt/decrypt. */
 #define	CSP_MODE_DIGEST		3	/* Compute/verify digest. */
 #define	CSP_MODE_AEAD		4	/* Combined auth/encryption. */
-#define	CSP_MODE_ETA		5	/* IPSec style encrypt-then-auth */
+#define	CSP_MODE_ETA		5	/* IPsec style encrypt-then-auth */
 
 	int		csp_flags;
-
-#define	CSP_IV_VALID		0x0001
 
 	int		csp_ivlen;	 /* IV length in bytes. */
 
