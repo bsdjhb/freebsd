@@ -92,7 +92,7 @@ des1_set_key(struct krb5_key_state *ks, const void *in)
 	csp.csp_mode = CSP_MODE_CIPHER;
 	csp.csp_ivlen = 8;
 	csp.csp_cipher_alg = CRYPTO_DES_CBC;
-	csp.csp_cipher_klen = 64;
+	csp.csp_cipher_klen = 8;
 	csp.csp_cipher_key = ks->ks_key;
 
 	crypto_newsession(&ds->ds_session, &csp,

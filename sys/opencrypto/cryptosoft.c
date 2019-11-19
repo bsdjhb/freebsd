@@ -148,7 +148,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 
 		csp = crypto_get_params(crp->crp_session);
 		error = exf->setkey(&sw->sw_kschedule,
-		    crp->crp_cipher_key, csp->csp_cipher_klen / 8);
+		    crp->crp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
 	}
@@ -346,8 +346,6 @@ swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw,
     const uint8_t *key, int klen)
 {
 
-	klen /= 8;
-
 	switch (axf->type) {
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
@@ -357,8 +355,8 @@ swcr_authprepare(struct auth_hash *axf, struct swcr_auth *sw,
 	case CRYPTO_SHA2_512_HMAC:
 	case CRYPTO_NULL_HMAC:
 	case CRYPTO_RIPEMD160_HMAC:
-		hmac_init_ipad(axf, key, klen * 8, sw->sw_ictx);
-		hmac_init_opad(axf, key, klen * 8, sw->sw_octx);
+		hmac_init_ipad(axf, key, klen, sw->sw_ictx);
+		hmac_init_opad(axf, key, klen, sw->sw_octx);
 		break;
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
@@ -932,7 +930,7 @@ swcr_setup_encdec(struct swcr_session *ses,
 	MPASS(txf->ivsize == csp->csp_ivlen);
 	if (csp->csp_cipher_key != NULL) {
 		error = txf->setkey(&swe->sw_kschedule,
-		    csp->csp_cipher_key, csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
 	}
@@ -986,7 +984,7 @@ swcr_setup_auth(struct swcr_session *ses,
 		break;
 	case CRYPTO_MD5_KPDK:
 	case CRYPTO_SHA1_KPDK:
-		swa->sw_octx_len = csp->csp_auth_klen / 8;
+		swa->sw_octx_len = csp->csp_auth_klen;
 		swa->sw_octx = malloc(swa->sw_octx_len, M_CRYPTO_DATA,
 		    M_NOWAIT);
 		if (swa->sw_octx == NULL)
@@ -1016,7 +1014,7 @@ swcr_setup_auth(struct swcr_session *ses,
 	case CRYPTO_AES_NIST_GMAC:
 		axf->Init(swa->sw_ictx);
 		axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
-		    csp->csp_auth_klen / 8);
+		    csp->csp_auth_klen);
 		if (csp->csp_mode == CSP_MODE_DIGEST)
 			ses->swcr_process = swcr_gmac;
 		break;
@@ -1029,7 +1027,7 @@ swcr_setup_auth(struct swcr_session *ses,
 		 */
 		if (csp->csp_auth_klen == 0 || csp->csp_auth_key != NULL)
 			axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
-			    csp->csp_auth_klen / 8);
+			    csp->csp_auth_klen);
 		axf->Init(swa->sw_ictx);
 		if (csp->csp_mode == CSP_MODE_DIGEST)
 			ses->swcr_process = swcr_authcompute;
@@ -1037,7 +1035,7 @@ swcr_setup_auth(struct swcr_session *ses,
 	case CRYPTO_AES_CCM_CBC_MAC:
 		axf->Init(swa->sw_ictx);
 		axf->Setkey(swa->sw_ictx, csp->csp_auth_key,
-		    csp->csp_auth_klen / 8);
+		    csp->csp_auth_klen);
 		if (csp->csp_mode == CSP_MODE_DIGEST)
 			ses->swcr_process = swcr_ccm_cbc_mac;
 		break;
@@ -1061,7 +1059,7 @@ swcr_setup_gcm(struct swcr_session *ses,
 
 	/* First, setup the auth side. */
 	swa = &ses->swcr_auth;
-	switch (csp->csp_cipher_klen) {
+	switch (csp->csp_cipher_klen * 8) {
 	case 128:
 		axf = &auth_hash_nist_gmac_aes_128;
 		break;
@@ -1087,14 +1085,14 @@ swcr_setup_gcm(struct swcr_session *ses,
 	axf->Init(swa->sw_ictx);
 	if (csp->csp_cipher_key != NULL)
 		axf->Setkey(swa->sw_ictx, csp->csp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_klen);
 
 	/* Second, setup the cipher side. */
 	swe = &ses->swcr_encdec;
 	txf = &enc_xform_aes_nist_gcm;
 	if (csp->csp_cipher_key != NULL) {
 		error = txf->setkey(&swe->sw_kschedule,
-		    csp->csp_cipher_key, csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
 	}
@@ -1118,7 +1116,7 @@ swcr_setup_ccm(struct swcr_session *ses,
 
 	/* First, setup the auth side. */
 	swa = &ses->swcr_auth;
-	switch (csp->csp_cipher_klen) {
+	switch (csp->csp_cipher_klen * 8) {
 	case 128:
 		axf = &auth_hash_ccm_cbc_mac_128;
 		break;
@@ -1144,14 +1142,14 @@ swcr_setup_ccm(struct swcr_session *ses,
 	axf->Init(swa->sw_ictx);
 	if (csp->csp_cipher_key != NULL)
 		axf->Setkey(swa->sw_ictx, csp->csp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_klen);
 
 	/* Second, setup the cipher side. */
 	swe = &ses->swcr_encdec;
 	txf = &enc_xform_ccm;
 	if (csp->csp_cipher_key != NULL) {
 		error = txf->setkey(&swe->sw_kschedule,
-		    csp->csp_cipher_key, csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
 	}
@@ -1181,7 +1179,7 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 	case CRYPTO_SHA1_KPDK:
 		break;
 	case CRYPTO_AES_NIST_GMAC:
-		switch (csp->csp_auth_klen) {
+		switch (csp->csp_auth_klen * 8) {
 		case 128:
 		case 192:
 		case 256:
@@ -1195,11 +1193,11 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 			return (false);
 		break;
 	case CRYPTO_POLY1305:
-		if (csp->csp_auth_klen != POLY1305_KEY_LEN * 8)
+		if (csp->csp_auth_klen != POLY1305_KEY_LEN)
 			return (false);
 		break;
 	case CRYPTO_AES_CCM_CBC_MAC:
-		switch (csp->csp_auth_klen) {
+		switch (csp->csp_auth_klen * 8) {
 		case 128:
 		case 192:
 		case 256:

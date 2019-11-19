@@ -340,7 +340,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls)
 		csp.csp_mode = CSP_MODE_AEAD;
 		csp.csp_cipher_alg = CRYPTO_AES_NIST_GCM_16;
 		csp.csp_cipher_key = tls->params.cipher_key;
-		csp.csp_cipher_klen = tls->params.cipher_key_len * 8;
+		csp.csp_cipher_klen = tls->params.cipher_key_len;
 		csp.csp_ivlen = AES_GCM_IV_LEN;
 		break;
 	default:

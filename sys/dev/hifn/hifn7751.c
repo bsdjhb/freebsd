@@ -2330,7 +2330,7 @@ hifn_auth_supported(struct hifn_softc *sc,
 		break;
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
-		if (csp->csp_auth_klen / 8 > HIFN_MAC_KEY_LENGTH)
+		if (csp->csp_auth_klen > HIFN_MAC_KEY_LENGTH)
 			return (false);
 		break;
 	default:
@@ -2526,7 +2526,7 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 			cmd->ck = crp->crp_cipher_key;
 		else
 			cmd->ck = csp->csp_cipher_key;
-		cmd->cklen = csp->csp_cipher_klen >> 3;
+		cmd->cklen = csp->csp_cipher_klen;
 		cmd->cry_masks |= HIFN_CRYPT_CMD_NEW_KEY;
 
 		/* 
@@ -2587,7 +2587,7 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 				mackey = crp->crp_auth_key;
 			else
 				mackey = csp->csp_auth_key;
-			keylen = csp->csp_auth_klen >> 3;
+			keylen = csp->csp_auth_klen;
 			bcopy(mackey, cmd->mac, keylen);
 			bzero(cmd->mac + keylen, HIFN_MAC_KEY_LENGTH - keylen);
 		}

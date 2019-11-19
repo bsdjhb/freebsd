@@ -261,12 +261,10 @@ static bool
 blake2_check_klen(const struct crypto_session_params *csp, unsigned klen)
 {
 
-	if (klen % 8 != 0)
-		return (false);
 	if (csp->csp_auth_alg == CRYPTO_BLAKE2S)
-		return (klen / 8 <= BLAKE2S_KEYBYTES);
+		return (klen <= BLAKE2S_KEYBYTES);
 	else
-		return (klen / 8 <= BLAKE2B_KEYBYTES);
+		return (klen <= BLAKE2B_KEYBYTES);
 }
 
 static int
@@ -358,7 +356,7 @@ blake2_cipher_process(struct blake2_session *ses, struct cryptop *crp)
 		key = crp->crp_auth_key;
 	else
 		key = csp->csp_auth_key;
-	klen = csp->csp_auth_klen / 8;
+	klen = csp->csp_auth_klen;
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_BLAKE2B:
 		if (klen > 0)

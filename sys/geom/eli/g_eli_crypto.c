@@ -74,7 +74,7 @@ g_eli_crypto_cipher(u_int algo, int enc, u_char *data, size_t datasize,
 	csp.csp_cipher_alg = algo;
 	csp.csp_ivlen = g_eli_ivlen(algo);
 	csp.csp_cipher_key = key;
-	csp.csp_cipher_klen = keysize;
+	csp.csp_cipher_klen = keysize / 8;
 	error = crypto_newsession(&sid, &csp, CRYPTOCAP_F_SOFTWARE);
 	if (error != 0)
 		return (error);

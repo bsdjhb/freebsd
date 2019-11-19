@@ -295,7 +295,6 @@ ccp_init_hmac_digest(struct ccp_session *s, const char *key, int klen)
 	 * the key as the key instead.
 	 */
 	axf = s->hmac.auth_hash;
-	klen /= 8;
 	if (klen > axf->blocksize) {
 		axf->Init(&auth_ctx);
 		axf->Update(&auth_ctx, key, klen);
@@ -318,7 +317,7 @@ static bool
 ccp_aes_check_keylen(int alg, int klen)
 {
 
-	switch (klen) {
+	switch (klen * 8) {
 	case 128:
 	case 192:
 		if (alg == CRYPTO_AES_XTS)
@@ -342,9 +341,9 @@ ccp_aes_setkey(struct ccp_session *s, int alg, const void *key, int klen)
 	unsigned kbits;
 
 	if (alg == CRYPTO_AES_XTS)
-		kbits = klen / 2;
+		kbits = (klen / 2) * 8;
 	else
-		kbits = klen;
+		kbits = klen * 8;
 
 	switch (kbits) {
 	case 128:
@@ -360,7 +359,7 @@ ccp_aes_setkey(struct ccp_session *s, int alg, const void *key, int klen)
 		panic("should not get here");
 	}
 
-	s->blkcipher.key_len = klen / 8;
+	s->blkcipher.key_len = klen;
 	memcpy(s->blkcipher.enckey, key, s->blkcipher.key_len);
 }
 

@@ -407,11 +407,11 @@ struct crypto_session_params {
 	int		csp_ivlen;	 /* IV length in bytes. */
 
 	int		csp_cipher_alg;
-	int		csp_cipher_klen; /* Key length in bits. */
+	int		csp_cipher_klen; /* Key length in bytes. */
 	const void	*csp_cipher_key;
 
 	int		csp_auth_alg;
-	int		csp_auth_klen;	/* Key length in bits. */
+	int		csp_auth_klen;	/* Key length in bytes. */
 	const void	*csp_auth_key;
 	int		csp_auth_mlen;	/* Number of digest bytes to use.
 					   0 means all. */

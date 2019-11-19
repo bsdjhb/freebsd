@@ -96,7 +96,7 @@ des3_set_key(struct krb5_key_state *ks, const void *in)
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_mode = CSP_MODE_DIGEST;
 	csp.csp_auth_alg = CRYPTO_SHA1_HMAC;
-	csp.csp_auth_klen = 192;
+	csp.csp_auth_klen = 24;
 	csp.csp_auth_key = ks->ks_key;
 
 	crypto_newsession(&ds->ds_hmac_session, &csp,
@@ -105,7 +105,7 @@ des3_set_key(struct krb5_key_state *ks, const void *in)
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_mode = CSP_MODE_CIPHER;
 	csp.csp_cipher_alg = CRYPTO_3DES_CBC;
-	csp.csp_cipher_klen = 192;
+	csp.csp_cipher_klen = 24;
 	csp.csp_cipher_key = ks->ks_key;
 	csp.csp_ivlen = 8;
 

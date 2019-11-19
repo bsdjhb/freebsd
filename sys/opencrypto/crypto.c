@@ -427,7 +427,6 @@ hmac_init_pad(struct auth_hash *axf, const char *key, int klen, void *auth_ctx,
 	uint8_t hmac_key[HMAC_MAX_BLOCK_LEN];
 	u_int i;
 
-	KASSERT(klen % 8 == 0, ("Invalid HMAC key length %d", klen));
 	KASSERT(axf->blocksize <= sizeof(hmac_key),
 	    ("Invalid HMAC block size %d", axf->blocksize));
 
@@ -436,7 +435,6 @@ hmac_init_pad(struct auth_hash *axf, const char *key, int klen, void *auth_ctx,
 	 * the key as the key instead.
 	 */
 	memset(hmac_key, 0, sizeof(hmac_key));
-	klen /= 8;
 	if (klen > axf->blocksize) {
 		axf->Init(auth_ctx);
 		axf->Update(auth_ctx, key, klen);
@@ -574,11 +572,11 @@ crypto_auth_hash(const struct crypto_session_params *csp)
 		return (&auth_hash_sha2_512);
 	case CRYPTO_AES_NIST_GMAC:
 		switch (csp->csp_auth_klen) {
-		case 128:
+		case 128 / 8:
 			return (&auth_hash_nist_gmac_aes_128);
-		case 192:
+		case 192 / 8:
 			return (&auth_hash_nist_gmac_aes_192);
-		case 256:
+		case 256 / 8:
 			return (&auth_hash_nist_gmac_aes_256);
 		default:
 			return (NULL);
@@ -591,11 +589,11 @@ crypto_auth_hash(const struct crypto_session_params *csp)
 		return (&auth_hash_poly1305);
 	case CRYPTO_AES_CCM_CBC_MAC:
 		switch (csp->csp_auth_klen) {
-		case 128:
+		case 128 / 8:
 			return (&auth_hash_ccm_cbc_mac_128);
-		case 192:
+		case 192 / 8:
 			return (&auth_hash_ccm_cbc_mac_192);
-		case 256:
+		case 256 / 8:
 			return (&auth_hash_ccm_cbc_mac_256);
 		default:
 			return (NULL);
@@ -790,8 +788,6 @@ check_csp(const struct crypto_session_params *csp)
 	if (csp->csp_auth_key != NULL && csp->csp_auth_klen == 0)
 		return (false);
 	if (csp->csp_cipher_key != NULL && csp->csp_cipher_klen == 0)
-		return (false);
-	if (csp->csp_cipher_klen % 8 != 0 || csp->csp_auth_klen % 8 != 0)
 		return (false);
 
 	switch (csp->csp_mode) {

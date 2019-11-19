@@ -195,7 +195,7 @@ armv8_crypto_probesession(device_t dev,
 		case CRYPTO_AES_CBC:
 			if (csp->csp_ivlen != AES_BLOCK_LEN)
 				return (EINVAL);
-			switch (csp->csp_cipher_klen) {
+			switch (csp->csp_cipher_klen * 8) {
 			case 128:
 			case 192:
 			case 256:
@@ -219,7 +219,7 @@ armv8_crypto_cipher_setup(struct armv8_crypto_session *ses,
 {
 	int i;
 
-	switch (csp->csp_cipher_klen) {
+	switch (csp->csp_cipher_klen * 8) {
 	case 128:
 		ses->rounds = AES128_ROUNDS;
 		break;
@@ -234,9 +234,9 @@ armv8_crypto_cipher_setup(struct armv8_crypto_session *ses,
 	}
 
 	rijndaelKeySetupEnc(ses->enc_schedule, csp->csp_cipher_key,
-	    csp->csp_cipher_klen);
+	    csp->csp_cipher_klen * 8);
 	rijndaelKeySetupDec(ses->dec_schedule, csp->csp_cipher_key,
-	    csp->csp_cipher_klen);
+	    csp->csp_cipher_klen * 8);
 	for (i = 0; i < nitems(ses->enc_schedule); i++) {
 		ses->enc_schedule[i] = bswap32(ses->enc_schedule[i]);
 		ses->dec_schedule[i] = bswap32(ses->dec_schedule[i]);

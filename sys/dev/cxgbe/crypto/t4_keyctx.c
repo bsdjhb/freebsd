@@ -73,7 +73,7 @@ t4_init_gmac_hash(const char *key, int klen, char *ghash)
 	uint32_t keysched[4 * (RIJNDAEL_MAXNR + 1)];
 	int rounds;
 
-	rounds = rijndaelKeySetupEnc(keysched, key, klen);
+	rounds = rijndaelKeySetupEnc(keysched, key, klen * 8);
 	rijndaelEncrypt(keysched, rounds, zeroes, ghash);
 }
 

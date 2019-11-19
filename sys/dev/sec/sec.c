@@ -1194,8 +1194,7 @@ sec_cipher_supported(const struct crypto_session_params *csp)
 		return (false);
 	}
 
-	if (csp->csp_cipher_klen == 0 ||
-	    csp->csp_cipher_klen / 8 > SEC_MAX_KEY_LEN)
+	if (csp->csp_cipher_klen == 0 || csp->csp_cipher_klen > SEC_MAX_KEY_LEN)
 		return (false);
 
 	return (true);
@@ -1215,7 +1214,7 @@ sec_auth_supported(struct sec_softc *sc,
 	case CRYPTO_MD5_HMAC:
 	case CRYPTO_SHA1_HMAC:
 	case CRYPTO_SHA2_256_HMAC:
-		if (csp->csp_auth_klen / 8 > SEC_MAX_KEY_LEN)
+		if (csp->csp_auth_klen > SEC_MAX_KEY_LEN)
 			return (false);
 		break;
 	case CRYPTO_MD5:
@@ -1272,12 +1271,11 @@ sec_newsession(device_t dev, crypto_session_t cses,
 
 	/* Save cipher key */
 	if (csp->csp_cipher_key != NULL)
-		memcpy(ses->ss_key, csp->csp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		memcpy(ses->ss_key, csp->csp_cipher_key, csp->csp_cipher_klen);
 
 	/* Save digest key */
 	if (csp->csp_auth_key != NULL)
-		memcpy(ses->ss_mkey, csp->csp_auth_key, csp->csp_auth_klen / 8);
+		memcpy(ses->ss_mkey, csp->csp_auth_key, csp->csp_auth_klen);
 
 	if (csp->csp_auth_alg != 0) {
 		if (csp->csp_auth_mlen == 0)
@@ -1338,14 +1336,13 @@ sec_process(device_t dev, struct cryptop *crp, int hint)
 	}
 
 	if (crp->crp_cipher_key != NULL)
-		memcpy(ses->ss_key, crp->crp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		memcpy(ses->ss_key, crp->crp_cipher_key, csp->csp_cipher_klen);
 
 	if (crp->crp_auth_key != NULL)
-		memcpy(ses->ss_mkey, crp->crp_auth_key, csp->csp_auth_klen / 8);
+		memcpy(ses->ss_mkey, crp->crp_auth_key, csp->csp_auth_klen);
 
-	memcpy(desc->sd_desc->shd_key, ses->ss_key, csp->csp_cipher_klen / 8);
-	memcpy(desc->sd_desc->shd_mkey, ses->ss_mkey, csp->csp_auth_klen / 8);
+	memcpy(desc->sd_desc->shd_key, ses->ss_key, csp->csp_cipher_klen);
+	memcpy(desc->sd_desc->shd_mkey, ses->ss_mkey, csp->csp_auth_klen);
 
 	error = ses->ss_eu->sem_make_desc(sc, csp, desc, crp);
 
@@ -1405,7 +1402,7 @@ sec_build_common_ns_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 2: Cipher Key */
 	error = sec_make_pointer_direct(sc, desc, 2, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen / 8);
+	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen);
  	if (error)
 		return (error);
 
@@ -1450,7 +1447,7 @@ sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 0: HMAC Key */
 	error = sec_make_pointer_direct(sc, desc, 0, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_mkey), csp->csp_auth_klen / 8);
+	    offsetof(struct sec_hw_desc, shd_mkey), csp->csp_auth_klen);
 	if (error)
 		return (error);
 
@@ -1462,7 +1459,7 @@ sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 2: Cipher Key */
 	error = sec_make_pointer_direct(sc, desc, 2, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen / 8);
+	    offsetof(struct sec_hw_desc, shd_key), csp->csp_cipher_klen);
  	if (error)
 		return (error);
 
@@ -1680,7 +1677,7 @@ sec_mdeu_make_desc(struct sec_softc *sc,
 	if (hd->shd_mode0 & SEC_MDEU_MODE_HMAC)
 		error = sec_make_pointer_direct(sc, desc, 2,
 		    desc->sd_desc_paddr + offsetof(struct sec_hw_desc,
-		    shd_mkey), csp->csp_auth_klen / 8);
+		    shd_mkey), csp->csp_auth_klen);
 	else
 		error = sec_make_pointer_direct(sc, desc, 2, 0, 0);
 

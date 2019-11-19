@@ -610,7 +610,7 @@ cryptof_ioctl(
 
 		if (txform) {
 			csp.csp_cipher_alg = txform->type;
-			csp.csp_cipher_klen = sop->keylen * 8;
+			csp.csp_cipher_klen = sop->keylen;
 			if (sop->keylen > txform->maxkey ||
 			    sop->keylen < txform->minkey) {
 				CRYPTDEB("invalid cipher parameters");
@@ -620,9 +620,8 @@ cryptof_ioctl(
 				goto bail;
 			}
 
-			key = malloc(csp.csp_cipher_klen / 8, M_XDATA,
-			    M_WAITOK);
-			error = copyin(sop->key, key, csp.csp_cipher_klen / 8);
+			key = malloc(csp.csp_cipher_klen, M_XDATA, M_WAITOK);
+			error = copyin(sop->key, key, csp.csp_cipher_klen);
 			if (error) {
 				CRYPTDEB("invalid key");
 				SDT_PROBE1(opencrypto, dev, ioctl, error,
@@ -635,7 +634,7 @@ cryptof_ioctl(
 
 		if (thash) {
 			csp.csp_auth_alg = thash->type;
-			csp.csp_auth_klen = sop->mackeylen * 8;
+			csp.csp_auth_klen = sop->mackeylen;
 			if (sop->mackeylen > thash->keysize ||
 			    sop->mackeylen < 0) {
 				CRYPTDEB("invalid mac key length");
@@ -646,10 +645,10 @@ cryptof_ioctl(
 			}
 
 			if (csp.csp_auth_klen) {
-				mackey = malloc(csp.csp_auth_klen / 8,
-				    M_XDATA, M_WAITOK);
+				mackey = malloc(csp.csp_auth_klen, M_XDATA,
+				    M_WAITOK);
 				error = copyin(sop->mackey, mackey,
-				    csp.csp_auth_klen / 8);
+				    csp.csp_auth_klen);
 				if (error) {
 					CRYPTDEB("invalid mac key");
 					SDT_PROBE1(opencrypto, dev, ioctl,

@@ -235,7 +235,7 @@ ah_init0(struct secasvar *sav, struct xformsw *xsp,
 
 	/* Initialize crypto session. */
 	csp->csp_auth_alg = sav->tdb_authalgxform->type;
-	csp->csp_auth_klen = _KEYBITS(sav->key_auth);
+	csp->csp_auth_klen = _KEYBITS(sav->key_auth) / 8;
 	csp->csp_auth_key = sav->key_auth->key_data;
 	csp->csp_auth_mlen = AUTHSIZE(sav);
 

@@ -502,12 +502,8 @@ SHA256_Finalize_fn(void *digest, void *ctx)
 static int
 aesni_authprepare(struct aesni_session *ses, int klen)
 {
-	int keylen;
 
-	if (klen % 8 != 0)
-		return (EINVAL);
-	keylen = klen / 8;
-	if (keylen > SHA1_BLOCK_LEN)
+	if (klen > SHA1_BLOCK_LEN)
 		return (EINVAL);
 	if ((ses->hmac && klen == 0) || (!ses->hmac && klen != 0))
 		return (EINVAL);
@@ -523,7 +519,7 @@ aesni_cipherprepare(const struct crypto_session_params *csp)
 	case CRYPTO_AES_NIST_GCM_16:
 	case CRYPTO_AES_CCM_16:
 	case CRYPTO_AES_CBC:
-		switch (csp->csp_cipher_klen) {
+		switch (csp->csp_cipher_klen * 8) {
 		case 128:
 		case 192:
 		case 256:
@@ -534,7 +530,7 @@ aesni_cipherprepare(const struct crypto_session_params *csp)
 		}
 		break;
 	case CRYPTO_AES_XTS:
-		switch (csp->csp_cipher_klen) {
+		switch (csp->csp_cipher_klen * 8) {
 		case 256:
 		case 512:
 			break;
@@ -810,7 +806,7 @@ aesni_cipher_mac(struct aesni_session *ses, struct cryptop *crp,
 		key = crp->crp_auth_key;
 	else
 		key = csp->csp_auth_key;
-	keylen = csp->csp_auth_klen / 8;
+	keylen = csp->csp_auth_klen;
 
 	if (ses->hmac) {
 		/* Inner hash: (K ^ IPAD) || data */

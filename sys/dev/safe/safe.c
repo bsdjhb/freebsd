@@ -626,7 +626,7 @@ safe_setup_enckey(struct safe_session *ses, const void *key)
 {
 	int i;
 
-	bcopy(key, ses->ses_key, ses->ses_klen / 8);
+	bcopy(key, ses->ses_key, ses->ses_klen);
 
 	/* PE is little-endian, insure proper byte order */
 	for (i = 0; i < N(ses->ses_key); i++)
@@ -700,10 +700,10 @@ safe_cipher_supported(struct safe_softc *sc,
 		if (csp->csp_ivlen != 8)
 			return (false);
 		if (csp->csp_cipher_alg == CRYPTO_DES_CBC) {
-			if (csp->csp_cipher_klen != 64)
+			if (csp->csp_cipher_klen != 8)
 				return (false);
 		} else {
-			if (csp->csp_cipher_klen != 192)
+			if (csp->csp_cipher_klen != 24)
 				return (false);
 		}
 		break;
@@ -712,9 +712,9 @@ safe_cipher_supported(struct safe_softc *sc,
 			return (false);
 		if (csp->csp_ivlen != 16)
 			return (false);
-		if (csp->csp_cipher_klen != 128 &&
-		    csp->csp_cipher_klen != 192 &&
-		    csp->csp_cipher_klen != 256)
+		if (csp->csp_cipher_klen != 16 &&
+		    csp->csp_cipher_klen != 24 &&
+		    csp->csp_cipher_klen != 32)
 			return (false);
 		break;
 	}
@@ -876,9 +876,9 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 		case CRYPTO_AES_CBC:
 			cmd0 |= SAFE_SA_CMD0_AES;
 			cmd1 |= SAFE_SA_CMD1_CBC;
-			if (ses->ses_klen == 128)
+			if (ses->ses_klen * 8 == 128)
 			     cmd1 |=  SAFE_SA_CMD1_AES128;
-			else if (ses->ses_klen == 192)
+			else if (ses->ses_klen * 8 == 192)
 			     cmd1 |=  SAFE_SA_CMD1_AES192;
 			else
 			     cmd1 |=  SAFE_SA_CMD1_AES256;

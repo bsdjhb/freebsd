@@ -454,7 +454,7 @@ aesni_cipher_setup_common(struct aesni_session *ses,
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		keylen /= 2;
 
-	switch (keylen) {
+	switch (keylen * 8) {
 	case 128:
 		ses->rounds = AES128_ROUNDS;
 		break;
@@ -474,6 +474,6 @@ aesni_cipher_setup_common(struct aesni_session *ses,
 		    ses->rounds);
 
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
-		aesni_set_enckey(key + keylen / 8, ses->xts_schedule,
+		aesni_set_enckey(key + keylen, ses->xts_schedule,
 		    ses->rounds);
 }

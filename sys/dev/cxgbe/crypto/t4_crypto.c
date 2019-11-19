@@ -2116,7 +2116,7 @@ static bool
 ccr_aes_check_keylen(int alg, int klen)
 {
 
-	switch (klen) {
+	switch (klen * 8) {
 	case 128:
 	case 192:
 		if (alg == CRYPTO_AES_XTS)
@@ -2141,9 +2141,9 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 	unsigned int opad_present;
 
 	if (s->blkcipher.cipher_mode == SCMD_CIPH_MODE_AES_XTS)
-		kbits = klen / 2;
+		kbits = (klen / 2) * 8;
 	else
-		kbits = klen;
+		kbits = klen * 8;
 	switch (kbits) {
 	case 128:
 		ck_size = CHCR_KEYCTX_CIPHER_KEY_SIZE_128;
@@ -2158,7 +2158,7 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 		panic("should not get here");
 	}
 
-	s->blkcipher.key_len = klen / 8;
+	s->blkcipher.key_len = klen;
 	memcpy(s->blkcipher.enckey, key, s->blkcipher.key_len);
 	switch (s->blkcipher.cipher_mode) {
 	case SCMD_CIPH_MODE_AES_CBC:

@@ -511,7 +511,7 @@ glxsb_crypto_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_CIPHER:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_CBC:
-			if (csp->csp_cipher_klen != 128)
+			if (csp->csp_cipher_klen * 8 != 128)
 				return (EINVAL);
 			break;
 		default:
@@ -532,10 +532,10 @@ glxsb_crypto_newsession(device_t dev, crypto_session_t cses,
 	int error;
 
 	ses = crypto_get_driver_session(cses);
-	ses->ses_klen = csp->csp_cipher_klen;
 
 	/* Copy the key (Geode LX wants the primary key only) */
-	bcopy(csp->csp_cipher_key, ses->ses_key, sizeof(ses->ses_key));
+	if (csp->csp_cipher_key != NULL)
+		bcopy(csp->csp_cipher_key, ses->ses_key, sizeof(ses->ses_key));
 
 	if (csp->csp_auth_alg != 0) {
 		error = glxsb_hash_setup(ses, csp);
@@ -628,7 +628,7 @@ static int
 glxsb_crypto_encdec(struct cryptop *crp, struct glxsb_session *ses,
     struct glxsb_softc *sc)
 {
-	char *op_src, *op_dst;
+	char *key, *op_src, *op_dst;
 	uint32_t op_psrc, op_pdst;
 	uint8_t op_iv[SB_AES_BLOCK_SIZE];
 	int error;
@@ -669,6 +669,11 @@ glxsb_crypto_encdec(struct cryptop *crp, struct glxsb_session *ses,
 	offset = 0;
 	tlen = crp->crp_payload_length;
 
+	if (crp->crp_cipher_key != NULL)
+		key = crp->crp_cipher_key;
+	else
+		key = ses->ses_key;
+
 	/* Process the data in GLXSB_MAX_AES_LEN chunks */
 	while (tlen > 0) {
 		len = (tlen > GLXSB_MAX_AES_LEN) ? GLXSB_MAX_AES_LEN : tlen;
@@ -677,8 +682,8 @@ glxsb_crypto_encdec(struct cryptop *crp, struct glxsb_session *ses,
 
 		glxsb_dma_pre_op(sc, &sc->sc_dma);
 
-		error = glxsb_aes(sc, control, op_psrc, op_pdst, ses->ses_key,
-		    len, op_iv);
+		error = glxsb_aes(sc, control, op_psrc, op_pdst, key, len,
+		    op_iv);
 
 		glxsb_dma_post_op(sc, &sc->sc_dma);
 		if (error != 0)

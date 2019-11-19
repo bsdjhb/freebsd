@@ -106,8 +106,8 @@ padlock_cipher_key_setup(struct padlock_session *ses, const void *key, int klen)
 	cw = &ses->ses_cw;
 	if (cw->cw_key_generation == PADLOCK_KEY_GENERATION_SW) {
 		/* Build expanded keys for both directions */
-		rijndaelKeySetupEnc(ses->ses_ekey, key, klen);
-		rijndaelKeySetupDec(ses->ses_dkey, key, klen);
+		rijndaelKeySetupEnc(ses->ses_ekey, key, klen * 8);
+		rijndaelKeySetupDec(ses->ses_dkey, key, klen * 8);
 		for (i = 0; i < 4 * (RIJNDAEL_MAXNR + 1); i++) {
 			ses->ses_ekey[i] = ntohl(ses->ses_ekey[i]);
 			ses->ses_dkey[i] = ntohl(ses->ses_dkey[i]);
@@ -124,8 +124,8 @@ padlock_cipher_setup(struct padlock_session *ses,
 {
 	union padlock_cw *cw;
 
-	if (csp->csp_cipher_klen != 128 && csp->csp_cipher_klen != 192 &&
-	    csp->csp_cipher_klen != 256) {
+	if (csp->csp_cipher_klen != 16 && csp->csp_cipher_klen != 25 &&
+	    csp->csp_cipher_klen != 32) {
 		return (EINVAL);
 	}
 
@@ -134,7 +134,7 @@ padlock_cipher_setup(struct padlock_session *ses,
 	cw->cw_algorithm_type = PADLOCK_ALGORITHM_TYPE_AES;
 	cw->cw_key_generation = PADLOCK_KEY_GENERATION_SW;
 	cw->cw_intermediate = 0;
-	switch (csp->csp_cipher_klen) {
+	switch (csp->csp_cipher_klen * 8) {
 	case 128:
 		cw->cw_round_count = PADLOCK_ROUND_COUNT_AES128;
 		cw->cw_key_size = PADLOCK_KEY_SIZE_128;

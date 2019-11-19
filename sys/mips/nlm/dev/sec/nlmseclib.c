@@ -186,7 +186,7 @@ nlm_crypto_do_cipher(struct xlp_sec_softc *sc, struct xlp_sec_command *cmd,
 	}
 	nlm_crypto_fill_pkt_ctrl(cmd->ctrlp, 0, NLM_HASH_BYPASS, 0,
 	    cmd->cipheralg, cmd->ciphermode, cipkey,
-	    (csp->csp_cipher_klen >> 3), NULL, 0);
+	    csp->csp_cipher_klen, NULL, 0);
 
 	nlm_crypto_fill_cipher_pkt_param(cmd->ctrlp, cmd->paramp,
 	    CRYPTO_OP_IS_ENCRYPT(cmd->crp->crp_op) ? 1 : 0, cmd->ivoff,
@@ -210,7 +210,7 @@ nlm_crypto_do_digest(struct xlp_sec_softc *sc, struct xlp_sec_command *cmd,
 		key = csp->csp_auth_key;
 	nlm_crypto_fill_pkt_ctrl(cmd->ctrlp, csp->csp_auth_klen ? 1 : 0,
 	    cmd->hashalg, cmd->hashmode, NLM_CIPHER_BYPASS, 0,
-	    NULL, 0, key, csp->csp_auth_klen >> 3);
+	    NULL, 0, key, csp->csp_auth_klen);
 
 	nlm_crypto_fill_auth_pkt_param(cmd->ctrlp, cmd->paramp,
 	    cmd->hashoff, cmd->hashlen, cmd->hmacpad,
@@ -253,8 +253,8 @@ nlm_crypto_do_cipher_digest(struct xlp_sec_softc *sc,
 	}
 	nlm_crypto_fill_pkt_ctrl(cmd->ctrlp, csp->csp_auth_klen ? 1 : 0,
 	    cmd->hashalg, cmd->hashmode, cmd->cipheralg, cmd->ciphermode,
-	    cipkey, (csp->csp_cipher_klen >> 3),
-	    authkey, (csp->csp_auth_klen >> 3));
+	    cipkey, csp->csp_cipher_klen,
+	    authkey, csp->csp_auth_klen);
 
 	nlm_crypto_fill_cipher_auth_pkt_param(cmd->ctrlp, cmd->paramp,
 	    CRYPTO_OP_IS_ENCRYPT(cmd->crp->crp_op) ? 1 : 0, cmd->hashsrc,

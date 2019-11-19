@@ -93,7 +93,7 @@ aes_set_key(struct krb5_key_state *ks, const void *in)
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_mode = CSP_MODE_DIGEST;
 	csp.csp_auth_alg = CRYPTO_SHA1_HMAC;
-	csp.csp_auth_klen = ks->ks_class->ec_keybits;
+	csp.csp_auth_klen = ks->ks_class->ec_keybits / 8;
 	csp.csp_auth_mlen = 12;
 	csp.csp_auth_key = ks->ks_key;
 	crypto_newsession(&as->as_session_sha1, &csp,
@@ -102,7 +102,7 @@ aes_set_key(struct krb5_key_state *ks, const void *in)
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_mode = CSP_MODE_CIPHER;
 	csp.csp_cipher_alg = CRYPTO_AES_CBC;
-	csp.csp_cipher_klen = ks->ks_class->ec_keybits;
+	csp.csp_cipher_klen = ks->ks_class->ec_keybits / 8;
 	csp.csp_cipher_key = ks->ks_key;
 	csp.csp_ivlen = 16;
 	crypto_newsession(&as->as_session_aes, &csp,

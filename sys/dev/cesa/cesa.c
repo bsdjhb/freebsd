@@ -478,12 +478,12 @@ cesa_prep_aes_key(struct cesa_session *cs,
 	uint32_t *dkey;
 	int i;
 
-	rijndaelKeySetupEnc(ek, cs->cs_key, csp->csp_cipher_klen);
+	rijndaelKeySetupEnc(ek, cs->cs_key, csp->csp_cipher_klen * 8);
 
 	cs->cs_config &= ~CESA_CSH_AES_KLEN_MASK;
 	dkey = (uint32_t *)cs->cs_aes_dkey;
 
-	switch (csp->csp_cipher_klen / 8) {
+	switch (csp->csp_cipher_klen) {
 	case 16:
 		cs->cs_config |= CESA_CSH_AES_KLEN_128;
 		for (i = 0; i < 4; i++)
@@ -816,10 +816,10 @@ cesa_create_chain(struct cesa_softc *sc,
 		if (csp->csp_cipher_alg == CRYPTO_AES_CBC &&
 		    !CRYPTO_OP_IS_ENCRYPT(cr->cr_crp->crp_op))
 			memcpy(cr->cr_csd->csd_key, cr->cr_cs->cs_aes_dkey,
-			    csp->csp_cipher_klen / 8);
+			    csp->csp_cipher_klen);
 		else
 			memcpy(cr->cr_csd->csd_key, cr->cr_cs->cs_key,
-			    csp->csp_cipher_klen / 8);
+			    csp->csp_cipher_klen);
 	}
 
 	if (csp->csp_auth_klen != 0) {
@@ -1615,7 +1615,7 @@ cesa_cipher_supported(const struct crypto_session_params *csp)
 		return (false);
 	}
 
-	if (csp->csp_cipher_klen / 8 > CESA_MAX_KEY_LEN)
+	if (csp->csp_cipher_klen > CESA_MAX_KEY_LEN)
 		return (false);
 
 	return (true);
@@ -1643,7 +1643,7 @@ cesa_auth_supported(struct cesa_softc *sc,
 		return (false);
 	}
 
-	if (csp->csp_auth_klen / 8 > CESA_MAX_MKEY_LEN)
+	if (csp->csp_auth_klen > CESA_MAX_MKEY_LEN)
 		return (false);
 
 	hashlen = crypto_auth_hash(csp)->hashsize;
@@ -1767,7 +1767,7 @@ cesa_newsession(device_t dev, crypto_session_t cses,
 	/* Save cipher key */
 	if (csp->csp_cipher_key != NULL) {
 		memcpy(cs->cs_key, csp->csp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_klen);
 		if (csp->csp_cipher_alg == CRYPTO_AES_CBC)
 			error = cesa_prep_aes_key(cs, csp);
 	}
@@ -1847,7 +1847,7 @@ cesa_process(device_t dev, struct cryptop *crp, int hint)
 
 	if (crp->crp_cipher_key != NULL) {
 		memcpy(cs->cs_key, crp->crp_cipher_key,
-		    csp->csp_cipher_klen / 8);
+		    csp->csp_cipher_klen);
 		if (csp->csp_cipher_alg == CRYPTO_AES_CBC)
 			error = cesa_prep_aes_key(cs, csp);
 	}

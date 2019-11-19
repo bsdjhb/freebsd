@@ -242,7 +242,8 @@ esp_init(struct secasvar *sav, struct xformsw *xsp)
 	/* Initialize crypto session. */
 	csp.csp_cipher_alg = sav->tdb_encalgxform->type;
 	csp.csp_cipher_key = sav->key_enc->key_data;
-	csp.csp_cipher_klen = _KEYBITS(sav->key_enc) - SAV_ISCTRORGCM(sav) * 32;
+	csp.csp_cipher_klen = _KEYBITS(sav->key_enc) / 8 -
+	    SAV_ISCTRORGCM(sav) * 4;
 	csp.csp_ivlen = txform->ivsize;
 
 	error = crypto_newsession(&sav->tdb_cryptoid, &csp, V_crypto_support);

@@ -125,16 +125,16 @@ cryptocteon_cipher_supported(const struct crypto_session_params *csp)
 	case CRYPTO_3DES_CBC:
 		if (csp->csp_ivlen != 8)
 			return (false);
-		if (csp->csp_cipher_klen != 8 * 8 &&
-		    csp->csp_cipher_klen != 24 * 8)
+		if (csp->csp_cipher_klen != 8 &&
+		    csp->csp_cipher_klen != 24)
 			return (false);
 		break;
 	case CRYPTO_AES_CBC:
 		if (csp->csp_ivlen != 16)
 			return (false);
-		if (csp->csp_cipher_klen != 16 * 8 &&
-		    csp->csp_cipher_klen != 24 * 8 &&
-		    csp->csp_cipher_klen != 32 * 8)
+		if (csp->csp_cipher_klen != 16 &&
+		    csp->csp_cipher_klen != 24 &&
+		    csp->csp_cipher_klen != 32)
 			return (false);
 		break;
 	default:
@@ -194,7 +194,7 @@ cryptocteon_newsession(device_t dev, crypto_session_t cses,
 
 	ocd = crypto_get_driver_session(cses);
 
-	ocd->octo_encklen = csp->csp_cipher_klen / 8;
+	ocd->octo_encklen = csp->csp_cipher_klen;
 	if (csp->csp_cipher_key != NULL)
 		memcpy(ocd->octo_enckey, csp->csp_cipher_key,
 		    ocd->octo_encklen);
