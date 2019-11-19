@@ -2282,6 +2282,8 @@ ccr_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 	unsigned int cipher_mode;
 
+	if (csp->csp_flags != 0)
+		return (EINVAL);
 	switch (csp->csp_mode) {
 	case CSP_MODE_DIGEST:
 		if (!ccr_auth_supported(csp))

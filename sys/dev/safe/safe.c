@@ -726,6 +726,8 @@ safe_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 	struct safe_softc *sc = device_get_softc(dev);
 
+	if (csp->csp_flags != 0)
+		return (EINVAL);
 	switch (csp->csp_mode) {
 	case CSP_MODE_DIGEST:
 		if (!safe_auth_supported(sc, csp))

@@ -148,6 +148,8 @@ static int
 cryptocteon_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 
+	if (csp->csp_flags != 0)
+		return (EINVAL);
 	switch (csp->csp_mode) {
 	case CSP_MODE_DIGEST:
 		if (!cryptocteon_auth_supported(csp))
@@ -165,7 +167,6 @@ cryptocteon_probesession(device_t dev, const struct crypto_session_params *csp)
 	default:
 		return (EINVAL);
 	}
-
 	return (CRYPTODEV_PROBE_ACCEL_SOFTWARE);
 }
 

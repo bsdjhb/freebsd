@@ -485,6 +485,9 @@ static int
 glxsb_crypto_probesession(device_t dev, const struct crypto_session_params *csp)
 {
 
+	if (csp->csp_flags != 0)
+		return (EINVAL);
+
 	/*
 	 * We only support HMAC algorithms to be able to work with
 	 * ipsec(4), so if we are asked only for authentication without
