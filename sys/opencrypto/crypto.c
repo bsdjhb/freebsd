@@ -780,7 +780,7 @@ check_csp(const struct crypto_session_params *csp)
 	struct auth_hash *axf;
 
 	/* Mode-independent checks. */
-	if ((csp->csp_flags & ~CSP_IV_VALID) != 0)
+	if (csp->csp_flags != 0)
 		return (false);
 	if (csp->csp_ivlen < 0 || csp->csp_cipher_klen < 0 ||
 	    csp->csp_auth_klen < 0 || csp->csp_auth_mlen < 0)

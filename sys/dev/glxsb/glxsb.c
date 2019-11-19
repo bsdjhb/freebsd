@@ -207,7 +207,7 @@ static int  glxsb_crypto_newsession(device_t, crypto_session_t,
 	const struct crypto_session_params *);
 static void glxsb_crypto_freesession(device_t, crypto_session_t);
 static int  glxsb_aes(struct glxsb_softc *, uint32_t, uint32_t,
-	uint32_t, void *, int, void *);
+	uint32_t, const void *, int, const void *);
 
 static int  glxsb_crypto_encdec(struct cryptop *, struct glxsb_session *,
 	struct glxsb_softc *);
@@ -559,7 +559,7 @@ glxsb_crypto_freesession(device_t dev, crypto_session_t cses)
 
 static int
 glxsb_aes(struct glxsb_softc *sc, uint32_t control, uint32_t psrc,
-    uint32_t pdst, void *key, int len, void *iv)
+    uint32_t pdst, const void *key, int len, const void *iv)
 {
 	uint32_t status;
 	int i;
@@ -628,7 +628,8 @@ static int
 glxsb_crypto_encdec(struct cryptop *crp, struct glxsb_session *ses,
     struct glxsb_softc *sc)
 {
-	char *key, *op_src, *op_dst;
+	char *op_src, *op_dst;
+	const void *key;
 	uint32_t op_psrc, op_pdst;
 	uint8_t op_iv[SB_AES_BLOCK_SIZE];
 	int error;
