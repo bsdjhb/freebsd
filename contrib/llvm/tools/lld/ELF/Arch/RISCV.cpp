@@ -105,7 +105,8 @@ static uint32_t getEFlags(InputFile *f) {
 }
 
 uint32_t RISCV::calcEFlags() const {
-  assert(!objectFiles.empty());
+  if (objectFiles.empty())
+    return 0;
 
   uint32_t target = getEFlags(objectFiles.front());
 
