@@ -1080,7 +1080,9 @@ is_tls_sock(struct socket *so, struct adapter *sc)
 	struct inpcb *inp = sotoinpcb(so);
 	int i, rc;
 
-	/* XXX: Eventually add a SO_WANT_TLS socket option perhaps? */
+	if (so_options_get(so) & SO_WANT_KTLS)
+		return (1);
+
 	rc = 0;
 	ADAPTER_LOCK(sc);
 	for (i = 0; i < sc->tt.num_tls_rx_ports; i++) {
