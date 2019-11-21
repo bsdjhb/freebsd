@@ -70,8 +70,8 @@ extern struct sysent linux_sysent[LINUX_SYS_MAXSYSCALL];
 SET_DECLARE(linux_ioctl_handler_set, struct linux_ioctl_handler);
 
 static int	linux_copyout_strings(struct image_params *imgp,
-		    register_t **stack_base);
-static int	linux_elf_fixup(register_t **stack_base,
+		    uintptr_t *stack_base);
+static int	linux_elf_fixup(uintptr_t *stack_base,
 		    struct image_params *iparams);
 static bool	linux_trans_osrel(const Elf_Note *note, int32_t *osrel);
 static void	linux_vdso_install(const void *param);
@@ -79,7 +79,7 @@ static void	linux_vdso_deinstall(const void *param);
 static void	linux_set_syscall_retval(struct thread *td, int error);
 static int	linux_fetch_syscall_args(struct thread *td);
 static void	linux_exec_setregs(struct thread *td, struct image_params *imgp,
-		    u_long stack);
+		    uintptr_t stack);
 static int	linux_vsyscall(struct thread *td);
 
 /* DTrace init */
@@ -143,7 +143,7 @@ linux_set_syscall_retval(struct thread *td, int error)
 }
 
 static int
-linux_copyout_auxargs(struct image_params *imgp, u_long *base)
+linux_copyout_auxargs(struct image_params *imgp, uintptr_t *base)
 {
 	Elf_Auxargs *args;
 	Elf_Auxinfo *argarray, *pos;
@@ -198,7 +198,7 @@ linux_copyout_auxargs(struct image_params *imgp, u_long *base)
 }
 
 static int
-linux_elf_fixup(register_t **stack_base, struct image_params *imgp)
+linux_elf_fixup(uintptr_t *stack_base, struct image_params *imgp)
 {
 
 	LIN_SDT_PROBE0(sysvec, linux_elf_fixup, todo);
@@ -213,7 +213,7 @@ linux_elf_fixup(register_t **stack_base, struct image_params *imgp)
  * LINUXTODO: deduplicate against other linuxulator archs
  */
 static int
-linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
+linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 {
 	char **vectp;
 	char *stringp, *destp;
@@ -256,7 +256,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	vectp = (char **)destp;
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
-		    (u_long *)&vectp);
+		    (uintptr_t *)&vectp);
 		if (error != 0)
 			return (error);
 	}
@@ -269,7 +269,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	vectp = (char **)STACKALIGN(vectp);
 
 	/* vectp also becomes our initial stack base. */
-	*stack_base = (register_t *)vectp;
+	*stack_base = (uintptr_t)vectp;
 
 	stringp = imgp->args->begin_argv;
 	argc = imgp->args->argc;
@@ -325,7 +325,8 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
  * Reset registers to default values on exec.
  */
 static void
-linux_exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+linux_exec_setregs(struct thread *td, struct image_params *imgp,
+    uintptr_t stack)
 {
 	struct trapframe *regs = td->td_frame;
 

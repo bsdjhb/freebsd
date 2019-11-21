@@ -88,15 +88,15 @@ extern struct sysent linux_sysent[LINUX_SYS_MAXSYSCALL];
 
 SET_DECLARE(linux_ioctl_handler_set, struct linux_ioctl_handler);
 
-static int	linux_fixup(register_t **stack_base,
+static int	linux_fixup(uintptr_t *stack_base,
 		    struct image_params *iparams);
-static int	linux_fixup_elf(register_t **stack_base,
+static int	linux_fixup_elf(uintptr_t *stack_base,
 		    struct image_params *iparams);
 static void     linux_sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask);
 static void	linux_exec_setregs(struct thread *td,
-		    struct image_params *imgp, u_long stack);
+		    struct image_params *imgp, uintptr_t stack);
 static int	linux_copyout_strings(struct image_params *imgp,
-		    register_t **stack_base);
+		    uintptr_t *stack_base);
 static bool	linux_trans_osrel(const Elf_Note *note, int32_t *osrel);
 static void	linux_vdso_install(void *param);
 static void	linux_vdso_deinstall(void *param);
@@ -174,23 +174,25 @@ linux_translate_traps(int signal, int trap_code)
 }
 
 static int
-linux_fixup(register_t **stack_base, struct image_params *imgp)
+linux_fixup(uintptr_t *stack_base, struct image_params *imgp)
 {
-	register_t *argv, *envp;
+	register_t *base, *argv, *envp;
 
-	argv = *stack_base;
-	envp = *stack_base + (imgp->args->argc + 1);
-	(*stack_base)--;
-	suword(*stack_base, (intptr_t)(void *)envp);
-	(*stack_base)--;
-	suword(*stack_base, (intptr_t)(void *)argv);
-	(*stack_base)--;
-	suword(*stack_base, imgp->args->argc);
+	base = (register_t *)*stack_base;
+	argv = base;
+	envp = base + (imgp->args->argc + 1);
+	base--;
+	suword(base, (intptr_t)envp);
+	base--;
+	suword(base, (intptr_t)argv);
+	base--;
+	suword(base, imgp->args->argc);
+	*stack_base = (uintptr_t)base;
 	return (0);
 }
 
 static int
-linux_copyout_auxargs(struct image_params *imgp, u_long *base)
+linux_copyout_auxargs(struct image_params *imgp, uintptr_t *base)
 {
 	struct proc *p;
 	Elf32_Auxargs *args;
@@ -255,12 +257,15 @@ linux_copyout_auxargs(struct image_params *imgp, u_long *base)
 }
 
 static int
-linux_fixup_elf(register_t **stack_base, struct image_params *imgp)
+linux_fixup_elf(uintptr_t *stack_base, struct image_params *imgp)
 {
+	register_t *base;
 
-	(*stack_base)--;
-	if (suword(*stack_base, (register_t)imgp->args->argc) == -1)
+	base = (register_t *)*stack_base;
+	base--;
+	if (suword(base, (register_t)imgp->args->argc) == -1)
 		return (EFAULT);
+	*stack_base = (uintptr_t)base;
 	return (0);
 }
 
@@ -268,7 +273,7 @@ linux_fixup_elf(register_t **stack_base, struct image_params *imgp)
  * Copied from kern/kern_exec.c
  */
 static int
-linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
+linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 {
 	int argc, envc, error;
 	char **vectp;
@@ -317,7 +322,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	vectp = (char **)destp;
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
-		    (u_long *)&vectp);
+		    (uintptr_t *)&vectp);
 		if (error != 0)
 			return (error);
 	}
@@ -329,7 +334,7 @@ linux_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	vectp -= imgp->args->argc + 1 + imgp->args->envc + 1;
 
 	/* vectp also becomes our initial stack base. */
-	*stack_base = (register_t *)vectp;
+	*stack_base = (uintptr_t)vectp;
 
 	stringp = imgp->args->begin_argv;
 	argc = imgp->args->argc;
@@ -781,7 +786,8 @@ linux_fetch_syscall_args(struct thread *td)
  * override the exec_setregs default(s) here.
  */
 static void
-linux_exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+linux_exec_setregs(struct thread *td, struct image_params *imgp,
+    uintptr_t stack)
 {
 	struct pcb *pcb = td->td_pcb;
 

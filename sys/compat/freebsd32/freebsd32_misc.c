@@ -3120,7 +3120,7 @@ syscall32_helper_unregister(struct syscall_helper_data *sd)
 }
 
 int
-freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
+freebsd32_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 {
 	int argc, envc, i;
 	u_int32_t *vectp;
@@ -3200,11 +3200,11 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 
 	vectp = (uint32_t *)destp;
 	if (imgp->sysent->sv_stackgap != NULL)
-		imgp->sysent->sv_stackgap(imgp, (u_long *)&vectp);
+		imgp->sysent->sv_stackgap(imgp, (uintptr_t *)&vectp);
 
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
-		    (u_long *)&vectp);
+		    (uintptr_t *)&vectp);
 		if (error != 0)
 			return (error);
 	}
@@ -3218,7 +3218,7 @@ freebsd32_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	/*
 	 * vectp also becomes our initial stack base
 	 */
-	*stack_base = (register_t *)vectp;
+	*stack_base = (uintptr_t)vectp;
 
 	stringp = imgp->args->begin_argv;
 	argc = imgp->args->argc;

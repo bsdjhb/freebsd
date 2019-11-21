@@ -360,7 +360,7 @@ do_execve(struct thread *td, struct image_args *args, struct mac *mac_p)
 	struct nameidata nd;
 	struct ucred *oldcred;
 	struct uidinfo *euip = NULL;
-	register_t *stack_base;
+	uintptr_t stack_base;
 	int error, i;
 	struct image_params image_params, *imgp;
 	struct vattr attr;
@@ -865,7 +865,7 @@ interpret:
 #endif
 
 	/* Set values passed into the program in registers. */
-	(*p->p_sysent->sv_setregs)(td, imgp, (u_long)(uintptr_t)stack_base);
+	(*p->p_sysent->sv_setregs)(td, imgp, stack_base);
 
 	vfs_mark_atime(imgp->vp, td->td_ucred);
 
@@ -1566,7 +1566,7 @@ exec_args_get_begin_envv(struct image_args *args)
  * as the initial stack pointer.
  */
 int
-exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
+exec_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 {
 	int argc, envc;
 	char **vectp;
@@ -1647,11 +1647,11 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 
 	vectp = (char **)destp;
 	if (imgp->sysent->sv_stackgap != NULL)
-		imgp->sysent->sv_stackgap(imgp, (u_long *)&vectp);
+		imgp->sysent->sv_stackgap(imgp, (uintptr_t *)&vectp);
 
 	if (imgp->auxargs) {
 		error = imgp->sysent->sv_copyout_auxargs(imgp,
-		    (u_long *)&vectp);
+		    (uintptr_t *)&vectp);
 		if (error != 0)
 			return (error);
 	}
@@ -1665,7 +1665,7 @@ exec_copyout_strings(struct image_params *imgp, register_t **stack_base)
 	/*
 	 * vectp also becomes our initial stack base
 	 */
-	*stack_base = (register_t *)vectp;
+	*stack_base = (uintptr_t)vectp;
 
 	stringp = imgp->args->begin_argv;
 	argc = imgp->args->argc;
