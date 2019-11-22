@@ -64,7 +64,7 @@ cloudabi64_fixup_tcb(uintptr_t *stack_base, struct image_params *imgp)
 	 * containing a pointer to the TCB. %fs base will point to this.
 	 */
 	tcbptr = (register_t)*stack_base;
-	*stack_base -= sizeof(register_t);
+	*stack_base -= sizeof(tcbptr);
 	return (copyout(&tcbptr, (void *)*stack_base, sizeof(tcbptr)));
 }
 
