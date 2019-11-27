@@ -277,7 +277,8 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 {
 	int argc, envc, error;
 	char **vectp;
-	char *stringp, *destp;
+	char *stringp;
+	uintptr_t destp, ustringp;
 	struct ps_strings *arginfo;
 	char canary[LINUX_AT_RANDOM_LEN];
 	size_t execpath_len;
@@ -290,42 +291,48 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 	else
 		execpath_len = 0;
 	arginfo = (struct ps_strings *)p->p_sysent->sv_psstrings;
-	destp = (caddr_t)arginfo - SPARE_USRSPACE - linux_szplatform -
-	    roundup(sizeof(canary), sizeof(char *)) -
-	    roundup(execpath_len, sizeof(char *)) -
-	    roundup(ARG_MAX - imgp->args->stringspace, sizeof(char *));
+	destp = (uintptr_t)arginfo;
 
 	/* Install LINUX_PLATFORM. */
-	error = copyout(linux_kplatform, ((caddr_t)arginfo - linux_szplatform),
-	    linux_szplatform);
+	destp -= linux_szplatform;
+	destp = rounddown2(destp, sizeof(void *));
+	error = copyout(linux_kplatform, (void *)destp, linux_szplatform);
 	if (error != 0)
 		return (error);
 
 	if (execpath_len != 0) {
-		imgp->execpathp = (uintptr_t)arginfo -
-		linux_szplatform - execpath_len;
-		error = copyout(imgp->execpath, (void *)imgp->execpathp,
-		    execpath_len);
+		destp -= execpath_len;
+		destp = rounddown2(destp, sizeof(void *));
+		imgp->execpathp = destp;
+		error = copyout(imgp->execpath, (void *)destp, execpath_len);
 		if (error != 0)
 			return (error);
 	}
 
 	/* Prepare the canary for SSP. */
 	arc4rand(canary, sizeof(canary), 0);
-	imgp->canary = (uintptr_t)arginfo - linux_szplatform -
-	    roundup(execpath_len, sizeof(char *)) -
-	    roundup(sizeof(canary), sizeof(char *));
-	error = copyout(canary, (void *)imgp->canary, sizeof(canary));
+	destp -= roundup(sizeof(canary), sizeof(void *));
+	imgp->canary = destp;
+	error = copyout(canary, (void *)destp, sizeof(canary));
 	if (error != 0)
 		return (error);
 
-	vectp = (char **)destp;
+
+	/* XXX: Is this really needed? */
+	destp -= SPARE_USRSPACE;
+
+	/* Allocate room for the argument and environment strings. */
+	destp -= ARG_MAX - imgp->args->stringspace;
+	destp = rounddown2(destp, sizeof(void *));
+	ustringp = destp;
+
 	if (imgp->auxargs) {
-		error = imgp->sysent->sv_copyout_auxargs(imgp,
-		    (uintptr_t *)&vectp);
+		error = imgp->sysent->sv_copyout_auxargs(imgp, &destp);
 		if (error != 0)
 			return (error);
 	}
+
+	vectp = (char **)destp;
 
 	/*
 	 * Allocate room for the argv[] and env vectors including the
@@ -341,7 +348,8 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 	envc = imgp->args->envc;
 
 	/* Copy out strings - arguments and environment. */
-	error = copyout(stringp, destp, ARG_MAX - imgp->args->stringspace);
+	error = copyout(stringp, (void *)ustringp,
+	    ARG_MAX - imgp->args->stringspace);
 	if (error != 0)
 		return (error);
 
@@ -352,11 +360,11 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 
 	/* Fill in argument portion of vector table. */
 	for (; argc > 0; --argc) {
-		if (suword(vectp++, (long)(intptr_t)destp) != 0)
+		if (suword(vectp++, ustringp) != 0)
 			return (EFAULT);
 		while (*stringp++ != 0)
-			destp++;
-		destp++;
+			ustringp++;
+		ustringp++;
 	}
 
 	/* A null vector table pointer separates the argp's from the envp's. */
@@ -369,11 +377,11 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 
 	/* Fill in environment portion of vector table. */
 	for (; envc > 0; --envc) {
-		if (suword(vectp++, (long)(intptr_t)destp) != 0)
+		if (suword(vectp++, ustringp) != 0)
 			return (EFAULT);
 		while (*stringp++ != 0)
-			destp++;
-		destp++;
+			ustringp++;
+		ustringp++;
 	}
 
 	/* The end of the vector table is a null pointer. */
