@@ -317,10 +317,6 @@ linux_copyout_strings(struct image_params *imgp, uintptr_t *stack_base)
 	if (error != 0)
 		return (error);
 
-
-	/* XXX: Is this really needed? */
-	destp -= SPARE_USRSPACE;
-
 	/* Allocate room for the argument and environment strings. */
 	destp -= ARG_MAX - imgp->args->stringspace;
 	destp = rounddown2(destp, sizeof(void *));
