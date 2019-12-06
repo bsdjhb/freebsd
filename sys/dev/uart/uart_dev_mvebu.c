@@ -320,6 +320,7 @@ struct uart_class uart_mvebu_class = {
 	.uc_rshift = 0,
 	.uc_riowidth = 4
 };
+UART_CLASS(uart_mvebu_class);
 
 static struct ofw_compat_data compat_data[] = {
 	{"marvell,armada-3700-uart",	(uintptr_t)&uart_mvebu_class},

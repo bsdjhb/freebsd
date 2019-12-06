@@ -396,6 +396,7 @@ struct uart_class uart_sab82532_class = {
 	.uc_rclk = DEFAULT_RCLK,
 	.uc_rshift = 0
 };
+UART_CLASS(uart_sab82532_class);
 
 #define	SIGCHG(c, i, s, d)				\
 	if (c) {					\

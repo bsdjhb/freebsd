@@ -101,12 +101,12 @@ uart_setreg(struct uart_bas *bas, int reg, int value)
  */
 struct uart_class;
 
-extern struct uart_class uart_ns8250_class __attribute__((weak));
-extern struct uart_class uart_quicc_class __attribute__((weak));
-extern struct uart_class uart_s3c2410_class __attribute__((weak));
-extern struct uart_class uart_sab82532_class __attribute__((weak));
-extern struct uart_class uart_sbbc_class __attribute__((weak));
-extern struct uart_class uart_z8530_class __attribute__((weak));
+extern struct uart_class uart_ns8250_class;
+extern struct uart_class uart_quicc_class;
+extern struct uart_class uart_s3c2410_class;
+extern struct uart_class uart_sab82532_class;
+extern struct uart_class uart_sbbc_class;
+extern struct uart_class uart_z8530_class;
 
 /*
  * Device flags.

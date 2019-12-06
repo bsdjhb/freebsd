@@ -237,31 +237,31 @@ uart_add_sysdev(struct uart_devinfo *di)
 const char *
 uart_getname(struct uart_class *uc)
 {
-	return ((uc != NULL) ? uc->name : NULL);
+	return (uc->name);
 }
 
 struct uart_ops *
 uart_getops(struct uart_class *uc)
 {
-	return ((uc != NULL) ? uc->uc_ops : NULL);
+	return (uc->uc_ops);
 }
 
 int
 uart_getrange(struct uart_class *uc)
 {
-	return ((uc != NULL) ? uc->uc_range : 0);
+	return (uc->uc_range);
 }
 
 u_int
 uart_getregshift(struct uart_class *uc)
 {
-	return ((uc != NULL) ? uc->uc_rshift : 0);
+	return (uc->uc_rshift);
 }
 
 u_int
 uart_getregiowidth(struct uart_class *uc)
 {
-	return ((uc != NULL) ? uc->uc_riowidth : 0);
+	return (uc->uc_riowidth);
 }
 
 /*
@@ -500,13 +500,6 @@ uart_bus_probe(device_t dev, int regshft, int regiowidth, int rclk, int rid, int
 	int error;
 
 	sc = device_get_softc(dev);
-
-	/*
-	 * All uart_class references are weak. Check that the needed
-	 * class has been compiled-in. Fail if not.
-	 */
-	if (sc->sc_class == NULL)
-		return (ENXIO);
 
 	/*
 	 * Initialize the instance. Note that the instance (=softc) does

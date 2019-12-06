@@ -58,8 +58,6 @@ uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 	unsigned int i, ivar;
 
 	class = &uart_ns8250_class;
-	if (class == NULL)
-		return (ENXIO);
 
 	/* Check the environment. */
 	if (uart_getenv(devtype, di, class) == 0)

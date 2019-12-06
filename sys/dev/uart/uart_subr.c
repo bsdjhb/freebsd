@@ -51,14 +51,7 @@ __FBSDID("$FreeBSD$");
 #define	UART_TAG_XO	9
 #define	UART_TAG_BD	10
 
-static struct uart_class *uart_classes[] = {
-	&uart_ns8250_class,
-	&uart_sab82532_class,
-	&uart_z8530_class,
-#if defined(__arm__)
-	&uart_s3c2410_class,
-#endif
-};
+SET_DECLARE(uart_classes_set, struct uart_class);
 
 static bus_addr_t
 uart_parse_addr(const char **p)
@@ -69,20 +62,16 @@ uart_parse_addr(const char **p)
 static struct uart_class *
 uart_parse_class(struct uart_class *class, const char **p)
 {
-	struct uart_class *uc;
+	struct uart_class **uc;
 	const char *nm;
 	size_t len;
-	u_int i;
 
-	for (i = 0; i < nitems(uart_classes); i++) {
-		uc = uart_classes[i];
-		nm = uart_getname(uc);
-		if (nm == NULL || *nm == '\0')
-			continue;
+	SET_FOREACH(uc, uart_classes_set) {
+		nm = uart_getname(*uc);
 		len = strlen(nm);
 		if (strncmp(nm, *p, len) == 0) {
 			*p += len;
-			return (uc);
+			return (*uc);
 		}
 	}
 	return (class);
@@ -206,13 +195,6 @@ uart_getenv(int devtype, struct uart_devinfo *di, struct uart_class *class)
 	char *cp;
 	bus_addr_t addr = ~0U;
 	int error;
-
-	/*
-	 * All uart_class references are weak. Make sure the default
-	 * device class has been compiled-in.
-	 */
-	if (class == NULL)
-		return (ENXIO);
 
 	/*
 	 * Check the environment variables "hw.uart.console" and

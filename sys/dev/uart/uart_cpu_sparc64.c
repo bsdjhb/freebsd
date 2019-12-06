@@ -273,8 +273,6 @@ uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 		class = &uart_sbbc_class;
 		di->bas.chan = 0;
 	}
-	if (class == NULL)
-		return (ENXIO);
 
 	/* Fill in the device info. */
 	di->ops = uart_getops(class);
