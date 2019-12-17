@@ -230,3 +230,10 @@ session and crypto op parameters.
 + kill CSP_IV_VALID and update drivers to all bail for flags != 0 to
   permit adding new flags in the future
 - update crypto.9
+
++ bus_dmamap_load_crp()
+  + hifn
+  + sec (ppc)
+  + safe
+  + cesa (armv7)
+  + ubsec
