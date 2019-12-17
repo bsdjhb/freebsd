@@ -75,7 +75,7 @@ static int	sec_init(struct sec_softc *sc);
 static int	sec_alloc_dma_mem(struct sec_softc *sc,
     struct sec_dma_mem *dma_mem, bus_size_t size);
 static int	sec_desc_map_dma(struct sec_softc *sc,
-    struct sec_dma_mem *dma_mem, void *mem, bus_size_t size, int type,
+    struct sec_dma_mem *dma_mem, struct cryptop *crp, bus_size_t size,
     struct sec_desc_map_info *sdmi);
 static void	sec_free_dma_mem(struct sec_dma_mem *dma_mem);
 static void	sec_enqueue(struct sec_softc *sc);
@@ -787,14 +787,6 @@ sec_dma_map_desc_cb(void *arg, bus_dma_segment_t *segs, int nseg,
 	sdmi->sdmi_lt_last = lt;
 }
 
-static void
-sec_dma_map_desc_cb2(void *arg, bus_dma_segment_t *segs, int nseg,
-    bus_size_t size, int error)
-{
-
-	sec_dma_map_desc_cb(arg, segs, nseg, error);
-}
-
 static int
 sec_alloc_dma_mem(struct sec_softc *sc, struct sec_dma_mem *dma_mem,
     bus_size_t size)
@@ -852,22 +844,22 @@ err1:
 }
 
 static int
-sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem, void *mem,
-    bus_size_t size, int type, struct sec_desc_map_info *sdmi)
+sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem,
+    struct cryptop *crp, bus_size_t size, struct sec_desc_map_info *sdmi)
 {
 	int error;
 
 	if (dma_mem->dma_vaddr != NULL)
 		return (EBUSY);
 
-	switch (type) {
+	switch (crp->crp_buf_type) {
 	case CRYPTO_BUF_CONTIG:
 		break;
 	case CRYPTO_BUF_UIO:
 		size = SEC_FREE_LT_CNT(sc) * SEC_MAX_DMA_BLOCK_SIZE;
 		break;
 	case CRYPTO_BUF_MBUF:
-		size = m_length((struct mbuf*)mem, NULL);
+		size = m_length(crp->crp_mbuf, NULL);
 		break;
 	default:
 		return (EINVAL);
@@ -900,20 +892,8 @@ sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem, void *mem,
 		return (error);
 	}
 
-	switch (type) {
-	case CRYPTO_BUF_CONTIG:
-		error = bus_dmamap_load(dma_mem->dma_tag, dma_mem->dma_map,
-		    mem, size, sec_dma_map_desc_cb, sdmi, BUS_DMA_NOWAIT);
-		break;
-	case CRYPTO_BUF_UIO:
-		error = bus_dmamap_load_uio(dma_mem->dma_tag, dma_mem->dma_map,
-		    mem, sec_dma_map_desc_cb2, sdmi, BUS_DMA_NOWAIT);
-		break;
-	case CRYPTO_BUF_MBUF:
-		error = bus_dmamap_load_mbuf(dma_mem->dma_tag, dma_mem->dma_map,
-		    mem, sec_dma_map_desc_cb2, sdmi, BUS_DMA_NOWAIT);
-		break;
-	}
+	error = bus_dmamap_load_crp(dma_mem->dma_tag, dma_mem->dma_map, crp,
+	    sec_dma_map_desc_cb, sdmi, BUS_DMA_NOWAIT);
 
 	if (error) {
 		device_printf(sc->sc_dev, "cannot get address of the DMA"
@@ -924,7 +904,7 @@ sec_desc_map_dma(struct sec_softc *sc, struct sec_dma_mem *dma_mem, void *mem,
 	}
 
 	dma_mem->dma_is_map = 1;
-	dma_mem->dma_vaddr = mem;
+	dma_mem->dma_vaddr = crp;
 
 	return (0);
 }
@@ -1135,29 +1115,12 @@ sec_make_pointer(struct sec_softc *sc, struct sec_desc *desc,
 {
 	struct sec_desc_map_info sdmi = { sc, dsize, doffset, NULL, NULL, 0 };
 	struct sec_hw_desc_ptr *ptr;
-	void *data;
 	int error;
 
 	SEC_LOCK_ASSERT(sc, descriptors);
 
-	/* For flat memory map only requested region */
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_CONTIG:
-		data = (uint8_t *)crp->crp_buf + doffset;
-		sdmi.sdmi_offset = 0;
-		break;
-	case CRYPTO_BUF_UIO:
-		data = crp->crp_uio;
-		break;
-	case CRYPTO_BUF_MBUF:
-		data = crp->crp_mbuf;
-		break;
-	default:
-		return (EINVAL);
-	}
-
-	error = sec_desc_map_dma(sc, &(desc->sd_ptr_dmem[n]), data, dsize,
-	    crp->crp_buf_type, &sdmi);
+	error = sec_desc_map_dma(sc, &(desc->sd_ptr_dmem[n]), crp, dsize,
+	    &sdmi);
 
 	if (error)
 		return (error);

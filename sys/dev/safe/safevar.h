@@ -75,10 +75,6 @@ struct safe_dma_alloc {
  * where each is mapped for DMA.
  */
 struct safe_operand {
-	union {
-		struct mbuf *m;
-		struct uio *io;
-	} u;
 	bus_dmamap_t		map;
 	bus_size_t		mapsize;
 	int			nsegs;
@@ -109,21 +105,18 @@ struct safe_ringentry {
 
 	struct safe_operand	re_src;		/* source operand */
 	struct safe_operand	re_dst;		/* destination operand */
+	struct mbuf		*re_dst_m;
 
 	int			unused;
 	int			re_flags;
 #define	SAFE_QFLAGS_COPYOUTICV	0x2		/* copy back on completion */
 };
 
-#define	re_src_m	re_src.u.m
-#define	re_src_io	re_src.u.io
 #define	re_src_map	re_src.map
 #define	re_src_nsegs	re_src.nsegs
 #define	re_src_segs	re_src.segs
 #define	re_src_mapsize	re_src.mapsize
 
-#define	re_dst_m	re_dst.u.m
-#define	re_dst_io	re_dst.u.io
 #define	re_dst_map	re_dst.map
 #define	re_dst_nsegs	re_dst.nsegs
 #define	re_dst_segs	re_dst.segs

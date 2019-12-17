@@ -47,6 +47,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
 #include <sys/endian.h>
+#include <sys/uio.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -783,8 +784,24 @@ safe_newsession(device_t dev, crypto_session_t cses,
 	return (0);
 }
 
+static bus_size_t
+safe_crp_length(struct cryptop *crp)
+{
+
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		return (crp->crp_mbuf->m_pkthdr.len);
+	case CRYPTO_BUF_UIO:
+		return (crp->crp_uio->uio_resid);
+	case CRYPTO_BUF_CONTIG:
+		return (crp->crp_ilen);
+	default:
+		panic("bad crp buffer type");
+	}
+}
+
 static void
-safe_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, bus_size_t mapsize, int error)
+safe_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, int error)
 {
 	struct safe_operand *op = arg;
 
@@ -792,7 +809,6 @@ safe_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, bus_size_t mapsize, int
 		(u_int) mapsize, nsegs, error));
 	if (error != 0)
 		return;
-	op->mapsize = mapsize;
 	op->nsegs = nsegs;
 	bcopy(seg, op->segs, nsegs * sizeof (seg[0]));
 }
@@ -826,21 +842,6 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 	re->re_sa.sa_staterec = staterec;	/* restore */
 
 	re->re_crp = crp;
-
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		re->re_src_m = crp->crp_mbuf;
-		re->re_dst_m = crp->crp_mbuf;
-		break;
-	case CRYPTO_BUF_UIO:
-		re->re_src_io = crp->crp_uio;
-		re->re_dst_io = crp->crp_uio;
-		break;
-	default:
-		safestats.st_badflags++;
-		err = EINVAL;
-		goto errout;	/* XXX we don't handle contiguous blocks! */
-	}
 
 	sa = &re->re_sa;
 	ses = crypto_get_driver_session(crp->crp_session);
@@ -1040,30 +1041,15 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 		err = ENOMEM;
 		goto errout;
 	}
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		if (bus_dmamap_load_mbuf(sc->sc_srcdmat, re->re_src_map,
-		    re->re_src_m, safe_op_cb,
-		    &re->re_src, BUS_DMA_NOWAIT) != 0) {
-			bus_dmamap_destroy(sc->sc_srcdmat, re->re_src_map);
-			re->re_src_map = NULL;
-			safestats.st_noload++;
-			err = ENOMEM;
-			goto errout;
-		}
-		break;
-	case CRYPTO_BUF_UIO:
-		if (bus_dmamap_load_uio(sc->sc_srcdmat, re->re_src_map,
-		    re->re_src_io, safe_op_cb,
-		    &re->re_src, BUS_DMA_NOWAIT) != 0) {
-			bus_dmamap_destroy(sc->sc_srcdmat, re->re_src_map);
-			re->re_src_map = NULL;
-			safestats.st_noload++;
-			err = ENOMEM;
-			goto errout;
-		}
-		break;
+	if (bus_dmamap_load_crp(sc->sc_srcdmat, re->re_src_map, crp, safe_op_cb,
+	    &re->re_src, BUS_DMA_NOWAIT) != 0) {
+		bus_dmamap_destroy(sc->sc_srcdmat, re->re_src_map);
+		re->re_src_map = NULL;
+		safestats.st_noload++;
+		err = ENOMEM;
+		goto errout;
 	}
+	re->re_src_mapsize = safe_crp_length(crp);
 	nicealign = safe_dmamap_aligned(&re->re_src);
 	uniform = safe_dmamap_uniform(&re->re_src);
 
@@ -1099,205 +1085,170 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 		 * Hash op; no destination needed.
 		 */
 	} else {
-		switch (crp->crp_buf_type) {
-		case CRYPTO_BUF_UIO:
-			if (!nicealign) {
-				safestats.st_iovmisaligned++;
-				err = EINVAL;
+		if (nicealign && uniform == 1) {
+			/*
+			 * Source layout is suitable for direct
+			 * sharing of the DMA map and segment list.
+			 */
+			re->re_dst = re->re_src;
+		} else if (nicealign && uniform == 2) {
+			/*
+			 * The source is properly aligned but requires a
+			 * different particle list to handle DMA of the
+			 * result.  Create a new map and do the load to
+			 * create the segment list.  The particle
+			 * descriptor setup code below will handle the
+			 * rest.
+			 */
+			if (bus_dmamap_create(sc->sc_dstdmat, BUS_DMA_NOWAIT,
+			    &re->re_dst_map)) {
+				safestats.st_nomap++;
+				err = ENOMEM;
 				goto errout;
 			}
-			if (uniform != 1) {
-				/*
-				 * Source is not suitable for direct use as
-				 * the destination.  Create a new scatter/gather
-				 * list based on the destination requirements
-				 * and check if that's ok.
-				 */
-				if (bus_dmamap_create(sc->sc_dstdmat,
-				    BUS_DMA_NOWAIT, &re->re_dst_map)) {
-					safestats.st_nomap++;
-					err = ENOMEM;
-					goto errout;
-				}
-				if (bus_dmamap_load_uio(sc->sc_dstdmat,
-				    re->re_dst_map, re->re_dst_io,
-				    safe_op_cb, &re->re_dst,
-				    BUS_DMA_NOWAIT) != 0) {
-					bus_dmamap_destroy(sc->sc_dstdmat,
-						re->re_dst_map);
-					re->re_dst_map = NULL;
-					safestats.st_noload++;
-					err = ENOMEM;
-					goto errout;
-				}
-				uniform = safe_dmamap_uniform(&re->re_dst);
-				if (!uniform) {
-					/*
-					 * There's no way to handle the DMA
-					 * requirements with this uio.  We
-					 * could create a separate DMA area for
-					 * the result and then copy it back,
-					 * but for now we just bail and return
-					 * an error.  Note that uio requests
-					 * > SAFE_MAX_DSIZE are handled because
-					 * the DMA map and segment list for the
-					 * destination wil result in a
-					 * destination particle list that does
-					 * the necessary scatter DMA.
-					 */ 
-					safestats.st_iovnotuniform++;
-					err = EINVAL;
-					goto errout;
-				}
-			} else
-				re->re_dst = re->re_src;
-			break;
-		case CRYPTO_BUF_MBUF:
-			if (nicealign && uniform == 1) {
-				/*
-				 * Source layout is suitable for direct
-				 * sharing of the DMA map and segment list.
-				 */
-				re->re_dst = re->re_src;
-			} else if (nicealign && uniform == 2) {
-				/*
-				 * The source is properly aligned but requires a
-				 * different particle list to handle DMA of the
-				 * result.  Create a new map and do the load to
-				 * create the segment list.  The particle
-				 * descriptor setup code below will handle the
-				 * rest.
-				 */
-				if (bus_dmamap_create(sc->sc_dstdmat,
-				    BUS_DMA_NOWAIT, &re->re_dst_map)) {
-					safestats.st_nomap++;
-					err = ENOMEM;
-					goto errout;
-				}
-				if (bus_dmamap_load_mbuf(sc->sc_dstdmat,
-				    re->re_dst_map, re->re_dst_m,
-				    safe_op_cb, &re->re_dst,
-				    BUS_DMA_NOWAIT) != 0) {
-					bus_dmamap_destroy(sc->sc_dstdmat,
-						re->re_dst_map);
-					re->re_dst_map = NULL;
-					safestats.st_noload++;
-					err = ENOMEM;
-					goto errout;
-				}
-			} else {		/* !(aligned and/or uniform) */
-				int totlen, len;
-				struct mbuf *m, *top, **mp;
+			if (bus_dmamap_load_crp(sc->sc_dstdmat, re->re_dst_map,
+			    crp, safe_op_cb, &re->re_dst, BUS_DMA_NOWAIT) !=
+			    0) {
+				bus_dmamap_destroy(sc->sc_dstdmat,
+				    re->re_dst_map);
+				re->re_dst_map = NULL;
+				safestats.st_noload++;
+				err = ENOMEM;
+				goto errout;
+			}
+		} else if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
+			int totlen, len;
+			struct mbuf *m, *top, **mp;
 
-				/*
-				 * DMA constraints require that we allocate a
-				 * new mbuf chain for the destination.  We
-				 * allocate an entire new set of mbufs of
-				 * optimal/required size and then tell the
-				 * hardware to copy any bits that are not
-				 * created as a byproduct of the operation.
-				 */
-				if (!nicealign)
-					safestats.st_unaligned++;
-				if (!uniform)
-					safestats.st_notuniform++;
-				totlen = re->re_src_mapsize;
-				if (re->re_src_m->m_flags & M_PKTHDR) {
-					len = MHLEN;
-					MGETHDR(m, M_NOWAIT, MT_DATA);
-					if (m && !m_dup_pkthdr(m, re->re_src_m,
-					    M_NOWAIT)) {
-						m_free(m);
-						m = NULL;
-					}
-				} else {
-					len = MLEN;
-					MGET(m, M_NOWAIT, MT_DATA);
+			/*
+			 * DMA constraints require that we allocate a
+			 * new mbuf chain for the destination.  We
+			 * allocate an entire new set of mbufs of
+			 * optimal/required size and then tell the
+			 * hardware to copy any bits that are not
+			 * created as a byproduct of the operation.
+			 */
+			if (!nicealign)
+				safestats.st_unaligned++;
+			if (!uniform)
+				safestats.st_notuniform++;
+			totlen = re->re_src_mapsize;
+			if (crp->crp_mbuf->m_flags & M_PKTHDR) {
+				len = MHLEN;
+				MGETHDR(m, M_NOWAIT, MT_DATA);
+				if (m && !m_dup_pkthdr(m, crp->crp_mbuf,
+				    M_NOWAIT)) {
+					m_free(m);
+					m = NULL;
 				}
-				if (m == NULL) {
-					safestats.st_nombuf++;
-					err = sc->sc_nqchip ? ERESTART : ENOMEM;
+			} else {
+				len = MLEN;
+				MGET(m, M_NOWAIT, MT_DATA);
+			}
+			if (m == NULL) {
+				safestats.st_nombuf++;
+				err = sc->sc_nqchip ? ERESTART : ENOMEM;
+				goto errout;
+			}
+			if (totlen >= MINCLSIZE) {
+				if (!(MCLGET(m, M_NOWAIT))) {
+					m_free(m);
+					safestats.st_nomcl++;
+					err = sc->sc_nqchip ?
+					    ERESTART : ENOMEM;
 					goto errout;
 				}
-				if (totlen >= MINCLSIZE) {
+				len = MCLBYTES;
+			}
+			m->m_len = len;
+			top = NULL;
+			mp = &top;
+
+			while (totlen > 0) {
+				if (top) {
+					MGET(m, M_NOWAIT, MT_DATA);
+					if (m == NULL) {
+						m_freem(top);
+						safestats.st_nombuf++;
+						err = sc->sc_nqchip ?
+						    ERESTART : ENOMEM;
+						goto errout;
+					}
+					len = MLEN;
+				}
+				if (top && totlen >= MINCLSIZE) {
 					if (!(MCLGET(m, M_NOWAIT))) {
-						m_free(m);
+						*mp = m;
+						m_freem(top);
 						safestats.st_nomcl++;
 						err = sc->sc_nqchip ?
-							ERESTART : ENOMEM;
+						    ERESTART : ENOMEM;
 						goto errout;
 					}
 					len = MCLBYTES;
 				}
-				m->m_len = len;
-				top = NULL;
-				mp = &top;
-
-				while (totlen > 0) {
-					if (top) {
-						MGET(m, M_NOWAIT, MT_DATA);
-						if (m == NULL) {
-							m_freem(top);
-							safestats.st_nombuf++;
-							err = sc->sc_nqchip ?
-							    ERESTART : ENOMEM;
-							goto errout;
-						}
-						len = MLEN;
-					}
-					if (top && totlen >= MINCLSIZE) {
-						if (!(MCLGET(m, M_NOWAIT))) {
-							*mp = m;
-							m_freem(top);
-							safestats.st_nomcl++;
-							err = sc->sc_nqchip ?
-							    ERESTART : ENOMEM;
-							goto errout;
-						}
-						len = MCLBYTES;
-					}
-					m->m_len = len = min(totlen, len);
-					totlen -= len;
-					*mp = m;
-					mp = &m->m_next;
-				}
-				re->re_dst_m = top;
-				if (bus_dmamap_create(sc->sc_dstdmat, 
-				    BUS_DMA_NOWAIT, &re->re_dst_map) != 0) {
-					safestats.st_nomap++;
-					err = ENOMEM;
-					goto errout;
-				}
-				if (bus_dmamap_load_mbuf(sc->sc_dstdmat,
-				    re->re_dst_map, re->re_dst_m,
-				    safe_op_cb, &re->re_dst,
-				    BUS_DMA_NOWAIT) != 0) {
-					bus_dmamap_destroy(sc->sc_dstdmat,
-					re->re_dst_map);
-					re->re_dst_map = NULL;
-					safestats.st_noload++;
-					err = ENOMEM;
-					goto errout;
-				}
-				if (re->re_src.mapsize > oplen) {
-					/*
-					 * There's data following what the
-					 * hardware will copy for us.  If this
-					 * isn't just the ICV (that's going to
-					 * be written on completion), copy it
-					 * to the new mbufs
-					 */
-					if (!(csp->csp_mode == CSP_MODE_ETA &&
-					    (re->re_src.mapsize-oplen) == ses->ses_mlen &&
-					    crp->crp_digest_start == oplen))
-						safe_mcopy(re->re_src_m,
-							   re->re_dst_m,
-							   oplen);
-					else
-						safestats.st_noicvcopy++;
-				}
+				m->m_len = len = min(totlen, len);
+				totlen -= len;
+				*mp = m;
+				mp = &m->m_next;
 			}
-			break;
+			re->re_dst_m = top;
+			if (bus_dmamap_create(sc->sc_dstdmat,
+			    BUS_DMA_NOWAIT, &re->re_dst_map) != 0) {
+				safestats.st_nomap++;
+				err = ENOMEM;
+				goto errout;
+			}
+			if (bus_dmamap_load_mbuf_sg(sc->sc_dstdmat,
+			    re->re_dst_map, top, re->re_dst_segs,
+			    &re->re_dst_nsegs, 0) != 0) {
+				bus_dmamap_destroy(sc->sc_dstdmat,
+				    re->re_dst_map);
+				re->re_dst_map = NULL;
+				safestats.st_noload++;
+				err = ENOMEM;
+				goto errout;
+			}
+			re->re_dst_mapsize = re->re_src_mapsize;
+			if (re->re_src.mapsize > oplen) {
+				/*
+				 * There's data following what the
+				 * hardware will copy for us.  If this
+				 * isn't just the ICV (that's going to
+				 * be written on completion), copy it
+				 * to the new mbufs
+				 */
+				if (!(csp->csp_mode == CSP_MODE_ETA &&
+				    (re->re_src.mapsize-oplen) == ses->ses_mlen &&
+				    crp->crp_digest_start == oplen))
+					safe_mcopy(crp->crp_mbuf, re->re_dst_m,
+					    oplen);
+				else
+					safestats.st_noicvcopy++;
+			}
+		} else {
+			if (!nicealign) {
+				safestats.st_iovmisaligned++;
+				err = EINVAL;
+				goto errout;
+			} else {
+				/*
+				 * There's no way to handle the DMA
+				 * requirements with this uio.  We
+				 * could create a separate DMA area for
+				 * the result and then copy it back,
+				 * but for now we just bail and return
+				 * an error.  Note that uio requests
+				 * > SAFE_MAX_DSIZE are handled because
+				 * the DMA map and segment list for the
+				 * destination wil result in a
+				 * destination particle list that does
+				 * the necessary scatter DMA.
+				 */
+				safestats.st_iovnotuniform++;
+				err = EINVAL;
+				goto errout;
+			}
 		}
 
 		if (re->re_dst.nsegs > 1) {
@@ -1362,7 +1313,7 @@ safe_process(device_t dev, struct cryptop *crp, int hint)
 	return (0);
 
 errout:
-	if ((re->re_dst_m != NULL) && (re->re_src_m != re->re_dst_m))
+	if (re->re_dst_m != NULL)
 		m_freem(re->re_dst_m);
 
 	if (re->re_dst_map != NULL && re->re_dst_map != re->re_src_map) {
@@ -1406,6 +1357,9 @@ safe_callback(struct safe_softc *sc, struct safe_ringentry *re)
 		safestats.st_peoperr++;
 		crp->crp_etype = EIO;		/* something more meaningful? */
 	}
+
+	/* XXX: Should crp_mbuf be updated to re->re_dst_m if it is non-NULL? */
+
 	if (re->re_dst_map != NULL && re->re_dst_map != re->re_src_map) {
 		bus_dmamap_sync(sc->sc_dstdmat, re->re_dst_map,
 		    BUS_DMASYNC_POSTREAD);
@@ -1844,7 +1798,7 @@ safe_free_entry(struct safe_softc *sc, struct safe_ringentry *re)
 	/*
 	 * Free header MCR
 	 */
-	if ((re->re_dst_m != NULL) && (re->re_src_m != re->re_dst_m))
+	if (re->re_dst_m != NULL)
 		m_freem(re->re_dst_m);
 
 	crp = (struct cryptop *)re->re_crp;

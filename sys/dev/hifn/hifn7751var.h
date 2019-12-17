@@ -257,10 +257,6 @@ struct hifn_softc {
  *
  */
 struct hifn_operand {
-	union {
-		struct mbuf *m;
-		struct uio *io;
-	} u;
 	bus_dmamap_t	map;
 	bus_size_t	mapsize;
 	int		nsegs;
@@ -276,20 +272,17 @@ struct hifn_command {
 
 	struct hifn_operand src;
 	struct hifn_operand dst;
+	struct mbuf *dst_m;
 
 	struct hifn_softc *softc;
 	struct cryptop *crp;
 };
 
-#define	src_m		src.u.m
-#define	src_io		src.u.io
 #define	src_map		src.map
 #define	src_mapsize	src.mapsize
 #define	src_segs	src.segs
 #define	src_nsegs	src.nsegs
 
-#define	dst_m		dst.u.m
-#define	dst_io		dst.u.io
 #define	dst_map		dst.map
 #define	dst_mapsize	dst.mapsize
 #define	dst_segs	dst.segs

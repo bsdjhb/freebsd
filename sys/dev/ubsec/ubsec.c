@@ -61,6 +61,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
 #include <sys/endian.h>
+#include <sys/uio.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -960,8 +961,24 @@ ubsec_newsession(device_t dev, crypto_session_t cses,
 	return (0);
 }
 
+static bus_size_t
+ubsec_crp_length(struct cryptop *crp)
+{
+
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		return (crp->crp_mbuf->m_pkthdr.len);
+	case CRYPTO_BUF_UIO:
+		return (crp->crp_uio->uio_resid);
+	case CRYPTO_BUF_CONTIG:
+		return (crp->crp_ilen);
+	default:
+		panic("bad crp buffer type");
+	}
+}
+
 static void
-ubsec_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, bus_size_t mapsize, int error)
+ubsec_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, int error)
 {
 	struct ubsec_operand *op = arg;
 
@@ -969,12 +986,11 @@ ubsec_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, bus_size_t mapsize, in
 		("Too many DMA segments returned when mapping operand"));
 #ifdef UBSEC_DEBUG
 	if (ubsec_debug)
-		printf("ubsec_op_cb: mapsize %u nsegs %d error %d\n",
-			(u_int) mapsize, nsegs, error);
+		printf("ubsec_op_cb: nsegs %d error %d\n",
+			nsegs, error);
 #endif
 	if (error != 0)
 		return;
-	op->mapsize = mapsize;
 	op->nsegs = nsegs;
 	bcopy(seg, op->segs, nsegs * sizeof (seg[0]));
 }
@@ -1010,21 +1026,6 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 
 	q->q_dma = dmap;
 	ses = crypto_get_driver_session(crp->crp_session);
-
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		q->q_src_m = crp->crp_mbuf;
-		q->q_dst_m = crp->crp_mbuf;
-		break;
-	case CRYPTO_BUF_UIO:
-		q->q_src_io = crp->crp_uio;
-		q->q_dst_io = crp->crp_uio;
-		break;
-	default:
-		ubsecstats.hst_badflags++;
-		err = EINVAL;
-		goto errout;	/* XXX we don't handle contiguous blocks! */
-	}
 
 	bzero(&dmap->d_dma->d_mcr, sizeof(struct ubsec_mcr));
 
@@ -1136,28 +1137,15 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 		err = ENOMEM;
 		goto errout;
 	}
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		if (bus_dmamap_load_mbuf(sc->sc_dmat, q->q_src_map,
-		    q->q_src_m, ubsec_op_cb, &q->q_src, BUS_DMA_NOWAIT) != 0) {
-			bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
-			q->q_src_map = NULL;
-			ubsecstats.hst_noload++;
-			err = ENOMEM;
-			goto errout;
-		}
-		break;
-	case CRYPTO_BUF_UIO:
-		if (bus_dmamap_load_uio(sc->sc_dmat, q->q_src_map,
-		    q->q_src_io, ubsec_op_cb, &q->q_src, BUS_DMA_NOWAIT) != 0) {
-			bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
-			q->q_src_map = NULL;
-			ubsecstats.hst_noload++;
-			err = ENOMEM;
-			goto errout;
-		}
-		break;
+	if (bus_dmamap_load_crp(sc->sc_dmat, q->q_src_map, crp, ubsec_op_cb,
+	    &q->q_src, BUS_DMA_NOWAIT) != 0) {
+		bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
+		q->q_src_map = NULL;
+		ubsecstats.hst_noload++;
+		err = ENOMEM;
+		goto errout;
 	}
+	q->q_src_mapsize = ubsec_crp_length(crp);
 	nicealign = ubsec_dmamap_aligned(&q->q_src);
 
 	dmap->d_dma->d_mcr.mcr_pktlen = htole16(stheend);
@@ -1224,107 +1212,79 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 			    dmap->d_dma->d_mcr.mcr_opktbuf.pb_next);
 #endif
 	} else {
-		switch (crp->crp_buf_type) {
-		case CRYPTO_BUF_UIO:
-			if (!nicealign) {
-				ubsecstats.hst_iovmisaligned++;
-				err = EINVAL;
-				goto errout;
-			}
-			if (bus_dmamap_create(sc->sc_dmat, BUS_DMA_NOWAIT,
-			     &q->q_dst_map)) {
-				ubsecstats.hst_nomap++;
-				err = ENOMEM;
-				goto errout;
-			}
-			if (bus_dmamap_load_uio(sc->sc_dmat, q->q_dst_map,
-			    q->q_dst_io, ubsec_op_cb, &q->q_dst, BUS_DMA_NOWAIT) != 0) {
-				bus_dmamap_destroy(sc->sc_dmat, q->q_dst_map);
-				q->q_dst_map = NULL;
-				ubsecstats.hst_noload++;
-				err = ENOMEM;
-				goto errout;
-			}
-			break;
-		case CRYPTO_BUF_MBUF:
-			if (nicealign) {
-				q->q_dst = q->q_src;
-			} else {
-				int totlen, len;
-				struct mbuf *m, *top, **mp;
+		if (nicealign) {
+			q->q_dst = q->q_src;
+		} else if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
+			int totlen, len;
+			struct mbuf *m, *top, **mp;
 
-				ubsecstats.hst_unaligned++;
-				totlen = q->q_src_mapsize;
+			ubsecstats.hst_unaligned++;
+			totlen = q->q_src_mapsize;
+			if (totlen >= MINCLSIZE) {
+				m = m_getcl(M_NOWAIT, MT_DATA,
+				    crp->crp_mbuf->m_flags & M_PKTHDR);
+				len = MCLBYTES;
+			} else if (crp->crp_mbuf->m_flags & M_PKTHDR) {
+				m = m_gethdr(M_NOWAIT, MT_DATA);
+				len = MHLEN;
+			} else {
+				m = m_get(M_NOWAIT, MT_DATA);
+				len = MLEN;
+			}
+			if (m && crp->crp_mbuf->m_flags & M_PKTHDR &&
+			    !m_dup_pkthdr(m, crp->crp_mbuf, M_NOWAIT)) {
+				m_free(m);
+				m = NULL;
+			}
+			if (m == NULL) {
+				ubsecstats.hst_nombuf++;
+				err = sc->sc_nqueue ? ERESTART : ENOMEM;
+				goto errout;
+			}
+			m->m_len = len = min(totlen, len);
+			totlen -= len;
+			top = m;
+			mp = &top;
+
+			while (totlen > 0) {
 				if (totlen >= MINCLSIZE) {
-					m = m_getcl(M_NOWAIT, MT_DATA,
-					    q->q_src_m->m_flags & M_PKTHDR);
+					m = m_getcl(M_NOWAIT, MT_DATA, 0);
 					len = MCLBYTES;
-				} else if (q->q_src_m->m_flags & M_PKTHDR) {
-					m = m_gethdr(M_NOWAIT, MT_DATA);
-					len = MHLEN;
 				} else {
 					m = m_get(M_NOWAIT, MT_DATA);
 					len = MLEN;
 				}
-				if (m && q->q_src_m->m_flags & M_PKTHDR &&
-				    !m_dup_pkthdr(m, q->q_src_m, M_NOWAIT)) {
-					m_free(m);
-					m = NULL;
-				}
 				if (m == NULL) {
+					m_freem(top);
 					ubsecstats.hst_nombuf++;
 					err = sc->sc_nqueue ? ERESTART : ENOMEM;
 					goto errout;
 				}
 				m->m_len = len = min(totlen, len);
 				totlen -= len;
-				top = m;
-				mp = &top;
-
-				while (totlen > 0) {
-					if (totlen >= MINCLSIZE) {
-						m = m_getcl(M_NOWAIT,
-						    MT_DATA, 0);
-						len = MCLBYTES;
-					} else {
-						m = m_get(M_NOWAIT, MT_DATA);
-						len = MLEN;
-					}
-					if (m == NULL) {
-						m_freem(top);
-						ubsecstats.hst_nombuf++;
-						err = sc->sc_nqueue ? ERESTART : ENOMEM;
-						goto errout;
-					}
-					m->m_len = len = min(totlen, len);
-					totlen -= len;
-					*mp = m;
-					mp = &m->m_next;
-				}
-				q->q_dst_m = top;
-				ubsec_mcopy(q->q_src_m, q->q_dst_m,
-				    cpskip, cpoffset);
-				if (bus_dmamap_create(sc->sc_dmat,
-				    BUS_DMA_NOWAIT, &q->q_dst_map) != 0) {
-					ubsecstats.hst_nomap++;
-					err = ENOMEM;
-					goto errout;
-				}
-				if (bus_dmamap_load_mbuf(sc->sc_dmat,
-				    q->q_dst_map, q->q_dst_m,
-				    ubsec_op_cb, &q->q_dst,
-				    BUS_DMA_NOWAIT) != 0) {
-					bus_dmamap_destroy(sc->sc_dmat,
-					q->q_dst_map);
-					q->q_dst_map = NULL;
-					ubsecstats.hst_noload++;
-					err = ENOMEM;
-					goto errout;
-				}
+				*mp = m;
+				mp = &m->m_next;
 			}
-			break;
-		default:
-			ubsecstats.hst_badflags++;
+			q->q_dst_m = top;
+			ubsec_mcopy(crp->crp_mbuf, q->q_dst_m, cpskip, cpoffset);
+			if (bus_dmamap_create(sc->sc_dmat, BUS_DMA_NOWAIT,
+			    &q->q_dst_map) != 0) {
+				ubsecstats.hst_nomap++;
+				err = ENOMEM;
+				goto errout;
+			}
+			if (bus_dmamap_load_mbuf_sg(sc->sc_dmat,
+			    q->q_dst_map, q->q_dst_m, q->q_dst_segs,
+			    &q->q_dst_nsegs, 0) != 0) {
+				bus_dmamap_destroy(sc->sc_dmat, q->q_dst_map);
+				q->q_dst_map = NULL;
+				ubsecstats.hst_noload++;
+				err = ENOMEM;
+				goto errout;
+			}
+			q->q_dst_mapsize = q->q_src_mapsize;
+		} else {
+			ubsecstats.hst_iovmisaligned++;
 			err = EINVAL;
 			goto errout;
 		}
@@ -1422,7 +1382,7 @@ ubsec_process(device_t dev, struct cryptop *crp, int hint)
 
 errout:
 	if (q != NULL) {
-		if ((q->q_dst_m != NULL) && (q->q_src_m != q->q_dst_m))
+		if (q->q_dst_m != NULL)
 			m_freem(q->q_dst_m);
 
 		if (q->q_dst_map != NULL && q->q_dst_map != q->q_src_map) {
@@ -1475,6 +1435,8 @@ ubsec_callback(struct ubsec_softc *sc, struct ubsec_q *q)
 	bus_dmamap_sync(sc->sc_dmat, q->q_src_map, BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, q->q_src_map);
 	bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
+
+	/* XXX: Should crp_mbuf be updated to q->q_dst_m if it is non-NULL? */
 
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
@@ -1886,7 +1848,7 @@ ubsec_free_q(struct ubsec_softc *sc, struct ubsec_q *q)
 		if(q->q_stacked_mcr[i]) {
 			q2 = q->q_stacked_mcr[i];
 
-			if ((q2->q_dst_m != NULL) && (q2->q_src_m != q2->q_dst_m))
+			if (q2->q_dst_m != NULL)
 				m_freem(q2->q_dst_m);
 
 			crp = (struct cryptop *)q2->q_crp;
@@ -1903,7 +1865,7 @@ ubsec_free_q(struct ubsec_softc *sc, struct ubsec_q *q)
 	/*
 	 * Free header MCR
 	 */
-	if ((q->q_dst_m != NULL) && (q->q_src_m != q->q_dst_m))
+	if (q->q_dst_m != NULL)
 		m_freem(q->q_dst_m);
 
 	crp = (struct cryptop *)q->q_crp;

@@ -791,14 +791,6 @@ cesa_create_chain_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	}
 }
 
-static void
-cesa_create_chain_cb2(void *arg, bus_dma_segment_t *segs, int nseg,
-    bus_size_t size, int error)
-{
-
-	cesa_create_chain_cb(arg, segs, nseg, error);
-}
-
 static int
 cesa_create_chain(struct cesa_softc *sc,
     const struct crypto_session_params *csp, struct cesa_request *cr)
@@ -860,26 +852,8 @@ cesa_create_chain(struct cesa_softc *sc,
 	cci.cci_config = config;
 	cci.cci_error = 0;
 
-	switch (cr->cr_crp->crp_buf_type) {
-	case CRYPTO_BUF_UIO:
-		error = bus_dmamap_load_uio(sc->sc_data_dtag,
-		    cr->cr_dmap, cr->cr_crp->crp_uio,
-		    cesa_create_chain_cb2, &cci, BUS_DMA_NOWAIT);
-		break;
-	case CRYPTO_BUF_MBUF:
-		error = bus_dmamap_load_mbuf(sc->sc_data_dtag,
-		    cr->cr_dmap, cr->cr_crp->crp_mbuf,
-		    cesa_create_chain_cb2, &cci, BUS_DMA_NOWAIT);
-		break;
-	case CRYPTO_BUF_CONTIG:
-		error = bus_dmamap_load(sc->sc_data_dtag,
-		    cr->cr_dmap, cr->cr_crp->crp_buf,
-		    cr->cr_crp->crp_ilen, cesa_create_chain_cb, &cci,
-		    BUS_DMA_NOWAIT);
-		break;
-	default:
-		error = EINVAL;
-	}
+	error = bus_dmamap_load_crp(sc->sc_data_dtag, cr->cr_dmap, cr->cr_crp,
+	    cesa_create_chain_cb, &cci, BUS_DMA_NOWAIT);
 
 	if (!error)
 		cr->cr_dmap_loaded = 1;

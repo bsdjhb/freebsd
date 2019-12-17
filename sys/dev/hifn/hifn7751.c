@@ -61,6 +61,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
+#include <sys/uio.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -1780,15 +1781,30 @@ hifn_dmamap_load_src(struct hifn_softc *sc, struct hifn_command *cmd)
 	return (idx);
 } 
 
+static bus_size_t
+hifn_crp_length(struct cryptop *crp)
+{
+
+	switch (crp->crp_buf_type) {
+	case CRYPTO_BUF_MBUF:
+		return (crp->crp_mbuf->m_pkthdr.len);
+	case CRYPTO_BUF_UIO:
+		return (crp->crp_uio->uio_resid);
+	case CRYPTO_BUF_CONTIG:
+		return (crp->crp_ilen);
+	default:
+		panic("bad crp buffer type");
+	}
+}
+
 static void
-hifn_op_cb(void* arg, bus_dma_segment_t *seg, int nsegs, bus_size_t mapsize, int error)
+hifn_op_cb(void* arg, bus_dma_segment_t *seg, int nsegs, int error)
 {
 	struct hifn_operand *op = arg;
 
 	KASSERT(nsegs <= MAX_SCATTER,
 		("hifn_op_cb: too many DMA segments (%u > %u) "
 		 "returned when mapping operand", nsegs, MAX_SCATTER));
-	op->mapsize = mapsize;
 	op->nsegs = nsegs;
 	bcopy(seg, op->segs, nsegs * sizeof (seg[0]));
 }
@@ -1830,136 +1846,110 @@ hifn_crypto(
 		return (ENOMEM);
 	}
 
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		if (bus_dmamap_load_mbuf(sc->sc_dmat, cmd->src_map,
-		    cmd->src_m, hifn_op_cb, &cmd->src, BUS_DMA_NOWAIT)) {
-			hifnstats.hst_nomem_load++;
-			err = ENOMEM;
-			goto err_srcmap1;
-		}
-		break;
-	case CRYPTO_BUF_UIO:
-		if (bus_dmamap_load_uio(sc->sc_dmat, cmd->src_map,
-		    cmd->src_io, hifn_op_cb, &cmd->src, BUS_DMA_NOWAIT)) {
-			hifnstats.hst_nomem_load++;
-			err = ENOMEM;
-			goto err_srcmap1;
-		}
-		break;
-	default:
-		err = EINVAL;
+	if (bus_dmamap_load_crp(sc->sc_dmat, cmd->src_map, crp, hifn_op_cb,
+	    &cmd->src, BUS_DMA_NOWAIT)) {
+		hifnstats.hst_nomem_load++;
+		err = ENOMEM;
 		goto err_srcmap1;
 	}
+	cmd->src_mapsize = hifn_crp_length(crp);
 
 	if (hifn_dmamap_aligned(&cmd->src)) {
 		cmd->sloplen = cmd->src_mapsize & 3;
 		cmd->dst = cmd->src;
-	} else {
-		if (crp->crp_buf_type == CRYPTO_BUF_UIO) {
-			err = EINVAL;
-			goto err_srcmap;
-		} else if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
-			int totlen, len;
-			struct mbuf *m, *m0, *mlast;
+	} else if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
+		int totlen, len;
+		struct mbuf *m, *m0, *mlast;
 
-			KASSERT(cmd->dst_m == cmd->src_m,
-				("hifn_crypto: dst_m initialized improperly"));
-			hifnstats.hst_unaligned++;
-			/*
-			 * Source is not aligned on a longword boundary.
-			 * Copy the data to insure alignment.  If we fail
-			 * to allocate mbufs or clusters while doing this
-			 * we return ERESTART so the operation is requeued
-			 * at the crypto later, but only if there are
-			 * ops already posted to the hardware; otherwise we
-			 * have no guarantee that we'll be re-entered.
-			 */
-			totlen = cmd->src_mapsize;
-			if (cmd->src_m->m_flags & M_PKTHDR) {
-				len = MHLEN;
-				MGETHDR(m0, M_NOWAIT, MT_DATA);
-				if (m0 && !m_dup_pkthdr(m0, cmd->src_m, M_NOWAIT)) {
-					m_free(m0);
-					m0 = NULL;
-				}
-			} else {
-				len = MLEN;
-				MGET(m0, M_NOWAIT, MT_DATA);
+		KASSERT(cmd->dst_m == NULL,
+		    ("hifn_crypto: dst_m initialized improperly"));
+		hifnstats.hst_unaligned++;
+
+		/*
+		 * Source is not aligned on a longword boundary.
+		 * Copy the data to insure alignment.  If we fail
+		 * to allocate mbufs or clusters while doing this
+		 * we return ERESTART so the operation is requeued
+		 * at the crypto later, but only if there are
+		 * ops already posted to the hardware; otherwise we
+		 * have no guarantee that we'll be re-entered.
+		 */
+		totlen = cmd->src_mapsize;
+		if (crp->crp_mbuf->m_flags & M_PKTHDR) {
+			len = MHLEN;
+			MGETHDR(m0, M_NOWAIT, MT_DATA);
+			if (m0 && !m_dup_pkthdr(m0, crp->crp_mbuf, M_NOWAIT)) {
+				m_free(m0);
+				m0 = NULL;
 			}
-			if (m0 == NULL) {
-				hifnstats.hst_nomem_mbuf++;
+		} else {
+			len = MLEN;
+			MGET(m0, M_NOWAIT, MT_DATA);
+		}
+		if (m0 == NULL) {
+			hifnstats.hst_nomem_mbuf++;
+			err = sc->sc_cmdu ? ERESTART : ENOMEM;
+			goto err_srcmap;
+		}
+		if (totlen >= MINCLSIZE) {
+			if (!(MCLGET(m0, M_NOWAIT))) {
+				hifnstats.hst_nomem_mcl++;
 				err = sc->sc_cmdu ? ERESTART : ENOMEM;
+				m_freem(m0);
 				goto err_srcmap;
 			}
+			len = MCLBYTES;
+		}
+		totlen -= len;
+		m0->m_pkthdr.len = m0->m_len = len;
+		mlast = m0;
+
+		while (totlen > 0) {
+			MGET(m, M_NOWAIT, MT_DATA);
+			if (m == NULL) {
+				hifnstats.hst_nomem_mbuf++;
+				err = sc->sc_cmdu ? ERESTART : ENOMEM;
+				m_freem(m0);
+				goto err_srcmap;
+			}
+			len = MLEN;
 			if (totlen >= MINCLSIZE) {
-				if (!(MCLGET(m0, M_NOWAIT))) {
+				if (!(MCLGET(m, M_NOWAIT))) {
 					hifnstats.hst_nomem_mcl++;
 					err = sc->sc_cmdu ? ERESTART : ENOMEM;
+					mlast->m_next = m;
 					m_freem(m0);
 					goto err_srcmap;
 				}
 				len = MCLBYTES;
 			}
+
+			m->m_len = len;
+			m0->m_pkthdr.len += len;
 			totlen -= len;
-			m0->m_pkthdr.len = m0->m_len = len;
-			mlast = m0;
 
-			while (totlen > 0) {
-				MGET(m, M_NOWAIT, MT_DATA);
-				if (m == NULL) {
-					hifnstats.hst_nomem_mbuf++;
-					err = sc->sc_cmdu ? ERESTART : ENOMEM;
-					m_freem(m0);
-					goto err_srcmap;
-				}
-				len = MLEN;
-				if (totlen >= MINCLSIZE) {
-					if (!(MCLGET(m, M_NOWAIT))) {
-						hifnstats.hst_nomem_mcl++;
-						err = sc->sc_cmdu ? ERESTART : ENOMEM;
-						mlast->m_next = m;
-						m_freem(m0);
-						goto err_srcmap;
-					}
-					len = MCLBYTES;
-				}
-
-				m->m_len = len;
-				m0->m_pkthdr.len += len;
-				totlen -= len;
-
-				mlast->m_next = m;
-				mlast = m;
-			}
-			cmd->dst_m = m0;
+			mlast->m_next = m;
+			mlast = m;
 		}
-	}
+		cmd->dst_m = m0;
 
-	if (cmd->dst_map == NULL) {
-		if (bus_dmamap_create(sc->sc_dmat, BUS_DMA_NOWAIT, &cmd->dst_map)) {
+		if (bus_dmamap_create(sc->sc_dmat, BUS_DMA_NOWAIT,
+		    &cmd->dst_map)) {
 			hifnstats.hst_nomem_map++;
 			err = ENOMEM;
 			goto err_srcmap;
 		}
-		switch (crp->crp_buf_type) {
-		case CRYPTO_BUF_MBUF:
-			if (bus_dmamap_load_mbuf(sc->sc_dmat, cmd->dst_map,
-			    cmd->dst_m, hifn_op_cb, &cmd->dst, BUS_DMA_NOWAIT)) {
-				hifnstats.hst_nomem_map++;
-				err = ENOMEM;
-				goto err_dstmap1;
-			}
-			break;
-		case CRYPTO_BUF_UIO:
-			if (bus_dmamap_load_uio(sc->sc_dmat, cmd->dst_map,
-			    cmd->dst_io, hifn_op_cb, &cmd->dst, BUS_DMA_NOWAIT)) {
-				hifnstats.hst_nomem_load++;
-				err = ENOMEM;
-				goto err_dstmap1;
-			}
-			break;
+
+		if (bus_dmamap_load_mbuf_sg(sc->sc_dmat, cmd->dst_map, m0,
+		    cmd->dst_segs, &cmd->dst_nsegs, 0)) {
+			hifnstats.hst_nomem_map++;
+			err = ENOMEM;
+			goto err_dstmap1;
 		}
+		cmd->dst_mapsize = m0->m_pkthdr.len;
+	} else {
+		err = EINVAL;
+		goto err_srcmap;
 	}
 
 #ifdef HIFN_DEBUG
@@ -2116,7 +2106,7 @@ err_dstmap1:
 		bus_dmamap_destroy(sc->sc_dmat, cmd->dst_map);
 err_srcmap:
 	if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
-		if (cmd->src_m != cmd->dst_m)
+		if (cmd->dst_m != NULL)
 			m_freem(cmd->dst_m);
 	}
 	bus_dmamap_unload(sc->sc_dmat, cmd->src_map);
@@ -2453,20 +2443,6 @@ hifn_process(device_t dev, struct cryptop *crp, int hint)
 		goto errout;
 	}
 
-	switch (crp->crp_buf_type) {
-	case CRYPTO_BUF_MBUF:
-		cmd->src_m = crp->crp_mbuf;
-		cmd->dst_m = crp->crp_mbuf;
-		break;
-	case CRYPTO_BUF_UIO:
-		cmd->src_io = crp->crp_uio;
-		cmd->dst_io = crp->crp_uio;
-		break;
-	default:
-		err = EINVAL;
-		goto errout;	/* XXX we don't handle contiguous buffers! */
-	}
-
 	csp = crypto_get_params(crp->crp_session);
 
 	/*
@@ -2664,9 +2640,8 @@ hifn_abort(struct hifn_softc *sc)
 				    BUS_DMASYNC_POSTREAD);
 			}
 
-			if (cmd->src_m != cmd->dst_m) {
-				m_freem(cmd->src_m);
-				crp->crp_buf = (caddr_t)cmd->dst_m;
+			if (cmd->dst_m != NULL) {
+				m_freem(cmd->dst_m);
 			}
 
 			/* non-shared buffers cannot be restarted */
@@ -2720,8 +2695,7 @@ hifn_callback(struct hifn_softc *sc, struct hifn_command *cmd, u_int8_t *macbuf)
 	}
 
 	if (crp->crp_buf_type == CRYPTO_BUF_MBUF) {
-		if (cmd->src_m != cmd->dst_m) {
-			crp->crp_buf = (caddr_t)cmd->dst_m;
+		if (cmd->dst_m != NULL) {
 			totlen = cmd->src_mapsize;
 			for (m = cmd->dst_m; m != NULL; m = m->m_next) {
 				if (totlen < m->m_len) {
@@ -2730,8 +2704,9 @@ hifn_callback(struct hifn_softc *sc, struct hifn_command *cmd, u_int8_t *macbuf)
 				} else
 					totlen -= m->m_len;
 			}
-			cmd->dst_m->m_pkthdr.len = cmd->src_m->m_pkthdr.len;
-			m_freem(cmd->src_m);
+			cmd->dst_m->m_pkthdr.len = crp->crp_mbuf->m_pkthdr.len;
+			m_freem(crp->crp_mbuf);
+			crp->crp_mbuf = cmd->dst_m;
 		}
 	}
 
