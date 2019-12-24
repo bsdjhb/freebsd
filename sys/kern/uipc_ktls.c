@@ -919,10 +919,6 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 	if (en->cipher_algorithm == CRYPTO_AES_CBC && !ktls_cbc_enable)
 		return (ENOTSUP);
 
-	/* TLS requires ext pgs */
-	if (mb_use_ext_pgs == 0)
-		return (ENXIO);
-
 	error = ktls_create_session(so, en, &tls);
 	if (error)
 		return (error);
