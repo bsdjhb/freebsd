@@ -194,9 +194,6 @@ struct cesa_sa_desc {
 
 struct cesa_session {
 	uint32_t			cs_config;
-#if 0
-	unsigned int			cs_klen;
-#endif
 	unsigned int			cs_ivlen;
 	unsigned int			cs_hlen;
 	unsigned int			cs_mblen;
