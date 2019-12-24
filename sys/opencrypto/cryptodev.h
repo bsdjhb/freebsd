@@ -572,12 +572,6 @@ extern	int crypto_usercrypto;		/* userland may do crypto requests */
 extern	int crypto_userasymcrypto;	/* userland may do asym crypto reqs */
 extern	int crypto_devallowsoft;	/* only use hardware crypto */
 
-/*
- * Read-only buffers filled with IPAD and OPAD values used with HMAC.
- */
-extern uint8_t hmac_ipad_buffer[];
-extern uint8_t hmac_opad_buffer[];
-
 /* Helper routines for drivers to initialize auth contexts for HMAC. */
 struct auth_hash;
 

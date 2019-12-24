@@ -242,9 +242,6 @@ SYSCTL_INT(_debug, OID_AUTO, crypto_timing, CTLFLAG_RW,
 	   &crypto_timing, 0, "Enable/disable crypto timing support");
 #endif
 
-uint8_t hmac_ipad_buffer[HMAC_MAX_BLOCK_LEN];
-uint8_t hmac_opad_buffer[HMAC_MAX_BLOCK_LEN];
-
 /* Try to avoid directly exposing the key buffer as a symbol */
 static struct keybuf *keybuf;
 
@@ -304,9 +301,6 @@ crypto_init(void)
 {
 	struct crypto_ret_worker *ret_worker;
 	int error;
-
-	memset(hmac_ipad_buffer, HMAC_IPAD_VAL, HMAC_MAX_BLOCK_LEN);
-	memset(hmac_opad_buffer, HMAC_OPAD_VAL, HMAC_MAX_BLOCK_LEN);
 
 	mtx_init(&crypto_drivers_mtx, "crypto", "crypto driver table",
 		MTX_DEF|MTX_QUIET);
