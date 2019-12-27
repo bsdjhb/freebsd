@@ -841,7 +841,7 @@ ocf_init_eta_session(const struct alg *alg, const char *cipher_key,
 	return (ocf_init_session(&sop, "ETA", alg->name, ses));
 }
 
-static bool
+static int
 ocf_eta(const struct ocf_session *ses, const struct alg *alg, const char *iv,
     size_t iv_len, const char *aad, size_t aad_len, const char *input,
     char *output, size_t size, char *digest, int op)
@@ -879,13 +879,9 @@ ocf_eta(const struct ocf_session *ses, const struct alg *alg, const char *iv,
 		ret = ioctl(ses->fd, CIOCCRYPT, &cop);
 	}
 
-	if (ret < 0) {
-		warn("cryptodev %s (%zu) ETA failed for device %s",
-		    alg->name, size, crfind(crid));
-		return (false);
-	}
-
-	return (true);
+	if (ret < 0)
+		return (errno);
+	return (0);
 }
 
 static void
@@ -896,7 +892,8 @@ run_eta_test(const struct alg *alg, size_t size)
 	const EVP_MD *md;
 	char *aad, *buffer, *cleartext, *ciphertext;
 	char *iv, *auth_key, *cipher_key;
-	u_int i, iv_len, auth_key_len, cipher_key_len, digest_len;
+	u_int iv_len, auth_key_len, cipher_key_len, digest_len;
+	int error;
 	char control_digest[EVP_MAX_MD_SIZE], test_digest[EVP_MAX_MD_SIZE];
 
 	cipher = alg->evp_cipher();
@@ -944,10 +941,14 @@ run_eta_test(const struct alg *alg, size_t size)
 		goto out;
 
 	/* OCF encrypt + HMAC. */
-	if (!ocf_eta(&ses, alg, iv, iv_len,
+	error = ocf_eta(&ses, alg, iv, iv_len,
 	    aad_len != 0 ? cleartext : NULL, aad_len, cleartext + aad_len,
-	    buffer + aad_len, size, test_digest, COP_ENCRYPT))
+	    buffer + aad_len, size, test_digest, COP_ENCRYPT);
+	if (error != 0) {
+		warnc(error, "cryptodev %s (%zu) ETA failed for device %s",
+		    alg->name, size, crfind(ses.crid));
 		goto out;
+	}
 	if (memcmp(ciphertext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
 		printf("control:\n");
@@ -971,16 +972,37 @@ run_eta_test(const struct alg *alg, size_t size)
 	}
 
 	/* OCF HMAC + decrypt. */
-	if (!ocf_eta(&ses, alg, iv, iv_len,
+	error = ocf_eta(&ses, alg, iv, iv_len,
 	    aad_len != 0 ? ciphertext : NULL, aad_len, ciphertext + aad_len,
-	    buffer + aad_len, size, test_digest, COP_DECRYPT))
+	    buffer + aad_len, size, test_digest, COP_DECRYPT);
+	if (error != 0) {
+		warnc(error, "cryptodev %s (%zu) ETA failed for device %s",
+		    alg->name, size, crfind(ses.crid));
 		goto out;
+	}
 	if (memcmp(cleartext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
 		printf("control:\n");
 		hexdump(cleartext, size, NULL, 0);
 		printf("test (cryptodev device %s):\n", crfind(ses.crid));
 		hexdump(buffer, size, NULL, 0);
+		goto out;
+	}
+
+	/* Verify OCF HMAC + decrypt fails with busted MAC. */
+	test_digest[0] ^= 0x1;
+	error = ocf_eta(&ses, alg, iv, iv_len,
+	    aad_len != 0 ? ciphertext : NULL, aad_len, ciphertext + aad_len,
+	    buffer + aad_len, size, test_digest, COP_DECRYPT);
+	if (error != EBADMSG) {
+		if (error != 0)
+			warnc(error,
+		    "cryptodev %s (%zu) corrupt tag failed for device %s",
+			    alg->name, size, crfind(ses.crid));
+		else
+			warnx(
+		    "cryptodev %s (%zu) corrupt tag didn't fail for device %s",
+			    alg->name, size, crfind(ses.crid));
 		goto out;
 	}
 
@@ -1040,7 +1062,7 @@ ocf_gmac(const struct alg *alg, const char *input, size_t size, const char *key,
 	sop.mackeylen = key_len;
 	sop.mackey = (char *)key;
 	sop.mac = alg->mac;
-	if (!ocf_init_session(&sop, "MAC", alg->name, &ses))
+	if (!ocf_create_session(&sop, "GMAC", alg->name, &ses))
 		return (false);
 
 	ocf_init_cop(&ses, &cop);
@@ -1085,7 +1107,7 @@ run_gmac_test(const struct alg *alg, size_t size)
 
 	/* OpenSSL GMAC. */
 	openssl_gmac(alg, cipher, key, iv, buffer, size, control_tag);
-	
+
 	/* OCF GMAC. */
 	if (!ocf_gmac(alg, buffer, size, key, key_len, iv, test_tag, &crid))
 		goto out;
