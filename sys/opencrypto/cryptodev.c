@@ -990,7 +990,7 @@ cryptodev_op(
 			break;
 		case COP_DECRYPT:
 			crp->crp_op = CRYPTO_OP_DECRYPT |
-			    CRYPTO_OP_COMPUTE_DIGEST;
+			    CRYPTO_OP_VERIFY_DIGEST;
 			break;
 		default:
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
@@ -1028,8 +1028,15 @@ cryptodev_op(
 		crp->crp_payload_start += cse->ivsize;
 		crp->crp_payload_length -= cse->ivsize;
 	}
-	cryptodev_warn(cse);
 
+	if (cop->mac != NULL) {
+		error = copyin(cop->mac, cod->buf + cop->len, cse->hashsize);
+		if (error) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			goto bail;
+		}
+	}
+	cryptodev_warn(cse);
 again:
 	/*
 	 * Let the dispatch run unlocked, then, interlock against the
@@ -1167,7 +1174,7 @@ cryptodev_aead(
 			break;
 		case COP_DECRYPT:
 			crp->crp_op = CRYPTO_OP_DECRYPT |
-			    CRYPTO_OP_COMPUTE_DIGEST;
+			    CRYPTO_OP_VERIFY_DIGEST;
 			break;
 		default:
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
