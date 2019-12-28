@@ -825,7 +825,7 @@ ocf_eta_session(struct alg *alg, const char *cipher_key,
 static bool
 ocf_eta(struct ocf_session *ses, struct alg *alg, const char *iv,
     size_t iv_len, const char *aad, size_t aad_len, const char *input,
-    char *output, size_t size, char *digest, int enc, int exp_error)
+    char *output, size_t size, char *digest, int enc)
 {
 	int ret;
 
@@ -861,18 +861,9 @@ ocf_eta(struct ocf_session *ses, struct alg *alg, const char *iv,
 	}
 
 	if (ret < 0) {
-		if (errno != exp_error) {
-			warn("cryptodev %s (%zu) ETA failed for device %s",
-			    alg->name, size, crfind(crid));
-			return (false);
-		}
-	} else {
-		if (exp_error != 0) {
-			warnx(
-		    "cryptodev %s (%zu) ETA didn't fail for device %s",
-			    alg->name, size, crfind(crid));
-			return (false);
-		}
+		warn("cryptodev %s (%zu) ETA failed for device %s",
+		    alg->name, size, crfind(crid));
+		return (false);
 	}
 
 	return (true);
@@ -936,7 +927,7 @@ run_eta_test(struct alg *alg, size_t size)
 	/* OCF encrypt + HMAC. */
 	if (!ocf_eta(&ses, alg, iv, iv_len,
 	    aad_len != 0 ? cleartext : NULL, aad_len, cleartext + aad_len,
-	    buffer + aad_len, size, test_digest, 1, 0))
+	    buffer + aad_len, size, test_digest, 1))
 		goto out;
 	if (memcmp(ciphertext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
@@ -963,7 +954,7 @@ run_eta_test(struct alg *alg, size_t size)
 	/* OCF HMAC + decrypt. */
 	if (!ocf_eta(&ses, alg, iv, iv_len,
 	    aad_len != 0 ? ciphertext : NULL, aad_len, ciphertext + aad_len,
-	    buffer + aad_len, size, test_digest, 0, 0))
+	    buffer + aad_len, size, test_digest, 0))
 		goto out;
 	if (memcmp(cleartext + aad_len, buffer + aad_len, size) != 0) {
 		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
@@ -973,14 +964,6 @@ run_eta_test(struct alg *alg, size_t size)
 		hexdump(buffer, size, NULL, 0);
 		goto out;
 	}
-
-	/* Verify OCF HMAC + decrypt fails with busted MAC. */
-	for (i = 0; i < sizeof(test_digest); i++)
-		test_digest[i] = control_digest[i] ^ 0xff;
-	if (!ocf_eta(&ses, alg, iv, iv_len,
-	    aad_len != 0 ? ciphertext : NULL, aad_len, ciphertext + aad_len,
-	    buffer + aad_len, size, test_digest, 0, EBADMSG))
-		goto out;
 
 	if (verbose)
 		printf("%s (%zu) matched (cryptodev device %s)\n",
