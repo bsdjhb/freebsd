@@ -976,7 +976,7 @@ run_eta_test(struct alg *alg, size_t size)
 
 	/* Verify OCF HMAC + decrypt fails with busted MAC. */
 	for (i = 0; i < sizeof(test_digest); i++)
-		test_digest[i] = control_digest[i] ^ 0xFF;
+		test_digest[i] = control_digest[i] ^ 0xff;
 	if (!ocf_eta(&ses, alg, iv, iv_len,
 	    aad_len != 0 ? ciphertext : NULL, aad_len, ciphertext + aad_len,
 	    buffer + aad_len, size, test_digest, 0, EBADMSG))
@@ -1214,9 +1214,9 @@ run_gcm_test(struct alg *alg, size_t size)
 
 	/* Verify OCF decrypt fails with busted tag. */
 	for (i = 0; i < sizeof(test_tag); i++)
-		test_tag[i] = control_tag[i] ^ 0xFF;
+		test_tag[i] = control_tag[i] ^ 0xff;
 	if (!ocf_aead(&ses, alg, iv, iv_len, aad, aad_len, ciphertext, buffer,
-	    size, control_tag, 0, EBADMSG))
+	    size, test_tag, 0, EBADMSG))
 		goto out;
 
 	if (verbose)
@@ -1383,9 +1383,9 @@ run_ccm_test(struct alg *alg, size_t size)
 
 	/* Verify OCF decrypt fails with busted tag. */
 	for (i = 0; i < sizeof(test_tag); i++)
-		test_tag[i] = control_tag[i] ^ 0xFF;
+		test_tag[i] = control_tag[i] ^ 0xff;
 	if (!ocf_aead(&ses, alg, iv, iv_len, aad, aad_len, ciphertext, buffer,
-	    size, control_tag, 0, EBADMSG))
+	    size, test_tag, 0, EBADMSG))
 		goto out;
 
 	if (verbose)
