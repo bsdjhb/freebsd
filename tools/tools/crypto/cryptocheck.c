@@ -804,7 +804,7 @@ run_cipher_test(const struct alg *alg, size_t size)
 
 	if (verbose)
 		printf("%s (%zu) matched (cryptodev device %s)\n",
-		    alg->name, size, crfind(crid));
+		    alg->name, size, crfind(ses.crid));
 
 out:
 	ocf_destroy_session(&ses);
@@ -977,7 +977,7 @@ run_eta_test(const struct alg *alg, size_t size)
 
 	if (verbose)
 		printf("%s (%zu) matched (cryptodev device %s)\n",
-		    alg->name, size, crfind(crid));
+		    alg->name, size, crfind(ses.crid));
 
 out:
 	ocf_destroy_session(&ses);
@@ -1293,7 +1293,7 @@ run_aead_test(const struct alg *alg, size_t size)
 
 	if (verbose)
 		printf("%s (%zu) matched (cryptodev device %s)\n",
-		    alg->name, size, crfind(crid));
+		    alg->name, size, crfind(ses.crid));
 
 out:
 	ocf_destroy_session(&ses);
