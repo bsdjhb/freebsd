@@ -97,26 +97,26 @@
  *	sha512hmac	512-bit	SHA-2 HMAC
  *
  * Ciphers:
- *	aes-cbc		128-bit aes cbc
- *	aes-cbc192	192-bit	aes cbc
- *	aes-cbc256	256-bit aes cbc
- *	aes-ctr		128-bit aes ctr
- *	aes-ctr192	192-bit aes ctr
- *	aes-ctr256	256-bit aes ctr
- *	aes-xts		128-bit aes xts
- *	aes-xts256	256-bit aes xts
+ *	aes-cbc		128-bit AES-CBC
+ *	aes-cbc192	192-bit	AES-CBC
+ *	aes-cbc256	256-bit AES-CBC
+ *	aes-ctr		128-bit AES-CTR
+ *	aes-ctr192	192-bit AES-CTR
+ *	aes-ctr256	256-bit AES-CTR
+ *	aes-xts		128-bit AES-XTS
+ *	aes-xts256	256-bit AES-XTS
  *	chacha20
  *
  * Encrypt then Authenticate:
  *	<cipher>+<mac>
  *
  * Authenticated Encryption with Associated Data:
- *	aes-gcm		128-bit aes gcm
- *	aes-gcm192	192-bit aes gcm
- *	aes-gcm256	256-bit aes gcm
- *	aes-ccm		128-bit aes ccm
- *	aes-ccm192	192-bit aes ccm
- *	aes-ccm256	256-bit aes ccm
+ *	aes-gcm		128-bit AES-GCM
+ *	aes-gcm192	192-bit AES-GCM
+ *	aes-gcm256	256-bit AES-GCM
+ *	aes-ccm		128-bit AES-CCM
+ *	aes-ccm192	192-bit AES-CCM
+ *	aes-ccm256	256-bit AES-CCM
  */
 
 #include <sys/param.h>
