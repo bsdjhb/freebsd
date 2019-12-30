@@ -145,7 +145,7 @@ const struct alg {
 	const char *name;
 	int cipher;
 	int mac;
-	enum { T_HASH, T_HMAC, T_CIPHER, T_ETA, T_GCM, T_CCM } type;
+	enum { T_HASH, T_HMAC, T_CIPHER, T_ETA, T_AEAD } type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
 } algs[] = {
@@ -192,22 +192,22 @@ const struct alg {
 	{ .name = "chacha20", .cipher = CRYPTO_CHACHA20, .type = T_CIPHER,
 	  .evp_cipher = EVP_chacha20 },
 	{ .name = "aes-gcm", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_128_NIST_GMAC, .type = T_GCM,
+	  .mac = CRYPTO_AES_128_NIST_GMAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_128_gcm },
 	{ .name = "aes-gcm192", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_192_NIST_GMAC, .type = T_GCM,
+	  .mac = CRYPTO_AES_192_NIST_GMAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_192_gcm },
 	{ .name = "aes-gcm256", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .mac = CRYPTO_AES_256_NIST_GMAC, .type = T_GCM,
+	  .mac = CRYPTO_AES_256_NIST_GMAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_256_gcm },
 	{ .name = "aes-ccm", .cipher = CRYPTO_AES_CCM_16,
-	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_CCM,
+	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_128_ccm },
 	{ .name = "aes-ccm192", .cipher = CRYPTO_AES_CCM_16,
-	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_CCM,
+	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_192_ccm },
 	{ .name = "aes-ccm256", .cipher = CRYPTO_AES_CCM_16,
-	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_CCM,
+	  .mac = CRYPTO_AES_CCM_CBC_MAC, .type = T_AEAD,
 	  .evp_cipher = EVP_aes_256_ccm },
 };
 
@@ -1032,47 +1032,6 @@ openssl_gcm_encrypt(const struct alg *alg, const EVP_CIPHER *cipher,
 	EVP_CIPHER_CTX_free(ctx);
 }
 
-static bool
-ocf_init_aead_session(const struct alg *alg, const char *key, size_t key_len,
-    struct ocf_session *ses)
-{
-	struct session2_op sop;
-
-	ocf_init_sop(&sop);
-	sop.keylen = key_len;
-	sop.key = (char *)key;
-	sop.cipher = alg->cipher;
-	sop.mackeylen = key_len;
-	sop.mackey = (char *)key;
-	sop.mac = alg->mac;
-	return (ocf_init_session(&sop, "AEAD", alg->name, ses));
-}
-
-static int
-ocf_aead(const struct ocf_session *ses, const struct alg *alg, const char *iv,
-    size_t iv_len, const char *aad, size_t aad_len, const char *input,
-    char *output, size_t size, char *tag, int op)
-{
-	struct crypt_aead caead;
-
-	ocf_init_caead(ses, &caead);
-	caead.op = op;
-	caead.len = size;
-	caead.aadlen = aad_len;
-	caead.ivlen = iv_len;
-	caead.src = (char *)input;
-	caead.dst = output;
-	caead.aad = (char *)aad;
-	caead.tag = tag;
-	caead.iv = (char *)iv;
-
-	if (ioctl(ses->fd, CIOCCRYPTAEAD, &caead) < 0)
-		return (errno);
-	return (0);
-
-	return (true);
-}
-
 #ifdef notused
 static bool
 openssl_gcm_decrypt(const struct alg *alg, const EVP_CIPHER *cipher,
@@ -1117,121 +1076,6 @@ openssl_gcm_decrypt(const struct alg *alg, const EVP_CIPHER *cipher,
 	return (valid);
 }
 #endif
-
-static void
-run_gcm_test(const struct alg *alg, size_t size)
-{
-	struct ocf_session ses;
-	const EVP_CIPHER *cipher;
-	char *aad, *buffer, *cleartext, *ciphertext;
-	char *iv, *key;
-	u_int iv_len, key_len;
-	int error;
-	char control_tag[AES_GMAC_HASH_LEN], test_tag[AES_GMAC_HASH_LEN];
-
-	cipher = alg->evp_cipher();
-	if (size % EVP_CIPHER_block_size(cipher) != 0) {
-		if (verbose)
-			printf(
-			    "%s (%zu): invalid buffer size (block size %d)\n",
-			    alg->name, size, EVP_CIPHER_block_size(cipher));
-		return;
-	}
-
-	memset(control_tag, 0x3c, sizeof(control_tag));
-	memset(test_tag, 0x3c, sizeof(test_tag));
-
-	key_len = EVP_CIPHER_key_length(cipher);
-	iv_len = EVP_CIPHER_iv_length(cipher);
-
-	key = alloc_buffer(key_len);
-	iv = generate_iv(iv_len, alg);
-	cleartext = alloc_buffer(size);
-	buffer = malloc(size);
-	ciphertext = malloc(size);
-	if (aad_len != 0)
-		aad = alloc_buffer(aad_len);
-	else
-		aad = NULL;
-
-	/* OpenSSL encrypt */
-	openssl_gcm_encrypt(alg, cipher, key, iv, aad, aad_len, cleartext,
-	    ciphertext, size, control_tag);
-
-	if (!ocf_init_aead_session(alg, key, key_len, &ses))
-		goto out;
-
-	/* OCF encrypt */
-	error = ocf_aead(&ses, alg, iv, iv_len, aad, aad_len, cleartext, buffer,
-	    size, test_tag, COP_ENCRYPT);
-	if (error != 0) {
-		warnc(error, "cryptodev %s (%zu) failed for device %s",
-		    alg->name, size, crfind(ses.crid));
-		goto out;
-	}
-	if (memcmp(ciphertext, buffer, size) != 0) {
-		printf("%s (%zu) encryption mismatch:\n", alg->name, size);
-		printf("control:\n");
-		hexdump(ciphertext, size, NULL, 0);
-		printf("test (cryptodev device %s):\n", crfind(ses.crid));
-		hexdump(buffer, size, NULL, 0);
-		goto out;
-	}
-	if (memcmp(control_tag, test_tag, sizeof(control_tag)) != 0) {
-		printf("%s (%zu) enc tag mismatch:\n", alg->name, size);
-		printf("control:\n");
-		hexdump(control_tag, sizeof(control_tag), NULL, 0);
-		printf("test (cryptodev device %s):\n", crfind(ses.crid));
-		hexdump(test_tag, sizeof(test_tag), NULL, 0);
-		goto out;
-	}
-
-	/* OCF decrypt */
-	error = ocf_aead(&ses, alg, iv, iv_len, aad, aad_len, ciphertext,
-	    buffer, size, control_tag, COP_DECRYPT);
-	if (error != 0) {
-		warnc(error, "cryptodev %s (%zu) failed for device %s",
-		    alg->name, size, crfind(ses.crid));
-		goto out;
-	}
-	if (memcmp(cleartext, buffer, size) != 0) {
-		printf("%s (%zu) decryption mismatch:\n", alg->name, size);
-		printf("control:\n");
-		hexdump(cleartext, size, NULL, 0);
-		printf("test (cryptodev device %s):\n", crfind(ses.crid));
-		hexdump(buffer, size, NULL, 0);
-		goto out;
-	}
-
-	/* Verify OCF decrypt fails with busted tag. */
-	test_tag[0] ^= 0x1;
-	error = ocf_aead(&ses, alg, iv, iv_len, aad, aad_len, ciphertext,
-	    buffer, size, test_tag, COP_DECRYPT);
-	if (error != EBADMSG) {
-		if (error != 0)
-			warnc(error,
-		    "cryptodev %s (%zu) corrupt tag failed for device %s",
-			    alg->name, size, crfind(ses.crid));
-		else
-			warnx(
-		    "cryptodev %s (%zu) corrupt tag didn't fail for device %s",
-			    alg->name, size, crfind(ses.crid));
-		goto out;
-	}
-
-	if (verbose)
-		printf("%s (%zu) matched (cryptodev device %s)\n",
-		    alg->name, size, crfind(crid));
-
-out:
-	ocf_destroy_session(&ses);
-	free(aad);
-	free(ciphertext);
-	free(buffer);
-	free(cleartext);
-	free(iv);
-	free(key);
-}
 
 static void
 openssl_ccm_encrypt(const struct alg *alg, const EVP_CIPHER *cipher,
@@ -1288,8 +1132,51 @@ openssl_ccm_encrypt(const struct alg *alg, const EVP_CIPHER *cipher,
 	EVP_CIPHER_CTX_free(ctx);
 }
 
+static bool
+ocf_init_aead_session(const struct alg *alg, const char *key, size_t key_len,
+    struct ocf_session *ses)
+{
+	struct session2_op sop;
+
+	ocf_init_sop(&sop);
+	sop.keylen = key_len;
+	sop.key = (char *)key;
+	sop.cipher = alg->cipher;
+	sop.mackeylen = key_len;
+	sop.mackey = (char *)key;
+	sop.mac = alg->mac;
+	return (ocf_init_session(&sop, "AEAD", alg->name, ses));
+}
+
+static int
+ocf_aead(const struct ocf_session *ses, const struct alg *alg, const char *iv,
+    size_t iv_len, const char *aad, size_t aad_len, const char *input,
+    char *output, size_t size, char *tag, int op)
+{
+	struct crypt_aead caead;
+
+	ocf_init_caead(ses, &caead);
+	caead.op = op;
+	caead.len = size;
+	caead.aadlen = aad_len;
+	caead.ivlen = iv_len;
+	caead.src = (char *)input;
+	caead.dst = output;
+	caead.aad = (char *)aad;
+	caead.tag = tag;
+	caead.iv = (char *)iv;
+
+	if (ioctl(ses->fd, CIOCCRYPTAEAD, &caead) < 0)
+		return (errno);
+	return (0);
+
+	return (true);
+}
+
+#define	AEAD_MAX_TAG_LEN	MAX(AES_GMAC_HASH_LEN, AES_CBC_MAC_HASH_LEN)
+
 static void
-run_ccm_test(const struct alg *alg, size_t size)
+run_aead_test(const struct alg *alg, size_t size)
 {
 	struct ocf_session ses;
 	const EVP_CIPHER *cipher;
@@ -1297,7 +1184,7 @@ run_ccm_test(const struct alg *alg, size_t size)
 	char *iv, *key;
 	u_int iv_len, key_len;
 	int error;
-	char control_tag[AES_CBC_MAC_HASH_LEN], test_tag[AES_CBC_MAC_HASH_LEN];
+	char control_tag[AEAD_MAX_TAG_LEN], test_tag[AEAD_MAX_TAG_LEN];
 
 	cipher = alg->evp_cipher();
 	if (size % EVP_CIPHER_block_size(cipher) != 0) {
@@ -1311,20 +1198,16 @@ run_ccm_test(const struct alg *alg, size_t size)
 	memset(control_tag, 0x3c, sizeof(control_tag));
 	memset(test_tag, 0x3c, sizeof(test_tag));
 
-	/*
-	 * We only have one algorithm constant for CBC-MAC; however, the
-	 * alg structure uses the different openssl types, which gives us
-	 * the key length.  We need that for the OCF code.
-	 */
 	key_len = EVP_CIPHER_key_length(cipher);
+	iv_len = EVP_CIPHER_iv_length(cipher);
 
 	/*
 	 * AES-CCM can have varying IV lengths; however, for the moment
 	 * we only support AES_CCM_IV_LEN (12).  So if the sizes are
 	 * different, we'll fail.
 	 */
-	iv_len = EVP_CIPHER_iv_length(cipher);
-	if (iv_len != AES_CCM_IV_LEN) {
+	if (EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE &&
+	    iv_len != AES_CCM_IV_LEN) {
 		if (verbose)
 			printf("OpenSSL CCM IV length (%d) != AES_CCM_IV_LEN",
 			    iv_len);
@@ -1342,8 +1225,12 @@ run_ccm_test(const struct alg *alg, size_t size)
 		aad = NULL;
 
 	/* OpenSSL encrypt */
-	openssl_ccm_encrypt(alg, cipher, key, iv, iv_len, aad, aad_len, cleartext,
-	    ciphertext, size, control_tag);
+	if (EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE)
+		openssl_ccm_encrypt(alg, cipher, key, iv, iv_len, aad,
+		    aad_len, cleartext, ciphertext, size, control_tag);
+	else
+		openssl_gcm_encrypt(alg, cipher, key, iv, aad, aad_len,
+		    cleartext, ciphertext, size, control_tag);
 
 	if (!ocf_init_aead_session(alg, key, key_len, &ses))
 		goto out;
@@ -1437,11 +1324,8 @@ run_test(const struct alg *alg, size_t size)
 	case T_ETA:
 		run_eta_test(alg, size);
 		break;
-	case T_GCM:
-		run_gcm_test(alg, size);
-		break;
-	case T_CCM:
-		run_ccm_test(alg, size);
+	case T_AEAD:
+		run_aead_test(alg, size);
 		break;
 	}
 }
@@ -1513,8 +1397,7 @@ run_aead_tests(size_t *sizes, u_int nsizes)
 	u_int i;
 
 	for (i = 0; i < nitems(algs); i++)
-		if (algs[i].type == T_GCM ||
-		    algs[i].type == T_CCM)
+		if (algs[i].type == T_AEAD)
 			run_test_sizes(&algs[i], sizes, nsizes);
 }
 
