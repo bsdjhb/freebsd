@@ -1169,8 +1169,6 @@ ocf_aead(const struct ocf_session *ses, const struct alg *alg, const char *iv,
 	if (ioctl(ses->fd, CIOCCRYPTAEAD, &caead) < 0)
 		return (errno);
 	return (0);
-
-	return (true);
 }
 
 #define	AEAD_MAX_TAG_LEN	MAX(AES_GMAC_HASH_LEN, AES_CBC_MAC_HASH_LEN)
