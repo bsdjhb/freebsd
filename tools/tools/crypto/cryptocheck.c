@@ -853,7 +853,6 @@ ocf_eta(const struct ocf_session *ses, const struct alg *alg, const char *iv,
 
 		ocf_init_caead(ses, &caead);
 		caead.op = op;
-		caead.flags = op == COP_ENCRYPT ? COP_F_CIPHER_FIRST : 0;
 		caead.len = size;
 		caead.aadlen = aad_len;
 		caead.ivlen = iv_len;
@@ -869,7 +868,6 @@ ocf_eta(const struct ocf_session *ses, const struct alg *alg, const char *iv,
 
 		ocf_init_cop(ses, &cop);
 		cop.op = op;
-		cop.flags = op == COP_ENCRYPT ? COP_F_CIPHER_FIRST : 0;
 		cop.len = size;
 		cop.src = (char *)input;
 		cop.dst = output;
@@ -1282,11 +1280,6 @@ ocf_init_aead_session(const struct alg *alg, const char *key, size_t key_len,
 	sop.keylen = key_len;
 	sop.key = (char *)key;
 	sop.cipher = alg->cipher;
-#ifdef OLD_API
-	sop.mackeylen = key_len;
-	sop.mackey = (char *)key;
-	sop.mac = alg->mac;
-#endif
 	return (ocf_init_session(&sop, "AEAD", alg->name, ses));
 }
 
