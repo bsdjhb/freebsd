@@ -1062,7 +1062,7 @@ ocf_gmac(const struct alg *alg, const char *input, size_t size, const char *key,
 	sop.mackeylen = key_len;
 	sop.mackey = (char *)key;
 	sop.mac = alg->mac;
-	if (!ocf_create_session(&sop, "GMAC", alg->name, &ses))
+	if (!ocf_init_session(&sop, "GMAC", alg->name, &ses))
 		return (false);
 
 	ocf_init_cop(&ses, &cop);
