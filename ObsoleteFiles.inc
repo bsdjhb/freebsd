@@ -36,6 +36,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2020xxxx: OCF refactoring
+OLD_FILES+=usr/share/man/man9/crypto_register.9
+OLD_FILES+=usr/share/man/man9/crypto_unregister.9
+
 # 20200320: cx and ctau drivers retired
 OLD_FILES+=usr/share/man/man4/ctau.4.gz
 OLD_FILES+=usr/share/man/man4/cx.4.gz

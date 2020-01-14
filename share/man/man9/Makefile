@@ -71,6 +71,7 @@ MAN=	accept_filter.9 \
 	cr_seeothergids.9 \
 	cr_seeotheruids.9 \
 	crypto.9 \
+	crypto_session.9 \
 	CTASSERT.9 \
 	DB_COMMAND.9 \
 	DECLARE_GEOM_CLASS.9 \
@@ -892,17 +893,18 @@ MLINKS+=critical_enter.9 critical.9 \
 MLINKS+=crypto.9 crypto_dispatch.9 \
 	crypto.9 crypto_done.9 \
 	crypto.9 crypto_freereq.9 \
-	crypto.9 crypto_freesession.9 \
 	crypto.9 crypto_get_driverid.9 \
 	crypto.9 crypto_getreq.9 \
 	crypto.9 crypto_kdispatch.9 \
 	crypto.9 crypto_kdone.9 \
 	crypto.9 crypto_kregister.9 \
-	crypto.9 crypto_newsession.9 \
-	crypto.9 crypto_register.9 \
 	crypto.9 crypto_unblock.9 \
-	crypto.9 crypto_unregister.9 \
 	crypto.9 crypto_unregister_all.9
+MLINKS+=crypto_session.9 crypto_auth_hash.9 \
+	crypto_session.9 crypto_cipher.9 \
+	crypto_session.9 crypto_get_params.9 \
+	crypto_session.9 crypto_newsession.9 \
+	crypto_session.9 crypto_freesession.9
 MLINKS+=DB_COMMAND.9 DB_SHOW_ALL_COMMAND.9 \
 	DB_COMMAND.9 DB_SHOW_COMMAND.9
 MLINKS+=DECLARE_MODULE.9 DECLARE_MODULE_TIED.9
