@@ -484,15 +484,17 @@ cryptof_ioctl(
 		case CRYPTO_RIPEMD160_HMAC:
 			thash = &auth_hash_hmac_ripemd_160;
 			break;
+#ifdef COMPAT_FREEBSD12
 		case CRYPTO_AES_128_NIST_GMAC:
-			thash = &auth_hash_nist_gmac_aes_128;
-			break;
 		case CRYPTO_AES_192_NIST_GMAC:
-			thash = &auth_hash_nist_gmac_aes_192;
-			break;
 		case CRYPTO_AES_256_NIST_GMAC:
-			thash = &auth_hash_nist_gmac_aes_256;
+			/* Should always be paired with GCM. */
+			if (sop->cipher != CRYPTO_AES_NIST_GCM_16) {
+				CRYPTDEB("GMAC without GCM");
+				return (EINVAL);
+			}
 			break;
+#endif
 		case CRYPTO_AES_NIST_GMAC:
 			switch (sop->mackeylen * 8) {
 			case 128:
@@ -512,7 +514,7 @@ cryptof_ioctl(
 			}
 			break;
 		case CRYPTO_AES_CCM_CBC_MAC:
-			switch (sop->keylen) {
+			switch (sop->mackeylen) {
 			case 16:
 				thash = &auth_hash_ccm_cbc_mac_128;
 				break;
@@ -575,13 +577,14 @@ cryptof_ioctl(
 
 		if (sop->cipher == CRYPTO_AES_NIST_GCM_16) {
 			switch (sop->mac) {
+#ifdef COMPAT_FREEBSD12
 			case CRYPTO_AES_128_NIST_GMAC:
 			case CRYPTO_AES_192_NIST_GMAC:
 			case CRYPTO_AES_256_NIST_GMAC:
 				if (sop->keylen != sop->mackeylen)
 					return (EINVAL);
-				thash = NULL;
 				break;
+#endif
 			case 0:
 				break;
 			default:
@@ -590,11 +593,13 @@ cryptof_ioctl(
 			csp.csp_mode = CSP_MODE_AEAD;
 		} else if (sop->cipher == CRYPTO_AES_CCM_16) {
 			switch (sop->mac) {
+#ifdef COMPAT_FREEBSD12
 			case CRYPTO_AES_CCM_CBC_MAC:
 				if (sop->keylen != sop->mackeylen)
 					return (EINVAL);
 				thash = NULL;
 				break;
+#endif
 			case 0:
 				break;
 			default:

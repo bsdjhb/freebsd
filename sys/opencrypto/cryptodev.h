@@ -104,9 +104,6 @@
 #define	HMAC_IPAD_VAL			0x36
 #define	HMAC_OPAD_VAL			0x5C
 /* HMAC Key Length */
-#define	AES_128_GMAC_KEY_LEN		16
-#define	AES_192_GMAC_KEY_LEN		24
-#define	AES_256_GMAC_KEY_LEN		32
 #define	AES_128_CBC_MAC_KEY_LEN		16
 #define	AES_192_CBC_MAC_KEY_LEN		24
 #define	AES_256_CBC_MAC_KEY_LEN		32
@@ -188,11 +185,13 @@
 #define	CRYPTO_CAMELLIA_CBC	21
 #define	CRYPTO_AES_XTS		22
 #define	CRYPTO_AES_ICM		23 /* commonly known as CTR mode */
-#define	CRYPTO_AES_NIST_GMAC	24 /* cipher side */
+#define	CRYPTO_AES_NIST_GMAC	24 /* GMAC only */
 #define	CRYPTO_AES_NIST_GCM_16	25 /* 16 byte ICV */
+#ifdef _KERNEL
 #define	CRYPTO_AES_128_NIST_GMAC 26 /* auth side */
 #define	CRYPTO_AES_192_NIST_GMAC 27 /* auth side */
 #define	CRYPTO_AES_256_NIST_GMAC 28 /* auth side */
+#endif
 #define	CRYPTO_BLAKE2B		29 /* Blake2b hash */
 #define	CRYPTO_BLAKE2S		30 /* Blake2s hash */
 #define	CRYPTO_CHACHA20		31 /* Chacha20 stream cipher */
