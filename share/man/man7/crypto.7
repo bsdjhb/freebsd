@@ -68,13 +68,13 @@ This algorithm implements Cipher-block chaining.
 .El
 .Pp
 This algorithm implements Galois/Counter Mode.
-This is the cipher part of an AEAD
+This cipher uses AEAD
 .Pq Authenticated Encryption with Associated Data
 mode.
 .Pp
-The associated data (if any) must be provided by the authentication mode op.
-The authentication tag will be read/written from/to the offset crd_inject
-specified in the descriptor for the authentication mode.
+The authentication tag will be read/written from/to the offset
+.Va crp_digest_start
+specified in the request.
 .Pp
 Note: You must provide an IV on every call.
 .It Dv CRYPTO_AES_ICM
