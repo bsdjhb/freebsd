@@ -104,6 +104,9 @@
 #define	HMAC_IPAD_VAL			0x36
 #define	HMAC_OPAD_VAL			0x5C
 /* HMAC Key Length */
+#define	AES_128_GMAC_KEY_LEN		16
+#define	AES_192_GMAC_KEY_LEN		24
+#define	AES_256_GMAC_KEY_LEN		32
 #define	AES_128_CBC_MAC_KEY_LEN		16
 #define	AES_192_CBC_MAC_KEY_LEN		24
 #define	AES_256_CBC_MAC_KEY_LEN		32
