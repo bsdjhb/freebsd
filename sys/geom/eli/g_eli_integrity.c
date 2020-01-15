@@ -141,9 +141,9 @@ g_eli_auth_read_done(struct cryptop *crp)
 	bp = (struct bio *)crp->crp_opaque;
 	bp->bio_inbed++;
 	if (crp->crp_etype == 0) {
-		bp->bio_completed += crp->crp_olen;
+		bp->bio_completed += crp->crp_ilen;
 		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d) (add=%jd completed=%jd).",
-		    bp->bio_inbed, bp->bio_children, (intmax_t)crp->crp_olen, (intmax_t)bp->bio_completed);
+		    bp->bio_inbed, bp->bio_children, (intmax_t)crp->crp_ilen, (intmax_t)bp->bio_completed);
 	} else {
 		G_ELI_DEBUG(1, "Crypto READ request failed (%d/%d) error=%d.",
 		    bp->bio_inbed, bp->bio_children, crp->crp_etype);

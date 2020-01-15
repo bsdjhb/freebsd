@@ -82,7 +82,7 @@ g_eli_crypto_read_done(struct cryptop *crp)
 	if (crp->crp_etype == 0) {
 		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d).",
 		    bp->bio_inbed, bp->bio_children);
-		bp->bio_completed += crp->crp_olen;
+		bp->bio_completed += crp->crp_ilen;
 	} else {
 		G_ELI_DEBUG(1, "Crypto READ request failed (%d/%d) error=%d.",
 		    bp->bio_inbed, bp->bio_children, crp->crp_etype);
