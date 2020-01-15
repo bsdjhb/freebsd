@@ -597,7 +597,7 @@ aesni_cipher_setup(struct aesni_session *ses,
 	if (error != 0)
 		return (error);
 
-	kt = is_fpu_kern_thread(0) || (csp->csp_cipher_alg != 0);
+	kt = is_fpu_kern_thread(0) || (csp->csp_cipher_alg == 0);
 	if (!kt) {
 		ACQUIRE_CTX(ctxidx, ctx);
 		fpu_kern_enter(curthread, ctx,
