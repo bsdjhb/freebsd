@@ -38,49 +38,14 @@
 .Ft int
 .Fn crypto_find_driver "const char *match"
 .Ft int
-.Fn crypto_dispatch "struct cryptop *crp"
-.Ft int
 .Fn crypto_kdispatch "struct cryptkop *krp"
 .Ft int
 .Fn crypto_unblock "uint32_t driverid" "int what"
-.Ft "struct cryptop *"
-.Fn crypto_getreq "crypto_session_t cses" "int how"
-.Ft void
-.Fn crypto_freereq "struct cryptop *crp"
 .Ft "struct cryptkop *"
 .Fn crypto_getkreq "uint32_t crid"
 .Bd -literal
 #define	CRYPTO_SYMQ	0x1
 #define	CRYPTO_ASYMQ	0x2
-
-#define EALG_MAX_BLOCK_LEN      16
-
-struct cryptop {
-	TAILQ_ENTRY(cryptop) crp_next;
-	crypto_session_t crp_session;
-	int		crp_ilen;
-	int		crp_olen;
-	int		crp_etype;
-	int		crp_flags;
-	int		crp_op;
-	union {
-		caddr_t		crp_buf;
-		struct mbuf	*crp_mbuf;
-		struct uio	*crp_uio;
-	};
-	int		crp_buf_type;
-	int		crp_aad_start;
-	int		crp_aad_length;
-	int		crp_iv_start;
-	int		crp_payload_start;
-	int		crp_payload_length;
-	int		crp_digest_start;
-	uint8_t		crp_iv[EALG_MAX_BLOCK_LEN];
-	const void	*crp_cipher_key;
-	const void	*crp_auth_key;
-	void		*crp_opaque;
-	int (*crp_callback)(struct cryptop *);
-};
 
 struct crparam {
         caddr_t         crp_p;
@@ -197,239 +162,6 @@ Currently supported algorithms are:
 .It Dv CRYPTO_SKIPJACK_CBC
 .El
 .Pp
-.Fn crypto_dispatch
-is called to process a request.
-The various fields in the
-.Vt cryptop
-structure are:
-.Bl -tag -width ".Va crp_callback"
-.It Va crp_session
-The session handle.
-.It Va crp_ilen
-The total length in bytes of the buffer to be processed.
-.It Va crp_olen
-On return, contains the total length of the result.
-For symmetric crypto operations, this will be the same as the input length.
-This will be used if the framework needs to allocate a new
-buffer for the result (or for re-formatting the input).
-.It Va crp_callback
-Callback routine invoked when a request is completed via
-.Fn crypto_done .
-The callback routine should inspect the
-.Va crp_etype
-to determine if the request was successfully completed.
-.It Va crp_etype
-The error type, if any errors were encountered, or zero if
-the request was successfully processed.
-If the
-.Er EAGAIN
-error code is returned, the session handle has changed (and has been recorded
-in the
-.Va crp_session
-field).
-The consumer should record the new session handle and use it in all subsequent
-requests.
-In this case, the request may be re-submitted immediately.
-This mechanism is used by the framework to perform
-session migration (move a session from one driver to another, because
-of availability, performance, or other considerations).
-.Pp
-This field is only valid in the context of the callback routine specified by
-.Va crp_callback .
-Errors are returned to the invoker of
-.Fn crypto_process
-only when enough information is not present to call the callback
-routine (i.e., if the pointer passed is
-.Dv NULL
-or if no callback routine was specified).
-.It Va crp_flags
-A bitmask of flags associated with this request.
-Currently defined flags are:
-.Bl -tag -width ".Dv CRYPTO_F_CBIFSYNC"
-.It Dv CRYPTO_F_IMBUF
-The buffer is an mbuf chain pointed to by
-.Va crp_mbuf .
-.It Dv CRYPTO_F_IOV
-The buffer is a
-.Vt uio
-structure pointed to by
-.Va crp_uio .
-.It Dv CRYPTO_F_BATCH
-Batch operation if possible.
-.It Dv CRYPTO_F_CBIMM
-Do callback immediately instead of doing it from a dedicated kernel thread.
-.It Dv CRYPTO_F_DONE
-Operation completed.
-.It Dv CRYPTO_F_CBIFSYNC
-Do callback immediately if operation is synchronous (that the driver
-specified the
-.Dv CRYPTOCAP_F_SYNC
-flag).
-.It Dv CRYPTO_F_ASYNC
-Try to do the crypto operation in a pool of workers
-if the operation is synchronous (that is, if the driver specified the
-.Dv CRYPTOCAP_F_SYNC
-flag).
-It aims to speed up processing by dispatching crypto operations
-on different processors.
-.It Dv CRYPTO_F_ASYNC_KEEPORDER
-Dispatch callbacks in the same order they are posted.
-Only relevant if the
-.Dv CRYPTO_F_ASYNC
-flag is set and if the operation is synchronous.
-.El
-.It Va crp_buf
-Data buffer unless
-.Dv CRYPTO_F_IMBUF
-or
-.Dv CRYPTO_F_IOV
-is set in
-.Va crp_flags .
-The length in bytes is set in
-.Va crp_ilen .
-.It Va crp_mbuf
-Data buffer mbuf chain when
-.Dv CRYPTO_F_IMBUF
-is set in
-.Va crp_flags .
-.It Va crp_uio
-.Vt struct uio
-data buffer when
-.Dv CRYPTO_F_IOV
-is set in
-.Va crp_flags .
-.It Va crp_opaque
-Cookie passed through the crypto framework untouched.
-It is
-intended for the invoking application's use.
-.It Va crp_desc
-A linked list of descriptors.
-Each descriptor provides
-information about what type of cryptographic operation should be done
-on the input buffer.
-The various fields are:
-.Bl -tag -width ".Va crd_inject"
-.It Va crd_iv
-When the flag
-.Dv CRD_F_IV_EXPLICIT
-is set, this field contains the IV.
-.It Va crd_key
-When the
-.Dv CRD_F_KEY_EXPLICIT
-flag is set, the
-.Va crd_key
-points to a buffer with encryption or authentication key.
-.It Va crd_alg
-An algorithm to use.
-Must be the same as the one given at newsession time.
-.It Va crd_klen
-The
-.Va crd_key
-key length.
-.It Va crd_skip
-The offset in the input buffer where processing should start.
-.It Va crd_len
-How many bytes, after
-.Va crd_skip ,
-should be processed.
-.It Va crd_inject
-The
-.Va crd_inject
-field specifies an offset in bytes from the beginning of the buffer.
-For encryption algorithms, this may be where the IV will be inserted
-when encrypting or where the IV may be found for
-decryption (subject to
-.Va crd_flags ) .
-For MAC algorithms, this is where the result of the keyed hash will be
-inserted.
-.It Va crd_flags
-The following flags are defined:
-.Bl -tag -width 3n
-.It Dv CRD_F_ENCRYPT
-For encryption algorithms, this bit is set when encryption is required
-(when not set, decryption is performed).
-.It Dv CRD_F_IV_PRESENT
-.\" This flag name has nothing to do w/ it's behavior, fix the name.
-For encryption, if this bit is not set the IV used to encrypt the packet
-will be written at the location pointed to by
-.Va crd_inject .
-The IV length is assumed to be equal to the blocksize of the
-encryption algorithm.
-For encryption, if this bit is set, nothing is done.
-For decryption, this flag has no meaning.
-Applications that do special
-.Dq "IV cooking" ,
-such as the half-IV mode in
-.Xr ipsec 4 ,
-can use this flag to indicate that the IV should not be written on the packet.
-This flag is typically used in conjunction with the
-.Dv CRD_F_IV_EXPLICIT
-flag.
-.It Dv CRD_F_IV_EXPLICIT
-This bit is set when the IV is explicitly
-provided by the consumer in the
-.Va crd_iv
-field.
-Otherwise, for encryption operations the IV is provided for by
-the driver used to perform the operation, whereas for decryption
-operations the offset of the IV is provided by the
-.Va crd_inject
-field.
-This flag is typically used when the IV is calculated
-.Dq "on the fly"
-by the consumer, and does not precede the data.
-.It Dv CRD_F_KEY_EXPLICIT
-For encryption and authentication (MAC) algorithms, this bit is set when the key
-is explicitly provided by the consumer in the
-.Va crd_key
-field for the given operation.
-Otherwise, the key is taken at newsession time from the
-.Va cri_key
-field.
-As calculating the key schedule may take a while, it is recommended that often
-used keys are given their own session.
-.It Dv CRD_F_COMP
-For compression algorithms, this bit is set when compression is required (when
-not set, decompression is performed).
-.El
-.It Va CRD_INI
-This
-.Vt cryptoini
-structure will not be modified by the framework or the device drivers.
-Since this information accompanies every cryptographic
-operation request, drivers may re-initialize state on-demand
-(typically an expensive operation).
-Furthermore, the cryptographic
-framework may re-route requests as a result of full queues or hardware
-failure, as described above.
-.It Va crd_next
-Point to the next descriptor.
-Linked operations are useful in protocols such as
-.Xr ipsec 4 ,
-where multiple cryptographic transforms may be applied on the same
-block of data.
-.El
-.El
-.Pp
-.Fn crypto_getreq
-allocates a
-.Vt cryptop
-structure with a linked list of
-.Fa num
-.Vt cryptodesc
-structures.
-.Pp
-.Fn crypto_freereq
-deallocates a structure
-.Vt cryptop
-and any
-.Vt cryptodesc
-structures linked to it.
-Note that it is the responsibility of the
-callback routine to do the necessary cleanups associated with the
-opaque field in the
-.Vt cryptop
-structure.
 .Pp
 .Fn crypto_kdispatch
 is called to perform a keying operation.
@@ -599,30 +331,12 @@ When the request is completed, or an error is detected, the
 routine should invoked
 .Fn crypto_kdone .
 .Sh RETURN VALUES
-.Fn crypto_register ,
-.Fn crypto_kregister ,
-.Fn crypto_newsession ,
-.Fn crypto_freesession ,
+.Fn crypto_kregister
 and
 .Fn crypto_unblock
 return 0 on success, or an error code on failure.
 .Fn crypto_get_driverid
 returns a non-negative value on error, and \-1 on failure.
-.Fn crypto_getreq
-returns a pointer to a
-.Vt cryptop
-structure and
-.Dv NULL
-on failure.
-.Fn crypto_dispatch
-returns
-.Er EINVAL
-if its argument or the callback function was
-.Dv NULL ,
-and 0 otherwise.
-The callback is provided with an error code in case of failure, in the
-.Va crp_etype
-field.
 .Sh FILES
 .Bl -tag -width ".Pa sys/opencrypto/crypto.c"
 .It Pa sys/opencrypto/crypto.c
@@ -632,6 +346,7 @@ most of the framework code
 .Xr crypto 4 ,
 .Xr ipsec 4 ,
 .Xr crypto 7 ,
+.Xr crypto_request 9 ,
 .Xr crypto_session 9 ,
 .Xr malloc 9 ,
 .Xr sleep 9
