@@ -571,7 +571,7 @@ ipcomp_output_cb(struct cryptop *crp)
 	}
 	IPCOMPSTAT_INC(ipcomps_hist[sav->alg_comp]);
 
-	if (crp->crp_ilen - skip > crp->crp_olen) {
+	if (crp->crp_payload_length > crp->crp_olen) {
 		struct mbuf *mo;
 		struct ipcomp *ipcomp;
 		int roff;
@@ -638,8 +638,8 @@ ipcomp_output_cb(struct cryptop *crp)
 	} else {
 		/* Compression was useless, we have lost time. */
 		IPCOMPSTAT_INC(ipcomps_uncompr);
-		DPRINTF(("%s: compressions was useless %d - %d <= %d\n",
-		    __func__, crp->crp_ilen, skip, crp->crp_olen));
+		DPRINTF(("%s: compressions was useless %d <= %d\n",
+		    __func__, crp->crp_payload_length, crp->crp_olen));
 		/* XXX remember state to not compress the next couple
 		 *     of packets, RFC 3173, 2.2. Non-Expansion Policy */
 	}
