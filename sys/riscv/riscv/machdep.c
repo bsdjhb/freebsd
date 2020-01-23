@@ -368,11 +368,10 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	tf = td->td_frame;
 
 	/*
-	 * Make sure the processor mode has not been tampered with and
-	 * interrupts have not been disabled.
-	 * Supervisor interrupts in user mode are always enabled.
+	 * Only permit changes to the USTATUS bits of SSTATUS.
 	 */
-	if ((mcp->mc_gpregs.gp_sstatus & SSTATUS_SPP) != 0)
+	if (((mcp->mc_gpregs.gp_sstatus ^ tf->tf_sstatus) &
+	    ~(SSTATUS_UPIE | SSTATUS_UIE)) != 0)
 		return (EINVAL);
 
 	memcpy(tf->tf_t, mcp->mc_gpregs.gp_t, sizeof(tf->tf_t));
