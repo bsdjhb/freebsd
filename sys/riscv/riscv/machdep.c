@@ -368,10 +368,16 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	tf = td->td_frame;
 
 	/*
-	 * Only permit changes to the USTATUS bits of SSTATUS.
+	 * Permit changes to the USTATUS bits of SSTATUS.
+	 *
+	 * Ignore writes to read-only bits (SD, XS).
+	 *
+	 * Ignore writes to the FS field as set_fpcontext() will set
+	 * it explicitly.
 	 */
 	if (((mcp->mc_gpregs.gp_sstatus ^ tf->tf_sstatus) &
-	    ~(SSTATUS_UPIE | SSTATUS_UIE)) != 0)
+	    ~(SSTATUS64_SD | SSTATUS_XS_MASK | SSTATUS_FS_MASK | SSTATUS_UPIE |
+	    SSTATUS_UIE)) != 0)
 		return (EINVAL);
 
 	memcpy(tf->tf_t, mcp->mc_gpregs.gp_t, sizeof(tf->tf_t));
@@ -425,7 +431,12 @@ set_fpcontext(struct thread *td, mcontext_t *mcp)
 {
 #ifdef FPE
 	struct pcb *curpcb;
+#endif
 
+	td->td_frame->tf_sstatus &= ~SSTATUS_FS_MASK;
+	td->td_frame->tf_sstatus |= SSTATUS_FS_OFF;
+
+#ifdef FPE
 	critical_enter();
 
 	if ((mcp->mc_flags & _MC_FP_VALID) != 0) {
@@ -435,6 +446,7 @@ set_fpcontext(struct thread *td, mcontext_t *mcp)
 		    sizeof(mcp->mc_fpregs));
 		curpcb->pcb_fcsr = mcp->mc_fpregs.fp_fcsr;
 		curpcb->pcb_fpflags = mcp->mc_fpregs.fp_flags & PCB_FP_USERMASK;
+		td->td_frame->tf_sstatus |= SSTATUS_FS_CLEAN;
 	}
 
 	critical_exit();
