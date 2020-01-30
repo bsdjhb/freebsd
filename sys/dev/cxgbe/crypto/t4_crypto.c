@@ -165,7 +165,7 @@ struct ccr_session_blkcipher {
 struct ccr_session {
 	bool active;
 	int pending;
-	enum { HASH, HMAC, BLKCIPHER, AUTHENC, GCM, CCM } mode;
+	enum { HASH, HMAC, BLKCIPHER, ETA, GCM, CCM } mode;
 	union {
 		struct ccr_session_hmac hmac;
 		struct ccr_session_gmac gmac;
@@ -208,8 +208,8 @@ struct ccr_softc {
 	uint64_t stats_blkcipher_decrypt;
 	uint64_t stats_hash;
 	uint64_t stats_hmac;
-	uint64_t stats_authenc_encrypt;
-	uint64_t stats_authenc_decrypt;
+	uint64_t stats_eta_encrypt;
+	uint64_t stats_eta_decrypt;
 	uint64_t stats_gcm_encrypt;
 	uint64_t stats_gcm_decrypt;
 	uint64_t stats_ccm_encrypt;
@@ -783,7 +783,7 @@ ccr_hmac_ctrl(unsigned int hashsize, unsigned int authsize)
 }
 
 static int
-ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
+ccr_eta(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 {
 	char iv[CHCR_MAX_CRYPTO_IV_LEN];
 	struct chcr_wr *crwr;
@@ -1076,7 +1076,7 @@ ccr_authenc(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 }
 
 static int
-ccr_authenc_done(struct ccr_softc *sc, struct ccr_session *s,
+ccr_eta_done(struct ccr_softc *sc, struct ccr_session *s,
     struct cryptop *crp, const struct cpl_fw6_pld *cpl, int error)
 {
 
@@ -1296,7 +1296,7 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	/*
 	 * NB: cipherstop is explicitly set to 0.  On encrypt it
 	 * should normally be set to 0 anyway.  However, for decrypt
-	 * the cipher ends before the tag in the AUTHENC case (and
+	 * the cipher ends before the tag in the ETA case (and
 	 * authstop is set to stop before the tag), but for GCM the
 	 * cipher still runs to the end of the buffer.  Not sure if
 	 * this is intentional or a firmware quirk, but it is required
@@ -2010,11 +2010,11 @@ ccr_sysctls(struct ccr_softc *sc)
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "cipher_decrypt", CTLFLAG_RD,
 	    &sc->stats_blkcipher_decrypt, 0,
 	    "Cipher decryption requests submitted");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc_encrypt", CTLFLAG_RD,
-	    &sc->stats_authenc_encrypt, 0,
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "eta_encrypt", CTLFLAG_RD,
+	    &sc->stats_eta_encrypt, 0,
 	    "Combined AES+HMAC encryption requests submitted");
-	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "authenc_decrypt", CTLFLAG_RD,
-	    &sc->stats_authenc_decrypt, 0,
+	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "eta_decrypt", CTLFLAG_RD,
+	    &sc->stats_eta_decrypt, 0,
 	    "Combined AES+HMAC decryption requests submitted");
 	SYSCTL_ADD_U64(ctx, children, OID_AUTO, "gcm_encrypt", CTLFLAG_RD,
 	    &sc->stats_gcm_encrypt, 0, "AES-GCM encryption requests submitted");
@@ -2169,7 +2169,7 @@ ccr_aes_setkey(struct ccr_session *s, const void *key, int klen)
 
 	kctx_len = roundup2(s->blkcipher.key_len, 16);
 	switch (s->mode) {
-	case AUTHENC:
+	case ETA:
 		mk_size = s->hmac.mk_size;
 		opad_present = 1;
 		iopad_size = roundup2(s->hmac.partial_digest_len, 16);
@@ -2445,7 +2445,7 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 			s->mode = GCM;
 		break;
 	case CSP_MODE_ETA:
-		s->mode = AUTHENC;
+		s->mode = ETA;
 		break;
 	case CSP_MODE_DIGEST:
 		if (csp->csp_auth_klen != 0)
@@ -2562,7 +2562,7 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 				sc->stats_blkcipher_decrypt++;
 		}
 		break;
-	case AUTHENC:
+	case ETA:
 		if (crp->crp_auth_key != NULL)
 			t4_init_hmac_digest(s->hmac.auth_hash,
 			    s->hmac.partial_digest_len, crp->crp_auth_key,
@@ -2570,12 +2570,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 		if (crp->crp_cipher_key != NULL)
 			ccr_aes_setkey(s, crp->crp_cipher_key,
 			    csp->csp_cipher_klen);
-		error = ccr_authenc(sc, s, crp);
+		error = ccr_eta(sc, s, crp);
 		if (error == 0) {
 			if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
-				sc->stats_authenc_encrypt++;
+				sc->stats_eta_encrypt++;
 			else
-				sc->stats_authenc_decrypt++;
+				sc->stats_eta_decrypt++;
 		}
 		break;
 	case GCM:
@@ -2678,8 +2678,8 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	case BLKCIPHER:
 		error = ccr_blkcipher_done(sc, s, crp, cpl, error);
 		break;
-	case AUTHENC:
-		error = ccr_authenc_done(sc, s, crp, cpl, error);
+	case ETA:
+		error = ccr_eta_done(sc, s, crp, cpl, error);
 		break;
 	case GCM:
 		error = ccr_gcm_done(sc, s, crp, cpl, error);
