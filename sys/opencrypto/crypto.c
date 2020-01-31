@@ -1192,6 +1192,10 @@ crypto_unregister_all(u_int32_t driverid)
 	cap->cc_flags |= CRYPTOCAP_F_CLEANUP;
 	crypto_drivers[driverid] = NULL;
 
+	/*
+	 * XXX: This doesn't do anything to kick sessions that
+	 * have no pending operations.
+	 */
 	while (cap->cc_sessions != 0 || cap->cc_koperations != 0)
 		mtx_sleep(cap, &crypto_drivers_mtx, 0, "cryunreg", 0);
 	CRYPTO_DRIVER_UNLOCK();
