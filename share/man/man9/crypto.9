@@ -25,28 +25,17 @@
 .Nd API for cryptographic services in the kernel
 .Sh SYNOPSIS
 .In opencrypto/cryptodev.h
-.Ft int32_t
-.Fn crypto_get_driverid "device_t dev" "size_t session_size" "int flags"
 .Ft int
 .Fn crypto_kregister "uint32_t driverid" "int kalg" "uint32_t flags"
-.Ft int
-.Fn crypto_unregister_all "uint32_t driverid"
-.Ft void
-.Fn crypto_done "struct cryptop *crp"
 .Ft void
 .Fn crypto_kdone "struct cryptkop *krp"
 .Ft int
 .Fn crypto_find_driver "const char *match"
 .Ft int
 .Fn crypto_kdispatch "struct cryptkop *krp"
-.Ft int
-.Fn crypto_unblock "uint32_t driverid" "int what"
 .Ft "struct cryptkop *"
 .Fn crypto_getkreq "uint32_t crid"
 .Bd -literal
-#define	CRYPTO_SYMQ	0x1
-#define	CRYPTO_ASYMQ	0x2
-
 struct crparam {
         caddr_t         crp_p;
         u_int           crp_nbits;
@@ -193,58 +182,14 @@ Callback called on completion of a keying operation.
 .El
 .Sh DRIVER-SIDE API
 The
-.Fn crypto_get_driverid ,
-.Fn crypto_get_driver_session ,
-.Fn crypto_kregister ,
-.Fn crypto_unblock ,
-and
-.Fn crypto_done
+.Fn crypto_kregister
 routines are used by drivers that provide support for cryptographic
 primitives to register and unregister with the kernel crypto services
 framework.
 .Pp
-Drivers must first use the
-.Fn crypto_get_driverid
-function to acquire a driver identifier, specifying the
-.Fa flags
-as an argument.
-One of
-.Dv CRYPTOCAP_F_SOFTWARE
-or
-.Dv CRYPTOCAP_F_HARDWARE
-must be specified.
-The
-.Dv CRYPTOCAP_F_SYNC
-may also be specified, and should be specified if the driver does all of
-it's operations synchronously.
-Drivers must pass the size of their session structure as the second argument.
-An appropriately sized memory will be allocated by the framework, zeroed, and
-passed to the driver's
-.Fn newsession
-method.
-.Pp
-.Fn crypto_unregister_all
-will unregister all algorithms registered by a driver
-and the driver will be disabled (no new sessions will be allocated on
-that driver, and any existing sessions will be migrated to other
-drivers).
-After a call to
-.Fn crypto_unregister_all
-there will be no threads in either the newsession or freesession function
-of the driver.
-.Pp
 The calling convention for the driver-supplied routines are:
 .Pp
 .Bl -item -compact
-.It
-.Ft int
-.Fn \*[lp]*newsession\*[rp] "device_t" "crypto_session_t" "struct cryptoini *" ;
-.It
-.Ft void
-.Fn \*[lp]*freesession\*[rp] "device_t" "crypto_session_t" ;
-.It
-.Ft int
-.Fn \*[lp]*process\*[rp] "device_t" "struct cryptop *" "int" ;
 .It
 .Ft int
 .Fn \*[lp]*kprocess\*[rp] "device_t" "struct cryptkop *" "int" ;
@@ -255,65 +200,6 @@ all routines is the
 .Fa device_t
 that was provided to
 .Fn crypto_get_driverid .
-The second argument to
-.Fn newsession
-is the opaque session handle for the new session.
-The third argument is identical to that of
-.Fn crypto_newsession .
-.Pp
-Drivers obtain a pointer to their session memory by invoking
-.Fn crypto_get_driver_session
-on the opaque
-.Vt crypto_session_t
-handle.
-.Pp
-The
-.Fn freesession
-routine takes as arguments the opaque data value and the session handle.
-It should clear any context associated with the session (clear hardware
-registers, memory, etc.).
-If no resources need to be released other than the contents of session memory,
-the method is optional.
-The
-.Nm
-framework will zero and release the allocated session memory (after running the
-.Fn freesession
-method, if one exists).
-.Pp
-The
-.Fn process
-routine is invoked with a request to perform crypto processing.
-This routine must not block or sleep, but should queue the request and return
-immediately or process the request to completion.
-In case of an unrecoverable error, the error indication must be placed in the
-.Va crp_etype
-field of the
-.Vt cryptop
-structure.
-When the request is completed, or an error is detected, the
-.Fn process
-routine must invoke
-.Fn crypto_done .
-Session migration may be performed, as mentioned previously.
-.Pp
-In case of a temporary resource exhaustion, the
-.Fn process
-routine may return
-.Er ERESTART
-in which case the crypto services will requeue the request, mark the driver
-as
-.Dq blocked ,
-and stop submitting requests for processing.
-The driver is then responsible for notifying the crypto services
-when it is again able to process requests through the
-.Fn crypto_unblock
-routine.
-This simple flow control mechanism should only be used for short-lived
-resource exhaustion as it causes operations to be queued in the crypto
-layer.
-Doing so is preferable to returning an error in such cases as
-it can cause network protocols to degrade performance by treating the
-failure much like a lost packet.
 .Pp
 The
 .Fn kprocess
@@ -332,11 +218,7 @@ routine should invoked
 .Fn crypto_kdone .
 .Sh RETURN VALUES
 .Fn crypto_kregister
-and
-.Fn crypto_unblock
 return 0 on success, or an error code on failure.
-.Fn crypto_get_driverid
-returns a non-negative value on error, and \-1 on failure.
 .Sh FILES
 .Bl -tag -width ".Pa sys/opencrypto/crypto.c"
 .It Pa sys/opencrypto/crypto.c
@@ -346,6 +228,7 @@ most of the framework code
 .Xr crypto 4 ,
 .Xr ipsec 4 ,
 .Xr crypto 7 ,
+.Xr crypto_driver 9 ,
 .Xr crypto_request 9 ,
 .Xr crypto_session 9 ,
 .Xr malloc 9 ,
@@ -356,14 +239,6 @@ The cryptographic framework first appeared in
 and was written by
 .An Angelos D. Keromytis Aq Mt angelos@openbsd.org .
 .Sh BUGS
-The framework currently assumes that all the algorithms in a
-.Fn crypto_newsession
-operation must be available by the same driver.
-If that is not the case, session initialization will fail.
-.Pp
 The framework also needs a mechanism for determining which driver is
 best for a specific set of algorithms associated with a session.
 Some type of benchmarking is in order here.
-.Pp
-Multiple instances of the same algorithm in the same session are not
-supported.
