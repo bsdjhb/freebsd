@@ -1599,7 +1599,6 @@ static bool
 cesa_auth_supported(struct cesa_softc *sc,
     const struct crypto_session_params *csp)
 {
-	int hashlen;
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA2_256_HMAC:
@@ -1619,21 +1618,6 @@ cesa_auth_supported(struct cesa_softc *sc,
 
 	if (csp->csp_auth_klen > CESA_MAX_MKEY_LEN)
 		return (false);
-
-	hashlen = crypto_auth_hash(csp)->hashsize;
-	switch (csp->csp_auth_alg) {
-	case CRYPTO_MD5:
-	case CRYPTO_SHA1:
-		if (csp->csp_auth_mlen != 0 &&
-		    csp->csp_auth_mlen != hashlen)
-			return (false);
-		break;
-	default:
-		if (csp->csp_auth_mlen != 0 &&
-		    csp->csp_auth_mlen != CESA_HMAC_TRUNC_LEN &&
-		    csp->csp_auth_mlen != hashlen)
-			return (false);
-	}
 
 	return (true);
 }
