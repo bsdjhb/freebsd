@@ -62,7 +62,7 @@ and should be set to either
 or
 .Dv M_WAITOK .
 The caller should then set fields in the returned structure to describe
-request-specific paramters.
+request-specific parameters.
 Unused fields should be left as-is.
 .Pp
 .Fn crypto_dispatch
@@ -79,7 +79,7 @@ Note that a request's callback function may be invoked before
 .Fn crypto_dispatch
 returns.
 .Pp
-Once a request has signalled completion by invoking it's callback function,
+Once a request has signaled completion by invoking it's callback function,
 it should be feed via
 .Fn crypto_freereq .
 .Pp
@@ -143,7 +143,7 @@ session.
 All requests must define a payload region.
 Other regions are only required for specific session modes.
 The following regions are defined:
-.Bl -column "Payload" ".Fa crp_payload_start" ".Fa crp_payload_length"
+.Bl -column "Payload" "crp_payload_start" "crp_payload_length"
 .It Sy Region Ta Sy Start Ta Sy Length Ta Sy Description
 .It AAD Ta Fa crp_aad_start Ta Fa crp_aad_length Ta
 Additional Authenticated Data
@@ -383,7 +383,7 @@ This pointer permits users of the cryptographic framework to store
 information about a request to be used in the callback.
 .It Fa crp_callback
 Callback function.
-This must post to a callback function of type
+This must point to a callback function of type
 .Vt void (*)(struct cryptop *) .
 The callback function should inspect
 .Fa crp_etype

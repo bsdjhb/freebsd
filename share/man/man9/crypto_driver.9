@@ -140,7 +140,7 @@ When a new session is created by
 .Fn crypto_newsession ,
 .Fn CRYPTODEV_PROBESESSION
 is invoked by the cryptographic framework on each active driver to
-determine the best driver to use for the sesssion.
+determine the best driver to use for the session.
 This method should inspect the session parameters in
 .Fa csp .
 If a driver does not support requests described by
@@ -172,7 +172,7 @@ the framework invokes the
 method to initialize driver-specific session state.
 Prior to calling this method,
 the framework allocates a per-session driver-specific data structure.
-This structure is initalized with zeroes,
+This structure is initialized with zeroes,
 and it's size is set by the
 .Fa session_size
 passed to
@@ -191,7 +191,7 @@ is invoked to release any driver-specific state when a session is
 destroyed.
 The per-session driver-specific data structure is explicitly zeroed
 and freed by the framework after this method returns.
-If a driver requires no additional teardown steps, it can leave
+If a driver requires no additional tear-down steps, it can leave
 this method undefined.
 .Pp
 This method should not sleep.
@@ -204,7 +204,7 @@ but it must not sleep.
 .Pp
 If this method is not able to complete a request due to insufficient
 resources such as a full command queue,
-it can defer the request with
+it can defer the request by returning
 .Dv ERESTART .
 The request will be queued by the framework and retried once the
 driver releases pending requests via
@@ -372,7 +372,7 @@ returns a pointer to a contiguous segment or
 .Dv NULL .
 .Pp
 .Fn crypto_get_driverid
-returns a driver identifier on sucess or -1 on error.
+returns a driver identifier on success or -1 on error.
 .Pp
 .Fn crypto_unblock ,
 .Fn crypto_unregister_all ,
@@ -387,5 +387,5 @@ returns a negative value on success or an error on failure.
 .Sh SEE ALSO
 .Xr crypto 7 ,
 .Xr crypto 9 ,
-.Xr crypto_request 9
+.Xr crypto_request 9 ,
 .Xr crypto_session 9
