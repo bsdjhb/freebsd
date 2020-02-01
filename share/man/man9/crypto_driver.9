@@ -264,7 +264,8 @@ bytes in the request's data buffer.
 A driver calls
 .Fn crypto_done
 to mark the request
-.Fa crp as completed.
+.Fa crp
+as completed.
 Any errors should be set in
 .Fa crp_etype
 prior to calling this function.
