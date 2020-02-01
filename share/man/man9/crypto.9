@@ -26,34 +26,7 @@
 .Sh SYNOPSIS
 .In opencrypto/cryptodev.h
 .Ft int
-.Fn crypto_kregister "uint32_t driverid" "int kalg" "uint32_t flags"
-.Ft void
-.Fn crypto_kdone "struct cryptkop *krp"
-.Ft int
 .Fn crypto_find_driver "const char *match"
-.Ft int
-.Fn crypto_kdispatch "struct cryptkop *krp"
-.Ft "struct cryptkop *"
-.Fn crypto_getkreq "uint32_t crid"
-.Bd -literal
-struct crparam {
-        caddr_t         crp_p;
-        u_int           crp_nbits;
-};
-
-#define CRK_MAXPARAM    8
-
-struct cryptkop {
-        TAILQ_ENTRY(cryptkop) krp_next;
-        u_int              krp_op;         /* ie. CRK_MOD_EXP or other */
-        u_int              krp_status;     /* return status */
-        u_short            krp_iparams;    /* # of input parameters */
-        u_short            krp_oparams;    /* # of output parameters */
-        uint32_t           krp_hid;
-        struct crparam     krp_param[CRK_MAXPARAM];
-        int               (*krp_callback)(struct cryptkop *);
-};
-.Ed
 .Sh DESCRIPTION
 .Nm
 is a framework for drivers of cryptographic hardware to register with
@@ -151,74 +124,7 @@ Currently supported algorithms are:
 .It Dv CRYPTO_SKIPJACK_CBC
 .El
 .Pp
-.Pp
-.Fn crypto_kdispatch
-is called to perform a keying operation.
-The various fields in the
-.Vt cryptkop
-structure are:
-.Bl -tag -width ".Va krp_callback"
-.It Va krp_op
-Operation code, such as
-.Dv CRK_MOD_EXP .
-.It Va krp_status
-Return code.
-This
-.Va errno Ns -style
-variable indicates whether lower level reasons
-for operation failure.
-.It Va krp_iparams
-Number of input parameters to the specified operation.
-Note that each operation has a (typically hardwired) number of such parameters.
-.It Va krp_oparams
-Number of output parameters from the specified operation.
-Note that each operation has a (typically hardwired) number of such parameters.
-.It Va krp_kvp
-An array of kernel memory blocks containing the parameters.
-.It Va krp_hid
-Identifier specifying which low-level driver is being used.
-.It Va krp_callback
-Callback called on completion of a keying operation.
-.El
-.Sh DRIVER-SIDE API
-The
-.Fn crypto_kregister
-routines are used by drivers that provide support for cryptographic
-primitives to register and unregister with the kernel crypto services
-framework.
-.Pp
-The calling convention for the driver-supplied routines are:
-.Pp
-.Bl -item -compact
-.It
-.Ft int
-.Fn \*[lp]*kprocess\*[rp] "device_t" "struct cryptkop *" "int" ;
-.El
-.Pp
-On invocation, the first argument to
-all routines is the
-.Fa device_t
-that was provided to
-.Fn crypto_get_driverid .
-.Pp
-The
-.Fn kprocess
-routine is invoked with a request to perform crypto key processing.
-This routine must not block, but should queue the request and return
-immediately.
-Upon processing the request, the callback routine should be invoked.
-In case of an unrecoverable error, the error indication must be placed in the
-.Va krp_status
-field of the
-.Vt cryptkop
-structure.
-When the request is completed, or an error is detected, the
-.Fn kprocess
-routine should invoked
-.Fn crypto_kdone .
 .Sh RETURN VALUES
-.Fn crypto_kregister
-return 0 on success, or an error code on failure.
 .Sh FILES
 .Bl -tag -width ".Pa sys/opencrypto/crypto.c"
 .It Pa sys/opencrypto/crypto.c
@@ -228,6 +134,7 @@ most of the framework code
 .Xr crypto 4 ,
 .Xr ipsec 4 ,
 .Xr crypto 7 ,
+.Xr crypto_asym 9 ,
 .Xr crypto_driver 9 ,
 .Xr crypto_request 9 ,
 .Xr crypto_session 9 ,

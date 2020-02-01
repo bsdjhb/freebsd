@@ -71,6 +71,7 @@ MAN=	accept_filter.9 \
 	cr_seeothergids.9 \
 	cr_seeotheruids.9 \
 	crypto.9 \
+	crypto_asym.9 \
 	crypto_driver.9 \
 	crypto_request.9 \
 	crypto_session.9 \
@@ -892,10 +893,11 @@ MLINKS+=cpuset.9 CPUSET_T_INITIALIZER.9 \
 	cpuset.9 CPU_COPY_STORE_REL.9
 MLINKS+=critical_enter.9 critical.9 \
 	critical_enter.9 critical_exit.9
-MLINKS+=crypto.9 crypto_find_driver.9 \
-	crypto.9 crypto_kdispatch.9 \
-	crypto.9 crypto_kdone.9 \
-	crypto.9 crypto_kregister.9 \
+MLINKS+=crypto.9 crypto_find_driver.9
+MLINKS+=crypto_asym.9 crypto_kdispatch.9 \
+	crypto_asym.9 crypto_kdone.9 \
+	crypto_asym.9 crypto_kregister.9 \
+	crypto_asym.9 CRYPTODEV_KPROCESS.9
 MLINKS+=crypto_driver.9 crypto_apply.9 \
 	crypto_driver.9 crypto_contiguous_segment.9 \
 	crypto_driver.9 crypto_copyback.9 \
