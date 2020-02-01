@@ -1308,13 +1308,11 @@ cryptodev_cb(struct cryptop *crp)
 	return (0);
 }
 
-static int
-cryptodevkey_cb(void *op)
+static void
+cryptodevkey_cb(struct cryptkop *krp)
 {
-	struct cryptkop *krp = (struct cryptkop *) op;
 
 	wakeup_one(krp);
-	return (0);
 }
 
 static int
@@ -1373,7 +1371,7 @@ cryptodev_key(struct crypt_kop *kop)
 	krp->krp_oparams = kop->crk_oparams;
 	krp->krp_crid = kop->crk_crid;
 	krp->krp_status = 0;
-	krp->krp_callback = (int (*) (struct cryptkop *)) cryptodevkey_cb;
+	krp->krp_callback = cryptodevkey_cb;
 
 	for (i = 0; i < CRK_MAXPARAM; i++) {
 		if (kop->crk_param[i].crp_nbits > 65536) {

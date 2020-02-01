@@ -529,7 +529,7 @@ struct cryptkop {
 	u_int		krp_crid;	/* desired device, etc. */
 	uint32_t	krp_hid;	/* device used */
 	struct crparam	krp_param[CRK_MAXPARAM];	/* kvm */
-	int		(*krp_callback)(struct cryptkop *);
+	void		(*krp_callback)(struct cryptkop *);
 	struct cryptocap *krp_cap;
 };
 
