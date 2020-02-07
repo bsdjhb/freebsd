@@ -37,6 +37,7 @@
 # done
 
 # 2020xxxx: OCF refactoring
+OLD_FILES+=usr/share/man/man9/crypto_find_driver.9
 OLD_FILES+=usr/share/man/man9/crypto_register.9
 OLD_FILES+=usr/share/man/man9/crypto_unregister.9
 
