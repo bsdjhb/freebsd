@@ -1083,18 +1083,7 @@ ccr_eta_done(struct ccr_softc *sc, struct ccr_session *s,
 	/*
 	 * The updated IV to permit chained requests is at
 	 * cpl->data[2], but OCF doesn't permit chained requests.
-	 *
-	 * A decryption request always does a comparison of the
-	 * supplied HMAC.  If the user requested a computed digest
-	 * instead and the comparison failed, copy the computed HMAC
-	 * into the destination buffer.
 	 */
-	if (error == EBADMSG && !CHK_PAD_ERR_BIT(be64toh(cpl->data[0])) &&
-	    (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) == 0) {
-		crypto_copyback(crp, crp->crp_digest_start, s->hmac.hash_len,
-		    cpl + 1);
-		error = 0;
-	}
 	return (error);
 }
 
