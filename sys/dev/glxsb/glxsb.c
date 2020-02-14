@@ -491,7 +491,7 @@ glxsb_crypto_probesession(device_t dev, const struct crypto_session_params *csp)
 	/*
 	 * We only support HMAC algorithms to be able to work with
 	 * ipsec(4), so if we are asked only for authentication without
-	 * encryption, don't pretend we can accellerate it.
+	 * encryption, don't pretend we can accelerate it.
 	 */
 	switch (csp->csp_mode) {
 	case CSP_MODE_ETA:

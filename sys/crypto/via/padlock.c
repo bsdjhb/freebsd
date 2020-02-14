@@ -147,7 +147,7 @@ padlock_probesession(device_t dev, const struct crypto_session_params *csp)
 	/*
 	 * We only support HMAC algorithms to be able to work with
 	 * ipsec(4), so if we are asked only for authentication without
-	 * encryption, don't pretend we can accellerate it.
+	 * encryption, don't pretend we can accelerate it.
 	 *
 	 * XXX: For CPUs with SHA instructions we should probably
 	 * permit CSP_MODE_DIGEST so that those can be tested.
