@@ -1436,7 +1436,10 @@ ubsec_callback(struct ubsec_softc *sc, struct ubsec_q *q)
 	bus_dmamap_unload(sc->sc_dmat, q->q_src_map);
 	bus_dmamap_destroy(sc->sc_dmat, q->q_src_map);
 
-	/* XXX: Should crp_mbuf be updated to q->q_dst_m if it is non-NULL? */
+	if (q->q_dst_m != NULL) {
+		m_freem(crp->crp_mbuf);
+		crp->crp_mbuf = q->q_dst_m;
+	}
 
 	if (csp->csp_auth_alg != 0) {
 		if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
