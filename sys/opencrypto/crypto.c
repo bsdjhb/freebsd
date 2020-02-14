@@ -1278,8 +1278,6 @@ crp_sanity(struct cryptop *crp)
 		KASSERT(crp->crp_op ==
 		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
 		    crp->crp_op ==
-		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
-		    crp->crp_op ==
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid ETA op %x", crp->crp_op));
 		break;
