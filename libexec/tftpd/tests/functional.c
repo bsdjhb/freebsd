@@ -573,6 +573,29 @@ TFTPD_TC_DEFINE(rrq_medium,)
 }
 
 /*
+ * Read a medium file with a window size of 2.
+ */
+TFTPD_TC_DEFINE(rrq_medium_window,)
+{
+	int fd;
+	size_t i;
+	uint32_t contents[192];
+
+	for (i = 0; i < nitems(contents); i++)
+		contents[i] = i;
+
+	fd = open("medium.txt", O_RDWR | O_CREAT, 0644);
+	ATF_REQUIRE(fd >= 0);
+	write_all(fd, contents, sizeof(contents));
+	close(fd);
+
+	SEND_STR("\0\001medium.txt\0octet\0windowsize\02\0");
+	recv_data(1, (const char*)&contents[0], 512);
+	recv_data(2, (const char*)&contents[128], 256);
+	send_ack(2);
+}
+
+/*
  * Read a file in netascii format
  */
 TFTPD_TC_DEFINE(rrq_netascii,)
@@ -872,6 +895,37 @@ TFTPD_TC_DEFINE(wrq_medium,)
 }
 
 /*
+ * Write a medium file with a window size of 2.
+ */
+TFTPD_TC_DEFINE(wrq_medium_window,)
+{
+	int fd;
+	size_t i;
+	ssize_t r;
+	uint32_t contents[192];
+	char buffer[1024];
+
+	for (i = 0; i < nitems(contents); i++)
+		contents[i] = i;
+
+	fd = open("medium.txt", O_RDWR | O_CREAT, 0666);
+	ATF_REQUIRE(fd >= 0);
+	close(fd);
+
+	SEND_STR("\0\002medium.txt\0octet\0windowsize\02\0");
+	recv_ack(0);
+	send_data(1, (const char*)&contents[0], 512);
+	send_data(2, (const char*)&contents[128], 256);
+	recv_ack(2);
+
+	fd = open("medium.txt", O_RDONLY);
+	ATF_REQUIRE(fd >= 0);
+	r = read(fd, buffer, sizeof(buffer));
+	close(fd);
+	require_bufeq((const char*)contents, 768, buffer, r);
+}
+
+/*
  * Write a file in netascii format
  */
 TFTPD_TC_DEFINE(wrq_netascii,)
@@ -981,6 +1035,7 @@ ATF_TP_ADD_TCS(tp)
 	TFTPD_TC_ADD(tp, rrq_eaccess);
 	TFTPD_TC_ADD(tp, rrq_empty);
 	TFTPD_TC_ADD(tp, rrq_medium);
+	TFTPD_TC_ADD(tp, rrq_medium_window);
 	TFTPD_TC_ADD(tp, rrq_netascii);
 	TFTPD_TC_ADD(tp, rrq_nonexistent);
 	TFTPD_TC_ADD(tp, rrq_path_max);
@@ -994,6 +1049,7 @@ ATF_TP_ADD_TCS(tp)
 	TFTPD_TC_ADD(tp, wrq_eaccess);
 	TFTPD_TC_ADD(tp, wrq_eaccess_world_readable);
 	TFTPD_TC_ADD(tp, wrq_medium);
+	TFTPD_TC_ADD(tp, wrq_medium_window);
 	TFTPD_TC_ADD(tp, wrq_netascii);
 	TFTPD_TC_ADD(tp, wrq_nonexistent);
 	TFTPD_TC_ADD(tp, wrq_small);

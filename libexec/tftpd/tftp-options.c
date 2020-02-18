@@ -56,6 +56,7 @@ struct options options[] = {
 	{ "blksize",	NULL, NULL, option_blksize, 1 },
 	{ "blksize2",	NULL, NULL, option_blksize2, 0 },
 	{ "rollover",	NULL, NULL, option_rollover, 0 },
+	{ "windowsize",	NULL, NULL, option_windowsize, 1 },
 	{ NULL,		NULL, NULL, NULL, 0 }
 };
 
@@ -270,6 +271,41 @@ option_blksize2(int peer __unused)
 	pktsize = size + 4;
 	if (debug&DEBUG_OPTIONS)
 		tftp_log(LOG_DEBUG, "Setting blksize2 to '%s'",
+		    options[OPT_BLKSIZE2].o_reply);
+
+	return (0);
+}
+
+int
+option_windowsize(int peer)
+{
+	int size;
+
+	if (options[OPT_WINDOWSIZE].o_request == NULL)
+		return (0);
+
+	size = atoi(options[OPT_WINDOWSIZE].o_request);
+	if (size < WINDOWSIZE_MIN || size > WINDOWSIZE_MAX) {
+		if (acting_as_client) {
+			tftp_log(LOG_ERR,
+			    "Invalid windowsize (%d segments), aborting",
+			    size);
+			send_error(peer, EBADOP);
+			return (1);
+		} else {
+			tftp_log(LOG_WARNING,
+			    "Invalid windowsize (%d segments), ignoring request",
+			    size);
+			return (0);
+		}
+	}
+
+	/* XXX: Should force a windowsize of 1 for non-seekable files. */
+	asprintf(&options[OPT_WINDOWSIZE].o_reply, "%d", size);
+	windowsize = size;
+
+	if (debug&DEBUG_OPTIONS)
+		tftp_log(LOG_DEBUG, "Setting windowsize to '%s'",
 		    options[OPT_BLKSIZE2].o_reply);
 
 	return (0);
