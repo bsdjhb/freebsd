@@ -675,6 +675,55 @@ TFTPD_TC_DEFINE(rrq_small,)
 }
 
 /*
+ * Read a file following the example in RFC 7440.
+ */
+TFTPD_TC_DEFINE(rrq_window_rfc7440,)
+{
+	int fd;
+	size_t i;
+	char buffer[1024];
+	uint32_t contents[(13 * 512) / sizeof(uint32_t)];
+
+	for (i = 0; i < nitems(contents); i++)
+		contents[i] = i;
+
+	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0644);
+	ATF_REQUIRE(fd >= 0);
+	write_all(fd, contents, sizeof(contents));
+	close(fd);
+
+	SEND_STR("\0\001rfc7440.txt\0octet\0windowsize\04\0");
+	recv_data(1, (const char *)&contents[0 * 512], 512);
+	recv_data(2, (const char *)&contents[1 * 512], 512);
+	recv_data(3, (const char *)&contents[2 * 512], 512);
+	recv_data(4, (const char *)&contents[3 * 512], 512);
+	send_ack(4);
+	recv_data(5, (const char *)&contents[4 * 512], 512);
+	recv_data(6, (const char *)&contents[5 * 512], 512);
+	recv_data(7, (const char *)&contents[6 * 512], 512);
+	recv_data(8, (const char *)&contents[7 * 512], 512);
+
+	/* ACK 5 as if 6-8 were dropped. */
+	send_ack(5);
+	recv_data(6, (const char *)&contents[5 * 512], 512);
+	recv_data(7, (const char *)&contents[6 * 512], 512);
+	recv_data(8, (const char *)&contents[7 * 512], 512);
+	recv_data(9, (const char *)&contents[8 * 512], 512);
+	send_ack(9);
+	recv_data(10, (const char *)&contents[9 * 512], 512);
+	recv_data(11, (const char *)&contents[9 * 512], 512);
+	recv_data(12, (const char *)&contents[9 * 512], 512);
+	recv_data(13, (const char *)&contents[9 * 512], 512);
+
+	/* Drop ACK and after timeout receive 10-13. */
+	recv_data(10, (const char *)&contents[9 * 512], 512);
+	recv_data(11, (const char *)&contents[9 * 512], 512);
+	recv_data(12, (const char *)&contents[9 * 512], 512);
+	recv_data(13, (const char *)&contents[9 * 512], 512);
+	send_ack(13);	
+}
+
+/*
  * Try to transfer a file with an unknown mode.
  */
 TFTPD_TC_DEFINE(unknown_modes,)
@@ -1019,6 +1068,60 @@ TFTPD_TC_DEFINE(wrq_truncate,)
 	ATF_REQUIRE_EQ(sb.st_size, 0);
 }
 
+/*
+ * Write a file following the example in RFC 7440.
+ */
+TFTPD_TC_DEFINE(wrq_window_rfc7440,)
+{
+	int fd;
+	size_t i;
+	uint32_t contents[(13 * 512) / sizeof(uint32_t)];
+	char buffer[sizeof(contents)];
+
+	for (i = 0; i < nitems(contents); i++)
+		contents[i] = i;
+
+	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0644);
+	ATF_REQUIRE(fd >= 0);
+	close(fd);
+
+	SEND_STR("\0\002rfc7440.txt\0octet\0windowsize\04\0");
+	recv_ack(0);
+	send_data(1, (const char *)&contents[0 * 512], 512);
+	send_data(2, (const char *)&contents[1 * 512], 512);
+	send_data(3, (const char *)&contents[2 * 512], 512);
+	send_data(4, (const char *)&contents[3 * 512], 512);
+	recv_ack(4);
+	send_data(5, (const char *)&contents[4 * 512], 512);
+
+	/* Drop 6-8. */
+	recv_ack(5);
+	send_data(6, (const char *)&contents[5 * 512], 512);
+	send_data(7, (const char *)&contents[6 * 512], 512);
+	send_data(8, (const char *)&contents[7 * 512], 512);
+	send_data(9, (const char *)&contents[8 * 512], 512);
+	recv_ack(9);
+
+	/* Drop 11. */
+	send_data(10, (const char *)&contents[9 * 512], 512);
+	send_data(12, (const char *)&contents[9 * 512], 512);
+	send_data(13, (const char *)&contents[9 * 512], 512);
+
+	/* Ignore ACK for 10 and resend 10-13. */
+	recv_ack(10);
+	recv_data(10, (const char *)&contents[9 * 512], 512);
+	recv_data(11, (const char *)&contents[9 * 512], 512);
+	recv_data(12, (const char *)&contents[9 * 512], 512);
+	recv_data(13, (const char *)&contents[9 * 512], 512);
+	recv_ack(13);
+
+	fd = open("rfc7440.txt", O_RDONLY);
+	ATF_REQUIRE(fd >= 0);
+	r = read(fd, buffer, sizeof(buffer));
+	close(fd);
+	require_bufeq(contents, sizeof(contents), buffer, r);
+}
+
 
 /*
  * Main
@@ -1040,6 +1143,7 @@ ATF_TP_ADD_TCS(tp)
 	TFTPD_TC_ADD(tp, rrq_nonexistent);
 	TFTPD_TC_ADD(tp, rrq_path_max);
 	TFTPD_TC_ADD(tp, rrq_small);
+	TFTPD_TC_ADD(tp, rrq_window_rfc7440);
 	TFTPD_TC_ADD(tp, unknown_modes);
 	TFTPD_TC_ADD(tp, unknown_opcode);
 	TFTPD_TC_ADD(tp, w_flag);
@@ -1054,6 +1158,7 @@ ATF_TP_ADD_TCS(tp)
 	TFTPD_TC_ADD(tp, wrq_nonexistent);
 	TFTPD_TC_ADD(tp, wrq_small);
 	TFTPD_TC_ADD(tp, wrq_truncate);
+	TFTPD_TC_ADD(tp, wrq_window_rfc7440);
 
 	return (atf_no_error());
 }
