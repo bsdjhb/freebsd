@@ -38,6 +38,7 @@ __FBSDID("$FreeBSD$");
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdalign.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -87,6 +88,13 @@ recv_ack(uint16_t blocknum)
 {
 	char hdr[] = {0, 4, blocknum >> 8, blocknum & 0xFF};
 	RECV(hdr, NULL, 0);
+}
+
+static void
+recv_oack(const char *options, size_t options_len)
+{
+	char hdr[] = {0, 6};
+	RECV(hdr, options, options_len);
 }
 
 /*
@@ -159,6 +167,11 @@ send_ack(uint16_t blocknum)
 
 }
 
+/*
+ * build an option string
+ */
+#define	OPTION_STR(name, value)	name "\000" value "\000"
+
 /* 
  * send a read request to tftpd.
  * @param	filename	filename as a string, absolute or relative
@@ -166,12 +179,22 @@ send_ack(uint16_t blocknum)
  */
 #define SEND_RRQ(filename, mode) SEND_STR("\0\001" filename "\0" mode "\0")
 
+/*
+ * send a read request with options
+ */
+#define	SEND_RRQ_OPT(filename, mode, options) SEND_STR("\0\001" filename "\0" mode "\000" options)
+
 /* 
  * send a write request to tftpd.
  * @param	filename	filename as a string, absolute or relative
  * @param	mode		either "octet" or "netascii"
  */
 #define SEND_WRQ(filename, mode) SEND_STR("\0\002" filename "\0" mode "\0")
+
+/*
+ * send a write request with options
+ */
+#define	SEND_WRQ_OPT(filename, mode, options) SEND_STR("\0\002" filename "\0" mode "\000" options)
 
 /* Define a test case, for both IPv4 and IPv6 */
 #define TFTPD_TC_DEFINE(name, head, ...) \
@@ -580,6 +603,7 @@ TFTPD_TC_DEFINE(rrq_medium_window,)
 	int fd;
 	size_t i;
 	uint32_t contents[192];
+	char options[] = OPTION_STR("windowsize", "2");
 
 	for (i = 0; i < nitems(contents); i++)
 		contents[i] = i;
@@ -589,7 +613,9 @@ TFTPD_TC_DEFINE(rrq_medium_window,)
 	write_all(fd, contents, sizeof(contents));
 	close(fd);
 
-	SEND_STR("\0\001medium.txt\0octet\0windowsize\02\0");
+	SEND_RRQ_OPT("medium.txt", "octet", OPTION_STR("windowsize", "2"));
+	recv_oack(options, sizeof(options) - 1);
+	send_ack(0);
 	recv_data(1, (const char*)&contents[0], 512);
 	recv_data(2, (const char*)&contents[128], 256);
 	send_ack(2);
@@ -681,46 +707,50 @@ TFTPD_TC_DEFINE(rrq_window_rfc7440,)
 {
 	int fd;
 	size_t i;
-	char buffer[1024];
-	uint32_t contents[(13 * 512) / sizeof(uint32_t)];
+	char options[] = OPTION_STR("windowsize", "4");
+	alignas(uint32_t) char contents[13 * 512];
+	uint32_t *u32p;
 
-	for (i = 0; i < nitems(contents); i++)
-		contents[i] = i;
+	u32p = (uint32_t *)contents;
+	for (i = 0; i < sizeof(contents) / sizeof(uint32_t); i++)
+		u32p[i] = i;
 
 	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0644);
 	ATF_REQUIRE(fd >= 0);
 	write_all(fd, contents, sizeof(contents));
 	close(fd);
 
-	SEND_STR("\0\001rfc7440.txt\0octet\0windowsize\04\0");
-	recv_data(1, (const char *)&contents[0 * 512], 512);
-	recv_data(2, (const char *)&contents[1 * 512], 512);
-	recv_data(3, (const char *)&contents[2 * 512], 512);
-	recv_data(4, (const char *)&contents[3 * 512], 512);
+	SEND_RRQ_OPT("rfc7440.txt", "octet", OPTION_STR("windowsize", "4"));
+	recv_oack(options, sizeof(options) - 1);
+	send_ack(0);
+	recv_data(1, &contents[0 * 512], 512);
+	recv_data(2, &contents[1 * 512], 512);
+	recv_data(3, &contents[2 * 512], 512);
+	recv_data(4, &contents[3 * 512], 512);
 	send_ack(4);
-	recv_data(5, (const char *)&contents[4 * 512], 512);
-	recv_data(6, (const char *)&contents[5 * 512], 512);
-	recv_data(7, (const char *)&contents[6 * 512], 512);
-	recv_data(8, (const char *)&contents[7 * 512], 512);
+	recv_data(5, &contents[4 * 512], 512);
+	recv_data(6, &contents[5 * 512], 512);
+	recv_data(7, &contents[6 * 512], 512);
+	recv_data(8, &contents[7 * 512], 512);
 
 	/* ACK 5 as if 6-8 were dropped. */
 	send_ack(5);
-	recv_data(6, (const char *)&contents[5 * 512], 512);
-	recv_data(7, (const char *)&contents[6 * 512], 512);
-	recv_data(8, (const char *)&contents[7 * 512], 512);
-	recv_data(9, (const char *)&contents[8 * 512], 512);
+	recv_data(6, &contents[5 * 512], 512);
+	recv_data(7, &contents[6 * 512], 512);
+	recv_data(8, &contents[7 * 512], 512);
+	recv_data(9, &contents[8 * 512], 512);
 	send_ack(9);
-	recv_data(10, (const char *)&contents[9 * 512], 512);
-	recv_data(11, (const char *)&contents[9 * 512], 512);
-	recv_data(12, (const char *)&contents[9 * 512], 512);
-	recv_data(13, (const char *)&contents[9 * 512], 512);
+	recv_data(10, &contents[9 * 512], 512);
+	recv_data(11, &contents[10 * 512], 512);
+	recv_data(12, &contents[11 * 512], 512);
+	recv_data(13, &contents[12 * 512], 512);
 
 	/* Drop ACK and after timeout receive 10-13. */
-	recv_data(10, (const char *)&contents[9 * 512], 512);
-	recv_data(11, (const char *)&contents[9 * 512], 512);
-	recv_data(12, (const char *)&contents[9 * 512], 512);
-	recv_data(13, (const char *)&contents[9 * 512], 512);
-	send_ack(13);	
+	recv_data(10, &contents[9 * 512], 512);
+	recv_data(11, &contents[10 * 512], 512);
+	recv_data(12, &contents[11 * 512], 512);
+	recv_data(13, &contents[12 * 512], 512);
+	send_ack(13);
 }
 
 /*
@@ -953,6 +983,7 @@ TFTPD_TC_DEFINE(wrq_medium_window,)
 	ssize_t r;
 	uint32_t contents[192];
 	char buffer[1024];
+	char options[] = OPTION_STR("windowsize", "2");
 
 	for (i = 0; i < nitems(contents); i++)
 		contents[i] = i;
@@ -961,8 +992,8 @@ TFTPD_TC_DEFINE(wrq_medium_window,)
 	ATF_REQUIRE(fd >= 0);
 	close(fd);
 
-	SEND_STR("\0\002medium.txt\0octet\0windowsize\02\0");
-	recv_ack(0);
+	SEND_WRQ_OPT("medium.txt", "octet", OPTION_STR("windowsize", "2"));
+	recv_oack(options, sizeof(options) - 1);
 	send_data(1, (const char*)&contents[0], 512);
 	send_data(2, (const char*)&contents[128], 256);
 	recv_ack(2);
@@ -1075,44 +1106,48 @@ TFTPD_TC_DEFINE(wrq_window_rfc7440,)
 {
 	int fd;
 	size_t i;
-	uint32_t contents[(13 * 512) / sizeof(uint32_t)];
+	ssize_t r;
+	char options[] = OPTION_STR("windowsize", "4");
+	alignas(uint32_t) char contents[13 * 512];
 	char buffer[sizeof(contents)];
+	uint32_t *u32p;
 
-	for (i = 0; i < nitems(contents); i++)
-		contents[i] = i;
+	u32p = (uint32_t *)contents;
+	for (i = 0; i < sizeof(contents) / sizeof(uint32_t); i++)
+		u32p[i] = i;
 
 	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0644);
 	ATF_REQUIRE(fd >= 0);
 	close(fd);
 
-	SEND_STR("\0\002rfc7440.txt\0octet\0windowsize\04\0");
-	recv_ack(0);
-	send_data(1, (const char *)&contents[0 * 512], 512);
-	send_data(2, (const char *)&contents[1 * 512], 512);
-	send_data(3, (const char *)&contents[2 * 512], 512);
-	send_data(4, (const char *)&contents[3 * 512], 512);
+	SEND_WRQ_OPT("rfc7440.txt", "octet", OPTION_STR("windowsize", "4"));
+	recv_oack(options, sizeof(options) - 1);
+	send_data(1, &contents[0 * 512], 512);
+	send_data(2, &contents[1 * 512], 512);
+	send_data(3, &contents[2 * 512], 512);
+	send_data(4, &contents[3 * 512], 512);
 	recv_ack(4);
-	send_data(5, (const char *)&contents[4 * 512], 512);
+	send_data(5, &contents[4 * 512], 512);
 
 	/* Drop 6-8. */
 	recv_ack(5);
-	send_data(6, (const char *)&contents[5 * 512], 512);
-	send_data(7, (const char *)&contents[6 * 512], 512);
-	send_data(8, (const char *)&contents[7 * 512], 512);
-	send_data(9, (const char *)&contents[8 * 512], 512);
+	send_data(6, &contents[5 * 512], 512);
+	send_data(7, &contents[6 * 512], 512);
+	send_data(8, &contents[7 * 512], 512);
+	send_data(9, &contents[8 * 512], 512);
 	recv_ack(9);
 
 	/* Drop 11. */
-	send_data(10, (const char *)&contents[9 * 512], 512);
-	send_data(12, (const char *)&contents[9 * 512], 512);
-	send_data(13, (const char *)&contents[9 * 512], 512);
+	send_data(10, &contents[9 * 512], 512);
+	send_data(12, &contents[11 * 512], 512);
+	send_data(13, &contents[12 * 512], 512);
 
 	/* Ignore ACK for 10 and resend 10-13. */
 	recv_ack(10);
-	recv_data(10, (const char *)&contents[9 * 512], 512);
-	recv_data(11, (const char *)&contents[9 * 512], 512);
-	recv_data(12, (const char *)&contents[9 * 512], 512);
-	recv_data(13, (const char *)&contents[9 * 512], 512);
+	recv_data(10, &contents[9 * 512], 512);
+	recv_data(11, &contents[10 * 512], 512);
+	recv_data(12, &contents[11 * 512], 512);
+	recv_data(13, &contents[12 * 512], 512);
 	recv_ack(13);
 
 	fd = open("rfc7440.txt", O_RDONLY);
