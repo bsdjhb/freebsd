@@ -1084,8 +1084,8 @@ setwindowsize(int argc, char *argv[])
 		int size = atoi(argv[1]);
 
 		if (size < WINDOWSIZE_MIN || size > WINDOWSIZE_MAX) {
-			printf("Windowsize should be between %d and %d segments.\n",
-				WINDOWSIZE_MIN, WINDOWSIZE_MAX);
+			printf("Windowsize should be between %d and %d "
+			    "blocks.\n", WINDOWSIZE_MIN, WINDOWSIZE_MAX);
 			return;
 		} else {
 			asprintf(&options[OPT_WINDOWSIZE].o_request, "%d",

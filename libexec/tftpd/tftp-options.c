@@ -288,13 +288,13 @@ option_windowsize(int peer)
 	if (size < WINDOWSIZE_MIN || size > WINDOWSIZE_MAX) {
 		if (acting_as_client) {
 			tftp_log(LOG_ERR,
-			    "Invalid windowsize (%d segments), aborting",
+			    "Invalid windowsize (%d blocks), aborting",
 			    size);
 			send_error(peer, EBADOP);
 			return (1);
 		} else {
 			tftp_log(LOG_WARNING,
-			    "Invalid windowsize (%d segments), ignoring request",
+			    "Invalid windowsize (%d blocks), ignoring request",
 			    size);
 			return (0);
 		}
