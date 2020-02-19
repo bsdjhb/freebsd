@@ -1141,6 +1141,13 @@ TFTPD_TC_DEFINE(wrq_window_rfc7440,)
 	send_data(10, &contents[9 * 512], 512);
 	send_data(12, &contents[11 * 512], 512);
 
+	/*
+	 * We can't send 13 here as tftpd has probably already seen 12
+	 * and sent the ACK of 10 if running locally.  While it would
+	 * recover by sending another ACK of 10, our state machine
+	 * would be out of sync.
+	 */
+
 	/* Ignore ACK for 10 and resend 10-13. */
 	recv_ack(10);
 	send_data(10, &contents[9 * 512], 512);
