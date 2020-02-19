@@ -708,7 +708,7 @@ TFTPD_TC_DEFINE(rrq_window_rfc7440,)
 	int fd;
 	size_t i;
 	char options[] = OPTION_STR("windowsize", "4");
-	alignas(uint32_t) char contents[13 * 512];
+	alignas(uint32_t) char contents[13 * 512 - 4];
 	uint32_t *u32p;
 
 	u32p = (uint32_t *)contents;
@@ -743,13 +743,13 @@ TFTPD_TC_DEFINE(rrq_window_rfc7440,)
 	recv_data(10, &contents[9 * 512], 512);
 	recv_data(11, &contents[10 * 512], 512);
 	recv_data(12, &contents[11 * 512], 512);
-	recv_data(13, &contents[12 * 512], 512);
+	recv_data(13, &contents[12 * 512], 508);
 
 	/* Drop ACK and after timeout receive 10-13. */
 	recv_data(10, &contents[9 * 512], 512);
 	recv_data(11, &contents[10 * 512], 512);
 	recv_data(12, &contents[11 * 512], 512);
-	recv_data(13, &contents[12 * 512], 512);
+	recv_data(13, &contents[12 * 512], 508);
 	send_ack(13);
 }
 
@@ -1108,7 +1108,7 @@ TFTPD_TC_DEFINE(wrq_window_rfc7440,)
 	size_t i;
 	ssize_t r;
 	char options[] = OPTION_STR("windowsize", "4");
-	alignas(uint32_t) char contents[13 * 512];
+	alignas(uint32_t) char contents[13 * 512 - 4];
 	char buffer[sizeof(contents)];
 	uint32_t *u32p;
 
@@ -1116,7 +1116,7 @@ TFTPD_TC_DEFINE(wrq_window_rfc7440,)
 	for (i = 0; i < sizeof(contents) / sizeof(uint32_t); i++)
 		u32p[i] = i;
 
-	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0644);
+	fd = open("rfc7440.txt", O_RDWR | O_CREAT, 0666);
 	ATF_REQUIRE(fd >= 0);
 	close(fd);
 
@@ -1140,14 +1140,13 @@ TFTPD_TC_DEFINE(wrq_window_rfc7440,)
 	/* Drop 11. */
 	send_data(10, &contents[9 * 512], 512);
 	send_data(12, &contents[11 * 512], 512);
-	send_data(13, &contents[12 * 512], 512);
 
 	/* Ignore ACK for 10 and resend 10-13. */
 	recv_ack(10);
-	recv_data(10, &contents[9 * 512], 512);
-	recv_data(11, &contents[10 * 512], 512);
-	recv_data(12, &contents[11 * 512], 512);
-	recv_data(13, &contents[12 * 512], 512);
+	send_data(10, &contents[9 * 512], 512);
+	send_data(11, &contents[10 * 512], 512);
+	send_data(12, &contents[11 * 512], 512);
+	send_data(13, &contents[12 * 512], 508);
 	recv_ack(13);
 
 	fd = open("rfc7440.txt", O_RDONLY);
