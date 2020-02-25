@@ -141,9 +141,9 @@ g_eli_auth_read_done(struct cryptop *crp)
 	bp = (struct bio *)crp->crp_opaque;
 	bp->bio_inbed++;
 	if (crp->crp_etype == 0) {
-		bp->bio_completed += crp->crp_ilen;
-		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d) (add=%jd completed=%jd).",
-		    bp->bio_inbed, bp->bio_children, (intmax_t)crp->crp_ilen, (intmax_t)bp->bio_completed);
+		bp->bio_completed += crp->crp_payload_length;
+		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d) (add=%d completed=%jd).",
+		    bp->bio_inbed, bp->bio_children, crp->crp_payload_length, (intmax_t)bp->bio_completed);
 	} else {
 		if (crp->crp_etype == EBADMSG)
 			G_ELI_DEBUG(0,
@@ -165,6 +165,36 @@ g_eli_auth_read_done(struct cryptop *crp)
 	 */
 	if (bp->bio_inbed < bp->bio_children)
 		return (0);
+
+	if (bp->bio_error == 0) {
+		u_int i, lsec, nsec, data_secsize, decr_secsize, encr_secsize;
+		u_char *srcdata, *dstdata;
+
+		/* Sectorsize of decrypted provider eg. 4096. */
+		decr_secsize = bp->bio_to->sectorsize;
+		/* The real sectorsize of encrypted provider, eg. 512. */
+		encr_secsize = LIST_FIRST(&sc->sc_geom->consumer)->provider->sectorsize;
+		/* Number of data bytes in one encrypted sector, eg. 480. */
+		data_secsize = sc->sc_data_per_sector;
+		/* Number of sectors from decrypted provider, eg. 2. */
+		nsec = bp->bio_length / decr_secsize;
+		/* Number of sectors from encrypted provider, eg. 18. */
+		nsec = (nsec * sc->sc_bytes_per_sector) / encr_secsize;
+		/* Last sector number in every big sector, eg. 9. */
+		lsec = sc->sc_bytes_per_sector / encr_secsize;
+
+		srcdata = bp->bio_driver2;
+		dstdata = bp->bio_data;
+
+		for (i = 1; i <= nsec; i++) {
+			data_secsize = sc->sc_data_per_sector;
+			if ((i % lsec) == 0)
+				data_secsize = decr_secsize % data_secsize;
+			bcopy(srcdata + sc->sc_alen, dstdata, data_secsize);
+			srcdata += encr_secsize;
+			dstdata += data_secsize;
+		}
+	}
 	free(bp->bio_driver2, M_ELI);
 	bp->bio_driver2 = NULL;
 	if (bp->bio_error != 0) {
