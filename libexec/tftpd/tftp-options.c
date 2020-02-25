@@ -306,7 +306,7 @@ option_windowsize(int peer)
 
 	if (debug&DEBUG_OPTIONS)
 		tftp_log(LOG_DEBUG, "Setting windowsize to '%s'",
-		    options[OPT_BLKSIZE2].o_reply);
+		    options[OPT_WINDOWSIZE].o_reply);
 
 	return (0);
 }
