@@ -74,7 +74,7 @@ tftp_send(int peer, uint16_t *block, struct tftp_stats *ts)
 	windowblock = 0;
 	acktry = 0;
 	do {
-	read_block:
+read_block:
 		if (debug&DEBUG_SIMPLE)
 			tftp_log(LOG_DEBUG, "Sending block %d (window block %d)",
 			    *block, windowblock);
