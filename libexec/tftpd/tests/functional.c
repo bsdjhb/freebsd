@@ -170,7 +170,7 @@ send_ack(uint16_t blocknum)
 /*
  * build an option string
  */
-#define	OPTION_STR(name, value)	name "\000" value "\000"
+#define OPTION_STR(name, value)	name "\000" value "\000"
 
 /* 
  * send a read request to tftpd.
@@ -182,7 +182,7 @@ send_ack(uint16_t blocknum)
 /*
  * send a read request with options
  */
-#define	SEND_RRQ_OPT(filename, mode, options) SEND_STR("\0\001" filename "\0" mode "\000" options)
+#define SEND_RRQ_OPT(filename, mode, options) SEND_STR("\0\001" filename "\0" mode "\000" options)
 
 /* 
  * send a write request to tftpd.
@@ -194,7 +194,7 @@ send_ack(uint16_t blocknum)
 /*
  * send a write request with options
  */
-#define	SEND_WRQ_OPT(filename, mode, options) SEND_STR("\0\002" filename "\0" mode "\000" options)
+#define SEND_WRQ_OPT(filename, mode, options) SEND_STR("\0\002" filename "\0" mode "\000" options)
 
 /* Define a test case, for both IPv4 and IPv6 */
 #define TFTPD_TC_DEFINE(name, head, ...) \
