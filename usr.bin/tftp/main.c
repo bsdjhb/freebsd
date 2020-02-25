@@ -1092,6 +1092,6 @@ setwindowsize(int argc, char *argv[])
 			    size);
 		}
 	}
-	printf("Windowsize is now %s bytes.\n",
+	printf("Windowsize is now %s blocks.\n",
 	    options[OPT_WINDOWSIZE].o_request);
 }
