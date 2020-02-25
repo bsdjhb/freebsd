@@ -146,7 +146,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 		    bp->bio_inbed, bp->bio_children, crp->crp_payload_length, (intmax_t)bp->bio_completed);
 	} else {
 		if (crp->crp_etype == EBADMSG)
-			G_ELI_DEBUG(0,
+			G_ELI_DEBUG(1,
 		    "Crypto READ request failed to authenticate (%d/%d),",
 			    bp->bio_inbed, bp->bio_children);
 		else
@@ -200,6 +200,9 @@ g_eli_auth_read_done(struct cryptop *crp)
 	if (bp->bio_error != 0) {
 		if (bp->bio_error == -1)
 			bp->bio_error = EINTEGRITY;
+		else if (bp->bio_error == EBADMSG)
+			G_ELI_LOGREQ(0, bp,
+			    "Crypto READ request failed authentication");
 		else {
 			G_ELI_LOGREQ(0, bp,
 			    "Crypto READ request failed (error=%d).",
