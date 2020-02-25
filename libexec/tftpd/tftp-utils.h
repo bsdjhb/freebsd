@@ -58,7 +58,7 @@ int	settimeouts(int timeoutpacket, int timeoutnetwork, int maxtimeouts);
 
 extern uint16_t	segsize;
 extern uint16_t	pktsize;
-extern uint16_t windowsize;
+extern uint16_t	windowsize;
 
 extern int	acting_as_client;
 
