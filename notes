@@ -202,6 +202,24 @@ session and crypto op parameters.
     - aesni		27 Gbps		63-66% CPU
     - ccr		30 Gbps		40-44% CPU
 
+  - dd /dev/zero to 4g md geli using AES-XTS / HMAC/SHA256
+    - svn
+      - software        43.002561 secs (49938506 bytes/sec)
+      - ccr             17.595058 secs (122050390 bytes/sec)
+    - ocf_rework
+      - software	43.544508 secs (49316981 bytes/sec)
+      - ccr		19.096170 secs (112456250 bytes/sec)
+
+  - dd /dev/zero to 4g md geli using AES-XTS
+    - svn
+      - software	34.214655 secs (125530048 bytes/sec)
+      - aesni		10.575568 secs (406121652 bytes/sec)
+      - ccr		10.530135 secs (407873915 bytes/sec)
+    - ocf_rework
+      - software	34.942433 secs (122915518 bytes/sec)
+      - aesni		10.498557 secs (409100708 bytes/sec)
+      - ccr		11.955181 secs (359255745 bytes/sec)
+
 - steps to convert a driver
   - add probesession
   - cri -> csp
