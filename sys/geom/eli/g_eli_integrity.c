@@ -154,7 +154,8 @@ g_eli_auth_read_done(struct cryptop *crp)
 			    "Crypto READ request failed (%d/%d) error=%d.",
 			    bp->bio_inbed, bp->bio_children, crp->crp_etype);
 		if (bp->bio_error == 0)
-			bp->bio_error = crp->crp_etype;
+			bp->bio_error = crp->crp_etype == EBADMSG ?
+			    EINTEGRITY : crp->crp_etype;
 	}
 	sc = bp->bio_to->geom->softc;
 	if (crp->crp_cipher_key != NULL)
@@ -200,7 +201,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 	if (bp->bio_error != 0) {
 		if (bp->bio_error == -1)
 			bp->bio_error = EINTEGRITY;
-		else if (bp->bio_error == EBADMSG)
+		else if (bp->bio_error == EINTEGRITY)
 			G_ELI_LOGREQ(0, bp,
 			    "Crypto READ request failed authentication");
 		else {
