@@ -1947,7 +1947,8 @@ restart:
 	 *   1. the current count is less than the low water mark, or
 	 *   2. MSG_DONTWAIT is not set
 	 */
-	if (m == NULL || (((flags & MSG_DONTWAIT) == 0 &&
+	if (m == NULL || (m->m_flags & M_NOTAVAIL) != 0 ||
+	    (((flags & MSG_DONTWAIT) == 0 &&
 	    sbavail(&so->so_rcv) < uio->uio_resid) &&
 	    sbavail(&so->so_rcv) < so->so_rcv.sb_lowat &&
 	    m->m_nextpkt == NULL && (pr->pr_flags & PR_ATOMIC) == 0)) {
@@ -1955,7 +1956,7 @@ restart:
 		    ("receive: m == %p sbavail == %u",
 		    m, sbavail(&so->so_rcv)));
 		if (so->so_error) {
-			if (m != NULL)
+			if (m != NULL && (m->m_flags & M_NOTAVAIL) == 0)
 				goto dontblock;
 			error = so->so_error;
 			if ((flags & MSG_PEEK) == 0)
@@ -1969,10 +1970,11 @@ restart:
 			    so->so_rcv.sb_tlscc == 0) {
 				SOCKBUF_UNLOCK(&so->so_rcv);
 				goto release;
-			} else
+			} else if (m != NULL && (m->m_flags & M_NOTAVAIL) == 0)
 				goto dontblock;
 		}
-		for (; m != NULL; m = m->m_next)
+		for (; m != NULL && (m->m_flags & M_NOTAVAIL) == 0;
+		     m = m->m_next)
 			if (m->m_type == MT_OOBDATA  || (m->m_flags & M_EOR)) {
 				m = so->so_rcv.sb_mb;
 				goto dontblock;
