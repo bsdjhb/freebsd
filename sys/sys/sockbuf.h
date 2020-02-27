@@ -51,6 +51,7 @@
 #define	SB_STOP		0x1000		/* backpressure indicator */
 #define	SB_AIO_RUNNING	0x2000		/* AIO operation running */
 #define	SB_TLS_IFNET	0x4000		/* has used / is using ifnet KTLS */
+#define	SB_TLS_RX	0x8000		/* using KTLS on RX */
 
 #define	SBS_CANTSENDMORE	0x0010	/* can't send more data to peer */
 #define	SBS_CANTRCVMORE		0x0020	/* can't receive more data from peer */
@@ -99,10 +100,13 @@ struct	sockbuf {
 	u_int   sb_ccnt;        /* (a) number of clusters in buffer */
 	u_int	sb_mbmax;	/* (a) max chars of mbufs to use */
 	u_int	sb_ctl;		/* (a) non-data chars in buffer */
+	u_int	sb_tlscc;	/* (a) TLS chain characters */
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
 	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
 	struct	ktls_session *sb_tls_info; /* (a + b) TLS state */
+	struct	mbuf *sb_mtls;	/* (a) TLS mbuf chain */
+	struct	mbuf *sb_mtlstail; /* (a) last mbuf in TLS chain */
 	short	sb_flags;	/* (a) flags, see above */
 	int	(*sb_upcall)(struct socket *, void *, int); /* (a) */
 	void	*sb_upcallarg;	/* (a) */

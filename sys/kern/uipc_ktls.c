@@ -76,9 +76,19 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_pageout.h>
 #include <vm/vm_page.h>
 
+/*
+ * KTLS RX mbufs used for software encryption store extra fields in
+ * the M_PKTHDR fields of the control mbuf.
+ */
+#define	ktls_rx_seqno	rcv_tstmp
+#define	ktls_rx_socket	PH_per.ptr
+#define	ktls_rx_next	PH_loc.ptr
+
 struct ktls_wq {
 	struct mtx	mtx;
-	STAILQ_HEAD(, mbuf) head;
+	STAILQ_HEAD(, mbuf) encrypt_head;
+	STAILQ_HEAD(, mbuf) ktls_rx_head;
+	STAILQ_HEAD(, socket) so_head;
 	bool		running;
 } __aligned(CACHE_LINE_SIZE);
 
@@ -130,9 +140,15 @@ static counter_u64_t ktls_tasks_active;
 SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
     &ktls_tasks_active, "Number of active tasks");
 
-static counter_u64_t ktls_cnt_on;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, so_inqueue, CTLFLAG_RD,
-    &ktls_cnt_on, "Number of TLS records in queue to tasks for SW crypto");
+static counter_u64_t ktls_cnt_tx_queued;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_tx_inqueue, CTLFLAG_RD,
+    &ktls_cnt_tx_queued,
+    "Number of TLS records in queue to tasks for SW encryption");
+
+static counter_u64_t ktls_cnt_rx_queued;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_rx_inqueue, CTLFLAG_RD,
+    &ktls_cnt_rx_queued,
+    "Number of TLS records in queue to tasks for SW decryption");
 
 static counter_u64_t ktls_offload_total;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, offload_total,
@@ -333,7 +349,8 @@ ktls_init(void *dummy __unused)
 	int error, i;
 
 	ktls_tasks_active = counter_u64_alloc(M_WAITOK);
-	ktls_cnt_on = counter_u64_alloc(M_WAITOK);
+	ktls_cnt_tx_queued = counter_u64_alloc(M_WAITOK);
+	ktls_cnt_rx_queued = counter_u64_alloc(M_WAITOK);
 	ktls_offload_total = counter_u64_alloc(M_WAITOK);
 	ktls_offload_enable_calls = counter_u64_alloc(M_WAITOK);
 	ktls_offload_active = counter_u64_alloc(M_WAITOK);
@@ -369,7 +386,8 @@ ktls_init(void *dummy __unused)
 	 * work queue for each CPU.
 	 */
 	CPU_FOREACH(i) {
-		STAILQ_INIT(&ktls_wq[i].head);
+		STAILQ_INIT(&ktls_wq[i].encrypt_head);
+		STAILQ_INIT(&ktls_wq[i].ktls_rx_head);
 		mtx_init(&ktls_wq[i].mtx, "ktls work queue", NULL, MTX_DEF);
 		error = kproc_kthread_add(ktls_work_thread, &ktls_wq[i],
 		    &ktls_proc, &td, 0, 0, "KTLS", "thr_%d", i);
@@ -855,7 +873,7 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, bool force)
 }
 
 static int
-ktls_try_sw(struct socket *so, struct ktls_session *tls)
+ktls_try_sw(struct socket *so, struct ktls_session *tls, int direction)
 {
 	struct rm_priotracker prio;
 	struct ktls_crypto_backend *be;
@@ -870,7 +888,7 @@ ktls_try_sw(struct socket *so, struct ktls_session *tls)
 	if (ktls_allow_unload)
 		rm_rlock(&ktls_backends_lock, &prio);
 	LIST_FOREACH(be, &ktls_backends, next) {
-		if (be->try(so, tls) == 0)
+		if (be->try(so, tls, direction) == 0)
 			break;
 		KASSERT(tls->cipher == NULL,
 		    ("ktls backend leaked a cipher pointer"));
@@ -894,6 +912,58 @@ ktls_try_sw(struct socket *so, struct ktls_session *tls)
 		break;
 	}
 	return (0);
+}
+
+/*
+ * KTLS RX stores data in the socket buffer as a list of TLS records,
+ * where each record is stored as a control message containg the TLS
+ * header followed by data mbufs containing the decrypted data.  This
+ * is different from KTLS TX which always uses an mb_ext_pgs mbuf for
+ * both encrypted and decrypted data.  TLS records decrypted by a NIC
+ * should be queued to the socket buffer as records, but encrypted
+ * data which needs to be decrypted by software arrives as a stream of
+ * regular mbufs which need to be converted.  In addition, there may
+ * already be pending encrypted data in the socket buffer when KTLS RX
+ * is enabled.
+ *
+ * To manage not-yet-decrypted data for KTLS RX, the following scheme
+ * is used:
+ *
+ * - A single chain of NOTREADY mbufs is hung off of sb_mtls.
+ *
+ * - ktls_check_sbrcv checks this chain of mbufs reading the TLS
+ *   header from the first mbuf.  Once all of the data for that TLS
+ *   record is queued, it is bundled into a record starting with a
+ *   control message holding the TLS header and a chain of mbufs
+ *   holding the encrypted data.
+ *
+ * - Once the data is decrypted, the trailer is dropped from the mbuf
+ *   chain (and from sb_acc), the data is marked ready, and the record
+ *   is appended to the socket buffer via sbappendrecord.
+ */
+
+static void
+sb_mark_notready(struct sockbuf *sb)
+{
+	struct mbuf *m;
+
+	KASSERT(sb->sb_fnrdy == NULL, ("%s: fnrdy != NULL", __func__));
+	m = sb->sb_mb;
+	sb->sb_mbtls = m;
+	sb->sb_mb = NULL;
+	for (; m != NULL; m = m->m_next) {
+		KASSERT(m->m_nextpkt, ("%s: m_nextpkt != NULL", __func__));
+		KASSERT((m->m_flags & M_NOTAVAIL) == 0, ("%s: mbuf not avail",
+		    __func__));
+		KASSERT(sb->sb_acc >= m->m_len, ("%s: sb_acc < m->m_len",
+		    __func__));
+		m->m_flags |= M_NOTREADY;
+		sb->sb_acc -= m->m_len;
+		sb->sb_tlscc += m->m_len;
+	}
+	KASSERT(sb->sb_acc == 0 && sb->sb_tlscc == sb->sb_ccc,
+	    ("%s: acc %u tlscc %u ccc %u", __func__, sb->sb_acc, sb->sb_tlscc,
+	    sb->sb_ccc));
 }
 
 int
@@ -928,12 +998,11 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 	if (error)
 		return (error);
 
-	/* TLS RX offload is only supported on TOE currently. */
 #ifdef TCP_OFFLOAD
 	error = ktls_try_toe(so, tls, KTLS_RX);
-#else
-	error = EOPNOTSUPP;
+	if (error)
 #endif
+		error = ktls_try_sw(so, tls, KTLS_RX);
 
 	if (error) {
 		ktls_cleanup(tls);
@@ -942,7 +1011,16 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 
 	/* Mark the socket as using TLS offload. */
 	SOCKBUF_LOCK(&so->so_rcv);
+	so->so_rcv.sb_tls_seqno = be64dec(en->rec_seq);
 	so->so_rcv.sb_tls_info = tls;
+
+	/*
+	 * Mark any existing data as not ready until they can be
+	 * decrypted.
+	 */
+	sb->sb_flags |= SB_TLS_RX;
+	sb_mark_notready(&so->so_rcv);
+	ktls_check_recv(sb);
 	SOCKBUF_UNLOCK(&so->so_rcv);
 
 	counter_u64_add(ktls_offload_total, 1);
@@ -993,7 +1071,7 @@ ktls_enable_tx(struct socket *so, struct tls_enable *en)
 #endif
 		error = ktls_try_ifnet(so, tls, false);
 	if (error)
-		error = ktls_try_sw(so, tls);
+		error = ktls_try_sw(so, tls, KTLS_TX);
 
 	if (error) {
 		ktls_cleanup(tls);
@@ -1098,7 +1176,7 @@ ktls_set_tx_mode(struct socket *so, int mode)
 	if (mode == TCP_TLS_MODE_IFNET)
 		error = ktls_try_ifnet(so, tls_new, true);
 	else
-		error = ktls_try_sw(so, tls_new);
+		error = ktls_try_sw(so, tls_new, KTLS_TX);
 	if (error) {
 		counter_u64_add(ktls_switch_failed, 1);
 		ktls_free(tls_new);
@@ -1422,6 +1500,194 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 }
 
 void
+ktls_check_recv(struct sockbuf *sb)
+{
+
+	SOCKBUF_LOCK_ASSERT(sb, MA_OWNED);
+	if (sb->sb_flags & SB_TLS_RX_RUNNING)
+		return;
+
+	if (!ktls_check_recv_internal(sb, false))
+		return (true);
+	sb->sb_flags |= SB_TLS_RX_RUNNING;
+	ktls_enqueue_to_check_recv(so);
+}
+
+static bool
+ktls_check_recv_internal(struct sockbuf *sb, bool sleepok)
+{
+	struct tls_record_layer hdr;
+	struct tls_get_record tgr;
+	struct mbuf *control, *data, *m, *n;
+	int tls_len;
+
+	SOCKBUF_LOCK_ASSERT(sb, MA_OWNED);
+	KASSERT(sb->sb_flags & SB_TLS_RX, ("%s: sockbuf %b isn't TLS RX",
+	    __func__, sb));
+
+	for (;;) {
+		/* Is there enough queued for a TLS header? */
+		if (sb->sb_tlscc < sizeof(hdr))
+			return (true);
+
+		m_copydata(sb->sb_mtls, 0, sizeof(hdr), &hdr);
+		tls_len = sizeof(hdr) + ntohs(hdr.tls_length);
+
+		/* Is the entire record queued? */
+		if (sb->sb_tlscc < tls_len)
+			return (true);
+
+		/* Allocate the control mbuf. */
+		tgr.tls_type = hdr.tls_type;
+		tgr.tls_vmajor = hdr.tls_vmajor;
+		tgr.tls_vminor = hdr.tls_vminor;
+		control = sbcreatecontrol_how(&tgr, sizeof(tgr), TLS_GET_RECORD,
+		    IPPROTO_TCP, M_NOWAIT, M_PKTHDR);
+		if (__predict_false(control == NULL)) {
+			if (!sleepok)
+				return (false);
+
+			SOCKBUF_UNLOCK(sb);
+			control = sbcreatecontrol_how(&tgr, sizeof(tgr),
+			    TLS_GET_RECORD, IPPROTO_TCP, M_WAITOK, M_PKTHDR);
+			SOCKBUF_LOCK(sb);
+		}
+
+		/*
+		 * Split out the portion of the mbuf chain containing
+		 * this TLS record.  If the chain is the exact size of
+		 * the record, just grab the whole chain.  Otherwise,
+		 * use m_split.
+		 */
+		data = sb->sb_mtls;
+		if (sb->sb_tlscc == tls_len) {
+			sb->sb_mtls = NULL;
+			sb->sb_mtlstail = NULL;
+		} else {
+			m = m_split(sb->sb_mtls, tls_len, M_NOWAIT);
+			if (__predict_false(m == NULL)) {
+				if (!sleepok) {
+					m_freem(control);
+					return (false);
+				}
+
+				/*
+				 * m_split might need to split
+				 * sb_mtlstail, but we need to permit
+				 * concurrent enqueues of mbufs while
+				 * we drop the lock.  To avoid this,
+				 * detach the entire chain and append
+				 * any new chain to the end of the
+				 * remainder afterwards.
+				 */
+				sb->sb_mtls = NULL;
+				sb->sb_mtlstail = NULL;
+				SOCKBUF_UNLOCK(sb);
+
+				m = m_split(data, tls_len, M_WAITOK);
+
+				SOCKBUF_LOCK(sb);
+				MPASS(m != NULL);
+
+				/* Find the last mbuf in the remainder. */
+				for (n = m; n->m_next != NULL; n = n->m_next)
+					;
+
+				/*
+				 * If there is no new chain to append,
+				 * use 'n' as the new tail.  If there
+				 * is an new chain, join them and keep
+				 * the existing tail.
+				 */
+				if (sb->sb_mtls == NULL)
+					sb->sb_mtlstail = n;
+				else
+					n->m_next = sb->sb_mtls;
+			} else {
+				/*
+				 * sb_mtlstail might have been split.
+				 * If so, m->m_next will be NULL.
+				 * Note that sb_mtlstail might also
+				 * just be 'm' but reassigning the
+				 * value won't hurt in that case.
+				 */
+				if (m->m_next == NULL)
+					sb->sb_mtlstail = m;
+			}
+
+			/* The remainder is the new TLS chain. */
+			sb->sb_mtls = m;
+		}
+
+		/* Remove the TLS record data from the TLS chain accounting. */
+		sbfree_ktls_rx(sb, data);
+
+		/* Finish populating the control mbuf. */
+		control->m_flags |= M_NOTREADY;
+		control->m_pkthdr.ktls_rx_seqno = sb->sb_tls_seqno;
+		control->m_pkthdr.ktls_rx_socket = __containerof(sb,
+		    struct socket, so_rcv);
+		sb->sb_tls_seqno++;
+
+		sbappendcontrol_locked(sb, n, control);
+
+		ktls_enqueue_rx(sb, control);
+	}
+}
+
+static void
+ktls_check_recv_wq(struct socket *so)
+{
+	struct sockbuf *sb;
+
+	sb = &so->so_rcv;
+	SOCKBUF_LOCK(sb);
+	KASSERT(sb->sb_flags & SB_TLS_RX_RUNNING,
+	    ("%s: socket %p not running", __func__, so));
+	ktls_check_recv_internal(sb, true);
+	sb->sb_flags &= ~SB_TLS_RX_RUNNING;
+	SOCKBUF_UNLOCK(sb);
+	
+	CURVNET_SET(so->so_vnet);
+	SOCK_LOCK(so);
+	sorele(so);
+	CURVNET_RESTORE();
+}
+
+static void
+ktls_enqueue_to_check_recv(struct socket *so)
+{
+	struct ktls_wq *wq;
+	bool running;
+
+	soref(so);
+	wq = &ktls_wq[so->so_rcv.sb_tls_info->wq_index];
+	mtx_lock(&wq->mtx);
+	STAILQ_INSERT_TAIL(&wq->socket_head, so, so_ktls_rx_list);
+	mtx_unlock(&wq->mtx);
+	if (!running)
+		wakeup(wq);	
+}
+
+static void
+ktls_enqueue_rx(struct sockbuf *sb, struct mbuf *control)
+{
+	struct ktls_wq *wq;
+	struct socket *so;
+	bool running;
+
+	soref(control->m_pkthdr.ktls_rx_socket);
+	wq = &ktls_wq[sb->sb_tls_info->wq_index];
+	mtx_lock(&wq->mtx);
+	STAILQ_INSERT_TAIL(&wq->ktls_rx_head, m, m_pkthdr.ktls_rx_next);
+	running = wq->running;
+	mtx_unlock(&wq->mtx);
+	if (!running)
+		wakeup(wq);
+	counter_u64_add(ktls_cnt_rx_queued, 1);
+}
+
+void
 ktls_enqueue_to_free(struct mbuf *m)
 {
 	struct ktls_wq *wq;
@@ -1431,7 +1697,7 @@ ktls_enqueue_to_free(struct mbuf *m)
 	m->m_epg_flags |= EPG_FLAG_2FREE;
 	wq = &ktls_wq[m->m_epg_tls->wq_index];
 	mtx_lock(&wq->mtx);
-	STAILQ_INSERT_TAIL(&wq->head, m, m_epg_stailq);
+	STAILQ_INSERT_TAIL(&wq->encrypt_head, m, m_epg_stailq);
 	running = wq->running;
 	mtx_unlock(&wq->mtx);
 	if (!running)
@@ -1461,12 +1727,12 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 
 	wq = &ktls_wq[m->m_epg_tls->wq_index];
 	mtx_lock(&wq->mtx);
-	STAILQ_INSERT_TAIL(&wq->head, m, m_epg_stailq);
+	STAILQ_INSERT_TAIL(&wq->encrypt_head, m, m_epg_stailq);
 	running = wq->running;
 	mtx_unlock(&wq->mtx);
 	if (!running)
 		wakeup(wq);
-	counter_u64_add(ktls_cnt_on, 1);
+	counter_u64_add(ktls_cnt_tx_queued, 1);
 }
 
 static __noinline void
@@ -1613,29 +1879,50 @@ retry_page:
 	CURVNET_RESTORE();
 }
 
+static __noinline void
+ktls_decrypt(struct mbuf *control)
+{
+	struct ktls_session *tls;
+	struct iovec *iov;
+
+	/*
+	 * Decrypt a single TLS record.  Unlike the encryption path,
+	 * each 
+	 */
+}
+
 static void
 ktls_work_thread(void *ctx)
 {
 	struct ktls_wq *wq = ctx;
 	struct mbuf *m, *n;
-	STAILQ_HEAD(, mbuf) local_head;
+	struct socket *so, *son;
+	STAILQ_HEAD(, mbuf) local_encrypt_head;
+	STAILQ_HEAD(, mbuf) local_ktls_rx_head;
+	STAILQ_HEAD(, socket) local_so_head;
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
 	fpu_kern_thread(0);
 #endif
 	for (;;) {
 		mtx_lock(&wq->mtx);
-		while (STAILQ_EMPTY(&wq->head)) {
+		while (STAILQ_EMPTY(&wq->encrypt_head) &&
+		    STAILQ_EMPTY(&wq->ktls_rx_head) &&
+		    STAILQ_EMPTY(&wq->ktls_so_head)) {
 			wq->running = false;
 			mtx_sleep(wq, &wq->mtx, 0, "-", 0);
 			wq->running = true;
 		}
 
-		STAILQ_INIT(&local_head);
-		STAILQ_CONCAT(&local_head, &wq->head);
+		STAILQ_INIT(&local_encrypt_head);
+		STAILQ_CONCAT(&local_encrypt_head, &wq->encrypt_head);
+		STAILQ_INIT(&local_ktls_rx_head);
+		STAILQ_CONCAT(&local_ktls_rx_head, &wq->ktls_rx_head);
+		STAILQ_INIT(&local_so_head);
+		STAILQ_CONCAT(&local_so_head, &wq->so_head);
 		mtx_unlock(&wq->mtx);
 
-		STAILQ_FOREACH_SAFE(m, &local_head, m_epg_stailq, n) {
+		STAILQ_FOREACH_SAFE(m, &local_encrypt_head, m_epg_stailq, n) {
 			if (m->m_epg_flags & EPG_FLAG_2FREE) {
 				ktls_free(m->m_epg_tls);
 				uma_zfree(zone_mbuf, m);
@@ -1643,6 +1930,16 @@ ktls_work_thread(void *ctx)
 				ktls_encrypt(m);
 				counter_u64_add(ktls_cnt_on, -1);
 			}
+		}
+
+		STAILQ_FOREACH_SAFE(m, &local_ktls_rx_head,
+		    m_pkthdr.ktls_rx_next, mn) {
+			ktls_decrypt(m);
+			counter_u64_add(ktls_cnt_rx_queued, -1);
+		}
+
+		STAILQ_FOREACH_SAFE(so, &local_so_head, so_ktls_rx_list, son) {
+			ktls_check_recv_wq(so);
 		}
 	}
 }
