@@ -187,6 +187,9 @@ struct ktls_session {
 		    const struct tls_record_layer *hdr, uint8_t *trailer,
 		    struct iovec *src, struct iovec *dst, int iovcnt,
 		    uint64_t seqno, uint8_t record_type);
+		int	(*sw_decrypt)(struct ktls_session *tls,
+		    const struct tls_record_layer *hdr, struct iovec *data,
+		    int iovcnt, uint64_t seqno, int *trailer_len);
 	};
 	union {
 		void *cipher;
@@ -204,6 +207,7 @@ struct ktls_session {
 	bool reset_pending;
 } __aligned(CACHE_LINE_SIZE);
 
+void ktls_check_rx(struct sockbuf *sb);
 int ktls_crypto_backend_register(struct ktls_crypto_backend *be);
 int ktls_crypto_backend_deregister(struct ktls_crypto_backend *be);
 int ktls_enable_rx(struct socket *so, struct tls_enable *en);

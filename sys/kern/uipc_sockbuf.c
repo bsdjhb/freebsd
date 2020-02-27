@@ -70,6 +70,8 @@ u_long sb_max_adj =
 
 static	u_long sb_efficiency = 8;	/* parameter for sbreserve() */
 
+static void	sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m,
+    struct mbuf *n);
 static struct mbuf	*sbcut_internal(struct sockbuf *sb, int len);
 static void	sbflush_internal(struct sockbuf *sb);
 
@@ -358,7 +360,7 @@ sballoc_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 	}
 }
 
-static void
+void
 sbfree_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 {
 
@@ -413,6 +415,10 @@ socantrcvmore_locked(struct socket *so)
 	SOCKBUF_LOCK_ASSERT(&so->so_rcv);
 
 	so->so_rcv.sb_state |= SBS_CANTRCVMORE;
+#ifdef KERN_TLS
+	if (so->so_rcv.sb_flags & SB_TLS_RX)
+		ktls_check_rx(&so->so_rcv);
+#endif
 	sorwakeup_locked(so);
 	mtx_assert(SOCKBUF_MTX(&so->so_rcv), MA_NOTOWNED);
 }
@@ -924,7 +930,7 @@ sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 	m_demote(m, 1, M_NOTREADY);
 
 	sbcompress_ktls_rx(sb, m, sb->sb_mtlstail);
-	ktls_check_recv(sb);
+	ktls_check_rx(sb);
 }
 #endif
 
@@ -1047,11 +1053,11 @@ sbcheck(struct sockbuf *sb, const char *file, int line)
 	}
 
 	/*
-	 * Note that we might be "missing" some bytes due to the hack
-	 * in uipc_ktls.c:ktls_check_recv_internal() where the existing
-	 * TLS chain is detached for a M_WAITOK m_split().  If we have
-	 * missing bytes and SB_TLS_RX_RUNNING is set, assume we are ok
-	 * and just return.
+	 * Note that we might be "missing" some bytes while a record
+	 * is being decrypted in ktls_decrypt(), or if the TLS chain
+	 * is detached for a M_WAITOK m_split().  If the only missing
+	 * bytes are TLS bytes and SB_TLS_RX_RUNNING is set, assume we
+	 * are ok and just return.
 	 */
 	if (sb->sb_flags & SB_TLS_RX_RUNNING) {
 		long delta = sb->sb_tlscc - tlscc;
@@ -1350,7 +1356,6 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 static void
 sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 {
-	struct mbuf *o;
 
 	SOCKBUF_LOCK_ASSERT(sb);
 
@@ -1679,8 +1684,7 @@ sbdroprecord(struct sockbuf *sb)
  * type for presentation on a socket buffer.
  */
 struct mbuf *
-sbcreatecontrol_how(caddr_t p, int size, int type, int level, int wait,
-    int flags)
+sbcreatecontrol_how(void *p, int size, int type, int level, int wait)
 {
 	struct cmsghdr *cp;
 	struct mbuf *m;
@@ -1688,11 +1692,8 @@ sbcreatecontrol_how(caddr_t p, int size, int type, int level, int wait,
 	MBUF_CHECKSLEEP(wait);
 	if (CMSG_SPACE((u_int)size) > MCLBYTES)
 		return ((struct mbuf *) NULL);
-	if (CMSG_SPACE((u_int)size) > MLEN ||
-	    ((flags & M_PKTHDR) != 0 && CMSG_SPACE((u_int)size) > MHLEN))
-		m = m_getcl(wait, MT_CONTROL, flags & M_PKTHDR);
-	else if (flags & M_PKTHDR)
-		m = m_gethdr(wait, MT_CONTROL)
+	if (CMSG_SPACE((u_int)size) > MLEN)
+		m = m_getcl(wait, MT_CONTROL, 0);
 	else
 		m = m_get(wait, MT_CONTROL);
 	if (m == NULL)

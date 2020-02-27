@@ -52,6 +52,7 @@
 #define	SB_AIO_RUNNING	0x2000		/* AIO operation running */
 #define	SB_TLS_IFNET	0x4000		/* has used / is using ifnet KTLS */
 #define	SB_TLS_RX	0x8000		/* using KTLS on RX */
+#define	SB_TLS_RX_RUNNING 0x10000	/* KTLS RX operation running */
 
 #define	SBS_CANTSENDMORE	0x0010	/* can't send more data to peer */
 #define	SBS_CANTRCVMORE		0x0020	/* can't receive more data from peer */
@@ -157,6 +158,9 @@ void	sbappendrecord_locked(struct sockbuf *sb, struct mbuf *m0);
 void	sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n);
 struct mbuf *
 	sbcreatecontrol(caddr_t p, int size, int type, int level);
+struct mbuf *
+	sbcreatecontrol_how(void *p, int size, int type, int level,
+	    int wait);
 void	sbdestroy(struct sockbuf *sb, struct socket *so);
 void	sbdrop(struct sockbuf *sb, int len);
 void	sbdrop_locked(struct sockbuf *sb, int len);
@@ -182,6 +186,7 @@ int	sblock(struct sockbuf *sb, int flags);
 void	sbunlock(struct sockbuf *sb);
 void	sballoc(struct sockbuf *, struct mbuf *);
 void	sbfree(struct sockbuf *, struct mbuf *);
+void	sbfree_ktls_rx(struct sockbuf *sb, struct mbuf *m);
 int	sbready(struct sockbuf *, struct mbuf *, int);
 
 /*
