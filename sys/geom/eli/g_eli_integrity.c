@@ -153,7 +153,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 			G_ELI_DEBUG(1,
 			    "Crypto READ request failed (%d/%d) error=%d.",
 			    bp->bio_inbed, bp->bio_children, crp->crp_etype);
-		if (bp->bio_error == 0)
+		if (bp->bio_error == 0 || bp->bio_error == EINTEGRITY)
 			bp->bio_error = crp->crp_etype == EBADMSG ?
 			    EINTEGRITY : crp->crp_etype;
 	}
@@ -199,9 +199,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 	free(bp->bio_driver2, M_ELI);
 	bp->bio_driver2 = NULL;
 	if (bp->bio_error != 0) {
-		if (bp->bio_error == -1)
-			bp->bio_error = EINTEGRITY;
-		else if (bp->bio_error == EINTEGRITY)
+		if (bp->bio_error == EINTEGRITY)
 			G_ELI_LOGREQ(0, bp,
 			    "Crypto READ request failed authentication");
 		else {
