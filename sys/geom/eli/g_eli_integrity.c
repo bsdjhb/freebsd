@@ -145,14 +145,20 @@ g_eli_auth_read_done(struct cryptop *crp)
 		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d) (add=%d completed=%jd).",
 		    bp->bio_inbed, bp->bio_children, crp->crp_payload_length, (intmax_t)bp->bio_completed);
 	} else {
-		if (crp->crp_etype == EBADMSG)
-			G_ELI_DEBUG(1,
-		    "Crypto READ request failed to authenticate (%d/%d),",
-			    bp->bio_inbed, bp->bio_children);
-		else
-			G_ELI_DEBUG(1,
-			    "Crypto READ request failed (%d/%d) error=%d.",
-			    bp->bio_inbed, bp->bio_children, crp->crp_etype);
+		u_int encr_secsize, rel_sec;
+		int *errorp;
+
+		/* The real sectorsize of encrypted provider, eg. 512. */
+		encr_secsize =
+		    LIST_FIRST(&sc->sc_geom->consumer)->provider->sectorsize;
+		/* Which relative sector this request decrypted. */
+		rel_sec = ((crp->crp_buf + crp->crp_payload_start) -
+		    bp->bio_driver2) / encr_secsize;
+		errorp = bp->bio_driver2 + sizeof(int) * rel_sec;
+		*errorp = crp->crp_etype;
+		G_ELI_DEBUG(1,
+		    "Crypto READ request failed (%d/%d) error=%d.",
+		    bp->bio_inbed, bp->bio_children, crp->crp_etype);
 		if (bp->bio_error == 0 || bp->bio_error == EINTEGRITY)
 			bp->bio_error = crp->crp_etype == EBADMSG ?
 			    EINTEGRITY : crp->crp_etype;
@@ -195,14 +201,69 @@ g_eli_auth_read_done(struct cryptop *crp)
 			srcdata += encr_secsize;
 			dstdata += data_secsize;
 		}
+	} else if (bp->bio_error == EINTEGRITY) {
+		u_int i, lsec, nsec, data_secsize, decr_secsize, encr_secsize;
+		int *errorp;
+		off_t corroff, corsize, dstoff;
+
+		/* Sectorsize of decrypted provider eg. 4096. */
+		decr_secsize = bp->bio_to->sectorsize;
+		/* The real sectorsize of encrypted provider, eg. 512. */
+		encr_secsize = LIST_FIRST(&sc->sc_geom->consumer)->provider->sectorsize;
+		/* Number of data bytes in one encrypted sector, eg. 480. */
+		data_secsize = sc->sc_data_per_sector;
+		/* Number of sectors from decrypted provider, eg. 2. */
+		nsec = bp->bio_length / decr_secsize;
+		/* Number of sectors from encrypted provider, eg. 18. */
+		nsec = (nsec * sc->sc_bytes_per_sector) / encr_secsize;
+		/* Last sector number in every big sector, eg. 9. */
+		lsec = sc->sc_bytes_per_sector / encr_secsize;
+
+		errorp = bp->bio_driver2 + encr_secsize * nsec;
+		coroff = -1;
+		corsize = 0;
+		dstoff = bp->bio_offset;
+
+		for (i = 1; i <= nsec; i++) {
+			data_secsize = sc->sc_data_per_sector;
+			if ((i % lsec) == 0)
+				data_secsize = decr_secsize % data_secsize;
+			if (errorp[i - 1] == EINTEGRITY) {
+				/*
+				 * Corruption detected, remember the offset if
+				 * this is the first corrupted sector and
+				 * increase size.
+				 */
+				if (coroff == -1)
+					coroff = dstoff;
+				corsize += data_secsize;
+			} else {
+				/*
+				 * No curruption, good.
+				 * Report previous corruption if there was one.
+				 */
+				if (coroff != -1) {
+					G_ELI_DEBUG(0, "%s: Failed to authenticate %jd "
+					    "bytes of data at offset %jd.",
+					    sc->sc_name, (intmax_t)corsize,
+					    (intmax_t)coroff);
+					coroff = -1;
+					corsize = 0;
+				}
+			}
+			dstoff += data_secsize;
+		}
+		/* Report previous corruption if there was one. */
+		if (coroff != -1) {
+			G_ELI_DEBUG(0, "%s: Failed to authenticate %jd "
+			    "bytes of data at offset %jd.",
+			    sc->sc_name, (intmax_t)corsize, (intmax_t)coroff);
+		}
 	}
 	free(bp->bio_driver2, M_ELI);
 	bp->bio_driver2 = NULL;
 	if (bp->bio_error != 0) {
-		if (bp->bio_error == EINTEGRITY)
-			G_ELI_LOGREQ(0, bp,
-			    "Crypto READ request failed authentication");
-		else {
+		if (bp->bio_error != EINTEGRITY) {
 			G_ELI_LOGREQ(0, bp,
 			    "Crypto READ request failed (error=%d).",
 			    bp->bio_error);
@@ -332,10 +393,15 @@ g_eli_auth_read(struct g_eli_softc *sc, struct bio *bp)
 
 	cbp->bio_length = cp->provider->sectorsize * nsec;
 	size = cbp->bio_length;
+	size += sizeof(int) * nsec;
 	size += G_ELI_AUTH_SECKEYLEN * nsec;
 	cbp->bio_offset = (bp->bio_offset / bp->bio_to->sectorsize) * sc->sc_bytes_per_sector;
 	bp->bio_driver2 = malloc(size, M_ELI, M_WAITOK);
 	cbp->bio_data = bp->bio_driver2;
+
+	/* Clear the error array. */
+	memset((char *)bp->bio_driver2 + cbp->bio_length, 0,
+	    sizeof(int) * nsec);
 
 	/*
 	 * We read more than what is requested, so we have to be ready to read
@@ -404,6 +470,7 @@ g_eli_auth_run(struct g_eli_worker *wr, struct bio *bp)
 	if (bp->bio_cmd == BIO_READ) {
 		data = bp->bio_driver2;
 		p = data + encr_secsize * nsec;
+		p += sizeof(int) * nsec;
 	} else {
 		size_t size;
 
