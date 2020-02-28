@@ -1544,16 +1544,17 @@ ktls_check_rx(struct sockbuf *sb)
 }
 
 static int
-m_segments(struct mbuf *m, int len)
+m_segments(struct mbuf *m, int skip)
 {
 	int count;
 
-	count = 1;
-	while (len > m->m_len) {
-		len -= m->m_len;
-		count++;
+	while (skip >= m->m_len) {
+		skip -= m->m_len;
 		m = m->m_next;
 	}
+
+	for (count = 0; m != NULL; count++)
+		m = m->m_next;
 	return (count);
 }
 
@@ -1654,23 +1655,29 @@ ktls_decrypt(struct socket *so)
 		sb->sb_tls_seqno++;
 		SOCKBUF_UNLOCK(sb);
 
-		/* Build an I/O vector describing the TLS record. */
-		iov_count = m_segments(data, tls_len);
+		/*
+		 * Build an I/O vector spanning the TLS record payload
+		 * and trailer but skipping the header.
+		 */
+		iov_count = m_segments(data, tls->params.tls_hlen);
 		if (iov_count > iov_cap) {
 			free(iov, M_KTLS);
 			iov = malloc(sizeof(*iov) * iov_count, M_KTLS,
 			    M_WAITOK);
 			iov_cap = iov_count;
 		}
-		remain = tls_len;
-		for (m = data, i = 0;; m = m->m_next, i++) {
-			iov[i].iov_base = m->m_data;
-			if (remain < m->m_len) {
-				iov[i].iov_len = remain;
-				break;
+		remain = tls->params.tls_hlen;
+		for (m = data; ; m = m->m_next) {
+			if (remain > m->m_len) {
+				remain -= m->m_len;
+				continue;
 			}
+			iov[0].iov_base = m->m_data + remain;
+			iov[0].iov_len = m->m_len - remain;
+		}
+		for (i = 1; m != NULL; m = m->m_next, i++) {
+			iov[i].iov_base = m->m_data;
 			iov[i].iov_len = m->m_len;
-			remain -= m->m_len;
 		}
 		MPASS(i == iov_count);
 
@@ -1757,7 +1764,7 @@ ktls_decrypt(struct socket *so)
 	}
 
 	SOCKBUF_UNLOCK(sb);
-	
+
 	CURVNET_SET(so->so_vnet);
 	SOCK_LOCK(so);
 	sorele(so);
