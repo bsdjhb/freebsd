@@ -140,21 +140,30 @@ g_eli_auth_read_done(struct cryptop *crp)
 	}
 	bp = (struct bio *)crp->crp_opaque;
 	bp->bio_inbed++;
+	sc = bp->bio_to->geom->softc;
 	if (crp->crp_etype == 0) {
 		bp->bio_completed += crp->crp_payload_length;
 		G_ELI_DEBUG(3, "Crypto READ request done (%d/%d) (add=%d completed=%jd).",
 		    bp->bio_inbed, bp->bio_children, crp->crp_payload_length, (intmax_t)bp->bio_completed);
 	} else {
-		u_int encr_secsize, rel_sec;
+		u_int nsec, decr_secsize, encr_secsize, rel_sec;
 		int *errorp;
 
+		/* Sectorsize of decrypted provider eg. 4096. */
+		decr_secsize = bp->bio_to->sectorsize;
 		/* The real sectorsize of encrypted provider, eg. 512. */
 		encr_secsize =
 		    LIST_FIRST(&sc->sc_geom->consumer)->provider->sectorsize;
+		/* Number of sectors from decrypted provider, eg. 2. */
+		nsec = bp->bio_length / decr_secsize;
+		/* Number of sectors from encrypted provider, eg. 18. */
+		nsec = (nsec * sc->sc_bytes_per_sector) / encr_secsize;
 		/* Which relative sector this request decrypted. */
 		rel_sec = ((crp->crp_buf + crp->crp_payload_start) -
-		    bp->bio_driver2) / encr_secsize;
-		errorp = bp->bio_driver2 + sizeof(int) * rel_sec;
+		    (char *)bp->bio_driver2) / encr_secsize;
+
+		errorp = (int *)((char *)bp->bio_driver2 + encr_secsize * nsec +
+		    sizeof(int) * rel_sec);
 		*errorp = crp->crp_etype;
 		G_ELI_DEBUG(1,
 		    "Crypto READ request failed (%d/%d) error=%d.",
@@ -163,7 +172,6 @@ g_eli_auth_read_done(struct cryptop *crp)
 			bp->bio_error = crp->crp_etype == EBADMSG ?
 			    EINTEGRITY : crp->crp_etype;
 	}
-	sc = bp->bio_to->geom->softc;
 	if (crp->crp_cipher_key != NULL)
 		g_eli_key_drop(sc, __DECONST(void *, crp->crp_cipher_key));
 	crypto_freereq(crp);
@@ -204,7 +212,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 	} else if (bp->bio_error == EINTEGRITY) {
 		u_int i, lsec, nsec, data_secsize, decr_secsize, encr_secsize;
 		int *errorp;
-		off_t corroff, corsize, dstoff;
+		off_t coroff, corsize, dstoff;
 
 		/* Sectorsize of decrypted provider eg. 4096. */
 		decr_secsize = bp->bio_to->sectorsize;
@@ -219,7 +227,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 		/* Last sector number in every big sector, eg. 9. */
 		lsec = sc->sc_bytes_per_sector / encr_secsize;
 
-		errorp = bp->bio_driver2 + encr_secsize * nsec;
+		errorp = (int *)((char *)bp->bio_driver2 + encr_secsize * nsec);
 		coroff = -1;
 		corsize = 0;
 		dstoff = bp->bio_offset;
@@ -228,7 +236,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 			data_secsize = sc->sc_data_per_sector;
 			if ((i % lsec) == 0)
 				data_secsize = decr_secsize % data_secsize;
-			if (errorp[i - 1] == EINTEGRITY) {
+			if (errorp[i - 1] == EBADMSG) {
 				/*
 				 * Corruption detected, remember the offset if
 				 * this is the first corrupted sector and
@@ -239,7 +247,7 @@ g_eli_auth_read_done(struct cryptop *crp)
 				corsize += data_secsize;
 			} else {
 				/*
-				 * No curruption, good.
+				 * No corruption, good.
 				 * Report previous corruption if there was one.
 				 */
 				if (coroff != -1) {
