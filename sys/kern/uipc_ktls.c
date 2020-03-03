@@ -943,7 +943,8 @@ sb_mark_notready(struct sockbuf *sb)
 	sb->sb_mb = NULL;
 	sb->sb_mbtail = NULL;
 	for (; m != NULL; m = m->m_next) {
-		KASSERT(m->m_nextpkt, ("%s: m_nextpkt != NULL", __func__));
+		KASSERT(m->m_nextpkt == NULL, ("%s: m_nextpkt != NULL",
+		    __func__));
 		KASSERT((m->m_flags & M_NOTAVAIL) == 0, ("%s: mbuf not avail",
 		    __func__));
 		KASSERT(sb->sb_acc >= m->m_len, ("%s: sb_acc < m->m_len",

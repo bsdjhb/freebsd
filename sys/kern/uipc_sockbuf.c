@@ -1367,7 +1367,7 @@ sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		    ("TLS RX mbuf %p is not MT_DATA", m));
 		KASSERT((m->m_flags & M_NOTREADY) != 0,
 		    ("TLS RX mbuf %p ready", m));
-		KASSERT((m->m_flags & M_NOMAP) != 0,
+		KASSERT((m->m_flags & M_NOMAP) == 0,
 		    ("TLS RX mbuf %p unmapped", m));
 		
 		if (m->m_len == 0) {
