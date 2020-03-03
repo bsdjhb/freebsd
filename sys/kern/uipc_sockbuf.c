@@ -927,8 +927,9 @@ sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 	SBLASTMBUFCHK(sb);
 
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */
-	m_demote(m, 1, M_NOTREADY);
+	m_demote(m, 1, 0);
 
+	m->m_flags |= M_NOTREADY;
 	sbcompress_ktls_rx(sb, m, sb->sb_mtlstail);
 	ktls_check_rx(sb);
 }
