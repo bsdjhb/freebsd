@@ -1450,6 +1450,7 @@ static struct mbuf *
 sbcut_internal(struct sockbuf *sb, int len)
 {
 	struct mbuf *m, *next, *mfree;
+	bool is_tls;
 
 	KASSERT(len >= 0, ("%s: len is %d but it is supposed to be >= 0",
 	    __func__, len));
@@ -1457,10 +1458,17 @@ sbcut_internal(struct sockbuf *sb, int len)
 	    __func__, len, sb->sb_ccc));
 
 	next = (m = sb->sb_mb) ? m->m_nextpkt : 0;
+	is_tls = false;
 	mfree = NULL;
 
 	while (len > 0) {
 		if (m == NULL) {
+#ifdef KERN_TLS
+			if (next == NULL && !is_tls) {
+				next = sb->sb_mtls;
+				is_tls = true;
+			}
+#endif
 			KASSERT(next, ("%s: no next, len %d", __func__, len));
 			m = next;
 			next = m->m_nextpkt;
@@ -1479,12 +1487,17 @@ sbcut_internal(struct sockbuf *sb, int len)
 			break;
 		}
 		len -= m->m_len;
-		sbfree(sb, m);
+#ifdef KERN_TLS
+		if (is_tls)
+			sbfree_ktls_rx(sb, m);
+		else
+#endif
+			sbfree(sb, m);
 		/*
 		 * Do not put M_NOTREADY buffers to the free list, they
 		 * are referenced from outside.
 		 */
-		if (m->m_flags & M_NOTREADY)
+		if (m->m_flags & M_NOTREADY && !is_tls)
 			m = m->m_next;
 		else {
 			struct mbuf *n;
@@ -1510,6 +1523,15 @@ sbcut_internal(struct sockbuf *sb, int len)
 		mfree = m;
 		m = n;
 	}
+#ifdef KERN_TLS
+	if (is_tls) {
+		sb->sb_mb = NULL;
+		sb->sb_mtls = m;
+		if (m == NULL)
+			sb->sb_mtlstail = NULL;
+		m = NULL;
+	} else
+#endif
 	if (m) {
 		sb->sb_mb = m;
 		m->m_nextpkt = next;
