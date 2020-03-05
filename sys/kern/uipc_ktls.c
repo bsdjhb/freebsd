@@ -1508,7 +1508,7 @@ ktls_check_rx(struct sockbuf *sb)
 
 	/* Is there enough queued for a TLS header? */
 	if (sb->sb_tlscc < sizeof(hdr)) {
-		if ((sb->sb_state & SBS_CANTRCVMORE) != 0)
+		if ((sb->sb_state & SBS_CANTRCVMORE) != 0 && sb->sb_tlscc != 0)
 			so->so_error = EBADMSG;
 		return;
 	}
