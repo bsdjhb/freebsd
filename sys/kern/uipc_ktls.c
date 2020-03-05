@@ -942,6 +942,7 @@ sb_mark_notready(struct sockbuf *sb)
 	sb->sb_mtls = m;
 	sb->sb_mb = NULL;
 	sb->sb_mbtail = NULL;
+	sb->sb_lastrecord = NULL;
 	for (; m != NULL; m = m->m_next) {
 		KASSERT(m->m_nextpkt == NULL, ("%s: m_nextpkt != NULL",
 		    __func__));
@@ -1507,13 +1508,8 @@ ktls_check_rx(struct sockbuf *sb)
 
 	/* Is there enough queued for a TLS header? */
 	if (sb->sb_tlscc < sizeof(hdr)) {
-		if ((sb->sb_state & SBS_CANTRCVMORE) != 0) {
+		if ((sb->sb_state & SBS_CANTRCVMORE) != 0)
 			so->so_error = EBADMSG;
-			sbfree_ktls_rx(sb, sb->sb_mtls);
-			m_freem(sb->sb_mtls);
-			sb->sb_mtls = NULL;
-			sb->sb_mtlstail = NULL;
-		}
 		return;
 	}
 
@@ -1521,13 +1517,8 @@ ktls_check_rx(struct sockbuf *sb)
 
 	/* Is the entire record queued? */
 	if (sb->sb_tlscc < sizeof(hdr) + ntohs(hdr.tls_length)) {
-		if ((sb->sb_state & SBS_CANTRCVMORE) != 0) {
+		if ((sb->sb_state & SBS_CANTRCVMORE) != 0)
 			so->so_error = EBADMSG;
-			sbfree_ktls_rx(sb, sb->sb_mtls);
-			m_freem(sb->sb_mtls);
-			sb->sb_mtls = NULL;
-			sb->sb_mtlstail = NULL;
-		}
 		return;
 	}
 
@@ -1559,6 +1550,102 @@ m_segments(struct mbuf *m, int skip)
 	return (count);
 }
 
+static struct mbuf *
+ktls_detach_record(struct sockbuf *sb, int len)
+{
+	struct mbuf *m, *n, *top;
+	int remain;
+
+	SOCKBUF_LOCK_ASSERT(sb);
+	MPASS(len <= sb->sb_tlscc);
+
+	/*
+	 * If TLS chain is the exact size of the record,
+	 * just grab the whole record.
+	 */
+	top = sb->sb_mtls;
+	if (sb->sb_tlscc == len) {
+		sb->sb_mtls = NULL;
+		sb->sb_mtlstail = NULL;
+		goto out;
+	}
+
+	/*
+	 * While it would be nice to use m_split() here, we need
+	 * to know exactly what m_split() allocates to update the
+	 * accounting, so do it inline instead.
+	 */
+	remain = len;
+	for (m = top; remain > m->m_len; m = m->m_next)
+		remain -= m->m_len;
+
+	/* Easy case: don't have to split 'm'. */
+	if (remain == m->m_len) {
+		sb->sb_mtls = m->m_next;
+		if (sb->sb_mtls == NULL)
+			sb->sb_mtlstail = NULL;
+		m->m_next = NULL;
+		goto out;
+	}
+
+	/*
+	 * Need to allocate an mbuf to hold the remainder of 'm'.  Try
+	 * with M_NOWAIT first.
+	 */
+	n = m_get(M_NOWAIT, MT_DATA);
+	if (n == NULL) {
+		/*
+		 * Use M_WAITOK with socket buffer unlocked.  If
+		 * 'sb_mtls' changes while the lock is dropped, return
+		 * NULL to force the caller to retry.
+		 */
+		SOCKBUF_UNLOCK(sb);
+
+		n = m_get(M_WAITOK, MT_DATA);
+
+		SOCKBUF_LOCK(sb);
+		if (sb->sb_mtls != top) {
+			m_free(n);
+			return (NULL);
+		}
+	}
+
+	/* Store remainder in 'n'. */
+	n->m_len = m->m_len - remain;
+	if (m->m_flags & M_EXT) {
+		n->m_data = m->m_data + n->m_len;
+		mb_dupcl(n, m);
+	} else {
+		bcopy(mtod(m, caddr_t) + remain, mtod(n, caddr_t), n->m_len);
+	}
+
+	/* Trim 'm' and update accounting. */
+	m->m_len -= n->m_len;
+	sb->sb_tlscc -= n->m_len;
+	sb->sb_ccc -= n->m_len;
+
+	/* Account for 'n'. */
+	sballoc_ktls_rx(sb, n);
+
+	/* Insert 'n' into the TLS chain. */
+	n->m_next = m->m_next;
+	if (sb->sb_mtlstail == m)
+		sb->sb_mtlstail = n;
+
+	/* Detach the record from the TLS chain. */
+	m->m_next = NULL;
+
+out:
+	MPASS(m_length(top, NULL) == len);
+	for (m = top; m != NULL; m = m->m_next)
+		sbfree_ktls_rx(sb, m);
+	sb->sb_tlsdcc = len;
+	sb->sb_ccc += len;
+	SBCHECK(sb);
+	return (top);
+}
+
+
 static void
 ktls_decrypt(struct socket *so)
 {
@@ -1568,7 +1655,7 @@ ktls_decrypt(struct socket *so)
 	struct tls_record_layer *hdr;
 	struct iovec *iov;
 	struct tls_get_record tgr;
-	struct mbuf *control, *data, *m, *n;
+	struct mbuf *control, *data, *m;
 	uint64_t seqno;
 	int error, i, iov_cap, iov_count, remain, tls_len, trail_len;
 
@@ -1589,7 +1676,7 @@ ktls_decrypt(struct socket *so)
 			break;
 
 		m_copydata(sb->sb_mtls, 0, tls->params.tls_hlen, tls_header);
-		tls_len = sizeof(hdr) + ntohs(hdr->tls_length);
+		tls_len = sizeof(*hdr) + ntohs(hdr->tls_length);
 
 		/* Is the entire record queued? */
 		if (sb->sb_tlscc < tls_len)
@@ -1597,63 +1684,16 @@ ktls_decrypt(struct socket *so)
 
 		/*
 		 * Split out the portion of the mbuf chain containing
-		 * this TLS record.  If the chain is the exact size of
-		 * the record, just grab the whole chain.  Otherwise,
-		 * use m_split.
+		 * this TLS record.
 		 */
-		data = sb->sb_mtls;
-		if (sb->sb_tlscc == tls_len) {
-			sb->sb_mtls = NULL;
-			sb->sb_mtlstail = NULL;
-		} else {
-			m = m_split(sb->sb_mtls, tls_len, M_NOWAIT);
-			if (__predict_false(m == NULL)) {
-				/*
-				 * m_split might need to split
-				 * sb_mtlstail, but we need to permit
-				 * concurrent enqueues of mbufs while
-				 * we drop the lock.  To avoid this,
-				 * detach the entire chain and append
-				 * any new chain to the end of the
-				 * remainder afterwards.
-				 */
-				sb->sb_mtls = NULL;
-				sb->sb_mtlstail = NULL;
-				SOCKBUF_UNLOCK(sb);
-
-				m = m_split(data, tls_len, M_WAITOK);
-				n = m_last(m);
-
-				SOCKBUF_LOCK(sb);
-
-				/*
-				 * If there is no new chain to append,
-				 * use 'n' as the new tail.  If there
-				 * is an new chain, join them and keep
-				 * the existing tail.
-				 */
-				if (sb->sb_mtls == NULL)
-					sb->sb_mtlstail = n;
-				else
-					n->m_next = sb->sb_mtls;
-			} else {
-				/*
-				 * sb_mtlstail might have been split.
-				 * If so, m->m_next will be NULL.
-				 * Note that sb_mtlstail might also
-				 * just be 'm' but reassigning the
-				 * value won't hurt in that case.
-				 */
-				if (m->m_next == NULL)
-					sb->sb_mtlstail = m;
-			}
-
-			/* The remainder is the new TLS chain. */
-			sb->sb_mtls = m;
-		}
+		data = ktls_detach_record(sb, tls_len);
+		if (data == NULL)
+			continue;
+		MPASS(sb->sb_tlsdcc == tls_len);
 
 		seqno = sb->sb_tls_seqno;
 		sb->sb_tls_seqno++;
+		SBCHECK(sb);
 		SOCKBUF_UNLOCK(sb);
 
 		/*
@@ -1668,15 +1708,11 @@ ktls_decrypt(struct socket *so)
 			iov_cap = iov_count;
 		}
 		remain = tls->params.tls_hlen;
-		for (m = data; ; m = m->m_next) {
-			if (remain > m->m_len) {
-				remain -= m->m_len;
-				continue;
-			}
-			iov[0].iov_base = m->m_data + remain;
-			iov[0].iov_len = m->m_len - remain;
-		}
-		for (i = 1; m != NULL; m = m->m_next, i++) {
+		for (m = data; remain > m->m_len; m = m->m_next)
+			remain -= m->m_len;
+		iov[0].iov_base = m->m_data + remain;
+		iov[0].iov_len = m->m_len - remain;
+		for (m = m->m_next, i = 1; m != NULL; m = m->m_next, i++) {
 			iov[i].iov_base = m->m_data;
 			iov[i].iov_len = m->m_len;
 		}
@@ -1688,19 +1724,31 @@ ktls_decrypt(struct socket *so)
 		if (error) {
 			counter_u64_add(ktls_offload_failed_crypto, 1);
 
-			CURVNET_SET(so->so_vnet);
-			so->so_error = EBADMSG;
-			sorwakeup(so);
-			CURVNET_RESTORE();
+			SOCKBUF_LOCK(sb);
+			if (sb->sb_tlsdcc == 0) {
+				/*
+				 * sbcut/drop/flush discarded these
+				 * mbufs.
+				 */
+				m_freem(data);
+				break;
+			}
 
 			/*
 			 * Drop this TLS record's data, but keep
 			 * decrypting subsequent records.
 			 */
-			SOCKBUF_LOCK(sb);
-			sbfree_ktls_rx(sb, data);
+			sb->sb_ccc -= tls_len;
+			sb->sb_tlsdcc = 0;
+
+			CURVNET_SET(so->so_vnet);
+			so->so_error = EBADMSG;
+			sorwakeup_locked(so);
+			CURVNET_RESTORE();
 
 			m_freem(data);
+
+			SOCKBUF_LOCK(sb);
 			continue;
 		}
 
@@ -1712,11 +1760,23 @@ ktls_decrypt(struct socket *so)
 		    trail_len);
 		control = sbcreatecontrol_how(&tgr, sizeof(tgr),
 		    TLS_GET_RECORD, IPPROTO_TCP, M_WAITOK);
-		control->m_flags |= M_NOTREADY;
 
-		/* Remove the TLS record data from the TLS chain accounting. */
 		SOCKBUF_LOCK(sb);
-		sbfree_ktls_rx(sb, data);
+		if (sb->sb_tlsdcc == 0) {
+			/* sbcut/drop/flush discarded these mbufs. */
+			MPASS(sb->sb_tlscc == 0);
+			m_freem(data);
+			m_freem(control);
+			break;
+		}
+
+		/*
+		 * Clear the 'dcc' accounting in preparation for
+		 * adding the decrypted record.
+		 */
+		sb->sb_ccc -= tls_len;
+		sb->sb_tlsdcc = 0;
+		SBCHECK(sb);
 
 		/* If there is no payload, drop all of the data. */
 		if (tgr.tls_length == htobe16(0)) {
@@ -1756,15 +1816,11 @@ ktls_decrypt(struct socket *so)
 
 	sb->sb_flags &= ~SB_TLS_RX_RUNNING;
 
-	if ((sb->sb_state & SBS_CANTRCVMORE) != 0 && sb->sb_tlscc > 0) {
+	if ((sb->sb_state & SBS_CANTRCVMORE) != 0 && sb->sb_tlscc > 0)
 		so->so_error = EBADMSG;
-		sbfree_ktls_rx(sb, sb->sb_mtls);
-		m_freem(sb->sb_mtls);
-		sb->sb_mtls = NULL;
-		sb->sb_mtlstail = NULL;
-	}
 
-	SOCKBUF_UNLOCK(sb);
+	sorwakeup_locked(so);
+	SOCKBUF_UNLOCK_ASSERT(sb);
 
 	CURVNET_SET(so->so_vnet);
 	SOCK_LOCK(so);

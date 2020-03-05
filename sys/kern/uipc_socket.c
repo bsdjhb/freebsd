@@ -1966,10 +1966,11 @@ restart:
 		}
 		SOCKBUF_LOCK_ASSERT(&so->so_rcv);
 		if (so->so_rcv.sb_state & SBS_CANTRCVMORE) {
-			if (m == NULL) {
+			if (m == NULL && so->so_rcv.sb_tlsdcc == 0 &&
+			    so->so_rcv.sb_tlscc == 0) {
 				SOCKBUF_UNLOCK(&so->so_rcv);
 				goto release;
-			} else
+			} else if (m != NULL && (m->m_flags & M_NOTAVAIL) == 0)
 				goto dontblock;
 		}
 		for (; m != NULL && (m->m_flags & M_NOTAVAIL) == 0;

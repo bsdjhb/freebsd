@@ -38,6 +38,8 @@
 /*
  * Constants for sb_flags field of struct sockbuf/xsockbuf.
  */
+#define	SB_TLS_RX	0x01		/* using KTLS on RX */
+#define	SB_TLS_RX_RUNNING 0x02		/* KTLS RX operation running */
 #define	SB_WAIT		0x04		/* someone is waiting for data/space */
 #define	SB_SEL		0x08		/* someone is selecting */
 #define	SB_ASYNC	0x10		/* ASYNC I/O, need signals */
@@ -51,8 +53,6 @@
 #define	SB_STOP		0x1000		/* backpressure indicator */
 #define	SB_AIO_RUNNING	0x2000		/* AIO operation running */
 #define	SB_TLS_IFNET	0x4000		/* has used / is using ifnet KTLS */
-#define	SB_TLS_RX	0x8000		/* using KTLS on RX */
-#define	SB_TLS_RX_RUNNING 0x10000	/* KTLS RX operation running */
 
 #define	SBS_CANTSENDMORE	0x0010	/* can't send more data to peer */
 #define	SBS_CANTRCVMORE		0x0020	/* can't receive more data from peer */
@@ -102,6 +102,7 @@ struct	sockbuf {
 	u_int	sb_mbmax;	/* (a) max chars of mbufs to use */
 	u_int	sb_ctl;		/* (a) non-data chars in buffer */
 	u_int	sb_tlscc;	/* (a) TLS chain characters */
+	u_int	sb_tlsdcc;	/* (a) TLS characters being decrypted */
 	int	sb_lowat;	/* (a) low water mark */
 	sbintime_t	sb_timeo;	/* (a) timeout for read/write */
 	uint64_t sb_tls_seqno;	/* (a) TLS seqno */
@@ -186,6 +187,7 @@ int	sblock(struct sockbuf *sb, int flags);
 void	sbunlock(struct sockbuf *sb);
 void	sballoc(struct sockbuf *, struct mbuf *);
 void	sbfree(struct sockbuf *, struct mbuf *);
+void	sballoc_ktls_rx(struct sockbuf *sb, struct mbuf *m);
 void	sbfree_ktls_rx(struct sockbuf *sb, struct mbuf *m);
 int	sbready(struct sockbuf *, struct mbuf *, int);
 
