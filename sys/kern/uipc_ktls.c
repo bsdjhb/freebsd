@@ -1599,6 +1599,7 @@ ktls_detach_record(struct sockbuf *sb, int len)
 			return (NULL);
 		}
 	}
+	n->m_flags |= M_NOTREADY;
 
 	/* Store remainder in 'n'. */
 	n->m_len = m->m_len - remain;
@@ -1618,6 +1619,7 @@ ktls_detach_record(struct sockbuf *sb, int len)
 	sballoc_ktls_rx(sb, n);
 
 	/* Insert 'n' into the TLS chain. */
+	sb->sb_mtls = n;
 	n->m_next = m->m_next;
 	if (sb->sb_mtlstail == m)
 		sb->sb_mtlstail = n;
