@@ -1053,7 +1053,7 @@ sbcheck(struct sockbuf *sb, const char *file, int line)
 			printf("sb %p TLS mbuf %p with nextpkt\n", sb, m);
 			goto fail;
 		}
-		if ((m->m_flags & M_NOTREADY) != 0) {
+		if ((m->m_flags & M_NOTREADY) == 0) {
 			printf("sb %p TLS mbuf %p ready\n", sb, m);
 			goto fail;
 		}
