@@ -1604,7 +1604,7 @@ ktls_detach_record(struct sockbuf *sb, int len)
 	/* Store remainder in 'n'. */
 	n->m_len = m->m_len - remain;
 	if (m->m_flags & M_EXT) {
-		n->m_data = m->m_data + n->m_len;
+		n->m_data = m->m_data + remain;
 		mb_dupcl(n, m);
 	} else {
 		bcopy(mtod(m, caddr_t) + remain, mtod(n, caddr_t), n->m_len);
@@ -1698,7 +1698,7 @@ ktls_decrypt(struct socket *so)
 			 * out of sync.  The connection isn't
 			 * recoverable at this point, so abort it.
 			 */
-			SOCKBUF_UNLOCK();
+			SOCKBUF_UNLOCK(sb);
 
 			CURVNET_SET(so->so_vnet);
 			so->so_proto->pr_usrreqs->pru_abort(so);
