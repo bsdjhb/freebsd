@@ -988,6 +988,11 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 	if (en->cipher_algorithm == CRYPTO_AES_CBC && !ktls_cbc_enable)
 		return (ENOTSUP);
 
+	/* TLS 1.3 is not yet supported. */
+	if (en->tls_vmajor == TLS_MAJOR_VER_ONE &&
+	    en->tls_vminor == TLS_MINOR_VER_THREE)
+		return (ENOTSUP);
+
 	error = ktls_create_session(so, en, &tls);
 	if (error)
 		return (error);
@@ -1535,21 +1540,6 @@ ktls_check_rx(struct sockbuf *sb)
 	counter_u64_add(ktls_cnt_rx_queued, 1);
 }
 
-static int
-m_segments(struct mbuf *m, int skip)
-{
-	int count;
-
-	while (skip >= m->m_len) {
-		skip -= m->m_len;
-		m = m->m_next;
-	}
-
-	for (count = 0; m != NULL; count++)
-		m = m->m_next;
-	return (count);
-}
-
 static struct mbuf *
 ktls_detach_record(struct sockbuf *sb, int len)
 {
@@ -1645,6 +1635,20 @@ out:
 	return (top);
 }
 
+static int
+m_segments(struct mbuf *m, int skip)
+{
+	int count;
+
+	while (skip >= m->m_len) {
+		skip -= m->m_len;
+		m = m->m_next;
+	}
+
+	for (count = 0; m != NULL; count++)
+		m = m->m_next;
+	return (count);
+}
 
 static void
 ktls_decrypt(struct socket *so)
@@ -1718,12 +1722,19 @@ ktls_decrypt(struct socket *so)
 		}
 		MPASS(i == iov_count);
 
-		error = tls->sw_decrypt(tls, hdr, iov, iov_count, seqno,
-		    &trail_len);
+		if (hdr->tls_vmajor != tls->params.tls_vmajor ||
+		    hdr->tls_vminor != tls->params.tls_vminor)
+			error = EINVAL;
+		else if (ntohs(hdr->tls_length) > TLS_MAX_MSG_SIZE_V10_2)
+			error = EMSGSIZE;
+		else {
+			error = tls->sw_decrypt(tls, hdr, iov, iov_count,
+			    seqno, &trail_len);
+			if (error)
+				counter_u64_add(ktls_offload_failed_crypto, 1);
+		}
 
 		if (error) {
-			counter_u64_add(ktls_offload_failed_crypto, 1);
-
 			SOCKBUF_LOCK(sb);
 			if (sb->sb_tlsdcc == 0) {
 				/*
