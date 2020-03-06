@@ -1684,6 +1684,29 @@ ktls_decrypt(struct socket *so)
 		m_copydata(sb->sb_mtls, 0, tls->params.tls_hlen, tls_header);
 		tls_len = sizeof(*hdr) + ntohs(hdr->tls_length);
 
+		if (hdr->tls_vmajor != tls->params.tls_vmajor ||
+		    hdr->tls_vminor != tls->params.tls_vminor)
+			error = EINVAL;
+		else if (tls_len < tls->params.tls_hlen ||
+		    ntohs(hdr->tls_length) > TLS_MAX_MSG_SIZE_V10_2)
+			error = EMSGSIZE;
+		else
+			error = 0;
+		if (__predict_false(error != 0)) {
+			/*
+			 * We have a corrupted record and are likely
+			 * out of sync.  The connection isn't
+			 * recoverable at this point, so abort it.
+			 */
+			SOCKBUF_UNLOCK();
+
+			CURVNET_SET(so->so_vnet);
+			so->so_proto->pr_usrreqs->pru_abort(so);
+			so->so_error = error;
+			CURVNET_RESTORE();
+			goto deref;
+		}
+
 		/* Is the entire record queued? */
 		if (sb->sb_tlscc < tls_len)
 			break;
@@ -1724,19 +1747,11 @@ ktls_decrypt(struct socket *so)
 		}
 		MPASS(i == iov_count);
 
-		if (hdr->tls_vmajor != tls->params.tls_vmajor ||
-		    hdr->tls_vminor != tls->params.tls_vminor)
-			error = EINVAL;
-		else if (ntohs(hdr->tls_length) > TLS_MAX_MSG_SIZE_V10_2)
-			error = EMSGSIZE;
-		else {
-			error = tls->sw_decrypt(tls, hdr, iov, iov_count,
-			    seqno, &trail_len);
-			if (error)
-				counter_u64_add(ktls_offload_failed_crypto, 1);
-		}
-
+		error = tls->sw_decrypt(tls, hdr, iov, iov_count, seqno,
+		    &trail_len);
 		if (error) {
+			counter_u64_add(ktls_offload_failed_crypto, 1);
+
 			SOCKBUF_LOCK(sb);
 			if (sb->sb_tlsdcc == 0) {
 				/*
@@ -1833,6 +1848,8 @@ ktls_decrypt(struct socket *so)
 		so->so_error = EBADMSG;
 
 	sorwakeup_locked(so);
+
+deref:
 	SOCKBUF_UNLOCK_ASSERT(sb);
 
 	CURVNET_SET(so->so_vnet);
