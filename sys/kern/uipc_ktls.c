@@ -1744,7 +1744,7 @@ ktls_decrypt(struct socket *so)
 			iov_cap = iov_count;
 		}
 		remain = tls->params.tls_hlen;
-		for (m = data; remain > m->m_len; m = m->m_next)
+		for (m = data; remain >= m->m_len; m = m->m_next)
 			remain -= m->m_len;
 		iov[0].iov_base = m->m_data + remain;
 		iov[0].iov_len = m->m_len - remain;
