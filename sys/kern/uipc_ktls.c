@@ -155,6 +155,10 @@ static counter_u64_t ktls_offload_active;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, active, CTLFLAG_RD,
     &ktls_offload_active, "Total Active TLS sessions");
 
+static counter_u64_t ktls_offload_corrupted_records;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, corrupted_records, CTLFLAG_RD,
+    &ktls_offload_corrupted_records, "Total corrupted TLS records received");
+
 static counter_u64_t ktls_offload_failed_crypto;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, failed_crypto, CTLFLAG_RD,
     &ktls_offload_failed_crypto, "Total TLS crypto failures");
@@ -345,6 +349,7 @@ ktls_init(void *dummy __unused)
 	ktls_offload_total = counter_u64_alloc(M_WAITOK);
 	ktls_offload_enable_calls = counter_u64_alloc(M_WAITOK);
 	ktls_offload_active = counter_u64_alloc(M_WAITOK);
+	ktls_offload_corrupted_records = counter_u64_alloc(M_WAITOK);
 	ktls_offload_failed_crypto = counter_u64_alloc(M_WAITOK);
 	ktls_switch_to_ifnet = counter_u64_alloc(M_WAITOK);
 	ktls_switch_to_sw = counter_u64_alloc(M_WAITOK);
@@ -1687,8 +1692,9 @@ ktls_decrypt(struct socket *so)
 		if (hdr->tls_vmajor != tls->params.tls_vmajor ||
 		    hdr->tls_vminor != tls->params.tls_vminor)
 			error = EINVAL;
-		else if (tls_len < tls->params.tls_hlen ||
-		    ntohs(hdr->tls_length) > TLS_MAX_MSG_SIZE_V10_2)
+		else if (tls_len < tls->params.tls_hlen || tls_len >
+		    tls->params.tls_hlen + TLS_MAX_MSG_SIZE_V10_2 +
+		    tls->params.tls_tlen)
 			error = EMSGSIZE;
 		else
 			error = 0;
@@ -1699,6 +1705,7 @@ ktls_decrypt(struct socket *so)
 			 * recoverable at this point, so abort it.
 			 */
 			SOCKBUF_UNLOCK(sb);
+			counter_u64_add(ktls_offload_corrupted_records, 1);
 
 			CURVNET_SET(so->so_vnet);
 			so->so_proto->pr_usrreqs->pru_abort(so);
