@@ -210,9 +210,6 @@ cpu_fork(struct thread *td1, struct proc *p2, struct thread *td2, int flags)
 	 * If the parent process has the trap bit set (i.e. a debugger
 	 * had single stepped the process to the system call), we need
 	 * to clear the trap flag from the new frame.
-	 *
-	 * XXX: Should we consider preserving PSL_T if PTRACE_FORK is
-	 * set on the parent?
 	 */
 	td2->td_frame->tf_eflags &= ~PSL_T;
 
