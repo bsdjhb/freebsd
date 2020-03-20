@@ -36,6 +36,9 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2020xxxx: Remove procfs-based process debugging
+OLD_FILES+=usr/include/sys/pioctl.h
+
 # 20200318: host.conf was deprecated a long time ago.
 OLD_FILES+=etc/host.conf
 OLD_FILES+=etc/rc.d/nsswitch
