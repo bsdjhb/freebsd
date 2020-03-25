@@ -1519,7 +1519,7 @@ ktls_check_rx(struct sockbuf *sb)
 	/* Is there enough queued for a TLS header? */
 	if (sb->sb_tlscc < sizeof(hdr)) {
 		if ((sb->sb_state & SBS_CANTRCVMORE) != 0 && sb->sb_tlscc != 0)
-			so->so_error = EBADMSG;
+			so->so_error = EMSGSIZE;
 		return;
 	}
 
@@ -1528,7 +1528,7 @@ ktls_check_rx(struct sockbuf *sb)
 	/* Is the entire record queued? */
 	if (sb->sb_tlscc < sizeof(hdr) + ntohs(hdr.tls_length)) {
 		if ((sb->sb_state & SBS_CANTRCVMORE) != 0)
-			so->so_error = EBADMSG;
+			so->so_error = EMSGSIZE;
 		return;
 	}
 
@@ -1852,7 +1852,7 @@ ktls_decrypt(struct socket *so)
 	sb->sb_flags &= ~SB_TLS_RX_RUNNING;
 
 	if ((sb->sb_state & SBS_CANTRCVMORE) != 0 && sb->sb_tlscc > 0)
-		so->so_error = EBADMSG;
+		so->so_error = EMSGSIZE;
 
 	sorwakeup_locked(so);
 
