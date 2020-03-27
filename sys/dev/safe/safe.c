@@ -805,8 +805,8 @@ safe_op_cb(void *arg, bus_dma_segment_t *seg, int nsegs, int error)
 {
 	struct safe_operand *op = arg;
 
-	DPRINTF(("%s: mapsize %u nsegs %d error %d\n", __func__,
-		(u_int) mapsize, nsegs, error));
+	DPRINTF(("%s: nsegs %d error %d\n", __func__,
+		nsegs, error));
 	if (error != 0)
 		return;
 	op->nsegs = nsegs;
