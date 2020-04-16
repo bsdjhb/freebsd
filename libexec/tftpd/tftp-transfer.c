@@ -125,7 +125,7 @@ read_block:
 					acktry++;
 					ts->retries++;
 					if (seek_file(window[0].offset) != 0) {
-						send_error(errno + 100);
+						send_error(peer, errno + 100);
 						goto abort;
 					}
 					*block = window[0].block;
@@ -162,7 +162,7 @@ read_block:
 					/* Resend the current window. */
 					ts->retries++;
 					if (seek_file(window[0].offset) != 0) {
-						send_error(errno + 100);
+						send_error(peer, errno + 100);
 						goto abort;
 					}
 					*block = window[0].block;
@@ -191,7 +191,7 @@ read_block:
 						    "Partial ACK");
 					if (seek_file(window[i + 1].offset) !=
 					    0) {
-						send_error(errno + 100);
+						send_error(peer, errno + 100);
 						goto abort;
 					}
 					*block = window[i + 1].block;
