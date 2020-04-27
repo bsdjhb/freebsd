@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD$");
 #include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
+#include <pthread_np.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -278,15 +279,20 @@ pci_emul_msix_twrite(struct pci_devinst *pi, uint64_t offset, int size,
 	/*
 	 * Return if table index is beyond what device supports
 	 */
+	//pthread_mutex_lock(&pi->pi_intr_lock);
 	tab_index = offset / MSIX_TABLE_ENTRY_SIZE;
-	if (tab_index >= pi->pi_msix.table_count)
+	if (tab_index >= pi->pi_msix.table_count) {
+		//pthread_mutex_unlock(&pi->pi_intr_lock);
 		return (-1);
+	}
 
 	msix_entry_offset = offset % MSIX_TABLE_ENTRY_SIZE;
 
 	/* support only aligned writes */
-	if ((msix_entry_offset % size) != 0)
+	if ((msix_entry_offset % size) != 0) {
+		//pthread_mutex_unlock(&pi->pi_intr_lock);
 		return (-1);
+	}
 
 	dest = (char *)(pi->pi_msix.table + tab_index);
 	dest += msix_entry_offset;
@@ -295,6 +301,7 @@ pci_emul_msix_twrite(struct pci_devinst *pi, uint64_t offset, int size,
 		*((uint32_t *)dest) = value;
 	else
 		*((uint64_t *)dest) = value;
+	//pthread_mutex_unlock(&pi->pi_intr_lock);
 
 	return (0);
 }
@@ -315,10 +322,12 @@ pci_emul_msix_tread(struct pci_devinst *pi, uint64_t offset, int size)
 	if (size != 1 && size != 4 && size != 8)
 		return (retval);
 
+	//pthread_mutex_lock(&pi->pi_intr_lock);
 	msix_entry_offset = offset % MSIX_TABLE_ENTRY_SIZE;
 
 	/* support only aligned reads */
 	if ((msix_entry_offset % size) != 0) {
+		//pthread_mutex_unlock(&pi->pi_intr_lock);
 		return (retval);
 	}
 
@@ -339,6 +348,7 @@ pci_emul_msix_tread(struct pci_devinst *pi, uint64_t offset, int size)
 		/* return 0 for PBA access */
 		retval = 0;
 	}
+	//pthread_mutex_unlock(&pi->pi_intr_lock);
 
 	return (retval);
 }
@@ -751,7 +761,7 @@ pci_emul_init(struct vmctx *ctx, struct pci_devemu *pde, int bus, int slot,
 	pdi->pi_bus = bus;
 	pdi->pi_slot = slot;
 	pdi->pi_func = func;
-	pthread_mutex_init(&pdi->pi_lintr.lock, NULL);
+	pthread_mutex_init(&pdi->pi_intr_lock, NULL);
 	pdi->pi_lintr.pin = 0;
 	pdi->pi_lintr.state = IDLE;
 	pdi->pi_lintr.pirq_pin = 0;
@@ -881,6 +891,7 @@ msixcap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 	uint16_t msgctrl, rwmask;
 	int off;
 
+	pthread_mutex_lock(&pi->pi_intr_lock);
 	off = offset - capoff;
 	/* Message Control Register */
 	if (off == 2 && bytes == 2) {
@@ -896,6 +907,7 @@ msixcap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 	}
 
 	CFGWRITE(pi, offset, val, bytes);
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 void
@@ -904,6 +916,8 @@ msicap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 {
 	uint16_t msgctrl, rwmask, msgdata, mme;
 	uint32_t addrlo;
+
+	pthread_mutex_lock(&pi->pi_intr_lock);
 
 	/*
 	 * If guest is writing to the message control register make sure
@@ -915,26 +929,28 @@ msicap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 		msgctrl &= ~rwmask;
 		msgctrl |= val & rwmask;
 		val = msgctrl;
-
-		addrlo = pci_get_cfgdata32(pi, capoff + 4);
-		if (msgctrl & PCIM_MSICTRL_64BIT)
-			msgdata = pci_get_cfgdata16(pi, capoff + 12);
-		else
-			msgdata = pci_get_cfgdata16(pi, capoff + 8);
-
-		mme = msgctrl & PCIM_MSICTRL_MME_MASK;
-		pi->pi_msi.enabled = msgctrl & PCIM_MSICTRL_MSI_ENABLE ? 1 : 0;
-		if (pi->pi_msi.enabled) {
-			pi->pi_msi.addr = addrlo;
-			pi->pi_msi.msg_data = msgdata;
-			pi->pi_msi.maxmsgnum = 1 << (mme >> 4);
-		} else {
-			pi->pi_msi.maxmsgnum = 0;
-		}
-		pci_lintr_update(pi);
 	}
-
 	CFGWRITE(pi, offset, val, bytes);
+
+	msgctrl = pci_get_cfgdata16(pi, capoff + 2);
+	addrlo = pci_get_cfgdata32(pi, capoff + 4);
+	if (msgctrl & PCIM_MSICTRL_64BIT)
+		msgdata = pci_get_cfgdata16(pi, capoff + 12);
+	else
+		msgdata = pci_get_cfgdata16(pi, capoff + 8);
+
+	mme = msgctrl & PCIM_MSICTRL_MME_MASK;
+	pi->pi_msi.enabled = msgctrl & PCIM_MSICTRL_MSI_ENABLE ? 1 : 0;
+	if (pi->pi_msi.enabled) {
+		pi->pi_msi.addr = addrlo;
+		pi->pi_msi.msg_data = msgdata;
+		pi->pi_msi.maxmsgnum = 1 << (mme >> 4);
+	} else {
+		pi->pi_msi.maxmsgnum = 0;
+	}
+	pci_lintr_update(pi);
+
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 void
@@ -1447,30 +1463,40 @@ pci_generate_msix(struct pci_devinst *pi, int index)
 {
 	struct msix_table_entry *mte;
 
-	if (!pci_msix_enabled(pi))
+	pthread_mutex_lock(&pi->pi_intr_lock);
+	if (!pci_msix_enabled(pi)) {
+		pthread_mutex_unlock(&pi->pi_intr_lock);
 		return;
+	}
 
-	if (pi->pi_msix.function_mask)
+	if (pi->pi_msix.function_mask) {
+		pthread_mutex_unlock(&pi->pi_intr_lock);
 		return;
+	}
 
-	if (index >= pi->pi_msix.table_count)
+	if (index >= pi->pi_msix.table_count) {
+		pthread_mutex_unlock(&pi->pi_intr_lock);
 		return;
+	}
 
 	mte = &pi->pi_msix.table[index];
 	if ((mte->vector_control & PCIM_MSIX_VCTRL_MASK) == 0) {
 		/* XXX Set PBA bit if interrupt is disabled */
 		vm_lapic_msi(pi->pi_vmctx, mte->addr, mte->msg_data);
 	}
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 void
 pci_generate_msi(struct pci_devinst *pi, int index)
 {
 
+	pthread_mutex_lock(&pi->pi_intr_lock);
 	if (pci_msi_enabled(pi) && index < pci_msi_maxmsgnum(pi)) {
 		vm_lapic_msi(pi->pi_vmctx, pi->pi_msi.addr,
 			     pi->pi_msi.msg_data + index);
 	}
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 static bool
@@ -1552,7 +1578,7 @@ pci_lintr_assert(struct pci_devinst *pi)
 
 	assert(pi->pi_lintr.pin > 0);
 
-	pthread_mutex_lock(&pi->pi_lintr.lock);
+	pthread_mutex_lock(&pi->pi_intr_lock);
 	if (pi->pi_lintr.state == IDLE) {
 		if (pci_lintr_permitted(pi)) {
 			pi->pi_lintr.state = ASSERTED;
@@ -1560,7 +1586,7 @@ pci_lintr_assert(struct pci_devinst *pi)
 		} else
 			pi->pi_lintr.state = PENDING;
 	}
-	pthread_mutex_unlock(&pi->pi_lintr.lock);
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 void
@@ -1569,20 +1595,20 @@ pci_lintr_deassert(struct pci_devinst *pi)
 
 	assert(pi->pi_lintr.pin > 0);
 
-	pthread_mutex_lock(&pi->pi_lintr.lock);
+	pthread_mutex_lock(&pi->pi_intr_lock);
 	if (pi->pi_lintr.state == ASSERTED) {
 		pi->pi_lintr.state = IDLE;
 		pci_irq_deassert(pi);
 	} else if (pi->pi_lintr.state == PENDING)
 		pi->pi_lintr.state = IDLE;
-	pthread_mutex_unlock(&pi->pi_lintr.lock);
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 static void
 pci_lintr_update(struct pci_devinst *pi)
 {
 
-	pthread_mutex_lock(&pi->pi_lintr.lock);
+	assert(pthread_mutex_isowned_np(&pi->pi_intr_lock));
 	if (pi->pi_lintr.state == ASSERTED && !pci_lintr_permitted(pi)) {
 		pci_irq_deassert(pi);
 		pi->pi_lintr.state = PENDING;
@@ -1590,7 +1616,6 @@ pci_lintr_update(struct pci_devinst *pi)
 		pi->pi_lintr.state = ASSERTED;
 		pci_irq_assert(pi);
 	}
-	pthread_mutex_unlock(&pi->pi_lintr.lock);
 }
 
 int
@@ -1736,7 +1761,9 @@ pci_emul_cmd_changed(struct pci_devinst *pi, uint16_t old)
 	 * If INTx has been unmasked and is pending, assert the
 	 * interrupt.
 	 */
+	pthread_mutex_lock(&pi->pi_intr_lock);
 	pci_lintr_update(pi);
+	pthread_mutex_unlock(&pi->pi_intr_lock);
 }
 
 static void

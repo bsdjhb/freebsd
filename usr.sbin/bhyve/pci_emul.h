@@ -124,7 +124,6 @@ struct pci_devinst {
 		enum lintr_stat	state;
 		int		pirq_pin;
 		int	  	ioapic_irq;
-		pthread_mutex_t	lock;
 	} pi_lintr;
 
 	struct {
@@ -147,6 +146,8 @@ struct pci_devinst {
 		void	*pba_page;
 		int	pba_page_offset;
 	} pi_msix;
+
+	pthread_mutex_t pi_intr_lock;
 
 	void      *pi_arg;		/* devemu-private data */
 
