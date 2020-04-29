@@ -417,7 +417,7 @@ ktls_ocf_free(struct ktls_session *tls)
 }
 
 static int
-ktls_ocf_try(struct socket *so, struct ktls_session *tls, bool transmit)
+ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 {
 	struct crypto_session_params csp;
 	struct ocf_session *os;
@@ -452,7 +452,8 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, bool transmit)
 		return (EPROTONOSUPPORT);
 
 	/* TLS 1.3 is not yet supported for receive. */
-	if (!transmit && tls->params.tls_vminor == TLS_MINOR_VER_THREE)
+	if (direction == KTLS_RX &&
+	    tls->params.tls_vminor == TLS_MINOR_VER_THREE)
 		return (EPROTONOSUPPORT);
 
 	os = malloc(sizeof(*os), M_KTLS_OCF, M_NOWAIT | M_ZERO);
@@ -468,7 +469,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, bool transmit)
 
 	mtx_init(&os->lock, "ktls_ocf", NULL, MTX_DEF);
 	tls->cipher = os;
-	if (transmit) {
+	if (direction == KTLS_TX) {
 		if (tls->params.tls_vminor == TLS_MINOR_VER_THREE)
 			tls->sw_encrypt = ktls_ocf_tls13_gcm_encrypt;
 		else

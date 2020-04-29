@@ -1846,7 +1846,7 @@ ktls_decrypt(struct socket *so)
 			m->m_flags |= M_EOR;
 		}
 
-		sbappendcontrol_locked(sb, data, control);
+		sbappendcontrol_locked(sb, data, control, 0);
 	}
 
 	sb->sb_flags &= ~SB_TLS_RX_RUNNING;
