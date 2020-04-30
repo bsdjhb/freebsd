@@ -68,6 +68,8 @@
 #ifdef _KERNEL
 #include <crypto/aesni/aesni.h>
 #include <crypto/aesni/aesni_os.h>
+#include <sys/lock.h>
+#include <sys/systm.h>
 #else
 #include <stdint.h>
 #endif
@@ -259,6 +261,93 @@ reduce4(__m128i H1, __m128i H2, __m128i H3, __m128i H4,
 	*res = tmp6;
 }
 
+struct aesni_cursor {
+	struct crypto_buffer_cursor *cc;
+	char *p;
+	size_t resid;
+	size_t done;
+};
+
+static void
+aesni_cursor_init(struct aesni_cursor *ac, struct crypto_buffer_cursor *cc)
+{
+
+	ac->cc = cc;
+	ac->p = crypto_cursor_segbase(cc);
+	ac->resid = crypto_cursor_seglen(cc);
+	ac->done = 0;
+}
+
+static __inline void
+aesni_cursor_advance(struct aesni_cursor *ac, size_t amount)
+{
+
+	MPASS(amount <= ac->resid);
+	ac->p += amount;
+	ac->resid -= amount;
+	ac->done += amount;
+}
+
+static __inline __m128i
+aesni_cursor_read(struct aesni_cursor *ac)
+{
+	void *op;
+	__m128i val;
+
+	if (ac->resid >= sizeof(__m128i)) {
+		op = ac->p;
+		ac->p += sizeof(__m128i);
+		ac->done += sizeof(__m128i);
+		ac->resid -= sizeof(__m128i);
+		return (_mm_loadu_si128((__m128i *)op));
+	}
+
+	crypto_cursor_advance(ac->cc, ac->done);
+	crypto_cursor_copydata(ac->cc, sizeof(val), &val);
+	ac->p = crypto_cursor_segbase(ac->cc);
+	ac->resid = crypto_cursor_seglen(ac->cc);
+	ac->done = 0;
+	return (val);
+}
+
+static __inline __m128i
+aesni_cursor_readn(struct aesni_cursor *ac, int nbytes)
+{
+	__m128i val;
+
+	val = _mm_setzero_si128();
+	crypto_cursor_advance(ac->cc, ac->done);
+	crypto_cursor_copydata(ac->cc, nbytes, &val);
+	return (val);
+}
+
+static __inline void
+aesni_cursor_write(struct aesni_cursor *ac, __m128i val)
+{
+
+	if (ac->resid >= sizeof(__m128i)) {
+		_mm_storeu_si128((__m128i *)ac->p, val);
+		ac->p += sizeof(__m128i);
+		ac->done += sizeof(__m128i);
+		ac->resid -= sizeof(__m128i);
+		return;
+	}
+
+	crypto_cursor_advance(ac->cc, ac->done);
+	crypto_cursor_copyback(ac->cc, sizeof(val), &val);
+	ac->p = crypto_cursor_segbase(ac->cc);
+	ac->resid = crypto_cursor_seglen(ac->cc);
+	ac->done = 0;
+}
+
+static __inline void
+aesni_cursor_writen(struct aesni_cursor *ac, __m128i val, int nbytes)
+{
+
+	crypto_cursor_advance(ac->cc, ac->done);
+	crypto_cursor_copyback(ac->cc, nbytes, &val);
+}
+
 /*
  * Figure 12. AES-GCM: Processing Four Blocks in Parallel with Aggregated
  * Every Four Blocks
@@ -268,7 +357,8 @@ reduce4(__m128i H1, __m128i H2, __m128i H3, __m128i H4,
  * 2^32-256*8*16 bytes.
  */
 void
-AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
+AES_GCM_encrypt(struct crypto_buffer_cursor *cc_in,
+	struct crypto_buffer_cursor *cc_out,
 	const unsigned char *addt, const unsigned char *ivec,
 	unsigned char *tag, uint32_t nbytes, uint32_t abytes, int ibytes,
 	const unsigned char *key, int nr)
@@ -288,7 +378,10 @@ AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
 	__m128i BSWAP_MASK = _mm_set_epi8(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
 	    15);
 	__m128i X = _mm_setzero_si128();
+	struct aesni_cursor in, out;
 
+	aesni_cursor_init(&in, cc_in);
+	aesni_cursor_init(&out, cc_out);
 	if (ibytes == 96/8) {
 		Y = _mm_loadu_si128((const __m128i *)ivec);
 		Y = _mm_insert_epi32(Y, 0x1000000, 3);
@@ -435,31 +528,55 @@ AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
 		tmp7 =_mm_aesenclast_si128(tmp7, KEY[nr]);
 		tmp8 =_mm_aesenclast_si128(tmp8, KEY[nr]);
 
-		tmp1 = _mm_xor_si128(tmp1,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+0]));
-		tmp2 = _mm_xor_si128(tmp2,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+1]));
-		tmp3 = _mm_xor_si128(tmp3,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+2]));
-		tmp4 = _mm_xor_si128(tmp4,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+3]));
-		tmp5 = _mm_xor_si128(tmp5,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+4]));
-		tmp6 = _mm_xor_si128(tmp6,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+5]));
-		tmp7 = _mm_xor_si128(tmp7,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+6]));
-		tmp8 = _mm_xor_si128(tmp8,
-		    _mm_loadu_si128(&((const __m128i *)in)[i*8+7]));
+		if (in.resid >= 8 * sizeof(__m128i)) {
+			tmp1 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 0));
+			tmp2 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 1));
+			tmp3 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 2));
+			tmp4 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 3));
+			tmp5 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 4));
+			tmp6 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 5));
+			tmp7 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 6));
+			tmp8 = _mm_xor_si128(tmp1,
+			    _mm_loadu_si128((const __m128i *)in.p + 7));
+			aesni_cursor_advance(&in, 8 * sizeof(__m128i));
+		} else {
+			tmp1 = _mm_xor_si128(tmp1, aesni_cursor_read(&in));
+			tmp2 = _mm_xor_si128(tmp2, aesni_cursor_read(&in));
+			tmp3 = _mm_xor_si128(tmp3, aesni_cursor_read(&in));
+			tmp4 = _mm_xor_si128(tmp4, aesni_cursor_read(&in));
+			tmp5 = _mm_xor_si128(tmp5, aesni_cursor_read(&in));
+			tmp6 = _mm_xor_si128(tmp6, aesni_cursor_read(&in));
+			tmp7 = _mm_xor_si128(tmp7, aesni_cursor_read(&in));
+			tmp8 = _mm_xor_si128(tmp8, aesni_cursor_read(&in));
+		};
 
-		_mm_storeu_si128(&((__m128i*)out)[i*8+0], tmp1);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+1], tmp2);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+2], tmp3);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+3], tmp4);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+4], tmp5);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+5], tmp6);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+6], tmp7);
-		_mm_storeu_si128(&((__m128i*)out)[i*8+7], tmp8);
+		if (out.resid >= 8 * sizeof(__m128i)) {
+			_mm_storeu_si128((__m128i *)out.p + 0, tmp1);
+			_mm_storeu_si128((__m128i *)out.p + 1, tmp2);
+			_mm_storeu_si128((__m128i *)out.p + 2, tmp3);
+			_mm_storeu_si128((__m128i *)out.p + 3, tmp4);
+			_mm_storeu_si128((__m128i *)out.p + 4, tmp5);
+			_mm_storeu_si128((__m128i *)out.p + 5, tmp6);
+			_mm_storeu_si128((__m128i *)out.p + 6, tmp7);
+			_mm_storeu_si128((__m128i *)out.p + 7, tmp8);
+			aesni_cursor_advance(&out, 8 * sizeof(__m128i));
+		} else {
+			aesni_cursor_write(&out, tmp1);
+			aesni_cursor_write(&out, tmp2);
+			aesni_cursor_write(&out, tmp3);
+			aesni_cursor_write(&out, tmp4);
+			aesni_cursor_write(&out, tmp5);
+			aesni_cursor_write(&out, tmp6);
+			aesni_cursor_write(&out, tmp7);
+			aesni_cursor_write(&out, tmp8);
+		}
 
 		tmp1 = _mm_shuffle_epi8(tmp1, BSWAP_MASK);
 		tmp2 = _mm_shuffle_epi8(tmp2, BSWAP_MASK);
@@ -487,9 +604,8 @@ AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
 		}
 		tmp1 = _mm_aesenc_si128(tmp1, KEY[nr-1]);
 		tmp1 = _mm_aesenclast_si128(tmp1, KEY[nr]);
-		tmp1 = _mm_xor_si128(tmp1,
-		    _mm_loadu_si128(&((const __m128i *)in)[k]));
-		_mm_storeu_si128(&((__m128i*)out)[k], tmp1);
+		tmp1 = _mm_xor_si128(tmp1, aesni_cursor_read(&in));
+		aesni_cursor_write(&out, tmp1);
 		tmp1 = _mm_shuffle_epi8(tmp1, BSWAP_MASK);
 		X = _mm_xor_si128(X, tmp1);
 		gfmul(X,H,&X);
@@ -505,11 +621,10 @@ AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
 		tmp1 = _mm_aesenc_si128(tmp1, KEY[nr-1]);
 		tmp1 = _mm_aesenclast_si128(tmp1, KEY[nr]);
 		tmp1 = _mm_xor_si128(tmp1,
-		    _mm_loadu_si128(&((const __m128i *)in)[k]));
+		    aesni_cursor_readn(&in, nbytes % 16));
+		aesni_cursor_writen(&out, tmp1, nbytes % 16);
 		last_block = tmp1;
-		for (j=0; j<nbytes%16; j++)
-			out[k*16+j] = ((unsigned char*)&last_block)[j];
-		for ((void)j; j<16; j++)
+		for (j = nbytes % 16; j < 16; j++)
 			((unsigned char*)&last_block)[j] = 0;
 		tmp1 = last_block;
 		tmp1 = _mm_shuffle_epi8(tmp1, BSWAP_MASK);

@@ -102,7 +102,8 @@ void aesni_decrypt_xts(int rounds, const void *data_schedule /*__aligned(16)*/,
     const uint8_t iv[__min_size(AES_BLOCK_LEN)]);
 
 /* GCM & GHASH functions */
-void AES_GCM_encrypt(const unsigned char *in, unsigned char *out,
+void AES_GCM_encrypt(struct crypto_buffer_cursor *cc_in,
+    struct crypto_buffer_cursor *cc_out,
     const unsigned char *addt, const unsigned char *ivec,
     unsigned char *tag, uint32_t nbytes, uint32_t abytes, int ibytes,
     const unsigned char *key, int nr);

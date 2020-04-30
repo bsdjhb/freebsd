@@ -36,6 +36,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/counter.h>
 #include <sys/kernel.h>
 #include <sys/kobj.h>
 #include <sys/libkern.h>
@@ -45,6 +46,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <sys/smp.h>
+#include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
 
@@ -68,6 +70,14 @@ __FBSDID("$FreeBSD$");
 
 static struct mtx_padalign *ctx_mtx;
 static struct fpu_kern_ctx **ctx_fpu;
+
+SYSCTL_NODE(_hw, OID_AUTO, aesni, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
+    "aesni(4)");
+
+static counter_u64_t saved_copies;
+COUNTER_U64_SYSINIT(saved_copies);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, saved_copies, CTLFLAG_RD, &saved_copies,
+    "Copies avoided by using cursors");
 
 struct aesni_softc {
 	int32_t cid;
@@ -686,11 +696,23 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 	uint8_t *authbuf, *buf, *outbuf;
 	int error;
 	bool encflag, allocated, authallocated, outallocated, outcopy;
+	struct crypto_buffer_cursor cc_in, cc_out;
 
-	buf = aesni_cipher_alloc(crp, crp->crp_payload_start,
-	    crp->crp_payload_length, &allocated);
-	if (buf == NULL)
-		return (ENOMEM);
+	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16 &&
+	    CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
+		crypto_cursor_init(&cc_in, &crp->crp_buf);
+		crypto_cursor_advance(&cc_in, crp->crp_payload_start);
+		if (crypto_cursor_seglen(&cc_in) < crp->crp_payload_length)
+			counter_u64_add(saved_copies, 1);
+		allocated = false;
+		cc_out = cc_in;
+		buf = NULL;
+	} else {
+		buf = aesni_cipher_alloc(crp, crp->crp_payload_start,
+		    crp->crp_payload_length, &allocated);
+		if (buf == NULL)
+			return (ENOMEM);
+	}
 
 	outallocated = false;
 	authallocated = false;
@@ -705,7 +727,16 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 		}
 	}
 
-	if (CRYPTO_HAS_OUTPUT_BUFFER(crp)) {
+	if (CRYPTO_HAS_OUTPUT_BUFFER(crp) &&
+	    csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16 &&
+	    CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
+		crypto_cursor_init(&cc_out, &crp->crp_obuf);
+		crypto_cursor_advance(&cc_out, crp->crp_payload_output_start);
+		if (crypto_cursor_seglen(&cc_in) < crp->crp_payload_length)
+			counter_u64_add(saved_copies, 1);
+		outcopy = false;
+		outbuf = NULL;
+	} else if (CRYPTO_HAS_OUTPUT_BUFFER(crp)) {
 		outbuf = crypto_buffer_contiguous_subsegment(&crp->crp_obuf,
 		    crp->crp_payload_output_start, crp->crp_payload_length);
 		if (outbuf == NULL) {
@@ -766,7 +797,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 	case CRYPTO_AES_NIST_GCM_16:
 		if (encflag) {
 			memset(tag, 0, sizeof(tag));
-			AES_GCM_encrypt(buf, outbuf, authbuf, iv, tag,
+			AES_GCM_encrypt(&cc_in, &cc_out, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
 			    csp->csp_ivlen, ses->enc_schedule, ses->rounds);
 			crypto_copyback(crp, crp->crp_digest_start, sizeof(tag),
