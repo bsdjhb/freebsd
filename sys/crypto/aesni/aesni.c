@@ -79,6 +79,31 @@ COUNTER_U64_SYSINIT(saved_copies);
 SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, saved_copies, CTLFLAG_RD, &saved_copies,
     "Copies avoided by using cursors");
 
+counter_u64_t stream_loads;
+COUNTER_U64_SYSINIT(stream_loads);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, stream_loads, CTLFLAG_RD, &stream_loads,
+    "Blocks of stream loads");
+
+counter_u64_t loadus;
+COUNTER_U64_SYSINIT(loadus);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, loadus, CTLFLAG_RD, &loadus,
+    "Blocks of non-stream loads");
+
+counter_u64_t cursor_reads;
+COUNTER_U64_SYSINIT(cursor_reads);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, cursor_reads, CTLFLAG_RD, &cursor_reads,
+    "Blocks of cursor reads");
+
+counter_u64_t stream_stores;
+COUNTER_U64_SYSINIT(stream_stores);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, stream_stores, CTLFLAG_RD, &stream_stores,
+    "Blocks of stream stores");
+
+counter_u64_t cursor_writes;
+COUNTER_U64_SYSINIT(cursor_writes);
+SYSCTL_COUNTER_U64(_hw_aesni, OID_AUTO, cursor_writes, CTLFLAG_RD, &cursor_writes,
+    "Blocks of cursor writes");
+
 struct aesni_softc {
 	int32_t cid;
 	bool	has_aes;

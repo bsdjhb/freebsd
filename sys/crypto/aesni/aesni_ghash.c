@@ -528,24 +528,54 @@ AES_GCM_encrypt(struct crypto_buffer_cursor *cc_in,
 		tmp8 =_mm_aesenclast_si128(tmp8, KEY[nr]);
 
 		if (in.resid >= 8 * sizeof(__m128i)) {
-			tmp1 = _mm_xor_si128(tmp1,
-			    _mm_loadu_si128((const __m128i *)in.p + 0));
-			tmp2 = _mm_xor_si128(tmp2,
-			    _mm_loadu_si128((const __m128i *)in.p + 1));
-			tmp3 = _mm_xor_si128(tmp3,
-			    _mm_loadu_si128((const __m128i *)in.p + 2));
-			tmp4 = _mm_xor_si128(tmp4,
-			    _mm_loadu_si128((const __m128i *)in.p + 3));
-			tmp5 = _mm_xor_si128(tmp5,
-			    _mm_loadu_si128((const __m128i *)in.p + 4));
-			tmp6 = _mm_xor_si128(tmp6,
-			    _mm_loadu_si128((const __m128i *)in.p + 5));
-			tmp7 = _mm_xor_si128(tmp7,
-			    _mm_loadu_si128((const __m128i *)in.p + 6));
-			tmp8 = _mm_xor_si128(tmp8,
-			    _mm_loadu_si128((const __m128i *)in.p + 7));
+			if ((uintptr_t)in.p % sizeof(__m128i) == 0) {
+				counter_u64_add(stream_loads, 1);
+				tmp1 = _mm_xor_si128(tmp1,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 0));
+				tmp2 = _mm_xor_si128(tmp2,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 1));
+				tmp3 = _mm_xor_si128(tmp3,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 2));
+				tmp4 = _mm_xor_si128(tmp4,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 3));
+				tmp5 = _mm_xor_si128(tmp5,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 4));
+				tmp6 = _mm_xor_si128(tmp6,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 5));
+				tmp7 = _mm_xor_si128(tmp7,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 6));
+				tmp8 = _mm_xor_si128(tmp8,
+				    _mm_stream_load_si128(
+					(const __m128i *)in.p + 7));
+			} else {
+				counter_u64_add(loadus, 1);
+				tmp1 = _mm_xor_si128(tmp1,
+				    _mm_loadu_si128((const __m128i *)in.p + 0));
+				tmp2 = _mm_xor_si128(tmp2,
+				    _mm_loadu_si128((const __m128i *)in.p + 1));
+				tmp3 = _mm_xor_si128(tmp3,
+				    _mm_loadu_si128((const __m128i *)in.p + 2));
+				tmp4 = _mm_xor_si128(tmp4,
+				    _mm_loadu_si128((const __m128i *)in.p + 3));
+				tmp5 = _mm_xor_si128(tmp5,
+				    _mm_loadu_si128((const __m128i *)in.p + 4));
+				tmp6 = _mm_xor_si128(tmp6,
+				    _mm_loadu_si128((const __m128i *)in.p + 5));
+				tmp7 = _mm_xor_si128(tmp7,
+				    _mm_loadu_si128((const __m128i *)in.p + 6));
+				tmp8 = _mm_xor_si128(tmp8,
+				    _mm_loadu_si128((const __m128i *)in.p + 7));
+			}
 			aesni_cursor_advance(&in, 8 * sizeof(__m128i));
 		} else {
+			counter_u64_add(cursor_reads, 1);
 			tmp1 = _mm_xor_si128(tmp1, aesni_cursor_read(&in));
 			tmp2 = _mm_xor_si128(tmp2, aesni_cursor_read(&in));
 			tmp3 = _mm_xor_si128(tmp3, aesni_cursor_read(&in));
@@ -557,16 +587,18 @@ AES_GCM_encrypt(struct crypto_buffer_cursor *cc_in,
 		};
 
 		if (out.resid >= 8 * sizeof(__m128i)) {
-			_mm_storeu_si128((__m128i *)out.p + 0, tmp1);
-			_mm_storeu_si128((__m128i *)out.p + 1, tmp2);
-			_mm_storeu_si128((__m128i *)out.p + 2, tmp3);
-			_mm_storeu_si128((__m128i *)out.p + 3, tmp4);
-			_mm_storeu_si128((__m128i *)out.p + 4, tmp5);
-			_mm_storeu_si128((__m128i *)out.p + 5, tmp6);
-			_mm_storeu_si128((__m128i *)out.p + 6, tmp7);
-			_mm_storeu_si128((__m128i *)out.p + 7, tmp8);
+			counter_u64_add(stream_stores, 1);
+			_mm_stream_si128((__m128i *)out.p + 0, tmp1);
+			_mm_stream_si128((__m128i *)out.p + 1, tmp2);
+			_mm_stream_si128((__m128i *)out.p + 2, tmp3);
+			_mm_stream_si128((__m128i *)out.p + 3, tmp4);
+			_mm_stream_si128((__m128i *)out.p + 4, tmp5);
+			_mm_stream_si128((__m128i *)out.p + 5, tmp6);
+			_mm_stream_si128((__m128i *)out.p + 6, tmp7);
+			_mm_stream_si128((__m128i *)out.p + 7, tmp8);
 			aesni_cursor_advance(&out, 8 * sizeof(__m128i));
 		} else {
+			counter_u64_add(cursor_writes, 1);
 			aesni_cursor_write(&out, tmp1);
 			aesni_cursor_write(&out, tmp2);
 			aesni_cursor_write(&out, tmp3);

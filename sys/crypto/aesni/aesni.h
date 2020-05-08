@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
+#include <sys/counter.h>
 
 #include <opencrypto/cryptodev.h>
 
@@ -67,6 +68,12 @@ struct aesni_session {
 	void (*hash_finalize)(void *, void *);
 	bool hmac;
 };
+
+extern counter_u64_t stream_loads;
+extern counter_u64_t loadus;
+extern counter_u64_t cursor_reads;
+extern counter_u64_t stream_stores;
+extern counter_u64_t cursor_writes;
 
 /*
  * Internal functions, implemented in assembler.
