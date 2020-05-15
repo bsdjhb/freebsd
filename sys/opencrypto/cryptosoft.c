@@ -65,7 +65,7 @@ struct swcr_auth {
 };
 
 struct swcr_encdec {
-	uint8_t		*sw_kschedule;
+	void		*sw_kschedule;
 	struct enc_xform *sw_exf;
 };
 
@@ -132,7 +132,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 
 	if (crp->crp_cipher_key != NULL) {
 		if (sw->sw_kschedule)
-			exf->zerokey(&(sw->sw_kschedule));
+			exf->zerokey(sw->sw_kschedule);
 
 		csp = crypto_get_params(crp->crp_session);
 		error = exf->setkey(&sw->sw_kschedule,
@@ -197,10 +197,10 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 			/* Actual encryption/decryption */
 			if (exf->reinit) {
 				if (encrypting) {
-					exf->encrypt(sw->sw_kschedule,
+					exf->encrypt(sw->sw_kschedule, blk,
 					    blk);
 				} else {
-					exf->decrypt(sw->sw_kschedule,
+					exf->decrypt(sw->sw_kschedule, blk,
 					    blk);
 				}
 			} else if (encrypting) {
@@ -208,7 +208,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 				for (j = 0; j < blks; j++)
 					blk[j] ^= ivp[j];
 
-				exf->encrypt(sw->sw_kschedule, blk);
+				exf->encrypt(sw->sw_kschedule, blk, blk);
 
 				/*
 				 * Keep encrypted block for XOR'ing
@@ -224,7 +224,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 				nivp = (ivp == iv) ? iv2 : iv;
 				bcopy(blk, nivp, blks);
 
-				exf->decrypt(sw->sw_kschedule, blk);
+				exf->decrypt(sw->sw_kschedule, blk, blk);
 
 				/* XOR with previous block */
 				for (j = 0; j < blks; j++)
@@ -264,25 +264,25 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 			if (exf->reinit) {
 				if (encrypting && exf->encrypt_multi == NULL)
 					exf->encrypt(sw->sw_kschedule,
-					    idat);
+					    idat, idat);
 				else if (encrypting) {
 					nb = rounddown(rem, blks);
 					exf->encrypt_multi(sw->sw_kschedule,
-					    idat, nb);
+					    idat, idat, nb);
 				} else if (exf->decrypt_multi == NULL)
 					exf->decrypt(sw->sw_kschedule,
-					    idat);
+					    idat, idat);
 				else {
 					nb = rounddown(rem, blks);
 					exf->decrypt_multi(sw->sw_kschedule,
-					    idat, nb);
+					    idat, idat, nb);
 				}
 			} else if (encrypting) {
 				/* XOR with previous block/IV */
 				for (j = 0; j < blks; j++)
 					idat[j] ^= ivp[j];
 
-				exf->encrypt(sw->sw_kschedule, idat);
+				exf->encrypt(sw->sw_kschedule, idat, idat);
 				ivp = idat;
 			} else {	/* decrypt */
 				/*
@@ -292,7 +292,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 				nivp = (ivp == iv) ? iv2 : iv;
 				bcopy(idat, nivp, blks);
 
-				exf->decrypt(sw->sw_kschedule, idat);
+				exf->decrypt(sw->sw_kschedule, idat, idat);
 
 				/* XOR with previous block/IV */
 				for (j = 0; j < blks; j++)
@@ -543,7 +543,7 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 			bzero(blk, blksz);
 		crypto_copydata(crp, crp->crp_payload_start + i, len, blk);
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-			exf->encrypt(swe->sw_kschedule, blk);
+			exf->encrypt(swe->sw_kschedule, blk, blk);
 			axf->Update(&ctx, blk, len);
 			crypto_copyback(crp, crp->crp_payload_start + i, len,
 			    blk);
@@ -579,7 +579,7 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 				bzero(blk, blksz);
 			crypto_copydata(crp, crp->crp_payload_start + i, len,
 			    blk);
-			exf->decrypt(swe->sw_kschedule, blk);
+			exf->decrypt(swe->sw_kschedule, blk, blk);
 			crypto_copyback(crp, crp->crp_payload_start + i, len,
 			    blk);
 		}
@@ -704,7 +704,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 		crypto_copydata(crp, crp->crp_payload_start + i, len, blk);
 		if (CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
 			axf->Update(&ctx, blk, len);
-			exf->encrypt(swe->sw_kschedule, blk);
+			exf->encrypt(swe->sw_kschedule, blk, blk);
 			crypto_copyback(crp, crp->crp_payload_start + i, len,
 			    blk);
 		} else {
@@ -716,7 +716,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 			 * the tag and a second time after the tag is
 			 * verified.
 			 */
-			exf->decrypt(swe->sw_kschedule, blk);
+			exf->decrypt(swe->sw_kschedule, blk, blk);
 			axf->Update(&ctx, blk, len);
 		}
 	}
@@ -741,7 +741,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 				bzero(blk, blksz);
 			crypto_copydata(crp, crp->crp_payload_start + i, len,
 			    blk);
-			exf->decrypt(swe->sw_kschedule, blk);
+			exf->decrypt(swe->sw_kschedule, blk, blk);
 			crypto_copyback(crp, crp->crp_payload_start + i, len,
 			    blk);
 		}
@@ -1323,7 +1323,7 @@ swcr_freesession(device_t dev, crypto_session_t cses)
 	txf = ses->swcr_encdec.sw_exf;
 	if (txf != NULL) {
 		if (ses->swcr_encdec.sw_kschedule != NULL)
-			txf->zerokey(&(ses->swcr_encdec.sw_kschedule));
+			txf->zerokey(ses->swcr_encdec.sw_kschedule);
 	}
 
 	axf = ses->swcr_auth.sw_axf;

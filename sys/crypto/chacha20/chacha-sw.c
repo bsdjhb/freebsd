@@ -7,7 +7,7 @@ __FBSDID("$FreeBSD$");
 #include <opencrypto/xform_enc.h>
 
 static int
-chacha20_xform_setkey(u_int8_t **sched, const u_int8_t *key, int len)
+chacha20_xform_setkey(void **sched, const uint8_t *key, int len)
 {
 	struct chacha_ctx *ctx;
 
@@ -24,41 +24,38 @@ chacha20_xform_setkey(u_int8_t **sched, const u_int8_t *key, int len)
 }
 
 static void
-chacha20_xform_reinit(caddr_t key, const u_int8_t *iv)
+chacha20_xform_reinit(void *key, const u_int8_t *iv)
 {
 	struct chacha_ctx *ctx;
 
-	ctx = (void *)key;
+	ctx = key;
 	chacha_ivsetup(ctx, iv + 8, iv);
 }
 
 static void
-chacha20_xform_zerokey(u_int8_t **sched)
+chacha20_xform_zerokey(void *sched)
 {
-	struct chacha_ctx *ctx;
 
-	ctx = (void *)*sched;
-	explicit_bzero(ctx, sizeof(*ctx));
-	free(ctx, M_CRYPTO_DATA);
-	*sched = NULL;
+	zfree(sched, M_CRYPTO_DATA);
 }
 
 static void
-chacha20_xform_crypt(caddr_t cctx, u_int8_t *bytes)
+chacha20_xform_crypt(void *cctx, const uint8_t *in, uint8_t *out)
 {
 	struct chacha_ctx *ctx;
 
-	ctx = (void *)cctx;
-	chacha_encrypt_bytes(ctx, bytes, bytes, 1);
+	ctx = cctx;
+	chacha_encrypt_bytes(ctx, in, out, 1);
 }
 
 static void
-chacha20_xform_crypt_multi(void *vctx, uint8_t *bytes, size_t len)
+chacha20_xform_crypt_multi(void *vctx, const uint8_t *in, uint8_t *out,
+    size_t len)
 {
 	struct chacha_ctx *ctx;
 
 	ctx = vctx;
-	chacha_encrypt_bytes(ctx, bytes, bytes, len);
+	chacha_encrypt_bytes(ctx, in, out, len);
 }
 
 struct enc_xform enc_xform_chacha20 = {
