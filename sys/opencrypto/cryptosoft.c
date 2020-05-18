@@ -131,11 +131,8 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 	crypto_read_iv(crp, iv);
 
 	if (crp->crp_cipher_key != NULL) {
-		if (sw->sw_kschedule)
-			exf->zerokey(sw->sw_kschedule);
-
 		csp = crypto_get_params(crp->crp_session);
-		error = exf->setkey(&sw->sw_kschedule,
+		error = exf->setkey(sw->sw_kschedule,
 		    crp->crp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
@@ -854,7 +851,7 @@ swcr_compdec(struct swcr_session *ses, struct cryptop *crp)
 }
 
 static int
-swcr_setup_encdec(struct swcr_session *ses,
+swcr_setup_cipher(struct swcr_session *ses,
     const struct crypto_session_params *csp)
 {
 	struct swcr_encdec *swe;
@@ -864,8 +861,14 @@ swcr_setup_encdec(struct swcr_session *ses,
 	swe = &ses->swcr_encdec;
 	txf = crypto_cipher(csp);
 	MPASS(txf->ivsize == csp->csp_ivlen);
+	if (txf->ctxsize != 0) {
+		swe->sw_kschedule = malloc(txf->ctxsize, M_CRYPTO_DATA,
+		    M_NOWAIT);
+		if (swe->sw_kschedule == NULL)
+			return (ENOMEM);
+	}
 	if (csp->csp_cipher_key != NULL) {
-		error = txf->setkey(&swe->sw_kschedule,
+		error = txf->setkey(swe->sw_kschedule,
 		    csp->csp_cipher_key, csp->csp_cipher_klen);
 		if (error)
 			return (error);
@@ -962,11 +965,8 @@ static int
 swcr_setup_gcm(struct swcr_session *ses,
     const struct crypto_session_params *csp)
 {
-	struct swcr_encdec *swe;
 	struct swcr_auth *swa;
-	struct enc_xform *txf;
 	struct auth_hash *axf;
-	int error;
 
 	if (csp->csp_ivlen != AES_GCM_IV_LEN)
 		return (EINVAL);
@@ -1002,28 +1002,15 @@ swcr_setup_gcm(struct swcr_session *ses,
 		    csp->csp_cipher_klen);
 
 	/* Second, setup the cipher side. */
-	swe = &ses->swcr_encdec;
-	txf = &enc_xform_aes_nist_gcm;
-	if (csp->csp_cipher_key != NULL) {
-		error = txf->setkey(&swe->sw_kschedule,
-		    csp->csp_cipher_key, csp->csp_cipher_klen);
-		if (error)
-			return (error);
-	}
-	swe->sw_exf = txf;
-
-	return (0);
+	return (swcr_setup_cipher(ses, csp));
 }
 
 static int
 swcr_setup_ccm(struct swcr_session *ses,
     const struct crypto_session_params *csp)
 {
-	struct swcr_encdec *swe;
 	struct swcr_auth *swa;
-	struct enc_xform *txf;
 	struct auth_hash *axf;
-	int error;
 
 	if (csp->csp_ivlen != AES_CCM_IV_LEN)
 		return (EINVAL);
@@ -1059,17 +1046,7 @@ swcr_setup_ccm(struct swcr_session *ses,
 		    csp->csp_cipher_klen);
 
 	/* Second, setup the cipher side. */
-	swe = &ses->swcr_encdec;
-	txf = &enc_xform_ccm;
-	if (csp->csp_cipher_key != NULL) {
-		error = txf->setkey(&swe->sw_kschedule,
-		    csp->csp_cipher_key, csp->csp_cipher_klen);
-		if (error)
-			return (error);
-	}
-	swe->sw_exf = txf;
-
-	return (0);
+	return (swcr_setup_cipher(ses, csp));
 }
 
 static bool
@@ -1246,7 +1223,7 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 			panic("bad cipher algo");
 #endif
 		default:
-			error = swcr_setup_encdec(ses, csp);
+			error = swcr_setup_cipher(ses, csp);
 			if (error == 0)
 				ses->swcr_process = swcr_encdec;
 		}
@@ -1295,7 +1272,7 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 			break;
 		}
 
-		error = swcr_setup_encdec(ses, csp);
+		error = swcr_setup_cipher(ses, csp);
 		if (error == 0)
 			ses->swcr_process = swcr_eta;
 		break;
@@ -1313,18 +1290,13 @@ swcr_freesession(device_t dev, crypto_session_t cses)
 {
 	struct swcr_session *ses;
 	struct swcr_auth *swa;
-	struct enc_xform *txf;
 	struct auth_hash *axf;
 
 	ses = crypto_get_driver_session(cses);
 
 	mtx_destroy(&ses->swcr_lock);
 
-	txf = ses->swcr_encdec.sw_exf;
-	if (txf != NULL) {
-		if (ses->swcr_encdec.sw_kschedule != NULL)
-			txf->zerokey(ses->swcr_encdec.sw_kschedule);
-	}
+	zfree(ses->swcr_encdec.sw_kschedule, M_CRYPTO_DATA);
 
 	axf = ses->swcr_auth.sw_axf;
 	if (axf != NULL) {

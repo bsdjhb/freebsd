@@ -52,9 +52,8 @@ __FBSDID("$FreeBSD$");
 
 #include <opencrypto/xform_enc.h>
 
-static	int aes_icm_setkey(void **, const uint8_t *, int);
+static	int aes_icm_setkey(void *, const uint8_t *, int);
 static	void aes_icm_crypt(void *, const uint8_t *, uint8_t *);
-static	void aes_icm_zerokey(void *);
 static	void aes_icm_reinit(void *, const uint8_t *);
 static	void aes_gcm_reinit(void *, const uint8_t *);
 static	void aes_ccm_reinit(void *, const uint8_t *);
@@ -63,6 +62,7 @@ static	void aes_ccm_reinit(void *, const uint8_t *);
 struct enc_xform enc_xform_aes_icm = {
 	.type = CRYPTO_AES_ICM,
 	.name = "AES-ICM",
+	.ctxsize = sizeof(struct aes_icm_ctx),
 	.blocksize = AES_BLOCK_LEN,
 	.ivsize = AES_BLOCK_LEN,
 	.minkey = AES_MIN_KEY,
@@ -70,13 +70,13 @@ struct enc_xform enc_xform_aes_icm = {
 	.encrypt = aes_icm_crypt,
 	.decrypt = aes_icm_crypt,
 	.setkey = aes_icm_setkey,
-	.zerokey = aes_icm_zerokey,
 	.reinit = aes_icm_reinit,
 };
 
 struct enc_xform enc_xform_aes_nist_gcm = {
 	.type = CRYPTO_AES_NIST_GCM_16,
 	.name = "AES-GCM",
+	.ctxsize = sizeof(struct aes_icm_ctx),
 	.blocksize = AES_ICM_BLOCK_LEN,
 	.ivsize = AES_GCM_IV_LEN,
 	.minkey = AES_MIN_KEY,
@@ -84,19 +84,18 @@ struct enc_xform enc_xform_aes_nist_gcm = {
 	.encrypt = aes_icm_crypt,
 	.decrypt = aes_icm_crypt,
 	.setkey = aes_icm_setkey,
-	.zerokey = aes_icm_zerokey,
 	.reinit = aes_gcm_reinit,
 };
 
 struct enc_xform enc_xform_ccm = {
 	.type = CRYPTO_AES_CCM_16,
 	.name = "AES-CCM",
+	.ctxsize = sizeof(struct aes_icm_ctx),
 	.blocksize = AES_ICM_BLOCK_LEN, .ivsize = AES_CCM_IV_LEN,
 	.minkey = AES_MIN_KEY, .maxkey = AES_MAX_KEY,
 	.encrypt = aes_icm_crypt,
 	.decrypt = aes_icm_crypt,
 	.setkey = aes_icm_setkey,
-	.zerokey = aes_icm_zerokey,
 	.reinit = aes_ccm_reinit,
 };
 
@@ -161,26 +160,14 @@ aes_icm_crypt(void *key, const uint8_t *in, uint8_t *out)
 }
 
 static int
-aes_icm_setkey(void **sched, const uint8_t *key, int len)
+aes_icm_setkey(void *sched, const uint8_t *key, int len)
 {
 	struct aes_icm_ctx *ctx;
 
 	if (len != 16 && len != 24 && len != 32)
-		return EINVAL;
+		return (EINVAL);
 
-	*sched = KMALLOC(sizeof(struct aes_icm_ctx), M_CRYPTO_DATA,
-	    M_NOWAIT | M_ZERO);
-	if (*sched == NULL)
-		return ENOMEM;
-
-	ctx = *sched;
+	ctx = sched;
 	ctx->ac_nr = rijndaelKeySetupEnc(ctx->ac_ek, key, len * 8);
-	return 0;
-}
-
-static void
-aes_icm_zerokey(void *sched)
-{
-
-	zfree(sched, M_CRYPTO_DATA);
+	return (0);
 }

@@ -53,15 +53,15 @@ __FBSDID("$FreeBSD$");
 #include <crypto/camellia/camellia.h>
 #include <opencrypto/xform_enc.h>
 
-static	int cml_setkey(void **, const uint8_t *, int);
+static	int cml_setkey(void *, const uint8_t *, int);
 static	void cml_encrypt(void *, const uint8_t *, uint8_t *);
 static	void cml_decrypt(void *, const uint8_t *, uint8_t *);
-static	void cml_zerokey(void *);
 
 /* Encryption instances */
 struct enc_xform enc_xform_camellia = {
 	.type = CRYPTO_CAMELLIA_CBC,
-	.name = "Camellia",
+	.name = "Camellia-CBC",
+	.ctxsize = sizeof(camellia_ctx),
 	.blocksize = CAMELLIA_BLOCK_LEN,
 	.ivsize = CAMELLIA_BLOCK_LEN,
 	.minkey = CAMELLIA_MIN_KEY,
@@ -69,43 +69,30 @@ struct enc_xform enc_xform_camellia = {
 	.encrypt = cml_encrypt,
 	.decrypt = cml_decrypt,
 	.setkey = cml_setkey,
-	.zerokey = cml_zerokey,
 };
 
 /*
  * Encryption wrapper routines.
  */
 static void
-cml_encrypt(void *key, const uint8_t *in, uint8_t *out)
+cml_encrypt(void *ctx, const uint8_t *in, uint8_t *out)
 {
-	camellia_encrypt(key, in, out);
+	camellia_encrypt(ctx, in, out);
 }
 
 static void
-cml_decrypt(void *key, const uint8_t *in, uint8_t *out)
+cml_decrypt(void *ctx, const uint8_t *in, uint8_t *out)
 {
-	camellia_decrypt(key, in, out);
+	camellia_decrypt(ctx, in, out);
 }
 
 static int
-cml_setkey(void **sched, const uint8_t *key, int len)
+cml_setkey(void *ctx, const uint8_t *key, int len)
 {
-	int err;
 
 	if (len != 16 && len != 24 && len != 32)
 		return (EINVAL);
-	*sched = KMALLOC(sizeof(camellia_ctx), M_CRYPTO_DATA,
-	    M_NOWAIT|M_ZERO);
-	if (*sched != NULL) {
-		camellia_set_key(*sched, key, len * 8);
-		err = 0;
-	} else
-		err = ENOMEM;
-	return err;
-}
 
-static void
-cml_zerokey(void *sched)
-{
-	zfree(sched, M_CRYPTO_DATA);
+	camellia_set_key(ctx, key, len * 8);
+	return (0);
 }

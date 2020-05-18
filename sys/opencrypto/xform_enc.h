@@ -37,7 +37,6 @@
 #include <crypto/rijndael/rijndael.h>
 #include <crypto/camellia/camellia.h>
 #include <opencrypto/cryptodev.h>
-#include <opencrypto/xform_userland.h>
 
 #define AESICM_BLOCKSIZE	AES_BLOCK_LEN
 #define	AES_XTS_BLOCKSIZE	16
@@ -48,13 +47,13 @@
 struct enc_xform {
 	int type;
 	char *name;
+	size_t ctxsize;
 	u_int16_t blocksize;	/* Required input block size -- 1 for stream ciphers. */
 	u_int16_t ivsize;
 	u_int16_t minkey, maxkey;
 	void (*encrypt) (void *, const uint8_t *, uint8_t *);
 	void (*decrypt) (void *, const uint8_t *, uint8_t *);
-	int (*setkey) (void **, const uint8_t *, int len);
-	void (*zerokey) (void *);
+	int (*setkey) (void *, const uint8_t *, int len);
 	void (*reinit) (void *, const u_int8_t *);
 	/*
 	 * Encrypt/decrypt 1+ blocks of input -- total size is 'len' bytes.

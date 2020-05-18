@@ -53,15 +53,15 @@ __FBSDID("$FreeBSD$");
 #include <crypto/rijndael/rijndael.h>
 #include <opencrypto/xform_enc.h>
 
-static	int rijndael128_setkey(void **, const u_int8_t *, int);
+static	int rijndael128_setkey(void *, const u_int8_t *, int);
 static	void rijndael128_encrypt(void *, const uint8_t *, uint8_t *);
 static	void rijndael128_decrypt(void *, const uint8_t *, uint8_t *);
-static	void rijndael128_zerokey(void *);
 
 /* Encryption instances */
 struct enc_xform enc_xform_rijndael128 = {
 	.type = CRYPTO_RIJNDAEL128_CBC,
 	.name = "Rijndael-128/AES",
+	.ctxsize = sizeof(rijndael_ctx),
 	.blocksize = RIJNDAEL128_BLOCK_LEN,
 	.ivsize = RIJNDAEL128_BLOCK_LEN,
 	.minkey = RIJNDAEL_MIN_KEY,
@@ -69,7 +69,6 @@ struct enc_xform enc_xform_rijndael128 = {
 	.encrypt = rijndael128_encrypt,
 	.decrypt = rijndael128_decrypt,
 	.setkey = rijndael128_setkey,
-	.zerokey = rijndael128_zerokey,
 };
 
 /*
@@ -88,23 +87,12 @@ rijndael128_decrypt(void *key, const uint8_t *in, uint8_t *out)
 }
 
 static int
-rijndael128_setkey(void **sched, const uint8_t *key, int len)
+rijndael128_setkey(void *sched, const uint8_t *key, int len)
 {
-	int err;
 
 	if (len != 16 && len != 24 && len != 32)
 		return (EINVAL);
-	*sched = KMALLOC(sizeof(rijndael_ctx), M_CRYPTO_DATA,
-	    M_NOWAIT|M_ZERO);
-	if (*sched == NULL)
-		return (ENOMEM);
 
-	rijndael_set_key(*sched, key, len * 8);
+	rijndael_set_key(sched, key, len * 8);
 	return (0);
-}
-
-static void
-rijndael128_zerokey(void *sched)
-{
-	zfree(sched, M_CRYPTO_DATA);
 }

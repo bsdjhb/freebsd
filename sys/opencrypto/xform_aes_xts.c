@@ -52,16 +52,16 @@ __FBSDID("$FreeBSD$");
 
 #include <opencrypto/xform_enc.h>
 
-static	int aes_xts_setkey(void **, const uint8_t *, int);
+static	int aes_xts_setkey(void *, const uint8_t *, int);
 static	void aes_xts_encrypt(void *, const uint8_t *, uint8_t *);
 static	void aes_xts_decrypt(void *, const uint8_t *, uint8_t *);
-static	void aes_xts_zerokey(void *);
 static	void aes_xts_reinit(void *, const uint8_t *);
 
 /* Encryption instances */
 struct enc_xform enc_xform_aes_xts = {
 	.type = CRYPTO_AES_XTS,
 	.name = "AES-XTS",
+	.ctxsize = sizeof(struct aes_xts_ctx),
 	.blocksize = AES_BLOCK_LEN,
 	.ivsize = AES_XTS_IV_LEN,
 	.minkey = AES_XTS_MIN_KEY,
@@ -69,7 +69,6 @@ struct enc_xform enc_xform_aes_xts = {
 	.encrypt = aes_xts_encrypt,
 	.decrypt = aes_xts_decrypt,
 	.setkey = aes_xts_setkey,
-	.zerokey = aes_xts_zerokey,
 	.reinit = aes_xts_reinit
 };
 
@@ -141,27 +140,17 @@ aes_xts_decrypt(void *key, const uint8_t *in, uint8_t *out)
 }
 
 static int
-aes_xts_setkey(void **sched, const uint8_t *key, int len)
+aes_xts_setkey(void *sched, const uint8_t *key, int len)
 {
 	struct aes_xts_ctx *ctx;
 
 	if (len != 32 && len != 64)
-		return EINVAL;
+		return (EINVAL);
 
-	*sched = KMALLOC(sizeof(struct aes_xts_ctx), M_CRYPTO_DATA,
-	    M_NOWAIT | M_ZERO);
-	if (*sched == NULL)
-		return ENOMEM;
-	ctx = *sched;
+	ctx = sched;
 
 	rijndael_set_key(&ctx->key1, key, len * 4);
 	rijndael_set_key(&ctx->key2, key + (len / 2), len * 4);
 
-	return 0;
-}
-
-static void
-aes_xts_zerokey(void *sched)
-{
-	zfree(sched, M_CRYPTO_DATA);
+	return (0);
 }

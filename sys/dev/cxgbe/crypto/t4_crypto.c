@@ -1388,7 +1388,12 @@ ccr_gcm_soft(struct ccr_session *s, struct cryptop *crp)
 
 	/* Initialize the cipher. */
 	exf = &enc_xform_aes_nist_gcm;
-	error = exf->setkey(&kschedule, s->blkcipher.enckey,
+	kschedule = malloc(exf->ctxsize, M_CCR, M_NOWAIT);
+	if (kschedule == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
+	error = exf->setkey(kschedule, s->blkcipher.enckey,
 	    s->blkcipher.key_len);
 	if (error)
 		goto out;
@@ -1469,12 +1474,9 @@ ccr_gcm_soft(struct ccr_session *s, struct cryptop *crp)
 			error = EBADMSG;
 	}
 
-	exf->zerokey(kschedule);
 out:
-	if (auth_ctx != NULL) {
-		memset(auth_ctx, 0, axf->ctxsize);
-		free(auth_ctx, M_CCR);
-	}
+	zfree(kschedule, M_CCR);
+	zfree(auth_ctx, M_CCR);
 	crp->crp_etype = error;
 	crypto_done(crp);
 }
@@ -1843,7 +1845,12 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 
 	/* Initialize the cipher. */
 	exf = &enc_xform_ccm;
-	error = exf->setkey(&kschedule, s->blkcipher.enckey,
+	kschedule = malloc(exf->ctxsize, M_CCR, M_NOWAIT);
+	if (kschedule == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
+	error = exf->setkey(kschedule, s->blkcipher.enckey,
 	    s->blkcipher.key_len);
 	if (error)
 		goto out;
@@ -1917,12 +1924,9 @@ ccr_ccm_soft(struct ccr_session *s, struct cryptop *crp)
 			error = EBADMSG;
 	}
 
-	exf->zerokey(kschedule);
 out:
-	if (auth_ctx != NULL) {
-		memset(auth_ctx, 0, axf->ctxsize);
-		free(auth_ctx, M_CCR);
-	}
+	zfree(kschedule, M_CCR);
+	zfree(auth_ctx, M_CCR);
 	crp->crp_etype = error;
 	crypto_done(crp);
 }
