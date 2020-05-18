@@ -15,7 +15,7 @@ chacha20_xform_setkey(void **sched, const uint8_t *key, int len)
 		return (EINVAL);
 
 	ctx = malloc(sizeof(*ctx), M_CRYPTO_DATA, M_NOWAIT | M_ZERO);
-	*sched = (void *)ctx;
+	*sched = ctx;
 	if (ctx == NULL)
 		return (ENOMEM);
 

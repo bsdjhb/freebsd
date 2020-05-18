@@ -96,12 +96,11 @@ rijndael128_setkey(void **sched, const uint8_t *key, int len)
 		return (EINVAL);
 	*sched = KMALLOC(sizeof(rijndael_ctx), M_CRYPTO_DATA,
 	    M_NOWAIT|M_ZERO);
-	if (*sched != NULL) {
-		rijndael_set_key(*sched, key, len * 8);
-		err = 0;
-	} else
-		err = ENOMEM;
-	return err;
+	if (*sched == NULL)
+		return (ENOMEM);
+
+	rijndael_set_key(*sched, key, len * 8);
+	return (0);
 }
 
 static void
