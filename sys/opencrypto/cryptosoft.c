@@ -119,7 +119,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 	exf = sw->sw_exf;
 	ivlen = exf->ivsize;
 
-	if (exf->blocksize != 1) {
+	if (exf->native_blocksize == 0) {
 		/* Check for non-padded data */
 		if ((crp->crp_payload_length % exf->blocksize) != 0)
 			return (EINVAL);
@@ -312,12 +312,12 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 
 	/* Handle trailing partial block for stream ciphers. */
 	if (i > 0) {
-		KASSERT(exf->blocksize == 1,
-		    ("%s: partial block of %d bytes for non-stream cipher %s",
+		KASSERT(exf->native_blocksize != 0,
+		    ("%s: partial block of %d bytes for cipher %s",
 		    __func__, i, exf->name));
 		KASSERT(exf->reinit != NULL,
-		    ("%s: stream cipher %s without reinit hook", __func__,
-		    exf->name));
+		    ("%s: partial block cipher %s without reinit hook",
+		    __func__, exf->name));
 		KASSERT(i < blks, ("%s: partial block too big", __func__));
 
 		cuio_copydata(uio, count, i, blk);
