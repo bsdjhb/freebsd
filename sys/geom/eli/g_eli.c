@@ -530,7 +530,7 @@ g_eli_newsession(struct g_eli_worker *wr)
 		error = crypto_newsession(&wr->w_sid, &csp,
 		    CRYPTOCAP_F_HARDWARE | CRYPTOCAP_F_SOFTWARE);
 		if (error == 0) {
-			caps = crypto_ses2caps(&wr->w_sid);
+			caps = crypto_ses2caps(wr->w_sid);
 			if (caps & CRYPTOCAP_F_HARDWARE)
 				new_crypto = G_ELI_CRYPTO_HW;
 			else if (caps & CRYPTOCAP_F_ACCEL_SOFTWARE)
