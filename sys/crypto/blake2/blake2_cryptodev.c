@@ -303,7 +303,7 @@ blake2_cipher_setup(struct blake2_session *ses,
 }
 
 static int
-blake2b_applicator(void *state, void *buf, u_int len)
+blake2b_applicator(void *state, const void *buf, u_int len)
 {
 	int rc;
 
@@ -314,7 +314,7 @@ blake2b_applicator(void *state, void *buf, u_int len)
 }
 
 static int
-blake2s_applicator(void *state, void *buf, u_int len)
+blake2s_applicator(void *state, const void *buf, u_int len)
 {
 	int rc;
 
