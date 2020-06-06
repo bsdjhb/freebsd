@@ -69,7 +69,7 @@ AES_GMAC_Reinit(void *ctx, const uint8_t *iv, u_int ivlen)
 {
 	struct aes_gmac_ctx *agc;
 
-	ctx = agc;
+	agc = ctx;
 	KASSERT(ivlen <= sizeof agc->counter, ("passed ivlen too large!"));
 	bcopy(iv, agc->counter, ivlen);
 }

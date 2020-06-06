@@ -82,7 +82,7 @@ AES_CBC_MAC_Setkey(void *vctx, const uint8_t *key, u_int klen)
  * nonce, as well as information about the sizes and lengths involved.
  */
 void
-AES_CBC_MAC_Reinit(void *ctx, const uint8_t *nonce, u_int nonceLen)
+AES_CBC_MAC_Reinit(void *vctx, const uint8_t *nonce, u_int nonceLen)
 {
 	struct aes_cbc_mac_ctx *ctx = vctx;
 	uint8_t b0[CCM_CBC_BLOCK_LEN];

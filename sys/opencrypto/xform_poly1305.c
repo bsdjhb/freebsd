@@ -55,7 +55,7 @@ Poly1305_Update(struct poly1305_xform_ctx *polyctx, const void *data,
 }
 
 static int
-xform_Poly1305_Update(void *ctx, const uint8_t *data, u_int len)
+xform_Poly1305_Update(void *ctx, const void *data, u_int len)
 {
 	return (Poly1305_Update(ctx, data, len));
 }
