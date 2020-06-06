@@ -93,6 +93,7 @@ struct auth_hash auth_hash_nist_gmac_aes_192 = {
 };
 
 struct auth_hash auth_hash_nist_gmac_aes_256 = {
+	.type = CRYPTO_AES_NIST_GMAC,
 	.name = "GMAC-AES-256",
 	.keysize = AES_256_GMAC_KEY_LEN,
 	.hashsize = AES_GMAC_HASH_LEN,
