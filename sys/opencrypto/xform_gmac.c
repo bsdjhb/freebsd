@@ -75,7 +75,7 @@ struct auth_hash auth_hash_nist_gmac_aes_128 = {
 	.Setkey = AES_GMAC_Setkey,
 	.Reinit = AES_GMAC_Reinit,
 	.Update = AES_GMAC_Update,
-	.Final = AES_GMAC_Final
+	.Final = AES_GMAC_Final,
 };
 
 struct auth_hash auth_hash_nist_gmac_aes_192 = {
@@ -89,7 +89,7 @@ struct auth_hash auth_hash_nist_gmac_aes_192 = {
 	.Setkey = AES_GMAC_Setkey,
 	.Reinit = AES_GMAC_Reinit,
 	.Update = AES_GMAC_Update,
-	.Final = AES_GMAC_Final
+	.Final = AES_GMAC_Final,
 };
 
 struct auth_hash auth_hash_nist_gmac_aes_256 = {
@@ -103,5 +103,5 @@ struct auth_hash auth_hash_nist_gmac_aes_256 = {
 	.Setkey = AES_GMAC_Setkey,
 	.Reinit = AES_GMAC_Reinit,
 	.Update = AES_GMAC_Update,
-	.Final = AES_GMAC_Final
+	.Final = AES_GMAC_Final,
 };
