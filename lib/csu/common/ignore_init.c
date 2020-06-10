@@ -148,4 +148,5 @@ __asm(
 "	.word		4\n"
 "	.word		" __XSTRING(NT_FREEBSD_NOINIT_TAG) "\n"
 "	.asciz		\"FreeBSD\"\n"
+"	.p2align	2\n"
 "	.word		0");

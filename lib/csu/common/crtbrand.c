@@ -44,6 +44,7 @@ __asm(
 "	.word		4\n"
 "	.word		" __XSTRING(NT_FREEBSD_ABI_TAG) "\n"
 "	.asciz		\"FreeBSD\"\n"
+"	.p2align	2\n"
 "	.word		" __XSTRING(__FreeBSD_version));
 
 __asm(
@@ -53,4 +54,5 @@ __asm(
 "	.word		4\n"
 "	.word		" __XSTRING(NT_FREEBSD_FEATURE_CTL) "\n"
 "	.asciz		\"FreeBSD\"\n"
+"	.p2align	2\n"
 "	.word		0");
