@@ -30,7 +30,6 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/elf_common.h>
-#include "notes.h"
 
 /*
  * Special ".note" entry specifying the ABI version.  See
