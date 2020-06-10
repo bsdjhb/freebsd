@@ -36,49 +36,21 @@ __FBSDID("$FreeBSD$");
  * Special ".note" entry specifying the ABI version.  See
  * http://www.netbsd.org/Documentation/kernel/elf-notes.html
  * for more information.
- *
- * For all arches except sparc, gcc emits the section directive for the
- * following struct with a PROGBITS type.  However, newer versions of binutils
- * (after 2.16.90) require the section to be of NOTE type, to guarantee that the
- * .note.ABI-tag section correctly ends up in the first page of the final
- * executable.
- *
- * Unfortunately, there is no clean way to tell gcc to use another section type,
- * so this C file (or the C file that includes it) must be compiled in multiple
- * steps:
- *
- * - Compile the .c file to a .s file.
- * - Edit the .s file to change the 'progbits' type to 'note', for the section
- *   directive that defines the .note.ABI-tag section.
- * - Compile the .s file to an object file.
- *
- * These steps are done in the invididual Makefiles for each applicable arch.
  */
-static const struct {
-	int32_t	namesz;
-	int32_t	descsz;
-	int32_t	type;
-	char	name[sizeof(NOTE_FREEBSD_VENDOR)];
-	int32_t	desc;
-} abitag __attribute__ ((section (NOTE_SECTION), aligned(4))) __used = {
-	.namesz = sizeof(NOTE_FREEBSD_VENDOR),
-	.descsz = sizeof(int32_t),
-	.type = NT_FREEBSD_ABI_TAG,
-	.name = NOTE_FREEBSD_VENDOR,
-	.desc = __FreeBSD_version
-};
+__asm(
+"	.section .note.tag,\"a\",@note\n"
+"	.p2align	2\n"
+"	.word		8\n"
+"	.word		4\n"
+"	.word		" __XSTRING(NT_FREEBSD_ABI_TAG) "\n"
+"	.asciz		\"FreeBSD\"\n"
+"	.word		" __XSTRING(__FreeBSD_version));
 
-static const struct {
-	int32_t	namesz;
-	int32_t	descsz;
-	int32_t	type;
-	char	name[sizeof(NOTE_FREEBSD_VENDOR)];
-	uint32_t	desc[1];
-} crt_feature_ctl __attribute__ ((section (NOTE_SECTION),
-    aligned(4))) __used = {
-	.namesz = sizeof(NOTE_FREEBSD_VENDOR),
-	.descsz = sizeof(uint32_t),
-	.type = NT_FREEBSD_FEATURE_CTL,
-	.name = NOTE_FREEBSD_VENDOR,
-	.desc = { 0 }
-};
+__asm(
+"	.section .note.tag,\"a\",@note\n"
+"	.p2align	2\n"
+"	.word		8\n"
+"	.word		4\n"
+"	.word		" __XSTRING(NT_FREEBSD_FEATURE_CTL) "\n"
+"	.asciz		\"FreeBSD\"\n"
+"	.word		0");
