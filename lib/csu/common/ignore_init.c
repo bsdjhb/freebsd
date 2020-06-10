@@ -32,6 +32,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/elf.h>
 #include <sys/elf_common.h>
 
+#include "notes.h"
+
 extern int main(int, char **, char **);
 
 extern void (*__preinit_array_start[])(int, char **, char **) __hidden;

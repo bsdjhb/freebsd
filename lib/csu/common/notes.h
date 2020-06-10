@@ -1,7 +1,7 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-1-Clause
  *
- * Copyright 2000 David E. O'Brien, John D. Polstra.
+ * Copyright 2012 Konstantin Belousov <kib@FreeBSD.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -9,9 +9,6 @@
  * are met:
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -23,38 +20,15 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * $FreeBSD$
  */
 
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+#ifndef	CSU_COMMON_NOTES_H
+#define	CSU_COMMON_NOTES_H
 
-#include <sys/param.h>
-#include <sys/elf_common.h>
-#include "notes.h"
+#define NOTE_FREEBSD_VENDOR	"FreeBSD"
 
-/*
- * Special ".note" entry specifying the ABI version.  See
- * http://www.netbsd.org/Documentation/kernel/elf-notes.html
- * for more information.
- */
-__asm(
-"	.section .note.tag,\"a\",@note\n"
-"	.p2align	2\n"
-"	.word		2f-1f\n"
-"	.word		4f-3f\n"
-"	.word		" __XSTRING(NT_FREEBSD_ABI_TAG) "\n"
-"1:	.asciz		\"FreeBSD\"\n"
-"2:	.p2align	2\n"
-"3:	.word		" __XSTRING(__FreeBSD_version) "\n"
-"4:");
+#define NOTE_SECTION		".note.tag"
 
-__asm(
-"	.section .note.tag,\"a\",@note\n"
-"	.p2align	2\n"
-"	.word		2f-1f\n"
-"	.word		4f-3f\n"
-"	.word		" __XSTRING(NT_FREEBSD_FEATURE_CTL) "\n"
-"1:	.asciz		\"FreeBSD\"\n"
-"2:	.p2align	2\n"
-"3:	.word		0\n"
-"4:");
+#endif
