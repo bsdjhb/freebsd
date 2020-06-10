@@ -19,9 +19,6 @@ FILESDIR=	${LIBDIR}
 
 CLEANFILES=	${OBJS}
 
-crt1.o: crt1.c
-	${CC} ${CFLAGS} -c -o ${.TARGET} ${.CURDIR}/crt1.c
-
 gcrt1.o: crt1.c
 	${CC} ${CFLAGS} -DGCRT -c -o ${.TARGET} ${.CURDIR}/crt1.c
 
