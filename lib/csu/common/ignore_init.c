@@ -142,9 +142,10 @@ handle_argv(int argc, char *argv[], char **env)
 __asm(
 "	.section .note.tag,\"a\",@note\n"
 "	.p2align	2\n"
-"	.word		8\n"
-"	.word		4\n"
+"	.word		2f-1f\n"
+"	.word		4f-3f\n"
 "	.word		" __XSTRING(NT_FREEBSD_NOINIT_TAG) "\n"
-"	.asciz		\"FreeBSD\"\n"
-"	.p2align	2\n"
-"	.word		0");
+"1:	.asciz		\"FreeBSD\"\n"
+"2:	.p2align	2\n"
+"3:	.word		0\n"
+"4:");
