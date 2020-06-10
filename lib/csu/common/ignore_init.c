@@ -141,17 +141,11 @@ handle_argv(int argc, char *argv[], char **env)
 	}
 }
 
-static const struct {
-	int32_t	namesz;
-	int32_t	descsz;
-	int32_t	type;
-	char	name[sizeof(NOTE_FREEBSD_VENDOR)];
-	uint32_t desc;
-} crt_noinit_tag __attribute__ ((section (NOTE_SECTION),
-    aligned(4))) __used = {
-	.namesz = sizeof(NOTE_FREEBSD_VENDOR),
-	.descsz = sizeof(uint32_t),
-	.type = NT_FREEBSD_NOINIT_TAG,
-	.name = NOTE_FREEBSD_VENDOR,
-	.desc = 0
-};
+__asm(
+"	.section .note.tag,\"a\",@note\n"
+"	.p2align	2\n"
+"	.word		8\n"
+"	.word		4\n"
+"	.word		" __XSTRING(NT_FREEBSD_NOINIT_TAG) "\n"
+"	.asciz		\"FreeBSD\"\n"
+"	.word		0");
