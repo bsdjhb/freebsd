@@ -1,17 +1,17 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-1-Clause
  *
- * Copyright 2000 David E. O'Brien, John D. Polstra.
- * All rights reserved.
+ * Copyright 2012 Konstantin Belousov <kib@FreeBSD.org>
+ * Copyright (c) 2018 The FreeBSD Foundation
+ *
+ * Parts of this software was developed by Konstantin Belousov
+ * <kib@FreeBSD.org> under sponsorship from the FreeBSD Foundation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,36 +25,19 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
+#include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-#include <sys/param.h>
 #include <sys/elf_common.h>
+
 #include "notes.h"
 
-/*
- * Special ".note" entry specifying the ABI version.  See
- * http://www.netbsd.org/Documentation/kernel/elf-notes.html
- * for more information.
- */
-__asm(
-"	.section .note.tag,\"a\",@note\n"
-"	.p2align	2\n"
-"	.word		2f-1f\n"
-"	.word		4f-3f\n"
-"	.word		" __XSTRING(NT_FREEBSD_ABI_TAG) "\n"
-"1:	.asciz		\"FreeBSD\"\n"
-"2:	.p2align	2\n"
-"3:	.word		" __XSTRING(__FreeBSD_version) "\n"
-"4:");
-
-__asm(
-"	.section .note.tag,\"a\",@note\n"
-"	.p2align	2\n"
-"	.word		2f-1f\n"
-"	.word		4f-3f\n"
-"	.word		" __XSTRING(NT_FREEBSD_FEATURE_CTL) "\n"
-"1:	.asciz		\"FreeBSD\"\n"
-"2:	.p2align	2\n"
-"3:	.word		0\n"
-"4:");
+	.section .note.tag,"a",@note
+	.p2align	2
+	.word		2f-1f
+	.word		4f-3f
+	.word		NT_FREEBSD_NOINIT_TAG
+1:	.asciz		NOTE_FREEBSD_VENDOR
+2:	.p2align	2
+3:	.word		0
+4:
