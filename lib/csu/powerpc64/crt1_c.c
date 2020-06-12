@@ -45,13 +45,20 @@
 __FBSDID("$FreeBSD$");
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <sys/elf.h>
+
+static uint32_t cpu_features;
+static uint32_t cpu_features2;
 
 #include "libc_private.h"
-#include "crtbrand.c"
 #include "ignore_init.c"
 
 struct Struct_Obj_Entry;
 struct ps_strings;
+
+extern void _start(int, char **, char **, const struct Struct_Obj_Entry *,
+    void (*)(void), struct ps_strings *);
 
 #ifdef GCRT
 extern void _mcleanup(void);
@@ -62,8 +69,29 @@ extern int etext;
 
 struct ps_strings *__ps_strings;
 
-void _start(int, char **, char **, const struct Struct_Obj_Entry *,
-    void (*)(void), struct ps_strings *);
+static void
+init_cpu_features(char **env)
+{
+	const Elf_Auxinfo *aux;
+
+	/* Find the auxiliary vector on the stack. */
+	while (*env++ != 0)	/* Skip over environment, and NULL terminator */
+		;
+	aux = (const Elf_Auxinfo *)env;
+
+	/* Digest the auxiliary vector. */
+	for (;  aux->a_type != AT_NULL; aux++) {
+		switch (aux->a_type) {
+		case AT_HWCAP:
+			cpu_features = (uint32_t)aux->a_un.a_val;
+			break;
+		case AT_HWCAP2:
+			cpu_features2 = (uint32_t)aux->a_un.a_val;
+			break;
+		}
+	}
+}
+
 
 /* The entry function. */
 /*
@@ -77,7 +105,6 @@ _start(int argc, char **argv, char **env,
     struct ps_strings *ps_strings)
 {
 
-
 	handle_argv(argc, argv, env);
 
 	if (ps_strings != (struct ps_strings *)0)
@@ -85,8 +112,11 @@ _start(int argc, char **argv, char **env,
 
 	if (&_DYNAMIC != NULL)
 		atexit(cleanup);
-	else
+	else {
+		init_cpu_features(env);
+		process_irelocs();
 		_init_tls();
+	}
 
 #ifdef GCRT
 	atexit(_mcleanup);
@@ -101,10 +131,4 @@ _start(int argc, char **argv, char **env,
 __asm__(".text");
 __asm__("eprol:");
 __asm__(".previous");
-#endif
-
-#ifndef PIC
-__asm__(".text\n"
-	"\t.global _GLOBAL_OFFSET_TABLE_\n"
-	"\t.reloc 0, R_PPC_NONE, _GLOBAL_OFFSET_TABLE_");
 #endif

@@ -2,9 +2,9 @@
 
 .PATH: ${.CURDIR:H}/common
 
-SRCS=		crt1.c crti.S crtn.S
+SRCS=		crti.S crtn.S
 OBJS=		${SRCS:N*.h:R:S/$/.o/g}
-OBJS+=		crtsavres.o Scrt1.o gcrt1.o
+OBJS+=		Scrt1.o crtsavres.o crt1.o gcrt1.o
 CFLAGS+=	-I${.CURDIR} -I${.CURDIR:H}/common \
 		-I${SRCTOP}/lib/libc/include \
 		-mlongcall -DCRT_IRELOC_RELA
@@ -17,20 +17,27 @@ FILESDIR=	${LIBDIR}
 # These FILES qualify as libraries for the purpose of LIBRARIES_ONLY.
 .undef LIBRARIES_ONLY
 
-CLEANFILES=	${OBJS}
+CLEANFILES=	${OBJS} crt1_c.o gcrt1_c.o Scrt1_c.o
+CLEANFILES+=	crtbrand.o ignore_init_note.o
 CLEANFILES+=	crtsavres.S
-
-crt1.o: crt1.c
-	${CC} ${CFLAGS} -c -o ${.TARGET} ${.CURDIR}/crt1.c
 
 # On powerpc64 crtsavres is an empty file
 crtsavres.S:
 	touch ${.TARGET}
 
-gcrt1.o: crt1.c
-	${CC} ${CFLAGS} -DGCRT -c -o ${.TARGET} ${.CURDIR}/crt1.c
+gcrt1_c.o: crt1_c.c
+	${CC} ${CFLAGS} -DGCRT -c -o ${.TARGET} ${.CURDIR}/crt1_c.c
 
-Scrt1.o: crt1.c
-	${CC} ${CFLAGS} -fPIC -DPIC -c -o ${.TARGET} ${.CURDIR}/crt1.c
+gcrt1.o: gcrt1_c.o crtbrand.o ignore_init_note.o
+	${LD} ${_LDFLAGS} -o gcrt1.o -r crtbrand.o ignore_init_note.o gcrt1_c.o
+
+crt1.o:	crt1_c.o crtbrand.o ignore_init_note.o
+	${LD} ${_LDFLAGS} -o crt1.o -r crtbrand.o ignore_init_note.o crt1_c.o
+
+Scrt1_c.o: crt1_c.c
+	${CC} ${CFLAGS} -fPIC -DPIC -c -o ${.TARGET} ${.CURDIR}/crt1_c.c
+
+Scrt1.o: Scrt1_c.o crtbrand.o ignore_init_note.o
+	${LD} ${_LDFLAGS} -o Scrt1.o -r crtbrand.o ignore_init_note.o Scrt1_c.o
 
 .include <bsd.lib.mk>
