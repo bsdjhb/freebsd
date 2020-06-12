@@ -28,6 +28,8 @@
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
+#define LOCORE
+
 #include <sys/elf_common.h>
 
 #include "notes.h"
