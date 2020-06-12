@@ -676,8 +676,7 @@ swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 
 	axf->Reinit(&ctx, iv, ivlen);
 	error = crypto_apply(crp, crp->crp_payload_start,
-	    crp->crp_payload_length,
-	    (int (*)(void *, void *, unsigned int))axf->Update, &ctx);
+	    crp->crp_payload_length, axf->Update, &ctx);
 	if (error)
 		return (error);
 
@@ -750,7 +749,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 
 	/* Supply MAC with AAD */
 	error = crypto_apply(crp, crp->crp_aad_start, crp->crp_aad_length,
-	    (int (*)(void *, void *, unsigned int))axf->Update, &ctx);
+	    axf->Update, &ctx);
 	if (error)
 		return (error);
 
