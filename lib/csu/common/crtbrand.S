@@ -33,27 +33,27 @@ __FBSDID("$FreeBSD$");
 #include "notes.h"
 
 /*
- * Special ".note" entry specifying the ABI version.  See
+ * Special ".note.tag" entry specifying the ABI version.  See
  * http://www.netbsd.org/Documentation/kernel/elf-notes.html
  * for more information.
  */
 
 	.section .note.tag,"a",@note
 	.p2align	2
-	.word		2f-1f
-	.word		4f-3f
-	.word		NT_FREEBSD_ABI_TAG
+	.4byte		2f-1f
+	.4byte		4f-3f
+	.4byte		NT_FREEBSD_ABI_TAG
 1:	.asciz		NOTE_FREEBSD_VENDOR
 2:	.p2align	2
-3:	.word		__FreeBSD_version
+3:	.4byte		__FreeBSD_version
 4:
 
 	.section .note.tag,"a",@note
 	.p2align	2
-	.word		2f-1f
-	.word		4f-3f
-	.word		NT_FREEBSD_FEATURE_CTL
+	.4byte		2f-1f
+	.4byte		4f-3f
+	.4byte		NT_FREEBSD_FEATURE_CTL
 1:	.asciz		NOTE_FREEBSD_VENDOR
 2:	.p2align	2
-3:	.word		0
+3:	.4byte		0
 4:
