@@ -4,7 +4,7 @@
 
 SRCS=		crti.S crtn.S
 OBJS=		${SRCS:N*.h:R:S/$/.o/g}
-OBJS+=		Scrt1.o crtsavres.o crt1.o gcrt1.o
+OBJS+=		Scrt1.o crt1.o crtsavres.o gcrt1.o
 CFLAGS+=	-I${.CURDIR} -I${.CURDIR:H}/common \
 		-I${SRCTOP}/lib/libc/include \
 		-mlongcall -DCRT_IRELOC_RELA
