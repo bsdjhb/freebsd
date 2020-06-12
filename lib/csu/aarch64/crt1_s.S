@@ -29,57 +29,19 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
+#include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-#include <stdlib.h>
+#include "crtbrand.S"
+#include "ignore_init_note.S"
 
-#include "libc_private.h"
-#include "crtbrand.c"
-#include "ignore_init.c"
+ENTRY(_start)
+	mov	x3, x2		/* cleanup */
+	add	x1, x0, #8	/* load argv */
+	ldr	x0, [x0]	/* load argc */
+	add	x2, x1, x0, lsl #3 /* env is after argv */
+	add	x2, x2, #8	/* argv is null terminated */
+	b	 __start
+END(_start)
 
-#ifdef GCRT
-extern void _mcleanup(void);
-extern void monstartup(void *, void *);
-extern int eprol;
-extern int etext;
-#endif
-
-extern long * _end;
-
-void __start(int, char **, char **, void (*)(void));
-
-/* The entry function. */
-__asm("	.text			\n"
-"	.align	0		\n"
-"	.globl	_start		\n"
-"	_start:			\n"
-"	mov	x3, x2		\n" /* cleanup */
-"	add	x1, x0, #8	\n" /* load argv */
-"	ldr	x0, [x0]	\n" /* load argc */
-"	add	x2, x1, x0, lsl #3 \n" /* env is after argv */
-"	add	x2, x2, #8	\n" /* argv is null terminated */
-"	b	 __start  ");
-
-
-/* The entry function. */
-void
-__start(int argc, char *argv[], char *env[], void (*cleanup)(void))
-{
-
-	handle_argv(argc, argv, env);
-
-	if (&_DYNAMIC != NULL)
-		atexit(cleanup);
-	else
-		_init_tls();
-
-#ifdef GCRT
-	atexit(_mcleanup);
-	monstartup(&eprol, &etext);
-__asm__("eprol:");
-#endif
-
-	handle_static_init(argc, argv, env);
-	exit(main(argc, argv, env));
-}
+	.section .note.GNU-stack,"",@progbits
