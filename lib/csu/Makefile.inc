@@ -11,6 +11,8 @@ NO_WMISSING_VARIABLE_DECLARATIONS=
 OBJS+=	crtbegin.o crtbeginS.o crtbeginT.o
 OBJS+=	crtend.o crtendS.o
 
+ACFLAGS+=	-DLOCORE
+
 CFLAGS+=	-fno-asynchronous-unwind-tables
 CFLAGS+=	-fno-omit-frame-pointer
 
