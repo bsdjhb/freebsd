@@ -651,7 +651,7 @@ out:
 static int
 swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 {
-	u_char digest[AES_CBC_MAC_HASH_LEN];
+	u_char tag[AES_CBC_MAC_HASH_LEN];
 	u_char iv[AES_BLOCK_LEN];
 	union authctx ctx;
 	struct swcr_auth *swa;
@@ -682,22 +682,21 @@ swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 		return (error);
 
 	/* Finalize MAC */
-	axf->Final(digest, &ctx);
+	axf->Final(tag, &ctx);
 
 	if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
-		u_char digest2[AES_CBC_MAC_HASH_LEN];
+		u_char tag2[AES_CBC_MAC_HASH_LEN];
 
 		crypto_copydata(crp, crp->crp_digest_start, swa->sw_mlen,
-		    digest2);
-		if (timingsafe_bcmp(digest, digest2, swa->sw_mlen) != 0)
+		    tag2);
+		if (timingsafe_bcmp(tag, tag2, swa->sw_mlen) != 0)
 			error = EBADMSG;
-		explicit_bzero(digest2, sizeof(digest));
+		explicit_bzero(tag2, sizeof(tag));
 	} else {
 		/* Inject the authentication data */
-		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen,
-		    digest);
+		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen, tag);
 	}
-	explicit_bzero(digest, sizeof(digest));
+	explicit_bzero(tag, sizeof(tag));
 	explicit_bzero(iv, sizeof(iv));
 	return (error);
 }
@@ -707,7 +706,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 {
 	uint32_t blkbuf[howmany(AES_BLOCK_LEN, sizeof(uint32_t))];
 	u_char *blk = (u_char *)blkbuf;
-	u_char digest[AES_CBC_MAC_HASH_LEN];
+	u_char tag[AES_CBC_MAC_HASH_LEN];
 	u_char iv[AES_BLOCK_LEN];
 	struct crypto_buffer_cursor cc_in, cc_out;
 	const u_char *inblk;
@@ -810,18 +809,18 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 	}
 
 	/* Finalize MAC */
-	axf->Final(digest, &ctx);
+	axf->Final(tag, &ctx);
 
 	/* Validate tag */
 	error = 0;
 	if (!CRYPTO_OP_IS_ENCRYPT(crp->crp_op)) {
-		u_char digest2[AES_CBC_MAC_HASH_LEN];
+		u_char tag2[AES_CBC_MAC_HASH_LEN];
 
 		crypto_copydata(crp, crp->crp_digest_start, swa->sw_mlen,
-		    digest2);
+		    tag2);
 
-		r = timingsafe_bcmp(digest, digest2, swa->sw_mlen);
-		explicit_bzero(digest2, sizeof(digest2));
+		r = timingsafe_bcmp(tag, tag2, swa->sw_mlen);
+		explicit_bzero(tag2, sizeof(tag2));
 		if (r != 0) {
 			error = EBADMSG;
 			goto out;
@@ -857,13 +856,12 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 		}
 	} else {
 		/* Inject the authentication data */
-		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen,
-		    digest);
+		crypto_copyback(crp, crp->crp_digest_start, swa->sw_mlen, tag);
 	}
 
 out:
 	explicit_bzero(blkbuf, sizeof(blkbuf));
-	explicit_bzero(digest, sizeof(digest));
+	explicit_bzero(tag, sizeof(tag));
 	explicit_bzero(iv, sizeof(iv));
 	return (error);
 }
