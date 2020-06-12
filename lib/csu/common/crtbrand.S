@@ -38,7 +38,7 @@ __FBSDID("$FreeBSD$");
  * for more information.
  */
 
-	.section .note.tag,"a",@note
+	.section .note.tag,"a",%note
 	.p2align	2
 	.4byte		2f-1f
 	.4byte		4f-3f
@@ -48,7 +48,7 @@ __FBSDID("$FreeBSD$");
 3:	.4byte		__FreeBSD_version
 4:
 
-	.section .note.tag,"a",@note
+	.section .note.tag,"a",%note
 	.p2align	2
 	.4byte		2f-1f
 	.4byte		4f-3f

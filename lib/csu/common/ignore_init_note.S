@@ -32,7 +32,7 @@ __FBSDID("$FreeBSD$");
 
 #include "notes.h"
 
-	.section .note.tag,"a",@note
+	.section .note.tag,"a",%note
 	.p2align	2
 	.4byte		2f-1f
 	.4byte		4f-3f
