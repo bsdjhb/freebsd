@@ -17,6 +17,7 @@ PROG?=		ld-elf.so.1
 TAGS+=		lib32
 .endif
 SRCS= \
+	crtbrand.S \
 	rtld_start.S \
 	reloc.c \
 	rtld.c \
@@ -75,7 +76,7 @@ beforeinstall:
 	-chflags -h noschg ${DESTDIR}/usr/libexec/${PROG}
 .endif
 
-.PATH: ${RTLD_ELF_DIR}/${RTLD_ARCH}
+.PATH: ${RTLD_ELF_DIR}/${RTLD_ARCH} ${SRCTOP}/lib/csu/common
 
 .if ${.CURDIR} == ${RTLD_ELF_DIR}
 HAS_TESTS=
