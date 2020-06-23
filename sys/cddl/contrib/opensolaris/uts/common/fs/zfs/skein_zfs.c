@@ -55,7 +55,7 @@ abd_checksum_skein_native(abd_t *abd, uint64_t size,
 	bcopy(ctx_template, &ctx, sizeof (ctx));
 	(void) abd_iterate_func(abd, 0, size, skein_incremental, &ctx);
 	(void) Skein_512_Final(&ctx, (uint8_t *)zcp);
-	bzero(&ctx, sizeof (ctx));
+	explicit_bzero(&ctx, sizeof (ctx));
 }
 
 /*
@@ -100,6 +100,6 @@ abd_checksum_skein_tmpl_free(void *ctx_template)
 {
 	Skein_512_Ctxt_t	*ctx = ctx_template;
 
-	bzero(ctx, sizeof (*ctx));
+	explicit_bzero(ctx, sizeof (*ctx));
 	kmem_free(ctx, sizeof (*ctx));
 }

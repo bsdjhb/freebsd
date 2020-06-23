@@ -57,6 +57,7 @@ abd_checksum_edonr_native(abd_t *abd, uint64_t size,
 	(void) abd_iterate_func(abd, 0, size, edonr_incremental, &ctx);
 	EdonRFinal(&ctx, digest);
 	bcopy(digest, zcp->zc_word, sizeof (zcp->zc_word));
+	explicit_bzero(&ctx, sizeof(ctx));
 }
 
 /*
@@ -109,6 +110,6 @@ abd_checksum_edonr_tmpl_free(void *ctx_template)
 {
 	EdonRState	*ctx = ctx_template;
 
-	bzero(ctx, sizeof (*ctx));
+	explicit_bzero(ctx, sizeof (*ctx));
 	kmem_free(ctx, sizeof (*ctx));
 }
