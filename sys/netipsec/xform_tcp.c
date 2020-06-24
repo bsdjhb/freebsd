@@ -358,22 +358,10 @@ tcpsignature_init(struct secasvar *sav, struct xformsw *xsp)
 	return (0);
 }
 
-/*
- * Called when the SA is deleted.
- */
-static int
-tcpsignature_zeroize(struct secasvar *sav)
-{
-
-	sav->tdb_xform = NULL;
-	return (0);
-}
-
 static struct xformsw tcpsignature_xformsw = {
 	.xf_type =	XF_TCPSIGNATURE,
 	.xf_name =	"TCP-MD5",
 	.xf_init =	tcpsignature_init,
-	.xf_zeroize =	tcpsignature_zeroize,
 };
 
 static const struct tcpmd5_methods tcpmd5_methods = {

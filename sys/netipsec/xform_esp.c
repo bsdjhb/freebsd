@@ -237,18 +237,11 @@ esp_init(struct secasvar *sav, struct xformsw *xsp)
 	return error;
 }
 
-/*
- * Paranoia.
- */
-static int
-esp_zeroize(struct secasvar *sav)
+static void
+esp_cleanup(struct secasvar *sav)
 {
-	/* NB: ah_zeroize free's the crypto session state */
-	int error = ah_zeroize(sav);
 
-	sav->tdb_encalgxform = NULL;
-	sav->tdb_xform = NULL;
-	return error;
+	crypto_freesession(sav->tdb_cryptoid);
 }
 
 /*
@@ -964,7 +957,7 @@ static struct xformsw esp_xformsw = {
 	.xf_type =	XF_ESP,
 	.xf_name =	"IPsec ESP",
 	.xf_init =	esp_init,
-	.xf_zeroize =	esp_zeroize,
+	.xf_cleanup =	esp_cleanup,
 	.xf_input =	esp_input,
 	.xf_output =	esp_output,
 };
