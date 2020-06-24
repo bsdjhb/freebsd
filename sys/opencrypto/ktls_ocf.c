@@ -273,18 +273,16 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 
 	crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	crp->crp_buf_type = CRYPTO_BUF_UIO;
-	crp->crp_uio = &uio;
-	crp->crp_ilen = uio.uio_resid;
+	crypto_use_uio(crp, &uio);
 	crp->crp_opaque = oo;
 	crp->crp_callback = ktls_ocf_callback;
 
 	crp->crp_aad_start = 0;
 	crp->crp_aad_length = sizeof(ad);
 	crp->crp_payload_start = sizeof(ad);
-	crp->crp_payload_length = crp->crp_ilen -
-	    (sizeof(ad) + AES_GMAC_HASH_LEN);
-	crp->crp_digest_start = crp->crp_ilen - AES_GMAC_HASH_LEN;
+	crp->crp_payload_length = tls_comp_len;
+	crp->crp_digest_start = crp->crp_payload_start +
+	    crp->crp_payload_length;;
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
 	for (;;) {
