@@ -1664,11 +1664,10 @@ ktls_decrypt(struct socket *so)
 	struct ktls_session *tls;
 	struct sockbuf *sb;
 	struct tls_record_layer *hdr;
-	struct iovec *iov;
 	struct tls_get_record tgr;
 	struct mbuf *control, *data, *m;
 	uint64_t seqno;
-	int error, i, iov_cap, iov_count, remain, tls_len, trail_len;
+	int error, i, remain, tls_len, trail_len;
 
 	hdr = (struct tls_record_layer *)tls_header;
 	sb = &so->so_rcv;
@@ -1679,8 +1678,6 @@ ktls_decrypt(struct socket *so)
 	tls = sb->sb_tls_info;
 	MPASS(tls != NULL);
 
-	iov = NULL;
-	iov_cap = 0;
 	for (;;) {
 		/* Is there enough queued for a TLS header? */
 		if (sb->sb_tlscc < tls->params.tls_hlen)
@@ -1732,30 +1729,7 @@ ktls_decrypt(struct socket *so)
 		SBCHECK(sb);
 		SOCKBUF_UNLOCK(sb);
 
-		/*
-		 * Build an I/O vector spanning the TLS record payload
-		 * and trailer but skipping the header.
-		 */
-		iov_count = m_segments(data, tls->params.tls_hlen);
-		if (iov_count > iov_cap) {
-			free(iov, M_KTLS);
-			iov = malloc(sizeof(*iov) * iov_count, M_KTLS,
-			    M_WAITOK);
-			iov_cap = iov_count;
-		}
-		remain = tls->params.tls_hlen;
-		for (m = data; remain >= m->m_len; m = m->m_next)
-			remain -= m->m_len;
-		iov[0].iov_base = m->m_data + remain;
-		iov[0].iov_len = m->m_len - remain;
-		for (m = m->m_next, i = 1; m != NULL; m = m->m_next, i++) {
-			iov[i].iov_base = m->m_data;
-			iov[i].iov_len = m->m_len;
-		}
-		MPASS(i == iov_count);
-
-		error = tls->sw_decrypt(tls, hdr, iov, iov_count, seqno,
-		    &trail_len);
+		error = tls->sw_decrypt(tls, hdr, data, seqno, &trail_len);
 		if (error) {
 			counter_u64_add(ktls_offload_failed_crypto, 1);
 

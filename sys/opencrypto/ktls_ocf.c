@@ -224,10 +224,9 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 
 static int
 ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
-    const struct tls_record_layer *hdr, struct iovec *iniov, int iovcnt,
-    uint64_t seqno, int *trailer_len)
+    const struct tls_record_layer *hdr, struct mbuf *m, uint64_t seqno,
+    int *trailer_len)
 {
-	struct uio uio;
 	struct tls_aead_data ad;
 	struct cryptop *crp;
 	struct ocf_session *os;
@@ -255,22 +254,15 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
 
-	uio.uio_resid = tls_comp_len + AES_GMAC_HASH_LEN;
-	uio.uio_iov = iniov;
-	uio.uio_iovcnt = iovcnt + 1;
-	uio.uio_offset = 0;
-	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_td = curthread;
-
 	crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	crypto_use_uio(crp, &uio);
+	crypto_use_mbuf(crp, m);
 	crp->crp_opaque = oo;
 	crp->crp_callback = ktls_ocf_callback;
 
 	crp->crp_aad = &ad;
 	crp->crp_aad_length = sizeof(ad);
-	crp->crp_payload_start = 0;
+	crp->crp_payload_start = tls->params.tls_hlen;
 	crp->crp_payload_length = tls_comp_len;
 	crp->crp_digest_start = crp->crp_payload_start +
 	    crp->crp_payload_length;

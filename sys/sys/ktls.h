@@ -188,8 +188,8 @@ struct ktls_session {
 		    struct iovec *src, struct iovec *dst, int iovcnt,
 		    uint64_t seqno, uint8_t record_type);
 		int	(*sw_decrypt)(struct ktls_session *tls,
-		    const struct tls_record_layer *hdr, struct iovec *iov,
-		    int iovcnt, uint64_t seqno, int *trailer_len);
+		    const struct tls_record_layer *hdr, struct mbuf *m,
+		    uint64_t seqno, int *trailer_len);
 	};
 	union {
 		void *cipher;
