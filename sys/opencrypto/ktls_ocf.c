@@ -232,16 +232,13 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	struct cryptop *crp;
 	struct ocf_session *os;
 	struct ocf_operation *oo;
-	struct iovec *iov;
 	int error;
 	uint16_t tls_comp_len;
 
 	os = tls->cipher;
 
-	oo = malloc(sizeof(*oo) + (iovcnt + 1) * sizeof(*iov), M_KTLS_OCF,
-	    M_WAITOK | M_ZERO);
+	oo = malloc(sizeof(*oo), M_KTLS_OCF, M_WAITOK | M_ZERO);
 	oo->os = os;
-	iov = oo->iov;
 
 	crp = crypto_getreq(os->sid, M_WAITOK);
 
@@ -257,15 +254,9 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	ad.tls_vmajor = hdr->tls_vmajor;
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
-	iov[0].iov_base = &ad;
-	iov[0].iov_len = sizeof(ad);
-	uio.uio_resid = sizeof(ad);
 
-	/* Copy over IOV entries for the payload and trailer. */
-	memcpy(iov + 1, iniov, iovcnt * sizeof(*iov));
-
-	uio.uio_resid = sizeof(ad) + tls_comp_len + AES_GMAC_HASH_LEN;
-	uio.uio_iov = iov;
+	uio.uio_resid = tls_comp_len + AES_GMAC_HASH_LEN;
+	uio.uio_iov = iniov;
 	uio.uio_iovcnt = iovcnt + 1;
 	uio.uio_offset = 0;
 	uio.uio_segflg = UIO_SYSSPACE;
@@ -277,12 +268,12 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	crp->crp_opaque = oo;
 	crp->crp_callback = ktls_ocf_callback;
 
-	crp->crp_aad_start = 0;
+	crp->crp_aad = &ad;
 	crp->crp_aad_length = sizeof(ad);
-	crp->crp_payload_start = sizeof(ad);
+	crp->crp_payload_start = 0;
 	crp->crp_payload_length = tls_comp_len;
 	crp->crp_digest_start = crp->crp_payload_start +
-	    crp->crp_payload_length;;
+	    crp->crp_payload_length;
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
 	for (;;) {
