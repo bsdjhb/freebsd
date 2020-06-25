@@ -246,6 +246,8 @@ ah_cleanup(struct secasvar *sav)
 {
 
 	crypto_freesession(sav->tdb_cryptoid);
+	sav->tdb_cryptoid = NULL;
+	sav->tdb_authalgxform = NULL;
 }
 
 /*
