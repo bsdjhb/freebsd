@@ -1667,7 +1667,7 @@ ktls_decrypt(struct socket *so)
 	struct tls_get_record tgr;
 	struct mbuf *control, *data, *m;
 	uint64_t seqno;
-	int error, i, remain, tls_len, trail_len;
+	int error, remain, tls_len, trail_len;
 
 	hdr = (struct tls_record_layer *)tls_header;
 	sb = &so->so_rcv;
@@ -2034,7 +2034,7 @@ retry_page:
 static void
 ktls_work_thread(void *ctx)
 {
-	struct ktls_wq *wq = ctx;<
+	struct ktls_wq *wq = ctx;
 	struct mbuf *m, *n;
 	struct socket *so, *son;
 	STAILQ_HEAD(, mbuf) local_m_head;
@@ -2046,7 +2046,7 @@ ktls_work_thread(void *ctx)
 	for (;;) {
 		mtx_lock(&wq->mtx);
 		while (STAILQ_EMPTY(&wq->m_head) &&
-		    STAILQ_EMPTY(&wq->ktls_so_head)) {
+		    STAILQ_EMPTY(&wq->so_head)) {
 			wq->running = false;
 			mtx_sleep(wq, &wq->mtx, 0, "-", 0);
 			wq->running = true;
@@ -2064,7 +2064,7 @@ ktls_work_thread(void *ctx)
 				uma_zfree(zone_mbuf, m);
 			} else {
 				ktls_encrypt(m);
-				counter_u64_add(ktls_cnt_on, -1);
+				counter_u64_add(ktls_cnt_tx_queued, -1);
 			}
 		}
 

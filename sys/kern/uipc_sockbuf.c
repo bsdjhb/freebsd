@@ -1373,7 +1373,7 @@ sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		    ("TLS RX mbuf %p is not MT_DATA", m));
 		KASSERT((m->m_flags & M_NOTREADY) != 0,
 		    ("TLS RX mbuf %p ready", m));
-		KASSERT((m->m_flags & M_NOMAP) == 0,
+		KASSERT((m->m_flags & M_EXTPG) == 0,
 		    ("TLS RX mbuf %p unmapped", m));
 
 		if (m->m_len == 0) {
@@ -1388,7 +1388,7 @@ sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		if (n &&
 		    M_WRITABLE(n) &&
 		    ((sb->sb_flags & SB_NOCOALESCE) == 0) &&
-		    !(n->m_flags & (M_NOMAP)) &&
+		    !(n->m_flags & (M_EXTPG)) &&
 		    m->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
 		    m->m_len <= M_TRAILINGSPACE(n)) {
 			m_copydata(m, 0, m->m_len, mtodo(n, n->m_len));
