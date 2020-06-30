@@ -45,6 +45,8 @@ __FBSDID("$FreeBSD$");
 
 struct ocf_session {
 	crypto_session_t sid;
+	crypto_session_t mac_sid;
+	int mac_len;
 	struct mtx lock;
 };
 
@@ -61,6 +63,11 @@ SYSCTL_DECL(_kern_ipc_tls_stats);
 static SYSCTL_NODE(_kern_ipc_tls_stats, OID_AUTO, ocf,
     CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Kernel TLS offload via OCF stats");
+
+static counter_u64_t ocf_tls11_cbc_crypts;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls11_cbc_crypts,
+    CTLFLAG_RD, &ocf_tls12_cbc_crypts,
+    "Total number of OCF TLS 1.1/1.2 CBC encryption operations");
 
 static counter_u64_t ocf_tls12_gcm_crypts;
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls12_gcm_crypts,
@@ -131,6 +138,120 @@ ktls_ocf_dispatch(struct ocf_session *os, struct cryptop *crp)
 		oo.done = false;
 		counter_u64_add(ocf_retries, 1);
 	}
+	return (error);
+}
+
+static int
+ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
+    const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
+    struct iovec *outiov, int iovcnt, uint64_t seqno,
+    uint8_t record_type __unused)
+{
+	struct uio uio, out_uio, *mac_uio;
+	struct tls_mac_data ad;
+	struct cryptop crp;
+	struct ocf_session *os;
+	struct iovec iov[iovcnt + 2];
+	struct iovec out_iov[iovcnt + 1];
+	int i, error;
+	uint16_t tls_comp_len;
+	uint8_t pad;
+	bool inplace;
+
+	os = tls->cipher;
+
+	/*
+	 * Compute the payload length.
+	 *
+	 * XXX: This could be easily computed O(1) from the mbuf
+	 * fields, but we don't have those accessible here.  Can
+	 * at least compute inplace as well while we are here.
+	 */
+	tls_comp_len = 0;
+	inplace = true;
+	for (i = 0; i < iovcnt; i++) {
+		tls_comp_len += iniov[i].iov_len;
+		if (iniov[i].iov_base != outiov[i].iov_base)
+			inplace = false;
+	}
+
+	/* Initialize the AAD. */
+	ad.seq = htobe64(seqno);
+	ad.type = hdr->tls_type;
+	ad.tls_vmajor = hdr->tls_vmajor;
+	ad.tls_vminor = hdr->tls_vminor;
+	ad.tls_length = htons(tls_comp_len);
+
+	/* First, compute the MAC. */
+	iov[0].iov_base = &ad;
+	iov[0].iov_len = sizeof(ad);
+	memcpy(&iov[1], iniov, sizeof(*iniov) * iovcnt);
+	iov[iovcnt + 1].iov_base = trailer;
+	iov[iovcnt + 1].iov_len = os->mac_len;
+	uio.uio_iov = iov;
+	uio.uio_iovcnt = iovcnt + 2;
+	uio.uio_offset = 0;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_td = curthread;
+	uio.uio_resid = sizeof(ad) + tls_comp_len + os->mac_len;
+
+	crypto_initreq(&crp, os->mac_sid);
+	crp.crp_payload_start = 0;
+	crp.crp_payload_length = sizeof(ad) + tls_comp_len;
+	crp.crp_digest_start = crp.crp_payload_length;
+	crp.crp_op = CRYPTO_OP_COMPUTE_DIGEST;
+	crp.crp_flags = CRYPTO_F_CBIMM;
+	crypto_use_uio(&crp, &uio);
+	error = ktls_ocf_dispatch(os, &crp);
+
+	crypto_destroyreq(&crp);
+	if (error)
+		return (error);
+
+	/* Second, add the padding. */
+	pad = AES_BLOCK_LEN - ((tls_comp_len + os->mac_len) % AES_BLOCK_LEN);
+	for (i = 0; i < pad; i++)
+		trailer[os->mac_len + i] = pad;
+
+	/* Finally, encrypt the record. */
+
+	/*
+	 * Don't recopy the input iovec, instead just adjust the
+	 * trailer length and skip over the AAD vector in the uio.
+	 */
+	iov[iovcnt + 1].iov_len += pad;
+	uio.uio_iov = iov + 1;
+	uio.uio_iovcnt = iovcnt + 1;
+	uio.uio_resid = tls_comp_len + iov[iovcnt + 1].iov_len;
+	KASSERT(uio.uio_resid % AES_BLOCK_LEN == 0,
+	    ("invalid encryption size"));
+
+	crypto_initreq(&crp, os->sid);
+	crp.crp_payload_start = 0;
+	crp.crp_payload_length = uio.uio_resid;
+	crp.crp_op = CRYPTO_OP_ENCRYPT;
+	crp.crp_flags = CRYPTO_F_CBIMM;
+	crypto_use_uio(&crp, &uio);
+	if (!inplace) {
+		memcpy(out_iov, outiov, sizeof(*iniov) * iovcnt);
+		out_iov[iovcnt] = iov[iovcnt + 1];
+		out_uio.uio_iov = out_iov;
+		out_uio.uio_iovcnt = iovcnt + 1;
+		out_uio.uio_offset = 0;
+		out_uio.uio_segflg = UIO_SYSSPACE;
+		out_uio.uio_td = curthread;
+		out_uio.uio_resid = uio.uio_resid;
+		crypto_use_output_uio(&crp, &out_uio);
+	}
+
+	counter_u64_add(ocf_tls11_cbc_crypts, 1);
+	if (inplace)
+		counter_u64_add(ocf_inplace, 1);
+	else
+		counter_u64_add(ocf_separate_output, 1);
+	error = ktls_ocf_dispatch(os, &crp);
+
+	crypto_destroyreq(&crp);
 	return (error);
 }
 
@@ -377,12 +498,15 @@ ktls_ocf_free(struct ktls_session *tls)
 static int
 ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 {
-	struct crypto_session_params csp;
+	struct crypto_session_params csp, mac_csp;
 	struct ocf_session *os;
-	int error;
+	int error, mac_len;
 
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_flags |= CSP_F_SEPARATE_OUTPUT | CSP_F_SEPARATE_AAD;
+	mac_csp = csp;
+	mac_csp.csp_mode = CSP_MODE_NONE;
+	mac_len = 0;
 
 	switch (tls->params.cipher_algorithm) {
 	case CRYPTO_AES_NIST_GCM_16:
@@ -393,26 +517,71 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		default:
 			return (EINVAL);
 		}
+
+		/* Only TLS 1.2 and 1.3 are supported. */
+		if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+		    tls->params.tls_vminor < TLS_MINOR_VER_TWO ||
+		    tls->params.tls_vminor > TLS_MINOR_VER_THREE)
+			return (EPROTONOSUPPORT);
+
+		/* TLS 1.3 is not yet supported for receive. */
+		if (direction == KTLS_RX &&
+		    tls->params.tls_vminor == TLS_MINOR_VER_THREE)
+			return (EPROTONOSUPPORT);
+
 		csp.csp_mode = CSP_MODE_AEAD;
 		csp.csp_cipher_alg = CRYPTO_AES_NIST_GCM_16;
 		csp.csp_cipher_key = tls->params.cipher_key;
 		csp.csp_cipher_klen = tls->params.cipher_key_len;
 		csp.csp_ivlen = AES_GCM_IV_LEN;
 		break;
+	case CRYPTO_AES_CBC:
+		switch (tls->params.cipher_key_len) {
+		case 128 / 8:
+		case 256 / 8:
+			break;
+		default:
+			return (EINVAL);
+		}
+
+		switch (tls->params.auth_algorithm) {
+		case CRYPTO_SHA1_HMAC:
+			mac_len = SHA1_HASH_LEN;
+			break;
+		case CRYPTO_SHA2_256_HMAC:
+			mac_len = SHA2_256_HASH_LEN;
+			break;
+		case CRYPTO_SHA2_384_HMAC:
+			mac_len = SHA2_384_HASH_LEN;
+			break;
+		default:
+			return (EINVAL);
+		}
+
+		/* Only TLS 1.1 and 1.2 are supported. */
+		if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
+		    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+		    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
+			return (EPROTONOSUPPORT);
+
+		/* AES-CBC is not supported for receive. */
+		if (direction == KTLS_RX)
+			return (EPROTONOSUPPORT);
+
+		csp.csp_mode = CSP_MODE_CIPHER;
+		csp.csp_cipher_alg = CRYPTO_AES_CBC;
+		csp.csp_cipher_key = tls->params.cipher_key;
+		csp.csp_cipher_klen = tls->params.cipher_key_len;
+		csp.csp_ivlen = AES_BLOCK_LEN;
+
+		mac_csp.csp_mode = CSP_MODE_DIGEST;
+		mac_csp.csp_auth_alg = tls->params.auth_algorithm;
+		mac_csp.csp_auth_key = tls->params.auth_key;
+		mac_csp.csp_auth_klen = tls->params.auth_key_len;
+		break;
 	default:
 		return (EPROTONOSUPPORT);
 	}
-
-	/* Only TLS 1.2 and 1.3 are supported. */
-	if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
-	    tls->params.tls_vminor < TLS_MINOR_VER_TWO ||
-	    tls->params.tls_vminor > TLS_MINOR_VER_THREE)
-		return (EPROTONOSUPPORT);
-
-	/* TLS 1.3 is not yet supported for receive. */
-	if (direction == KTLS_RX &&
-	    tls->params.tls_vminor == TLS_MINOR_VER_THREE)
-		return (EPROTONOSUPPORT);
 
 	os = malloc(sizeof(*os), M_KTLS_OCF, M_NOWAIT | M_ZERO);
 	if (os == NULL)
@@ -425,16 +594,30 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		return (error);
 	}
 
+	if (mac_csp.csp_mode != CSP_MODE_NONE) {
+		error = crypto_newsession(&os->mac_sid, &mac_csp,
+		    CRYPTO_FLAG_HARDWARE | CRYPTO_FLAG_SOFTWARE);
+		if (error) {
+			crypto_freesession(os->sid);
+			free(os, M_KTLS_OCF);
+			return (error);
+		}
+		os->mac_len = mac_len;
+	}
+
 	mtx_init(&os->lock, "ktls_ocf", NULL, MTX_DEF);
 	tls->cipher = os;
-	if (direction == KTLS_TX) {
-		if (tls->params.tls_vminor == TLS_MINOR_VER_THREE)
-			tls->sw_encrypt = ktls_ocf_tls13_gcm_encrypt;
-		else
-			tls->sw_encrypt = ktls_ocf_tls12_gcm_encrypt;
-	} else {
-		tls->sw_decrypt = ktls_ocf_tls12_gcm_decrypt;
-	}
+	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16) {
+		if (direction == KTLS_TX) {
+			if (tls->params.tls_vminor == TLS_MINOR_VER_THREE)
+				tls->sw_encrypt = ktls_ocf_tls13_gcm_encrypt;
+			else
+				tls->sw_encrypt = ktls_ocf_tls12_gcm_encrypt;
+		} else {
+			tls->sw_decrypt = ktls_ocf_tls12_gcm_decrypt;
+		}
+	} else
+		tls->sw_encrypt = ktls_ocf_tls11_cbc_encrypt;
 	tls->free = ktls_ocf_free;
 	return (0);
 }
