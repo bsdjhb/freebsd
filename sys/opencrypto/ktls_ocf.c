@@ -230,7 +230,9 @@ ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
 	crp.crp_payload_start = 0;
 	crp.crp_payload_length = uio.uio_resid;
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
-	crp.crp_flags = CRYPTO_F_CBIMM;
+	crp.crp_op = CRYPTO_OP_ENCRYPT;
+	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
+	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
 	crypto_use_uio(&crp, &uio);
 	if (!inplace) {
 		memcpy(out_iov, outiov, sizeof(*iniov) * iovcnt);
