@@ -64,9 +64,9 @@ static SYSCTL_NODE(_kern_ipc_tls_stats, OID_AUTO, ocf,
     CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Kernel TLS offload via OCF stats");
 
-static counter_u64_t ocf_tls11_cbc_crypts;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls11_cbc_crypts,
-    CTLFLAG_RD, &ocf_tls12_cbc_crypts,
+static counter_u64_t ocf_tls_cbc_crypts;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls_cbc_crypts,
+    CTLFLAG_RD, &ocf_tls_cbc_crypts,
     "Total number of OCF TLS 1.1/1.2 CBC encryption operations");
 
 static counter_u64_t ocf_tls12_gcm_crypts;
@@ -142,12 +142,12 @@ ktls_ocf_dispatch(struct ocf_session *os, struct cryptop *crp)
 }
 
 static int
-ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
+ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, uint8_t *trailer, struct iovec *iniov,
     struct iovec *outiov, int iovcnt, uint64_t seqno,
     uint8_t record_type __unused)
 {
-	struct uio uio, out_uio, *mac_uio;
+	struct uio uio, out_uio;
 	struct tls_mac_data ad;
 	struct cryptop crp;
 	struct ocf_session *os;
@@ -209,8 +209,9 @@ ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
 		return (error);
 
 	/* Second, add the padding. */
-	pad = AES_BLOCK_LEN - ((tls_comp_len + os->mac_len) % AES_BLOCK_LEN);
-	for (i = 0; i < pad; i++)
+	pad = (unsigned)(AES_BLOCK_LEN - (tls_comp_len + os->mac_len + 1)) %
+	    AES_BLOCK_LEN;
+	for (i = 0; i < pad + 1; i++)
 		trailer[os->mac_len + i] = pad;
 
 	/* Finally, encrypt the record. */
@@ -219,7 +220,7 @@ ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
 	 * Don't recopy the input iovec, instead just adjust the
 	 * trailer length and skip over the AAD vector in the uio.
 	 */
-	iov[iovcnt + 1].iov_len += pad;
+	iov[iovcnt + 1].iov_len += pad + 1;
 	uio.uio_iov = iov + 1;
 	uio.uio_iovcnt = iovcnt + 1;
 	uio.uio_resid = tls_comp_len + iov[iovcnt + 1].iov_len;
@@ -246,7 +247,7 @@ ktls_ocf_tls11_cbc_encrypt(struct ktls_session *tls,
 		crypto_use_output_uio(&crp, &out_uio);
 	}
 
-	counter_u64_add(ocf_tls11_cbc_crypts, 1);
+	counter_u64_add(ocf_tls_cbc_crypts, 1);
 	if (inplace)
 		counter_u64_add(ocf_inplace, 1);
 	else
@@ -505,8 +506,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 	int error, mac_len;
 
 	memset(&csp, 0, sizeof(csp));
-	csp.csp_flags |= CSP_F_SEPARATE_OUTPUT | CSP_F_SEPARATE_AAD;
-	mac_csp = csp;
+	memset(&mac_csp, 0, sizeof(mac_csp));
 	mac_csp.csp_mode = CSP_MODE_NONE;
 	mac_len = 0;
 
@@ -531,6 +531,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		    tls->params.tls_vminor == TLS_MINOR_VER_THREE)
 			return (EPROTONOSUPPORT);
 
+		csp.csp_flags |= CSP_F_SEPARATE_OUTPUT | CSP_F_SEPARATE_AAD;
 		csp.csp_mode = CSP_MODE_AEAD;
 		csp.csp_cipher_alg = CRYPTO_AES_NIST_GCM_16;
 		csp.csp_cipher_key = tls->params.cipher_key;
@@ -570,12 +571,14 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		if (direction == KTLS_RX)
 			return (EPROTONOSUPPORT);
 
+		csp.csp_flags |= CSP_F_SEPARATE_OUTPUT;
 		csp.csp_mode = CSP_MODE_CIPHER;
 		csp.csp_cipher_alg = CRYPTO_AES_CBC;
 		csp.csp_cipher_key = tls->params.cipher_key;
 		csp.csp_cipher_klen = tls->params.cipher_key_len;
 		csp.csp_ivlen = AES_BLOCK_LEN;
 
+		mac_csp.csp_flags |= CSP_F_SEPARATE_OUTPUT;
 		mac_csp.csp_mode = CSP_MODE_DIGEST;
 		mac_csp.csp_auth_alg = tls->params.auth_algorithm;
 		mac_csp.csp_auth_key = tls->params.auth_key;
@@ -619,7 +622,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 			tls->sw_decrypt = ktls_ocf_tls12_gcm_decrypt;
 		}
 	} else
-		tls->sw_encrypt = ktls_ocf_tls11_cbc_encrypt;
+		tls->sw_encrypt = ktls_ocf_tls_cbc_encrypt;
 	tls->free = ktls_ocf_free;
 	return (0);
 }
@@ -638,6 +641,7 @@ ktls_ocf_modevent(module_t mod, int what, void *arg)
 
 	switch (what) {
 	case MOD_LOAD:
+		ocf_tls_cbc_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_tls12_gcm_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_tls13_gcm_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_inplace = counter_u64_alloc(M_WAITOK);
@@ -648,6 +652,7 @@ ktls_ocf_modevent(module_t mod, int what, void *arg)
 		error = ktls_crypto_backend_deregister(&ocf_backend);
 		if (error)
 			return (error);
+		counter_u64_free(ocf_tls_cbc_crypts);
 		counter_u64_free(ocf_tls12_gcm_crypts);
 		counter_u64_free(ocf_tls13_gcm_crypts);
 		counter_u64_free(ocf_inplace);
