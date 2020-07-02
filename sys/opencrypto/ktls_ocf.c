@@ -51,7 +51,6 @@ struct ocf_session {
 struct ocf_operation {
 	struct ocf_session *os;
 	bool done;
-	struct iovec iov[0];
 };
 
 static MALLOC_DEFINE(M_KTLS_OCF, "ktls_ocf", "OCF KTLS");
@@ -111,16 +110,16 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 	struct tls_aead_data ad;
 	struct cryptop *crp;
 	struct ocf_session *os;
-	struct ocf_operation *oo;
+	struct ocf_operation oo;
+	struct iovec iov[iovcnt + 1];
 	int i, error;
 	uint16_t tls_comp_len;
 	bool inplace;
 
 	os = tls->cipher;
 
-	oo = malloc(sizeof(*oo) + (iovcnt + 1) * sizeof(struct iovec),
-	    M_KTLS_OCF, M_WAITOK | M_ZERO);
-	oo->os = os;
+	oo.os = os;
+	oo.done = false;
 
 	uio.uio_iov = iniov;
 	uio.uio_iovcnt = iovcnt;
@@ -168,10 +167,10 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 		tag_uio = &out_uio;
 
 	/* Duplicate iovec and append vector for tag. */
-	memcpy(oo->iov, tag_uio->uio_iov, iovcnt * sizeof(struct iovec));
-	tag_uio->uio_iov = oo->iov;
-	tag_uio->uio_iov[iovcnt].iov_base = trailer;
-	tag_uio->uio_iov[iovcnt].iov_len = AES_GMAC_HASH_LEN;
+	memcpy(iov, tag_uio->uio_iov, iovcnt * sizeof(struct iovec));
+	iov[iovcnt].iov_base = trailer;
+	iov[iovcnt].iov_len = AES_GMAC_HASH_LEN;
+	tag_uio->uio_iov = iov;
 	tag_uio->uio_iovcnt++;
 	crp->crp_digest_start = tag_uio->uio_resid;
 	tag_uio->uio_resid += AES_GMAC_HASH_LEN;
@@ -181,7 +180,7 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 	crypto_use_uio(crp, &uio);
 	if (!inplace)
 		crypto_use_output_uio(crp, &out_uio);
-	crp->crp_opaque = oo;
+	crp->crp_opaque = &oo;
 	crp->crp_callback = ktls_ocf_callback;
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
@@ -195,8 +194,8 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 			break;
 
 		mtx_lock(&os->lock);
-		while (!oo->done)
-			mtx_sleep(oo, &os->lock, 0, "ocfktls", 0);
+		while (!oo.done)
+			mtx_sleep(&oo, &os->lock, 0, "ocfktls", 0);
 		mtx_unlock(&os->lock);
 
 		if (crp->crp_etype != EAGAIN) {
@@ -206,12 +205,11 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 
 		crp->crp_etype = 0;
 		crp->crp_flags &= ~CRYPTO_F_DONE;
-		oo->done = false;
+		oo.done = false;
 		counter_u64_add(ocf_retries, 1);
 	}
 
 	crypto_freereq(crp);
-	free(oo, M_KTLS_OCF);
 	return (error);
 }
 
@@ -225,18 +223,15 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 	char nonce[12];
 	struct cryptop *crp;
 	struct ocf_session *os;
-	struct ocf_operation *oo;
-	struct iovec *iov, *out_iov;
+	struct ocf_operation oo;
+	struct iovec iov[iovcnt + 1], out_iov[iovcnt + 1];
 	int i, error;
 	bool inplace;
 
 	os = tls->cipher;
 
-	oo = malloc(sizeof(*oo) + (iovcnt + 1) * sizeof(*iov) * 2, M_KTLS_OCF,
-	    M_WAITOK | M_ZERO);
-	oo->os = os;
-	iov = oo->iov;
-	out_iov = iov + iovcnt + 2;
+	oo.os = os;
+	oo.done = false;
 
 	crp = crypto_getreq(os->sid, M_WAITOK);
 
@@ -299,7 +294,7 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 
 	crp->crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	crp->crp_opaque = oo;
+	crp->crp_opaque = &oo;
 	crp->crp_callback = ktls_ocf_callback;
 
 	memcpy(crp->crp_iv, nonce, sizeof(nonce));
@@ -315,8 +310,8 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 			break;
 
 		mtx_lock(&os->lock);
-		while (!oo->done)
-			mtx_sleep(oo, &os->lock, 0, "ocfktls", 0);
+		while (!oo.done)
+			mtx_sleep(&oo, &os->lock, 0, "ocfktls", 0);
 		mtx_unlock(&os->lock);
 
 		if (crp->crp_etype != EAGAIN) {
@@ -326,12 +321,11 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 
 		crp->crp_etype = 0;
 		crp->crp_flags &= ~CRYPTO_F_DONE;
-		oo->done = false;
+		oo.done = false;
 		counter_u64_add(ocf_retries, 1);
 	}
 
 	crypto_freereq(crp);
-	free(oo, M_KTLS_OCF);
 	return (error);
 }
 
