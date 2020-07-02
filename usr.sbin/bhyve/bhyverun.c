@@ -189,8 +189,6 @@ uint16_t cores, maxcpus, sockets, threads;
 
 int raw_stdio = 0;
 
-static int destroy_on_poweroff = 0;
-
 static char *progname;
 static const int BSP = 0;
 
@@ -899,7 +897,7 @@ vmexit_suspend(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
 	case VM_SUSPEND_RESET:
 		exit(0);
 	case VM_SUSPEND_POWEROFF:
-		if (destroy_on_poweroff)
+		if (get_config_bool("destroy_on_poweroff"))
 			vm_destroy(ctx);
 		exit(1);
 	case VM_SUSPEND_HALT:
@@ -1201,6 +1199,7 @@ set_defaults(void)
 	/* default is xAPIC */
 	set_config_bool("x2apic", false);
 	set_config_bool("acpi_tables", false);
+	set_config_bool("destroy_on_poweroff", false);
 	set_config_bool("gdb.wait", false);
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
@@ -1250,7 +1249,7 @@ main(int argc, char *argv[])
 			set_config_bool("acpi_tables", true);
 			break;
 		case 'D':
-			destroy_on_poweroff = 1;
+			set_config_bool("destroy_on_poweroff", true);
 			break;
 		case 'p':
                         if (pincpu_parse(optarg) != 0) {
