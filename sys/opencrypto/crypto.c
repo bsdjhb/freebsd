@@ -1755,12 +1755,8 @@ crypto_invoke(struct cryptocap *cap, struct cryptop *crp, int hint)
 }
 
 void
-crypto_freereq(struct cryptop *crp)
+crypto_destroyreq(struct cryptop *crp)
 {
-
-	if (crp == NULL)
-		return;
-
 #ifdef DIAGNOSTIC
 	{
 		struct cryptop *crp2;
@@ -1785,8 +1781,30 @@ crypto_freereq(struct cryptop *crp)
 		}
 	}
 #endif
+}
 
+void
+crypto_freereq(struct cryptop *crp)
+{
+
+	if (crp == NULL)
+		return;
+
+	crypto_destroyreq(crp);
 	uma_zfree(cryptop_zone, crp);
+}
+
+static void
+_crypto_initreq(struct cryptop *crp, crypto_session_t cses)
+{
+	crp->crp_session = cses;
+}
+
+void
+crypto_initreq(struct cryptop *crp, crypto_session_t cses)
+{
+	memset(crp, 0, sizeof(*crp));
+	crp->crp_session = cses;
 }
 
 struct cryptop *
@@ -1796,7 +1814,7 @@ crypto_getreq(crypto_session_t cses, int how)
 
 	MPASS(how == M_WAITOK || how == M_NOWAIT);
 	crp = uma_zalloc(cryptop_zone, how | M_ZERO);
-	crp->crp_session = cses;
+	_crypto_initreq(crp, cses);
 	return (crp);
 }
 
