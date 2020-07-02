@@ -81,6 +81,7 @@ __FBSDID("$FreeBSD$");
 
 #include "bhyverun.h"
 #include "block_if.h"
+#include "config.h"
 #include "debug.h"
 #include "pci_emul.h"
 
@@ -578,8 +579,9 @@ pci_nvme_init_nsdata(struct pci_nvme_softc *sc,
 		char *data = NULL;
 		uint64_t eui64 = nvstore->eui64;
 
-		asprintf(&data, "%s%u%u%u", vmname, sc->nsc_pi->pi_bus,
-		    sc->nsc_pi->pi_slot, sc->nsc_pi->pi_func);
+		asprintf(&data, "%s%u%u%u", get_config_value("name"),
+		    sc->nsc_pi->pi_bus, sc->nsc_pi->pi_slot,
+		    sc->nsc_pi->pi_func);
 
 		if (data != NULL) {
 			eui64 = OUI_FREEBSD_NVME_LOW | crc16(0, data, strlen(data));

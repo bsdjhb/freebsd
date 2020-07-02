@@ -1458,7 +1458,7 @@ main(int argc, char *argv[])
 	 * Initialize after PCI, to allow a bootrom file to reserve the high
 	 * region.
 	 */
-	if (acpi)
+	if (get_config_bool("acpi_tables"))
 		vmgenc_init(ctx);
 
 	value = get_config_value("gdb.port");
