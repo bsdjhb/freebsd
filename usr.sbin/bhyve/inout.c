@@ -125,7 +125,7 @@ emulate_inout(struct vmctx *ctx, int vcpu, struct vm_exit *vmexit)
 
 	handler = inout_handlers[port].handler;
 
-	if (handler == default_inout && get_config_bool("strictio"))
+	if (handler == default_inout && get_config_bool("x86.strictio"))
 		return (-1);
 
 	flags = inout_handlers[port].flags;

@@ -647,7 +647,7 @@ vmexit_rdmsr(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 	if (error != 0) {
 		fprintf(stderr, "rdmsr to register %#x on vcpu %d\n",
 		    vme->u.msr.code, *pvcpu);
-		if (get_config_bool("strictmsr")) {
+		if (get_config_bool("x86.strictmsr")) {
 			vm_inject_gp(ctx, *pvcpu);
 			return (VMEXIT_CONTINUE);
 		}
@@ -673,7 +673,7 @@ vmexit_wrmsr(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 	if (error != 0) {
 		fprintf(stderr, "wrmsr to register %#x(%#lx) on vcpu %d\n",
 		    vme->u.msr.code, vme->u.msr.wval, *pvcpu);
-		if (get_config_bool("strictmsr")) {
+		if (get_config_bool("x86.strictmsr")) {
 			vm_inject_gp(ctx, *pvcpu);
 			return (VMEXIT_CONTINUE);
 		}
@@ -1018,7 +1018,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 {
 	int err, tmp;
 
-	if (get_config_bool("vmexit_on_hlt")) {
+	if (get_config_bool("x86.vmexit_on_hlt")) {
 		err = vm_get_capability(ctx, cpu, VM_CAP_HALT_EXIT, &tmp);
 		if (err < 0) {
 			fprintf(stderr, "VM exit on HLT not supported\n");
@@ -1029,7 +1029,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_HLT] = vmexit_hlt;
 	}
 
-	if (get_config_bool("vmexit_on_pause")) {
+	if (get_config_bool("x86.vmexit_on_pause")) {
 		/*
 		 * pause exit support required for this mode
 		 */
@@ -1044,7 +1044,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_PAUSE] = vmexit_pause;
         }
 
-	if (get_config_bool("x2apic"))
+	if (get_config_bool("x86.x2apic"))
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_ENABLED);
 	else
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_DISABLED);
@@ -1196,8 +1196,6 @@ static void
 set_defaults(void)
 {
 
-	/* default is xAPIC */
-	set_config_bool("x2apic", false);
 	set_config_bool("acpi_tables", false);
 	set_config_bool("destroy_on_poweroff", false);
 	set_config_bool("gdb.wait", false);
@@ -1206,11 +1204,12 @@ set_defaults(void)
 	set_config_bool("memory.wired", false);
 	set_config_bool("mptable", true);
 	set_config_bool("rtc.use_localtime", true);
-	set_config_bool("strictio", false);
-	set_config_bool("strictmsr", true);
+	set_config_bool("x86.x2apic", false);
+	set_config_bool("x86.strictio", false);
+	set_config_bool("x86.strictmsr", true);
+	set_config_bool("x86.vmexit_on_hlt", false);
+	set_config_bool("x86.vmexit_on_pause", false);
 	set_config_bool("virtio_msix", true);
-	set_config_bool("vmexit_on_hlt", false);
-	set_config_bool("vmexit_on_pause", false);
 }
 
 int
@@ -1243,7 +1242,7 @@ main(int argc, char *argv[])
 	while ((c = getopt(argc, argv, optstr)) != -1) {
 		switch (c) {
 		case 'a':
-			set_config_bool("x2apic", false);
+			set_config_bool("x86.x2apic", false);
 			break;
 		case 'A':
 			set_config_bool("acpi_tables", true);
@@ -1309,7 +1308,7 @@ main(int argc, char *argv[])
 				errx(EX_USAGE, "invalid configuration option '%s'", optarg);
 			break;
 		case 'H':
-			set_config_bool("vmexit_on_hlt", true);
+			set_config_bool("x86.vmexit_on_hlt", true);
 			break;
 		case 'I':
 			/*
@@ -1321,10 +1320,10 @@ main(int argc, char *argv[])
 			 */
 			break;
 		case 'P':
-			set_config_bool("vmexit_on_pause", true);
+			set_config_bool("x86.vmexit_on_pause", true);
 			break;
 		case 'e':
-			set_config_bool("strictio", true);
+			set_config_bool("x86.strictio", true);
 			break;
 		case 'u':
 			set_config_bool("rtc.use_localtime", false);
@@ -1333,13 +1332,13 @@ main(int argc, char *argv[])
 			set_config_value("uuid", optarg);
 			break;
 		case 'w':
-			set_config_bool("strictmsr", false);
+			set_config_bool("x86.strictmsr", false);
 			break;
 		case 'W':
 			set_config_bool("virtio_msix", false);
 			break;
 		case 'x':
-			set_config_bool("x2apic", true);
+			set_config_bool("x86.x2apic", true);
 			break;
 		case 'Y':
 			set_config_bool("mptable", false);
