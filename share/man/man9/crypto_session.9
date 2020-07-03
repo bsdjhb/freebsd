@@ -181,6 +181,19 @@ The encryption algorithm is specified in
 .Fa csp_cipher_alg
 and the authentication algorithm is specified in
 .Fa csp_auth_alg .
+.It Dv CSP_MODE_MTE
+Mac-then-Encrypt
+In this mode, used for legacy TLS cipher suites, encryption operations
+first compute an authentication digest over the request additional
+authentication data and the decrypted payload prior to the digest start.
+After the computed digest is stored, the entire payload is encrypted.
+Padding must be filled by the caller.
+Decryption operations are not currently supported.
+.Pp
+The encryption algorithm is specified in
+.Fa csp_cipher_alg
+and the authentication algorithm is specified in
+.Fa csp_auth_alg .
 .El
 .It Fa csp_flags
 A mask of optional driver features.

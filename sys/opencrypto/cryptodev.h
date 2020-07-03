@@ -373,6 +373,7 @@ struct crypto_session_params {
 #define	CSP_MODE_DIGEST		3	/* Compute/verify digest. */
 #define	CSP_MODE_AEAD		4	/* Combined auth/encryption. */
 #define	CSP_MODE_ETA		5	/* IPsec style encrypt-then-auth */
+#define	CSP_MODE_MTE		6	/* TLS style mac-then-encrypt */
 
 	int		csp_flags;
 
