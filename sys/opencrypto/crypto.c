@@ -876,6 +876,34 @@ check_csp(const struct crypto_session_params *csp)
 				return (false);
 		}
 		break;
+	case CSP_MODE_MTE:
+		/* Only permit AES-CBC. */
+		if (csp->csp_cipher_alg != CRYPTO_AES_CBC)
+			return (false);
+		if (csp->csp_cipher_klen == 0)
+			return (false);
+		if (csp->csp_ivlen == 0)
+			return (false);
+		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
+			return (false);
+
+		/* Only permit MACs used with AES-CBC in TLS 1.[012]. */
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_SHA1_HMAC:
+		case CRYPTO_SHA2_256_HMAC:
+		case CRYPTO_SHA2_384_HMAC:
+			break;
+		default:
+			return (false);
+		}
+		if (csp->csp_auth_klen != 0)
+			return (false);
+		if (csp->csp_auth_mlen != 0) {
+			axf = crypto_auth_hash(csp);
+			if (axf == NULL || csp->csp_auth_mlen > axf->hashsize)
+				return (false);
+		}
+		break;
 	default:
 		return (false);
 	}
@@ -1326,8 +1354,22 @@ crp_sanity(struct cryptop *crp)
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid ETA op %x", crp->crp_op));
 		break;
+	case CSP_MODE_MTE:
+#if 1
+		KASSERT(crp->crp_op ==
+		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST),
+		    ("invalid MTE op %x", crp->crp_op));
+#else
+		KASSERT(crp->crp_op ==
+		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
+		    crp->crp_op ==
+		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
+		    ("invalid MTE op %x", crp->crp_op));
+#endif
+		break;
 	}
-	if (csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA) {
+	if (csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA
+	    || csp->csp_mode == CSP_MODE_MTE) {
 		if (crp->crp_aad == NULL) {
 			KASSERT(crp->crp_aad_start == 0 ||
 			    crp->crp_aad_start < ilen,
@@ -1393,6 +1435,26 @@ crp_sanity(struct cryptop *crp)
 		/* XXX: For the mlen == 0 case this check isn't perfect. */
 		KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <= len,
 		    ("digest outside buffer"));
+	} else if (csp->csp_mode == CSP_MODE_MTE) {
+		if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
+			/*
+			 * The driver must examine the decrypted
+			 * padding to determine the digest location.
+			 */
+			KASSERT(crp->crp_digest_start == 0,
+			    ("MTE verify request with non-zero digest start"));
+		} else {
+			size_t payload_start;
+
+			if (out == NULL)
+				payload_start = crp->crp_payload_start;
+			else
+				payload_start = crp->crp_payload_output_start;
+			KASSERT(crp->crp_digest_start >= payload_start &&
+			    crp->crp_digest_start + csp->csp_auth_mlen <=
+			    payload_start + crp->crp_payload_length,
+			    ("digest outside payload"));
+		}
 	} else {
 		KASSERT(crp->crp_digest_start == 0,
 		    ("non-zero digest start for request without a digest"));
