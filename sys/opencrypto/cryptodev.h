@@ -243,7 +243,8 @@ struct session2_op {
 
   	u_int32_t	ses;		/* returns: session # */ 
 	int		crid;		/* driver id + flags (rw) */
-	int		pad[4];		/* for future expansion */
+	u_int		flags;
+	int		pad[3];		/* for future expansion */
 };
 
 struct crypt_op {
