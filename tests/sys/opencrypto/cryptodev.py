@@ -79,10 +79,10 @@ class SessionOp2(dpkt.Packet):
         ('mackey',    'P', 0),
         ('ses',       'I', 0),
         ('crid',      'i', 0),
+        ('flags',     'I', 0),
         ('pad0',      'i', 0),
         ('pad1',      'i', 0),
         ('pad2',      'i', 0),
-        ('pad3',      'i', 0),
     )
 
 class CryptOp(dpkt.Packet):
@@ -202,6 +202,7 @@ class Crypto:
         if not cipher and not mac:
             raise ValueError('one of cipher or mac MUST be specified.')
         ses.crid = crid
+        ses.flags = 0
         #print(ses)
         s = array.array('B', ses.pack_hdr())
         #print(s)
