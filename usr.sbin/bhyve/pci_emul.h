@@ -34,6 +34,7 @@
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/kernel.h>
+#include <sys/nv.h>
 #include <sys/_pthreadtypes.h>
 
 #include <dev/pci/pcireg.h>
@@ -52,7 +53,7 @@ struct pci_devemu {
 
 	/* instance creation */
 	int       (*pe_init)(struct vmctx *, struct pci_devinst *,
-			     char *opts);
+			     nvlist_t *);
 
 	/* ACPI DSDT enumeration */
 	void	(*pe_write_dsdt)(struct pci_devinst *);
