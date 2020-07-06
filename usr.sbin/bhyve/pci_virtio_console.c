@@ -619,24 +619,19 @@ pci_vtcon_notify_rx(void *vsc, struct vqueue_info *vq)
 static int
 pci_vtcon_legacy_config(nvlist_t *nvl, const char *opts)
 {
-	char node_name[16];
 	char *name, *opt, *path, *str, *tofree;
-	nvlist_t *ports_nvl, *port_nvl;
-	int port;
+	nvlist_t *ports_nvl;
 
-	ports_nvl = create_relative_config_node(nvl, "port");
-	port = 0;
+	ports_nvl = create_relative_config_node(nvl, "ports");
 	tofree = str = strdup(opts);
 	while ((opt = strsep(&str, ",")) != NULL) {
 		name = strsep(&opt, "=");
 		path = opt;
-
-		snprintf(node_name, sizeof(node_name), "%d", port);
-		port_nvl = create_relative_config_node(ports_nvl, node_name);
-		set_config_value_node(port_nvl, "name", name);
-		if (path != NULL)
-			set_config_value_node(port_nvl, "path", path);
-		port++;
+		if (path != NULL) {
+			EPRINTLN("vtcon: port %s requires a path", name);
+			return (-1);
+		}
+		set_config_value_node(ports_nvl, name, path);
 	}
 	free(tofree);
 	return (0);
@@ -683,9 +678,8 @@ pci_vtcon_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 	sc->vsc_control_port.vsp_cb = pci_vtcon_control_tx;
 	sc->vsc_control_port.vsp_enabled = true;
 
-	ports_nvl = find_relative_config_node(nvl, "port");
+	ports_nvl = find_relative_config_node(nvl, "ports");
 	if (ports_nvl != NULL) {
-		const nvlist_t *port_nvl;
 		const char *name;
 		void *cookie;
 		int type;
@@ -693,30 +687,17 @@ pci_vtcon_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 		cookie = NULL;
 		while ((name = nvlist_next(ports_nvl, &type, &cookie)) !=
 		    NULL) {
-			char *portname, *portpath;
-			const char *value;
+			const char *path;
 
-			if (type != NV_TYPE_NVLIST)
+			if (type != NV_TYPE_STRING)
 				continue;
-			port_nvl = nvlist_get_nvlist(ports_nvl, name);
-			value = get_config_value_node(port_nvl, "name");
-			if (value != NULL)
-				portname = strdup(value);
-			else
-				portname = NULL;
-			value = get_config_value_node(port_nvl, "path");
-			if (value != NULL)
-				portpath = strdup(value);
-			else
-				portpath = NULL;
+			path = get_config_value_node(ports_nvl, name);
 
-			if (pci_vtcon_sock_add(sc, portname, portpath) < 0) {
+			if (pci_vtcon_sock_add(sc, name, path) < 0) {
 				EPRINTLN("cannot create port %s: %s",
-				    portname, strerror(errno));
+				    name, strerror(errno));
 				return (1);
 			}
-			free(portname);
-			free(portpath);
 		}
 	}
 
