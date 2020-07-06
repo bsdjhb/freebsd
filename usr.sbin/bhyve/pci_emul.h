@@ -54,7 +54,7 @@ struct pci_devemu {
 	/* instance creation */
 	int       (*pe_init)(struct vmctx *, struct pci_devinst *,
 			     nvlist_t *);
-	int	(*pe_legacy_config)(nvlist_t *, char *);
+	int	(*pe_legacy_config)(nvlist_t *, const char *);
 
 	/* ACPI DSDT enumeration */
 	void	(*pe_write_dsdt)(struct pci_devinst *);
