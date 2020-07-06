@@ -70,11 +70,26 @@ const char *get_config_value(const char *path);
 void	init_config(void);
 
 /*
- * Parses a dot-separated OID path.  Will fail if the path names an
- * existing leaf configuration variable.  Will create a new node if it
- * does not yet exist and 'create' is true.
+ * Creates an existing configuration node via a dot-separated OID
+ * path.  Will fail if the path names an existing leaf configuration
+ * variable.  If the node already exists, this returns a pointer to
+ * the existing node.
  */
-nvlist_t *lookup_config_node(const char *path, bool create);
+nvlist_t *create_config_node(const char *path);
+
+/*
+ * Looks for an existing configuration node via a dot-separated OID
+ * path.  Will fail if the path names an existing leaf configuration
+ * variable.
+ */
+nvlist_t *find_config_node(const char *path);
+
+/*
+ * Similar to the above, but treats the path relative to an existing
+ * 'parent' node rather than as an absolute path.
+ */
+nvlist_t *create_relative_config_node(nvlist_t *parent, const char *path);
+nvlist_t *find_relative_config_node(nvlist_t *parent, const char *path);
 
 /*
  * Adds or replaces the value of the specified variable.

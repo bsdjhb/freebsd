@@ -47,8 +47,8 @@ init_config(void)
 		err(4, "Failed to create configuration root nvlist");
 }
 
-nvlist_t *
-lookup_config_node(const char *path, bool create)
+static nvlist_t *
+_lookup_config_node(nvlist_t *parent, const char *path, bool create)
 {
 	char *copy, *name, *tofree;
 	nvlist_t *nvl, *new_nvl;
@@ -57,7 +57,7 @@ lookup_config_node(const char *path, bool create)
 	if (copy == NULL)
 		errx(4, "Failed to allocate memory");
 	tofree = copy;
-	nvl = config_root;
+	nvl = parent;
 	while ((name = strsep(&copy, ".")) != NULL) {
 		if (*name == '\0') {
 			warnx("Invalid configuration node: %s", path);
@@ -88,6 +88,34 @@ lookup_config_node(const char *path, bool create)
 	}
 	free(tofree);
 	return (nvl);
+}
+
+nvlist_t *
+create_config_node(const char *path)
+{
+
+	return (_lookup_config_node(config_root, path, true));
+}
+
+nvlist_t *
+find_config_node(const char *path)
+{
+
+	return (_lookup_config_node(config_root, path, false));
+}
+
+nvlist_t *
+create_relative_config_node(nvlist_t *parent, const char *path)
+{
+
+	return (_lookup_config_node(parent, path, true));
+}
+
+nvlist_t *
+find_relative_config_node(nvlist_t *parent, const char *path)
+{
+
+	return (_lookup_config_node(parent, path, false));
 }
 
 void
@@ -123,10 +151,9 @@ set_config_value(const char *path, const char *value)
 		node_name = strndup(path, name - path);
 		if (node_name == NULL)
 			errx(4, "Failed to allocate memory");
-		nvl = lookup_config_node(node_name, true);
+		nvl = create_config_node(node_name);
 		if (nvl == NULL)
-			errx(4,
-			    "Failed to create or lookup configuration node %s",
+			errx(4, "Failed to create configuration node %s",
 			    node_name);
 		free(node_name);
 
@@ -156,7 +183,7 @@ get_raw_config_value(const char *path)
 		node_name = strndup(path, name - path);
 		if (node_name == NULL)
 			errx(4, "Failed to allocate memory");
-		nvl = lookup_config_node(node_name, false);
+		nvl = find_config_node(node_name);
 		free(node_name);
 		if (nvl == NULL)
 			return (NULL);
