@@ -254,7 +254,14 @@ pci_parse_slot(char *opt)
 		goto done;
 	}
 
-	snprintf(node_name, sizeof(node_name), "pci.%d.%d.%d", bnum, snum, fnum);
+	snprintf(node_name, sizeof(node_name), "pci.%d.%d.%d", bnum, snum,
+	    fnum);
+	nvl = find_config_node(node_name);
+	if (nvl != NULL) {
+		EPRINTLN("pci slot %d:%d:%d already occupied!", bnum, snum,
+		    fnum);
+		goto done;
+	}
 	nvl = create_config_node(node_name);
 	set_config_value_node(nvl, "device", emul);
 
