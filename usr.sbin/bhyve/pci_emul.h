@@ -54,6 +54,7 @@ struct pci_devemu {
 	/* instance creation */
 	int       (*pe_init)(struct vmctx *, struct pci_devinst *,
 			     nvlist_t *);
+	int	(*pe_legacy_config)(nvlist_t *, char *);
 
 	/* ACPI DSDT enumeration */
 	void	(*pe_write_dsdt)(struct pci_devinst *);
@@ -237,6 +238,7 @@ int	pci_msix_enabled(struct pci_devinst *pi);
 int	pci_msix_table_bar(struct pci_devinst *pi);
 int	pci_msix_pba_bar(struct pci_devinst *pi);
 int	pci_msi_maxmsgnum(struct pci_devinst *pi);
+int	pci_parse_legacy_config(nvlist_t *nvl, const char *opt);
 int	pci_parse_slot(char *opt);
 void    pci_print_supported_devices();
 void	pci_populate_msicap(struct msicap *cap, int msgs, int nextptr);

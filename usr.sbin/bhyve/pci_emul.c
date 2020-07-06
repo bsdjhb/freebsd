@@ -172,6 +172,31 @@ pci_parse_slot_usage(char *aopt)
 }
 
 /*
+ * Helper function to parse a list of comma-separated options where
+ * each option is formatted as "name[=value]".  If no value is
+ * provided, the option is treated as a boolean and is given a value
+ * of true.
+ */
+int
+pci_parse_legacy_config(nvlist_t *nvl, const char *opt)
+{
+	char *config, *name, *tofree, *value;
+
+	config = tofree = strdup(opt);
+	while ((name = strsep(&config, ",")) != NULL) {
+		value = strchr(name, '=');
+		if (value != NULL) {
+			*value = '\0';
+			value++;
+			set_config_value_node(nvl, name, value);
+		} else
+			set_config_bool_node(nvl, name, true);
+	}
+	free(tofree);
+	return (0);
+}
+
+/*
  * PCI device configuration is stored in MIBs that encode the device's
  * location:
  *
@@ -184,13 +209,11 @@ pci_parse_slot_usage(char *aopt)
  * When parsing a legacy slot option, the "config" string is treated
  * as a comma separated list of "name[=value]" tuples.  If no value is
  * provided, an empty string value is assigned.
- *
- * XXX: Consider adding an "emul" method hook to parse the config
- * instead, perhaps as an optional override for the default parser.
  */
 int
 pci_parse_slot(char *opt)
 {
+	struct pci_devemu *pde;
 	char *emul, *config, *str, *cp, *node_name;
 	int error, bnum, snum, fnum;
 	nvlist_t *nvl;
@@ -231,24 +254,22 @@ pci_parse_slot(char *opt)
 	}
 
 	asprintf(&node_name, "pci.%d.%d.%d", bnum, snum, fnum);
-	nvl = lookup_config_node(node_name, true);
+	nvl = create_config_node(node_name);
 	free(node_name);
 	set_config_value_node(nvl, "device", emul);
 
-	/* TODO: emul-specific parsers? */
-	if (config != NULL) {
-		char *name, *value;
+	pde = pci_emul_finddev(emul);
+	if (pde == NULL) {
+		EPRINTLN("pci slot %d:%d:%d: unknown device \"%s\"", bnum, snum,
+		    fnum, emul);
+		goto done;
+	}
 
-		while ((name = strsep(&config, ",")) != NULL) {
-			value = strchr(name, '=');
-			if (value != NULL) {
-				*value = '\0';
-				value++;
-			} else {
-				value = "";
-			}
-			set_config_value_node(nvl, name, value);
-		}
+	if (config != NULL) {
+		if (pde->pe_legacy_config != NULL)
+			pde->pe_legacy_config(nvl, config);
+		else
+			pci_parse_legacy_config(nvl, config);
 	}
 done:
 	free(str);
@@ -1129,7 +1150,7 @@ init_pci(struct vmctx *ctx)
 
 	for (bus = 0; bus < MAXBUSES; bus++) {
 		snprintf(node_name, sizeof(node_name), "pci.%d", bus);
-		nvl = lookup_config_node(node_name, false);
+		nvl = find_config_node(node_name);
 		if (nvl == NULL)
 			continue;
 		pci_businfo[bus] = calloc(1, sizeof(struct businfo));
@@ -1149,7 +1170,7 @@ init_pci(struct vmctx *ctx)
 				fi = &si->si_funcs[func];
 				snprintf(node_name, sizeof(node_name),
 				    "pci.%d.%d.%d", bus, slot, func);
-				nvl = lookup_config_node(node_name, false);
+				nvl = find_config_node(node_name);
 				if (nvl == NULL)
 					continue;
 
@@ -2203,7 +2224,7 @@ struct pci_emul_dsoftc {
 #define	PCI_EMUL_MSIX_MSGS	16
 
 static int
-pci_emul_dinit(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
+pci_emul_dinit(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 {
 	int error;
 	struct pci_emul_dsoftc *sc;
