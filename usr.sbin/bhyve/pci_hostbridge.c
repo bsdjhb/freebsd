@@ -34,7 +34,7 @@ __FBSDID("$FreeBSD$");
 #include "pci_emul.h"
 
 static int
-pci_hostbridge_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
+pci_hostbridge_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 {
 
 	/* config space */
@@ -50,9 +50,9 @@ pci_hostbridge_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 }
 
 static int
-pci_amd_hostbridge_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
+pci_amd_hostbridge_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 {
-	(void) pci_hostbridge_init(ctx, pi, opts);
+	(void) pci_hostbridge_init(ctx, pi, nvl);
 	pci_set_cfgdata16(pi, PCIR_VENDOR, 0x1022);	/* AMD */
 	pci_set_cfgdata16(pi, PCIR_DEVICE, 0x7432);	/* made up */
 
