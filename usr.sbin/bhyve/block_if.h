@@ -63,6 +63,7 @@ struct blockif_req {
 };
 
 struct blockif_ctxt;
+int	blockif_legacy_config(nvlist_t *nvl, const char *opts);
 struct blockif_ctxt *blockif_open(nvlist_t *nvl, const char *ident);
 off_t	blockif_size(struct blockif_ctxt *bc);
 void	blockif_chs(struct blockif_ctxt *bc, uint16_t *c, uint8_t *h,

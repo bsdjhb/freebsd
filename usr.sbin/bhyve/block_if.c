@@ -64,6 +64,7 @@ __FBSDID("$FreeBSD$");
 #include "config.h"
 #include "debug.h"
 #include "mevent.h"
+#include "pci_emul.h"
 #include "block_if.h"
 
 #define BLOCKIF_SIG	0xb109b109
@@ -426,6 +427,22 @@ blockif_init(void)
 {
 	mevent_add(SIGCONT, EVF_SIGNAL, blockif_sigcont_handler, NULL);
 	(void) signal(SIGCONT, SIG_IGN);
+}
+
+int
+blockif_legacy_config(nvlist_t *nvl, const char *opts)
+{
+	char *cp, *path;
+
+	cp = strchr(opts, ',');
+	if (cp == NULL) {
+		set_config_value_node(nvl, "path", opts);
+		return (0);
+	}
+	path = strndup(opts, cp - opts);
+	set_config_value_node(nvl, "path", path);
+	free(path);
+	return (pci_parse_legacy_config(nvl, cp + 1));
 }
 
 static bool

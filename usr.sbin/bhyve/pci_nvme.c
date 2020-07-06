@@ -2612,22 +2612,6 @@ pci_nvme_read(struct vmctx *ctx, int vcpu, struct pci_devinst *pi, int baridx,
 }
 
 static int
-pci_nvme_legacy_config(nvlist_t *nvl, const char *opts)
-{
-	char *cp, *path;
-
-	cp = strchr(opts, ',');
-	if (cp == NULL) {
-		set_config_value_node(nvl, "path", opts);
-		return (0);
-	}
-	path = strndup(opts, cp - opts);
-	set_config_value_node(nvl, "path", path);
-	free(path);
-	return (pci_parse_legacy_config(nvl, cp + 1));
-}
-
-static int
 pci_nvme_parse_config(struct pci_nvme_softc *sc, nvlist_t *nvl)
 {
 	char bident[sizeof("XX:X:X")];
@@ -2820,7 +2804,7 @@ done:
 struct pci_devemu pci_de_nvme = {
 	.pe_emu =	"nvme",
 	.pe_init =	pci_nvme_init,
-	.pe_legacy_config = pci_nvme_legacy_config,
+	.pe_legacy_config = blockif_legacy_config,
 	.pe_barwrite =	pci_nvme_write,
 	.pe_barread =	pci_nvme_read
 };
