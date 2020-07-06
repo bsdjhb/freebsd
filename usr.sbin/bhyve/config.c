@@ -94,6 +94,8 @@ void
 set_config_value_node(nvlist_t *parent, const char *name, const char *value)
 {
 
+	if (strchr(name, '.') != NULL)
+		errx(4, "Invalid config node name %s", name);
 	if (parent == NULL)
 		parent = config_root;
 	if (nvlist_exists_string(parent, name))
@@ -283,6 +285,8 @@ const char *
 get_config_value_node(nvlist_t *parent, const char *name)
 {
 
+	if (strchr(name, '.') != NULL)
+		errx(4, "Invalid config node name %s", name);
 	if (parent == NULL)
 		parent = config_root;
 	if (nvlist_exists_nvlist(parent, name))
@@ -295,13 +299,9 @@ get_config_value_node(nvlist_t *parent, const char *name)
 }
 
 bool
-get_config_bool(const char *path)
+_bool_value(const char *name, const char *value)
 {
-	const char *value;
 
-	value = get_config_value(path);
-	if (value == NULL)
-		err(4, "Failed to fetch boolean variable %s", path);
 	if (strcasecmp(value, "true") == 0 ||
 	    strcasecmp(value, "on") == 0 ||
 	    strcasecmp(value, "yes") == 0 ||
@@ -312,7 +312,29 @@ get_config_bool(const char *path)
 	    strcasecmp(value, "no") == 0 ||
 	    strcmp(value, "0") == 0)
 		return (false);
-	err(4, "Invalid value %s for boolean variable %s", value, path);
+	err(4, "Invalid value %s for boolean variable %s", value, name);
+}
+
+bool
+get_config_bool(const char *path)
+{
+	const char *value;
+
+	value = get_config_value(path);
+	if (value == NULL)
+		err(4, "Failed to fetch boolean variable %s", path);
+	return (_bool_value(path, value));
+}
+
+bool
+get_config_bool_node(nvlist_t *parent, const char *name)
+{
+	const char *value;
+
+	value = get_config_value_node(parent, name);
+	if (value == NULL)
+		err(4, "Failed to fetch boolean variable %s", name);
+	return (_bool_value(name, value));
 }
 
 void
@@ -320,6 +342,13 @@ set_config_bool(const char *path, bool value)
 {
 
 	set_config_value(path, value ? "true" : "false");
+}
+
+void
+set_config_bool_node(nvlist_t *parent, const char *name, bool value)
+{
+
+	set_config_value_node(parent, name, value ? "true" : "false");
 }
 
 void
