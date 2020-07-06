@@ -58,7 +58,7 @@
  *
  * If 'parent' is NULL, 'name' is assumed to be a top-level variable.
  */
-const char *get_config_value_node(nvlist_t *parent, const char *name);
+const char *get_config_value_node(const nvlist_t *parent, const char *name);
 
 /*
  * Similar to get_config_value_node but expects a full path to the
@@ -107,7 +107,7 @@ void	set_config_value(const char *path, const char *value);
 
 /* Convenience wrappers for boolean variables. */
 bool	get_config_bool(const char *path);
-bool	get_config_bool_node(nvlist_t *parent, const char *name);
+bool	get_config_bool_node(const nvlist_t *parent, const char *name);
 void	set_config_bool(const char *path, bool value);
 void	set_config_bool_node(nvlist_t *parent, const char *name, bool value);
 

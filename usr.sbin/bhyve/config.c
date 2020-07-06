@@ -309,7 +309,7 @@ get_config_value(const char *path)
 }
 
 const char *
-get_config_value_node(nvlist_t *parent, const char *name)
+get_config_value_node(const nvlist_t *parent, const char *name)
 {
 
 	if (strchr(name, '.') != NULL)
@@ -354,7 +354,7 @@ get_config_bool(const char *path)
 }
 
 bool
-get_config_bool_node(nvlist_t *parent, const char *name)
+get_config_bool_node(const nvlist_t *parent, const char *name)
 {
 	const char *value;
 
