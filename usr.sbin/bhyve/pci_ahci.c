@@ -2346,7 +2346,7 @@ pci_ahci_legacy_config_port(nvlist_t *nvl, int port, const char *type,
 		set_config_value_node(port_nvl, "path", opts);
 		return (0);
 	}
-	path = strndup(opts, cp - path);
+	path = strndup(opts, cp - opts);
 	set_config_value_node(port_nvl, "path", path);
 	free(path);
 	return (pci_parse_legacy_config(port_nvl, cp + 1));
