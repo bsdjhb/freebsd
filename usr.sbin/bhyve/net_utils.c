@@ -45,7 +45,7 @@ __FBSDID("$FreeBSD$");
 #include "net_utils.h"
 
 int
-net_parsemac(char *mac_str, uint8_t *mac_addr)
+net_parsemac(const char *mac_str, uint8_t *mac_addr)
 {
         struct ether_addr *ea;
         char zero_addr[ETHER_ADDR_LEN] = { 0, 0, 0, 0, 0, 0 };
