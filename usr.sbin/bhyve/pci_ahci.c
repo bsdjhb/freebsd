@@ -2321,7 +2321,7 @@ pci_ahci_read(struct vmctx *ctx, int vcpu, struct pci_devinst *pi, int baridx,
  * zeroes).  Port nodes contain a "type" ("hd" or "cd"), as well as
  * options for blockif.  For example:
  *
- * pci.0.0.1
+ * pci.0.1.0
  *          .device="ahci"
  *          .port
  *               .0
