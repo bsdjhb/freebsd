@@ -206,9 +206,9 @@ pci_parse_legacy_config(nvlist_t *nvl, const char *opt)
  * leading zeroes.  Each valid device must have a "device" node which
  * identifies the driver model of the device.
  *
- * When parsing a legacy slot option, the "config" string is treated
- * as a comma separated list of "name[=value]" tuples.  If no value is
- * provided, an empty string value is assigned.
+ * Device backends can provide a parser for the "config" string.  If
+ * a custom parser is not provided, pci_parse_legacy_config() is used
+ * to parse the string.
  */
 int
 pci_parse_slot(char *opt)
