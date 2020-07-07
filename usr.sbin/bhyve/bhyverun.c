@@ -1202,7 +1202,7 @@ set_defaults(void)
 	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
 	set_config_bool("memory.wired", false);
-	set_config_bool("mptable", true);
+	set_config_bool("x86.mptable", true);
 	set_config_bool("rtc.use_localtime", true);
 	set_config_bool("x86.x2apic", false);
 	set_config_bool("x86.strictio", false);
@@ -1341,7 +1341,7 @@ main(int argc, char *argv[])
 			set_config_bool("x86.x2apic", true);
 			break;
 		case 'Y':
-			set_config_bool("mptable", false);
+			set_config_bool("x86.mptable", false);
 			break;
 		case 'h':
 			usage(0);			
@@ -1513,7 +1513,7 @@ main(int argc, char *argv[])
 	/*
 	 * build the guest tables, MP etc.
 	 */
-	if (get_config_bool("mptable")) {
+	if (get_config_bool("x86.mptable")) {
 		error = mptable_build(ctx, guest_ncpus);
 		if (error) {
 			perror("error to build the guest tables");
