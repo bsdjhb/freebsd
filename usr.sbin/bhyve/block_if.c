@@ -492,7 +492,7 @@ blockif_open(nvlist_t *nvl, const char *ident)
 	if (get_default_false_knob(nvl, "ro"))
 		ro = 1;
 	ssval = get_config_value_node(nvl, "sectorsize");
-	if (ssval == NULL) {
+	if (ssval != NULL) {
 		ssopt = strtol(ssval, &cp, 10);
 		if (cp == ssval) {
 			EPRINTLN("Invalid sector size \"%s\"", ssval);
