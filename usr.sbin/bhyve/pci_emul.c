@@ -1182,8 +1182,11 @@ init_pci(struct vmctx *ctx)
 
 				fi->fi_config = nvl;
 				emul = get_config_value_node(nvl, "device");
-				if (emul == NULL)
-					continue;
+				if (emul == NULL) {
+					EPRINTLN("pci slot %d:%d:%d: missing "
+					    "\"device\" value", bus, slot, func);
+					return (EINVAL);
+				}
 				pde = pci_emul_finddev(emul);
 				if (pde == NULL) {
 					EPRINTLN("pci slot %d:%d:%d: unknown"
