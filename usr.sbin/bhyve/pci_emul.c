@@ -274,10 +274,11 @@ pci_parse_slot(char *opt)
 
 	if (config != NULL) {
 		if (pde->pe_legacy_config != NULL)
-			pde->pe_legacy_config(nvl, config);
+			error = pde->pe_legacy_config(nvl, config);
 		else
-			pci_parse_legacy_config(nvl, config);
-	}
+			error = pci_parse_legacy_config(nvl, config);
+	} else
+		error = 0;
 done:
 	free(str);
 	return (error);
