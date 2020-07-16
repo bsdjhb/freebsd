@@ -90,7 +90,8 @@ struct session2_op32 {
 	u_int32_t	mackey;
 	u_int32_t	ses;
 	int		crid;
-	int		pad[4];
+	u_int		flags;
+	int		pad[3];
 };
 
 struct crypt_op32 {
@@ -159,6 +160,7 @@ session2_op_from_32(const struct session2_op32 *from, struct session2_op *to)
 
 	session_op_from_32((const struct session_op32 *)from, to);
 	CP(*from, *to, crid);
+	CP(*from, *to, flags);
 }
 
 static void
@@ -500,6 +502,12 @@ cryptof_ioctl(
 		} else
 			sop = (struct session2_op *)data;
 
+		if ((sop->flags & ~(SOP_F_MTE)) != 0) {
+			CRYPTDEB("invalid session flags");
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			return (EINVAL);
+		}
+
 		switch (sop->cipher) {
 		case 0:
 			break;
@@ -670,6 +678,11 @@ cryptof_ioctl(
 				    __LINE__);
 				return (EINVAL);
 			}
+			if ((sop->flags & SOP_F_MTE) != 0) {
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
 			csp.csp_mode = CSP_MODE_AEAD;
 		} else if (sop->cipher == CRYPTO_AES_CCM_16) {
 			switch (sop->mac) {
@@ -690,17 +703,37 @@ cryptof_ioctl(
 				    __LINE__);
 				return (EINVAL);
 			}
+			if ((sop->flags & SOP_F_MTE) != 0) {
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
 			csp.csp_mode = CSP_MODE_AEAD;
-		} else if (txform && thash)
-			csp.csp_mode = CSP_MODE_ETA;
-		else if (txform)
+		} else if (txform && thash) {
+			if (sop->flags & SOP_F_MTE)
+				csp.csp_mode = CSP_MODE_MTE;
+			else
+				csp.csp_mode = CSP_MODE_ETA;
+		} else if (txform) {
+			if ((sop->flags & SOP_F_MTE) != 0) {
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
 			csp.csp_mode = CSP_MODE_CIPHER;
-		else
+		} else {
+			if ((sop->flags & SOP_F_MTE) != 0) {
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				return (EINVAL);
+			}
 			csp.csp_mode = CSP_MODE_DIGEST;
+		}
 
 		switch (csp.csp_mode) {
 		case CSP_MODE_AEAD:
 		case CSP_MODE_ETA:
+		case CSP_MODE_MTE:
 			if (use_separate_aad)
 				csp.csp_flags |= CSP_F_SEPARATE_AAD;
 			break;
@@ -959,7 +992,7 @@ cryptodev_op(
 	 * as long as it is consistent with EtA.
 	 */
 	if (cop->flags & COP_F_CIPHER_FIRST) {
-		if (cop->op != COP_ENCRYPT) {
+		if (cop->op != COP_ENCRYPT || cse->mode != CSP_MODE_ETA) {
 			SDT_PROBE1(opencrypto, dev, ioctl, error,  __LINE__);
 			return (EINVAL);
 		}
