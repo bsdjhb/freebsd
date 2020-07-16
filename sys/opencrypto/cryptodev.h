@@ -244,6 +244,7 @@ struct session2_op {
   	u_int32_t	ses;		/* returns: session # */ 
 	int		crid;		/* driver id + flags (rw) */
 	u_int		flags;
+#define	SOP_F_MTE		0x0001	/* Request CSP_MODE_MTE */
 	int		pad[3];		/* for future expansion */
 };
 
