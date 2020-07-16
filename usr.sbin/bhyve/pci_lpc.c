@@ -77,7 +77,7 @@ static struct lpc_uart_softc {
 	int	enabled;
 } lpc_uart_softc[LPC_UART_NUM];
 
-static const char *lpc_uart_names[LPC_UART_NUM] = { "COM1", "COM2", "COM3", "COM4" };
+static const char *lpc_uart_names[LPC_UART_NUM] = { "com1", "com2", "com3", "com4" };
 
 static bool pctestdev_present;
 
