@@ -45,7 +45,9 @@ __FBSDID("$FreeBSD$");
 
 struct ocf_session {
 	crypto_session_t sid;
+#if 0
 	crypto_session_t mac_sid;
+#endif
 	int mac_len;
 	struct mtx lock;
 };
@@ -152,7 +154,9 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	struct cryptop crp;
 	struct ocf_session *os;
 	struct iovec iov[iovcnt + 2];
+#if 0
 	struct iovec out_iov[iovcnt + 1];
+#endif
 	int i, error;
 	uint16_t tls_comp_len;
 	uint8_t pad;
@@ -182,6 +186,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
 
+#if 0
 	/* First, compute the MAC. */
 	iov[0].iov_base = &ad;
 	iov[0].iov_len = sizeof(ad);
@@ -207,6 +212,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	crypto_destroyreq(&crp);
 	if (error)
 		return (error);
+#endif
 
 	/* Second, add the padding. */
 	pad = (unsigned)(AES_BLOCK_LEN - (tls_comp_len + os->mac_len + 1)) %
@@ -214,6 +220,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	for (i = 0; i < pad + 1; i++)
 		trailer[os->mac_len + i] = pad;
 
+#if 0
 	/* Finally, encrypt the record. */
 
 	/*
@@ -246,6 +253,49 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 		out_uio.uio_resid = uio.uio_resid;
 		crypto_use_output_uio(&crp, &out_uio);
 	}
+#else
+	if (inplace) {
+		memcpy(iov, iniov, sizeof(*iniov) * iovcnt);
+		iov[iovcnt].iov_base = trailer;
+		iov[iovcnt].iov_len = os->mac_len + pad + 1;
+		uio.uio_iov = iov;
+		uio.uio_iovcnt = iovcnt + 1;
+		uio.uio_offset = 0;
+		uio.uio_segflg = UIO_SYSSPACE;
+		uio.uio_td = curthread;
+		uio.uio_resid = tls_comp_len + iov[iovcnt].iov_len;
+	} else {
+		uio.uio_iov = iniov;
+		uio.uio_iovcnt = iovcnt;
+		uio.uio_offset = 0;
+		uio.uio_segflg = UIO_SYSSPACE;
+		uio.uio_td = curthread;
+		uio.uio_resid = tls_comp_len;
+
+		memcpy(iov, outiov, sizeof(*outiov) * iovcnt);
+		iov[iovcnt].iov_base = trailer;
+		iov[iovcnt].iov_len = os->mac_len + pad + 1;
+		out_uio.uio_iov = iov;
+		out_uio.uio_iovcnt = iovcnt + 1;
+		out_uio.uio_offset = 0;
+		out_uio.uio_segflg = UIO_SYSSPACE;
+		out_uio.uio_td = curthread;
+		out_uio.uio_resid = tls_comp_len + iov[iovcnt].iov_len;
+	}
+
+	crypto_initreq(&crp, os->sid);
+	crp.crp_aad = &ad;
+	crp.crp_aad_length = sizeof(ad);
+	crp.crp_payload_start = 0;
+	crp.crp_payload_length = tls_comp_len;
+	crp.crp_digest_start = tls_comp_len;
+	crp.crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
+	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
+	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
+	crypto_use_uio(&crp, &uio);
+	if (!inplace)
+		crypto_use_output_uio(&crp, &out_uio);
+#endif
 
 	counter_u64_add(ocf_tls_cbc_crypts, 1);
 	if (inplace)
@@ -501,13 +551,18 @@ ktls_ocf_free(struct ktls_session *tls)
 static int
 ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 {
-	struct crypto_session_params csp, mac_csp;
+	struct crypto_session_params csp;
+#if 0
+	struct crypto_session_params mac_csp;
+#endif
 	struct ocf_session *os;
 	int error, mac_len;
 
 	memset(&csp, 0, sizeof(csp));
+#if 0
 	memset(&mac_csp, 0, sizeof(mac_csp));
 	mac_csp.csp_mode = CSP_MODE_NONE;
+#endif
 	mac_len = 0;
 
 	switch (tls->params.cipher_algorithm) {
@@ -571,6 +626,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		if (direction == KTLS_RX)
 			return (EPROTONOSUPPORT);
 
+#if 0
 		csp.csp_flags |= CSP_F_SEPARATE_OUTPUT;
 		csp.csp_mode = CSP_MODE_CIPHER;
 		csp.csp_cipher_alg = CRYPTO_AES_CBC;
@@ -583,6 +639,17 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		mac_csp.csp_auth_alg = tls->params.auth_algorithm;
 		mac_csp.csp_auth_key = tls->params.auth_key;
 		mac_csp.csp_auth_klen = tls->params.auth_key_len;
+#else
+		csp.csp_flags |= CSP_F_SEPARATE_OUTPUT | CSP_F_SEPARATE_AAD;
+		csp.csp_mode = CSP_MODE_MTE;
+		csp.csp_cipher_alg = CRYPTO_AES_CBC;
+		csp.csp_cipher_key = tls->params.cipher_key;
+		csp.csp_cipher_klen = tls->params.cipher_key_len;
+		csp.csp_ivlen = AES_BLOCK_LEN;
+		csp.csp_auth_alg = tls->params.auth_algorithm;
+		csp.csp_auth_key = tls->params.auth_key;
+		csp.csp_auth_klen = tls->params.auth_key_len;
+#endif
 		break;
 	default:
 		return (EPROTONOSUPPORT);
@@ -599,6 +666,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		return (error);
 	}
 
+#if 0
 	if (mac_csp.csp_mode != CSP_MODE_NONE) {
 		error = crypto_newsession(&os->mac_sid, &mac_csp,
 		    CRYPTO_FLAG_HARDWARE | CRYPTO_FLAG_SOFTWARE);
@@ -607,8 +675,11 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 			free(os, M_KTLS_OCF);
 			return (error);
 		}
+#endif
 		os->mac_len = mac_len;
+#if 0
 	}
+#endif
 
 	mtx_init(&os->lock, "ktls_ocf", NULL, MTX_DEF);
 	tls->cipher = os;
