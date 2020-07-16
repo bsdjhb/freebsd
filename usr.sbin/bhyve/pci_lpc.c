@@ -103,7 +103,8 @@ lpc_device_parse(const char *opts)
 		}
 		for (unit = 0; unit < LPC_UART_NUM; unit++) {
 			if (strcasecmp(lpcdev, lpc_uart_names[unit]) == 0) {
-				asprintf(&node_name, "lpc.%s.device", lpcdev);
+				asprintf(&node_name, "lpc.%s.device",
+				    lpc_uart_names[unit]);
 				set_config_value(node_name, str);
 				free(node_name);
 				error = 0;
