@@ -77,6 +77,7 @@
  *	mac		Run all mac tests
  *	cipher		Run all cipher tests
  *	eta		Run all encrypt-then-authenticate tests
+ *	mte		Run all mac-then-encrypt tests
  *	aead		Run all authenticated encryption with associated data
  *			tests
  *
@@ -113,6 +114,10 @@
  * Encrypt then Authenticate:
  *	<cipher>+<mac>
  *
+ * Mac then Encrypt (TLS style):
+ *
+ *	<mac>+<cipher>
+ *
  * Authenticated Encryption with Associated Data:
  *	aes-gcm		128-bit AES-GCM
  *	aes-gcm192	192-bit AES-GCM
@@ -148,7 +153,7 @@ static const struct alg {
 	const char *name;
 	int cipher;
 	int mac;
-	enum { T_HASH, T_HMAC, T_GMAC, T_CIPHER, T_ETA, T_AEAD } type;
+	enum { T_HASH, T_HMAC, T_GMAC, T_CIPHER, T_ETA, T_MTE, T_AEAD } type;
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
 } algs[] = {
@@ -238,6 +243,53 @@ find_alg(const char *name)
 	return (NULL);
 }
 
+static bool
+is_mte_cipher(const struct alg *alg)
+{
+	if (alg->type != T_CIPHER)
+		return (false);
+	switch (alg->cipher) {
+	case CRYPTO_AES_CBC:
+		return (true);
+	default:
+		return (false);
+	}
+}
+
+static bool
+is_mte_mac(const struct alg *alg)
+{
+	if (alg->type != T_HMAC)
+		return (false);
+	switch (alg->mac) {
+	case CRYPTO_SHA1_HMAC:
+	case CRYPTO_SHA2_256_HMAC:
+	case CRYPTO_SHA2_384_HMAC:
+		return (true);
+	default:
+		return (false);
+	}
+}
+
+static struct alg *
+build_mte(const struct alg *mac, const struct alg *cipher)
+{
+	struct alg *mte;
+	char *name;
+
+	assert(is_mte_cipher(cipher));
+	assert(is_mte_mac(mac));
+	mte = calloc(1, sizeof(*mte));
+	asprintf(&name, "%s+%s", mac->name, cipher->name);
+	mte->name = name;
+	mte->cipher = cipher->cipher;
+	mte->mac = mac->mac;
+	mte->type = T_MTE;
+	mte->evp_cipher = cipher->evp_cipher;
+	mte->evp_md = mac->evp_md;
+	return (mte);
+}
+
 static struct alg *
 build_eta(const struct alg *cipher, const struct alg *mac)
 {
@@ -258,30 +310,34 @@ build_eta(const struct alg *cipher, const struct alg *mac)
 }
 
 static void
-free_eta(struct alg *eta)
+free_alg(struct alg *alg)
 {
 	free(__DECONST(char *, eta->name));
 	free(eta);
 }
 
 static struct alg *
-build_eta_name(const char *name)
+build_combo_name(const char *name)
 {
-	const struct alg *cipher, *mac;
-	const char *mac_name;
-	char *cp, *cipher_name;
+	const struct alg *first, *second;
+	const char *second_name;
+	char *cp, *first_name;
 
 	cp = strchr(name, '+');
-	cipher_name = strndup(name, cp - name);
-	mac_name = cp + 1;
-	cipher = find_alg(cipher_name);
-	free(cipher_name);
-	if (cipher == NULL || cipher->type != T_CIPHER)
-		errx(1, "Invalid cipher %s", cipher_name);
-	mac = find_alg(mac_name);
-	if (mac == NULL || mac->type != T_HMAC)
-		errx(1, "Invalid hmac %s", mac_name);
-	return (build_eta(cipher, mac));
+	first_name = strndup(name, cp - name);
+	second_name = cp + 1;
+	first = find_alg(first_name);
+	if (first == NULL)
+		errx(1, "Invalid algorithm name %s", first_name);
+	second = find_alg(second_name);
+	if (second == NULL)
+		errx(1, "Invalid algorithm name %s", second_name);
+	free(first_name);
+	if (first->type == T_CIPHER && second->type == T_HMAC)
+		return (build_eta(first, second));
+	if (is_mte_mac(first) && is_mte_cipher(second))
+		return (build_mte(first, second));
+	errx(1, "Invalid combination %s", name);
 }
 
 static int
@@ -1038,6 +1094,176 @@ out:
 	free(cipher_key);
 }
 
+static bool
+ocf_init_mte_session(const struct alg *alg, const char *cipher_key,
+    size_t cipher_key_len, const char *auth_key, size_t auth_key_len,
+    struct ocf_session *ses)
+{
+	struct session2_op sop;
+
+	ocf_init_sop(&sop);
+	sop.keylen = cipher_key_len;
+	sop.key = (char *)cipher_key;
+	sop.cipher = alg->cipher;
+	sop.mackeylen = auth_key_len;
+	sop.mackey = (char *)auth_key;
+	sop.mac = alg->mac;
+	sop.flags = SOP_F_MTE;
+	return (ocf_init_session(&sop, "MTE", alg->name, ses));
+}
+
+static int
+ocf_mte(const struct ocf_session *ses, const struct alg *alg, const char *iv,
+    size_t iv_len, const char *aad, size_t aad_len, const char *input,
+    char *output, size_t size, char *trailer, int op)
+{
+	int ret;
+
+	if (aad_len != 0) {
+		struct crypt_aead caead;
+
+		ocf_init_caead(ses, &caead);
+		caead.op = op;
+		caead.len = size;
+		caead.aadlen = aad_len;
+		caead.ivlen = iv_len;
+		caead.src = (char *)input;
+		caead.dst = output;
+		caead.aad = (char *)aad;
+		caead.tag = trailer;
+		caead.iv = (char *)iv;
+
+		ret = ioctl(ses->fd, CIOCCRYPTAEAD, &caead);
+	} else {
+		struct crypt_op cop;
+
+		ocf_init_cop(ses, &cop);
+		cop.op = op;
+		cop.len = size;
+		cop.src = (char *)input;
+		cop.dst = output;
+		cop.mac = trailer;
+		cop.iv = (char *)iv;
+
+		ret = ioctl(ses->fd, CIOCCRYPT, &cop);
+	}
+
+	if (ret < 0)
+		return (errno);
+	return (0);
+}
+
+static void
+run_mte_test(const struct alg *alg, size_t aad_len, size_t size)
+{
+	struct ocf_session ses;
+	const EVP_CIPHER *cipher;
+	const EVP_MD *md;
+	char *aad, *buffer, *cleartext, *ciphertext;
+	char *iv, *auth_key, *cipher_key;
+	u_int iv_len, auth_key_len, cipher_key_len, digest_len, padding_len;
+	u_int i, trailer_len;
+	int error;
+
+	cipher = alg->evp_cipher();
+
+	memset(control_trailer, 0x3c, sizeof(control_digest));
+	memset(test_trailer, 0x3c, sizeof(test_digest));
+
+	md = alg->evp_md();
+
+	cipher_key_len = EVP_CIPHER_key_length(cipher);
+	iv_len = EVP_CIPHER_iv_length(cipher);
+	auth_key_len = EVP_MD_size(md);
+	digest_len = EVP_MD_size(md);
+
+	/*
+	 * This uses the minimum amount of padding for TLS MTE which
+	 * is what the OCF interface assumes.
+	 */
+	trailer_len = EVP_MD_size(md) + 1;
+	padding = EVP_CIPHER_block_size(cipher) -
+	    ((size + trailer_len) % EVP_CIPHER_block_size(cipher));
+	assert(padding > 0 && padding <= EVP_CIPHER_block_size(cipher));
+	trailer_len += padding;
+	assert((size + trailer_len) % EVP_CIPHER_block_size(cipher) == 0);
+
+	cipher_key = alloc_buffer(cipher_key_len);
+	iv = generate_iv(iv_len, alg);
+	auth_key = alloc_buffer(auth_key_len);
+	cleartext = alloc_buffer(aad_len + size + trailer_len);
+	buffer = malloc(aad_len + size + trailer_len);
+	ciphertext = malloc(aad_len + size + trailer_len);
+
+	/* OpenSSL HMAC + encrypt. */
+	if (aad_len != 0)
+		memcpy(ciphertext, cleartext, aad_len);
+	memcpy(buffer, cleartext, aad_len + size);
+	if (HMAC(md, auth_key, auth_key_len, (u_char *)cleartext,
+	    aad_len + size, (u_char *)(buffer + aad_len + size),
+	    &digest_len) == NULL)
+		errx(1, "OpenSSL %s (%zu, %zu) HMAC failed: %s", alg->name,
+		    aad_len, size, ERR_error_string(ERR_get_error(), NULL));
+	assert(digest_len == EVP_MD_size(md));
+	for (i = 0; i < padding; i++)
+		buffer[aad_len + size + digest_len + i] = padding - 1;
+	openssl_cipher(alg, cipher, cipher_key, iv, buffer + aad_len,
+	    ciphertext + aad_len, size + trailer, 1);
+	if (size > 0 && memcmp(buffer + aad_len, ciphertext + aad_len,
+	    size) == 0)
+		warnx("OpenSSL %s (%zu, %zu): cipher text unchanged",
+		    alg->name, aad_len, size);
+
+	if (!ocf_init_mte_session(alg, cipher_key, cipher_key_len, auth_key,
+	    auth_key_len, &ses))
+		goto out;
+
+	/* OCF HMAC + encrypt. */
+	memset(buffer, 0x3c, aad_len + size + trailer_len);
+	error = ocf_mte(&ses, alg, iv, iv_len,
+	    aad_len != 0 ? cleartext : NULL, aad_len, cleartext + aad_len,
+	    buffer + aad_len, size, buffer + aad_len + size, COP_ENCRYPT);
+	if (error != 0) {
+		warnc(error, "cryptodev %s (%zu, %zu) MTE failed for device %s",
+		    alg->name, aad_len, size, crfind(ses.crid));
+		goto out;
+	}
+	if (memcmp(ciphertext + aad_len, buffer + aad_len, size) != 0) {
+		printf("%s (%zu, %zu) encryption mismatch:\n", alg->name,
+		    aad_len, size);
+		printf("control:\n");
+		hexdump(ciphertext + aad_len, size, NULL, 0);
+		printf("test (cryptodev device %s):\n", crfind(ses.crid));
+		hexdump(buffer + aad_len, size, NULL, 0);
+		goto out;
+	}
+	if (memcmp(ciphertext + aad_len + size, buffer + aad_len + size,
+	    trailer_len) != 0) {
+		printf("%s (%zu, %zu) trailer mismatch:\n", alg->name, aad_len,
+		    size);
+		printf("control:\n");
+		hexdump(ciphertext + aad_len + size, trailer_len, NULL, 0);
+		printf("test (cryptodev device %s):\n", crfind(ses.crid));
+		hexdump(buffer + aad_len + size, trailer_len, NULL, 0);
+		goto out;
+	}
+
+	/* OCF doesn't support decrypt for MTE. */
+
+	if (verbose)
+		printf("%s (%zu, %zu) matched (cryptodev device %s)\n",
+		    alg->name, aad_len, size, crfind(ses.crid));
+
+out:
+	ocf_destroy_session(&ses);
+	free(ciphertext);
+	free(buffer);
+	free(cleartext);
+	free(auth_key);
+	free(iv);
+	free(cipher_key);
+}
+
 static void
 openssl_gmac(const struct alg *alg, const EVP_CIPHER *cipher, const char *key,
     const char *iv, const char *input, size_t size, char *tag)
@@ -1484,6 +1710,9 @@ run_test(const struct alg *alg, size_t aad_len, size_t size)
 	case T_ETA:
 		run_eta_test(alg, aad_len, size);
 		break;
+	case T_MTE:
+		run_mte_test(alg, aad_len, size);
+		break;
 	case T_AEAD:
 		run_aead_test(alg, aad_len, size);
 		break;
@@ -1500,7 +1729,8 @@ run_test_sizes(const struct alg *alg)
 		for (i = 0; i < nsizes; i++)
 			run_test(alg, 0, sizes[i]);
 		break;
-	case T_ETA:
+	case T_ETA:	
+	case T_MTE:
 	case T_AEAD:
 		for (i = 0; i < naad_sizes; i++)
 			for (j = 0; j < nsizes; j++)
@@ -1556,7 +1786,29 @@ run_eta_tests(void)
 				continue;
 			eta = build_eta(cipher, mac);
 			run_test_sizes(eta);
-			free_eta(eta);
+			free_alg(eta);
+		}
+	}
+}
+
+static void
+run_mte_tests(void)
+{
+	const struct alg *cipher, *mac;
+	struct alg *mte;
+	u_int i, j;
+
+	for (i = 0; i < nitems(algs); i++) {
+		cipher = &algs[i];
+		if (!is_mte_cipher(cipher))
+			continue;
+		for (j = 0; j < nitems(algs); j++) {
+			mac = &algs[j];
+			if (!is_mte_mac(mac))
+				continue;
+			mte = build_mte(mac, cipher);
+			run_test_sizes(mte);
+			free_alg(mte);
 		}
 	}
 }
@@ -1576,7 +1828,7 @@ main(int ac, char **av)
 {
 	const char *algname;
 	const struct alg *alg;
-	struct alg *eta;
+	struct alg *combo;
 	char *cp;
 	size_t base_size;
 	u_int i;
@@ -1687,6 +1939,8 @@ main(int ac, char **av)
 		run_cipher_tests();
 	else if (strcasecmp(algname, "eta") == 0)
 		run_eta_tests();
+	else if (strcasecmp(algname, "mte") == 0)
+		run_mte_tests();
 	else if (strcasecmp(algname, "aead") == 0)
 		run_aead_tests();
 	else if (strcasecmp(algname, "all") == 0) {
@@ -1694,11 +1948,12 @@ main(int ac, char **av)
 		run_mac_tests();
 		run_cipher_tests();
 		run_eta_tests();
+		run_mte_tests();
 		run_aead_tests();
 	} else if (strchr(algname, '+') != NULL) {
-		eta = build_eta_name(algname);
-		run_test_sizes(eta);
-		free_eta(eta);
+		combo = build_combo_name(algname);
+		run_test_sizes(combo);
+		free_alg(combo);
 	} else {
 		alg = find_alg(algname);
 		if (alg == NULL)
