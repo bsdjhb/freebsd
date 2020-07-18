@@ -1182,7 +1182,7 @@ run_mte_test(const struct alg *alg, size_t aad_len, size_t size)
 	 * This uses the minimum amount of padding for TLS MTE which
 	 * is what the OCF interface assumes.
 	 */
-	trailer_len = EVP_MD_size(md) + 1;
+	trailer_len = EVP_MD_size(md);
 	padding = EVP_CIPHER_block_size(cipher) -
 	    ((size + trailer_len) % EVP_CIPHER_block_size(cipher));
 	assert(padding > 0 && padding <= EVP_CIPHER_block_size(cipher));
