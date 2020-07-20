@@ -888,6 +888,195 @@ swcr_eta(struct swcr_session *ses, struct cryptop *crp)
 }
 
 /*
+ * Apply a digest and a cipher to perform TLS-style MtE.
+ */
+static int
+swcr_mte(struct swcr_session *ses, struct cryptop *crp)
+{
+	unsigned char iv[EALG_MAX_BLOCK_LEN], blk[EALG_MAX_BLOCK_LEN];
+	u_char aalg[HASH_MAX_LEN], *aalgp;
+	struct crypto_buffer_cursor cc_in, cc_out;
+	const struct crypto_session_params *csp;
+	struct swcr_auth *swa;
+	struct swcr_encdec *swe;
+	struct auth_hash *axf;
+	struct enc_xform *exf;
+	union authctx ctx;
+	int blks, error, i, ivlen, mlen, resid, todo, trailer;
+	uint8_t pad;
+
+	if (!CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
+		return (EOPNOTSUPP);
+
+	swa = &ses->swcr_auth;
+	axf = swa->sw_axf;
+
+	/* Initialize auth. */
+	if (crp->crp_auth_key != NULL) {
+		csp = crypto_get_params(crp->crp_session);
+		swcr_authprepare(axf, swa, crp->crp_auth_key,
+		    csp->csp_auth_klen);
+	}
+
+	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
+
+	/* Input AAD into auth. */
+	if (crp->crp_aad != NULL)
+		error = axf->Update(&ctx, crp->crp_aad, crp->crp_aad_length);
+	else
+		error = crypto_apply(crp, crp->crp_aad_start,
+		    crp->crp_aad_length, axf->Update, &ctx);
+	if (error) {
+		explicit_bzero(&ctx, sizeof(ctx));
+		return (error);
+	}
+
+	/* Initialize cipher. */
+	swe = &ses->swcr_encdec;
+	exf = swe->sw_exf;
+	ivlen = exf->ivsize;
+
+	KASSERT(exf->native_blocksize == 0,
+	    ("MtE does not support stream ciphers"));
+	blks = ext->blocksize;
+
+	if (crp->crp_cipher_key != NULL) {
+		csp = crypto_get_params(crp->crp_session);
+		error = exf->setkey(swe->sw_kschedule,
+		    crp->crp_cipher_key, csp->csp_cipher_klen);
+		if (error)
+			return (error);
+	}
+
+	crypto_read_iv(crp, iv);
+
+	KASSERT(ext->reinit == NULL, ("MtE only supports CBC ciphers"));
+
+	/* MAC and then encrypt payload blocks prior to digest. */
+	crypto_cursor_init(&cc_in, &crp->crp_buf);
+	crypto_cursor_advance(&cc_in, crp->crp_payload_start);
+	inlen = crypto_cursor_seglen(&cc_in);
+	inblk = crypto_cursor_segbase(&cc_in);
+	if (CRYPTO_HAS_OUTPUT_BUFFER(crp)) {
+		crypto_cursor_init(&cc_out, &crp->crp_obuf);
+		crypto_cursor_advance(&cc_out, crp->crp_payload_output_start);
+	} else
+		cc_out = cc_in;
+	outlen = crypto_cursor_seglen(&cc_out);
+	outblk = crypto_cursor_segbase(&cc_out);
+
+	trailer = crp->crp_payload_length - crp->crp_digest_start;
+	KASSERT(trailer > swa->sw_mlen, ("%s: trailer too small", __func__));
+
+	/*
+	 * TLS mandates at least one padding byte.  All padding bytes
+	 * hold the count of additional padding bytes.
+	 */
+	pad = (trailer - swa->sw_mlen) - 1;
+
+	resid = crp->crp_payload_length - trailer;
+	while (resid >= blks) {
+		/*
+		 * If the current block is not contained within the
+		 * current input/output segment, use 'blk' as a local
+		 * buffer.
+		 */
+		if (inlen < blks) {
+			crypto_cursor_copydata(&cc_in, blks, blk);
+			inblk = blk;
+		}
+		if (outlen < blks)
+			outblk = blk;
+
+		axf->Update(&ctx, inblk, blks);
+
+		/* XOR with previous block */
+		for (i = 0; i < blks; i++)
+			outblk[i] = inblk[i] ^ iv[i];
+
+		exf->encrypt(sw->sw_kschedule, outblk, outblk);
+
+		/* Keep encrypted block for XOR'ing with next block */
+		memcpy(iv, outblk, blks);
+
+		if (inlen < blks) {
+			inlen = crypto_cursor_seglen(&cc_in);
+			inblk = crypto_cursor_segbase(&cc_in);
+		} else {
+			crypto_cursor_advance(&cc_in, blks);
+			inlen -= blks;
+			inblk += blks;
+		}
+
+		if (outlen < blks) {
+			crypto_cursor_copyback(&cc_out, blks, blk);
+			outlen = crypto_cursor_seglen(&cc_out);
+			outblk = crypto_cursor_segbase(&cc_out);
+		} else {
+			crypto_cursor_advance(&cc_out, blks);
+			outlen -= blks;
+			outblk += blks;
+		}
+
+		resid -= blks;
+	}
+
+	/* If there is a final partial block, feed it into the digest. */
+	if (resid > 0) {
+		crypto_cursor_copydata(&cc_in, resid, blk);
+		axf->Update(&ctx, blk, resid);
+	}
+
+	/* Finish the MAC. */
+	axf->Final(aalg, &ctx);
+	if (sw->sw_octx) {
+		bcopy(sw->sw_octx, &ctx, axf->ctxsize);
+		axf->Update(&ctx, aalg, axf->hashsize);
+		axf->Final(aalg, &ctx);
+	}
+	explicit_bzero(&ctx, sizeof(ctx));
+	mlen = sw->sw_mlen;
+	aalgp = aalg;
+
+	/*
+	 * Encrypt remaining blocks holding the hash and padding.
+	 * The first block already
+	 * contains 'resid' bytes.
+	 */
+	while (trailer > 0) {
+		todo = min(blks - resid, mlen);
+
+		if (todo > 0) {
+			memcpy(blk + resid, aalgp, todo);
+			aalgp += todo;
+			mlen -= todo;
+		}
+
+		if (resid + todo < blks)
+			memset(blk + resid + todo, pad, blks - (resid + todo));
+
+		/* XOR with previous block */
+		for (i = 0; i < blks; i++)
+			blk[i] ^= ^ iv[i];
+
+		exf->encrypt(sw->sw_kschedule, blk, blk);
+
+		/* Keep encrypted block for XOR'ing with next block */
+		memcpy(iv, blk, blks);
+
+		crypto_cursor_copyback(&cc_out, blks, blk);
+
+		trailer -= blksz - resid;
+		resid = 0;
+	}
+		
+	explicit_bzero(aalg, sizeof(aalg));
+	explicit_bzero(blk, sizeof(blk));
+	explicit_bzero(iv, sizeof(iv));
+	return (0);
+}
+
+/*
  * Apply a compression/decompression algorithm
  */
 static int
@@ -1295,6 +1484,23 @@ swcr_probesession(device_t dev, const struct crypto_session_params *csp)
 		    !swcr_auth_supported(csp))
 			return (EINVAL);
 		break;
+	case CSP_MODE_MTE:
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_CBC:
+			break;
+		default:
+			return (EINVAL);
+		}
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_AES_NIST_GMAC:
+		case CRYPTO_AES_CCM_CBC_MAC:
+			return (EINVAL);
+		}
+
+		if (!swcr_cipher_supported(csp) ||
+		    !swcr_auth_supported(csp))
+			return (EINVAL);
+		break;
 	default:
 		return (EINVAL);
 	}
@@ -1398,6 +1604,28 @@ swcr_newsession(device_t dev, crypto_session_t cses,
 		error = swcr_setup_cipher(ses, csp);
 		if (error == 0)
 			ses->swcr_process = swcr_eta;
+		break;
+	case CSP_MODE_MTE:
+#ifdef INVARIANTS
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
+		case CRYPTO_AES_CCM_16:
+			panic("bad eta cipher algo");
+		}
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_AES_NIST_GMAC:
+		case CRYPTO_AES_CCM_CBC_MAC:
+			panic("bad eta auth algo");
+		}
+#endif
+
+		error = swcr_setup_auth(ses, csp);
+		if (error)
+			break;
+
+		error = swcr_setup_cipher(ses, csp);
+		if (error == 0)
+			ses->swcr_process = swcr_mte;
 		break;
 	default:
 		error = EINVAL;
