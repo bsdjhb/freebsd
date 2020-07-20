@@ -228,18 +228,18 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
     int *trailer_len)
 {
 	struct tls_aead_data ad;
-	struct cryptop *crp;
+	struct cryptop crp;
 	struct ocf_session *os;
-	struct ocf_operation *oo;
+	struct ocf_operation oo;
 	int error;
 	uint16_t tls_comp_len;
 
 	os = tls->cipher;
 
-	oo = malloc(sizeof(*oo), M_KTLS_OCF, M_WAITOK | M_ZERO);
-	oo->os = os;
+	oo.os = os;
+	oo.done = false;
 
-	crp = crypto_getreq(os->sid, M_WAITOK);
+	crypto_initreq(&crp, os->sid);
 
 	/* Setup the IV. */
 	memcpy(crp->crp_iv, tls->params.iv, TLS_AEAD_GCM_LEN);
@@ -257,7 +257,7 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(crp, m);
-	crp->crp_opaque = oo;
+	crp->crp_opaque = &oo;
 	crp->crp_callback = ktls_ocf_callback;
 
 	crp->crp_aad = &ad;
@@ -274,8 +274,8 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 			break;
 
 		mtx_lock(&os->lock);
-		while (!oo->done)
-			mtx_sleep(oo, &os->lock, 0, "ocfktls", 0);
+		while (!oo.done)
+			mtx_sleep(&oo, &os->lock, 0, "ocfktls", 0);
 		mtx_unlock(&os->lock);
 
 		if (crp->crp_etype != EAGAIN) {
@@ -285,12 +285,11 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 
 		crp->crp_etype = 0;
 		crp->crp_flags &= ~CRYPTO_F_DONE;
-		oo->done = false;
+		oo.done = false;
 		counter_u64_add(ocf_retries, 1);
 	}
 
-	crypto_freereq(crp);
-	free(oo, M_KTLS_OCF);
+	crypto_destroyreq(&crp);
 	*trailer_len = AES_GMAC_HASH_LEN;
 	return (error);
 }
