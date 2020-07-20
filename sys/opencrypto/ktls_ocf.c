@@ -255,10 +255,10 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	/* Second, add the padding. */
 	pad = (unsigned)(AES_BLOCK_LEN - (tls_comp_len + os->mac_len + 1)) %
 	    AES_BLOCK_LEN;
+#if 0
 	for (i = 0; i < pad + 1; i++)
 		trailer[os->mac_len + i] = pad;
 
-#if 0
 	/* Finally, encrypt the record. */
 
 	/*
