@@ -210,15 +210,13 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 	crypto_use_uio(&crp, &uio);
 	if (!inplace)
 		crypto_use_output_uio(&crp, &out_uio);
-	crp.crp_opaque = &oo;
-	crp.crp_callback = ktls_ocf_callback;
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
 	if (inplace)
 		counter_u64_add(ocf_inplace, 1);
 	else
 		counter_u64_add(ocf_separate_output, 1);
-	error = ktls_ocf_dispatch(os, crp);
+	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
 	return (error);
@@ -301,8 +299,6 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 
 	crp.crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	crp.crp_opaque = &oo;
-	crp.crp_callback = ktls_ocf_callback;
 
 	memcpy(crp.crp_iv, nonce, sizeof(nonce));
 
@@ -311,7 +307,7 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 		counter_u64_add(ocf_inplace, 1);
 	else
 		counter_u64_add(ocf_separate_output, 1);
-	error = ktls_ocf_dispatch(os, crp);
+	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
 	return (error);
