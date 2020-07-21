@@ -896,7 +896,7 @@ check_csp(const struct crypto_session_params *csp)
 		default:
 			return (false);
 		}
-		if (csp->csp_auth_klen != 0)
+		if (csp->csp_auth_klen == 0)
 			return (false);
 		if (csp->csp_auth_mlen != 0) {
 			axf = crypto_auth_hash(csp);
