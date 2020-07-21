@@ -892,14 +892,16 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 {
 	unsigned char iv[EALG_MAX_BLOCK_LEN], blk[EALG_MAX_BLOCK_LEN];
 	u_char aalg[HASH_MAX_LEN], *aalgp;
-	struct crypto_buffer_cursor cc_in, cc_out;
 	const struct crypto_session_params *csp;
 	struct swcr_auth *swa;
 	struct swcr_encdec *swe;
 	struct auth_hash *axf;
 	struct enc_xform *exf;
 	union authctx ctx;
-	int blks, error, i, ivlen, mlen, resid, todo, trailer;
+	struct crypto_buffer_cursor cc_in, cc_out;
+	const unsigned char *inblk;
+	unsigned char *outblk;
+	int blks, error, i, inlen, ivlen, mlen, outlen, resid, todo, trailer;
 	uint8_t pad;
 
 	if (!CRYPTO_OP_IS_ENCRYPT(crp->crp_op))
@@ -935,7 +937,7 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 
 	KASSERT(exf->native_blocksize == 0,
 	    ("MtE does not support stream ciphers"));
-	blks = ext->blocksize;
+	blks = exf->blocksize;
 
 	if (crp->crp_cipher_key != NULL) {
 		csp = crypto_get_params(crp->crp_session);
@@ -947,7 +949,7 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 
 	crypto_read_iv(crp, iv);
 
-	KASSERT(ext->reinit == NULL, ("MtE only supports CBC ciphers"));
+	KASSERT(exf->reinit == NULL, ("MtE only supports CBC ciphers"));
 
 	/* MAC and then encrypt payload blocks prior to digest. */
 	crypto_cursor_init(&cc_in, &crp->crp_buf);
@@ -991,7 +993,7 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 		for (i = 0; i < blks; i++)
 			outblk[i] = inblk[i] ^ iv[i];
 
-		exf->encrypt(sw->sw_kschedule, outblk, outblk);
+		exf->encrypt(swe->sw_kschedule, outblk, outblk);
 
 		/* Keep encrypted block for XOR'ing with next block */
 		memcpy(iv, outblk, blks);
@@ -1026,13 +1028,13 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 
 	/* Finish the MAC. */
 	axf->Final(aalg, &ctx);
-	if (sw->sw_octx) {
-		bcopy(sw->sw_octx, &ctx, axf->ctxsize);
+	if (swa->sw_octx) {
+		bcopy(swa->sw_octx, &ctx, axf->ctxsize);
 		axf->Update(&ctx, aalg, axf->hashsize);
 		axf->Final(aalg, &ctx);
 	}
 	explicit_bzero(&ctx, sizeof(ctx));
-	mlen = sw->sw_mlen;
+	mlen = swa->sw_mlen;
 	aalgp = aalg;
 
 	/*
@@ -1054,16 +1056,16 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 
 		/* XOR with previous block */
 		for (i = 0; i < blks; i++)
-			blk[i] ^= ^ iv[i];
+			blk[i] ^= iv[i];
 
-		exf->encrypt(sw->sw_kschedule, blk, blk);
+		exf->encrypt(swe->sw_kschedule, blk, blk);
 
 		/* Keep encrypted block for XOR'ing with next block */
 		memcpy(iv, blk, blks);
 
 		crypto_cursor_copyback(&cc_out, blks, blk);
 
-		trailer -= blksz - resid;
+		trailer -= blks - resid;
 		resid = 0;
 	}
 		
