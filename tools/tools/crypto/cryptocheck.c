@@ -312,8 +312,8 @@ build_eta(const struct alg *cipher, const struct alg *mac)
 static void
 free_alg(struct alg *alg)
 {
-	free(__DECONST(char *, eta->name));
-	free(eta);
+	free(__DECONST(char *, alg->name));
+	free(alg);
 }
 
 static struct alg *
@@ -1166,10 +1166,6 @@ run_mte_test(const struct alg *alg, size_t aad_len, size_t size)
 	int error;
 
 	cipher = alg->evp_cipher();
-
-	memset(control_trailer, 0x3c, sizeof(control_digest));
-	memset(test_trailer, 0x3c, sizeof(test_digest));
-
 	md = alg->evp_md();
 
 	cipher_key_len = EVP_CIPHER_key_length(cipher);
@@ -1182,10 +1178,10 @@ run_mte_test(const struct alg *alg, size_t aad_len, size_t size)
 	 * is what the OCF interface assumes.
 	 */
 	trailer_len = EVP_MD_size(md);
-	padding = EVP_CIPHER_block_size(cipher) -
+	padding_len = EVP_CIPHER_block_size(cipher) -
 	    ((size + trailer_len) % EVP_CIPHER_block_size(cipher));
-	assert(padding > 0 && padding <= EVP_CIPHER_block_size(cipher));
-	trailer_len += padding;
+	assert(padding_len > 0 && padding_len <= EVP_CIPHER_block_size(cipher));
+	trailer_len += padding_len;
 	assert((size + trailer_len) % EVP_CIPHER_block_size(cipher) == 0);
 
 	cipher_key = alloc_buffer(cipher_key_len);
@@ -1205,10 +1201,10 @@ run_mte_test(const struct alg *alg, size_t aad_len, size_t size)
 		errx(1, "OpenSSL %s (%zu, %zu) HMAC failed: %s", alg->name,
 		    aad_len, size, ERR_error_string(ERR_get_error(), NULL));
 	assert(digest_len == EVP_MD_size(md));
-	for (i = 0; i < padding; i++)
-		buffer[aad_len + size + digest_len + i] = padding - 1;
+	for (i = 0; i < padding_len; i++)
+		buffer[aad_len + size + digest_len + i] = padding_len - 1;
 	openssl_cipher(alg, cipher, cipher_key, iv, buffer + aad_len,
-	    ciphertext + aad_len, size + trailer, 1);
+	    ciphertext + aad_len, size + trailer_len, 1);
 	if (size > 0 && memcmp(buffer + aad_len, ciphertext + aad_len,
 	    size) == 0)
 		warnx("OpenSSL %s (%zu, %zu): cipher text unchanged",
