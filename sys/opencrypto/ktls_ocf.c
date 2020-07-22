@@ -289,6 +289,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	crp.crp_payload_start = 0;
 	crp.crp_payload_length = tls_comp_len;
 	crp.crp_digest_start = tls_comp_len;
+	crp.crp_padding_length = pad + 1;
 	crp.crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);

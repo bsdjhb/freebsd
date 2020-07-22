@@ -498,6 +498,8 @@ struct cryptop {
 					   * from the session.
 					   */
 
+	int		crp_padding_length; /* Length of padding for MTE. */
+
 	uint8_t		crp_iv[EALG_MAX_BLOCK_LEN]; /* IV if IV_SEPARATE. */
 
 	const void	*crp_cipher_key; /* New cipher key if non-NULL. */

@@ -964,16 +964,7 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 	outlen = crypto_cursor_seglen(&cc_out);
 	outblk = crypto_cursor_segbase(&cc_out);
 
-	trailer = crp->crp_payload_length - crp->crp_digest_start;
-	KASSERT(trailer > swa->sw_mlen, ("%s: trailer too small", __func__));
-
-	/*
-	 * TLS mandates at least one padding byte.  All padding bytes
-	 * hold the count of additional padding bytes.
-	 */
-	pad = (trailer - swa->sw_mlen) - 1;
-
-	resid = crp->crp_payload_length - trailer;
+	resid = crp->crp_payload_length;
 	while (resid >= blks) {
 		/*
 		 * If the current block is not contained within the
@@ -1038,10 +1029,16 @@ swcr_mte(struct swcr_session *ses, struct cryptop *crp)
 	aalgp = aalg;
 
 	/*
-	 * Encrypt remaining blocks holding the hash and padding.
-	 * The first block already
-	 * contains 'resid' bytes.
+	 * All padding bytes hold the count of additional padding
+	 * bytes above the one mandatory padding byte.
 	 */
+	pad = crp->crp_padding_length - 1;
+
+	/*
+	 * Encrypt remaining blocks holding the hash and padding.  The
+	 * first block already contains 'resid' bytes.
+	 */
+	trailer = swa->sw_mlen + crp->crp_padding_length;
 	while (trailer > 0) {
 		todo = min(blks - resid, mlen);
 
