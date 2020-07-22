@@ -1355,17 +1355,9 @@ crp_sanity(struct cryptop *crp)
 		    ("invalid ETA op %x", crp->crp_op));
 		break;
 	case CSP_MODE_MTE:
-#if 1
 		KASSERT(crp->crp_op ==
 		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST),
 		    ("invalid MTE op %x", crp->crp_op));
-#else
-		KASSERT(crp->crp_op ==
-		    (CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST) ||
-		    crp->crp_op ==
-		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
-		    ("invalid MTE op %x", crp->crp_op));
-#endif
 		break;
 	}
 	if (csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA
@@ -1424,7 +1416,8 @@ crp_sanity(struct cryptop *crp)
 		    ("payload outside output buffer"));
 	}
 	if (csp->csp_mode == CSP_MODE_DIGEST ||
-	    csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA) {
+	    csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA ||
+	    csp->csp_mode == CSP_MODE_MTE) {
 		if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST)
 			len = ilen;
 		else
@@ -1435,29 +1428,25 @@ crp_sanity(struct cryptop *crp)
 		/* XXX: For the mlen == 0 case this check isn't perfect. */
 		KASSERT(crp->crp_digest_start + csp->csp_auth_mlen <= len,
 		    ("digest outside buffer"));
-	} else if (csp->csp_mode == CSP_MODE_MTE) {
-		if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
-			/*
-			 * The driver must examine the decrypted
-			 * padding to determine the digest location.
-			 */
-			KASSERT(crp->crp_digest_start == 0,
-			    ("MTE verify request with non-zero digest start"));
-		} else {
-			size_t payload_start;
-
-			if (out == NULL)
-				payload_start = crp->crp_payload_start;
-			else
-				payload_start = crp->crp_payload_output_start;
-			KASSERT(crp->crp_digest_start >= payload_start &&
-			    crp->crp_digest_start + csp->csp_auth_mlen <=
-			    payload_start + crp->crp_payload_length,
-			    ("digest outside payload"));
-		}
 	} else {
 		KASSERT(crp->crp_digest_start == 0,
 		    ("non-zero digest start for request without a digest"));
+	}
+	if (csp->csp_mode == CSP_MODE_MTE) {
+		size_t payload_start;
+
+		if (out == NULL)
+			payload_start = crp->crp_payload_start;
+		else
+			payload_start = crp->crp_payload_output_start;
+		KASSERT(payload_start + crp->crp_payload_length ==
+		    crp->crp_digest_start,
+		    ("digest not adjacent to MTE payload"));
+		KASSERT(crp->crp_padding_length > 0,
+		    ("zero padding for MTE request"));
+	} else {
+		KASSERT(crp->crp_padding_length != 0,
+		    ("non-zero padding length for non-MTE request"));
 	}
 	if (csp->csp_cipher_klen != 0)
 		KASSERT(csp->csp_cipher_key != NULL ||
