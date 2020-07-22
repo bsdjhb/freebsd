@@ -1003,6 +1003,8 @@ cryptodev_op(
 		}
 	}
 
+	crp = crypto_getreq(cse->cses, M_WAITOK);
+
 	padding = 0;
 	switch (cse->mode) {
 	case CSP_MODE_COMPRESS:
@@ -1086,8 +1088,6 @@ cryptodev_op(
 	}
 
 	cod = cod_alloc(cse, 0, cop->len + cse->hashsize + padding, td);
-
-	crp = crypto_getreq(cse->cses, M_WAITOK);
 
 	error = copyin(cop->src, cod->buf, cop->len);
 	if (error) {
@@ -1231,6 +1231,8 @@ cryptodev_aead(
 		}
 	}
 
+	crp = crypto_getreq(cse->cses, M_WAITOK);
+
 	padding = 0;
 	switch (cse->mode) {
 	case CSP_MODE_AEAD:
@@ -1273,8 +1275,6 @@ cryptodev_aead(
 
 	cod = cod_alloc(cse, caead->aadlen, caead->len + cse->hashsize +
 	    padding, td);
-
-	crp = crypto_getreq(cse->cses, M_WAITOK);
 
 	if (cod->aad != NULL)
 		error = copyin(caead->aad, cod->aad, caead->aadlen);
