@@ -262,7 +262,7 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 
 	crp.crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	crypto_use_mbuf(crp, m);
+	crypto_use_mbuf(&crp, m);
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
