@@ -242,8 +242,8 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	crypto_initreq(&crp, os->sid);
 
 	/* Setup the IV. */
-	memcpy(crp->crp_iv, tls->params.iv, TLS_AEAD_GCM_LEN);
-	memcpy(crp->crp_iv + TLS_AEAD_GCM_LEN, hdr + 1, sizeof(uint64_t));
+	memcpy(crp.crp_iv, tls->params.iv, TLS_AEAD_GCM_LEN);
+	memcpy(crp.crp_iv + TLS_AEAD_GCM_LEN, hdr + 1, sizeof(uint64_t));
 
 	/* Setup the AAD. */
 	tls_comp_len = ntohs(hdr->tls_length) -
@@ -253,16 +253,15 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	ad.tls_vmajor = hdr->tls_vmajor;
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
-	crp->crp_aad = &ad;
-	crp->crp_aad_length = sizeof(ad);
+	crp.crp_aad = &ad;
+	crp.crp_aad_length = sizeof(ad);
 
-	crp->crp_payload_start = tls->params.tls_hlen;
-	crp->crp_payload_length = tls_comp_len;
-	crp->crp_digest_start = crp->crp_payload_start +
-	    crp->crp_payload_length;
+	crp.crp_payload_start = tls->params.tls_hlen;
+	crp.crp_payload_length = tls_comp_len;
+	crp.crp_digest_start = crp.crp_payload_start + crp.crp_payload_length;
 
-	crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
-	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
+	crp.crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
+	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(crp, m);
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
