@@ -257,8 +257,6 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	crp->crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(crp, m);
-	crp->crp_opaque = &oo;
-	crp->crp_callback = ktls_ocf_callback;
 
 	crp->crp_aad = &ad;
 	crp->crp_aad_length = sizeof(ad);
@@ -268,26 +266,7 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	    crp->crp_payload_length;
 
 	counter_u64_add(ocf_tls12_gcm_crypts, 1);
-	for (;;) {
-		error = crypto_dispatch(crp);
-		if (error)
-			break;
-
-		mtx_lock(&os->lock);
-		while (!oo.done)
-			mtx_sleep(&oo, &os->lock, 0, "ocfktls", 0);
-		mtx_unlock(&os->lock);
-
-		if (crp->crp_etype != EAGAIN) {
-			error = crp->crp_etype;
-			break;
-		}
-
-		crp->crp_etype = 0;
-		crp->crp_flags &= ~CRYPTO_F_DONE;
-		oo.done = false;
-		counter_u64_add(ocf_retries, 1);
-	}
+	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
 	*trailer_len = AES_GMAC_HASH_LEN;
