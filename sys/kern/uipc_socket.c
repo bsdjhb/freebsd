@@ -1969,13 +1969,19 @@ restart:
 				goto dontblock;
 #ifdef KERN_TLS
 			else if (so->so_rcv.sb_tlsdcc == 0 &&
-			    so->so_rcv.sb_tlscc == 0)
+			    so->so_rcv.sb_tlscc == 0) {
+				SOCKBUF_UNLOCK(&so->so_rcv);
 				goto release;
+			}
 			else
-				printf("%s: CANVRCVMORE with pending TLS data\n");
+				printf(
+				    "%s: CANVRCVMORE with pending TLS data\n",
+				    __func__);
 #else
-			else
+			else {
+				SOCKBUF_UNLOCK(&so->so_rcv);
 				goto release;
+			}
 #endif
 		}
 		for (; m != NULL; m = m->m_next)
