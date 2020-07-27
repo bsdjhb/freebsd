@@ -682,7 +682,7 @@ again:
 sendit:
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 	if (IPSEC_ENABLED(ipv4)) {
-		if ((error = IPSEC_OUTPUT(ipv4, m, inp)) != 0) {
+		if ((error = IPSEC_OUTPUT(ipv4, m, inp, ifp)) != 0) {
 			if (error == EINPROGRESS)
 				error = 0;
 			goto done;

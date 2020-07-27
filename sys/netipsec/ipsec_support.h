@@ -48,7 +48,7 @@ struct ipsec_methods {
 	int	(*input)(struct mbuf *, int, int);
 	int	(*check_policy)(const struct mbuf *, struct inpcb *);
 	int	(*forward)(struct mbuf *);
-	int	(*output)(struct mbuf *, struct inpcb *);
+	int	(*output)(struct mbuf *, struct inpcb *, struct ifnet *);
 	int	(*pcbctl)(struct inpcb *, struct sockopt *);
 	size_t	(*hdrsize)(struct inpcb *);
 	int	(*capability)(struct mbuf *, u_int);
@@ -157,7 +157,7 @@ int ipsec_kmod_check_policy(struct ipsec_support * const, struct mbuf *,
     struct inpcb *);
 int ipsec_kmod_forward(struct ipsec_support * const, struct mbuf *);
 int ipsec_kmod_output(struct ipsec_support * const, struct mbuf *,
-    struct inpcb *);
+    struct inpcb *, struct ifnet *);
 int ipsec_kmod_pcbctl(struct ipsec_support * const, struct inpcb *,
     struct sockopt *);
 int ipsec_kmod_capability(struct ipsec_support * const, struct mbuf *, u_int);

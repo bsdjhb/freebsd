@@ -184,7 +184,7 @@ next:
  */
 static int
 ipsec4_perform_request(struct mbuf *m, struct secpolicy *sp,
-    struct inpcb *inp, u_int idx)
+    struct inpcb *inp, struct ifnet *ifp, u_int idx)
 {
 	struct ipsec_ctx_data ctx;
 	union sockaddr_union *dst;
@@ -286,14 +286,15 @@ bad:
 
 int
 ipsec4_process_packet(struct mbuf *m, struct secpolicy *sp,
-    struct inpcb *inp)
+    struct inpcb *inp, struct ifnet *ifp)
 {
 
-	return (ipsec4_perform_request(m, sp, inp, 0));
+	return (ipsec4_perform_request(m, sp, inp, ifp, 0));
 }
 
 static int
-ipsec4_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
+ipsec4_common_output(struct mbuf *m, struct inpcb *inp, struct ifnet *ifp,
+    int forwarding)
 {
 	struct secpolicy *sp;
 	int error;
@@ -336,7 +337,7 @@ ipsec4_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
 #endif
 	}
 	/* NB: callee frees mbuf and releases reference to SP */
-	error = ipsec4_process_packet(m, sp, inp);
+	error = ipsec4_process_packet(m, sp, inp, ifp);
 	if (error == EJUSTRETURN) {
 		/*
 		 * We had a SP with a level of 'use' and no SA. We
@@ -356,7 +357,7 @@ ipsec4_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
  * other values - mbuf consumed by IPsec.
  */
 int
-ipsec4_output(struct mbuf *m, struct inpcb *inp)
+ipsec4_output(struct mbuf *m, struct inpcb *inp, struct ifnet *ifp)
 {
 
 	/*
@@ -367,7 +368,7 @@ ipsec4_output(struct mbuf *m, struct inpcb *inp)
 	if (m_tag_find(m, PACKET_TAG_IPSEC_OUT_DONE, NULL) != NULL)
 		return (0);
 
-	return (ipsec4_common_output(m, inp, 0));
+	return (ipsec4_common_output(m, inp, ifp, 0));
 }
 
 /*
@@ -387,7 +388,7 @@ ipsec4_forward(struct mbuf *m)
 		m_freem(m);
 		return (EACCES);
 	}
-	return (ipsec4_common_output(m, NULL, 1));
+	return (ipsec4_common_output(m, NULL, NULL, 1));
 }
 #endif
 
@@ -496,7 +497,7 @@ next:
  */
 static int
 ipsec6_perform_request(struct mbuf *m, struct secpolicy *sp,
-    struct inpcb *inp, u_int idx)
+    struct inpcb *inp, struct ifnet *ifp, u_int idx)
 {
 	struct ipsec_ctx_data ctx;
 	union sockaddr_union *dst;
@@ -588,14 +589,15 @@ bad:
 
 int
 ipsec6_process_packet(struct mbuf *m, struct secpolicy *sp,
-    struct inpcb *inp)
+    struct inpcb *inp, struct ifnet *ifp)
 {
 
-	return (ipsec6_perform_request(m, sp, inp, 0));
+	return (ipsec6_perform_request(m, sp, inp, ifp, 0));
 }
 
 static int
-ipsec6_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
+ipsec6_common_output(struct mbuf *m, struct inpcb *inp, struct ifnet *ifp,
+    int forwarding)
 {
 	struct secpolicy *sp;
 	int error;
@@ -629,7 +631,7 @@ ipsec6_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
 #endif
 	}
 	/* NB: callee frees mbuf and releases reference to SP */
-	error = ipsec6_process_packet(m, sp, inp);
+	error = ipsec6_process_packet(m, sp, inp, ifp);
 	if (error == EJUSTRETURN) {
 		/*
 		 * We had a SP with a level of 'use' and no SA. We
@@ -649,7 +651,7 @@ ipsec6_common_output(struct mbuf *m, struct inpcb *inp, int forwarding)
  * other values - mbuf consumed by IPsec.
  */
 int
-ipsec6_output(struct mbuf *m, struct inpcb *inp)
+ipsec6_output(struct mbuf *m, struct inpcb *inp, struct ifnet *ifp)
 {
 
 	/*
@@ -660,7 +662,7 @@ ipsec6_output(struct mbuf *m, struct inpcb *inp)
 	if (m_tag_find(m, PACKET_TAG_IPSEC_OUT_DONE, NULL) != NULL)
 		return (0);
 
-	return (ipsec6_common_output(m, inp, 0));
+	return (ipsec6_common_output(m, inp, ifp, 0));
 }
 
 /*
@@ -680,7 +682,7 @@ ipsec6_forward(struct mbuf *m)
 		m_freem(m);
 		return (EACCES);
 	}
-	return (ipsec6_common_output(m, NULL, 1));
+	return (ipsec6_common_output(m, NULL, NULL, 1));
 }
 #endif /* INET6 */
 
@@ -757,14 +759,14 @@ ipsec_process_done(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 		case AF_INET:
 			key_freesav(&sav);
 			IPSECSTAT_INC(ips_out_bundlesa);
-			return (ipsec4_perform_request(m, sp, NULL, idx));
+			return (ipsec4_perform_request(m, sp, NULL, NULL, idx));
 			/* NOTREACHED */
 #endif
 #ifdef INET6
 		case AF_INET6:
 			key_freesav(&sav);
 			IPSEC6STAT_INC(ips_out_bundlesa);
-			return (ipsec6_perform_request(m, sp, NULL, idx));
+			return (ipsec6_perform_request(m, sp, NULL, NULL, idx));
 			/* NOTREACHED */
 #endif /* INET6 */
 		default:

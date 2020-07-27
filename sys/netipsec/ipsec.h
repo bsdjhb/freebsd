@@ -338,10 +338,11 @@ int ipsec4_in_reject(const struct mbuf *, struct inpcb *);
 int ipsec4_input(struct mbuf *, int, int);
 int ipsec4_forward(struct mbuf *);
 int ipsec4_pcbctl(struct inpcb *, struct sockopt *);
-int ipsec4_output(struct mbuf *, struct inpcb *);
+int ipsec4_output(struct mbuf *, struct inpcb *, struct ifnet *);
 int ipsec4_capability(struct mbuf *, u_int);
 int ipsec4_common_input_cb(struct mbuf *, struct secasvar *, int, int);
-int ipsec4_process_packet(struct mbuf *, struct secpolicy *, struct inpcb *);
+int ipsec4_process_packet(struct mbuf *, struct secpolicy *, struct inpcb *,
+    struct ifnet *);
 int ipsec_process_done(struct mbuf *, struct secpolicy *, struct secasvar *,
     u_int);
 

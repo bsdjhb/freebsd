@@ -70,10 +70,11 @@ int ipsec6_input(struct mbuf *, int, int);
 int ipsec6_in_reject(const struct mbuf *, struct inpcb *);
 int ipsec6_forward(struct mbuf *);
 int ipsec6_pcbctl(struct inpcb *, struct sockopt *);
-int ipsec6_output(struct mbuf *, struct inpcb *);
+int ipsec6_output(struct mbuf *, struct inpcb *, struct ifnet *);
 int ipsec6_capability(struct mbuf *, u_int);
 int ipsec6_common_input_cb(struct mbuf *, struct secasvar *, int, int);
-int ipsec6_process_packet(struct mbuf *, struct secpolicy *, struct inpcb *);
+int ipsec6_process_packet(struct mbuf *, struct secpolicy *, struct inpcb *,
+    struct ifnet *);
 
 int ip6_ipsec_filtertunnel(struct mbuf *);
 int ip6_ipsec_pcbctl(struct inpcb *, struct sockopt *);

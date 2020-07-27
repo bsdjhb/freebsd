@@ -473,7 +473,7 @@ ip6_output(struct mbuf *m0, struct ip6_pktopts *opt,
 	 * XXX: need scope argument.
 	 */
 	if (IPSEC_ENABLED(ipv6)) {
-		if ((error = IPSEC_OUTPUT(ipv6, m, inp)) != 0) {
+		if ((error = IPSEC_OUTPUT(ipv6, m, inp, NULL)) != 0) {
 			if (error == EINPROGRESS)
 				error = 0;
 			goto done;

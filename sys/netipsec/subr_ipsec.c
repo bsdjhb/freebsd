@@ -368,7 +368,7 @@ IPSEC_KMOD_METHOD(int, ipsec_kmod_forward, sc,
 
 IPSEC_KMOD_METHOD(int, ipsec_kmod_output, sc,
     output, METHOD_DECL(struct ipsec_support * const sc, struct mbuf *m,
-	struct inpcb *inp), METHOD_ARGS(m, inp)
+	struct inpcb *inp, struct ifnet *ifp), METHOD_ARGS(m, inp, ifp)
 )
 
 IPSEC_KMOD_METHOD(int, ipsec_kmod_pcbctl, sc,
