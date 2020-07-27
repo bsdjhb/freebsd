@@ -1970,19 +1970,12 @@ restart:
 #ifdef KERN_TLS
 			else if (so->so_rcv.sb_tlsdcc == 0 &&
 			    so->so_rcv.sb_tlscc == 0) {
-				SOCKBUF_UNLOCK(&so->so_rcv);
-				goto release;
-			}
-			else
-				printf(
-				    "%s: CANVRCVMORE with pending TLS data\n",
-				    __func__);
 #else
 			else {
+#endif
 				SOCKBUF_UNLOCK(&so->so_rcv);
 				goto release;
 			}
-#endif
 		}
 		for (; m != NULL; m = m->m_next)
 			if (m->m_type == MT_OOBDATA  || (m->m_flags & M_EOR)) {
