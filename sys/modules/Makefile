@@ -273,6 +273,7 @@ SUBDIR=	\
 	${_nvram} \
 	oce \
 	${_ocs_fc} \
+	${_ossl} \
 	otus \
 	${_otusfw} \
 	ow \
@@ -717,6 +718,7 @@ _iavf=		iavf
 _ioat=		ioat
 _ixl=		ixl
 _nvdimm=	nvdimm
+_ossl=		ossl
 _pms=		pms
 _qlxge=		qlxge
 _qlxgb=		qlxgb
