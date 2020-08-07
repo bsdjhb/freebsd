@@ -43,9 +43,11 @@ __FBSDID("$FreeBSD$");
 #include <sys/uio.h>
 #include <opencrypto/cryptodev.h>
 
+#define USE_MTE_MODE
+
 struct ocf_session {
 	crypto_session_t sid;
-#if 0
+#ifndef USE_MTE_MODE
 	crypto_session_t mac_sid;
 #endif
 	int mac_len;
@@ -167,7 +169,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	struct cryptop crp;
 	struct ocf_session *os;
 	struct iovec iov[iovcnt + 2];
-#if 0
+#ifndef USE_MTE_MODE
 	struct iovec out_iov[iovcnt + 1];
 #endif
 	int i, error;
@@ -216,7 +218,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	ad.tls_vminor = hdr->tls_vminor;
 	ad.tls_length = htons(tls_comp_len);
 
-#if 0
+#ifndef USE_MTE_MODE
 	/* First, compute the MAC. */
 	iov[0].iov_base = &ad;
 	iov[0].iov_len = sizeof(ad);
@@ -255,7 +257,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	/* Second, add the padding. */
 	pad = (unsigned)(AES_BLOCK_LEN - (tls_comp_len + os->mac_len + 1)) %
 	    AES_BLOCK_LEN;
-#if 0
+#ifndef USE_MTE_MODE
 	for (i = 0; i < pad + 1; i++)
 		trailer[os->mac_len + i] = pad;
 
@@ -609,14 +611,14 @@ static int
 ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 {
 	struct crypto_session_params csp;
-#if 0
+#ifndef USE_MTE_MODE
 	struct crypto_session_params mac_csp;
 #endif
 	struct ocf_session *os;
 	int error, mac_len;
 
 	memset(&csp, 0, sizeof(csp));
-#if 0
+#ifndef USE_MTE_MODE
 	memset(&mac_csp, 0, sizeof(mac_csp));
 	mac_csp.csp_mode = CSP_MODE_NONE;
 #endif
@@ -683,7 +685,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		if (direction == KTLS_RX)
 			return (EPROTONOSUPPORT);
 
-#if 0
+#ifndef USE_MTE_MODE
 		csp.csp_flags |= CSP_F_SEPARATE_OUTPUT;
 		csp.csp_mode = CSP_MODE_CIPHER;
 		csp.csp_cipher_alg = CRYPTO_AES_CBC;
@@ -723,7 +725,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		return (error);
 	}
 
-#if 0
+#ifndef USE_MTE_MODE
 	if (mac_csp.csp_mode != CSP_MODE_NONE) {
 		error = crypto_newsession(&os->mac_sid, &mac_csp,
 		    CRYPTO_FLAG_HARDWARE | CRYPTO_FLAG_SOFTWARE);
@@ -734,7 +736,7 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		}
 #endif
 		os->mac_len = mac_len;
-#if 0
+#ifndef USE_MTE_MODE
 	}
 #endif
 
