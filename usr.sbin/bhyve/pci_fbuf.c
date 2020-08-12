@@ -253,7 +253,7 @@ pci_fbuf_parse_config(struct pci_fbuf_softc *sc, nvlist_t *nvl)
 					    value);
 					return (-1);
 				}
-				sc->rfb_port = atoi(cp + 1);
+				sc->rfb_port = atoi(cp);
 			} else if (*cp != '\0') {
 				EPRINTLN("fbuf: Invalid IPv6 address: \"%s\"",
 				    value);
@@ -272,7 +272,7 @@ pci_fbuf_parse_config(struct pci_fbuf_softc *sc, nvlist_t *nvl)
 					    value);
 					return (-1);
 				}
-				sc->rfb_port = atoi(cp + 1);
+				sc->rfb_port = atoi(cp);
 			}
 		}
 	}
