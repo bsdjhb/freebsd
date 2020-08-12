@@ -1377,7 +1377,7 @@ main(int argc, char *argv[])
 		usage(1);
 
 #if 1
-	if (get_config_value("config.dump")) {
+	if (get_config_bool("config.dump")) {
 		dump_config();
 		exit(1);
 	}
