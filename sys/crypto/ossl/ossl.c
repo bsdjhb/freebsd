@@ -230,7 +230,7 @@ ossl_sha1_setkey(struct ossl_session *s, const void *key, size_t klen)
 	ossl_sha1_update(&s->sha1.ictx, hmac_key, sizeof(hmac_key));
 		
 	for (i = 0; i < sizeof(hmac_key); i++)
-		hmac_key[i] ^= (HMAC_IPAD_VAL | HMAC_OPAD_VAL);
+		hmac_key[i] ^= (HMAC_IPAD_VAL ^ HMAC_OPAD_VAL);
 
 	ossl_sha1_init(&s->sha1.octx);
 	ossl_sha1_update(&s->sha1.octx, hmac_key, sizeof(hmac_key));
