@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
+#include <machine/fpu.h>
 #include <machine/md_var.h>
 #include <x86/cputypes.h>
 #include <x86/specialreg.h>
@@ -53,7 +54,16 @@ struct ossl_softc {
 	int32_t sc_cid;
 };
 
+struct ossl_session_sha1 {
+	SHA_CTX ictx;
+	SHA_CTX octx;
+	u_int mlen;
+};
+
 struct ossl_session {
+	union {
+		struct ossl_session_sha1 sha1;
+	};
 };
 
 /*
@@ -183,11 +193,48 @@ ossl_probesession(device_t dev, const struct crypto_session_params *csp)
 	    0)
 		return (EINVAL);
 	switch (csp->csp_mode) {
+	case CSP_MODE_DIGEST:
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_SHA1:
+		case CRYPTO_SHA1_HMAC:
+			break;
+		default:
+			return (EINVAL);
+		}
 	default:
 		return (EINVAL);
 	}
 
 	return (CRYPTODEV_PROBE_ACCEL_SOFTWARE);
+}
+
+static void
+ossl_sha1_setkey(struct ossl_session *s, const void *key, size_t klen)
+{
+	char hmac_key[SHA1_BLOCK_LEN];
+	u_int i;
+
+	memset(hmac_key, 0, sizeof(hmac_key));
+	if (klen > SHA1_BLOCK_LEN) {
+		ossl_sha1_init(&s->sha1.ictx);
+		ossl_sha1_update(&s->sha1.ictx, key, klen);
+		ossl_sha1_final((unsigned char *)hmac_key, &s->sha1.ictx);
+	} else
+		memcpy(hmac_key, key, klen);
+
+	for (i = 0; i < sizeof(hmac_key); i++)
+		hmac_key[i] ^= HMAC_IPAD_VAL;
+
+	ossl_sha1_init(&s->sha1.ictx);
+	ossl_sha1_update(&s->sha1.ictx, hmac_key, sizeof(hmac_key));
+		
+	for (i = 0; i < sizeof(hmac_key); i++)
+		hmac_key[i] ^= (HMAC_IPAD_VAL | HMAC_OPAD_VAL);
+
+	ossl_sha1_init(&s->sha1.octx);
+	ossl_sha1_update(&s->sha1.octx, hmac_key, sizeof(hmac_key));
+
+	explicit_bzero(hmac_key, sizeof(hmac_key));
 }
 
 static int
@@ -198,15 +245,97 @@ ossl_newsession(device_t dev, crypto_session_t cses,
 
 	s = crypto_get_driver_session(cses);
 
-	return (ENXIO);
+	if (csp->csp_auth_mlen == 0)
+		s->sha1.mlen = SHA1_HASH_LEN;
+	else
+		s->sha1.mlen = csp->csp_auth_mlen;
+
+	switch (csp->csp_auth_alg) {
+	case CRYPTO_SHA1:
+		ossl_sha1_init(&s->sha1.ictx);
+		break;
+	case CRYPTO_SHA1_HMAC:
+		if (csp->csp_auth_key != NULL) {
+			fpu_kern_enter(curthread, NULL, FPU_KERN_NOCTX);
+			ossl_sha1_setkey(s, csp->csp_auth_key,
+			    csp->csp_auth_klen);
+			fpu_kern_leave(curthread, NULL);
+		}
+		break;
+	}
+
+	return (0);
 }
 
 static int
 ossl_process(device_t dev, struct cryptop *crp, int hint)
 {
+	SHA_CTX ctx;
+	char digest[SHA1_HASH_LEN];
+	const struct crypto_session_params *csp;
+	struct ossl_session *s;
+	int error;
+	bool fpu_entered;
 
-	crp->crp_etype = ENXIO;
+	s = crypto_get_driver_session(crp->crp_session);
+	csp = crypto_get_params(crp->crp_session);
+
+	if (is_fpu_kern_thread(0)) {
+		fpu_entered = false;
+	} else {
+		fpu_kern_enter(curthread, NULL, FPU_KERN_NOCTX);
+		fpu_entered = true;
+	}
+
+	if (crp->crp_auth_key != NULL)
+		ossl_sha1_setkey(s, crp->crp_auth_key, csp->csp_auth_klen);
+
+	ctx = s->sha1.ictx;
+
+	if (crp->crp_aad != NULL)
+		error = ossl_sha1_update(&ctx, crp->crp_aad,
+		    crp->crp_aad_length);
+	else
+		error = crypto_apply(crp, crp->crp_aad_start,
+		    crp->crp_aad_length, ossl_sha1_update, &ctx);
+	if (error)
+		goto out;
+
+	error = crypto_apply(crp, crp->crp_payload_start,
+	    crp->crp_payload_length, ossl_sha1_update, &ctx);
+	if (error)
+		goto out;
+
+	ossl_sha1_final(digest, &ctx);
+
+	if (csp->csp_auth_alg == CRYPTO_SHA1_HMAC) {
+		ctx = s->sha1.octx;
+		ossl_sha1_update(&ctx, digest, sizeof(digest));
+		ossl_sha1_final(digest, &ctx);
+	}
+
+	if (crp->crp_op & CRYPTO_OP_VERIFY_DIGEST) {
+		char digest2[SHA1_HASH_LEN];
+
+		crypto_copydata(crp, crp->crp_digest_start, s->sha1.mlen,
+		    digest2);
+		if (timingsafe_bcmp(digest, digest2, s->sha1.mlen) != 0)
+			error = EBADMSG;
+		explicit_bzero(digest2, sizeof(digest2));
+	} else {
+		crypto_copyback(crp, crp->crp_digest_start, s->sha1.mlen,
+		    digest);
+	}
+	explicit_bzero(digest, sizeof(digest));
+
+out:
+	if (fpu_entered)
+		fpu_kern_leave(curthread, NULL);
+
+	crp->crp_etype = error;
 	crypto_done(crp);
+
+	explicit_bzero(&ctx, sizeof(ctx));
 	return (0);
 }
 

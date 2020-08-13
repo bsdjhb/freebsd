@@ -1,29 +1,10 @@
 /*
- * Copyright (c) 2020 Netflix, Inc
+ * Copyright 2011-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer,
- *    without modification.
- * 2. Redistributions in binary form must reproduce at minimum a disclaimer
- *    similar to the "NO WARRANTY" disclaimer below ("Disclaimer") and any
- *    redistribution must be conditioned upon including a substantially
- *    similar Disclaimer requirement for further binary redistribution.
- *
- * NO WARRANTY
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF NONINFRINGEMENT, MERCHANTIBILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
- * THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY,
- * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
- * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGES.
+ * Licensed under the OpenSSL license (the "License").  You may not use
+ * this file except in compliance with the License.  You can obtain a copy
+ * in the file LICENSE in the source distribution or at
+ * https://www.openssl.org/source/license.html
  *
  * $FreeBSD$
  */
@@ -31,6 +12,37 @@
 #ifndef __OSSL_H__
 #define	__OSSL_H__
 
+/* Compatibility shims. */
+#if _BYTE_ORDER == _LITTLE_ENDIAN
+#define	DATA_ORDER_IS_LITTLE_ENDIAN
+#else
+#define	DATA_ORDER_IS_BIG_ENDIAN
+#endif
+#define	OPENSSL_cleanse		explicit_bzero
+
+/* Used by assembly routines to select CPU-specific variants. */
 extern unsigned int OPENSSL_ia32cap_P[4];
+
+/* From openssl/sha.h */
+# define SHA_LONG unsigned int
+
+# define SHA_LBLOCK      16
+# define SHA_CBLOCK      (SHA_LBLOCK*4)/* SHA treats input data as a
+                                        * contiguous array of 32 bit wide
+                                        * big-endian values. */
+# define SHA_LAST_BLOCK  (SHA_CBLOCK-8)
+# define SHA_DIGEST_LENGTH 20
+
+typedef struct SHAstate_st {
+    SHA_LONG h0, h1, h2, h3, h4;
+    SHA_LONG Nl, Nh;
+    SHA_LONG data[SHA_LBLOCK];
+    unsigned int num;
+} SHA_CTX;
+
+/* ossl_sha1.c */
+void	ossl_sha1_init(SHA_CTX *c);
+int	ossl_sha1_update(void *c_, const void *data_, unsigned int len);
+void	ossl_sha1_final(unsigned char *md, SHA_CTX *c);
 
 #endif /* !__OSSL_H__ */
