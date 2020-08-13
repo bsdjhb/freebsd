@@ -38,7 +38,7 @@ LIB32_MACHINE_ARCH=	i386
 LIB32WMAKEENV=	MACHINE_CPU="i686 mmx sse sse2"
 LIB32WMAKEFLAGS=	\
 		AS="${XAS} --32" \
-		LD="${XLD} -m elf_i386_fbsd -L${LIBCOMPATTMP}/usr/lib32"
+		LD="${XLD} -m elf_i386_fbsd"
 
 .elif ${COMPAT_ARCH} == "powerpc64"
 HAS_COMPAT=32
