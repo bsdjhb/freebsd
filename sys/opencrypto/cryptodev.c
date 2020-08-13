@@ -1055,8 +1055,6 @@ cryptodev_op(
 		case COP_ENCRYPT:
 		case COP_DECRYPT:
 			crp->crp_op = CRYPTO_OP_COMPUTE_DIGEST;
-			if (cod->obuf != NULL)
-				crp->crp_digest_start = 0;
 			break;
 		default:
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
@@ -1110,8 +1108,12 @@ cryptodev_op(
 	}
 	crp->crp_payload_start = 0;
 	crp->crp_payload_length = cop->len;
-	if (cse->hashsize)
-		crp->crp_digest_start = cop->len;
+	if (cse->hashsize) {
+		if (cse->mode == CSP_MODE_DIGEST && cod->obuf != NULL)
+			crp->crp_digest_start = 0;
+		else
+			crp->crp_digest_start = cop->len;
+	}
 	crp->crp_padding_length = padding;
 
 	crp->crp_flags = CRYPTO_F_CBIMM | (cop->flags & COP_F_BATCH);
