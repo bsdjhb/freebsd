@@ -201,6 +201,7 @@ ossl_probesession(device_t dev, const struct crypto_session_params *csp)
 		default:
 			return (EINVAL);
 		}
+		break;
 	default:
 		return (EINVAL);
 	}
