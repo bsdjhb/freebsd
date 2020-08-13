@@ -13,11 +13,6 @@
 #define	__OSSL_H__
 
 /* Compatibility shims. */
-#if _BYTE_ORDER == _LITTLE_ENDIAN
-#define	DATA_ORDER_IS_LITTLE_ENDIAN
-#else
-#define	DATA_ORDER_IS_BIG_ENDIAN
-#endif
 #define	OPENSSL_cleanse		explicit_bzero
 
 /* Used by assembly routines to select CPU-specific variants. */

@@ -15,6 +15,8 @@
 void sha1_block_data_order(SHA_CTX *c, const void *p, size_t len);
 
 /* From openssl/crypto/sha_local.h */
+#define DATA_ORDER_IS_BIG_ENDIAN
+
 #define HASH_LONG               SHA_LONG
 #define HASH_CTX                SHA_CTX
 #define HASH_CBLOCK             SHA_CBLOCK
