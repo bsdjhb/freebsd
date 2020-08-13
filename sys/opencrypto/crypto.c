@@ -1443,7 +1443,7 @@ crp_sanity(struct cryptop *crp)
 		KASSERT(crp->crp_padding_length > 0,
 		    ("zero padding for MTE request"));
 	} else {
-		KASSERT(crp->crp_padding_length != 0,
+		KASSERT(crp->crp_padding_length == 0,
 		    ("non-zero padding length for non-MTE request"));
 	}
 	if (csp->csp_cipher_klen != 0)
