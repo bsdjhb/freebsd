@@ -39,11 +39,13 @@ extern unsigned int OPENSSL_ia32cap_P[4];
 
 /* Needs to be big enough to hold any hash context. */
 struct ossl_hash_context {
-	uint32_t	dummy[28];
+	uint32_t	dummy[54];
 } __aligned(32);
 
 extern struct auth_hash ossl_hash_sha1;
 extern struct auth_hash ossl_hash_sha224;
 extern struct auth_hash ossl_hash_sha256;
+extern struct auth_hash ossl_hash_sha384;
+extern struct auth_hash ossl_hash_sha512;
 
 #endif /* !__OSSL_H__ */

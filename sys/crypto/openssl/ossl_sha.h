@@ -17,6 +17,7 @@
  * to work.
  */
 #define	SHA256_CTX	OSSL_SHA256_CTX
+#define	SHA512_CTX	OSSL_SHA512_CTX
 
 /* From openssl/sha.h */
 # define SHA_LONG unsigned int
@@ -43,5 +44,25 @@ typedef struct SHA256state_st {
     SHA_LONG data[SHA_LBLOCK];
     unsigned int num, md_len;
 } SHA256_CTX;
+
+/*
+ * SHA-512 treats input data as a
+ * contiguous array of 64 bit
+ * wide big-endian values.
+ */
+# define SHA512_CBLOCK   (SHA_LBLOCK*8)
+
+#  define SHA_LONG64 unsigned long long
+#  define U64(C)     C##ULL
+
+typedef struct SHA512state_st {
+    SHA_LONG64 h[8];
+    SHA_LONG64 Nl, Nh;
+    union {
+        SHA_LONG64 d[SHA_LBLOCK];
+        unsigned char p[SHA512_CBLOCK];
+    } u;
+    unsigned int num, md_len;
+} SHA512_CTX;
 
 #endif /* !__OSSL_SHA_H__ */
