@@ -6,6 +6,8 @@
 KMOD=	ossl
 SRCS=	ossl.c \
 	ossl_sha1.c \
-	sha1-x86_64.S
+	ossl_sha256.c \
+	sha1-x86_64.S \
+	sha256-x86_64.S
 
 .include <bsd.kmod.mk>

@@ -14,23 +14,7 @@
 #include <opencrypto/xform_auth.h>
 
 #include <crypto/ossl/ossl.h>
-
-/* From openssl/sha.h */
-# define SHA_LONG unsigned int
-
-# define SHA_LBLOCK      16
-# define SHA_CBLOCK      (SHA_LBLOCK*4)/* SHA treats input data as a
-                                        * contiguous array of 32 bit wide
-                                        * big-endian values. */
-# define SHA_LAST_BLOCK  (SHA_CBLOCK-8)
-# define SHA_DIGEST_LENGTH 20
-
-typedef struct SHAstate_st {
-    SHA_LONG h0, h1, h2, h3, h4;
-    SHA_LONG Nl, Nh;
-    SHA_LONG data[SHA_LBLOCK];
-    unsigned int num;
-} SHA_CTX;
+#include <crypto/ossl/ossl_sha.h>
 
 /* sha1-x86_64.S */
 void sha1_block_data_order(SHA_CTX *c, const void *p, size_t len);
