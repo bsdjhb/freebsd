@@ -18,26 +18,12 @@
 /* Used by assembly routines to select CPU-specific variants. */
 extern unsigned int OPENSSL_ia32cap_P[4];
 
-/* From openssl/sha.h */
-# define SHA_LONG unsigned int
-
-# define SHA_LBLOCK      16
-# define SHA_CBLOCK      (SHA_LBLOCK*4)/* SHA treats input data as a
-                                        * contiguous array of 32 bit wide
-                                        * big-endian values. */
-# define SHA_LAST_BLOCK  (SHA_CBLOCK-8)
-# define SHA_DIGEST_LENGTH 20
-
-typedef struct SHAstate_st {
-    SHA_LONG h0, h1, h2, h3, h4;
-    SHA_LONG Nl, Nh;
-    SHA_LONG data[SHA_LBLOCK];
-    unsigned int num;
-} SHA_CTX;
+/* Needs to be big enough to hold any hash context. */
+struct ossl_hash_context {
+	uint32_t	dummy[24];
+};
 
 /* ossl_sha1.c */
-void	ossl_sha1_init(SHA_CTX *c);
-int	ossl_sha1_update(void *c_, const void *data_, unsigned int len);
-void	ossl_sha1_final(unsigned char *md, SHA_CTX *c);
+extern struct auth_hash ossl_hash_sha1;
 
 #endif /* !__OSSL_H__ */

@@ -8,8 +8,29 @@
  */
 
 #include <sys/libkern.h>
+#include <sys/malloc.h>
 
-#include "ossl.h"
+#include <opencrypto/cryptodev.h>
+#include <opencrypto/xform_auth.h>
+
+#include <crypto/ossl/ossl.h>
+
+/* From openssl/sha.h */
+# define SHA_LONG unsigned int
+
+# define SHA_LBLOCK      16
+# define SHA_CBLOCK      (SHA_LBLOCK*4)/* SHA treats input data as a
+                                        * contiguous array of 32 bit wide
+                                        * big-endian values. */
+# define SHA_LAST_BLOCK  (SHA_CBLOCK-8)
+# define SHA_DIGEST_LENGTH 20
+
+typedef struct SHAstate_st {
+    SHA_LONG h0, h1, h2, h3, h4;
+    SHA_LONG Nl, Nh;
+    SHA_LONG data[SHA_LBLOCK];
+    unsigned int num;
+} SHA_CTX;
 
 /* sha1-x86_64.S */
 void sha1_block_data_order(SHA_CTX *c, const void *p, size_t len);
@@ -40,9 +61,10 @@ void sha1_block_data_order(SHA_CTX *c, const void *p, size_t len);
 #define INIT_DATA_h3 0x10325476UL
 #define INIT_DATA_h4 0xc3d2e1f0UL
 
-void
-HASH_INIT(SHA_CTX *c)
+static void
+HASH_INIT(void *c_)
 {
+    SHA_CTX *c = c_;
     memset(c, 0, sizeof(*c));
     c->h0 = INIT_DATA_h0;
     c->h1 = INIT_DATA_h1;
@@ -52,3 +74,17 @@ HASH_INIT(SHA_CTX *c)
 }
 
 #include "ossl_hash.h"
+
+struct auth_hash ossl_hash_sha1 = {
+	.type = CRYPTO_SHA1,
+	.name = "OpenSSL-SHA1",
+	.hashsize = SHA1_HASH_LEN,
+	.ctxsize = sizeof(SHA_CTX),
+	.blocksize = SHA1_BLOCK_LEN,
+	.Init = HASH_INIT,
+	.Update = HASH_UPDATE,
+	.Final = HASH_FINAL,
+};
+
+_Static_assert(sizeof(SHA_CTX) <= sizeof(struct ossl_hash_context),
+    "ossl_hash_context too small");
