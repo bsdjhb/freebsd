@@ -10,7 +10,8 @@
 /*
  * Derived from include/crypto/md32_common.h
  *
- * HASH_UPDATE has been modified to work with crypto_apply().
+ * HASH_UPDATE and HASH_FINAL have been updated to work with the
+ * auth_hash interface.
  */
 
 #if defined(DATA_ORDER_IS_BIG_ENDIAN)
@@ -43,7 +44,7 @@
  * Time for some action :-)
  */
 
-int
+static int
 HASH_UPDATE(void *c_, const void *data_, unsigned int len)
 {
     HASH_CTX *c = c_;
@@ -103,9 +104,10 @@ HASH_UPDATE(void *c_, const void *data_, unsigned int len)
     return 0;
 }
 
-void
-HASH_FINAL(unsigned char *md, HASH_CTX *c)
+static void
+HASH_FINAL(uint8_t *md, void *c_)
 {
+    HASH_CTX *c = c_;
     unsigned char *p = (unsigned char *)c->data;
     size_t n = c->num;
 
