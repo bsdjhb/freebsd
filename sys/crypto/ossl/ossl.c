@@ -201,6 +201,12 @@ ossl_lookup_hash(const struct crypto_session_params *csp)
 	case CRYPTO_SHA2_256:
 	case CRYPTO_SHA2_256_HMAC:
 		return (&ossl_hash_sha256);
+	case CRYPTO_SHA2_384:
+	case CRYPTO_SHA2_384_HMAC:
+		return (&ossl_hash_sha384);
+	case CRYPTO_SHA2_512:
+	case CRYPTO_SHA2_512_HMAC:
+		return (&ossl_hash_sha512);
 	default:
 		return (NULL);
 	}
