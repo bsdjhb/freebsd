@@ -67,6 +67,8 @@ struct ossl_session {
 };
 
 /*
+ * See OPENSSL_ia32cap(3).
+ *
  * [0] = cpu_feature but with a few custom bits
  * [1] = cpu_feature2 but with AMD XOP in bit 11
  * [2] = cpu_stdext_feature
