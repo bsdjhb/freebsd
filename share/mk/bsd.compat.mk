@@ -49,7 +49,7 @@ LIB32CPUFLAGS=	-mcpu=${COMPAT_CPUTYPE}
 .endif
 
 .if ${COMPAT_COMPILER_TYPE} == "gcc"
-LIB32CPUFLAGS+=	-m32
+LIB32CPUFLAGS+=	-m32 -msecure-plt
 .else
 LIB32CPUFLAGS+=	-target powerpc-unknown-freebsd13.0
 .endif
