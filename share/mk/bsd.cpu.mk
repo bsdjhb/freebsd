@@ -334,6 +334,7 @@ CFLAGS += -mfloat-abi=softfp
 
 .if ${MACHINE_ARCH} == "powerpc" || ${MACHINE_ARCH} == "powerpcspe"
 LDFLAGS.bfd+= -Wl,--secure-plt
+CFLAGS.gcc+= -msecure-plt
 .endif
 
 .if ${MACHINE_ARCH} == "powerpcspe"
