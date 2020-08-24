@@ -52,6 +52,14 @@ struct ocf_session {
 #endif
 	int mac_len;
 	struct mtx lock;
+	bool implicit_iv;
+
+	/* Only used for TLS 1.0 with the implicit IV. */
+#ifdef INVARIANTS
+	bool in_progress;
+	uint64_t next_seqno;
+#endif
+	char iv[AES_BLOCK_LEN];
 };
 
 struct ocf_operation {
@@ -68,9 +76,14 @@ static SYSCTL_NODE(_kern_ipc_tls_stats, OID_AUTO, ocf,
     CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Kernel TLS offload via OCF stats");
 
-static counter_u64_t ocf_tls_cbc_crypts;
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls_cbc_crypts,
-    CTLFLAG_RD, &ocf_tls_cbc_crypts,
+static counter_u64_t ocf_tls10_cbc_crypts;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls10_cbc_crypts,
+    CTLFLAG_RD, &ocf_tls10_cbc_crypts,
+    "Total number of OCF TLS 1.0 CBC encryption operations");
+
+static counter_u64_t ocf_tls11_cbc_crypts;
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, tls11_cbc_crypts,
+    CTLFLAG_RD, &ocf_tls11_cbc_crypts,
     "Total number of OCF TLS 1.1/1.2 CBC encryption operations");
 
 static counter_u64_t ocf_tls12_gcm_crypts;
@@ -166,6 +179,23 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 
 	os = tls->cipher;
 
+#ifdef INVARIANTS
+	if (os->implicit_iv) {
+		mtx_lock(&os->lock);
+		KASSERT(!os->in_progress,
+		    ("concurrent implicit IV encryptions"));
+		if (os->next_seqno != seqno) {
+			printf("KTLS CBC: TLS records out of order.  "
+			    "Expected %ju, got %ju\n",
+			    (uintmax_t)os->next_seqno, (uintmax_t)seqno);
+			mtx_unlock(&os->lock);
+			return (EINVAL);
+		}
+		os->in_progress = true;
+		mtx_unlock(&os->lock);
+	}
+#endif
+
 	/*
 	 * Compute the payload length.
 	 *
@@ -212,8 +242,16 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
-	if (error)
+	if (error) {
+#ifdef INVARIANTS
+		if (os->implicit_iv) {
+			mtx_lock(&os->lock);
+			os->in_progress = false;
+			mtx_unlock(&os->lock);
+		}
+#endif
 		return (error);
+	}
 #endif
 
 	/* Second, add the padding. */
@@ -240,9 +278,11 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	crp.crp_payload_start = 0;
 	crp.crp_payload_length = uio.uio_resid;
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
-	crp.crp_op = CRYPTO_OP_ENCRYPT;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
+	if (os->implicit_iv)
+		memcpy(crp.crp_iv, os->iv, AES_BLOCK_LEN);
+	else
+		memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
 	crypto_use_uio(&crp, &uio);
 	if (!inplace) {
 		memcpy(out_iov, outiov, sizeof(*iniov) * iovcnt);
@@ -294,13 +334,19 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	crp.crp_padding_length = pad + 1;
 	crp.crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
+	if (os->implicit_iv)
+		memcpy(crp.crp_iv, os->iv, AES_BLOCK_LEN);
+	else
+		memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
 	crypto_use_uio(&crp, &uio);
 	if (!inplace)
 		crypto_use_output_uio(&crp, &out_uio);
 #endif
 
-	counter_u64_add(ocf_tls_cbc_crypts, 1);
+	if (os->implicit_iv)
+		counter_u64_add(ocf_tls10_cbc_crypts, 1);
+	else
+		counter_u64_add(ocf_tls11_cbc_crypts, 1);
 	if (inplace)
 		counter_u64_add(ocf_inplace, 1);
 	else
@@ -308,6 +354,19 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
+
+	if (os->implicit_iv) {
+		KASSERT(os->mac_len + pad + 1 >= AES_BLOCK_LEN,
+		    ("trailer too short to read IV"));
+		memcpy(os->iv, trailer + os->mac_len + pad + 1 - AES_BLOCK_LEN,
+		    AES_BLOCK_LEN);
+#ifdef INVARIANTS
+		mtx_lock(&os->lock);
+		os->next_seqno = seqno + 1;
+		os->in_progress = false;
+		mtx_unlock(&os->lock);
+#endif
+	}
 	return (error);
 }
 
@@ -619,9 +678,9 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 			return (EINVAL);
 		}
 
-		/* Only TLS 1.1 and 1.2 are supported. */
+		/* Only TLS 1.0-1.2 are supported. */
 		if (tls->params.tls_vmajor != TLS_MAJOR_VER_ONE ||
-		    tls->params.tls_vminor < TLS_MINOR_VER_ONE ||
+		    tls->params.tls_vminor < TLS_MINOR_VER_ZERO ||
 		    tls->params.tls_vminor > TLS_MINOR_VER_TWO)
 			return (EPROTONOSUPPORT);
 
@@ -695,8 +754,14 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		} else {
 			tls->sw_decrypt = ktls_ocf_tls12_gcm_decrypt;
 		}
-	} else
+	} else {
 		tls->sw_encrypt = ktls_ocf_tls_cbc_encrypt;
+		if (tls->params.tls_vminor == TLS_MINOR_VER_ZERO) {
+			os->implicit_iv = true;
+			memcpy(os->iv, tls->params.iv, AES_BLOCK_LEN);
+		}
+	}
+
 	tls->free = ktls_ocf_free;
 	return (0);
 }
@@ -715,7 +780,8 @@ ktls_ocf_modevent(module_t mod, int what, void *arg)
 
 	switch (what) {
 	case MOD_LOAD:
-		ocf_tls_cbc_crypts = counter_u64_alloc(M_WAITOK);
+		ocf_tls10_cbc_crypts = counter_u64_alloc(M_WAITOK);
+		ocf_tls11_cbc_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_tls12_gcm_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_tls13_gcm_crypts = counter_u64_alloc(M_WAITOK);
 		ocf_inplace = counter_u64_alloc(M_WAITOK);
@@ -726,7 +792,8 @@ ktls_ocf_modevent(module_t mod, int what, void *arg)
 		error = ktls_crypto_backend_deregister(&ocf_backend);
 		if (error)
 			return (error);
-		counter_u64_free(ocf_tls_cbc_crypts);
+		counter_u64_free(ocf_tls10_cbc_crypts);
+		counter_u64_free(ocf_tls11_cbc_crypts);
 		counter_u64_free(ocf_tls12_gcm_crypts);
 		counter_u64_free(ocf_tls13_gcm_crypts);
 		counter_u64_free(ocf_inplace);
