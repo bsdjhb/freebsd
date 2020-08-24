@@ -334,7 +334,10 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls,
 	crp.crp_padding_length = pad + 1;
 	crp.crp_op = CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
-	memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
+	if (os->implicit_iv)
+		memcpy(crp.crp_iv, os->iv, AES_BLOCK_LEN);
+	else
+		memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
 	crypto_use_uio(&crp, &uio);
 	if (!inplace)
 		crypto_use_output_uio(&crp, &out_uio);
