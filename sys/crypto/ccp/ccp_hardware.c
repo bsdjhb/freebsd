@@ -1356,19 +1356,19 @@ ccp_collect_iv(struct cryptop *crp, const struct crypto_session_params *csp,
 	crypto_read_iv(crp, iv);
 
 	/*
-	 * If the input IV is 12 bytes, append an explicit counter of 1.
+	 * Append an explicit counter of 1 for GCM.
 	 */
-	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16 &&
-	    csp->csp_ivlen == 12)
+	if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
 		*(uint32_t *)&iv[12] = htobe32(1);
 
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS &&
-	    csp->csp_ivlen < AES_BLOCK_LEN)
-		memset(&iv[csp->csp_ivlen], 0, AES_BLOCK_LEN - csp->csp_ivlen);
+	    crp->crp_iv_length < AES_BLOCK_LEN)
+		memset(&iv[crp->crp_iv_length], 0,
+		    AES_BLOCK_LEN - crp->crp_iv_length);
 
 	/* Reverse order of IV material for HW */
 	INSECURE_DEBUG(NULL, "%s: IV: %16D len: %u\n", __func__, iv, " ",
-	    csp->csp_ivlen);
+	    crp->crp_iv_length);
 
 	/*
 	 * For unknown reasons, XTS mode expects the IV in the reverse byte
@@ -1504,7 +1504,7 @@ ccp_do_blkcipher(struct ccp_queue *qp, struct ccp_session *s,
 	/* Gather IV/nonce data */
 	csp = crypto_get_params(crp->crp_session);
 	ccp_collect_iv(crp, csp, s->blkcipher.iv);
-	iv_len = csp->csp_ivlen;
+	iv_len = crp->crp_iv_length;
 	if (csp->csp_cipher_alg == CRYPTO_AES_XTS)
 		iv_len = AES_BLOCK_LEN;
 

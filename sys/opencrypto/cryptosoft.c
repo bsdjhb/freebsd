@@ -146,7 +146,7 @@ swcr_encdec(struct swcr_session *ses, struct cryptop *crp)
 		 * xforms that provide a reinit method perform all IV
 		 * handling themselves.
 		 */
-		exf->reinit(sw->sw_kschedule, iv);
+		exf->reinit(sw->sw_kschedule, iv, crp->crp_iv_length);
 	}
 
 	ivp = iv;
@@ -537,7 +537,7 @@ swcr_gcm(struct swcr_session *ses, struct cryptop *crp)
 		}
 	}
 
-	exf->reinit(swe->sw_kschedule, iv);
+	exf->reinit(swe->sw_kschedule, iv, ivlen);
 
 	/* Do encryption with MAC */
 	crypto_cursor_init(&cc_in, &crp->crp_buf);
@@ -660,7 +660,7 @@ swcr_ccm_cbc_mac(struct swcr_session *ses, struct cryptop *crp)
 	bcopy(swa->sw_ictx, &ctx, axf->ctxsize);
 
 	/* Initialize the IV */
-	ivlen = AES_CCM_IV_LEN;
+	ivlen = crp->crp_iv_length;
 	crypto_read_iv(crp, iv);
 
 	/*
@@ -733,8 +733,8 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 		return (EINVAL);
 
 	/* Initialize the IV */
-	ivlen = AES_CCM_IV_LEN;
-	bcopy(crp->crp_iv, iv, ivlen);
+	ivlen = crp->crp_iv_length;
+	crypto_read_iv(crp, iv);
 
 	/*
 	 * AES CCM-CBC-MAC needs to know the length of both the auth
@@ -755,7 +755,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 	if (error)
 		return (error);
 
-	exf->reinit(swe->sw_kschedule, iv);
+	exf->reinit(swe->sw_kschedule, iv, ivlen);
 
 	/* Do encryption/decryption with MAC */
 	crypto_cursor_init(&cc_in, &crp->crp_buf);
@@ -828,7 +828,7 @@ swcr_ccm(struct swcr_session *ses, struct cryptop *crp)
 		}
 
 		/* tag matches, decrypt data */
-		exf->reinit(swe->sw_kschedule, iv);
+		exf->reinit(swe->sw_kschedule, iv, ivlen);
 		crypto_cursor_init(&cc_in, &crp->crp_buf);
 		crypto_cursor_advance(&cc_in, crp->crp_payload_start);
 		for (resid = crp->crp_payload_length; resid > blksz;
@@ -982,7 +982,6 @@ swcr_setup_cipher(struct swcr_session *ses,
 
 	swe = &ses->swcr_encdec;
 	txf = crypto_cipher(csp);
-	MPASS(txf->ivsize == csp->csp_ivlen);
 	if (txf->ctxsize != 0) {
 		swe->sw_kschedule = malloc(txf->ctxsize, M_CRYPTO_DATA,
 		    M_NOWAIT);
@@ -1090,9 +1089,6 @@ swcr_setup_gcm(struct swcr_session *ses,
 	struct swcr_auth *swa;
 	struct auth_hash *axf;
 
-	if (csp->csp_ivlen != AES_GCM_IV_LEN)
-		return (EINVAL);
-
 	/* First, setup the auth side. */
 	swa = &ses->swcr_auth;
 	switch (csp->csp_cipher_klen * 8) {
@@ -1133,9 +1129,6 @@ swcr_setup_ccm(struct swcr_session *ses,
 {
 	struct swcr_auth *swa;
 	struct auth_hash *axf;
-
-	if (csp->csp_ivlen != AES_CCM_IV_LEN)
-		return (EINVAL);
 
 	/* First, setup the auth side. */
 	swa = &ses->swcr_auth;
@@ -1199,8 +1192,6 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 		}
 		if (csp->csp_auth_key == NULL)
 			return (false);
-		if (csp->csp_ivlen != AES_GCM_IV_LEN)
-			return (false);
 		break;
 	case CRYPTO_POLY1305:
 		if (csp->csp_auth_klen != POLY1305_KEY_LEN)
@@ -1217,8 +1208,6 @@ swcr_auth_supported(const struct crypto_session_params *csp)
 		}
 		if (csp->csp_auth_key == NULL)
 			return (false);
-		if (csp->csp_ivlen != AES_CCM_IV_LEN)
-			return (false);
 		break;
 	}
 	return (true);
@@ -1231,9 +1220,6 @@ swcr_cipher_supported(const struct crypto_session_params *csp)
 
 	txf = crypto_cipher(csp);
 	if (txf == NULL)
-		return (false);
-	if (csp->csp_cipher_alg != CRYPTO_NULL_CBC &&
-	    txf->ivsize != csp->csp_ivlen)
 		return (false);
 	return (true);
 }

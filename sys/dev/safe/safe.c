@@ -682,8 +682,6 @@ safe_cipher_supported(struct safe_softc *sc,
 	case CRYPTO_AES_CBC:
 		if ((sc->sc_devinfo & SAFE_DEVINFO_AES) == 0)
 			return (false);
-		if (csp->csp_ivlen != 16)
-			return (false);
 		if (csp->csp_cipher_klen != 16 &&
 		    csp->csp_cipher_klen != 24 &&
 		    csp->csp_cipher_klen != 32)

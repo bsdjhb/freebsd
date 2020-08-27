@@ -1566,8 +1566,6 @@ cesa_cipher_supported(const struct crypto_session_params *csp)
 
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
 		break;
 	default:
 		return (false);

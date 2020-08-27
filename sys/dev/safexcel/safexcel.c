@@ -1609,18 +1609,14 @@ safexcel_instr_ccm(struct safexcel_request *req, struct safexcel_instr *instr,
 	 * authentication, respectively.  A0 is embedded in the token
 	 * descriptor, and B0 is inserted directly into the data stream using
 	 * instructions below.
-	 *
-	 * OCF seems to assume a 12-byte IV, fixing L (the payload length size)
-	 * at 3 bytes due to the layout of B0.  This is fine since the driver
-	 * has a maximum of 65535 bytes anyway.
 	 */
 	blen = AES_BLOCK_LEN;
-	L = 3;
+	L = (15 - crp->crp_iv_length);
 
 	a0 = (uint8_t *)&cdesc->control_data.token[0];
 	memset(a0, 0, blen);
 	a0[0] = L - 1;
-	memcpy(&a0[1], req->iv, AES_CCM_IV_LEN);
+	memcpy(&a0[1], req->iv, crp->crp_iv_length);
 
 	/*
 	 * Insert B0 and the AAD length into the input stream.
@@ -1638,7 +1634,7 @@ safexcel_instr_ccm(struct safexcel_request *req, struct safexcel_instr *instr,
 	    (L - 1) | /* payload length size */
 	    ((CCM_CBC_MAX_DIGEST_LEN - 2) / 2) << 3 /* digest length */ |
 	    (crp->crp_aad_length > 0 ? 1 : 0) << 6 /* AAD present bit */;
-	memcpy(&b0[1], req->iv, AES_CCM_IV_LEN);
+	memcpy(&b0[1], req->iv, crp->crp_iv_length);
 	b0[14] = crp->crp_payload_length >> 8;
 	b0[15] = crp->crp_payload_length & 0xff;
 	instr += blen / sizeof(*instr);
@@ -2124,12 +2120,7 @@ safexcel_probe_cipher(const struct crypto_session_params *csp)
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
 	case CRYPTO_AES_ICM:
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
-		break;
 	case CRYPTO_AES_XTS:
-		if (csp->csp_ivlen != AES_XTS_IV_LEN)
-			return (false);
 		break;
 	default:
 		return (false);
@@ -2153,9 +2144,6 @@ safexcel_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_DIGEST:
 		switch (csp->csp_auth_alg) {
 		case CRYPTO_AES_NIST_GMAC:
-			if (csp->csp_ivlen != AES_GCM_IV_LEN)
-				return (EINVAL);
-			break;
 		case CRYPTO_SHA1:
 		case CRYPTO_SHA1_HMAC:
 		case CRYPTO_SHA2_224:
@@ -2174,12 +2162,7 @@ safexcel_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_AEAD:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_NIST_GCM_16:
-			if (csp->csp_ivlen != AES_GCM_IV_LEN)
-				return (EINVAL);
-			break;
 		case CRYPTO_AES_CCM_16:
-			if (csp->csp_ivlen != AES_CCM_IV_LEN)
-				return (EINVAL);
 			break;
 		default:
 			return (EINVAL);

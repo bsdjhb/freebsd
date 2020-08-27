@@ -1136,8 +1136,6 @@ sec_cipher_supported(const struct crypto_session_params *csp)
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
 		/* AESU */
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
 		break;
 	default:
 		return (false);
@@ -1333,7 +1331,7 @@ sec_build_common_ns_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 1: IV IN */
 	error = sec_make_pointer_direct(sc, desc, 1, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_iv), csp->csp_ivlen);
+	    offsetof(struct sec_hw_desc, shd_iv), crp->crp_iv_length);
 	if (error)
 		return (error);
 
@@ -1402,7 +1400,7 @@ sec_build_common_s_desc(struct sec_softc *sc, struct sec_desc *desc,
 
 	/* Pointer 3: IV IN */
 	error = sec_make_pointer_direct(sc, desc, 3, desc->sd_desc_paddr +
-	    offsetof(struct sec_hw_desc, shd_iv), csp->csp_ivlen);
+	    offsetof(struct sec_hw_desc, shd_iv), crp->crp_iv_length);
 	if (error)
 		return (error);
 

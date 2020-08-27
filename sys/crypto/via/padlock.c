@@ -161,8 +161,6 @@ padlock_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_CIPHER:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_CBC:
-			if (csp->csp_ivlen != AES_BLOCK_LEN)
-				return (EINVAL);
 			break;
 		default:
 			return (EINVAL);

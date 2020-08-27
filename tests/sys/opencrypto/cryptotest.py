@@ -243,9 +243,6 @@ def GenTestCase(cname):
         def runCCMEncryptWithParser(self, parser):
             for data in next(parser):
                 Nlen = int(data['Nlen'])
-                if Nlen != 12:
-                    # OCF only supports 12 byte IVs
-                    continue
                 key = binascii.unhexlify(data['Key'])
                 nonce = binascii.unhexlify(data['Nonce'])
                 Alen = int(data['Alen'])
@@ -286,9 +283,6 @@ def GenTestCase(cname):
             # tests are actually ran.
             for data in next(parser):
                 Nlen = int(data['Nlen'])
-                if Nlen != 12:
-                    # OCF only supports 12 byte IVs
-                    continue
                 Tlen = int(data['Tlen'])
                 if Tlen != 16:
                     # OCF only supports 16 byte tags

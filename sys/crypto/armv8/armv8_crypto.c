@@ -193,8 +193,6 @@ armv8_crypto_probesession(device_t dev,
 	case CSP_MODE_CIPHER:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_CBC:
-			if (csp->csp_ivlen != AES_BLOCK_LEN)
-				return (EINVAL);
 			switch (csp->csp_cipher_klen * 8) {
 			case 128:
 			case 192:

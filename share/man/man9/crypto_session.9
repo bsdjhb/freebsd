@@ -211,11 +211,6 @@ It is required for IPsec ESN support of encrypt and authenticate mode where
 the high-order 32 bits of the sequence number are appended after the Next
 Header (RFC 4303).
 .El
-.It Fa csp_ivlen
-If either the cipher or authentication algorithms require an explicit
-initialization vector (IV) or nonce,
-this specifies the length in bytes.
-All requests for a session use the same IV length.
 .It Fa csp_cipher_alg
 Encryption or compression algorithm.
 .It Fa csp_cipher_klen

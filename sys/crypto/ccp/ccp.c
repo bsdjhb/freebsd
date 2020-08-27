@@ -338,16 +338,8 @@ ccp_cipher_supported(struct ccp_softc *sc,
 		return (false);
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
-		break;
 	case CRYPTO_AES_ICM:
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
-		break;
 	case CRYPTO_AES_XTS:
-		if (csp->csp_ivlen != AES_XTS_IV_LEN)
-			return (false);
 		break;
 	default:
 		return (false);
@@ -376,8 +368,6 @@ ccp_probesession(device_t dev, const struct crypto_session_params *csp)
 	case CSP_MODE_AEAD:
 		switch (csp->csp_cipher_alg) {
 		case CRYPTO_AES_NIST_GCM_16:
-			if (csp->csp_ivlen != AES_GCM_IV_LEN)
-				return (EINVAL);
 			if (csp->csp_auth_mlen < 0 ||
 			    csp->csp_auth_mlen > AES_GMAC_HASH_LEN)
 				return (EINVAL);

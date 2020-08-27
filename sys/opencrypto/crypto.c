@@ -756,8 +756,8 @@ check_csp(const struct crypto_session_params *csp)
 	/* Mode-independent checks. */
 	if ((csp->csp_flags & ~(SUPPORTED_SES)) != 0)
 		return (false);
-	if (csp->csp_ivlen < 0 || csp->csp_cipher_klen < 0 ||
-	    csp->csp_auth_klen < 0 || csp->csp_auth_mlen < 0)
+	if (csp->csp_cipher_klen < 0 || csp->csp_auth_klen < 0 ||
+	    csp->csp_auth_mlen < 0)
 		return (false);
 	if (csp->csp_auth_key != NULL && csp->csp_auth_klen == 0)
 		return (false);
@@ -772,9 +772,8 @@ check_csp(const struct crypto_session_params *csp)
 			return (false);
 		if (csp->csp_flags & CSP_F_SEPARATE_AAD)
 			return (false);
-		if (csp->csp_cipher_klen != 0 || csp->csp_ivlen != 0 ||
-		    csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0 ||
-		    csp->csp_auth_mlen != 0)
+		if (csp->csp_cipher_klen != 0 || csp->csp_auth_alg != 0 ||
+		    csp->csp_auth_klen != 0 || csp->csp_auth_mlen != 0)
 			return (false);
 		break;
 	case CSP_MODE_CIPHER:
@@ -785,11 +784,7 @@ check_csp(const struct crypto_session_params *csp)
 		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
 			if (csp->csp_cipher_klen == 0)
 				return (false);
-			if (csp->csp_ivlen == 0)
-				return (false);
 		}
-		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
-			return (false);
 		if (csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0 ||
 		    csp->csp_auth_mlen != 0)
 			return (false);
@@ -801,9 +796,6 @@ check_csp(const struct crypto_session_params *csp)
 		if (csp->csp_flags & CSP_F_SEPARATE_AAD)
 			return (false);
 
-		/* IV is optional for digests (e.g. GMAC). */
-		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
-			return (false);
 		if (!alg_is_digest(csp->csp_auth_alg))
 			return (false);
 
@@ -829,9 +821,6 @@ check_csp(const struct crypto_session_params *csp)
 			return (false);
 		if (csp->csp_cipher_klen == 0)
 			return (false);
-		if (csp->csp_ivlen == 0 ||
-		    csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
-			return (false);
 		if (csp->csp_auth_alg != 0 || csp->csp_auth_klen != 0)
 			return (false);
 
@@ -853,11 +842,7 @@ check_csp(const struct crypto_session_params *csp)
 		if (csp->csp_cipher_alg != CRYPTO_NULL_CBC) {
 			if (csp->csp_cipher_klen == 0)
 				return (false);
-			if (csp->csp_ivlen == 0)
-				return (false);
 		}
-		if (csp->csp_ivlen >= EALG_MAX_BLOCK_LEN)
-			return (false);
 		if (!alg_is_digest(csp->csp_auth_alg))
 			return (false);
 
@@ -1266,6 +1251,8 @@ crp_sanity(struct cryptop *crp)
 {
 	struct crypto_session_params *csp;
 	struct crypto_buffer *out;
+	struct auth_hash *axf;
+	struct enc_xform *exf;
 	size_t ilen, len, olen;
 
 	KASSERT(crp->crp_session != NULL, ("incoming crp without a session"));
@@ -1292,21 +1279,47 @@ crp_sanity(struct cryptop *crp)
 		    ("incoming crp with separate output buffer "
 		    "but no session support"));
 
+	axf = crypto_auth_hash(csp);
+	exf = crypto_cipher(csp);
 	switch (csp->csp_mode) {
 	case CSP_MODE_COMPRESS:
 		KASSERT(crp->crp_op == CRYPTO_OP_COMPRESS ||
 		    crp->crp_op == CRYPTO_OP_DECOMPRESS,
 		    ("invalid compression op %x", crp->crp_op));
+		KASSERT(crp->crp_iv_length == 0,
+		    ("compression request with IV"));
 		break;
 	case CSP_MODE_CIPHER:
 		KASSERT(crp->crp_op == CRYPTO_OP_ENCRYPT ||
 		    crp->crp_op == CRYPTO_OP_DECRYPT,
 		    ("invalid cipher op %x", crp->crp_op));
+		KASSERT(crp->crp_iv_length == exf->ivsize,
+		    ("invalid IV size %d", crp->crp_iv_length));
 		break;
 	case CSP_MODE_DIGEST:
 		KASSERT(crp->crp_op == CRYPTO_OP_COMPUTE_DIGEST ||
 		    crp->crp_op == CRYPTO_OP_VERIFY_DIGEST,
 		    ("invalid digest op %x", crp->crp_op));
+
+		switch (csp->csp_auth_alg) {
+		case CRYPTO_AES_NIST_GMAC:
+			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
+			    ("GMAC without a separate IV"));
+			KASSERT(crp->crp_iv_length == AES_GCM_IV_LEN,
+			    ("invalid IV size %d", crp->crp_iv_length));
+			break;
+		case CRYPTO_AES_CCM_CBC_MAC:
+			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
+			    ("CBC_MAC without a separate IV"));
+			KASSERT(crp->crp_iv_length >= 7 &&
+			    crp->crp_iv_length <= 13,
+			    ("invalid IV size %d", crp->crp_iv_length));
+			break;
+		default:
+			KASSERT(crp->crp_iv_length == 0,
+			    ("invalid IV size %d", crp->crp_iv_length));
+			break;
+		}
 		break;
 	case CSP_MODE_AEAD:
 		KASSERT(crp->crp_op ==
@@ -1314,12 +1327,23 @@ crp_sanity(struct cryptop *crp)
 		    crp->crp_op ==
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid AEAD op %x", crp->crp_op));
-		if (csp->csp_cipher_alg == CRYPTO_AES_NIST_GCM_16)
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_NIST_GCM_16:
 			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
 			    ("GCM without a separate IV"));
-		if (csp->csp_cipher_alg == CRYPTO_AES_CCM_16)
+			KASSERT(crp->crp_iv_length == AES_GCM_IV_LEN,
+			    ("invalid IV size %d", crp->crp_iv_length));
+			break;
+		case CRYPTO_AES_CCM_16:
 			KASSERT(crp->crp_flags & CRYPTO_F_IV_SEPARATE,
 			    ("CCM without a separate IV"));
+			KASSERT(crp->crp_iv_length >= 7 &&
+			    crp->crp_iv_length <= 13,
+			    ("invalid IV size %d", crp->crp_iv_length));
+			break;
+		default:
+			__assert_unreachable();
+		}
 		break;
 	case CSP_MODE_ETA:
 		KASSERT(crp->crp_op ==
@@ -1327,6 +1351,8 @@ crp_sanity(struct cryptop *crp)
 		    crp->crp_op ==
 		    (CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST),
 		    ("invalid ETA op %x", crp->crp_op));
+		KASSERT(crp->crp_iv_length == exf->ivsize,
+		    ("invalid IV size %d", crp->crp_iv_length));
 		break;
 	}
 	if (csp->csp_mode == CSP_MODE_AEAD || csp->csp_mode == CSP_MODE_ETA) {
@@ -1353,7 +1379,7 @@ crp_sanity(struct cryptop *crp)
 		    crp->crp_aad_length == 0,
 		    ("AAD region in request not supporting AAD"));
 	}
-	if (csp->csp_ivlen == 0) {
+	if (crp->crp_iv_length == 0) {
 		KASSERT((crp->crp_flags & CRYPTO_F_IV_SEPARATE) == 0,
 		    ("IV_SEPARATE set when IV isn't used"));
 		KASSERT(crp->crp_iv_start == 0,
@@ -1364,7 +1390,7 @@ crp_sanity(struct cryptop *crp)
 	} else {
 		KASSERT(crp->crp_iv_start < ilen,
 		    ("invalid IV start"));
-		KASSERT(crp->crp_iv_start + csp->csp_ivlen <= ilen,
+		KASSERT(crp->crp_iv_start + crp->crp_iv_length <= ilen,
 		    ("IV outside buffer length"));
 	}
 	/* XXX: payload_start of 0 should always be < ilen? */

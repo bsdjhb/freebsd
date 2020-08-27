@@ -391,8 +391,6 @@ xlp_sec_cipher_supported(const struct crypto_session_params *csp)
 
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
-		if (csp->csp_ivlen != XLP_SEC_AES_IV_LENGTH)
-			return (false);
 		break;
 	default:
 		return (false);
@@ -459,7 +457,7 @@ xlp_copyiv(struct xlp_sec_softc *sc, struct xlp_sec_command *cmd,
 	crp = cmd->crp;
 
 	if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
-		memcpy(cmd->iv, crp->crp_iv, csp->csp_ivlen);
+		memcpy(cmd->iv, crp->crp_iv, crp->crp_iv_length);
 }
 
 static int

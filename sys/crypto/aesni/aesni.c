@@ -246,8 +246,6 @@ aesni_cipher_supported(struct aesni_softc *sc,
 			CRYPTDEB("invalid CBC/ICM key length");
 			return (false);
 		}
-		if (csp->csp_ivlen != AES_BLOCK_LEN)
-			return (false);
 		break;
 	case CRYPTO_AES_XTS:
 		switch (csp->csp_cipher_klen * 8) {
@@ -258,8 +256,6 @@ aesni_cipher_supported(struct aesni_softc *sc,
 			CRYPTDEB("invalid XTS key length");
 			return (false);
 		}
-		if (csp->csp_ivlen != AES_XTS_IV_LEN)
-			return (false);
 		break;
 	default:
 		return (false);
@@ -302,8 +298,7 @@ aesni_probesession(device_t dev, const struct crypto_session_params *csp)
 			if (csp->csp_auth_mlen != 0 &&
 			    csp->csp_auth_mlen != GMAC_DIGEST_LEN)
 				return (EINVAL);
-			if (csp->csp_ivlen != AES_GCM_IV_LEN ||
-			    !sc->has_aes)
+			if (!sc->has_aes)
 				return (EINVAL);
 			break;
 		case CRYPTO_AES_CCM_16:
@@ -319,8 +314,7 @@ aesni_probesession(device_t dev, const struct crypto_session_params *csp)
 			if (csp->csp_auth_mlen != 0 &&
 			    csp->csp_auth_mlen != AES_CBC_MAC_HASH_LEN)
 				return (EINVAL);
-			if (csp->csp_ivlen != AES_CCM_IV_LEN ||
-			    !sc->has_aes)
+			if (!sc->has_aes)
 				return (EINVAL);
 			break;
 		default:
@@ -772,7 +766,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 			memset(tag, 0, sizeof(tag));
 			AES_GCM_encrypt(buf, outbuf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    csp->csp_ivlen, ses->enc_schedule, ses->rounds);
+			    crp->crp_iv_length, ses->enc_schedule, ses->rounds);
 			crypto_copyback(crp, crp->crp_digest_start, sizeof(tag),
 			    tag);
 		} else {
@@ -780,7 +774,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 			    tag);
 			if (!AES_GCM_decrypt(buf, outbuf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    csp->csp_ivlen, ses->enc_schedule, ses->rounds))
+			    crp->crp_iv_length, ses->enc_schedule, ses->rounds))
 				error = EBADMSG;
 		}
 		break;
@@ -789,7 +783,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 			memset(tag, 0, sizeof(tag));			
 			AES_CCM_encrypt(buf, outbuf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    csp->csp_ivlen, ses->enc_schedule, ses->rounds);
+			    crp->crp_iv_length, ses->enc_schedule, ses->rounds);
 			crypto_copyback(crp, crp->crp_digest_start, sizeof(tag),
 			    tag);
 		} else {
@@ -797,7 +791,7 @@ aesni_cipher_crypt(struct aesni_session *ses, struct cryptop *crp,
 			    tag);
 			if (!AES_CCM_decrypt(buf, outbuf, authbuf, iv, tag,
 			    crp->crp_payload_length, crp->crp_aad_length,
-			    csp->csp_ivlen, ses->enc_schedule, ses->rounds))
+			    crp->crp_iv_length, ses->enc_schedule, ses->rounds))
 				error = EBADMSG;
 		}
 		break;

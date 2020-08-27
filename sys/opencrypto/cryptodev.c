@@ -325,7 +325,6 @@ struct csession {
 	struct enc_xform *txform;
 	int		hashsize;
 	int		ivsize;
-	int		mode;
 
 	void		*key;
 	void		*mackey;
@@ -620,7 +619,6 @@ cse_create(struct fcrypt *fcr, struct session2_op *sop)
 			goto bail;
 		}
 		csp.csp_cipher_key = key;
-		csp.csp_ivlen = txform->ivsize;
 	}
 
 	if (thash != NULL) {
@@ -644,11 +642,6 @@ cse_create(struct fcrypt *fcr, struct session2_op *sop)
 			}
 			csp.csp_auth_key = mackey;
 		}
-
-		if (csp.csp_auth_alg == CRYPTO_AES_NIST_GMAC)
-			csp.csp_ivlen = AES_GCM_IV_LEN;
-		if (csp.csp_auth_alg == CRYPTO_AES_CCM_CBC_MAC)
-			csp.csp_ivlen = AES_CCM_IV_LEN;
 	}
 
 	crid = sop->crid;
@@ -670,7 +663,6 @@ cse_create(struct fcrypt *fcr, struct session2_op *sop)
 	refcount_init(&cse->refs, 1);
 	cse->key = key;
 	cse->mackey = mackey;
-	cse->mode = csp.csp_mode;
 	cse->cses = cses;
 	cse->txform = txform;
 	if (thash != NULL)
@@ -679,7 +671,12 @@ cse_create(struct fcrypt *fcr, struct session2_op *sop)
 		cse->hashsize = AES_GMAC_HASH_LEN;
 	else if (csp.csp_cipher_alg == CRYPTO_AES_CCM_16)
 		cse->hashsize = AES_CBC_MAC_HASH_LEN;
-	cse->ivsize = csp.csp_ivlen;
+	if (txform != NULL)
+		cse->ivsize = txform->ivsize;
+	else if (csp->csp_auth_alg == CRYPTO_AES_NIST_GMAC)
+		cse->ivsize = AES_GCM_IV_LEN;
+	else if (csp->csp_auth_alg == CRYPTO_AES_CCM_CBC_MAC)
+		cse->ivsize = AES_CCM_IV_LEN;
 
 	mtx_lock(&fcr->lock);
 	TAILQ_INSERT_TAIL(&fcr->csessions, cse, next);
@@ -797,6 +794,7 @@ cryptodev_cb(struct cryptop *crp)
 static int
 cryptodev_op(struct csession *cse, const struct crypt_op *cop)
 {
+	const struct crypto_session_params *csp;
 	struct cryptop_data *cod = NULL;
 	struct cryptop *crp = NULL;
 	char *dst;
@@ -846,7 +844,8 @@ cryptodev_op(struct csession *cse, const struct crypt_op *cop)
 	if (cse->hashsize)
 		crp->crp_digest_start = cop->len;
 
-	switch (cse->mode) {
+	csp = crypto_get_params(cse->cses);
+	switch (csp->csp_mode) {
 	case CSP_MODE_COMPRESS:
 		switch (cop->op) {
 		case COP_ENCRYPT:
@@ -931,8 +930,10 @@ cryptodev_op(struct csession *cse, const struct crypt_op *cop)
 			goto bail;
 		}
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
+		crp->crp_iv_length = cse->ivsize;
 	} else if (cse->ivsize != 0) {
 		crp->crp_iv_start = 0;
+		crp->crp_iv_length = cse->ivsize;
 		crp->crp_payload_start += cse->ivsize;
 		crp->crp_payload_length -= cse->ivsize;
 		dst += cse->ivsize;
@@ -1007,6 +1008,7 @@ bail:
 static int
 cryptodev_aead(struct csession *cse, struct crypt_aead *caead)
 {
+	const struct crypto_session_params *csp;
 	struct cryptop_data *cod = NULL;
 	struct cryptop *crp = NULL;
 	char *dst;
@@ -1069,7 +1071,8 @@ cryptodev_aead(struct csession *cse, struct crypt_aead *caead)
 	else
 		crp->crp_digest_start = crp->crp_payload_start + caead->len;
 
-	switch (cse->mode) {
+	csp = crypto_get_params(cse->cses);
+	switch (csp->csp_mode) {
 	case CSP_MODE_AEAD:
 	case CSP_MODE_ETA:
 		switch (caead->op) {
@@ -1103,29 +1106,50 @@ cryptodev_aead(struct csession *cse, struct crypt_aead *caead)
 	crp->crp_opaque = cod;
 
 	if (caead->iv) {
-		/*
-		 * Permit a 16-byte IV for AES-XTS, but only use the
-		 * first 8 bytes as a block number.
-		 */
-		if (cse->mode == CSP_MODE_ETA &&
-		    caead->ivlen == AES_BLOCK_LEN &&
-		    cse->ivsize == AES_XTS_IV_LEN)
-			caead->ivlen = AES_XTS_IV_LEN;
+		switch (csp->csp_cipher_alg) {
+		case CRYPTO_AES_CCM_16:
+			if (caead->ivlen < 7 || caead->ivlen > 13) {
+				error = EINVAL;
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				goto bail;
+			}
+			break;
+		case CRYPTO_AES_XTS:
+			/*
+			 * Permit a 16-byte IV for AES-XTS, but only
+			 * use the first 8 bytes as a block number.
+			 */
+			if (caead->ivlen == AES_BLOCK_LEN)
+				caead->ivlen = AES_XTS_IV_LEN;
 
-		if (caead->ivlen != cse->ivsize) {
-			error = EINVAL;
-			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
-			goto bail;
+			/* FALLTHROUGH */
+		default:
+			if (caead->ivlen != cse->ivsize) {
+				error = EINVAL;
+				SDT_PROBE1(opencrypto, dev, ioctl, error,
+				    __LINE__);
+				goto bail;
+			}
+			break;
 		}
 
-		error = copyin(caead->iv, crp->crp_iv, cse->ivsize);
+		error = copyin(caead->iv, crp->crp_iv, caead->ivlen);
 		if (error) {
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 			goto bail;
 		}
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
+		crp->crp_iv_length = caead->ivlen;
 	} else {
+		/*
+		 * XXX: Should we honor caead->ivsize in this case?
+		 *
+		 * XXX: Should we even permit this case with a
+		 * non-zero cse->ivsize?
+		 */
 		crp->crp_iv_start = crp->crp_payload_start;
+		crp->crp_iv_length = cse->ivsize;
 		crp->crp_payload_start += cse->ivsize;
 		crp->crp_payload_length -= cse->ivsize;
 		dst += cse->ivsize;

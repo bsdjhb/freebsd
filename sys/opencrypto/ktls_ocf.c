@@ -348,6 +348,7 @@ ktls_ocf_tls12_gcm_encrypt(struct ktls_session *tls,
 	/* Setup the IV. */
 	memcpy(crp.crp_iv, tls->params.iv, TLS_AEAD_GCM_LEN);
 	memcpy(crp.crp_iv + TLS_AEAD_GCM_LEN, hdr + 1, sizeof(uint64_t));
+	crp.crp_iv_length = AES_GCM_IV_LEN;
 
 	/* Setup the AAD. */
 	tls_comp_len = ntohs(hdr->tls_length) -
@@ -424,6 +425,7 @@ ktls_ocf_tls12_gcm_decrypt(struct ktls_session *tls,
 	/* Setup the IV. */
 	memcpy(crp.crp_iv, tls->params.iv, TLS_AEAD_GCM_LEN);
 	memcpy(crp.crp_iv + TLS_AEAD_GCM_LEN, hdr + 1, sizeof(uint64_t));
+	crp.crp_iv_length = AES_GCM_IV_LEN;
 
 	/* Setup the AAD. */
 	tls_comp_len = ntohs(hdr->tls_length) -
@@ -531,6 +533,7 @@ ktls_ocf_tls13_gcm_encrypt(struct ktls_session *tls,
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 
 	memcpy(crp.crp_iv, nonce, sizeof(nonce));
+	crp.crp_iv_length = sizeof(nonce);
 
 	counter_u64_add(ocf_tls13_gcm_crypts, 1);
 	if (inplace)
@@ -592,7 +595,6 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 		csp.csp_cipher_alg = CRYPTO_AES_NIST_GCM_16;
 		csp.csp_cipher_key = tls->params.cipher_key;
 		csp.csp_cipher_klen = tls->params.cipher_key_len;
-		csp.csp_ivlen = AES_GCM_IV_LEN;
 		break;
 	case CRYPTO_AES_CBC:
 		switch (tls->params.cipher_key_len) {

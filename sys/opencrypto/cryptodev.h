@@ -370,8 +370,6 @@ struct crypto_session_params {
 #define	CSP_F_SEPARATE_AAD	0x0002	/* Requests can use separate AAD */
 #define CSP_F_ESN		0x0004  /* Requests can use seperate ESN field */ 
 
-	int		csp_ivlen;	/* IV length in bytes. */
-
 	int		csp_cipher_alg;
 	int		csp_cipher_klen; /* Key length in bytes. */
 	const void	*csp_cipher_key;
@@ -479,9 +477,8 @@ struct cryptop {
 	int		crp_aad_length;	/* 0 => no AAD. */
 	uint8_t		crp_esn[4];	/* high-order ESN */
 
-	int		crp_iv_start;	/* Location of IV.  IV length is from
-					 * the session.
-					 */
+	int		crp_iv_start;	/* Location of IV. */
+	int		crp_iv_length;	/* IV length in bytes. */
 	int		crp_payload_start; /* Location of ciphertext. */
 	int		crp_payload_output_start;
 	int		crp_payload_length;
@@ -715,13 +712,11 @@ void	crypto_cursor_copydata_noadv(struct crypto_buffer_cursor *cc, int size,
 static __inline void
 crypto_read_iv(struct cryptop *crp, void *iv)
 {
-	const struct crypto_session_params *csp;
 
-	csp = crypto_get_params(crp->crp_session);
 	if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
-		memcpy(iv, crp->crp_iv, csp->csp_ivlen);
+		memcpy(iv, crp->crp_iv, crp->crp_iv_length);
 	else
-		crypto_copydata(crp, crp->crp_iv_start, csp->csp_ivlen, iv);
+		crypto_copydata(crp, crp->crp_iv_start, crp->crp_iv_length, iv);
 }
 
 #endif /* _KERNEL */

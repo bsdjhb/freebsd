@@ -104,7 +104,6 @@ aes_set_key(struct krb5_key_state *ks, const void *in)
 	csp.csp_cipher_alg = CRYPTO_AES_CBC;
 	csp.csp_cipher_klen = ks->ks_class->ec_keybits / 8;
 	csp.csp_cipher_key = ks->ks_key;
-	csp.csp_ivlen = 16;
 	crypto_newsession(&as->as_session_aes, &csp,
 	    CRYPTOCAP_F_HARDWARE | CRYPTOCAP_F_SOFTWARE);
 }
@@ -155,6 +154,7 @@ aes_encrypt_1(const struct krb5_key_state *ks, int buftype, void *buf,
 	} else {
 		memset(crp->crp_iv, 0, 16);
 	}
+	crp->crp_iv_length = 16;
 
 	if (buftype == CRYPTO_BUF_MBUF)
 		crypto_use_mbuf(crp, buf);

@@ -120,8 +120,6 @@ cryptocteon_cipher_supported(const struct crypto_session_params *csp)
 
 	switch (csp->csp_cipher_alg) {
 	case CRYPTO_AES_CBC:
-		if (csp->csp_ivlen != 16)
-			return (false);
 		if (csp->csp_cipher_klen != 16 &&
 		    csp->csp_cipher_klen != 24 &&
 		    csp->csp_cipher_klen != 32)
@@ -331,8 +329,8 @@ cryptocteon_process(device_t dev, struct cryptop *crp, int hint)
 		if (crp->crp_flags & CRYPTO_F_IV_SEPARATE)
 			ivp = crp->crp_iv;
 		else {
-			crypto_copydata(crp, crp->crp_iv_start, csp->csp_ivlen,
-			    iv_data);
+			crypto_copydata(crp, crp->crp_iv_start,
+			    crp->crp_iv_length, iv_data);
 			ivp = iv_data;
 		}
 	}

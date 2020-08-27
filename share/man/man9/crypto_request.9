@@ -231,7 +231,7 @@ Authentication digest, hash, or tag
 .Bl -column "Payload Output" ".Fa crp_payload_output_start"
 .It Sy Region Ta Sy Start Ta Sy Length
 .It AAD Ta Fa crp_aad_start Ta Fa crp_aad_length
-.It IV Ta Fa crp_iv_start Ta Fa csp_ivlen
+.It IV Ta Fa crp_iv_start Ta Fa crp_iv_length
 .It Payload Ta Fa crp_payload_start Ta Fa crp_payload_length
 .It Payload Output Ta Fa crp_payload_output_start Ta Fa crp_payload_length
 .It Digest Ta Fa crp_digest_start Ta Fa csp_auth_mlen
@@ -338,6 +338,9 @@ should be left as zero.
 Requests that store part, but not all, of the IV in the data buffer should
 store the partial IV in the data buffer and pass the full IV separately in
 .Fa crp_iv .
+In either case,
+.Fa crp_iv_length
+always indicates the length of the IV in bytes.
 .Ss Request and Callback Scheduling
 The crypto framework provides multiple methods of scheduling the dispatch
 of requests to drivers along with the processing of driver callbacks.

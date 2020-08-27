@@ -237,7 +237,6 @@ esp_init(struct secasvar *sav, struct xformsw *xsp)
 		csp.csp_cipher_klen = _KEYBITS(sav->key_enc) / 8 -
 		    SAV_ISCTRORGCM(sav) * 4;
 	};
-	csp.csp_ivlen = txform->ivsize;
 
 	error = crypto_newsession(&sav->tdb_cryptoid, &csp, V_crypto_support);
 	return error;
@@ -454,11 +453,15 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 		    _KEYLEN(sav->key_enc) - 4, 4);
 		m_copydata(m, skip + hlen - sav->ivlen, sav->ivlen, &ivp[4]);
 		if (SAV_ISCTR(sav)) {
+			crp->crp_iv_length = 16;
 			be32enc(&ivp[sav->ivlen + 4], 1);
-		}
+		} else
+			crp->crp_iv_length = 12;
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
-	} else if (sav->ivlen != 0)
+	} else if (sav->ivlen != 0) {
 		crp->crp_iv_start = skip + hlen - sav->ivlen;
+		crp->crp_iv_length = sav->ivlen;
+	}
 
 	return (crypto_dispatch(crp));
 
@@ -877,13 +880,16 @@ esp_output(struct mbuf *m, struct secpolicy *sp, struct secasvar *sav,
 		be64enc(&ivp[4], cntr);
 		if (SAV_ISCTR(sav)) {
 			be32enc(&ivp[sav->ivlen + 4], 1);
-		}
+			crp->crp_iv_length = 16;
+		} else
+			crp->crp_iv_length = 12;
 		m_copyback(m, skip + hlen - sav->ivlen, sav->ivlen, &ivp[4]);
 		crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
 	} else if (sav->ivlen != 0) {
 		arc4rand(ivp, sav->ivlen, 0);
 		crp->crp_iv_start = skip + hlen - sav->ivlen;
 		m_copyback(m, crp->crp_iv_start, sav->ivlen, ivp);
+		crp->crp_iv_length = sav->ivlen;
 	}
 
 	/* Callback parameters */

@@ -496,7 +496,6 @@ g_eli_newsession(struct g_eli_worker *wr)
 	memset(&csp, 0, sizeof(csp));
 	csp.csp_mode = CSP_MODE_CIPHER;
 	csp.csp_cipher_alg = sc->sc_ealgo;
-	csp.csp_ivlen = g_eli_ivlen(sc->sc_ealgo);
 	csp.csp_cipher_klen = sc->sc_ekeylen / 8;
 	if (sc->sc_ealgo == CRYPTO_AES_XTS)
 		csp.csp_cipher_klen <<= 1;

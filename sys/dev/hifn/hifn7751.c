@@ -2299,8 +2299,6 @@ hifn_cipher_supported(struct hifn_softc *sc,
 
 	if (csp->csp_cipher_klen == 0)
 		return (false);
-	if (csp->csp_ivlen > HIFN_MAX_IV_LENGTH)
-		return (false);
 	switch (sc->sc_ena) {
 	case HIFN_PUSTAT_ENA_2:
 		switch (csp->csp_cipher_alg) {

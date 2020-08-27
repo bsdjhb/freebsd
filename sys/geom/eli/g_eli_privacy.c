@@ -338,6 +338,7 @@ g_eli_crypto_run(struct g_eli_worker *wr, struct bio *bp)
 			crp->crp_flags |= CRYPTO_F_IV_SEPARATE;
 			g_eli_crypto_ivgen(sc, dstoff, crp->crp_iv,
 			    sizeof(crp->crp_iv));
+			crp->crp_iv_length = g_eli_ivlen(sc->sc_ealgo);
 		}
 
 		error = crypto_dispatch(crp);
