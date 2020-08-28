@@ -59,6 +59,7 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/vmm.h>
 #include <vmmapi.h>
+#include "debug.h"
 #include "pci_emul.h"
 #include "mem.h"
 
@@ -844,6 +845,12 @@ passthru_cfgwrite(struct vmctx *ctx, int vcpu, struct pci_devinst *pi,
 	if (msicap_access(sc, coff)) {
 		pci_emul_capwrite(pi, coff, bytes, val, sc->psc_msi.capoff,
 		    PCIY_MSI);
+		PRINTLN("%s: vm_setup_pptdev(pci%d.%d.%d, addr=%#lx,", __func__,
+		    sc->psc_sel.pc_bus, sc->psc_sel.pc_dev, sc->psc_sel.pc_func,
+		    (long)pi->pi_msi.addr);
+		PRINTLN("\tdata=%#lx, maxmsg=%d, enabled=%d",
+		    (long)pi->pi_msi.msg_data, pi->pi_msi.maxmsgnum,
+		    pi->pi_msi.enabled);
 		error = vm_setup_pptdev_msi(ctx, vcpu, sc->psc_sel.pc_bus,
 			sc->psc_sel.pc_dev, sc->psc_sel.pc_func,
 			pi->pi_msi.addr, pi->pi_msi.msg_data,

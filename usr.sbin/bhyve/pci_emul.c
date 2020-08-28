@@ -892,7 +892,7 @@ static void
 msicap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 		int bytes, uint32_t val)
 {
-	uint16_t msgctrl, rwmask, msgdata, mme;
+	uint16_t msgctrl, rwmask, msgdata, mmc, mme;
 	uint32_t addrlo;
 
 	/*
@@ -904,6 +904,20 @@ msicap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 		msgctrl = pci_get_cfgdata16(pi, offset);
 		msgctrl &= ~rwmask;
 		msgctrl |= val & rwmask;
+
+		/*
+		 * Reject attempts to enable more interrupts than are
+		 * supported.
+		 */
+		mme = (msgctrl & PCIM_MSICTRL_MME_MASK) >> 4;
+		mmc = msgctrl & PCIM_MSICTRL_MMC_MASK;
+		if (mme > mmc) {
+			PRINTLN("%s: %u.%u.%u rejecting mme %d > mmc %d",
+			    __func__, pi->pi_bus, pi->pi_slot, pi->pi_func,
+			    1 << mme, 1 << mmc);
+			return;
+		}
+
 		val = msgctrl;
 	}
 	CFGWRITE(pi, offset, val, bytes);
@@ -915,12 +929,12 @@ msicap_cfgwrite(struct pci_devinst *pi, int capoff, int offset,
 	else
 		msgdata = pci_get_cfgdata16(pi, capoff + 8);
 
-	mme = msgctrl & PCIM_MSICTRL_MME_MASK;
+	mme = (msgctrl & PCIM_MSICTRL_MME_MASK) >> 4;
 	pi->pi_msi.enabled = msgctrl & PCIM_MSICTRL_MSI_ENABLE ? 1 : 0;
 	if (pi->pi_msi.enabled) {
 		pi->pi_msi.addr = addrlo;
 		pi->pi_msi.msg_data = msgdata;
-		pi->pi_msi.maxmsgnum = 1 << (mme >> 4);
+		pi->pi_msi.maxmsgnum = 1 << mme;
 	} else {
 		pi->pi_msi.maxmsgnum = 0;
 	}
