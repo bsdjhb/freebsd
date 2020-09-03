@@ -931,7 +931,7 @@ netbe_init(struct net_backend **ret, nvlist_t *nvl, net_be_rxeof_t cb,
 	int err;
 
 	value = get_config_value_node(nvl, "backend");
-	if (devname == NULL) {
+	if (value == NULL) {
 		return (-1);
 	}
 	devname = strdup(value);
