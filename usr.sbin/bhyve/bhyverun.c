@@ -224,7 +224,7 @@ usage(int code)
         fprintf(stderr,
 		"Usage: %s [-aehuwxACDHPSWY]\n"
 		"       %*s [-c [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]]\n"
-		"       %*s [-f <file>] [-l <lpc>] [-m mem] [-o <var>=<value>]\n"
+		"       %*s [-k <file>] [-l <lpc>] [-m mem] [-o <var>=<value>]\n"
 		"       %*s [-p vcpu:hostcpu] [-s <pci>] [-U uuid] [<vm>]\n"
 		"       -a: local apic is in xAPIC mode (deprecated)\n"
 		"       -A: create ACPI tables\n"
@@ -232,9 +232,9 @@ usage(int code)
 		"       -C: include guest memory in core file\n"
 		"       -D: destroy on power-off\n"
 		"       -e: exit on unhandled I/O access\n"
-		"       -f: config file\n"
 		"       -h: help\n"
 		"       -H: vmexit from the guest on hlt\n"
+		"       -k: key=value flat config file\n"
 		"       -l: LPC device configuration\n"
 		"       -m: memory size in MB\n"
 		"       -o: set config 'var' to 'value'\n"
@@ -1235,9 +1235,9 @@ main(int argc, char *argv[])
 	progname = basename(argv[0]);
 
 #ifdef BHYVE_SNAPSHOT
-	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:r:";
+	optstr = "aehuwxACDHIPSWYk:o:p:G:c:s:m:l:U:r:";
 #else
-	optstr = "aehuwxACDHIPSWYf:o:p:G:c:s:m:l:U:";
+	optstr = "aehuwxACDHIPSWYk:o:p:G:c:s:m:l:U:";
 #endif
 	while ((c = getopt(argc, argv, optstr)) != -1) {
 		switch (c) {
@@ -1265,15 +1265,15 @@ main(int argc, char *argv[])
 		case 'C':
 			set_config_bool("memory.guest_in_core", true);
 			break;
-		case 'f':
-			parse_simple_config_file(optarg);
-			break;
 		case 'G':
 			if (optarg[0] == 'w') {
 				set_config_bool("gdb.wait", true);
 				optarg++;
 			}
 			set_config_value("gdb.port", optarg);
+			break;
+		case 'k':
+			parse_simple_config_file(optarg);
 			break;
 		case 'l':
 			if (strncmp(optarg, "help", strlen(optarg)) == 0) {
