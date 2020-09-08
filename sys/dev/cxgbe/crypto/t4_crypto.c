@@ -29,12 +29,18 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/module.h>
 #include <sys/sglist.h>
+
+#include <vm/vm.h>
+#include <vm/pmap.h>
+#include <vm/vm_param.h>
 
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform.h>
@@ -238,6 +244,10 @@ struct ccr_softc {
 	counter_u64_t stats_sglist_error;
 	counter_u64_t stats_process_error;
 	counter_u64_t stats_sw_fallback;
+
+#ifdef INVARIANTS
+	TAILQ_HEAD(, cryptop) crp_requests;
+#endif
 };
 
 /*
@@ -576,6 +586,9 @@ ccr_hash(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	else
 		ccr_write_ulptx_sgl(s, dst, sgl_nsegs);
 
+	CTR3(KTR_CXGBE, "submitting crp %p on port %d for rxq %d", crp,
+	    s->port - sc->ports, s->port->rxq->iq.abs_id);
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -756,6 +769,9 @@ ccr_blkcipher(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		    crp->crp_payload_length, dst);
 	else
 		ccr_write_ulptx_sgl(s, dst, sgl_nsegs);
+
+	CTR3(KTR_CXGBE, "submitting crp %p on port %d for rxq %d", crp,
+	    s->port - sc->ports, s->port->rxq->iq.abs_id);
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -1080,6 +1096,9 @@ ccr_eta(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	} else
 		ccr_write_ulptx_sgl(s, dst, sgl_nsegs);
 
+	CTR3(KTR_CXGBE, "submitting crp %p on port %d for rxq %d", crp,
+	    s->port - sc->ports, s->port->rxq->iq.abs_id);
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -1114,8 +1133,10 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	int sgl_nsegs, sgl_len;
 	int error;
 
-	if (s->blkcipher.key_len == 0)
+	if (s->blkcipher.key_len == 0) {
+		device_printf(sc->dev, "%s: EINVAL, key_len == 0\n", __func__);
 		return (EINVAL);
+	}
 
 	/*
 	 * The crypto engine doesn't handle GCM requests with an empty
@@ -1157,8 +1178,11 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	/*
 	 * GCM requests should always provide an explicit IV.
 	 */
-	if ((crp->crp_flags & CRYPTO_F_IV_SEPARATE) == 0)
+	if ((crp->crp_flags & CRYPTO_F_IV_SEPARATE) == 0) {
+		device_printf(sc->dev, "%s: EINVAL, IV is not separate\n",
+		    __func__);
 		return (EINVAL);
+	}
 
 	/*
 	 * The output buffer consists of the cipher text followed by
@@ -1171,26 +1195,43 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	 */
 	if (op_type == CHCR_ENCRYPT_OP) {
 		if (iv_len + crp->crp_aad_length + crp->crp_payload_length +
-		    hash_size_in_response > MAX_REQUEST_SIZE)
+		    hash_size_in_response > MAX_REQUEST_SIZE) {
+			device_printf(sc->dev,
+	    "%s: EFBIG, iv_len (%d), AAD (%d), payload (%d), hash (%d)\n",
+			    __func__, iv_len, crp->crp_aad_length,
+			    crp->crp_payload_length, hash_size_in_response);
 			return (EFBIG);
+		}
 	} else {
 		if (iv_len + crp->crp_aad_length + crp->crp_payload_length >
-		    MAX_REQUEST_SIZE)
+		    MAX_REQUEST_SIZE) {
+			device_printf(sc->dev,
+			    "%s: EFBIG, iv_len (%d), AAD (%d), payload (%d)\n",
+			    __func__, iv_len, crp->crp_aad_length,
+			    crp->crp_payload_length);
 			return (EFBIG);
+		}
 	}
 	sglist_reset(s->sg_dsgl);
 	error = sglist_append_sglist(s->sg_dsgl, sc->sg_iv_aad, 0, iv_len +
 	    crp->crp_aad_length);
-	if (error)
+	if (error) {
+		device_printf(sc->dev,
+		    "%s: dsgl append iv_aad failed with %d\n", __func__, error);
 		return (error);
+	}
 	if (CRYPTO_HAS_OUTPUT_BUFFER(crp))
 		error = sglist_append_sglist(s->sg_dsgl, s->sg_output,
 		    crp->crp_payload_output_start, crp->crp_payload_length);
 	else
 		error = sglist_append_sglist(s->sg_dsgl, s->sg_input,
 		    crp->crp_payload_start, crp->crp_payload_length);
-	if (error)
+	if (error) {
+		device_printf(sc->dev,
+		    "%s: dsgl append payload failed with %d\n", __func__,
+		    error);
 		return (error);
+	}
 	if (op_type == CHCR_ENCRYPT_OP) {
 		if (CRYPTO_HAS_OUTPUT_BUFFER(crp))
 			error = sglist_append_sglist(s->sg_dsgl, s->sg_output,
@@ -1198,12 +1239,19 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		else
 			error = sglist_append_sglist(s->sg_dsgl, s->sg_input,
 			    crp->crp_digest_start, hash_size_in_response);
-		if (error)
+		if (error) {
+			device_printf(sc->dev,
+			    "%s: dsgl append hash failed with %d\n",
+			    __func__, error);
 			return (error);
+		}
 	}
 	dsgl_nsegs = ccr_count_sgl(s->sg_dsgl, DSGL_SGE_MAXLEN);
-	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE)
+	if (dsgl_nsegs > MAX_RX_PHYS_DSGL_SGE) {
+		device_printf(sc->dev, "%s: EFBIG: dsgl_nseg (%d)\n",
+		    __func__, dsgl_nsegs);
 		return (EFBIG);
+	}
 	dsgl_len = ccr_phys_dsgl_len(dsgl_nsegs);
 
 	/*
@@ -1227,8 +1275,13 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 	input_len = crp->crp_aad_length + crp->crp_payload_length;
 	if (op_type == CHCR_DECRYPT_OP)
 		input_len += hash_size_in_response;
-	if (input_len > MAX_REQUEST_SIZE)
+	if (input_len > MAX_REQUEST_SIZE) {
+		device_printf(sc->dev,
+    "%s: EFBIG: input_len too large, AAD (%u), payload (%u), hash (%u)\n",
+		    __func__, crp->crp_aad_length, crp->crp_payload_length,
+		    op_type == CHCR_DECRYPT_OP ? hash_size_in_response : 0);
 		return (EFBIG);
+	}
 	if (ccr_use_imm_data(transhdr_len, iv_len + input_len)) {
 		imm_len = input_len;
 		sgl_nsegs = 0;
@@ -1244,18 +1297,30 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 				error = sglist_append_sglist(s->sg_ulptx,
 				    s->sg_input, crp->crp_aad_start,
 				    crp->crp_aad_length);
-			if (error)
+			if (error) {
+				device_printf(sc->dev,
+				    "%s: ulptx append aad failed with %d\n",
+				    __func__, error);
 				return (error);
+			}
 		}
 		error = sglist_append_sglist(s->sg_ulptx, s->sg_input,
 		    crp->crp_payload_start, crp->crp_payload_length);
-		if (error)
+		if (error) {
+			device_printf(sc->dev,
+			    "%s: ulptx append payload failed with %d\n",
+			    __func__, error);
 			return (error);
+		}
 		if (op_type == CHCR_DECRYPT_OP) {
 			error = sglist_append_sglist(s->sg_ulptx, s->sg_input,
 			    crp->crp_digest_start, hash_size_in_response);
-			if (error)
+			if (error) {
+				device_printf(sc->dev,
+				    "%s: ulptx append hash failed with %d\n",
+				    __func__, error);
 				return (error);
+			}
 		}
 		sgl_nsegs = s->sg_ulptx->sg_nseg;
 		sgl_len = ccr_ulptx_sgl_len(sgl_nsegs);
@@ -1280,8 +1345,16 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 
 	wr_len = roundup2(transhdr_len, 16) + iv_len + roundup2(imm_len, 16) +
 	    sgl_len;
-	if (wr_len > SGE_MAX_WR_LEN)
+	if (wr_len > SGE_MAX_WR_LEN) {
+		device_printf(sc->dev, "%s: EFBIG: wr_len (%u)\n", __func__,
+		    wr_len);
+		device_printf(sc->dev,
+		    "transhdr_len (%u), iv_len (%u), imm_len (%u)\n",
+		    transhdr_len, iv_len, imm_len);
+		device_printf(sc->dev, "sgl_len (%u) sgl_nsegs (%u)\n", sgl_len,
+		    sgl_nsegs);
 		return (EFBIG);
+	}
 	wr = alloc_wrqe(wr_len, s->port->txq);
 	if (wr == NULL) {
 		counter_u64_add(sc->stats_wr_nomem, 1);
@@ -1370,6 +1443,9 @@ ccr_gcm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 			    hash_size_in_response, dst);
 	} else
 		ccr_write_ulptx_sgl(s, dst, sgl_nsegs);
+
+	CTR3(KTR_CXGBE, "submitting crp %p on port %d for rxq %d", crp,
+	    s->port - sc->ports, s->port->rxq->iq.abs_id);
 
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
@@ -1860,6 +1936,9 @@ ccr_ccm(struct ccr_softc *sc, struct ccr_session *s, struct cryptop *crp)
 		ccr_write_ulptx_sgl(s, dst, sgl_nsegs);
 	}
 
+	CTR3(KTR_CXGBE, "submitting crp %p on port %d for rxq %d", crp,
+	    s->port - sc->ports, s->port->rxq->iq.abs_id);
+
 	/* XXX: TODO backpressure */
 	t4_wrq_tx(sc->adapter, wr);
 
@@ -2213,6 +2292,9 @@ ccr_attach(device_t dev)
 	sc->stats_process_error = counter_u64_alloc(M_WAITOK);
 	sc->stats_sw_fallback = counter_u64_alloc(M_WAITOK);
 	ccr_sysctls(sc);
+#ifdef INVARIANTS
+	TAILQ_INIT(&sc->crp_requests);
+#endif
 
 	return (0);
 }
@@ -2753,6 +2835,12 @@ ccr_process(device_t dev, struct cryptop *crp, int hint)
 	s = crypto_get_driver_session(crp->crp_session);
 	sc = device_get_softc(dev);
 
+#ifdef INVARIANTS
+	mtx_lock(&sc->lock);
+	TAILQ_INSERT_TAIL(&sc->crp_requests, crp, crp_next);
+	mtx_unlock(&sc->lock);
+#endif
+
 	mtx_lock(&s->lock);
 	error = ccr_populate_sglist(s->sg_input, &crp->crp_buf);
 	if (error == 0 && CRYPTO_HAS_OUTPUT_BUFFER(crp))
@@ -2865,6 +2953,11 @@ out:
 	mtx_unlock(&s->lock);
 
 	if (error) {
+#ifdef INVARIANTS
+		mtx_lock(&sc->lock);
+		TAILQ_REMOVE(&sc->crp_requests, crp, crp_next);
+		mtx_unlock(&sc->lock);
+#endif
 		crp->crp_etype = error;
 		crypto_done(crp);
 	}
@@ -2880,6 +2973,9 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 	struct ccr_session *s;
 	const struct cpl_fw6_pld *cpl;
 	struct cryptop *crp;
+#ifdef INVARIANTS
+	struct cryptop *crp2;
+#endif
 	uint32_t status;
 	int error;
 
@@ -2889,6 +2985,35 @@ do_cpl6_fw_pld(struct sge_iq *iq, const struct rss_header *rss,
 		cpl = (const void *)(rss + 1);
 
 	crp = (struct cryptop *)(uintptr_t)be64toh(cpl->data[1]);
+	CTR2(KTR_CXGBE, "completed crp %p on rxq %d", crp, iq->abs_id);
+
+#ifdef INVARIANTS
+	mtx_lock(&sc->lock);
+	TAILQ_FOREACH(crp2, &sc->crp_requests, crp_next) {
+		if (crp2 == crp)
+			goto found;
+	}
+	mtx_unlock(&sc->lock);
+	printf("%s: bogus crp %p\n", __func__, crp);
+	t4_fatal_err(iq->adapter, false);
+	return (0);
+found:
+	TAILQ_REMOVE(&sc->crp_requests, crp, crp_next);
+	mtx_unlock(&sc->lock);
+#endif
+
+	if (!INKERNEL((uintptr_t)crp)) {
+		printf("%s: bogus crp %p\n", __func__, crp);
+		t4_fatal_err(iq->adapter, false);
+		return (0);
+	}
+
+	if (!INKERNEL((uintptr_t)crp->crp_session)) {
+		printf("%s: bogus crp %p\n", __func__, crp);
+		t4_fatal_err(iq->adapter, false);
+		return (0);
+	}
+
 	s = crypto_get_driver_session(crp->crp_session);
 	status = be64toh(cpl->data[0]);
 	if (CHK_MAC_ERR_BIT(status) || CHK_PAD_ERR_BIT(status))
