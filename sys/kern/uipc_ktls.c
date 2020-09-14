@@ -763,15 +763,13 @@ ktls_try_toe(struct socket *so, struct ktls_session *tls, int direction)
  * the connection is currently routed over.
  */
 static int
-ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls,
-    struct m_snd_tag *old, struct m_snd_tag **mstp)
+ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
+    struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
-	union if_snd_tag_query_params query;
 	struct ifnet *ifp;
 	struct nhop_object *nh;
 	struct tcpcb *tp;
-	bool have_rate;
 	int error;
 
 	INP_RLOCK(inp);
@@ -793,10 +791,10 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls,
 	 * Check administrative controls on ifnet TLS to determine if
 	 * ifnet TLS should be denied.
 	 *
-	 * - Always permit requests to replace an existing tag.
+	 * - Always permit 'force' requests.
 	 * - ktls_ifnet_permitted == 0: always deny.
 	 */
-	if (old == NULL && ktls_ifnet_permitted == 0) {
+	if (!force && ktls_ifnet_permitted == 0) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
@@ -817,30 +815,14 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls,
 	if_ref(ifp);
 
 	/*
-	 * If there is an existing TLS + ratelimit tag, query it
-	 * for the current rate.
-	 *
-	 * Otherwise, if a ratelimit tag is present on the inp,
-	 * query the current rate from the inp.
-	 *
-	 * XXX: Should we fail if we can't query the rate?
-	 *
-	 * XXX: Ok to hold the inp lock for this?
+	 * Allocate a TLS + ratelimit tag if the connection has an
+	 * existing pacing rate.
 	 */
-	have_rate = false;
-	if (old != NULL && old->type == IF_SND_TAG_TYPE_TLS_RATE_LIMIT &&
-	    old->ifp->if_snd_tag_query(old, &query) == 0)
-		have_rate = true;
-	else if (inp->inp_snd_tag != NULL &&
-	    inp->inp_snd_tag->type == IF_SND_TAG_TYPE_RATE_LIMIT &&
-	    inp->inp_snd_tag->ifp->if_snd_tag_query(inp->inp_snd_tag,
-	    &query) == 0)
-		have_rate = true;
-	if (have_rate) {
+	if (tp->t_pacing_rate != -1) {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
 		params.tls_rate_limit.inp = inp;
 		params.tls_rate_limit.tls = tls;
-		params.tls_rate_limit.max_rate = query.rate_limit.max_rate;
+		params.tls_rate_limit.max_rate = tp->t_pacing_rate;
 	} else {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS;
 		params.tls.inp = inp;
@@ -878,7 +860,7 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, bool force)
 	struct m_snd_tag *mst;
 	int error;
 
-	error = ktls_alloc_snd_tag(so->so_pcb, tls, NULL, &mst);
+	error = ktls_alloc_snd_tag(so->so_pcb, tls, false, &mst);
 	if (error == 0) {
 		tls->mode = TCP_TLS_MODE_IFNET;
 		tls->snd_tag = mst;
@@ -1059,6 +1041,7 @@ int
 ktls_enable_tx(struct socket *so, struct tls_enable *en)
 {
 	struct ktls_session *tls;
+	struct inpcb *inp;
 	int error;
 
 	if (!ktls_offload_enable)
@@ -1111,12 +1094,20 @@ ktls_enable_tx(struct socket *so, struct tls_enable *en)
 		return (error);
 	}
 
+	/*
+	 * Write lock the INP when setting sb_tls_info so that
+	 * routines in tcp_ratelimit.c can read sb_tls_info while
+	 * holding the INP lock.
+	 */
+	inp = so->so_pcb;
+	INP_WLOCK(inp);
 	SOCKBUF_LOCK(&so->so_snd);
 	so->so_snd.sb_tls_seqno = be64dec(en->rec_seq);
 	so->so_snd.sb_tls_info = tls;
 	if (tls->mode != TCP_TLS_MODE_SW)
 		so->so_snd.sb_flags |= SB_TLS_IFNET;
 	SOCKBUF_UNLOCK(&so->so_snd);
+	INP_WUNLOCK(inp);
 	sbunlock(&so->so_snd);
 
 	counter_u64_add(ktls_offload_total, 1);
@@ -1299,7 +1290,7 @@ ktls_reset_send_tag(void *context, int pending)
 	if (old != NULL)
 		m_snd_tag_rele(old);
 
-	error = ktls_alloc_snd_tag(inp, tls, old, &new);
+	error = ktls_alloc_snd_tag(inp, tls, true, &new);
 
 	if (error == 0) {
 		INP_WLOCK(inp);
@@ -1369,6 +1360,42 @@ ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls)
 	mtx_pool_unlock(mtxpool_sleep, tls);
 	return (ENOBUFS);
 }
+
+#ifdef RATELIMIT
+int
+ktls_modify_txrtlmt(struct ktls_session *tls, uint64_t max_pacing_rate)
+{
+	union if_snd_tag_modify_params params = {
+		.rate_limit.max_rate = max_pacing_rate,
+		.rate_limit.flags = M_NOWAIT,
+	};
+	struct m_snd_tag *mst;
+	struct ifnet *ifp;
+	int error;
+
+	/* Can't get to the inp, but it should be locked. */
+	/* INP_LOCK_ASSERT(inp); */
+
+	MPASS(tls->mode == TCP_TLS_MODE_IFNET);
+
+	if (tls->snd_tag == NULL) {
+		/*
+		 * Resetting send tag, ignore this change.  The
+		 * pending reset may or may not see this updated rate
+		 * in the tcpcb.  If it doesn't, we will just lose
+		 * this rate change.
+		 */
+		return (0);
+	}
+
+	MPASS(tls->snd_tag != NULL);
+	MPASS(tls->snd_tag->type == IF_SND_TAG_TYPE_TLS_RATE_LIMIT);
+
+	mst = tls->snd_tag;
+	ifp = mst->ifp;
+	return (ifp->if_snd_tag_modify(mst, &params));
+}
+#endif
 #endif
 
 void
