@@ -825,6 +825,7 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	 * XXX: Ok to hold the inp lock for this?
 	 */
 	if (inp->inp_snd_tag != NULL && inp->inp_snd_tag->ifp == ifp &&
+	    inp->inp_snd_tag->type == IF_SND_TAG_TYPE_RATE_LIMIT &&
 	    ifp->if_snd_tag_query != NULL &&
 	    ifp->if_snd_tag_query(inp->inp_snd_tag, &query) == 0) {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
