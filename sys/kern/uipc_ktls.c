@@ -767,6 +767,7 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
     struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
+	union if_snd_tag_query_params query;
 	struct ifnet *ifp;
 	struct nhop_object *nh;
 	struct tcpcb *tp;
@@ -814,12 +815,30 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	ifp = nh->nh_ifp;
 	if_ref(ifp);
 
-	params.hdr.type = IF_SND_TAG_TYPE_TLS;
+	/*
+	 * If there is a ratelimit tag present, query the current
+	 * rate.
+	 *
+	 * XXX: Should we fail if we get an ifp mismatch or can't
+	 * query the rate?
+	 *
+	 * XXX: Ok to hold the inp lock for this?
+	 */
+	if (inp->inp_snd_tag != NULL && inp->inp_snd_tag->ifp == ifp &&
+	    ifp->if_snd_tag_query != NULL &&
+	    ifp->if_snd_tag_query(inp->inp_snd_tag, &query) == 0) {
+		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
+		params.tls_rate_limit.inp = inp;
+		params.tls_rate_limit.tls = tls;
+		params.tls_rate_limit.max_rate = query.rate_limit.max_rate;
+	} else {
+		params.hdr.type = IF_SND_TAG_TYPE_TLS;
+		params.tls.inp = inp;
+		params.tls.tls = tls;
+	}
 	params.hdr.flowid = inp->inp_flowid;
 	params.hdr.flowtype = inp->inp_flowtype;
 	params.hdr.numa_domain = inp->inp_numa_domain;
-	params.tls.inp = inp;
-	params.tls.tls = tls;
 	INP_RUNLOCK(inp);
 
 	if ((ifp->if_capenable & IFCAP_NOMAP) == 0) {	
