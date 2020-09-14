@@ -818,7 +818,8 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	 * Allocate a TLS + ratelimit tag if the connection has an
 	 * existing pacing rate.
 	 */
-	if (tp->t_pacing_rate != -1) {
+	if (tp->t_pacing_rate != -1 &&
+	    (ifp->if_capenable & IFCAP_TXTLS_RTLMT) != 0) {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
 		params.tls_rate_limit.inp = inp;
 		params.tls_rate_limit.tls = tls;
