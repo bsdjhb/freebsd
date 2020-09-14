@@ -763,14 +763,15 @@ ktls_try_toe(struct socket *so, struct ktls_session *tls, int direction)
  * the connection is currently routed over.
  */
 static int
-ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
-    struct m_snd_tag **mstp)
+ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls,
+    struct m_snd_tag *old, struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
 	union if_snd_tag_query_params query;
 	struct ifnet *ifp;
 	struct nhop_object *nh;
 	struct tcpcb *tp;
+	bool have_rate;
 	int error;
 
 	INP_RLOCK(inp);
@@ -792,10 +793,10 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	 * Check administrative controls on ifnet TLS to determine if
 	 * ifnet TLS should be denied.
 	 *
-	 * - Always permit 'force' requests.
+	 * - Always permit requests to replace an existing tag.
 	 * - ktls_ifnet_permitted == 0: always deny.
 	 */
-	if (!force && ktls_ifnet_permitted == 0) {
+	if (old == NULL && ktls_ifnet_permitted == 0) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
@@ -816,18 +817,26 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	if_ref(ifp);
 
 	/*
-	 * If there is a ratelimit tag present, query the current
-	 * rate.
+	 * If there is an existing TLS + ratelimit tag, query it
+	 * for the current rate.
 	 *
-	 * XXX: Should we fail if we get an ifp mismatch or can't
-	 * query the rate?
+	 * Otherwise, if a ratelimit tag is present on the inp,
+	 * query the current rate from the inp.
+	 *
+	 * XXX: Should we fail if we can't query the rate?
 	 *
 	 * XXX: Ok to hold the inp lock for this?
 	 */
-	if (inp->inp_snd_tag != NULL && inp->inp_snd_tag->ifp == ifp &&
+	have_rate = false;
+	if (old != NULL && old->type == IF_SND_TAG_TYPE_TLS_RATE_LIMIT &&
+	    old->ifp->if_snd_tag_query(old, &query) == 0)
+		have_rate = true;
+	else if (inp->inp_snd_tag != NULL &&
 	    inp->inp_snd_tag->type == IF_SND_TAG_TYPE_RATE_LIMIT &&
-	    ifp->if_snd_tag_query != NULL &&
-	    ifp->if_snd_tag_query(inp->inp_snd_tag, &query) == 0) {
+	    inp->inp_snd_tag->ifp->if_snd_tag_query(inp->inp_snd_tag,
+	    &query) == 0)
+		have_rate = true;
+	if (have_rate) {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
 		params.tls_rate_limit.inp = inp;
 		params.tls_rate_limit.tls = tls;
@@ -873,7 +882,7 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, bool force)
 	struct m_snd_tag *mst;
 	int error;
 
-	error = ktls_alloc_snd_tag(so->so_pcb, tls, force, &mst);
+	error = ktls_alloc_snd_tag(so->so_pcb, tls, NULL, &mst);
 	if (error == 0) {
 		tls->mode = TCP_TLS_MODE_IFNET;
 		tls->snd_tag = mst;
@@ -1294,7 +1303,7 @@ ktls_reset_send_tag(void *context, int pending)
 	if (old != NULL)
 		m_snd_tag_rele(old);
 
-	error = ktls_alloc_snd_tag(inp, tls, true, &new);
+	error = ktls_alloc_snd_tag(inp, tls, old, &new);
 
 	if (error == 0) {
 		INP_WLOCK(inp);
