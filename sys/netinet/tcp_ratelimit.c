@@ -1219,6 +1219,9 @@ tcp_set_pacing_rate(struct tcpcb *tp, struct ifnet *ifp,
     uint64_t bytes_per_sec, int flags, int *error)
 {
 	const struct tcp_hwrate_limit_table *rte;
+#ifdef KERN_TLS
+	struct ktls_session *tls;
+#endif
 
 	if (tp->t_inpcb->inp_snd_tag == NULL) {
 		/*
@@ -1230,25 +1233,29 @@ tcp_set_pacing_rate(struct tcpcb *tp, struct ifnet *ifp,
 				*error = ENODEV;
 			return (NULL);
 		}
+#ifdef KERN_TLS
+		tls = NULL;
+		if (tp->t_inpcb->inp_socket->so_snd.sb_flags & SB_TLS_IFNET) {
+			tls = tp->t_inpcb->inp_socket->so_snd.sb_tls_info;
+
+			if ((ifp->if_capenable & IFCAP_TXTLS_RTLMT) == 0 ||
+			    tls->mode != TCP_TLS_MODE_IFNET) {
+				if (error)
+					*error = ENODEV;
+				return (NULL);
+			}
+		}
+#endif
 		rte = rt_setup_rate(tp->t_inpcb, ifp, bytes_per_sec, flags, error);
 #ifdef KERN_TLS
-		if (rte != NULL &&
-		    tp->t_inpcb->inp_socket->so_snd.sb_flags & SB_TLS_IFNET) {
-			struct ktls_session *tls;
-
-			tls = tp->t_inpcb->inp_socket->so_snd.sb_tls_info;
-			if (tls->mode == TCP_TLS_MODE_IFNET &&
-			    tls->snd_tag != NULL) {
-				/*
-				 * Fake a route change error to reset
-				 * the TLS send tag.  This will
-				 * convert the existing tag to a TLS
-				 * ratelimit tag.
-				 */
-				MPASS(tls->snd_tag->type ==
-				    IF_SND_TAG_TYPE_TLS);
-				ktls_output_eagain(tp->t_inpcb, tls);
-			}
+		if (rte != NULL && tls != NULL && tls->snd_tag != NULL) {
+			/*
+			 * Fake a route change error to reset the TLS
+			 * send tag.  This will convert the existing
+			 * tag to a TLS ratelimit tag.
+			 */
+			MPASS(tls->snd_tag->type == IF_SND_TAG_TYPE_TLS);
+			ktls_output_eagain(tp->t_inpcb, tls);
 		}
 #endif
 	} else {

@@ -836,7 +836,7 @@ ktls_alloc_snd_tag(struct inpcb *inp, struct ktls_session *tls,
 	    inp->inp_snd_tag->ifp->if_snd_tag_query(inp->inp_snd_tag,
 	    &query) == 0)
 		have_rate = true;
-	if (have_rate) {
+	if (have_rate && (ifp->if_capenable & IFCAP_TXTLS_RTLMT) != 0) {
 		params.hdr.type = IF_SND_TAG_TYPE_TLS_RATE_LIMIT;
 		params.tls_rate_limit.inp = inp;
 		params.tls_rate_limit.tls = tls;
