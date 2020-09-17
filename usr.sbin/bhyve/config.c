@@ -378,39 +378,31 @@ set_config_bool_node(nvlist_t *parent, const char *name, bool value)
 	set_config_value_node(parent, name, value ? "true" : "false");
 }
 
+static void
+dump_tree(const char *prefix, const nvlist_t *nvl)
+{
+	const char *name;
+	void *cookie;
+	int type;
+
+	cookie = NULL;
+	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
+		if (type == NV_TYPE_NVLIST) {
+			char *new_prefix;
+
+			asprintf(&new_prefix, "%s%s.", prefix, name);
+			dump_tree(new_prefix, nvlist_get_nvlist(nvl, name));
+			free(new_prefix);
+		} else {
+			assert(type == NV_TYPE_STRING);
+			printf("%s%s=%s\n", prefix, name,
+			    nvlist_get_string(nvl, name));
+		}
+	}
+}
+
 void
 dump_config(void)
 {
-	const nvlist_t *nvl;
-	void *cookie;
-	const char *name, *value, *expval;
-	unsigned int depth;
-	int type;
-
-	nvl = config_root;
-	cookie = NULL;
-	depth = 0;
-	for (;;) {
-		while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
-			printf("%*s%s", (int)(depth * 4), "", name);
-			if (type == NV_TYPE_NVLIST) {
-				depth++;
-				nvl = nvlist_get_nvlist(nvl, name);
-				cookie = NULL;
-			} else {
-				assert(type == NV_TYPE_STRING);
-				value = nvlist_get_string(nvl, name);
-				printf("=%s", value);
-				expval = expand_config_value(value);
-				if (strcmp(value, expval) != 0)
-					printf(" (%s)", expval);
-			}
-			printf("\n");
-		}
-
-		nvl = nvlist_get_parent(nvl, &cookie);
-		if (nvl == NULL)
-			break;
-		depth--;
-	}
+	dump_tree("", config_root);
 }
