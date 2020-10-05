@@ -684,7 +684,6 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 			memcpy(os->iv, tls->params.iv, AES_BLOCK_LEN);
 		}
 	}
-
 	tls->free = ktls_ocf_free;
 	return (0);
 }
