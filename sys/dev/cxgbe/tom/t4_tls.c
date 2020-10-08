@@ -2050,6 +2050,10 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	tp->rcv_nxt += pdu_length;
 	KASSERT(tp->rcv_wnd >= pdu_length,
 	    ("%s: negative window size", __func__));
+#ifdef VERBOSE_TRACES
+	CTR4(KTR_CXGBE, "%s: tid %u rcv_wnd %u -> %u", __func__, tid,
+	    tp->rcv_wnd, tp->rcv_wnd - pdu_length);
+#endif
 	tp->rcv_wnd -= pdu_length;
 
 	/* XXX: Not sure what to do about urgent data. */
@@ -2211,6 +2215,10 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 #endif
 	if (rx_credits > 0 && sbused(sb) + tp->rcv_wnd < sb->sb_lowat) {
 		rx_credits = send_rx_credits(sc, toep, rx_credits);
+#ifdef VERBOSE_TRACES
+		CTR4(KTR_CXGBE, "%s: tid %u rcv_wnd %u -> %u",
+		    __func__, toep->tid, tp->rcv_wnd, tp->rcv_wnd + rx_credits);
+#endif
 		tp->rcv_wnd += rx_credits;
 		tp->rcv_adv += rx_credits;
 	}
@@ -2247,6 +2255,10 @@ do_rx_data_tls(const struct cpl_rx_data *cpl, struct toepcb *toep,
 
 	tp->rcv_nxt += len;
 	KASSERT(tp->rcv_wnd >= len, ("%s: negative window size", __func__));
+#ifdef VERBOSE_TRACES
+	CTR4(KTR_CXGBE, "%s: tid %u rcv_wnd %u -> %u", __func__, toep->tid,
+	    tp->rcv_wnd, tp->rcv_wnd - len);
+#endif
 	tp->rcv_wnd -= len;
 
 	/* Do we have a full TLS header? */
@@ -2339,6 +2351,11 @@ out:
 	if (rx_credits > 0 && sbused(sb) + tp->rcv_wnd < sb->sb_lowat) {
 		rx_credits = send_rx_credits(toep->vi->adapter, toep,
 		    rx_credits);
+#ifdef VERBOSE_TRACES
+		CTR4(KTR_CXGBE, "%s: tid %u rcv_wnd %u -> %u",
+		    __func__, toep->tid, tp->rcv_wnd,
+		    tp->rcv_wnd + rx_credits);
+#endif
 		tp->rcv_wnd += rx_credits;
 		tp->rcv_adv += rx_credits;
 	}

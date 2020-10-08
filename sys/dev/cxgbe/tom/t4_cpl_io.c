@@ -451,6 +451,10 @@ t4_rcvd_locked(struct toedev *tod, struct tcpcb *tp)
 	    (rx_credits >= 16 * 1024 && tp->rcv_wnd <= 128 * 1024) ||
 	    sbused(sb) + tp->rcv_wnd < sb->sb_lowat)) {
 		rx_credits = send_rx_credits(sc, toep, rx_credits);
+#ifdef VERBOSE_TRACES
+		CTR4(KTR_CXGBE, "%s: tid %u rcv_wnd %u -> %u",
+		    __func__, toep->tid, tp->rcv_wnd, tp->rcv_wnd + rx_credits);
+#endif
 		tp->rcv_wnd += rx_credits;
 		tp->rcv_adv += rx_credits;
 	} else if (toep->flags & TPF_FORCE_CREDITS)
