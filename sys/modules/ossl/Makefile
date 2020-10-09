@@ -4,10 +4,16 @@
 .PATH:	${SRCTOP}/sys/crypto/openssl/${MACHINE_CPUARCH}
 
 KMOD=	ossl
-SRCS=	ossl.c \
+SRCS=	bus_if.h \
+	cryptodev_if.h \
+	device_if.h \
+	ossl.c \
 	ossl_sha1.c \
 	ossl_sha256.c \
 	ossl_sha512.c \
+	${SRCS.${MACHINE_CPUARCH}}
+
+SRCS.amd64= \
 	sha1-x86_64.S \
 	sha256-x86_64.S \
 	sha512-x86_64.S
