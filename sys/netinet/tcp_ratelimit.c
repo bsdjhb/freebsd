@@ -1029,7 +1029,7 @@ rt_find_real_interface(struct ifnet *ifp, struct inpcb *inp, int *error)
 		return (NULL);
 	}
 	tifp = tag->ifp;
-	tifp->if_snd_tag_free(tag);
+	m_snd_tag_rele(tag);
 	return (tifp);
 }
 
@@ -1162,7 +1162,6 @@ static void
 tcp_rl_ifnet_departure(void *arg __unused, struct ifnet *ifp)
 {
 	struct tcp_rate_set *rs, *nrs;
-	struct ifnet *tifp;
 	int i;
 
 	mtx_lock(&rs_mtx);
@@ -1174,8 +1173,7 @@ tcp_rl_ifnet_departure(void *arg __unused, struct ifnet *ifp)
 			rs->rs_flags |= RS_IS_DEAD;
 			for (i = 0; i < rs->rs_rate_cnt; i++) {
 				if (rs->rs_rlt[i].flags & HDWRPACE_TAGPRESENT) {
-					tifp = rs->rs_rlt[i].tag->ifp;
-					in_pcbdetach_tag(tifp, rs->rs_rlt[i].tag);
+					in_pcbdetach_tag(rs->rs_rlt[i].tag);
 					rs->rs_rlt[i].tag = NULL;
 				}
 				rs->rs_rlt[i].flags = HDWRPACE_IFPDEPARTED;
@@ -1192,7 +1190,6 @@ static void
 tcp_rl_shutdown(void *arg __unused, int howto __unused)
 {
 	struct tcp_rate_set *rs, *nrs;
-	struct ifnet *tifp;
 	int i;
 
 	mtx_lock(&rs_mtx);
@@ -1202,8 +1199,7 @@ tcp_rl_shutdown(void *arg __unused, int howto __unused)
 		rs->rs_flags |= RS_IS_DEAD;
 		for (i = 0; i < rs->rs_rate_cnt; i++) {
 			if (rs->rs_rlt[i].flags & HDWRPACE_TAGPRESENT) {
-				tifp = rs->rs_rlt[i].tag->ifp;
-				in_pcbdetach_tag(tifp, rs->rs_rlt[i].tag);
+				in_pcbdetach_tag(rs->rs_rlt[i].tag);
 				rs->rs_rlt[i].tag = NULL;
 			}
 			rs->rs_rlt[i].flags = HDWRPACE_IFPDEPARTED;
