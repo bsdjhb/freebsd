@@ -1675,7 +1675,7 @@ m_uiotombuf_nomap(struct uio *uio, int how, int len, int maxseg, int flags)
 	 * a countermeasure against the known-IV weakness in CBC
 	 * ciphersuites.
 	 */
-	if (total == 0) {
+	if (__predict_false(total == 0)) {
 		mb = mb_alloc_ext_pgs(how, mb_free_mext_pgs);
 		if (mb == NULL)
 			return (NULL);

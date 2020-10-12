@@ -1502,7 +1502,7 @@ ktls_frame(struct mbuf *top, struct ktls_session *tls, int *enq_cnt,
 		if (tls->mode == TCP_TLS_MODE_SW) {
 			m->m_flags |= M_NOTREADY;
 			m->m_epg_nrdy = m->m_epg_npgs;
-			if (tls_len == 0) {
+			if (__predict_false(tls_len == 0)) {
 				/* TLS 1.0 empty fragment. */
 				*enq_cnt += 1;
 			} else
@@ -1971,7 +1971,7 @@ retry_page:
 			dst_iov[i].iov_len = len;
 		}
 
-		if (m->m_epg_npgs == 0) {
+		if (__predict_false(m->m_epg_npgs == 0)) {
 			/* TLS 1.0 empty fragment. */
 			npages++;
 		} else
