@@ -18,4 +18,9 @@ SRCS.amd64= \
 	sha256-x86_64.S \
 	sha512-x86_64.S
 
+SRCS.i386= \
+	sha1-586.S \
+	sha256-586.S \
+	sha512-586.S
+
 .include <bsd.kmod.mk>
