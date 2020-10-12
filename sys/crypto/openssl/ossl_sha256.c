@@ -16,8 +16,8 @@ __FBSDID("$FreeBSD$");
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform_auth.h>
 
-#include <crypto/ossl/ossl.h>
-#include <crypto/ossl/ossl_sha.h>
+#include <crypto/openssl/ossl.h>
+#include <crypto/openssl/ossl_sha.h>
 
 /* sha256-x86_64.S */
 void sha256_block_data_order(SHA256_CTX *c, const void *in, size_t num);
