@@ -65,7 +65,8 @@
  * operation once in software via OpenSSL and a second time via
  * OpenCrypto and compares the results.
  *
- * cryptocheck [-vz] [-A aad length] [-a algorithm] [-d dev] [size ...]
+ * cryptocheck [-vz] [-A aad length] [-a algorithm] [-d dev] [-I IV length]
+ *	       [size ...]
  *
  * Options:
  *	-v	Verbose.
@@ -149,6 +150,7 @@ static const struct alg {
 	int cipher;
 	int mac;
 	enum { T_HASH, T_HMAC, T_GMAC, T_CIPHER, T_ETA, T_AEAD } type;
+	u_int iv_sizes[8];
 	const EVP_CIPHER *(*evp_cipher)(void);
 	const EVP_MD *(*evp_md)(void);
 } algs[] = {
@@ -201,29 +203,36 @@ static const struct alg {
 	{ .name = "chacha20", .cipher = CRYPTO_CHACHA20, .type = T_CIPHER,
 	  .evp_cipher = EVP_chacha20 },
 	{ .name = "aes-gcm", .cipher = CRYPTO_AES_NIST_GCM_16, .type = T_AEAD,
-	  .evp_cipher = EVP_aes_128_gcm },
+	  .iv_sizes = { AES_GCM_IV_LEN }, .evp_cipher = EVP_aes_128_gcm },
 	{ .name = "aes-gcm192", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .type = T_AEAD, .evp_cipher = EVP_aes_192_gcm },
+	  .type = T_AEAD, .iv_sizes = { AES_GCM_IV_LEN },
+	  .evp_cipher = EVP_aes_192_gcm },
 	{ .name = "aes-gcm256", .cipher = CRYPTO_AES_NIST_GCM_16,
-	  .type = T_AEAD, .evp_cipher = EVP_aes_256_gcm },
+	  .type = T_AEAD, .iv_sizes = { AES_GCM_IV_LEN },
+	  .evp_cipher = EVP_aes_256_gcm },
 	{ .name = "aes-ccm", .cipher = CRYPTO_AES_CCM_16, .type = T_AEAD,
+	  .iv_sizes = { 12, 7, 8, 9, 10, 11, 13 },
 	  .evp_cipher = EVP_aes_128_ccm },
 	{ .name = "aes-ccm192", .cipher = CRYPTO_AES_CCM_16, .type = T_AEAD,
+	  .iv_sizes = { 12, 7, 8, 9, 10, 11, 13 },
 	  .evp_cipher = EVP_aes_192_ccm },
 	{ .name = "aes-ccm256", .cipher = CRYPTO_AES_CCM_16, .type = T_AEAD,
+	  .iv_sizes = { 12, 7, 8, 9, 10, 11, 13 },
 	  .evp_cipher = EVP_aes_256_ccm },
 };
 
-static bool verbose;
+static bool testall, verbose;
 static int requested_crid;
 static size_t aad_sizes[48], sizes[128];
 static u_int naad_sizes, nsizes;
+static u_int iv_size;
 
 static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: cryptocheck [-z] [-a algorithm] [-d dev] [size ...]\n");
+	    "usage: cryptocheck [-vz] [-A aad size] [-a algorithm]\n"
+	    "                   [-d dev] [-I IV size] [size ...]\n");
 	exit(1);
 }
 
@@ -1314,13 +1323,14 @@ ocf_aead(const struct ocf_session *ses, const char *iv, size_t iv_len,
 #define	AEAD_MAX_TAG_LEN	MAX(AES_GMAC_HASH_LEN, AES_CBC_MAC_HASH_LEN)
 
 static void
-run_aead_test(const struct alg *alg, size_t aad_len, size_t size)
+run_aead_test(const struct alg *alg, size_t aad_len, size_t size,
+    size_t iv_len)
 {
 	struct ocf_session ses;
 	const EVP_CIPHER *cipher;
 	char *aad, *buffer, *cleartext, *ciphertext;
 	char *iv, *key;
-	u_int iv_len, key_len;
+	u_int key_len;
 	int error;
 	char control_tag[AEAD_MAX_TAG_LEN], test_tag[AEAD_MAX_TAG_LEN];
 
@@ -1338,20 +1348,6 @@ run_aead_test(const struct alg *alg, size_t aad_len, size_t size)
 	memset(test_tag, 0x3c, sizeof(test_tag));
 
 	key_len = EVP_CIPHER_key_length(cipher);
-	iv_len = EVP_CIPHER_iv_length(cipher);
-
-	/*
-	 * AES-CCM can have varying IV lengths; however, for the moment
-	 * we only support AES_CCM_IV_LEN (12).  So if the sizes are
-	 * different, we'll fail.
-	 */
-	if (EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE &&
-	    iv_len != AES_CCM_IV_LEN) {
-		if (verbose)
-			printf("OpenSSL CCM IV length (%d) != AES_CCM_IV_LEN",
-			    iv_len);
-		return;
-	}
 
 	key = alloc_buffer(key_len);
 	iv = generate_iv(iv_len, alg);
@@ -1450,7 +1446,7 @@ out:
 }
 
 static void
-run_test(const struct alg *alg, size_t aad_len, size_t size)
+run_test(const struct alg *alg, size_t aad_len, size_t size, size_t iv_len)
 {
 
 	switch (alg->type) {
@@ -1470,7 +1466,7 @@ run_test(const struct alg *alg, size_t aad_len, size_t size)
 		run_eta_test(alg, aad_len, size);
 		break;
 	case T_AEAD:
-		run_aead_test(alg, aad_len, size);
+		run_aead_test(alg, aad_len, size, iv_len);
 		break;
 	}
 }
@@ -1478,18 +1474,33 @@ run_test(const struct alg *alg, size_t aad_len, size_t size)
 static void
 run_test_sizes(const struct alg *alg)
 {
-	u_int i, j;
+	u_int i, j, k;
 
 	switch (alg->type) {
 	default:
 		for (i = 0; i < nsizes; i++)
-			run_test(alg, 0, sizes[i]);
+			run_test(alg, 0, sizes[i], 0);
 		break;
 	case T_ETA:
-	case T_AEAD:
 		for (i = 0; i < naad_sizes; i++)
 			for (j = 0; j < nsizes; j++)
-				run_test(alg, aad_sizes[i], sizes[j]);
+				run_test(alg, aad_sizes[i], sizes[j], 0);
+		break;
+	case T_AEAD:
+		for (i = 0; i < naad_sizes; i++) {
+			for (j = 0; j < nsizes; j++) {
+				if (iv_size != 0)
+					run_test(alg, aad_sizes[i], sizes[j],
+						iv_size);
+				else if (testall) {
+					for (k = 0; alg->iv_sizes[k] != 0; k++)
+						run_test(alg, aad_sizes[i],
+						    sizes[j], alg->iv_sizes[k]);
+				} else
+					run_test(alg, aad_sizes[i], sizes[j],
+						alg->iv_sizes[0]);
+			}
+		}
 		break;
 	}
 }
@@ -1565,14 +1576,14 @@ main(int ac, char **av)
 	char *cp;
 	size_t base_size;
 	u_int i;
-	bool testall;
 	int ch;
 
 	algname = NULL;
 	requested_crid = CRYPTO_FLAG_HARDWARE;
 	testall = false;
 	verbose = false;
-	while ((ch = getopt(ac, av, "A:a:d:vz")) != -1)
+	iv_size = 0;
+	while ((ch = getopt(ac, av, "A:a:d:I:vz")) != -1)
 		switch (ch) {
 		case 'A':
 			if (naad_sizes >= nitems(aad_sizes)) {
@@ -1589,6 +1600,11 @@ main(int ac, char **av)
 			break;
 		case 'd':
 			requested_crid = crlookup(optarg);
+			break;
+		case 'I':
+			iv_size = strtol(optarg, &cp, 0);
+			if (*cp != '\0')
+				errx(1, "Bad IV size %s", optarg);
 			break;
 		case 'v':
 			verbose = true;
