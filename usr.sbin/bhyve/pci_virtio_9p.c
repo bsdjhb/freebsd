@@ -51,6 +51,8 @@ __FBSDID("$FreeBSD$");
 #include <backend/fs.h>
 
 #include "bhyverun.h"
+#include "config.h"
+#include "debug.h"
 #include "pci_emul.h"
 #include "virtio.h"
 
@@ -227,53 +229,65 @@ pci_vt9p_notify(void *vsc, struct vqueue_info *vq)
 	}
 }
 
+static int
+pci_vt9p_legacy_config(nvlist_t *nvl, const char *opts)
+{
+	char *sharename, *tofree, *token, *tokens;
+
+	tokens = tofree = strdup(opts);
+	while ((token = strsep(&tokens, ",")) != NULL) {
+		if (strchr(token, '=') != NULL) {
+			if (sharename != NULL) {
+				EPRINTLN(
+			    "virtio-9p: more than one share name given");
+				return (-1);
+			}
+
+			sharename = strsep(&token, "=");
+			set_config_value_node(nvl, "sharename", sharename);
+			set_config_value_node(nvl, "path", token);
+		} else
+			set_config_bool_node(nvl, token, true);
+	}
+	free(tofree);
+	return (0);
+}
 
 static int
-pci_vt9p_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
+pci_vt9p_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 {
 	struct pci_vt9p_softc *sc;
-	char *opt;
-	char *sharename = NULL;
-	char *rootpath = NULL;
+	const char *value;
+	const char *sharename;
 	int rootfd;
 	bool ro = false;
 	cap_rights_t rootcap;
 
-	if (opts == NULL) {
-		printf("virtio-9p: share name and path required\n");
+	value = get_config_value_node(nvl, "ro");
+	if (value != NULL)
+		ro = get_config_bool_node(nvl, "ro");
+
+	value = get_config_value_node(nvl, "path");
+	if (value == NULL) {
+		EPRINTLN("virtio-9p: path required");
 		return (1);
 	}
-
-	while ((opt = strsep(&opts, ",")) != NULL) {
-		if (strchr(opt, '=') != NULL) {
-			if (sharename != NULL) {
-				printf("virtio-9p: more than one share name given\n");
-				return (1);
-			}
-
-			sharename = strsep(&opt, "=");
-			rootpath = opt;
-			continue;
-		}
-
-		if (strcmp(opt, "ro") == 0) {
-			DPRINTF(("read-only mount requested\r\n"));
-			ro = true;
-			continue;
-		}
-
-		printf("virtio-9p: invalid option '%s'\n", opt);
-		return (1);
-	}
-
-	if (strlen(sharename) > VT9P_MAXTAGSZ) {
-		printf("virtio-9p: share name too long\n");
-		return (1);
-	}
-
-	rootfd = open(rootpath, O_DIRECTORY);
-	if (rootfd < 0)
+	rootfd = open(value, O_DIRECTORY);
+	if (rootfd < 0) {
+		EPRINTLN("virtio-9p: failed to open '%s': %s", value,
+		    strerror(errno));
 		return (-1);
+	}
+
+	sharename = get_config_value_node(nvl, "sharename");
+	if (sharename == NULL) {
+		EPRINTLN("virtio-9p: share name required");
+		return (1);
+	}
+	if (strlen(sharename) > VT9P_MAXTAGSZ) {
+		EPRINTLN("virtio-9p: share name too long");
+		return (1);
+	}
 
 	sc = calloc(1, sizeof(struct pci_vt9p_softc));
 	sc->vsc_config = calloc(1, sizeof(struct pci_vt9p_config) +
@@ -337,6 +351,7 @@ pci_vt9p_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 
 struct pci_devemu pci_de_v9p = {
 	.pe_emu =	"virtio-9p",
+	.pe_legacy_config = pci_vt9p_legacy_config,
 	.pe_init =	pci_vt9p_init,
 	.pe_barwrite =	vi_pci_write,
 	.pe_barread =	vi_pci_read
