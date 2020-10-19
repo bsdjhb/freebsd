@@ -68,8 +68,30 @@ i386
 .Pp
 The
 .Nm
-driver includes support for the SHA family of digests including both
-plain hashes and HMAC.
+driver includes support for the following algorithms:
+.Pp
+.Bl -bullet -compact
+.It
+SHA1
+.It
+SHA1-HMAC
+.It
+SHA2-224
+.It
+SHA2-224-HMAC
+.It
+SHA2-256
+.It
+SHA2-256-HMAC
+.It
+SHA2-384
+.It
+SHA2-384-HMAC
+.It
+SHA2-512
+.It
+SHA2-512-HMAC
+.El
 .Sh SEE ALSO
 .Xr crypto 4 ,
 .Xr intro 4 ,
