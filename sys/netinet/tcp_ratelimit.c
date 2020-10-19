@@ -1205,6 +1205,8 @@ tcp_set_pacing_rate(struct tcpcb *tp, struct ifnet *ifp,
 {
 	const struct tcp_hwrate_limit_table *rte;
 
+	INP_WLOCK_ASSERT(tp->t_inpcb);
+
 	if (tp->t_inpcb->inp_snd_tag == NULL) {
 		/*
 		 * We are setting up a rate for the first time.
@@ -1248,6 +1250,8 @@ tcp_chg_pacing_rate(const struct tcp_hwrate_limit_table *crte,
 	const struct tcp_rate_set *rs;
 	int is_indirect = 0;
 	int err;
+
+	INP_WLOCK_ASSERT(tp->t_inpcb);
 
 	if ((tp->t_inpcb->inp_snd_tag == NULL) ||
 	    (crte == NULL)) {
@@ -1324,6 +1328,8 @@ tcp_rel_pacing_rate(const struct tcp_hwrate_limit_table *crte, struct tcpcb *tp)
 	const struct tcp_rate_set *crs;
 	struct tcp_rate_set *rs;
 	uint64_t pre;
+
+	INP_WLOCK_ASSERT(tp->t_inpcb);
 
 	crs = crte->ptbl;
 	/*
