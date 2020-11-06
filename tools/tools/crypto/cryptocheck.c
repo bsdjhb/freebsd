@@ -352,21 +352,9 @@ crfind(int crid)
 
 	bzero(&find, sizeof(find));
 	find.crid = crid;
-	if (ioctl(devcrypto(), CRIOFINDDEV, &find) == -1)
+	if (ioctl(devcrypto(), CIOCFINDDEV, &find) == -1)
 		err(1, "ioctl(CIOCFINDDEV): crid %d", crid);
 	return (find.name);
-}
-
-static int
-crget(void)
-{
-	int fd;
-
-	if (ioctl(devcrypto(), CRIOGET, &fd) == -1)
-		err(1, "ioctl(CRIOGET)");
-	if (fcntl(fd, F_SETFD, 1) == -1)
-		err(1, "fcntl(F_SETFD) (crget)");
-	return fd;
 }
 
 static char
@@ -436,7 +424,7 @@ ocf_init_session(struct session2_op *sop, const char *type, const char *name,
 {
 	int fd;
 
-	fd = crget();
+	fd = devcrypto();
 	if (ioctl(fd, CIOCGSESSION2, sop) < 0) {
 		warn("cryptodev %s %s not supported for device %s",
 		    type, name, crfind(sop->crid));

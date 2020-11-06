@@ -317,8 +317,9 @@ struct crypt_kop {
 #define CRF_DH_COMPUTE_KEY	(1 << CRK_DH_COMPUTE_KEY)
 
 /*
- * done against open of /dev/crypto, to get a cloned descriptor.
- * Please use F_SETFD against the cloned descriptor.
+ * Deprecated ioctls.  Previously, most ioctls were performed against
+ * a cloned descriptor of /dev/crypto obtained via CRIOGET.  Now all
+ * ioctls are performed against /dev/crypto directly.
  */
 #define	CRIOGET		_IOWR('c', 100, uint32_t)
 #define	CRIOASYMFEAT	CIOCASYMFEAT
