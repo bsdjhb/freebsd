@@ -417,8 +417,7 @@ tcp_twcheck(struct inpcb *inp, struct tcpopt *to, struct tcphdr *th,
 	 * the segment.
 	 * See section 3.2 of RFC 7323.
 	 */
-	if (to != NULL && ((to->to_flags & TOF_TS) == 0) &&
-	    (tw->t_recent != 0)) {
+	if (((to->to_flags & TOF_TS) == 0) && (tw->t_recent != 0)) {
 		goto drop;
 	}
 
