@@ -140,5 +140,6 @@ void toe_syncache_add(struct in_conninfo *, struct tcpopt *, struct tcphdr *,
 int  toe_syncache_expand(struct in_conninfo *, struct tcpopt *, struct tcphdr *,
     struct socket **);
 
-int toe_4tuple_check(struct in_conninfo *, struct tcphdr *, struct ifnet *);
+int toe_4tuple_check(struct in_conninfo *,  struct tcpopt *, struct tcphdr *,
+    struct ifnet *);
 #endif

@@ -374,7 +374,8 @@ toe_syncache_expand(struct in_conninfo *inc, struct tcpopt *to,
  * equivalent.
  */
 int
-toe_4tuple_check(struct in_conninfo *inc, struct tcphdr *th, struct ifnet *ifp)
+toe_4tuple_check(struct in_conninfo *inc, struct tcpopt *to, struct tcphdr *th,
+    struct ifnet *ifp)
 {
 	struct inpcb *inp;
 
@@ -390,7 +391,7 @@ toe_4tuple_check(struct in_conninfo *inc, struct tcphdr *th, struct ifnet *ifp)
 		INP_WLOCK_ASSERT(inp);
 
 		if ((inp->inp_flags & INP_TIMEWAIT) && th != NULL) {
-			if (!tcp_twcheck(inp, NULL, th, NULL, 0))
+			if (!tcp_twcheck(inp, to, th, NULL, 0))
 				return (EADDRINUSE);
 		} else {
 			INP_WUNLOCK(inp);

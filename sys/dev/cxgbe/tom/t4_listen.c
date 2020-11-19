@@ -1315,7 +1315,8 @@ found:
 	}
 
 	/* Don't offload if the 4-tuple is already in use */
-	if (toe_4tuple_check(&inc, &th, ifp) != 0) {
+	t4opt_to_tcpopt(&cpl->tcpopt, &to);
+	if (toe_4tuple_check(&inc, &to, &th, ifp) != 0) {
 		NET_EPOCH_EXIT(et);
 		REJECT_PASS_ACCEPT_REQ(false);
 	}
@@ -1357,7 +1358,6 @@ found:
 	 * If all goes well t4_syncache_respond will get called during
 	 * syncache_add.  Note that syncache_add releases the pcb lock.
 	 */
-	t4opt_to_tcpopt(&cpl->tcpopt, &to);
 	toe_syncache_add(&inc, &to, &th, inp, tod, synqe, iptos);
 
 	if (atomic_load_int(&synqe->ok_to_respond) > 0) {
