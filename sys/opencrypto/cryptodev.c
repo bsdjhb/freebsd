@@ -66,6 +66,17 @@ SDT_PROVIDER_DECLARE(opencrypto);
 
 SDT_PROBE_DEFINE1(opencrypto, dev, ioctl, error, "int"/*line number*/);
 
+#ifdef COMPAT_FREEBSD12
+/*
+ * Previously, most ioctls were performed against a cloned descriptor
+ * of /dev/crypto obtained via CRIOGET.  Now all ioctls are performed
+ * against /dev/crypto directly.
+ */
+#define	CRIOGET		_IOWR('c', 100, uint32_t)
+#endif
+
+/* the following are done against the cloned descriptor */
+
 #ifdef COMPAT_FREEBSD32
 #include <sys/mount.h>
 #include <compat/freebsd32/freebsd32.h>

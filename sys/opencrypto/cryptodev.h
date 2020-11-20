@@ -316,16 +316,6 @@ struct crypt_kop {
 #define CRF_DSA_VERIFY		(1 << CRK_DSA_VERIFY)
 #define CRF_DH_COMPUTE_KEY	(1 << CRK_DH_COMPUTE_KEY)
 
-/*
- * Deprecated ioctls.  Previously, most ioctls were performed against
- * a cloned descriptor of /dev/crypto obtained via CRIOGET.  Now all
- * ioctls are performed against /dev/crypto directly.
- */
-#define	CRIOGET		_IOWR('c', 100, uint32_t)
-#define	CRIOASYMFEAT	CIOCASYMFEAT
-#define	CRIOFINDDEV	CIOCFINDDEV
-
-/* the following are done against the cloned descriptor */
 #define	CIOCGSESSION	_IOWR('c', 101, struct session_op)
 #define	CIOCFSESSION	_IOW('c', 102, uint32_t)
 #define CIOCCRYPT	_IOWR('c', 103, struct crypt_op)
