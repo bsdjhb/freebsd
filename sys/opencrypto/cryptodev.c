@@ -1351,9 +1351,9 @@ fcrypt_dtor(void *data)
 
 	while ((cse = TAILQ_FIRST(&fcr->csessions))) {
 		TAILQ_REMOVE(&fcr->csessions, cse, next);
-		KASSERT(cse->refs == 1,
+		KASSERT(refcount_load(&cse->refs) == 1,
 		    ("%s: crypto session %p with %d refs", __func__, cse,
-		    cse->refs));
+		    refcount_load(&cse->refs)));
 		cse_free(cse);
 	}
 	mtx_destroy(&fcr->lock);
