@@ -1451,6 +1451,13 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 	switch (cmd) {
 #ifdef COMPAT_FREEBSD12
 	case CRIOGET:
+		/*
+		 * NB: This may fail in cases that the old
+		 * implementation did not, e.g. if a /dev/crypto FD is
+		 * opened outside a jail but this ioctl() is used
+		 * inside a jail that does not expose /dev/crypto, or
+		 * if this is invoked after cap_enter().
+		 */
 		error = kern_openat(td, AT_FDCWD, "/dev/crypto", UIO_SYSSPACE,
 		    O_RDWR, 0);
 		if (error == 0)
