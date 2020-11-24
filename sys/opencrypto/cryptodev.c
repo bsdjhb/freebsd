@@ -1453,10 +1453,10 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 	case CRIOGET:
 		/*
 		 * NB: This may fail in cases that the old
-		 * implementation did not, e.g. if a /dev/crypto FD is
-		 * opened outside a jail but this ioctl() is used
-		 * inside a jail that does not expose /dev/crypto, or
-		 * if this is invoked after cap_enter().
+		 * implementation did not if the current process has
+		 * restricted filesystem access (e.g. running in a
+		 * jail that does not expose /dev/crypto or in
+		 * capability mode).
 		 */
 		error = kern_openat(td, AT_FDCWD, "/dev/crypto", UIO_SYSSPACE,
 		    O_RDWR, 0);
