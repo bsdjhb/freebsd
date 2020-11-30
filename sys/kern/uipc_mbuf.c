@@ -1216,6 +1216,52 @@ m_append(struct mbuf *m0, int len, c_caddr_t cp)
 	return (remainder == 0);
 }
 
+/* Apply function f to the data in a single mbuf. */
+static int
+m_apply_one(struct mbuf *m, int off, int len,
+    int (*f)(void *, void *, u_int), void *arg)
+{
+	void *p;
+	u_int i, count, pgoff;
+	int rval;
+
+	if ((m->m_flags & M_EXTPG) != 0) {
+		KASSERT(PMAP_HAS_DMAP,
+		    ("m_apply does not support unmapped mbufs"));
+		off += mtod(m, vm_offset_t);
+		if (off < m->m_epg_hdrlen) {
+			count = min(m->m_epg_hdrlen - off, len);
+			rval = f(arg, m->m_epg_hdr + off, count);
+			if (rval)
+				return (rval);
+			len -= count;
+			off = 0;
+		} else
+			off -= m->m_epg_hdrlen;
+		pgoff = m->m_epg_1st_off;
+		for (i = 0; i < m->m_epg_npgs && len > 0; i++) {
+			if (off < m_epg_pagelen(m, i, pgoff)) {
+				count = min(m_epg_pagelen(m, i, pgoff) - off,
+				    len);
+				p = (void *)PHYS_TO_DMAP(m->m_epg_pa[i] +
+				    pgoff);
+				rval = f(arg, p, count);
+				if (rval)
+					return (rval);
+				len -= count;
+				off = 0;
+			} else
+				off -= m_epg_pagelen(m, i, pgoff);
+		}
+		if (off < m->m_epg_trllen && len > 0) {
+			count = min(m->m_epg_trllen - off, len);
+			return (f(arg, m->m_epg_trail + off, count));
+		}
+		return (0);
+	}
+	return (f(arg, mtod(m, caddr_t) + off, len));
+}
+
 /*
  * Apply function f to the data in an mbuf chain starting "off" bytes from
  * the beginning, continuing for "len" bytes.
@@ -1239,7 +1285,7 @@ m_apply(struct mbuf *m, int off, int len,
 	while (len > 0) {
 		KASSERT(m != NULL, ("m_apply, offset > size of mbuf chain"));
 		count = min(m->m_len - off, len);
-		rval = (*f)(arg, mtod(m, caddr_t) + off, count);
+		rval = m_apply_one(m, off, count, f, arg);
 		if (rval)
 			return (rval);
 		len -= count;
