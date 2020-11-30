@@ -149,7 +149,7 @@ cuio_getptr(struct uio *uio, int loc, int *off)
 	return (-1);
 }
 
-#if CRYPTO_MAY_HAVE_VMPAGE
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
 /*
  * Apply function f to the data in a vm_page_t list starting "off" bytes from
  * the beginning, continuing for "len" bytes.
@@ -237,7 +237,83 @@ cvm_page_copydata(vm_page_t *pages, int off, int len, caddr_t cp)
 	}
 	return processed;
 }
-#endif /* CRYPTO_MAY_HAVE_VMPAGE */
+
+static __inline void *
+m_epg_segbase(struct mbuf *m, size_t offset)
+{
+	u_int i, pgoff;
+
+	KASSERT(PMAP_HAS_DMAP, ("%s: platform does not support unmapped mbufs",
+		__func__));
+
+	offset += mtod(m, vm_offset_t);
+	if (offset < m->m_epg_hdrlen)
+		return (m->m_epg_hdr + offset);
+	offset -= m->m_epg_hdrlen;
+	pgoff = m->m_epg_1st_off;
+	for (i = 0; i < m->m_epg_npgs; i++) {
+		if (offset < m_epg_pagelen(m, i, pgoff))
+			return ((void *)PHYS_TO_DMAP(m->m_epg_pa[i] + pgoff +
+			    offset));
+		offset -= m_epg_pagelen(m, i, pgoff);
+		pgoff = 0;
+	}
+	return (m->m_epg_trail + offset);
+}
+
+static __inline size_t
+m_epg_seglen(struct mbuf *m, size_t offset)
+{
+	u_int i, pgoff;
+
+	KASSERT(PMAP_HAS_DMAP, ("%s: platform does not support unmapped mbufs",
+		__func__));
+
+	offset += mtod(m, vm_offset_t);
+	if (offset < m->m_epg_hdrlen)
+		return (m->m_epg_hdrlen - offset);
+	offset -= m->m_epg_hdrlen;
+	pgoff = m->m_epg_1st_off;
+	for (i = 0; i < m->m_epg_npgs; i++) {
+		if (offset < m_epg_pagelen(m, i, pgoff))
+			return (m_epg_pagelen(m, i, pgoff) - offset);
+		offset -= m_epg_pagelen(m, i, pgoff);
+		pgoff = 0;
+	}
+	return (m->m_epg_trllen - offset);
+}
+
+static __inline void *
+m_epg_contiguous_subsegment(struct mbuf *m, size_t skip, size_t len)
+{
+	u_int i, pgoff;
+
+	KASSERT(PMAP_HAS_DMAP, ("%s: platform does not support unmapped mbufs",
+		__func__));
+
+	skip += mtod(m, vm_offset_t);
+	if (skip < m->m_epg_hdrlen) {
+		if (len > m->m_epg_hdrlen - skip)
+			return (NULL);
+		return (m->m_epg_hdr + skip);
+	}
+	skip -= m->m_epg_hdrlen;
+	pgoff = m->m_epg_1st_off;
+	for (i = 0; i < m->m_epg_npgs; i++) {
+		if (skip < m_epg_pagelen(m, i, pgoff)) {
+			if (len > m_epg_pagelen(m, i, pgoff) - skip)
+				return (NULL);
+			return ((void *)PHYS_TO_DMAP(m->m_epg_pa[i] + pgoff +
+			    skip));
+		}
+		skip -= m_epg_pagelen(m, i, pgoff);
+		pgoff = 0;
+	}
+	if (len > m->m_epg_trllen - skip)
+		return (NULL);
+	return (m->m_epg_trail + skip);
+}
+#endif /* CRYPTO_MAY_HAVE_DIRECT_MAP */
 
 void
 crypto_cursor_init(struct crypto_buffer_cursor *cc,
@@ -345,8 +421,14 @@ crypto_cursor_segbase(struct crypto_buffer_cursor *cc)
 	case CRYPTO_BUF_MBUF:
 		if (cc->cc_mbuf == NULL)
 			return (NULL);
-		KASSERT((cc->cc_mbuf->m_flags & M_EXTPG) == 0,
-		    ("%s: not supported for unmapped mbufs", __func__));
+		if (cc->cc_mbuf->m_flags & M_EXTPG) {
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
+			return (m_epg_segbase(cc->cc_mbuf, cc->cc_offset));
+#elif defined(INVARIANTS)
+			panic("%s: platform does not support unmapped mbufs",
+			    __func__);
+#endif
+		}
 		return (mtod(cc->cc_mbuf, char *) + cc->cc_offset);
 	case CRYPTO_BUF_VMPAGE:
 		return ((char *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(
@@ -372,6 +454,14 @@ crypto_cursor_seglen(struct crypto_buffer_cursor *cc)
 	case CRYPTO_BUF_MBUF:
 		if (cc->cc_mbuf == NULL)
 			return (0);
+		if (cc->cc_mbuf->m_flags & M_EXTPG) {
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
+			return (m_epg_seglen(cc->cc_mbuf, cc->cc_offset));
+#elif defined(INVARIANTS)
+			panic("%s: platform does not support unmapped mbufs",
+			    __func__);
+#endif
+		}
 		return (cc->cc_mbuf->m_len - cc->cc_offset);
 	case CRYPTO_BUF_UIO:
 		return (cc->cc_iov->iov_len - cc->cc_offset);
@@ -401,12 +491,14 @@ crypto_cursor_copyback(struct crypto_buffer_cursor *cc, int size,
 		break;
 	case CRYPTO_BUF_MBUF:
 		for (;;) {
-			KASSERT((cc->cc_mbuf->m_flags & M_EXTPG) == 0,
-			    ("%s: not supported for unmapped mbufs", __func__));
-			dst = mtod(cc->cc_mbuf, char *) + cc->cc_offset;
+			/*
+			 * This uses m_copyback() for individual
+			 * mbufs so that cc_mbuf and cc_offset are
+			 * updated.
+			 */
 			remain = cc->cc_mbuf->m_len - cc->cc_offset;
 			todo = MIN(remain, size);
-			memcpy(dst, src, todo);
+			m_copyback(cc->cc_mbuf, cc->cc_offset, todo, src);
 			src += todo;
 			if (todo < remain) {
 				cc->cc_offset += todo;
@@ -482,12 +574,14 @@ crypto_cursor_copydata(struct crypto_buffer_cursor *cc, int size, void *vdst)
 		break;
 	case CRYPTO_BUF_MBUF:
 		for (;;) {
-			KASSERT((cc->cc_mbuf->m_flags & M_EXTPG) == 0,
-			    ("%s: not supported for unmapped mbufs", __func__));
-			src = mtod(cc->cc_mbuf, const char *) + cc->cc_offset;
+			/*
+			 * This uses m_copydata() for individual
+			 * mbufs so that cc_mbuf and cc_offset are
+			 * updated.
+			 */
 			remain = cc->cc_mbuf->m_len - cc->cc_offset;
 			todo = MIN(remain, size);
-			memcpy(dst, src, todo);
+			m_copydata(cc->cc_mbuf, cc->cc_offset, todo, dst);
 			dst += todo;
 			if (todo < remain) {
 				cc->cc_offset += todo;
@@ -602,7 +696,7 @@ crypto_copyback(struct cryptop *crp, int off, int size, const void *src)
 	case CRYPTO_BUF_MBUF:
 		m_copyback(cb->cb_mbuf, off, size, src);
 		break;
-#if CRYPTO_MAY_HAVE_VMPAGE
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
 	case CRYPTO_BUF_VMPAGE:
 		MPASS(size <= cb->cb_vm_page_len);
 		MPASS(size + off <=
@@ -610,7 +704,7 @@ crypto_copyback(struct cryptop *crp, int off, int size, const void *src)
 		cvm_page_copyback(cb->cb_vm_page,
 		    off + cb->cb_vm_page_offset, size, src);
 		break;
-#endif /* CRYPTO_MAY_HAVE_VMPAGE */
+#endif /* CRYPTO_MAY_HAVE_DIRECT_MAP */
 	case CRYPTO_BUF_UIO:
 		cuio_copyback(cb->cb_uio, off, size, src);
 		break;
@@ -634,7 +728,7 @@ crypto_copydata(struct cryptop *crp, int off, int size, void *dst)
 	case CRYPTO_BUF_MBUF:
 		m_copydata(crp->crp_buf.cb_mbuf, off, size, dst);
 		break;
-#if CRYPTO_MAY_HAVE_VMPAGE
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
 	case CRYPTO_BUF_VMPAGE:
 		MPASS(size <= crp->crp_buf.cb_vm_page_len);
 		MPASS(size + off <= crp->crp_buf.cb_vm_page_len +
@@ -642,7 +736,7 @@ crypto_copydata(struct cryptop *crp, int off, int size, void *dst)
 		cvm_page_copydata(crp->crp_buf.cb_vm_page,
 		    off + crp->crp_buf.cb_vm_page_offset, size, dst);
 		break;
-#endif /* CRYPTO_MAY_HAVE_VMPAGE */
+#endif /* CRYPTO_MAY_HAVE_DIRECT_MAP */
 	case CRYPTO_BUF_UIO:
 		cuio_copydata(crp->crp_buf.cb_uio, off, size, dst);
 		break;
@@ -672,12 +766,12 @@ crypto_apply_buf(struct crypto_buffer *cb, int off, int len,
 	case CRYPTO_BUF_UIO:
 		error = cuio_apply(cb->cb_uio, off, len, f, arg);
 		break;
-#if CRYPTO_MAY_HAVE_VMPAGE
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
 	case CRYPTO_BUF_VMPAGE:
 		error = cvm_page_apply(cb->cb_vm_page,
 		    off + cb->cb_vm_page_offset, len, f, arg);
 		break;
-#endif /* CRYPTO_MAY_HAVE_VMPAGE */
+#endif /* CRYPTO_MAY_HAVE_DIRECT_MAP */
 	case CRYPTO_BUF_CONTIG:
 		MPASS(off + len <= cb->cb_buf_len);
 		error = (*f)(arg, cb->cb_buf + off, len);
@@ -715,6 +809,13 @@ m_contiguous_subsegment(struct mbuf *m, size_t skip, size_t len)
 	if (skip + len > m->m_len)
 		return (NULL);
 
+	if (m->m_flags & M_EXTPG) {
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
+		return (m_epg_contiguous_subsegment(m, skip, len));
+#elif defined(INVARIANTS)
+		panic("%s: platform does not support unmapped mbufs", __func__);
+#endif
+	}
 	return (mtod(m, char*) + skip);
 }
 
@@ -745,12 +846,12 @@ crypto_buffer_contiguous_subsegment(struct crypto_buffer *cb, size_t skip,
 		return (m_contiguous_subsegment(cb->cb_mbuf, skip, len));
 	case CRYPTO_BUF_UIO:
 		return (cuio_contiguous_segment(cb->cb_uio, skip, len));
-#if CRYPTO_MAY_HAVE_VMPAGE
+#if CRYPTO_MAY_HAVE_DIRECT_MAP
 	case CRYPTO_BUF_VMPAGE:
 		MPASS(skip + len <= cb->cb_vm_page_len);
 		return (cvm_page_contiguous_segment(cb->cb_vm_page,
 		    skip + cb->cb_vm_page_offset, len));
-#endif /* CRYPTO_MAY_HAVE_VMPAGE */
+#endif /* CRYPTO_MAY_HAVE_DIRECT_MAP */
 	case CRYPTO_BUF_CONTIG:
 		MPASS(skip + len <= cb->cb_buf_len);
 		return (cb->cb_buf + skip);

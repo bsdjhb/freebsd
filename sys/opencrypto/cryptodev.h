@@ -208,11 +208,11 @@
 #define CRYPTO_FLAG_HARDWARE	0x01000000	/* hardware accelerated */
 #define CRYPTO_FLAG_SOFTWARE	0x02000000	/* software implementation */
 
-/* Does the kernel support vmpage buffers on this platform? */
+/* Does the kernel support a direct map on this platform? */
 #ifdef __powerpc__
-#define CRYPTO_MAY_HAVE_VMPAGE	1
+#define CRYPTO_MAY_HAVE_DIRECT_MAP	1
 #else
-#define CRYPTO_MAY_HAVE_VMPAGE	( PMAP_HAS_DMAP )
+#define CRYPTO_MAY_HAVE_DIRECT_MAP	( PMAP_HAS_DMAP )
 #endif
 /* Does the currently running system support vmpage buffers on this platform? */
 #define CRYPTO_HAS_VMPAGE	( PMAP_HAS_DMAP )
