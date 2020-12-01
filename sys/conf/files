@@ -4920,6 +4920,7 @@ opencrypto/cryptodev.c		optional cryptodev
 opencrypto/cryptodev_if.m	optional crypto | ipsec | ipsec_support
 opencrypto/cryptosoft.c		optional crypto | ipsec | ipsec_support
 opencrypto/cryptodeflate.c	optional crypto | ipsec | ipsec_support
+opencrypto/ktls_ocf.c		optional kern_tls
 opencrypto/gmac.c		optional crypto | ipsec | ipsec_support
 opencrypto/gfmult.c		optional crypto | ipsec | ipsec_support
 opencrypto/rmd160.c		optional crypto | ipsec | ipsec_support
