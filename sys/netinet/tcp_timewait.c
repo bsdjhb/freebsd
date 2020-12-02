@@ -411,16 +411,6 @@ tcp_twcheck(struct inpcb *inp, struct tcpopt *to, struct tcphdr *th,
 	if (thflags & TH_RST)
 		goto drop;
 
-	/*
-	 * If timestamps were negotiated during SYN/ACK and a
-	 * segment without a timestamp is received, silently drop
-	 * the segment.
-	 * See section 3.2 of RFC 7323.
-	 */
-	if (((to->to_flags & TOF_TS) == 0) && (tw->t_recent != 0)) {
-		goto drop;
-	}
-
 #if 0
 /* PAWS not needed at the moment */
 	/*
@@ -454,6 +444,16 @@ tcp_twcheck(struct inpcb *inp, struct tcpopt *to, struct tcphdr *th,
 	 */
 	if ((thflags & TH_ACK) == 0)
 		goto drop;
+
+	/*
+	 * If timestamps were negotiated during SYN/ACK and a
+	 * segment without a timestamp is received, silently drop
+	 * the segment.
+	 * See section 3.2 of RFC 7323.
+	 */
+	if (((to->to_flags & TOF_TS) == 0) && (tw->t_recent != 0)) {
+		goto drop;
+	}
 
 	/*
 	 * Reset the 2MSL timer if this is a duplicate FIN.
