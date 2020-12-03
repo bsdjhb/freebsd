@@ -79,8 +79,6 @@ static struct lpc_uart_softc {
 
 static const char *lpc_uart_names[LPC_UART_NUM] = { "com1", "com2", "com3", "com4" };
 
-static bool pctestdev_present;
-
 /*
  * LPC device configuration is in the following form:
  * <lpc_device_name>[,<options>]
@@ -112,16 +110,11 @@ lpc_device_parse(const char *opts)
 			}
 		}
 		if (strcasecmp(lpcdev, pctestdev_getname()) == 0) {
-			if (pctestdev_present) {
-				EPRINTLN("More than one %s device conf is "
-				    "specified; only one is allowed.",
-				    pctestdev_getname());
-			} else if (pctestdev_parse(str) == 0) {
-				pctestdev_present = true;
-				error = 0;
-				free(cpy);
-				goto done;
-			}
+			asprintf(&node_name, "lpc.%s", pctestdev_getname());
+			set_config_bool(node_name, true);
+			free(node_name);
+			error = 0;
+			goto done;
 		}
 	}
 
@@ -254,11 +247,13 @@ lpc_init(struct vmctx *ctx)
 	}
 
 	/* pc-testdev */
-	if (pctestdev_present) {
+	asprintf(&node_name, "lpc.%s", pctestdev_getname());
+	if (get_config_bool(node_name)) {
 		error = pctestdev_init(ctx);
 		if (error)
 			return (error);
 	}
+	free(node_name);
 
 	return (0);
 }
