@@ -1376,12 +1376,10 @@ main(int argc, char *argv[])
 	if (vmname == NULL)
 		usage(1);
 
-#if 1
 	if (get_config_bool("config.dump")) {
 		dump_config();
 		exit(1);
 	}
-#endif
 
 	calc_topolopgy();
 	build_vcpumaps();
