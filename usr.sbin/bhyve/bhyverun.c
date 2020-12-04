@@ -1365,7 +1365,7 @@ main(int argc, char *argv[])
 		}
 		vmname = lookup_vmname(&rstate);
 		if (vmname != NULL)
-			set_config_value_path("name", vmname);
+			set_config_value("name", vmname);
 	}
 #endif
 
