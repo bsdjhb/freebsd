@@ -317,6 +317,12 @@ struct tom_data {
 	struct task reclaim_wr_resources;
 };
 
+struct sg_list
+{
+        void    *addr;
+        size_t  len;
+};
+
 static inline struct tom_data *
 tod_td(struct toedev *tod)
 {
@@ -416,17 +422,6 @@ mbuf_ctrlq_wr(struct mbuf *m)
 	M_ASSERTPKTHDR(m);
 	return m->m_pkthdr.PH_per.eight[6];
 }
-#if 0
-struct cxgbei_iso_info {
-        u8 flags;
-	u8 extra_len;
-        u16 mpdu;
-//	u32 npdu;
-//        u32 len;
-//        u32 burst_len;
-};
-#endif
-
 
 
 /* t4_tom.c */
