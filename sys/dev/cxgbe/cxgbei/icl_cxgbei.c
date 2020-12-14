@@ -1035,6 +1035,9 @@ no_ddp:
 		} else 
 			sgl = (void *)ctsio->kern_data_ptr;
 
+		if (!ddp_sgl_check(sgl, sg_entries, xferlen))
+			goto no_ddp;
+
 		/*
 		 * Reserve resources for DDP, update the ttt that should be used
 		 * in the PDU, and save DDP specific state for this I/O.
@@ -1046,10 +1049,6 @@ no_ddp:
 			goto no_ddp;
 		}
 
-		if (!ddp_sgl_check(sgl, sg_entries, xferlen)) {
-			uma_zfree(prsv_zone, prsv);
-			goto no_ddp;
-		}
 		rc = t4_alloc_page_pods_for_sgl(pr, sgl, sg_entries, prsv);
 		if (rc != 0) {
 			uma_zfree(prsv_zone, prsv);
@@ -1148,7 +1147,7 @@ icl_cxgbei_limits(struct icl_drv_limits *idl)
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
 	/* These are somewhat arbitrary. */
-	idl->idl_max_burst_length = 2 * 1024 * 1024;
+	idl->idl_max_burst_length = 1024 * 512;
 	idl->idl_first_burst_length = 65536;
 
 	t4_iterate(cxgbei_limits, idl);
