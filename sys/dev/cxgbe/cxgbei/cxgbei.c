@@ -525,7 +525,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
         struct icl_conn *ic = &icc->ic;
 	struct iscsi_bhs_data_out *bhsdo;
         u_int val = be32toh(cpl->ddpvld);
-        u_int pdu_len, data_digest_len;
+        u_int pdu_len, data_digest_len, hdr_digest_len;
 	uint32_t datasn;
 
         M_ASSERTPKTHDR(m);
@@ -551,6 +551,8 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
         m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
 	data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ? 
 	    ISCSI_DATA_DIGEST_SIZE : 0;
+	hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
+	    ISCSI_HEADER_DIGEST_SIZE : 0;
         ip->ip_data_len = pdu_len - len - data_digest_len;
         icp->icp_seq = ntohl(cpl->seq);
         icp->icp_flags |= ICPF_RX_HDR;
@@ -599,8 +601,10 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		kern_rel_offset = io->scsiio.kern_rel_offset;
 		buffer_offset = be32toh(bhsdo->bhsdo_buffer_offset);
 		prev_seg_len = buffer_offset - (kern_rel_offset + io->scsiio.ext_data_filled);
-		//pdu_len += prev_seg_len + (datasn  * data_digest_len);
-		pdu_len += icp->icp_seq - tp->rcv_nxt;
+		pdu_len += prev_seg_len + (datasn * (sizeof(struct iscsi_bhs_data_out)
+			+ hdr_digest_len + data_digest_len));
+		MPASS(pdu_len == (icp->icp_seq - tp->rcv_nxt +
+			G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp))));
 		MPASS(ip->ip_data_len == icl_pdu_data_segment_length(ip));
                 counter_u64_add(ci->ddp_bytes, prev_seg_len);
 		
@@ -970,7 +974,6 @@ cxgbei_select_worker_thread(struct icl_cxgbei_conn *icc)
 
 	return (i);
 }
-
 
 static int
 cxgbei_mod_load(void)
