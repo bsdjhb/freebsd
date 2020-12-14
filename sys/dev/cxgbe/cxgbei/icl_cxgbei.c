@@ -268,12 +268,13 @@ icl_cxgbei_conn_pdu_data_segment_length(struct icl_conn *ic,
 }
 
 static struct mbuf *
-finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
+finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t padding)
 {
 	struct icl_pdu *ip = &icp->ip;
-	uint8_t ulp_submode, padding;
+	uint8_t ulp_submode;
 	struct mbuf *m, *last;
 	struct iscsi_bhs *bhs;
+	int data_len;
 
 	/*
 	 * Fix up the data segment mbuf first.
@@ -287,7 +288,9 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
 		 * Round up the data segment to a 4B boundary.  Pad with 0 if
 		 * necessary.  There will definitely be room in the mbuf.
 		 */
-		padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
+#if 0
+		//padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
+#endif
 		if (padding) {
 			bzero(mtod(last, uint8_t *) + last->m_len, padding);
 			last->m_len += padding;
@@ -305,10 +308,14 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
 	MPASS(m->m_pkthdr.len == sizeof(struct iscsi_bhs));
 	MPASS(m->m_len == sizeof(struct iscsi_bhs));
 
+	data_len = ip->ip_data_len;
+        if (data_len > icc->ic.ic_max_data_segment_length)
+		data_len = icc->ic.ic_max_data_segment_length;
+
 	bhs = ip->ip_bhs;
-	bhs->bhs_data_segment_len[2] = ip->ip_data_len;
-	bhs->bhs_data_segment_len[1] = ip->ip_data_len >> 8;
-	bhs->bhs_data_segment_len[0] = ip->ip_data_len >> 16;
+	bhs->bhs_data_segment_len[2] = data_len;
+	bhs->bhs_data_segment_len[1] = data_len >> 8;
+	bhs->bhs_data_segment_len[0] = data_len >> 16;
 
 	/* "Convert" PDU to mbuf chain.  Do not use icp/ip after this. */
 	m->m_pkthdr.len = sizeof(struct iscsi_bhs) + ip->ip_data_len + padding;
@@ -328,7 +335,7 @@ int
 icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
     const void *addr, size_t len, int flags)
 {
-	struct mbuf *m;
+	struct mbuf *m, *m_tail;
 #ifdef INVARIANTS
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 #endif
@@ -336,27 +343,65 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
 	KASSERT(len > 0, ("%s: len is %jd", __func__, (intmax_t)len));
+#if 0
+	if (len > 8192) {
+		m = m_get(M_NOWAIT, MT_DATA);
+		if (m == NULL)
+			return 1;
+		m->m_data = __DECONST(void *, addr);
+		m->m_len = len;
+		ip->ip_data_len += len;
+		m_tail = ip->ip_data_mbuf;
+		if (m_tail != NULL) {
+			while (m_tail->m_next != NULL)
+				m_tail = m_tail->m_next;
+			m_tail->m_next = m;
+		} else {
+			ip->ip_data_mbuf = m;
+		}
 
-	m = ip->ip_data_mbuf;
-	if (m == NULL) {
+		return 0;
+	}
+#endif
+	m_tail = ip->ip_data_mbuf;
+	if (m_tail != NULL)
+		for(; m_tail->m_next != NULL; m_tail = m_tail->m_next)
+			;
+	int len1 = len;
+	int mjum16 = len / MJUM16BYTES;
+	while (mjum16--) {
 		m = m_getjcl(M_NOWAIT, MT_DATA, 0, MJUM16BYTES);
 		if (__predict_false(m == NULL))
-			return (ENOMEM);
-
-		ip->ip_data_mbuf = m;
-	}
-
-	if (__predict_true(m_append(m, len, addr) != 0)) {
-		ip->ip_data_len += len;
-		MPASS(ip->ip_data_len <= ic->ic_max_data_segment_length);
-		return (0);
-	} else {
-	    	if (flags & M_WAITOK) {
-			CXGBE_UNIMPLEMENTED("fail safe append");
+			return 1;
+		bcopy((c_caddr_t)addr + len - len1, mtod(m, caddr_t), MJUM16BYTES);
+		m->m_len = MJUM16BYTES;
+		ip->ip_data_len += MJUM16BYTES;
+		if (ip->ip_data_mbuf == NULL)
+			ip->ip_data_mbuf = m_tail = m;
+		else {
+			m_tail->m_next = m;
+			m_tail = m_tail->m_next;
 		}
-		ip->ip_data_len = m_length(m, NULL);
-		return (1);
+		len1 -= MJUM16BYTES;
 	}
+
+	if (len1 != 0) {
+		m = m_getm2(ip->ip_data_mbuf, len1, M_NOWAIT, MT_DATA, 0);
+		if (__predict_true(m == NULL))
+			return 1;
+		ip->ip_data_mbuf = m;
+		while (m != NULL && m->m_len != 0)
+			m = m->m_next;
+		for(; m != NULL; m = m->m_next) {
+			m->m_len = min(len1, M_SIZE(m));
+			bcopy((c_caddr_t)addr + len - len1, mtod(m, caddr_t), m->m_len);
+			ip->ip_data_len += m->m_len;
+			len1 -= m->m_len;
+		}
+		MPASS(ip->ip_data_len <= max(ic->ic_max_data_segment_length, ic->ic_hw_offload_length));
+	}
+
+	return !!len1;
 }
 
 void
@@ -379,6 +424,7 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 	struct toepcb *toep = icc->toep;
 	struct inpcb *inp;
 	struct mbuf *m;
+	uint8_t padding;
 
 	MPASS(ic == ip->ip_conn);
 	MPASS(ip->ip_bhs_mbuf != NULL);
@@ -392,7 +438,8 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 		return;
 	}
 
-	m = finalize_pdu(icc, icp);
+	padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
+	m = finalize_pdu(icc, icp, padding);
 	M_ASSERTPKTHDR(m);
 	MPASS((m->m_pkthdr.len & 3) == 0);
 
@@ -404,9 +451,24 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 	INP_WLOCK(inp);
 	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) ||
 	    __predict_false((toep->flags & TPF_ATTACHED) == 0))
+	     {
 		m_freem(m);
+	     }
 	else {
 		mbufq_enqueue(&toep->ulp_pduq, m);
+		int iscsi_hdr_len = sizeof(struct iscsi_bhs);
+		if( ISCSI_BHS_OPCODE_SCSI_DATA_IN == *mtod(m, uint8_t *) && ic->ic_hw_offload_length && ((m->m_pkthdr.len - iscsi_hdr_len) > ic->ic_max_data_segment_length) && !padding)
+		{
+
+#define CXGBIT_ISO_FSLICE 0x1
+#define CXGBIT_ISO_LSLICE 0x2
+			set_mbuf_iscsi_iso(m, 1);
+			set_mbuf_iscsi_iso_flags(m, CXGBIT_ISO_FSLICE | CXGBIT_ISO_LSLICE);
+			set_mbuf_iscsi_iso_mss(m, ic->ic_max_data_segment_length);
+			set_mbuf_iscsi_iso_hdrlen(m, iscsi_hdr_len);
+
+		}
+		CTR1(KTR_CXGBE, "opcode is %d", *mtod(m, uint8_t *));
 		t4_push_pdus(icc->sc, toep, 0);
 	}
 	INP_WUNLOCK(inp);
@@ -684,24 +746,39 @@ icl_cxgbei_conn_handoff(struct icl_conn *ic, int fd)
 		 * or the kernel.
 		 */
 		ic->ic_max_data_segment_length = ci->max_tx_pdu_len -
-		    ISCSI_BHS_SIZE;
+		    ISCSI_BHS_SIZE - ISCSI_HEADER_DIGEST_SIZE -
+		    ISCSI_DATA_DIGEST_SIZE;
+
+#define MAX_HW_ISO_LENGTH 65535
+
+		ic->ic_hw_offload_length =
+		    (MAX_HW_ISO_LENGTH / ci->max_tx_pdu_len) *
+		    ic->ic_max_data_segment_length;
+		ic->ic_hw_offload_length = 0;
+#if 0
+		ic->ic_max_data_segment_length = 1024 * 12 - ISCSI_BHS_SIZE;
+#endif
 
 		icc->ulp_submode = 0;
 		if (ic->ic_header_crc32c) {
 			icc->ulp_submode |= ULP_CRC_HEADER;
+#if 0
 			ic->ic_max_data_segment_length -=
 			    ISCSI_HEADER_DIGEST_SIZE;
+#endif
 		}
 		if (ic->ic_data_crc32c) {
 			icc->ulp_submode |= ULP_CRC_DATA;
+#if 0
 			ic->ic_max_data_segment_length -=
 			    ISCSI_DATA_DIGEST_SIZE;
+#endif
 		}
 		so->so_options |= SO_NO_DDP;
 		toep->params.ulp_mode = ULP_MODE_ISCSI;
 		toep->ulpcb = icc;
 
-		send_iscsi_flowc_wr(icc->sc, toep, ci->max_tx_pdu_len);
+		send_iscsi_flowc_wr(icc->sc, toep, MAX_HW_ISO_LENGTH);
 		set_ulp_mode_iscsi(icc->sc, toep, ic->ic_header_crc32c,
 		    ic->ic_data_crc32c);
 		error = 0;
@@ -846,10 +923,9 @@ no_ddp:
 		uma_zfree(prsv_zone, prsv);
 		goto no_ddp;
 	}
-
-	rc = t4_write_page_pods_for_buf(sc, toep->ofld_txq, toep->tid, prsv,
+	rc = t4_write_page_pods_for_buf(sc, toep, 0, prsv,
 	    (vm_offset_t)csio->data_ptr, csio->dxfer_len);
-	if (rc != 0) {
+	if (__predict_false(rc != 0)) {
 		t4_free_page_pods(prsv);
 		uma_zfree(prsv_zone, prsv);
 		goto no_ddp;
@@ -961,9 +1037,9 @@ no_ddp:
 			goto no_ddp;
 		}
 
-		rc = t4_write_page_pods_for_buf(sc, toep->ofld_txq, toep->tid,
+		rc = t4_write_page_pods_for_buf(sc, toep, 0,
 		    prsv, buf, xferlen);
-		if (rc != 0) {
+		if (__predict_false(rc != 0)) {
 			t4_free_page_pods(prsv);
 			uma_zfree(prsv_zone, prsv);
 			goto no_ddp;
@@ -1048,14 +1124,13 @@ cxgbei_limits(struct adapter *sc, void *arg)
 static int
 icl_cxgbei_limits(struct icl_drv_limits *idl)
 {
-
 	/* Maximum allowed by the RFC.  cxgbei_limits will clip them. */
 	idl->idl_max_recv_data_segment_length = (1 << 24) - 1;
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
 	/* These are somewhat arbitrary. */
 	idl->idl_max_burst_length = 2 * 1024 * 1024;
-	idl->idl_first_burst_length = 8192;
+	idl->idl_first_burst_length = 65536;
 
 	t4_iterate(cxgbei_limits, idl);
 

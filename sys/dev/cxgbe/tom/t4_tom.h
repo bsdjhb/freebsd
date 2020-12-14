@@ -204,6 +204,7 @@ struct toepcb {
 	void *ulpcb2;
 	struct mbufq ulp_pduq;	/* PDUs waiting to be sent out. */
 	struct mbufq ulp_pdu_reclaimq;
+	struct mbufq ulptxq;
 
 	struct ddp_pcb ddp;
 	struct tls_ofld_info tls;
@@ -337,6 +338,41 @@ set_mbuf_ulp_submode(struct mbuf *m, uint8_t ulp_submode)
 	M_ASSERTPKTHDR(m);
 	m->m_pkthdr.PH_per.eight[0] = ulp_submode;
 }
+static inline void
+set_mbuf_iscsi_iso(struct mbuf *m, uint8_t iso)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[1] = iso;
+}
+static inline void
+set_mbuf_iscsi_iso_flags(struct mbuf *m, uint8_t flags)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[2] = flags;
+}
+static inline void
+set_mbuf_iscsi_iso_hdrlen(struct mbuf *m, uint8_t hdrlen)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[3] = hdrlen;
+}
+static inline void
+set_mbuf_iscsi_iso_mss(struct mbuf *m, uint16_t mss)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.sixteen[2] = mss;
+}
+static inline void
+set_mbuf_ctrlq_wr(struct mbuf *m, uint8_t ulptx)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[6] = ulptx;
+}
 
 static inline uint8_t
 mbuf_ulp_submode(struct mbuf *m)
@@ -345,6 +381,53 @@ mbuf_ulp_submode(struct mbuf *m)
 	M_ASSERTPKTHDR(m);
 	return (m->m_pkthdr.PH_per.eight[0]);
 }
+static inline uint8_t
+mbuf_iscsi_iso(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return m->m_pkthdr.PH_per.eight[1];
+}
+static inline uint8_t
+mbuf_iscsi_iso_flags(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return m->m_pkthdr.PH_per.eight[2];
+}
+static inline uint8_t
+mbuf_iscsi_iso_hdrlen(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return m->m_pkthdr.PH_per.eight[3];
+}
+static inline uint16_t
+mbuf_iscsi_iso_mss(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return m->m_pkthdr.PH_per.sixteen[2];
+}
+static inline uint8_t
+mbuf_ctrlq_wr(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return m->m_pkthdr.PH_per.eight[6];
+}
+#if 0
+struct cxgbei_iso_info {
+        u8 flags;
+	u8 extra_len;
+        u16 mpdu;
+//	u32 npdu;
+//        u32 len;
+//        u32 burst_len;
+};
+#endif
+
+
 
 /* t4_tom.c */
 struct toepcb *alloc_toepcb(struct vi_info *, int);
@@ -412,6 +495,7 @@ void t4_set_tcb_field(struct adapter *, struct sge_wrq *, struct toepcb *,
     uint16_t, uint64_t, uint64_t, int, int);
 void t4_push_frames(struct adapter *, struct toepcb *, int);
 void t4_push_pdus(struct adapter *, struct toepcb *, int);
+bool t4_ctrlq_wr_in_ofldq(struct adapter *, struct mbuf *, struct toepcb *);
 
 /* t4_ddp.c */
 int t4_init_ppod_region(struct ppod_region *, struct t4_range *, u_int,
@@ -422,7 +506,7 @@ int t4_alloc_page_pods_for_buf(struct ppod_region *, vm_offset_t, int,
     struct ppod_reservation *);
 int t4_write_page_pods_for_ps(struct adapter *, struct sge_wrq *, int,
     struct pageset *);
-int t4_write_page_pods_for_buf(struct adapter *, struct sge_wrq *, int tid,
+int t4_write_page_pods_for_buf(struct adapter *, struct toepcb *, bool ctrlq,
     struct ppod_reservation *, vm_offset_t, int);
 void t4_free_page_pods(struct ppod_reservation *);
 int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,

@@ -75,7 +75,7 @@
 					     # iscsi_eff_offset_en
 
 	#Enable iscsi completion moderation feature
-	reg[0x1925c] = 0x000041c0/0x000031c0	# Enable offset decrement after
+	#reg[0x1925c] = 0x000041c0/0x000031c0	# Enable offset decrement after
 						# PI extraction and before DDP.
 						# ulp insert pi source info in
 						# DIF.

@@ -120,7 +120,6 @@ struct cxgbei_data {
 	counter_u64_t fl_bytes;
 	counter_u64_t fl_pdus;
 };
-
 /* cxgbei.c */
 u_int cxgbei_select_worker_thread(struct icl_cxgbei_conn *);
 
