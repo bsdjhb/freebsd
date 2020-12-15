@@ -100,19 +100,6 @@ static struct proc *cxgbei_proc;
 struct icl_pdu *icl_cxgbei_new_pdu(int);
 void icl_cxgbei_new_pdu_set_conn(struct icl_pdu *, struct icl_conn *);
 void icl_cxgbei_conn_pdu_free(struct icl_conn *, struct icl_pdu *);
-static size_t
-icl_pdu_data_segment_length(const struct icl_pdu *request)
-{
-	uint32_t len = 0;
-
-	len += request->ip_bhs->bhs_data_segment_len[0];
-	len <<= 8;
-	len += request->ip_bhs->bhs_data_segment_len[1];
-	len <<= 8;
-	len += request->ip_bhs->bhs_data_segment_len[2];
-
-	return (len);
-}
 static void
 free_ci_counters(struct cxgbei_data *ci)
 {
@@ -417,14 +404,19 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 
 	tp = intotcpcb(inp);
-	MPASS(icp->icp_seq == tp->rcv_nxt);
-	MPASS(tp->rcv_wnd >= pdu_len);
 	tp->rcv_nxt += pdu_len;
+	MPASS(icp->icp_seq == tp->rcv_nxt);
+	/* credit and window size updation disabled since RX flow control is
+	 * disabled when completion is enabled */
+	tp->rcv_nxt += pdu_len;
+#if 0
+	MPASS(tp->rcv_wnd >= pdu_len);
 	tp->rcv_wnd -= pdu_len;
 	tp->t_rcvtime = ticks;
 
 	/* update rx credits */
 	t4_rcvd(&toep->td->tod, tp);	/* XXX: sc->tom_softc.tod */
+#endif
 
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
@@ -574,72 +566,19 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		if(datasn == 0)
 			goto single_segment;
 
-#define CONN_SESSION(X) ((struct cfiscsi_session *)X->ic_prv0)
-#define CFISCSI_SESSION_LOCK(X)         mtx_lock(&X->cs_lock)
-#define CFISCSI_SESSION_UNLOCK(X)       mtx_unlock(&X->cs_lock)
-
-		struct cfiscsi_session *cs = CONN_SESSION(ic);
-		struct cfiscsi_data_wait *cdw = NULL;
-		uint32_t buffer_offset, kern_rel_offset;
-	        union ctl_io *io;
-		struct ctl_sg_entry ctl_sg_entry, *ctl_sglist;
-		int prev_seg_len, ctl_sg_count;
-
-		CFISCSI_SESSION_LOCK(cs);
-		TAILQ_FOREACH(cdw, &cs->cs_waiting_for_data_out, cdw_next) {
-			if (bhsdo->bhsdo_target_transfer_tag ==
-					cdw->cdw_target_transfer_tag)
-				break;
-		}
-		CFISCSI_SESSION_UNLOCK(cs);
-                KASSERT(cdw != NULL, ("data transfer tag 0x%x, initiator task tag "
-                    "0x%x, not found", bhsdo->bhsdo_target_transfer_tag,
-		    bhsdo->bhsdo_initiator_task_tag));
-
-		cdw->cdw_datasn = datasn;
-		io = cdw->cdw_ctl_io;
-		kern_rel_offset = io->scsiio.kern_rel_offset;
-		buffer_offset = be32toh(bhsdo->bhsdo_buffer_offset);
-		prev_seg_len = buffer_offset - (kern_rel_offset + io->scsiio.ext_data_filled);
-		pdu_len += prev_seg_len + (datasn * (sizeof(struct iscsi_bhs_data_out)
+		uint32_t prev_seg_len;
+		prev_seg_len = icp->icp_seq - tp->rcv_nxt - (datasn * (sizeof(struct iscsi_bhs_data_out)
 			+ hdr_digest_len + data_digest_len));
-		MPASS(pdu_len == (icp->icp_seq - tp->rcv_nxt +
-			G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp))));
-		MPASS(ip->ip_data_len == icl_pdu_data_segment_length(ip));
-                counter_u64_add(ci->ddp_bytes, prev_seg_len);
-		
-		/* adjust ext_data_filled, kern_data_resid, and cdw_sg_addr which
-		 * would be otherwise processed for every segment by cfiscsi */
-                io->scsiio.ext_data_filled += prev_seg_len;
-                io->scsiio.kern_data_resid -= prev_seg_len;
-
-		if (io->scsiio.kern_sg_entries > 0) {
-			ctl_sglist = (struct ctl_sg_entry *)io->scsiio.kern_data_ptr;
-			ctl_sg_count = io->scsiio.kern_sg_entries;
-		} else {
-			ctl_sglist = &ctl_sg_entry;
-			ctl_sglist->addr = io->scsiio.kern_data_ptr;
-			ctl_sglist->len = io->scsiio.kern_data_len;
-			ctl_sg_count = 1;
-		}		
-		while(prev_seg_len)
-		{	
-			if(prev_seg_len < cdw->cdw_sg_len)
-			{
-				cdw->cdw_sg_len -= prev_seg_len;
-				break;
-			} 
-			prev_seg_len -= cdw->cdw_sg_len;
-			if(cdw->cdw_sg_index == (ctl_sg_count - 1))
-			{
-				MPASS(prev_seg_len == 0);
-				break;
-			} else
-				cdw->cdw_sg_index++;
-
-			cdw->cdw_sg_addr = ctl_sglist[cdw->cdw_sg_index].addr;
-			cdw->cdw_sg_len = ctl_sglist[cdw->cdw_sg_index].len;
-		}
+		ip->ip_data_len += prev_seg_len;
+		pdu_len += (icp->icp_seq - tp->rcv_nxt);
+                /* since cfiscsi doesn't know about previous hdrs,
+                 * present this as if entire r2t data length got
+                 * received in this single segment */
+                bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
+                bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
+                bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
+                bhsdo->bhsdo_datasn = 0;
+                bhsdo->bhsdo_buffer_offset = htobe32(be32toh(bhsdo->bhsdo_buffer_offset) - prev_seg_len);
 
 single_segment:
                 counter_u64_add(ci->ddp_pdus, datasn + 1);
@@ -660,14 +599,18 @@ single_segment:
                 return (0);
         }
 
-        MPASS(tp->rcv_wnd >= pdu_len);
         tp->rcv_nxt += pdu_len;
+	/* credit and window size updation disabled since RX flow control is
+	 * disabled when completion is enabled */
+#if 0
+        MPASS(tp->rcv_wnd >= pdu_len);
         tp->rcv_wnd -= pdu_len;
         tp->t_rcvtime = ticks;
 
         /* update rx credits */
         toep->rx_credits += pdu_len;
         t4_rcvd(&toep->td->tod, tp);    /* XXX: sc->tom_softc.tod */
+#endif
 
         so = inp->inp_socket;
         sb = &so->so_rcv;

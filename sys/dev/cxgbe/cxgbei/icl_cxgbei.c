@@ -343,31 +343,13 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
 	KASSERT(len > 0, ("%s: len is %jd", __func__, (intmax_t)len));
-#if 0
-	if (len > 8192) {
-		m = m_get(M_NOWAIT, MT_DATA);
-		if (m == NULL)
-			return 1;
-		m->m_data = __DECONST(void *, addr);
-		m->m_len = len;
-		ip->ip_data_len += len;
-		m_tail = ip->ip_data_mbuf;
-		if (m_tail != NULL) {
-			while (m_tail->m_next != NULL)
-				m_tail = m_tail->m_next;
-			m_tail->m_next = m;
-		} else {
-			ip->ip_data_mbuf = m;
-		}
-
-		return 0;
-	}
-#endif
 	m_tail = ip->ip_data_mbuf;
 	if (m_tail != NULL)
 		for(; m_tail->m_next != NULL; m_tail = m_tail->m_next)
 			;
 	int len1 = len;
+
+	/* Allocate as jumbo mbufs of size MJUM16BYTES */
 	int mjum16 = len / MJUM16BYTES;
 	while (mjum16--) {
 		m = m_getjcl(M_NOWAIT, MT_DATA, 0, MJUM16BYTES);
@@ -385,6 +367,7 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 		len1 -= MJUM16BYTES;
 	}
 
+	/* Allocate mbuf chain for the remaining data of size < MJUM16BYTES. */
 	if (len1 != 0) {
 		m = m_getm2(ip->ip_data_mbuf, len1, M_NOWAIT, MT_DATA, 0);
 		if (__predict_true(m == NULL))
@@ -398,8 +381,9 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 			ip->ip_data_len += m->m_len;
 			len1 -= m->m_len;
 		}
-		MPASS(ip->ip_data_len <= max(ic->ic_max_data_segment_length, ic->ic_hw_offload_length));
 	}
+	MPASS(ip->ip_data_len <= max(ic->ic_max_data_segment_length,
+				ic->ic_hw_offload_length));
 
 	return !!len1;
 }
@@ -457,7 +441,10 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 	else {
 		mbufq_enqueue(&toep->ulp_pduq, m);
 		int iscsi_hdr_len = sizeof(struct iscsi_bhs);
-		if( ISCSI_BHS_OPCODE_SCSI_DATA_IN == *mtod(m, uint8_t *) && ic->ic_hw_offload_length && ((m->m_pkthdr.len - iscsi_hdr_len) > ic->ic_max_data_segment_length) && !padding)
+		if( (ISCSI_BHS_OPCODE_SCSI_DATA_IN == *mtod(m, uint8_t *)) &&
+		    ic->ic_hw_offload_length &&
+		    ((m->m_pkthdr.len - iscsi_hdr_len) > ic->ic_max_data_segment_length)
+		    && !padding)
 		{
 
 #define CXGBIT_ISO_FSLICE 0x1
@@ -1146,8 +1133,9 @@ icl_cxgbei_limits(struct icl_drv_limits *idl)
 	idl->idl_max_recv_data_segment_length = (1 << 24) - 1;
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
-	/* These are somewhat arbitrary. */
-	idl->idl_max_burst_length = 1024 * 512;
+	/* Burst size shouldn't exceed total rx_credits since credits
+	 * will be returned only at completion cpl */
+	idl->idl_max_burst_length = 1024 * 256;
 	idl->idl_first_burst_length = 65536;
 
 	t4_iterate(cxgbei_limits, idl);

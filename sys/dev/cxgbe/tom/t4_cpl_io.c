@@ -1000,7 +1000,7 @@ t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep)
 	toep->tx_credits -= credits;
 	toep->tx_nocompl += credits;
 	toep->plen_nocompl += plen;
-	if (toep->tx_credits <= toep->tx_total * 3 / 8 &&
+	if (toep->tx_credits <= toep->tx_total * 5 / 8 &&
 	    toep->tx_nocompl >= toep->tx_total / 4) {
 		ulptx_wr = wrtod(wr);
 		ulptx_wr->op_to_compl |= htobe32(F_FW_WR_COMPL);
@@ -1210,7 +1210,14 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 		toep->tx_credits -= credits;
 		toep->tx_nocompl += credits;
 		toep->plen_nocompl += plen;
-		if (toep->tx_credits <= toep->tx_total * 3 / 8 &&
+
+		/*
+		 * Since we are sending ulp_tx WR too thru offload
+		 * queue, make sure that this condition sets
+		 * F_FW_WR_COMPL flag when the available credits is <=
+		 * max ulp_tx WR size.
+		 */
+		if (toep->tx_credits <= toep->tx_total * 5 / 8 &&
 		    toep->tx_nocompl >= toep->tx_total / 4) {
 			txwr->op_to_immdlen |= htobe32(F_FW_WR_COMPL);
 			toep->tx_nocompl = 0;

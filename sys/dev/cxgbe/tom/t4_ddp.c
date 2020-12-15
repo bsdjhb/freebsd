@@ -856,11 +856,11 @@ alloc_page_pods(struct ppod_region *pr, u_int nppods, u_int pgsz_idx,
 	if (vmem_alloc(pr->pr_arena, PPOD_SZ(nppods), M_NOWAIT | M_FIRSTFIT,
 	    &addr) != 0)
 		return (ENOMEM);
-
+#if 0
 	CTR5(KTR_CXGBE, "%-17s arena %p, addr 0x%08x, nppods %d, pgsz %d",
 	    __func__, pr->pr_arena, (uint32_t)addr & pr->pr_tag_mask,
 	    nppods, 1 << pr->pr_page_shift[pgsz_idx]);
-
+#endif
 	/*
 	 * The hardware tagmask includes an extra invalid bit but the arena was
 	 * seeded with valid values only.  An allocation out of this arena will
@@ -1065,10 +1065,10 @@ t4_free_page_pods(struct ppod_reservation *prsv)
 
 	addr = prsv->prsv_tag & pr->pr_tag_mask;
 	MPASS((addr & pr->pr_invalid_bit) == 0);
-
+#if 0
 	CTR4(KTR_CXGBE, "%-17s arena %p, addr 0x%08x, nppods %d", __func__,
 	    pr->pr_arena, addr, prsv->prsv_nppods);
-
+#endif
 	vmem_free(pr->pr_arena, addr, PPOD_SZ(prsv->prsv_nppods));
 	prsv->prsv_nppods = 0;
 }
@@ -1168,6 +1168,7 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	struct ppod_region *pr = prsv->prsv_pr;
 	uintptr_t pva, pa;
 	struct mbuf *m;
+	struct mbufq wrq;
 	struct inpcb *inp = toep->inp;
 
 	MPASS(sgl);
@@ -1182,7 +1183,7 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	pva = trunc_page(sgl->addr);
 	if( !ctrlq)
-		INP_WLOCK(inp);
+		mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
 		/* How many page pods are we writing in this cycle */
 		n = min(prsv->prsv_nppods - i, NUM_ULP_TX_SC_IMM_PPODS);
@@ -1266,10 +1267,14 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 		if( ctrlq)
 			t4_wrq_tx(sc, wr);
 		else
-			mbufq_enqueue(&toep->ulp_pduq, m);
+			mbufq_enqueue(&wrq, m);
 	}
 	if( !ctrlq)
+	{
+		INP_WLOCK(inp);
+		mbufq_concat(&toep->ulp_pduq, &wrq);
 		INP_WUNLOCK(inp);
+	}
 
 	return (0);
 }
@@ -1288,6 +1293,7 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	struct ppod_region *pr = prsv->prsv_pr;
 	uintptr_t end_pva, pva, pa;
 	struct mbuf *m;
+	struct mbufq wrq;
 	struct inpcb *inp = toep->inp;
 
 	cmd = htobe32(V_ULPTX_CMD(ULP_TX_MEM_WRITE));
@@ -1301,7 +1307,7 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	pva = trunc_page(buf);
 	end_pva = trunc_page(buf + buflen - 1);
 	if( !ctrlq)
-		INP_WLOCK(inp);
+		mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
 
 		/* How many page pods are we writing in this cycle */
@@ -1374,11 +1380,15 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 		if( ctrlq)
 			t4_wrq_tx(sc, wr);
 		else
-			mbufq_enqueue(&toep->ulp_pduq, m);
+			mbufq_enqueue(&wrq, m);
 
 	}
 	if( !ctrlq)
+	{
+		INP_WLOCK(inp);
+		mbufq_concat(&toep->ulp_pduq, &wrq);
 		INP_WUNLOCK(inp);
+	}
 
 	MPASS(pva <= end_pva);
 
