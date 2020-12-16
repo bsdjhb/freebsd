@@ -10,7 +10,7 @@ CFLAGS+=-I${SRCTOP}/sys
 PROG=	bhyve
 PACKAGE=	bhyve
 
-MAN=	bhyve.8
+MAN=	bhyve.8 bhyve_config.5
 
 BHYVE_SYSDIR?=${SRCTOP}
 
