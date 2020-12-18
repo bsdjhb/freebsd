@@ -75,7 +75,7 @@ any syntax supported by
 may be used.
 .Sh GLOBAL SETTINGS
 .Ss Architecture Neutral Settings
-.Bl -column "memory.guest_in_core" "integer" "false"
+.Bl -column "memory.guest_in_core" "integer" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va name Ta string Ta Ta
 The name of the VM.
@@ -125,7 +125,7 @@ will write all of its configuration variables to stdout and exit
 after it has finished parsing command line options.
 .El
 .Ss x86-Specific Settings
-.Bl -column "memory.guest_in_core" "integer" "false"
+.Bl -column "x86.vmexit_on_pause" "integer" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va x86.mptable Ta bool Ta true Ta
 Generate an MPTable.
@@ -233,7 +233,7 @@ when using VNC.
 .Ss Block Device Settings
 Block devices use the following settings to configure their backing store.
 These settings are stored in the configuration node of the respective device.
-.Bl -column "sectorsize" "logical[/physical]" "false"
+.Bl -column "sectorsize" "logical[/physical]" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It path Ta string Ta Ta
 The path of the file or disk device to use as the backing store.
@@ -277,7 +277,7 @@ Use a
 .Xr netgraph 4
 socket hook as the backend.
 This backend uses the following additional variables:
-.Bl -column "peerhook" "integer" "false"
+.Bl -column "peerhook" "Format" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va path Ta string Ta Ta
 The name of the
@@ -325,7 +325,7 @@ The
 values are formatted as successive decimal values starting with 0.
 In addition to the block device settings described above, each
 port supports the following settings:
-.Bl -column "peerhook" "integer" "generated"
+.Bl -column "model" "integer" "generated"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va type Ta string Ta Ta
 The type of storage device to emulate.
@@ -425,7 +425,7 @@ The device can be backed either by a memory disk described by the
 .Va ram
 variable, or a block device using the the block device settings described above.
 In addition, each controller supports the following settings:
-.Bl -column "Name" "Format" "Default"
+.Bl -column "ioslots" "Format" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va maxq Ta integer Ta 16 Ta
 Maximum number of I/O submission and completion queue pairs.
@@ -462,7 +462,7 @@ If set, allocate a memory disk as the backing store.
 The value of this variable is the size of the memory disk in megabytes.
 .El
 .Ss PCI Passthrough Settings
-.Bl -column "Name" "Format" "Default"
+.Bl -column "Name" "integer" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va bus Ta integer Ta Ta
 Host PCI bus address of device to pass through.
@@ -511,7 +511,7 @@ a MAC address is generated from a hash of the device's PCI address.
 The largest supported MTU advertised to the guest.
 .El
 .Ss VirtIO SCSI Settings
-.Bl -column "Name" "Format" "Default"
+.Bl -column "Name" "integer" "Default"
 .It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
 .It Va dev Ta path Ta Ta
 The path of a CAM target layer (CTL) device to export:
