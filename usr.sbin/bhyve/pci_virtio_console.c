@@ -616,25 +616,53 @@ pci_vtcon_notify_rx(void *vsc, struct vqueue_info *vq)
 	}
 }
 
+/*
+ * Each console device has a "port" node which contains nodes for
+ * each port.  Ports are numbered starting at 0.
+ */
+static int
+pci_vtcon_legacy_config_port(nvlist_t *nvl, int port, char *opt)
+{
+	char *name, *path;
+	char node_name[sizeof("XX")];
+	nvlist_t *port_nvl;
+
+	name = strsep(&opt, "=");
+	path = opt;
+	if (path == NULL) {
+		EPRINTLN("vtcon: port %s requires a path", name);
+		return (-1);
+	}
+	if (port >= VTCON_MAXPORTS) {
+		EPRINTLN("vtcon: too many ports");
+		return (-1);
+	}
+	snprintf(node_name, sizeof(node_name), "%d", port);
+	port_nvl = create_relative_config_node(nvl, node_name);
+	set_config_value_node(port_nvl, "name", name);
+	set_config_value_node(port_nvl, "path", path);
+	return (0);
+}
+
 static int
 pci_vtcon_legacy_config(nvlist_t *nvl, const char *opts)
 {
-	char *name, *opt, *path, *str, *tofree;
+	char *opt, *str, *tofree;
 	nvlist_t *ports_nvl;
+	int error, port;
 
-	ports_nvl = create_relative_config_node(nvl, "ports");
+	ports_nvl = create_relative_config_node(nvl, "port");
 	tofree = str = strdup(opts);
+	error = 0;
+	port = 0;
 	while ((opt = strsep(&str, ",")) != NULL) {
-		name = strsep(&opt, "=");
-		path = opt;
-		if (path != NULL) {
-			EPRINTLN("vtcon: port %s requires a path", name);
-			return (-1);
-		}
-		set_config_value_node(ports_nvl, name, path);
+		error = pci_vtcon_legacy_config_port(ports_nvl, port, opt);
+		if (error)
+			break;
+		port++;
 	}
 	free(tofree);
-	return (0);
+	return (error);
 }
 
 static int
