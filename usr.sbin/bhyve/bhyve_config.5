@@ -214,13 +214,14 @@ VirtIO SCSI interface.
 Extensible Host Controller Interface (XHCI) USB controller.
 .El
 .Ss USB Device Settings
-USB controller devices contain zero or more child USB devices.
+USB controller devices contain zero or more child USB devices
+attached to slots.
 Each USB device stores its settings in a node named
-.Dq devices. Ns Va N
+.Dq slot. Ns Va N
 under the controller's device node.
-The
 .Va N
-values are formatted as successive decimal values starting with 0.
+is the number of the slot to which the USB device is attached.
+Note that USB slot numbers begin at 1.
 All USB device nodes must contain a configuration variable named
 .Dq device
 which specifies the device model to use.
