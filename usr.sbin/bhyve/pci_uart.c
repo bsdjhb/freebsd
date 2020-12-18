@@ -93,7 +93,7 @@ static int
 pci_uart_legacy_config(nvlist_t *nvl, const char *opts)
 {
 
-	set_config_value_node(nvl, "device", opts);
+	set_config_value_node(nvl, "path", opts);
 	return (0);
 }
 
@@ -114,7 +114,7 @@ pci_uart_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 	sc = uart_init(pci_uart_intr_assert, pci_uart_intr_deassert, pi);
 	pi->pi_arg = sc;
 
-	device = get_config_value_node(nvl, "device");
+	device = get_config_value_node(nvl, "path");
 	if (uart_set_backend(sc, device) != 0) {
 		EPRINTLN("Unable to initialize backend '%s' for "
 		    "pci uart at %d:%d", device, pi->pi_slot, pi->pi_func);

@@ -101,7 +101,7 @@ lpc_device_parse(const char *opts)
 		}
 		for (unit = 0; unit < LPC_UART_NUM; unit++) {
 			if (strcasecmp(lpcdev, lpc_uart_names[unit]) == 0) {
-				asprintf(&node_name, "lpc.%s.device",
+				asprintf(&node_name, "lpc.%s.path",
 				    lpc_uart_names[unit]);
 				set_config_value(node_name, str);
 				free(node_name);
@@ -224,7 +224,7 @@ lpc_init(struct vmctx *ctx)
 		sc->uart_softc = uart_init(lpc_uart_intr_assert,
 				    lpc_uart_intr_deassert, sc);
 
-		asprintf(&node_name, "lpc.%s.device", name);
+		asprintf(&node_name, "lpc.%s.path", name);
 		backend = get_config_value(node_name);
 		free(node_name);
 		if (uart_set_backend(sc->uart_softc, backend) != 0) {
