@@ -2666,6 +2666,9 @@ pci_xhci_legacy_config(nvlist_t *nvl, const char *opts)
 	char *cp, *opt, *str, *tofree;
 	int slot;
 
+	if (opts == NULL)
+		return (0);
+
 	slots_nvl = create_relative_config_node(nvl, "slot");
 	slot = 1;
 	tofree = str = strdup(opts);

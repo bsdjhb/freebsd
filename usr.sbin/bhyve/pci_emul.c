@@ -182,6 +182,9 @@ pci_parse_legacy_config(nvlist_t *nvl, const char *opt)
 {
 	char *config, *name, *tofree, *value;
 
+	if (opt == NULL)
+		return (0);
+
 	config = tofree = strdup(opt);
 	while ((name = strsep(&config, ",")) != NULL) {
 		value = strchr(name, '=');
@@ -275,19 +278,10 @@ pci_parse_slot(char *opt)
 	else
 		set_config_value_node(nvl, "device", pde->pe_emu);
 
-	if (config != NULL) {
-		if (pde->pe_legacy_config != NULL)
-			error = pde->pe_legacy_config(nvl, config);
-		else
-			error = pci_parse_legacy_config(nvl, config);
-	} else if (pde->pe_alias != NULL && pde->pe_legacy_config != NULL) {
-		/*
-		 * This is a bit of a hack to permit the
-		 * "amd-hostbridge" alias to always run.
-		 */
+	if (pde->pe_legacy_config != NULL)
 		error = pde->pe_legacy_config(nvl, config);
-	} else
-		error = 0;
+	else
+		error = pci_parse_legacy_config(nvl, config);
 done:
 	free(str);
 	return (error);

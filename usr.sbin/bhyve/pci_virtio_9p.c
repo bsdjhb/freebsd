@@ -234,6 +234,9 @@ pci_vt9p_legacy_config(nvlist_t *nvl, const char *opts)
 {
 	char *sharename, *tofree, *token, *tokens;
 
+	if (opts == NULL)
+		return (0);
+
 	tokens = tofree = strdup(opts);
 	while ((token = strsep(&tokens, ",")) != NULL) {
 		if (strchr(token, '=') != NULL) {

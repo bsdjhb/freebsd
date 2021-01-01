@@ -656,6 +656,9 @@ passthru_legacy_config(nvlist_t *nvl, const char *opts)
 	char value[16];
 	int bus, slot, func;
 
+	if (opts == NULL)
+		return (0);
+
 	if (sscanf(opts, "%d/%d/%d", &bus, &slot, &func) != 3) {
 		EPRINTLN("passthru: invalid options \"%s\"", opts);
 		return (-1);

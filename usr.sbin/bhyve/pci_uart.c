@@ -93,7 +93,8 @@ static int
 pci_uart_legacy_config(nvlist_t *nvl, const char *opts)
 {
 
-	set_config_value_node(nvl, "path", opts);
+	if (opts != NULL)
+		set_config_value_node(nvl, "path", opts);
 	return (0);
 }
 

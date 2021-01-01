@@ -2338,8 +2338,6 @@ pci_ahci_legacy_config_port(nvlist_t *nvl, int port, const char *type,
 	snprintf(node_name, sizeof(node_name), "%d", port);
 	port_nvl = create_relative_config_node(nvl, node_name);
 	set_config_value_node(port_nvl, "type", type);
-	if (opts == NULL)
-		return (0);
 	return (blockif_legacy_config(port_nvl, opts));
 }
 
@@ -2350,6 +2348,9 @@ pci_ahci_legacy_config(nvlist_t *nvl, const char *opts)
 	const char *type;
 	char *next, *next2, *str, *tofree;
 	int p, ret;
+
+	if (opts == NULL)
+		return (0);
 
 	ports_nvl = create_relative_config_node(nvl, "port");
 	ret = 1;

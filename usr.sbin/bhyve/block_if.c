@@ -434,6 +434,9 @@ blockif_legacy_config(nvlist_t *nvl, const char *opts)
 {
 	char *cp, *path;
 
+	if (opts == NULL)
+		return (0);
+
 	cp = strchr(opts, ',');
 	if (cp == NULL) {
 		set_config_value_node(nvl, "path", opts);
