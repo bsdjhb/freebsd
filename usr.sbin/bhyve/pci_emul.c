@@ -254,6 +254,13 @@ pci_parse_slot(char *opt)
 		goto done;
 	}
 
+	pde = pci_emul_finddev(emul);
+	if (pde == NULL) {
+		EPRINTLN("pci slot %d:%d:%d: unknown device \"%s\"", bnum, snum,
+		    fnum, emul);
+		goto done;
+	}
+
 	snprintf(node_name, sizeof(node_name), "pci.%d.%d.%d", bnum, snum,
 	    fnum);
 	nvl = find_config_node(node_name);
@@ -263,20 +270,22 @@ pci_parse_slot(char *opt)
 		goto done;
 	}
 	nvl = create_config_node(node_name);
-	set_config_value_node(nvl, "device", emul);
-
-	pde = pci_emul_finddev(emul);
-	if (pde == NULL) {
-		EPRINTLN("pci slot %d:%d:%d: unknown device \"%s\"", bnum, snum,
-		    fnum, emul);
-		goto done;
-	}
+	if (pde->pe_alias != NULL)
+		set_config_value_node(nvl, "device", pde->pe_alias);
+	else
+		set_config_value_node(nvl, "device", pde->pe_emu);
 
 	if (config != NULL) {
 		if (pde->pe_legacy_config != NULL)
 			error = pde->pe_legacy_config(nvl, config);
 		else
 			error = pci_parse_legacy_config(nvl, config);
+	} else if (pde->pe_alias != NULL && pde->pe_legacy_config != NULL) {
+		/*
+		 * This is a bit of a hack to permit the
+		 * "amd-hostbridge" alias to always run.
+		 */
+		error = pde->pe_legacy_config(nvl, config);
 	} else
 		error = 0;
 done:
@@ -1190,9 +1199,16 @@ init_pci(struct vmctx *ctx)
 				}
 				pde = pci_emul_finddev(emul);
 				if (pde == NULL) {
-					EPRINTLN("pci slot %d:%d:%d: unknown"
-					    " device \"%s\"", bus, slot, func,
+					EPRINTLN("pci slot %d:%d:%d: unknown "
+					    "device \"%s\"", bus, slot, func,
 					    emul);
+					return (EINVAL);
+				}
+				if (pde->pe_alias != NULL) {
+					EPRINTLN("pci slot %d:%d:%d: legacy "
+					    "device \"%s\", use \"%s\" instead",
+					    bus, slot, func, emul,
+					    pde->pe_alias);
 					return (EINVAL);
 				}
 				fi->fi_pde = pde;

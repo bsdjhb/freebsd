@@ -55,6 +55,7 @@ struct pci_devemu {
 	int       (*pe_init)(struct vmctx *, struct pci_devinst *,
 			     nvlist_t *);
 	int	(*pe_legacy_config)(nvlist_t *, const char *);
+	const char *pe_alias;
 
 	/* ACPI DSDT enumeration */
 	void	(*pe_write_dsdt)(struct pci_devinst *);
@@ -79,6 +80,7 @@ struct pci_devemu {
 	int	(*pe_snapshot)(struct vm_snapshot_meta *meta);
 	int	(*pe_pause)(struct vmctx *ctx, struct pci_devinst *pi);
 	int	(*pe_resume)(struct vmctx *ctx, struct pci_devinst *pi);
+
 };
 #define PCI_EMUL_SET(x)   DATA_SET(pci_devemu_set, x);
 

@@ -2855,28 +2855,14 @@ PCI_EMUL_SET(pci_de_ahci);
 
 struct pci_devemu pci_de_ahci_hd = {
 	.pe_emu =	"ahci-hd",
-	.pe_init =	pci_ahci_init,
 	.pe_legacy_config = pci_ahci_hd_legacy_config,
-	.pe_barwrite =	pci_ahci_write,
-	.pe_barread =	pci_ahci_read,
-#ifdef BHYVE_SNAPSHOT
-	.pe_snapshot =	pci_ahci_snapshot,
-	.pe_pause =	pci_ahci_pause,
-	.pe_resume =	pci_ahci_resume,
-#endif
+	.pe_alias =	"ahci",
 };
 PCI_EMUL_SET(pci_de_ahci_hd);
 
 struct pci_devemu pci_de_ahci_cd = {
 	.pe_emu =	"ahci-cd",
-	.pe_init =	pci_ahci_init,
 	.pe_legacy_config = pci_ahci_cd_legacy_config,
-	.pe_barwrite =	pci_ahci_write,
-	.pe_barread =	pci_ahci_read,
-#ifdef BHYVE_SNAPSHOT
-	.pe_snapshot =	pci_ahci_snapshot,
-	.pe_pause =	pci_ahci_pause,
-	.pe_resume =	pci_ahci_resume,
-#endif
+	.pe_alias =	"ahci",
 };
 PCI_EMUL_SET(pci_de_ahci_cd);

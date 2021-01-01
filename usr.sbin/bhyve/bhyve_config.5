@@ -169,18 +169,8 @@ The following PCI device models are supported:
 Provide a simple PCI-Host bridge device.
 This is usually configured at pci0:0:0 and is required by most guest
 operating systems.
-.It Li amd_hostbridge
-Identical to the
-.Va hostbridge
-model, but uses an AMD PCI ID.
 .It Li ahci
 AHCI storage controller.
-.It Li ahci-cd
-AHCI storage controller.
-This name is deprecated and will be removed in a future version.
-.It Li ahci-hd
-AHCI storage controller.
-This name is deprecated and will be removed in a future version.
 .It Li e1000
 Intel e82545 network interface.
 .It Li fbuf
@@ -314,6 +304,14 @@ Either the pathname of a character device or
 to use standard input and output of the
 .Xr bhyve 8
 process.
+.El
+.Ss Host Bridge Settings
+.Bl -column "vendor" "integer" "Default"
+.It Sy Name Ta Sy Format Ta Sy Default Ta Sy Description
+.It Va vendor Ta integer Ta 0x1275 Ta
+PCI vendor ID.
+.It Va device Ta integer Ta 0x1275 Ta
+PCI device ID.
 .El
 .Ss AHCI Controller Settings
 AHCI controller devices contain zero or more ports each of which
