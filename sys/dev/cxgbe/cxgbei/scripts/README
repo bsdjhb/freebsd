@@ -1,0 +1,37 @@
+1) FreeBSD OS cloning
+---------------------
+	-  Run the clone.sh script to clone latest FreeBSD
+	-  This script will clone latest OS from local repository and install necessary packages.
+
+2) Compilation 
+---------------
+	- Use compile.sh script to compile.
+	- Argument to the script : 
+		- 'world' : compile both user and kernel.
+		- 'ckern' : clean kernel compilation.(make clean && make)
+		- no argument will compile kernel only.  
+
+3) Our drivers
+---------------
+	- kldload if_cxgbe : NIC driver
+	- kldload t4_tom   : tom driver
+	- kldload cxgbei   : ISCSI driver
+
+4) ISCSI configurations
+------------------------
+	- Configure ISCSI target(s) in /etc/ctl.conf
+	- Refer manpage for ctl.conf for configurations.
+	- Under portal-group configurations, provide 'offload cxgbei' to use our offload driver.
+	- Once configuration is done, do 'service ctld onestop' to stop the service and
+	  'service ctld onestart' to start the service.
+
+5) ktrdump
+-----------
+	- To increase the number of ktr entries, do 'sysctl debug.ktr.entries=990000'
+	- do 'sysctl debug.ktr.clear=1' to log rotate
+
+Notes : 
+
+1) default iscsi daemon in the linux initiator doesn't support data digest.
+   Faced certain compilation issues with open iscsi's latest version 2.0.876.
+   Finally, open-iscsi-2.0-873 was used.

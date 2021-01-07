@@ -288,9 +288,6 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t pa
 		 * Round up the data segment to a 4B boundary.  Pad with 0 if
 		 * necessary.  There will definitely be room in the mbuf.
 		 */
-#if 0
-		//padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
-#endif
 		if (padding) {
 			bzero(mtod(last, uint8_t *) + last->m_len, padding);
 			last->m_len += padding;

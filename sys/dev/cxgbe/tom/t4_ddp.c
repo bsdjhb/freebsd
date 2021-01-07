@@ -1182,6 +1182,8 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	offset = (vm_offset_t)sgl->addr & PAGE_MASK;
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	pva = trunc_page(sgl->addr);
+	/* if ctrlq is true, allocate mbufs, write WR, append it to ulp_pduq
+	 * so that the WRs would be sent via offload queue */
 	if( !ctrlq)
 		mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
@@ -1227,14 +1229,11 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 			    V_PPOD_OFST(offset));
 			ppod->rsvd = 0;
 
-			//pva = trunc_page((vm_offset_t)sgl->addr);
-			//sg_offset = 0;
 			for (k = 0; k < nitems(ppod->addr); k++) {
 				if (entries) {
 					/* Fill phys address in the ppod entries */
 					pa = pmap_kextract(pva + sg_offset);
 					ppod->addr[k] = htobe64(pa);
-					//pva += ddp_pgsz;
 					if (nitems(ppod->addr) > (k + 1)) {
 						/*
 						 * Goto the next ddp page only
@@ -1306,6 +1305,8 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	pva = trunc_page(buf);
 	end_pva = trunc_page(buf + buflen - 1);
+	/* if ctrlq is true, allocate mbufs, write WR, append it to ulp_pduq
+	 * so that the WRs would be sent via offload queue */
 	if( !ctrlq)
 		mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
