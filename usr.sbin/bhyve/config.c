@@ -354,6 +354,17 @@ get_config_bool(const char *path)
 }
 
 bool
+get_config_bool_default(const char *path, bool def)
+{
+	const char *value;
+
+	value = get_config_value(path);
+	if (value == NULL)
+		return (def);
+	return (_bool_value(path, value));
+}
+
+bool
 get_config_bool_node(const nvlist_t *parent, const char *name)
 {
 	const char *value;
@@ -361,6 +372,18 @@ get_config_bool_node(const nvlist_t *parent, const char *name)
 	value = get_config_value_node(parent, name);
 	if (value == NULL)
 		err(4, "Failed to fetch boolean variable %s", name);
+	return (_bool_value(name, value));
+}
+
+bool
+get_config_bool_node_default(const nvlist_t *parent, const char *name,
+    bool def)
+{
+	const char *value;
+
+	value = get_config_value_node(parent, name);
+	if (value == NULL)
+		return (def);
 	return (_bool_value(name, value));
 }
 

@@ -1376,7 +1376,7 @@ main(int argc, char *argv[])
 	if (vmname == NULL)
 		usage(1);
 
-	if (get_config_bool("config.dump")) {
+	if (get_config_bool_default("config.dump", false)) {
 		dump_config();
 		exit(1);
 	}

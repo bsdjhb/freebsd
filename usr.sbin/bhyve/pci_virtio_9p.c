@@ -263,12 +263,10 @@ pci_vt9p_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 	const char *value;
 	const char *sharename;
 	int rootfd;
-	bool ro = false;
+	bool ro;
 	cap_rights_t rootcap;
 
-	value = get_config_value_node(nvl, "ro");
-	if (value != NULL)
-		ro = get_config_bool_node(nvl, "ro");
+	ro = get_config_bool_node_default(nvl, "ro", false);
 
 	value = get_config_value_node(nvl, "path");
 	if (value == NULL) {

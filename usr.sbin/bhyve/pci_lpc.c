@@ -248,7 +248,7 @@ lpc_init(struct vmctx *ctx)
 
 	/* pc-testdev */
 	asprintf(&node_name, "lpc.%s", pctestdev_getname());
-	if (get_config_value(node_name) != NULL && get_config_bool(node_name)) {
+	if (get_config_bool_default(node_name, false)) {
 		error = pctestdev_init(ctx);
 		if (error)
 			return (error);

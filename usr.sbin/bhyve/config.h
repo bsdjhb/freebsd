@@ -108,6 +108,9 @@ void	set_config_value(const char *path, const char *value);
 /* Convenience wrappers for boolean variables. */
 bool	get_config_bool(const char *path);
 bool	get_config_bool_node(const nvlist_t *parent, const char *name);
+bool	get_config_bool_default(const char *path, bool def);
+bool	get_config_bool_node_default(const nvlist_t *parent, const char *name,
+    bool def);
 void	set_config_bool(const char *path, bool value);
 void	set_config_bool_node(nvlist_t *parent, const char *name, bool value);
 

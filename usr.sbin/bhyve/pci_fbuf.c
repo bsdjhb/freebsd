@@ -222,9 +222,7 @@ pci_fbuf_parse_config(struct pci_fbuf_softc *sc, nvlist_t *nvl)
 	const char *value;
 	char *cp;
 
-	value = get_config_value_node(nvl, "wait");
-	if (value != NULL)
-		sc->rfb_wait = get_config_bool_node(nvl, "wait");
+	sc->rfb_wait = get_config_bool_node_default(nvl, "wait", false);
 
 	/* Prefer "rfb" to "tcp". */
 	value = get_config_value_node(nvl, "rfb");

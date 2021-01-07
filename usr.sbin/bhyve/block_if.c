@@ -448,15 +448,6 @@ blockif_legacy_config(nvlist_t *nvl, const char *opts)
 	return (pci_parse_legacy_config(nvl, cp + 1));
 }
 
-static bool
-get_default_false_knob(nvlist_t *nvl, const char *name)
-{
-
-	if (get_config_value_node(nvl, name) == NULL)
-		return (false);
-	return (get_config_bool_node(nvl, name));
-}
-
 struct blockif_ctxt *
 blockif_open(nvlist_t *nvl, const char *ident)
 {
@@ -485,14 +476,14 @@ blockif_open(nvlist_t *nvl, const char *ident)
 	ro = 0;
 	nodelete = 0;
 
-	if (get_default_false_knob(nvl, "nocache"))
+	if (get_config_bool_node_default(nvl, "nocache", false))
 		extra |= O_DIRECT;
-	if (get_default_false_knob(nvl, "nodelete"))
+	if (get_config_bool_node_default(nvl, "nodelete", false))
 		nodelete = 1;
-	if (get_default_false_knob(nvl, "sync") ||
-	    get_default_false_knob(nvl, "direct"))
+	if (get_config_bool_node_default(nvl, "sync", false) ||
+	    get_config_bool_node_default(nvl, "direct", false))
 		extra |= O_SYNC;
-	if (get_default_false_knob(nvl, "ro"))
+	if (get_config_bool_node_default(nvl, "ro", false))
 		ro = 1;
 	ssval = get_config_value_node(nvl, "sectorsize");
 	if (ssval != NULL) {
