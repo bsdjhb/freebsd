@@ -66,7 +66,7 @@ rtc_time(struct vmctx *ctx)
 	time_t t;
 
 	time(&t);
-	if (get_config_bool("rtc.use_localtime")) {
+	if (get_config_bool_default("rtc.use_localtime", true)) {
 		localtime_r(&t, &tm);
 		t = timegm(&tm);
 	}

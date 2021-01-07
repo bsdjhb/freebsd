@@ -516,7 +516,7 @@ int
 fbsdrun_virtio_msix(void)
 {
 
-	return (get_config_bool("virtio_msix"));
+	return (get_config_bool_default("virtio_msix", true));
 }
 
 static void *
@@ -897,7 +897,7 @@ vmexit_suspend(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
 	case VM_SUSPEND_RESET:
 		exit(0);
 	case VM_SUSPEND_POWEROFF:
-		if (get_config_bool("destroy_on_poweroff"))
+		if (get_config_bool_default("destroy_on_poweroff", false))
 			vm_destroy(ctx);
 		exit(1);
 	case VM_SUSPEND_HALT:
@@ -1018,7 +1018,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 {
 	int err, tmp;
 
-	if (get_config_bool("x86.vmexit_on_hlt")) {
+	if (get_config_bool_default("x86.vmexit_on_hlt", false)) {
 		err = vm_get_capability(ctx, cpu, VM_CAP_HALT_EXIT, &tmp);
 		if (err < 0) {
 			fprintf(stderr, "VM exit on HLT not supported\n");
@@ -1029,7 +1029,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_HLT] = vmexit_hlt;
 	}
 
-	if (get_config_bool("x86.vmexit_on_pause")) {
+	if (get_config_bool_default("x86.vmexit_on_pause", false)) {
 		/*
 		 * pause exit support required for this mode
 		 */
@@ -1044,7 +1044,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 			handler[VM_EXITCODE_PAUSE] = vmexit_pause;
         }
 
-	if (get_config_bool("x86.x2apic"))
+	if (get_config_bool_default("x86.x2apic", false))
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_ENABLED);
 	else
 		err = vm_set_x2apic_state(ctx, cpu, X2APIC_DISABLED);
@@ -1197,19 +1197,8 @@ set_defaults(void)
 {
 
 	set_config_bool("acpi_tables", false);
-	set_config_bool("destroy_on_poweroff", false);
-	set_config_bool("gdb.wait", false);
-	set_config_bool("memory.guest_in_core", false);
 	set_config_value("memory.size", "256M");
-	set_config_bool("memory.wired", false);
-	set_config_bool("x86.mptable", true);
-	set_config_bool("rtc.use_localtime", true);
-	set_config_bool("x86.x2apic", false);
-	set_config_bool("x86.strictio", false);
 	set_config_bool("x86.strictmsr", true);
-	set_config_bool("x86.vmexit_on_hlt", false);
-	set_config_bool("x86.vmexit_on_pause", false);
-	set_config_bool("virtio_msix", true);
 }
 
 int
@@ -1414,9 +1403,9 @@ main(int argc, char *argv[])
 	fbsdrun_set_capabilities(ctx, BSP);
 
 	memflags = 0;
-	if (get_config_bool("memory.wired"))
+	if (get_config_bool_default("memory.wired", false))
 		memflags |= VM_MEM_F_WIRED;
-	if (get_config_bool("memory.guest_in_core"))
+	if (get_config_bool_default("memory.guest_in_core", false))
 		memflags |= VM_MEM_F_INCORE;
 	vm_set_memflags(ctx, memflags);
 	err = vm_setup_memory(ctx, memsize, VM_MMAP_ALL);
@@ -1459,7 +1448,8 @@ main(int argc, char *argv[])
 
 	value = get_config_value("gdb.port");
 	if (value != NULL)
-		init_gdb(ctx, atoi(value), get_config_bool("gdb.wait"));
+		init_gdb(ctx, atoi(value), get_config_bool_default("gdb.wait",
+		    false));
 
 	if (lpc_bootrom()) {
 		if (vm_set_capability(ctx, BSP, VM_CAP_UNRESTRICTED_GUEST, 1)) {
@@ -1511,7 +1501,7 @@ main(int argc, char *argv[])
 	/*
 	 * build the guest tables, MP etc.
 	 */
-	if (get_config_bool("x86.mptable")) {
+	if (get_config_bool_default("x86.mptable", true)) {
 		error = mptable_build(ctx, guest_ncpus);
 		if (error) {
 			perror("error to build the guest tables");
