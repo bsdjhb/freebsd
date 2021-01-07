@@ -501,6 +501,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 static int
 do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 {
+	struct epoch_tracker et;
         struct adapter *sc = iq->adapter;
         struct cxgbei_data *ci = sc->iscsi_ulp_softc;
         struct cpl_rx_iscsi_cmp *cpl = mtod(m, struct cpl_rx_iscsi_cmp *);
@@ -608,7 +609,6 @@ single_segment:
         tp->t_rcvtime = ticks;
 
         /* update rx credits */
-        toep->rx_credits += pdu_len;
         t4_rcvd(&toep->td->tod, tp);    /* XXX: sc->tom_softc.tod */
 #endif
 
@@ -623,12 +623,14 @@ single_segment:
                 SOCKBUF_UNLOCK(sb);
                 INP_WUNLOCK(inp);
 
-                INP_INFO_RLOCK(&V_tcbinfo);
+		CURVNET_SET(so->so_vnet);
+		NET_EPOCH_ENTER(et);
                 INP_WLOCK(inp);
                 tp = tcp_drop(tp, ECONNRESET);
                 if (tp)
                         INP_WUNLOCK(inp);
-                INP_INFO_RUNLOCK(&V_tcbinfo);
+		NET_EPOCH_EXIT(et);
+		CURVNET_RESTORE();
 
                 icl_cxgbei_conn_pdu_free(NULL, ip);
                 toep->ulpcb2 = NULL;
