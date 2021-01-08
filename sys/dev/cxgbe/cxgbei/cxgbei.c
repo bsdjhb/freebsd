@@ -404,11 +404,10 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 
 	tp = intotcpcb(inp);
-	tp->rcv_nxt += pdu_len;
 	MPASS(icp->icp_seq == tp->rcv_nxt);
+	tp->rcv_nxt += pdu_len;
 	/* credit and window size updation disabled since RX flow control is
 	 * disabled when completion is enabled */
-	tp->rcv_nxt += pdu_len;
 #if 0
 	MPASS(tp->rcv_wnd >= pdu_len);
 	tp->rcv_wnd -= pdu_len;
