@@ -452,7 +452,9 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 			set_mbuf_iscsi_iso_hdrlen(m, iscsi_hdr_len);
 
 		}
+		CURVNET_SET(toep->vnet);
 		t4_push_pdus(icc->sc, toep, 0);
+		CURVNET_RESTORE();
 	}
 	INP_WUNLOCK(inp);
 }
