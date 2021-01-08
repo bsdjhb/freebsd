@@ -917,7 +917,7 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 static inline void
 rqdrop_locked(struct mbufq *q, int plen)
 {
-	struct mbuf *m;
+	struct mbuf *m, *mnxt;
 
 	while (plen > 0) {
 		m = mbufq_dequeue(q);
@@ -930,6 +930,18 @@ rqdrop_locked(struct mbufq *q, int plen)
 		MPASS(plen >= m->m_pkthdr.len);
 
 		plen -= m->m_pkthdr.len;
+		mnxt = m->m_next;
+		/* first mbuf (m) has icl_cxgbei_pdu structure
+		 * during free of M_EXT enabled data mbuf (m->next),
+		 * it require icl_cxgbei_pdu,
+		 * 
+		 * in brief: m->next with flag M_EXT requires 
+		 * m buf so m mbuf should be freed after m->next
+		 * */
+		if (mnxt &&  (mnxt->m_flags & M_EXT)) {
+			m->m_next = NULL;
+			m_freem(mnxt);
+		}
 		m_freem(m);
 	}
 }

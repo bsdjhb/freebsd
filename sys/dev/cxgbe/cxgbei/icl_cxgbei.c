@@ -134,6 +134,7 @@ static icl_conn_pdu_data_segment_length_t
 static icl_conn_pdu_append_data_t	icl_cxgbei_conn_pdu_append_data;
 static icl_conn_pdu_get_data_t	icl_cxgbei_conn_pdu_get_data;
 static icl_conn_pdu_queue_t	icl_cxgbei_conn_pdu_queue;
+static icl_conn_pdu_queue_cb_t	icl_cxgbei_conn_pdu_queue_cb;
 static icl_conn_handoff_t	icl_cxgbei_conn_handoff;
 static icl_conn_free_t		icl_cxgbei_conn_free;
 static icl_conn_close_t		icl_cxgbei_conn_close;
@@ -150,6 +151,7 @@ static kobj_method_t icl_cxgbei_methods[] = {
 	KOBJMETHOD(icl_conn_pdu_append_data, icl_cxgbei_conn_pdu_append_data),
 	KOBJMETHOD(icl_conn_pdu_get_data, icl_cxgbei_conn_pdu_get_data),
 	KOBJMETHOD(icl_conn_pdu_queue, icl_cxgbei_conn_pdu_queue),
+	KOBJMETHOD(icl_conn_pdu_queue_cb, icl_cxgbei_conn_pdu_queue_cb),
 	KOBJMETHOD(icl_conn_handoff, icl_cxgbei_conn_handoff),
 	KOBJMETHOD(icl_conn_free, icl_cxgbei_conn_free),
 	KOBJMETHOD(icl_conn_close, icl_cxgbei_conn_close),
@@ -167,9 +169,10 @@ icl_cxgbei_conn_pdu_free(struct icl_conn *ic, struct icl_pdu *ip)
 {
 #ifdef INVARIANTS
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-#endif
 
+	KASSERT(icp->ref_cnt == 0, ("freeing active PDU"));
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
+#endif
 	MPASS(ic == ip->ip_conn);
 	MPASS(ip->ip_bhs_mbuf != NULL);
 
@@ -182,6 +185,49 @@ icl_cxgbei_conn_pdu_free(struct icl_conn *ic, struct icl_pdu *ip)
 		refcount_release(&ic->ic_outstanding_pdus);
 #endif
 }
+
+static void
+icl_cxgbei_pdu_call_cb(struct icl_pdu *ip)
+{
+	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
+
+	if (icp->cb != NULL)
+		icp->cb(ip, icp->error);
+#ifdef DIAGNOSTIC
+	if (__predict_true(ip->ip_conn != NULL))
+		refcount_release(&ip->ip_conn->ic_outstanding_pdus);
+#endif
+}
+
+static void
+icl_cxgbei_pdu_done(struct icl_pdu *ip, int error)
+{
+	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
+
+	if (error != 0)
+		icp->error = error;
+
+	m_freem(ip->ip_ahs_mbuf);
+	ip->ip_ahs_mbuf = NULL;
+	m_freem(ip->ip_data_mbuf);
+	ip->ip_data_mbuf = NULL;
+	m_freem(ip->ip_bhs_mbuf);
+	ip->ip_bhs_mbuf = NULL;
+
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1) {
+		icl_cxgbei_pdu_call_cb(ip);
+	}
+}
+
+static void
+icl_cxgbei_mbuf_done(struct mbuf *mb)
+{
+
+	struct icl_cxgbei_pdu *icp = (struct icl_cxgbei_pdu *)mb->m_ext.ext_arg1;;
+
+	icl_cxgbei_pdu_call_cb(&icp->ip);
+}
+
 
 struct icl_pdu *
 icl_cxgbei_new_pdu(int flags)
@@ -332,10 +378,8 @@ int
 icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
     const void *addr, size_t len, int flags)
 {
-	struct mbuf *m, *m_tail;
-#ifdef INVARIANTS
+	struct mbuf *m, *m_tail, *newmb;
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-#endif
 
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
@@ -344,6 +388,30 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 	if (m_tail != NULL)
 		for(; m_tail->m_next != NULL; m_tail = m_tail->m_next)
 			;
+
+	if (flags & ICL_NOCOPY) {
+		newmb = m_get(flags & ~ICL_NOCOPY, MT_DATA);
+		if (newmb == NULL) {
+			ICL_WARN("failed to allocate mbuf");
+			return (ENOMEM);
+		}
+
+		newmb->m_flags |= M_RDONLY;
+		m_extaddref(newmb, __DECONST(char *, addr), len, &icp->ref_cnt,
+				icl_cxgbei_mbuf_done, icp, NULL);
+		newmb->m_len = len;
+		if (ip->ip_data_mbuf == NULL) {
+			ip->ip_data_mbuf = newmb;
+			ip->ip_data_len = len;
+		} else {
+			m_tail->m_next = newmb;
+			m_tail = m_tail->m_next;
+			ip->ip_data_len += len;
+		}
+
+		return 0; 
+	}
+
 	int len1 = len;
 
 	/* Allocate as jumbo mbufs of size MJUM16BYTES */
@@ -399,6 +467,13 @@ icl_cxgbei_conn_pdu_get_data(struct icl_conn *ic, struct icl_pdu *ip,
 void
 icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 {
+	icl_cxgbei_conn_pdu_queue_cb(ic, ip, NULL);
+}
+
+void
+icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
+			     icl_pdu_cb cb)
+{
 	struct icl_cxgbei_conn *icc = ic_to_icc(ic);
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 	struct socket *so = ic->ic_socket;
@@ -413,9 +488,12 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 	MPASS(ip->ip_ahs_mbuf == NULL && ip->ip_ahs_len == 0);
 
 	ICL_CONN_LOCK_ASSERT(ic);
+
+	icp->cb = cb;
+
 	/* NOTE: sowriteable without so_snd lock is a mostly harmless race. */
 	if (ic->ic_disconnecting || so == NULL || !sowriteable(so)) {
-		icl_cxgbei_conn_pdu_free(ic, ip);
+		icl_cxgbei_pdu_done(ip, ENOTCONN);
 		return;
 	}
 
@@ -839,7 +917,7 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 		while (!STAILQ_EMPTY(&icc->rcvd_pdus)) {
 			ip = STAILQ_FIRST(&icc->rcvd_pdus);
 			STAILQ_REMOVE_HEAD(&icc->rcvd_pdus, ip_next);
-			icl_cxgbei_conn_pdu_free(ic, ip);
+			icl_cxgbei_pdu_done(ip, ENOTCONN);
 		}
 		SOCKBUF_UNLOCK(sb);
 	}
