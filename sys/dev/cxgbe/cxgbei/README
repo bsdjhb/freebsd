@@ -1,0 +1,55 @@
+1) FreeBSD OS cloning to /usr/src
+---------------------
+	Clean /usr/src
+	- rm -rf /usr/src
+
+	clone FreeBSD_iSCSI repo to /usr/src
+	- hg clone /root/FreeBSD_iSCSI/ /usr/src
+2) Compilation 
+---------------
+	- Copy /usr/src/sys/dev/cxgbe/cxgbei/scripts/compile.sh script to /root.
+	- To compile repo run /root/compile.sh with below arg
+	- Argument to the script : 
+		- 'world' : compile both user and kernel.
+		- 'ckern' : clean kernel compilation.(make clean && make)
+		- no argument will compile kernel only.  
+	-reboot
+
+3) Our drivers
+---------------
+	- kldload if_cxgbe : NIC driver
+	- kldload t4_tom   : tom driver
+	- kldload cxgbei   : ISCSI driver
+	- Assign ip: ifconfig cc0 102.1.1.219/24 up
+	- enable toe: ifconfig cc0 toe
+
+4) ISCSI configurations
+------------------------
+	- Configure ISCSI target(s) in /etc/ctl.conf
+	- Refer manpage for ctl.conf for configurations.
+	- or refer https://www.freebsd.org/doc/handbook/network-iscsi.html
+	- Under portal-group configurations, provide 'offload cxgbei' to use our offload driver.
+	- Once configuration is done, do 'service ctld onestop' to stop the service and
+	  'service ctld onestart' to start the service.
+
+5) ktrdump
+-----------
+	- To increase the number of ktr entries, do 'sysctl debug.ktr.entries=990000'
+	- do 'sysctl debug.ktr.clear=1' to log rotate
+
+Notes : 
+
+1) default iscsi daemon in the linux initiator doesn't support data digest.
+   Faced certain compilation issues with open iscsi's latest version 2.0.876.
+   Finally, open-iscsi-2.0-873 was used.
+
+
+=======================================
+
+ Compile module wise:
+#cd /usr/src/sys/modules/cxgbe
+#make
+
+Load compiled module:
+#kldload /usr/obj/usr/src/amd64.amd64/sys/modules/cxgbe/cxgbei/cxgbei.ko
+
