@@ -1027,7 +1027,7 @@ t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep)
 	toep->txsd_avail--;
 
 #ifdef VERBOSE_TRACES
-	CTR3(KTR_CXGBE, "ulptx WR sent in ofld queue, credits : %u",
+	CTR2(KTR_CXGBE, "%s: ulptx WR sent in ofld queue, credits : %u",
 	    __func__, credits);
 #endif
 	t4_wrq_tx(sc, wr);
