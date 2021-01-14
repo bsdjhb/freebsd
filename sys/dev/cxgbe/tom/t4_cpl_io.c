@@ -974,10 +974,10 @@ write_tx_data_iso(void *dst, u_int ulp_submode, uint8_t flags, uint16_t mss, int
 	cpl->reserved3 = 0;
 }
 
-bool
-t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep)
+static bool
+t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep,
+    struct ofld_tx_sdesc *txsd)
 {
-	struct ofld_tx_sdesc *txsd = &toep->txsd[toep->txsd_pidx];
 	struct fw_ulptx_wr *ulptx_wr;
 	struct wrqe *wr;
 	u_int plen, credits;
@@ -1022,8 +1022,6 @@ t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep)
 	KASSERT(toep->txsd_avail > 0, ("%s: no txsd", __func__));
 	txsd->plen = plen;
 	txsd->tx_credits = credits;
-	if (__predict_false(++toep->txsd_pidx == toep->txsd_total))
-		toep->txsd_pidx = 0;
 	toep->txsd_avail--;
 
 #ifdef VERBOSE_TRACES
@@ -1033,6 +1031,7 @@ t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep)
 	t4_wrq_tx(sc, wr);
 	return (true);
 }
+
 void
 t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 {
@@ -1074,8 +1073,13 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 
 	while ((sndptr = mbufq_first(pduq)) != NULL) {
 		if (mbuf_ctrlq_wr(sndptr)) {
-			if (!t4_ctrlq_wr_in_ofldq(sc, sndptr, toep) != 0)
+			if (!t4_ctrlq_wr_in_ofldq(sc, sndptr, toep, txsd) != 0)
 				return;
+			txsd++;
+			if (__predict_false(++toep->txsd_pidx == toep->txsd_total)) {
+				toep->txsd_pidx = 0;
+				txsd = &toep->txsd[0];
+			}
 			continue;
 		}
 		M_ASSERTPKTHDR(sndptr);

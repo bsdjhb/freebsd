@@ -490,7 +490,6 @@ void t4_set_tcb_field(struct adapter *, struct sge_wrq *, struct toepcb *,
     uint16_t, uint64_t, uint64_t, int, int);
 void t4_push_frames(struct adapter *, struct toepcb *, int);
 void t4_push_pdus(struct adapter *, struct toepcb *, int);
-bool t4_ctrlq_wr_in_ofldq(struct adapter *, struct mbuf *, struct toepcb *);
 
 /* t4_ddp.c */
 int t4_init_ppod_region(struct ppod_region *, struct t4_range *, u_int,
