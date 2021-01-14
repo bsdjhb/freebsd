@@ -7218,6 +7218,9 @@ cxgbe_sysctls(struct port_info *pi)
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "rx_toe_tls_octets",
 	    CTLFLAG_RD, &pi->rx_toe_tls_octets,
 	    "# of payload octets in received TOE TLS records");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO, "tx_toe_iscsi_pdus",
+	    CTLFLAG_RD, &pi->tx_toe_iscsi_pdus,
+	    "# of TOE iSCSI PDUs transmitted");
 }
 
 static int

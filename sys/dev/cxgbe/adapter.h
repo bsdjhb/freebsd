@@ -321,6 +321,7 @@ struct port_info {
 	u_long	tx_toe_tls_octets;
 	u_long	rx_toe_tls_records;
 	u_long	rx_toe_tls_octets;
+	u_long	tx_toe_iscsi_pdus;
 
 	struct callout tick;
 };

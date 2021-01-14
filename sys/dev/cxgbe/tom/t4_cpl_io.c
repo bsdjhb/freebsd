@@ -1089,6 +1089,8 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 		}
 		toep->txsd_avail--;
 
+		atomic_add_long(&toep->vi->pi->tx_toe_iscsi_pdus, 1);
+
 		t4_l2t_send(sc, wr, toep->l2te);
 	}
 
