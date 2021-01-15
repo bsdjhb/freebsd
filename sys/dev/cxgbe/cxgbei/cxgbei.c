@@ -100,6 +100,7 @@ static struct proc *cxgbei_proc;
 struct icl_pdu *icl_cxgbei_new_pdu(int);
 void icl_cxgbei_new_pdu_set_conn(struct icl_pdu *, struct icl_conn *);
 void icl_cxgbei_conn_pdu_free(struct icl_conn *, struct icl_pdu *);
+
 static void
 free_ci_counters(struct cxgbei_data *ci)
 {
@@ -161,6 +162,7 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_pdu_len,
 	v = min(G_PMMAXXFERLEN0(r), G_PMMAXXFERLEN1(r));
 	rx_len = min(rx_len, v);
 	tx_len = min(tx_len, v);
+
 	/* Remove after FW_FLOWC_MNEM_TXDATAPLEN_MAX fix in firmware. */
 	tx_len = min(tx_len, 2 * 4096);
 
@@ -304,23 +306,24 @@ do_rx_iscsi_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m
 	M_ASSERTPKTHDR(m);
 	MPASS(m->m_pkthdr.len == be16toh(cpl->len) + sizeof(*cpl));
 
-	if(icp == NULL) {
+	/* XXXJHB: Is there a better way to test for this mode? */
+	if (icp == NULL) {
 		/* 
-		 * T6 completion enabled, start of a new pdu. Hdr would come in
-		 * completion CTL 
+		 * T6 completion enabled, start of a new pdu. Header
+		 * will come in completion CPL.
 		 */
 	        ip = icl_cxgbei_new_pdu(M_NOWAIT);
 	        if (ip == NULL)
         	        CXGBE_UNIMPLEMENTED("PDU allocation failure");
 		icp = ip_to_icp(ip);
 	} else {
-		/* T5 mode, header is already received */
+		/* T5 mode, header is already received. */
 		MPASS(icp->icp_flags == ICPF_RX_HDR);
 		MPASS(icp->ip.ip_data_mbuf == NULL);
 		MPASS(icp->ip.ip_data_len == m->m_pkthdr.len - sizeof(*cpl));
 	}
 
-	/* Trim the cpl header from mbuf */
+	/* Trim the cpl header from mbuf. */
 	m_adj(m, sizeof(*cpl));
 
 	icp->icp_flags |= ICPF_RX_FLBUF;
@@ -328,7 +331,10 @@ do_rx_iscsi_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m
 	counter_u64_add(ci->fl_pdus, 1);
 	counter_u64_add(ci->fl_bytes, m->m_pkthdr.len);
 
-	/* Save the icp for further processing in completion handler, in T6 only */
+	/*
+	 * For T6, save the icp for further processing in the
+	 * completion handler.
+	 */
 	if (icp->icp_flags == ICPF_RX_FLBUF) {
 	        MPASS(toep->ulpcb2 == NULL);
         	toep->ulpcb2 = icp;
@@ -406,8 +412,14 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	tp = intotcpcb(inp);
 	MPASS(icp->icp_seq == tp->rcv_nxt);
 	tp->rcv_nxt += pdu_len;
-	/* credit and window size updation disabled since RX flow control is
-	 * disabled when completion is enabled */
+
+	/*
+	 * Don't update the window size or return credits since RX
+	 * flow control is disabled when completion is enabled.
+	 *
+	 * XXXJHB: What does "completion enabled" mean, and is that
+	 * T6 only?
+	 */
 #if 0
 	MPASS(tp->rcv_wnd >= pdu_len);
 	tp->rcv_wnd -= pdu_len;
@@ -501,165 +513,178 @@ static int
 do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 {
 	struct epoch_tracker et;
-        struct adapter *sc = iq->adapter;
-        struct cxgbei_data *ci = sc->iscsi_ulp_softc;
-        struct cpl_rx_iscsi_cmp *cpl = mtod(m, struct cpl_rx_iscsi_cmp *);
-        u_int tid = GET_TID(cpl);
-        struct toepcb *toep = lookup_tid(sc, tid);
-        struct icl_cxgbei_pdu *icp = toep->ulpcb2;
-        struct icl_pdu *ip;
-        struct inpcb *inp = toep->inp;
-        uint16_t len = be16toh(cpl->len);
-        struct socket *so;
-        struct sockbuf *sb;
-        struct tcpcb *tp = intotcpcb(inp);
-        struct icl_cxgbei_conn *icc = toep->ulpcb;
-        struct icl_conn *ic = &icc->ic;
+	struct adapter *sc = iq->adapter;
+	struct cxgbei_data *ci = sc->iscsi_ulp_softc;
+	struct cpl_rx_iscsi_cmp *cpl = mtod(m, struct cpl_rx_iscsi_cmp *);
+	u_int tid = GET_TID(cpl);
+	struct toepcb *toep = lookup_tid(sc, tid);
+	struct icl_cxgbei_pdu *icp = toep->ulpcb2;
+	struct icl_pdu *ip;
+	struct inpcb *inp = toep->inp;
+	uint16_t len = be16toh(cpl->len);
+	struct socket *so;
+	struct sockbuf *sb;
+	struct tcpcb *tp = intotcpcb(inp);
+	struct icl_cxgbei_conn *icc = toep->ulpcb;
+	struct icl_conn *ic = &icc->ic;
 	struct iscsi_bhs_data_out *bhsdo;
-        u_int val = be32toh(cpl->ddpvld);
-        u_int pdu_len, data_digest_len, hdr_digest_len;
-	uint32_t datasn;
+	u_int val = be32toh(cpl->ddpvld);
+	u_int pdu_len, data_digest_len, hdr_digest_len;
+	uint32_t datasn, prev_seg_hdrs, prev_seg_len;
 
-        M_ASSERTPKTHDR(m);
-        MPASS(m->m_pkthdr.len == len + sizeof(*cpl));
+	M_ASSERTPKTHDR(m);
+	MPASS(m->m_pkthdr.len == len + sizeof(*cpl));
 
-	if(!(val & F_DDP_PDU))
-	{
+	if ((val & F_DDP_PDU) == 0) {
 		MPASS(icp != NULL);
 		MPASS((icp->icp_flags & ICPF_RX_STATUS) == 0);
 		ip = &icp->ip;
 	}
 
-	if(icp == NULL) {
-		/* T6 completion enabled, start of a new pdu */
-	        ip = icl_cxgbei_new_pdu(M_NOWAIT);
-	        if (ip == NULL)
-        	        CXGBE_UNIMPLEMENTED("PDU allocation failure");
+	if (icp == NULL) {
+		/* T6 completion enabled, start of a new PDU. */
+		ip = icl_cxgbei_new_pdu(M_NOWAIT);
+		if (ip == NULL)
+			CXGBE_UNIMPLEMENTED("PDU allocation failure");
 		icp = ip_to_icp(ip);
 	}
-        pdu_len = G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp));
+	pdu_len = G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp));
 
-        /* Copy header */
-        m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
+	/* Copy header */
+	m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
 	data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ? 
 	    ISCSI_DATA_DIGEST_SIZE : 0;
 	hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
 	    ISCSI_HEADER_DIGEST_SIZE : 0;
-        ip->ip_data_len = pdu_len - len - data_digest_len;
-        icp->icp_seq = ntohl(cpl->seq);
-        icp->icp_flags |= ICPF_RX_HDR;
-        icp->icp_flags |= ICPF_RX_STATUS;
+	ip->ip_data_len = pdu_len - len - data_digest_len;
+	icp->icp_seq = ntohl(cpl->seq);
+	icp->icp_flags |= ICPF_RX_HDR;
+	icp->icp_flags |= ICPF_RX_STATUS;
 
-        if (val & F_DDP_PADDING_ERR)
-                icp->icp_flags |= ICPF_PAD_ERR;
-        if (val & F_DDP_HDRCRC_ERR)
-                icp->icp_flags |= ICPF_HCRC_ERR;
-        if (val & F_DDP_DATACRC_ERR)
-                icp->icp_flags |= ICPF_DCRC_ERR;
-        if (val & F_DDP_PDU && ip->ip_data_mbuf == NULL) {
-                MPASS((icp->icp_flags & ICPF_RX_FLBUF) == 0);
-                MPASS(ip->ip_data_len > 0);
-                icp->icp_flags |= ICPF_RX_DDP;
+	if (val & F_DDP_PADDING_ERR)
+		icp->icp_flags |= ICPF_PAD_ERR;
+	if (val & F_DDP_HDRCRC_ERR)
+		icp->icp_flags |= ICPF_HCRC_ERR;
+	if (val & F_DDP_DATACRC_ERR)
+		icp->icp_flags |= ICPF_DCRC_ERR;
+	if (val & F_DDP_PDU && ip->ip_data_mbuf == NULL) {
+		MPASS((icp->icp_flags & ICPF_RX_FLBUF) == 0);
+		MPASS(ip->ip_data_len > 0);
+		icp->icp_flags |= ICPF_RX_DDP;
 		bhsdo = (struct iscsi_bhs_data_out *)ip->ip_bhs;
-		MPASS(bhsdo->bhsdo_flags & BHSDO_FLAGS_F); //should be the last
+
+		/* Must be the final PDU. */
+		MPASS(bhsdo->bhsdo_flags & BHSDO_FLAGS_F);
 		datasn = be32toh(bhsdo->bhsdo_datasn);
-		if(datasn == 0)
+		if (datasn == 0)
 			goto single_segment;
 
-		uint32_t prev_seg_len;
-		prev_seg_len = icp->icp_seq - tp->rcv_nxt - (datasn * (sizeof(struct iscsi_bhs_data_out)
-			+ hdr_digest_len + data_digest_len));
+		/* Amount of headers in previous segments. */
+		prev_seg_hdrs = datasn * (sizeof(struct iscsi_bhs_data_out) +
+		    hdr_digest_len + data_digest_len);
+		prev_seg_len = (icp->icp_seq - tp->rcv_nxt) - prev_seg_hdrs;
 		ip->ip_data_len += prev_seg_len;
 		pdu_len += (icp->icp_seq - tp->rcv_nxt);
-                /* since cfiscsi doesn't know about previous hdrs,
-                 * present this as if entire r2t data length got
-                 * received in this single segment */
-                bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
-                bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
-                bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
-                bhsdo->bhsdo_datasn = 0;
-                bhsdo->bhsdo_buffer_offset = htobe32(be32toh(bhsdo->bhsdo_buffer_offset) - prev_seg_len);
+
+		/*
+		 * Since cfiscsi doesn't know about previous headers,
+		 * pretend that the entire r2t data length was
+		 * received in this single segment.
+		 */
+		bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
+		bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
+		bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
+		bhsdo->bhsdo_datasn = 0;
+		bhsdo->bhsdo_buffer_offset = htobe32(
+		    be32toh(bhsdo->bhsdo_buffer_offset) - prev_seg_len);
 
 single_segment:
-                counter_u64_add(ci->ddp_pdus, datasn + 1);
-                counter_u64_add(ci->ddp_bytes, ip->ip_data_len);
-        } else {
+		counter_u64_add(ci->ddp_pdus, datasn + 1);
+		counter_u64_add(ci->ddp_bytes, ip->ip_data_len);
+	} else {
 		MPASS(icp->icp_flags & (ICPF_RX_FLBUF));
 		MPASS(ip->ip_data_len == ip->ip_data_mbuf->m_pkthdr.len);
 		MPASS(icp->icp_seq == tp->rcv_nxt);
 	}
 
-        INP_WLOCK(inp);
-        if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
-                CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
-                    __func__, tid, pdu_len, inp->inp_flags);
-                INP_WUNLOCK(inp);
-                icl_cxgbei_conn_pdu_free(NULL, ip);
-                toep->ulpcb2 = NULL;
-                return (0);
-        }
+	INP_WLOCK(inp);
+	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
+		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
+		    __func__, tid, pdu_len, inp->inp_flags);
+		INP_WUNLOCK(inp);
+		icl_cxgbei_conn_pdu_free(NULL, ip);
+		toep->ulpcb2 = NULL;
+		m_freem(m);
+		return (0);
+	}
 
-        tp->rcv_nxt += pdu_len;
-	/* credit and window size updation disabled since RX flow control is
-	 * disabled when completion is enabled */
+	tp->rcv_nxt += pdu_len;
+
+	/*
+	 * Don't update the window size or return credits since RX
+	 * flow control is disabled when completion is enabled.
+	 *
+	 * XXXJHB: What does "completion enabled" mean, and is that
+	 * T6 only?
+	 */
 #if 0
-        MPASS(tp->rcv_wnd >= pdu_len);
-        tp->rcv_wnd -= pdu_len;
-        tp->t_rcvtime = ticks;
+	MPASS(tp->rcv_wnd >= pdu_len);
+	tp->rcv_wnd -= pdu_len;
+	tp->t_rcvtime = ticks;
 
-        /* update rx credits */
-        t4_rcvd(&toep->td->tod, tp);    /* XXX: sc->tom_softc.tod */
+	/* update rx credits */
+	t4_rcvd(&toep->td->tod, tp);	/* XXX: sc->tom_softc.tod */
 #endif
 
-        so = inp->inp_socket;
-        sb = &so->so_rcv;
-        SOCKBUF_LOCK(sb);
-
-        if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
-                CTR5(KTR_CXGBE,
-                    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
-                    __func__, tid, pdu_len, icc, sb->sb_state);
-                SOCKBUF_UNLOCK(sb);
-                INP_WUNLOCK(inp);
+	so = inp->inp_socket;
+	sb = &so->so_rcv;
+	SOCKBUF_LOCK(sb);
+	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
+		CTR5(KTR_CXGBE,
+		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
+		    __func__, tid, pdu_len, icc, sb->sb_state);
+		SOCKBUF_UNLOCK(sb);
+		INP_WUNLOCK(inp);
 
 		CURVNET_SET(so->so_vnet);
 		NET_EPOCH_ENTER(et);
-                INP_WLOCK(inp);
-                tp = tcp_drop(tp, ECONNRESET);
-                if (tp)
-                        INP_WUNLOCK(inp);
+		INP_WLOCK(inp);
+		tp = tcp_drop(tp, ECONNRESET);
+		if (tp != NULL)
+			INP_WUNLOCK(inp);
 		NET_EPOCH_EXIT(et);
 		CURVNET_RESTORE();
 
-                icl_cxgbei_conn_pdu_free(NULL, ip);
-                toep->ulpcb2 = NULL;
-                return (0);
-        }
+		icl_cxgbei_conn_pdu_free(NULL, ip);
+		toep->ulpcb2 = NULL;
+		m_freem(m);
+		return (0);
+	}
 
-        MPASS(icc->icc_signature == CXGBEI_CONN_SIGNATURE);
-        icl_cxgbei_new_pdu_set_conn(ip, ic);
+	MPASS(icc->icc_signature == CXGBEI_CONN_SIGNATURE);
+	icl_cxgbei_new_pdu_set_conn(ip, ic);
 
-        /* Queue the PDU to received pdus q */
-        STAILQ_INSERT_TAIL(&icc->rcvd_pdus, ip, ip_next);
-        if ((icc->rx_flags & RXF_ACTIVE) == 0) {
-                struct cxgbei_worker_thread_softc *cwt = &cwt_softc[icc->cwt];
+	/* Enqueue the PDU to the received pdus queue. */
+	STAILQ_INSERT_TAIL(&icc->rcvd_pdus, ip, ip_next);
+	if ((icc->rx_flags & RXF_ACTIVE) == 0) {
+		struct cxgbei_worker_thread_softc *cwt = &cwt_softc[icc->cwt];
 
-                mtx_lock(&cwt->cwt_lock);
-                icc->rx_flags |= RXF_ACTIVE;
-                TAILQ_INSERT_TAIL(&cwt->rx_head, icc, rx_link);
-                if (cwt->cwt_state == CWT_SLEEPING) {
-                        cwt->cwt_state = CWT_RUNNING;
-                        cv_signal(&cwt->cwt_cv);
-                }
-                mtx_unlock(&cwt->cwt_lock);
-        }
-        SOCKBUF_UNLOCK(sb);
-        INP_WUNLOCK(inp);
+		mtx_lock(&cwt->cwt_lock);
+		icc->rx_flags |= RXF_ACTIVE;
+		TAILQ_INSERT_TAIL(&cwt->rx_head, icc, rx_link);
+		if (cwt->cwt_state == CWT_SLEEPING) {
+			cwt->cwt_state = CWT_RUNNING;
+			cv_signal(&cwt->cwt_cv);
+		}
+		mtx_unlock(&cwt->cwt_lock);
+	}
+	SOCKBUF_UNLOCK(sb);
+	INP_WUNLOCK(inp);
 
-        toep->ulpcb2 = NULL;
-        m_freem(m);
+	toep->ulpcb2 = NULL;
+	m_freem(m);
 
-        return (0);
+	return (0);
 
 }
 
