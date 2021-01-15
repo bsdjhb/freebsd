@@ -927,6 +927,7 @@ have_pgsz:
 
 	return (1);
 }
+
 int
 t4_alloc_page_pods_for_sgl(struct ppod_region *pr, struct sg_list *sgl, int entries,
     struct ppod_reservation *prsv)
@@ -1154,11 +1155,11 @@ t4_write_page_pods_for_ps(struct adapter *sc, struct sge_wrq *wrq, int tid,
 
 	return (0);
 }
+
 int
-t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
+t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
     struct ppod_reservation *prsv, struct sg_list *sgl, int entries, int xferlen)
 {
-	struct wrqe *wr;
 	struct ulp_mem_io *ulpmc;
 	struct ulptx_idata *ulpsc;
 	struct pagepod *ppod;
@@ -1182,35 +1183,22 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	offset = (vm_offset_t)sgl->addr & PAGE_MASK;
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	pva = trunc_page(sgl->addr);
-	/* if ctrlq is true, allocate mbufs, write WR, append it to ulp_pduq
-	 * so that the WRs would be sent via offload queue */
-	if( !ctrlq)
-		mbufq_init(&wrq, INT_MAX);
+	mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
 		/* How many page pods are we writing in this cycle */
 		n = min(prsv->prsv_nppods - i, NUM_ULP_TX_SC_IMM_PPODS);
 		MPASS(n > 0);
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
-		if(ctrlq)
-		{
-			wr = alloc_wrqe(len, toep->ctrlq);
-			if (wr == NULL)
-				return (ENOMEM);	/* ok to just bail out */
-			ulpmc = wrtod(wr);
-			INIT_ULPTX_WR(ulpmc, len, 0, 0);
-		}
-		else
-		{
-			m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
-			if(m == NULL)
-				return (ENOMEM);	
-			m->m_pkthdr.len = len;
-			m->m_len = len;
-			set_mbuf_ctrlq_wr(m, 1);
-			ulpmc = mtod(m, struct ulp_mem_io *);
-			INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
-		}
+		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+		if (m == NULL)
+			return (ENOMEM);
+		m->m_pkthdr.len = len;
+		m->m_len = len;
+		set_mbuf_ctrlq_wr(m, 1);
+
+		ulpmc = mtod(m, struct ulp_mem_io *);
+		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
 		ulpmc->cmd = cmd;
 		ulpmc->dlen = htobe32(V_ULP_MEMIO_DATA_LEN(chunk / 32));
 		ulpmc->len16 = htobe32(howmany(len - sizeof(ulpmc->wr), 16));
@@ -1263,26 +1251,20 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 			}
 		}
 
-		if( ctrlq)
-			t4_wrq_tx(sc, wr);
-		else
-			mbufq_enqueue(&wrq, m);
+		mbufq_enqueue(&wrq, m);
 	}
-	if( !ctrlq)
-	{
-		INP_WLOCK(inp);
-		mbufq_concat(&toep->ulp_pduq, &wrq);
-		INP_WUNLOCK(inp);
-	}
+
+	INP_WLOCK(inp);
+	mbufq_concat(&toep->ulp_pduq, &wrq);
+	INP_WUNLOCK(inp);
 
 	return (0);
 }
 
 int
-t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
+t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep,
     struct ppod_reservation *prsv, vm_offset_t buf, int buflen)
 {
-	struct wrqe *wr;
 	struct ulp_mem_io *ulpmc;
 	struct ulptx_idata *ulpsc;
 	struct pagepod *ppod;
@@ -1305,37 +1287,22 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	pva = trunc_page(buf);
 	end_pva = trunc_page(buf + buflen - 1);
-	/* if ctrlq is true, allocate mbufs, write WR, append it to ulp_pduq
-	 * so that the WRs would be sent via offload queue */
-	if( !ctrlq)
-		mbufq_init(&wrq, INT_MAX);
+	mbufq_init(&wrq, INT_MAX);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
-
 		/* How many page pods are we writing in this cycle */
 		n = min(prsv->prsv_nppods - i, NUM_ULP_TX_SC_IMM_PPODS);
 		MPASS(n > 0);
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
-		if(ctrlq)
-		{
-			wr = alloc_wrqe(len, toep->ctrlq);
-			if (wr == NULL)
-				return (ENOMEM);	/* ok to just bail out */
-			ulpmc = wrtod(wr);
-			INIT_ULPTX_WR(ulpmc, len, 0, 0);
-		}
-		else
-		{
-			m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
-			if(m == NULL)
-				return (ENOMEM);	
-			m->m_pkthdr.len = len;
-			m->m_len = len;
-			set_mbuf_ctrlq_wr(m, 1);
-			ulpmc = mtod(m, struct ulp_mem_io *);
-			INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
-		}
+		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+		if (m == NULL)
+			return (ENOMEM);
+		m->m_pkthdr.len = len;
+		m->m_len = len;
+		set_mbuf_ctrlq_wr(m, 1);
 
+		ulpmc = mtod(m, struct ulp_mem_io *);
+		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
 		ulpmc->cmd = cmd;
 		ulpmc->dlen = htobe32(V_ULP_MEMIO_DATA_LEN(chunk / 32));
 		ulpmc->len16 = htobe32(howmany(len - sizeof(ulpmc->wr), 16));
@@ -1378,18 +1345,12 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep, bool ctrlq,
 			pva -= ddp_pgsz;
 		}
 
-		if( ctrlq)
-			t4_wrq_tx(sc, wr);
-		else
-			mbufq_enqueue(&wrq, m);
+		mbufq_enqueue(&wrq, m);
+	}
 
-	}
-	if( !ctrlq)
-	{
-		INP_WLOCK(inp);
-		mbufq_concat(&toep->ulp_pduq, &wrq);
-		INP_WUNLOCK(inp);
-	}
+	INP_WLOCK(inp);
+	mbufq_concat(&toep->ulp_pduq, &wrq);
+	INP_WUNLOCK(inp);
 
 	MPASS(pva <= end_pva);
 

@@ -502,9 +502,9 @@ int t4_alloc_page_pods_for_sgl(struct ppod_region *, struct sg_list *, int,
     struct ppod_reservation *);
 int t4_write_page_pods_for_ps(struct adapter *, struct sge_wrq *, int,
     struct pageset *);
-int t4_write_page_pods_for_buf(struct adapter *, struct toepcb *, bool ctrlq,
+int t4_write_page_pods_for_buf(struct adapter *, struct toepcb *,
     struct ppod_reservation *, vm_offset_t, int);
-int t4_write_page_pods_for_sgl(struct adapter *, struct toepcb *, bool ctrlq,
+int t4_write_page_pods_for_sgl(struct adapter *, struct toepcb *,
     struct ppod_reservation *, struct sg_list *, int, int);
 
 void t4_free_page_pods(struct ppod_reservation *);

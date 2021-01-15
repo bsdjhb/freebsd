@@ -988,7 +988,7 @@ no_ddp:
 		uma_zfree(prsv_zone, prsv);
 		goto no_ddp;
 	}
-	rc = t4_write_page_pods_for_buf(sc, toep, 0, prsv,
+	rc = t4_write_page_pods_for_buf(sc, toep, prsv,
 	    (vm_offset_t)csio->data_ptr, csio->dxfer_len);
 	if (__predict_false(rc != 0)) {
 		t4_free_page_pods(prsv);
@@ -1122,8 +1122,8 @@ no_ddp:
 			goto no_ddp;
 		}
 
-		rc = t4_write_page_pods_for_sgl(sc, toep, 0,
-		    prsv, sgl, sg_entries, xferlen);
+		rc = t4_write_page_pods_for_sgl(sc, toep, prsv, sgl, sg_entries,
+		    xferlen);
 		if (__predict_false(rc != 0)) {
 			t4_free_page_pods(prsv);
 			uma_zfree(prsv_zone, prsv);
