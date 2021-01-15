@@ -1156,6 +1156,25 @@ t4_write_page_pods_for_ps(struct adapter *sc, struct sge_wrq *wrq, int tid,
 	return (0);
 }
 
+static struct mbuf *
+alloc_ctrlq_mbuf(int len)
+{
+	struct mbuf *m;
+
+	if (len <= MHLEN)
+		m = m_gethdr(M_NOWAIT, MT_DATA);
+	else if (len <= MCLBYTES)
+		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+	else
+		m = NULL;
+	if (m == NULL)
+		return (NULL);
+	m->m_pkthdr.len = len;
+	m->m_len = len;
+	set_mbuf_ctrlq_wr(m, 1);
+	return (m);
+}
+
 int
 t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
     struct ppod_reservation *prsv, struct sg_list *sgl, int entries, int xferlen)
@@ -1190,12 +1209,9 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
 		MPASS(n > 0);
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
-		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+		m = alloc_ctrlq_mbuf(len);
 		if (m == NULL)
 			return (ENOMEM);
-		m->m_pkthdr.len = len;
-		m->m_len = len;
-		set_mbuf_ctrlq_wr(m, 1);
 
 		ulpmc = mtod(m, struct ulp_mem_io *);
 		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
@@ -1294,12 +1310,9 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep,
 		MPASS(n > 0);
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
-		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+		m = alloc_ctrlq_mbuf(len);
 		if (m == NULL)
 			return (ENOMEM);
-		m->m_pkthdr.len = len;
-		m->m_len = len;
-		set_mbuf_ctrlq_wr(m, 1);
 
 		ulpmc = mtod(m, struct ulp_mem_io *);
 		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
