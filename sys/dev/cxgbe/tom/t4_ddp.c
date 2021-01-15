@@ -1210,8 +1210,10 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
 		m = alloc_ctrlq_mbuf(len);
-		if (m == NULL)
+		if (m == NULL) {
+			mbufq_drain(&wrq);
 			return (ENOMEM);
+		}
 
 		ulpmc = mtod(m, struct ulp_mem_io *);
 		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
@@ -1311,8 +1313,10 @@ t4_write_page_pods_for_buf(struct adapter *sc, struct toepcb *toep,
 		chunk = PPOD_SZ(n);
 		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
 		m = alloc_ctrlq_mbuf(len);
-		if (m == NULL)
+		if (m == NULL) {
+			mbufq_drain(&wrq);
 			return (ENOMEM);
+		}
 
 		ulpmc = mtod(m, struct ulp_mem_io *);
 		INIT_ULPTX_WR(ulpmc, len, 0, toep->tid);
