@@ -2638,7 +2638,7 @@ cfiscsi_datamove_in(union ctl_io *io)
 		buffer_offset += response->ip_data_len;
 		if (buffer_offset == io->scsiio.kern_total_len ||
 		    buffer_offset == expected_len) {
-			if (!(response->ip_data_len > cs->cs_max_send_data_segment_length))
+			if (response->ip_data_len <= cs->cs_max_send_data_segment_length)
 				bhsdi->bhsdi_flags |= BHSDI_FLAGS_F;
 			if (io->io_hdr.status == CTL_SUCCESS) {
 				bhsdi->bhsdi_flags |= BHSDI_FLAGS_S;
