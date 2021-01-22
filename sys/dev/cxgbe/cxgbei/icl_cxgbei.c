@@ -378,9 +378,9 @@ int
 icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
     const void *addr, size_t len, int flags)
 {
-	struct mbuf *m, *m_tail, *newmb;
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-	int len1, njum16;
+	struct mbuf *m, *m_tail;
+	const char *src;
 
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
@@ -392,67 +392,79 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 			;
 
 	if (flags & ICL_NOCOPY) {
-		newmb = m_get(flags & ~ICL_NOCOPY, MT_DATA);
-		if (newmb == NULL) {
+		m = m_get(flags & ~ICL_NOCOPY, MT_DATA);
+		if (m == NULL) {
 			ICL_WARN("failed to allocate mbuf");
 			return (ENOMEM);
 		}
 
-		newmb->m_flags |= M_RDONLY;
-		m_extaddref(newmb, __DECONST(char *, addr), len, &icp->ref_cnt,
-				icl_cxgbei_mbuf_done, icp, NULL);
-		newmb->m_len = len;
+		m->m_flags |= M_RDONLY;
+		m_extaddref(m, __DECONST(char *, addr), len, &icp->ref_cnt,
+		    icl_cxgbei_mbuf_done, icp, NULL);
+		m->m_len = len;
 		if (ip->ip_data_mbuf == NULL) {
-			ip->ip_data_mbuf = newmb;
+			ip->ip_data_mbuf = m;
 			ip->ip_data_len = len;
 		} else {
-			m_tail->m_next = newmb;
+			m_tail->m_next = m;
 			m_tail = m_tail->m_next;
 			ip->ip_data_len += len;
 		}
 
-		return 0; 
+		return (0);
 	}
 
-	len1 = len;
+	src = (const char *)addr;
 
-	/* Allocate as jumbo mbufs of size MJUM16BYTES */
-	njum16 = len / MJUM16BYTES;
-	while (njum16--) {
+	/* Allocate as jumbo mbufs of size MJUM16BYTES. */
+	while (len >= MJUM16BYTES) {
 		m = m_getjcl(M_NOWAIT, MT_DATA, 0, MJUM16BYTES);
-		if (__predict_false(m == NULL))
-			return 1;
-		bcopy((c_caddr_t)addr + len - len1, mtod(m, caddr_t), MJUM16BYTES);
+		if (__predict_false(m == NULL)) {
+			if ((flags & M_WAITOK) != 0) {
+				/* Fall back to non-jumbo mbufs. */
+				break;
+			}
+			return (ENOMEM);
+		}
+		memcpy(mtod(m, void *), src, MJUM16BYTES);
 		m->m_len = MJUM16BYTES;
-		ip->ip_data_len += MJUM16BYTES;
-		if (ip->ip_data_mbuf == NULL)
+		if (ip->ip_data_mbuf == NULL) {
 			ip->ip_data_mbuf = m_tail = m;
-		else {
+			ip->ip_data_len = MJUM16BYTES;
+		} else {
 			m_tail->m_next = m;
 			m_tail = m_tail->m_next;
+			ip->ip_data_len += MJUM16BYTES;
 		}
-		len1 -= MJUM16BYTES;
+		src += MJUM16BYTES;
+		len -= MJUM16BYTES;
 	}
 
-	/* Allocate mbuf chain for the remaining data of size < MJUM16BYTES. */
-	if (len1 != 0) {
-		m = m_getm2(ip->ip_data_mbuf, len1, M_NOWAIT, MT_DATA, 0);
-		if (__predict_true(m == NULL))
-			return 1;
-		ip->ip_data_mbuf = m;
-		while (m != NULL && m->m_len != 0)
-			m = m->m_next;
-		for(; m != NULL; m = m->m_next) {
-			m->m_len = min(len1, M_SIZE(m));
-			bcopy((c_caddr_t)addr + len - len1, mtod(m, caddr_t), m->m_len);
-			ip->ip_data_len += m->m_len;
-			len1 -= m->m_len;
+	/* Allocate mbuf chain for the remaining data. */
+	if (len != 0) {
+		m = m_getm2(NULL, len, flags, MT_DATA, 0);
+		if (__predict_false(m == NULL))
+			return (ENOMEM);
+		if (ip->ip_data_mbuf == NULL) {
+			ip->ip_data_mbuf = m;
+			ip->ip_data_len = len;
+		} else {
+			m_tail->m_next = m;
+			m_tail = m_tail->m_next;
+			ip->ip_data_len += len;
 		}
+		for (; m != NULL; m = m->m_next) {
+			m->m_len = min(len, M_SIZE(m));
+			memcpy(mtod(m, void *), src, m->m_len);
+			src += m->m_len;
+			len -= m->m_len;
+		}
+		MPASS(len == 0);
 	}
 	MPASS(ip->ip_data_len <= max(ic->ic_max_data_segment_length,
 	    ic->ic_hw_offload_length));
 
-	return (!!len1);
+	return (0);
 }
 
 void
