@@ -365,6 +365,7 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t pa
 	m->m_next = ip->ip_data_mbuf;
 	set_mbuf_ulp_submode(m, ulp_submode);
 #ifdef INVARIANTS
+	/* XXXJHB: Doesn't this break the ref_cnt in the ICL_NOCOPY case? */
 	bzero(icp, sizeof(*icp));
 #endif
 #ifdef DIAGNOSTIC
@@ -388,7 +389,7 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 
 	m_tail = ip->ip_data_mbuf;
 	if (m_tail != NULL)
-		for(; m_tail->m_next != NULL; m_tail = m_tail->m_next)
+		for (; m_tail->m_next != NULL; m_tail = m_tail->m_next)
 			;
 
 	if (flags & ICL_NOCOPY) {

@@ -516,7 +516,7 @@ t4_close_conn(struct adapter *sc, struct toepcb *toep)
 #define MAX_OFLD_TX_CREDITS (SGE_MAX_WR_LEN / 16)
 #define MIN_OFLD_TX_CREDITS (howmany(sizeof(struct fw_ofld_tx_data_wr) + 1, 16))
 #define MIN_ISO_TX_CREDITS  (howmany(sizeof(struct cpl_tx_data_iso), 16))
-#define	MIN_TX_CREDITS(iso)						\
+#define MIN_TX_CREDITS(iso)						\
 	(MIN_OFLD_TX_CREDITS + ((iso) ? MIN_ISO_TX_CREDITS : 0))
 
 /* Maximum amount of immediate data we could stuff in a WR */
@@ -917,7 +917,7 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 static inline void
 rqdrop_locked(struct mbufq *q, int plen)
 {
-	struct mbuf *m, *mnxt;
+	struct mbuf *m, *n;
 
 	while (plen > 0) {
 		m = mbufq_dequeue(q);
@@ -930,17 +930,30 @@ rqdrop_locked(struct mbufq *q, int plen)
 		MPASS(plen >= m->m_pkthdr.len);
 
 		plen -= m->m_pkthdr.len;
-		mnxt = m->m_next;
-		/* first mbuf (m) has icl_cxgbei_pdu structure
-		 * during free of M_EXT enabled data mbuf (m->next),
-		 * it require icl_cxgbei_pdu,
-		 * 
-		 * in brief: m->next with flag M_EXT requires 
-		 * m buf so m mbuf should be freed after m->next
-		 * */
-		if (mnxt &&  (mnxt->m_flags & M_EXT)) {
+		n = m->m_next;
+
+		/*
+		 * For an iSCSI PDU chain, the first mbuf in the chain
+		 * contains the icl_cxgbei_pdu structure.  However,
+		 * mbufs in the chain using an external cluster due to
+		 * ICL_NOCOPY also hold a reference to this structure
+		 * and share it's ref_cnt.  As a result, 'm' has to be
+		 * free'd after the rest of the chain.
+		 *
+		 * XXXJHB: This seems very hokey.  For the ICL_NOCOPY
+		 * case, the mbufs do share icp->ref_cnt and do call a
+		 * completion routine that uses the icp.  However,
+		 * various places uses mbufq_drain() directly to
+		 * cleanup that won't honor this.  It seems instead we
+		 * really need to manage the allocation of 'icp'
+		 * directly instead of having it live as part of the
+		 * first mbuf.  icp_soft does this by freeing the
+		 * equivalent structure from the mbuf callback instead
+		 * of storing it in the mbuf.
+		 */
+		if (n != NULL && (n->m_flags & M_EXT) != 0) {
 			m->m_next = NULL;
-			m_freem(mnxt);
+			m_freem(n);
 		}
 		m_freem(m);
 	}
