@@ -1242,7 +1242,7 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 		toep->plen_nocompl += plen;
 
 		/*
-		 * Since we are sending ulp_tx WR too thru offload
+		 * Since we are also sending ulp_tx WR through offload
 		 * queue, make sure that this condition sets
 		 * F_FW_WR_COMPL flag when the available credits is <=
 		 * max ulp_tx WR size.
@@ -1949,25 +1949,35 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CTR2(KTR_CXGBE, "%s: tid %d calling t4_push_frames", __func__,
 		    tid);
 #endif
-		struct sockbuf *sb = &so->so_snd;
-		int sbu;
 
-		SOCKBUF_LOCK(sb);
-		sbu = sbused(sb);
 		if (ulp_mode(toep) == ULP_MODE_ISCSI) {
+			struct sockbuf *sb = &so->so_snd;
+			int sbu;
 
-			if (__predict_false(sbu > 0)) {
-				/*
-				 * The data trasmitted before the tid's ULP mode
-				 * changed to ISCSI is still in so_snd.
-				 * Incoming credits should account for so_snd
-				 * first.
-				 */
-				sbdrop_locked(sb, min(sbu, plen));
-				plen -= min(sbu, plen);
+			/*
+			 * An unlocked read is ok here as the data
+			 * should only transition from a non-zero
+			 * value to either another non-zero value or
+			 * zero.  Once it is zero it should stay zero.
+			 */
+			if (__predict_false(sbused(sb)) > 0) {
+				SOCKBUF_LOCK(sb);
+				sbu = sbused(sb);
+				if (sbu > 0) {
+					/*
+					 * The data transmitted before
+					 * the tid's ULP mode changed
+					 * to ISCSI is still in
+					 * so_snd.  Incoming credits
+					 * should account for so_snd
+					 * first.
+					 */
+					sbdrop_locked(sb, min(sbu, plen));
+					plen -= min(sbu, plen);
+				}
+				sowwakeup_locked(so);	/* unlocks so_snd */
 			}
 		}
-		sowwakeup_locked(so);	/* unlocks so_snd */
 
 		toep->flags &= ~TPF_TX_SUSPENDED;
 		CURVNET_SET(toep->vnet);
@@ -1980,10 +1990,9 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		SOCKBUF_LOCK(sb);
 		sbu = sbused(sb);
 		if (ulp_mode(toep) == ULP_MODE_ISCSI) {
-
 			if (__predict_false(sbu > 0)) {
 				/*
-				 * The data trasmitted before the tid's ULP mode
+				 * The data transmitted before the tid's ULP mode
 				 * changed to ISCSI is still in so_snd.
 				 * Incoming credits should account for so_snd
 				 * first.
