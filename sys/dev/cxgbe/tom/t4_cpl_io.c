@@ -1042,6 +1042,12 @@ t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep,
 	return (true);
 }
 
+/*
+ * Not a bit in the TCB, but is a bit in the ulp_submode field of the
+ * CPL_TX_DATA flags field in FW_ISCSI_TX_DATA_WR.
+ */
+#define	ULP_ISO		G_TX_ULP_SUBMODE(F_FW_ISCSI_TX_DATA_WR_ULPSUBMODE_ISO)
+
 void
 t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 {
@@ -1166,11 +1172,10 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 			if (iso) {
 				struct cpl_tx_data_iso *cpl_iso;
 
-				/* XXX: Magic '8' */
 				write_tx_wr(txwr, toep, FW_ISCSI_TX_DATA_WR,
 				    plen + sizeof(struct cpl_tx_data_iso),
 				    adjusted_plen, credits, shove,
-				    ulp_submode | 8);
+				    ulp_submode | ULP_ISO);
 				cpl_iso = (struct cpl_tx_data_iso *)(txwr + 1);
 				write_tx_data_iso(cpl_iso, ulp_submode,
 				    mbuf_iscsi_iso_flags(sndptr), iso_mss,
@@ -1199,11 +1204,10 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 			if (iso) {
 				struct cpl_tx_data_iso *cpl_iso;
 
-				/* XXX: Magic '8' */
 				write_tx_wr(txwr, toep, FW_ISCSI_TX_DATA_WR,
 				    sizeof(struct cpl_tx_data_iso),
 				    adjusted_plen, credits, shove,
-				    ulp_submode | 8);
+				    ulp_submode | ULP_ISO);
 				cpl_iso = (struct cpl_tx_data_iso *)(txwr + 1);
 				write_tx_data_iso(cpl_iso, ulp_submode,
 				    mbuf_iscsi_iso_flags(sndptr), iso_mss,
