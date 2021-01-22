@@ -823,23 +823,10 @@ icl_cxgbei_conn_handoff(struct icl_conn *ic, int fd)
 		    ISCSI_DATA_DIGEST_SIZE;
 
 		icc->ulp_submode = 0;
-		if (ic->ic_header_crc32c) {
+		if (ic->ic_header_crc32c)
 			icc->ulp_submode |= ULP_CRC_HEADER;
-#if 0
-			/* XXXJHB: Why do we do this unconditionally above? */
-			/* Hmm, cxgbei_limits does this unconditionally. */
-			ic->ic_max_data_segment_length -=
-			    ISCSI_HEADER_DIGEST_SIZE;
-#endif
-		}
-		if (ic->ic_data_crc32c) {
+		if (ic->ic_data_crc32c)
 			icc->ulp_submode |= ULP_CRC_DATA;
-#if 0
-			/* XXXJHB: Why do we do this unconditionally above? */
-			ic->ic_max_data_segment_length -=
-			    ISCSI_DATA_DIGEST_SIZE;
-#endif
-		}
 
 		/* XXXJHB: This belongs in a header? */
 #define MAX_HW_ISO_LENGTH 65535
