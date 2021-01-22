@@ -1024,7 +1024,7 @@ icl_cxgbei_conn_task_done(struct icl_conn *ic, void *arg)
 }
 
 static inline bool
-ddp_sgl_check(struct sg_list *sg, int entries, int xferlen)
+ddp_sgl_check(struct ctl_sg_entry *sg, int entries, int xferlen)
 {
 	int total_len = 0;
 
@@ -1060,7 +1060,7 @@ icl_cxgbei_conn_transfer_setup(struct icl_conn *ic, union ctl_io *io,
 	struct cxgbei_data *ci = sc->iscsi_ulp_softc;
 	struct ppod_region *pr = &ci->pr;
 	struct ppod_reservation *prsv;
-	struct sg_list *sgl, sg_entry;
+	struct ctl_sg_entry *sgl, sg_entry;
 	int sg_entries = ctsio->kern_sg_entries;
 	uint32_t ttt;
 	int xferlen, rc = 0, alias;

@@ -62,6 +62,9 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_page.h>
 #include <vm/vm_object.h>
 
+#include <cam/scsi/scsi_all.h>
+#include <cam/ctl/ctl_io.h>
+
 #ifdef TCP_OFFLOAD
 #include "common/common.h"
 #include "common/t4_msg.h"
@@ -929,13 +932,13 @@ have_pgsz:
 }
 
 int
-t4_alloc_page_pods_for_sgl(struct ppod_region *pr, struct sg_list *sgl, int entries,
-    struct ppod_reservation *prsv)
+t4_alloc_page_pods_for_sgl(struct ppod_region *pr, struct ctl_sg_entry *sgl,
+    int entries, struct ppod_reservation *prsv)
 {
 	int hcf, seglen, idx = 0, npages, nppods, i, len;
 	uintptr_t start_pva, end_pva, pva, p1 ;
 	vm_offset_t buf;
-	struct sg_list *sge;
+	struct ctl_sg_entry *sge;
 
 	MPASS(entries > 0);
 	MPASS(sgl);
@@ -1176,7 +1179,8 @@ alloc_ctrlq_mbuf(int len)
 
 int
 t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
-    struct ppod_reservation *prsv, struct sg_list *sgl, int entries, int xferlen)
+    struct ppod_reservation *prsv, struct ctl_sg_entry *sgl, int entries,
+    int xferlen)
 {
 	struct ulp_mem_io *ulpmc;
 	struct ulptx_idata *ulpsc;

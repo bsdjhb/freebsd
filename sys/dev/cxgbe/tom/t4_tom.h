@@ -88,6 +88,7 @@ enum {
 	DDP_DEAD	= (1 << 6),	/* toepcb is shutting down */
 };
 
+struct ctl_sg_entry;
 struct sockopt;
 struct offload_settings;
 
@@ -317,12 +318,6 @@ struct tom_data {
 	struct task reclaim_wr_resources;
 };
 
-struct sg_list
-{
-        void    *addr;
-        size_t  len;
-};
-
 static inline struct tom_data *
 tod_td(struct toedev *tod)
 {
@@ -512,14 +507,14 @@ void t4_free_ppod_region(struct ppod_region *);
 int t4_alloc_page_pods_for_ps(struct ppod_region *, struct pageset *);
 int t4_alloc_page_pods_for_buf(struct ppod_region *, vm_offset_t, int,
     struct ppod_reservation *);
-int t4_alloc_page_pods_for_sgl(struct ppod_region *, struct sg_list *, int,
+int t4_alloc_page_pods_for_sgl(struct ppod_region *, struct ctl_sg_entry *, int,
     struct ppod_reservation *);
 int t4_write_page_pods_for_ps(struct adapter *, struct sge_wrq *, int,
     struct pageset *);
 int t4_write_page_pods_for_buf(struct adapter *, struct toepcb *,
     struct ppod_reservation *, vm_offset_t, int);
 int t4_write_page_pods_for_sgl(struct adapter *, struct toepcb *,
-    struct ppod_reservation *, struct sg_list *, int, int);
+    struct ppod_reservation *, struct ctl_sg_entry *, int, int);
 
 void t4_free_page_pods(struct ppod_reservation *);
 int t4_soreceive_ddp(struct socket *, struct sockaddr **, struct uio *,
