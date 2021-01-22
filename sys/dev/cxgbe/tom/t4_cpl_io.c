@@ -946,9 +946,6 @@ rqdrop_locked(struct mbufq *q, int plen)
 	}
 }
 
-#define CXGBIT_ISO_FSLICE 0x1
-#define CXGBIT_ISO_LSLICE 0x2
-
 static void
 write_tx_data_iso(void *dst, u_int ulp_submode, uint8_t flags, uint16_t mss, int len, int npdu)
 {
