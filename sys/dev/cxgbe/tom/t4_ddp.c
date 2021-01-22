@@ -856,11 +856,11 @@ alloc_page_pods(struct ppod_region *pr, u_int nppods, u_int pgsz_idx,
 	if (vmem_alloc(pr->pr_arena, PPOD_SZ(nppods), M_NOWAIT | M_FIRSTFIT,
 	    &addr) != 0)
 		return (ENOMEM);
-#if 0
+
 	CTR5(KTR_CXGBE, "%-17s arena %p, addr 0x%08x, nppods %d, pgsz %d",
 	    __func__, pr->pr_arena, (uint32_t)addr & pr->pr_tag_mask,
 	    nppods, 1 << pr->pr_page_shift[pgsz_idx]);
-#endif
+
 	/*
 	 * The hardware tagmask includes an extra invalid bit but the arena was
 	 * seeded with valid values only.  An allocation out of this arena will
@@ -1066,10 +1066,10 @@ t4_free_page_pods(struct ppod_reservation *prsv)
 
 	addr = prsv->prsv_tag & pr->pr_tag_mask;
 	MPASS((addr & pr->pr_invalid_bit) == 0);
-#if 0
+
 	CTR4(KTR_CXGBE, "%-17s arena %p, addr 0x%08x, nppods %d", __func__,
 	    pr->pr_arena, addr, prsv->prsv_nppods);
-#endif
+
 	vmem_free(pr->pr_arena, addr, PPOD_SZ(prsv->prsv_nppods));
 	prsv->prsv_nppods = 0;
 }
@@ -1149,7 +1149,6 @@ t4_write_page_pods_for_ps(struct adapter *sc, struct sge_wrq *wrq, int tid,
 		}
 
 		t4_wrq_tx(sc, wr);
-
 	}
 	ps->flags |= PS_PPODS_WRITTEN;
 
@@ -1191,7 +1190,7 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
 	struct mbufq wrq;
 	struct inpcb *inp = toep->inp;
 
-	MPASS(sgl);
+	MPASS(sgl != NULL);
 	MPASS(entries > 0);
 	cmd = htobe32(V_ULPTX_CMD(ULP_TX_MEM_WRITE));
 	if (is_t4(sc))
@@ -1231,40 +1230,51 @@ t4_write_page_pods_for_sgl(struct adapter *sc, struct toepcb *toep,
 			ppod->vld_tid_pgsz_tag_color = htobe64(F_PPOD_VALID |
 			    V_PPOD_TID(toep->tid) |
 			    (prsv->prsv_tag & ~V_PPOD_PGSZ(M_PPOD_PGSZ)));
-			ppod->len_offset = htobe64(V_PPOD_LEN(xferlen) | //compelte len
+			ppod->len_offset = htobe64(V_PPOD_LEN(xferlen) |
 			    V_PPOD_OFST(offset));
 			ppod->rsvd = 0;
 
 			for (k = 0; k < nitems(ppod->addr); k++) {
-				if (entries) {
-					/* Fill phys address in the ppod entries */
+				if (entries != 0) {
 					pa = pmap_kextract(pva + sg_offset);
 					ppod->addr[k] = htobe64(pa);
-					if (nitems(ppod->addr) > (k + 1)) {
-						/*
-						 * Goto the next ddp page only
-						 * if it is not the last entry
-						 * in the ppod. the last entry
-						 * must be equal to the first
-						 * entry in the next ppod.
-						 */
-						sg_offset += ddp_pgsz;
-						if (sg_offset == sgl->len) {
-							/*
-							 * This sgl entry is
-							 * done. Goto next.
-							 */
-							entries--;
-							sgl++;
-							sg_offset = 0;
-							if (entries) {
-								pva = trunc_page((vm_offset_t)sgl->addr);
-							}
-						}
-					}
-				} else {
-					/* Fill all left out entries with 0 */
+				} else
 					ppod->addr[k] = 0;
+
+#if 0
+				CTR5(KTR_CXGBE,
+				    "%s: tid %d ppod[%d]->addr[%d] = %p",
+				    __func__, tid, i, k,
+				    htobe64(ppod->addr[k]));
+#endif
+
+				/*
+				 * If this is the last entry in a pod,
+				 * reuse the same entry for first address
+				 * in the next pod.
+				 */
+				if (k + 1 == nitems(ppod->addr))
+					break;
+
+				/*
+				 * Don't move to the next DDP page if the
+				 * sgl is already finished.
+				 */
+				if (entries == 0)
+					continue;
+
+				sg_offset += ddp_pgsz;
+				if (sg_offset == sgl->len) {
+					/*
+					 * This sgl entry is done.  Go
+					 * to the next.
+					 */
+					entries--;
+					sgl++;
+					sg_offset = 0;
+					if (entries != 0)
+						pva = trunc_page(
+						    (vm_offset_t)sgl->addr);
 				}
 			}
 		}
