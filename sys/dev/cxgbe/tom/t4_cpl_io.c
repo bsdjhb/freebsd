@@ -970,8 +970,8 @@ write_tx_data_iso(void *dst, u_int ulp_submode, uint8_t flags, uint16_t mss, int
 	cpl->op_to_scsi = htonl(V_CPL_TX_DATA_ISO_OP(CPL_TX_DATA_ISO) |
 	    V_CPL_TX_DATA_ISO_FIRST(fslice) | V_CPL_TX_DATA_ISO_LAST(lslice) |
 	    V_CPL_TX_DATA_ISO_CPLHDRLEN(0) |
-	    V_CPL_TX_DATA_ISO_HDRCRC(ulp_submode & ULP_CRC_HEADER) |
-	    V_CPL_TX_DATA_ISO_PLDCRC(ulp_submode & ULP_CRC_DATA) |
+	    V_CPL_TX_DATA_ISO_HDRCRC(!!(ulp_submode & ULP_CRC_HEADER)) |
+	    V_CPL_TX_DATA_ISO_PLDCRC(!!(ulp_submode & ULP_CRC_DATA)) |
 	    V_CPL_TX_DATA_ISO_IMMEDIATE(0) | V_CPL_TX_DATA_ISO_SCSI(2));
 
 	cpl->ahs_len = 0;
