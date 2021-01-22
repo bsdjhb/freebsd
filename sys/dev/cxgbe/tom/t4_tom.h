@@ -396,40 +396,45 @@ mbuf_ulp_submode(struct mbuf *m)
 	M_ASSERTPKTHDR(m);
 	return (m->m_pkthdr.PH_per.eight[0]);
 }
+
 static inline uint8_t
 mbuf_iscsi_iso(struct mbuf *m)
 {
 
 	M_ASSERTPKTHDR(m);
-	return m->m_pkthdr.PH_per.eight[1];
+	return (m->m_pkthdr.PH_per.eight[1]);
 }
+
 static inline uint8_t
 mbuf_iscsi_iso_flags(struct mbuf *m)
 {
 
 	M_ASSERTPKTHDR(m);
-	return m->m_pkthdr.PH_per.eight[2];
+	return (m->m_pkthdr.PH_per.eight[2]);
 }
+
 static inline uint8_t
 mbuf_iscsi_iso_hdrlen(struct mbuf *m)
 {
 
 	M_ASSERTPKTHDR(m);
-	return m->m_pkthdr.PH_per.eight[3];
+	return (m->m_pkthdr.PH_per.eight[3]);
 }
+
 static inline uint16_t
 mbuf_iscsi_iso_mss(struct mbuf *m)
 {
 
 	M_ASSERTPKTHDR(m);
-	return m->m_pkthdr.PH_per.sixteen[2];
+	return (m->m_pkthdr.PH_per.sixteen[2]);
 }
+
 static inline uint8_t
 mbuf_ctrlq_wr(struct mbuf *m)
 {
 
 	M_ASSERTPKTHDR(m);
-	return m->m_pkthdr.PH_per.eight[6];
+	return (m->m_pkthdr.PH_per.eight[6]);
 }
 
 
