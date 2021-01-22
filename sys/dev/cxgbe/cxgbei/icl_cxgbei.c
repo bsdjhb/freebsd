@@ -100,6 +100,8 @@ __FBSDID("$FreeBSD$");
 #include "tom/t4_tom.h"
 #include "cxgbei.h"
 
+static MALLOC_DEFINE(M_CXGBEI, "cxgbei", "cxgbei(4)");
+
 SYSCTL_NODE(_kern_icl, OID_AUTO, cxgbei, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Chelsio iSCSI offload");
 static int coalesce = 1;
@@ -167,19 +169,23 @@ DEFINE_CLASS(icl_cxgbei, icl_cxgbei_methods, sizeof(struct icl_cxgbei_conn));
 void
 icl_cxgbei_conn_pdu_free(struct icl_conn *ic, struct icl_pdu *ip)
 {
-#ifdef INVARIANTS
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-#endif
 
-	KASSERT(icp->ref_cnt == 0, ("freeing active PDU"));
+	KASSERT(icp->ref_cnt != 0, ("freeing deleted PDU"));
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
-	MPASS(ip->ip_bhs_mbuf != NULL);
 
 	m_freem(ip->ip_ahs_mbuf);
 	m_freem(ip->ip_data_mbuf);
-	m_freem(ip->ip_bhs_mbuf);	/* storage for icl_cxgbei_pdu itself */
+	m_freem(ip->ip_bhs_mbuf);
 
+	KASSERT(ic != NULL || icp->ref_cnt == 1,
+	    ("orphaned PDU has oustanding references"));
+
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) != 1)
+		return;
+
+	free(icp, M_CXGBEI);
 #ifdef DIAGNOSTIC
 	if (__predict_true(ic != NULL))
 		refcount_release(&ic->ic_outstanding_pdus);
@@ -191,12 +197,16 @@ icl_cxgbei_pdu_call_cb(struct icl_pdu *ip)
 {
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 
+	KASSERT(icp->ref_cnt == 0, ("freeing active PDU"));
+	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
+
 	if (icp->cb != NULL)
 		icp->cb(ip, icp->error);
 #ifdef DIAGNOSTIC
 	if (__predict_true(ip->ip_conn != NULL))
 		refcount_release(&ip->ip_conn->ic_outstanding_pdus);
 #endif
+	free(icp, M_CXGBEI);
 }
 
 static void
@@ -214,9 +224,14 @@ icl_cxgbei_pdu_done(struct icl_pdu *ip, int error)
 	m_freem(ip->ip_bhs_mbuf);
 	ip->ip_bhs_mbuf = NULL;
 
-	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1) {
+	/*
+	 * All other references to this PDU should have been dropped
+	 * by the m_freem() of ip_data_mbuf.
+	 */
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1)
 		icl_cxgbei_pdu_call_cb(ip);
-	}
+	else
+		__assert_unreachable();
 }
 
 static void
@@ -228,37 +243,30 @@ icl_cxgbei_mbuf_done(struct mbuf *mb)
 	icl_cxgbei_pdu_call_cb(&icp->ip);
 }
 
-
 struct icl_pdu *
 icl_cxgbei_new_pdu(int flags)
 {
 	struct icl_cxgbei_pdu *icp;
 	struct icl_pdu *ip;
 	struct mbuf *m;
-	uintptr_t a;
 
-	m = m_gethdr(flags, MT_DATA);
-	if (__predict_false(m == NULL))
+	icp = malloc(sizeof(*icp), M_CXGBEI, flags | M_ZERO);
+	if (__predict_false(icp == NULL))
 		return (NULL);
 
-	a = roundup2(mtod(m, uintptr_t), _Alignof(struct icl_cxgbei_pdu));
-	icp = (struct icl_cxgbei_pdu *)a;
-	bzero(icp, sizeof(*icp));
-
 	icp->icp_signature = CXGBEI_PDU_SIGNATURE;
+	icp->ref_cnt = 1;
 	ip = &icp->ip;
+
+	m = m_gethdr(flags, MT_DATA);
+	if (__predict_false(m == NULL)) {
+		free(icp, M_CXGBEI);
+		return (NULL);
+	}
+
 	ip->ip_bhs_mbuf = m;
-
-	a = roundup2((uintptr_t)(icp + 1), _Alignof(struct iscsi_bhs *));
-	ip->ip_bhs = (struct iscsi_bhs *)a;
-#ifdef INVARIANTS
-	/* Everything must fit entirely in the mbuf. */
-	a = (uintptr_t)(ip->ip_bhs + 1);
-	MPASS(a <= (uintptr_t)m + MSIZE);
-#endif
-	bzero(ip->ip_bhs, sizeof(*ip->ip_bhs));
-
-	m->m_data = (void *)ip->ip_bhs;
+	ip->ip_bhs = mtod(m, struct iscsi_bhs *);
+	memset(ip->ip_bhs, 0, sizeof(*ip->ip_bhs));
 	m->m_len = sizeof(struct iscsi_bhs);
 	m->m_pkthdr.len = m->m_len;
 
@@ -314,7 +322,8 @@ icl_cxgbei_conn_pdu_data_segment_length(struct icl_conn *ic,
 }
 
 static struct mbuf *
-finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t padding)
+finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp,
+    uint8_t padding)
 {
 	struct icl_pdu *ip = &icp->ip;
 	uint8_t ulp_submode;
@@ -327,7 +336,7 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t pa
 	 */
 	m = ip->ip_data_mbuf;
 	ulp_submode = icc->ulp_submode;
-	if (m) {
+	if (m != NULL) {
 		last = m_last(m);
 
 		/*
@@ -360,17 +369,15 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp, uint8_t pa
 	bhs->bhs_data_segment_len[1] = data_len >> 8;
 	bhs->bhs_data_segment_len[0] = data_len >> 16;
 
-	/* "Convert" PDU to mbuf chain.	 Do not use icp/ip after this. */
-	m->m_pkthdr.len = sizeof(struct iscsi_bhs) + ip->ip_data_len + padding;
+	/*
+	 * Extract mbuf chain from PDU.
+	 */
+	m->m_pkthdr.len += ip->ip_data_len + padding;
 	m->m_next = ip->ip_data_mbuf;
 	set_mbuf_ulp_submode(m, ulp_submode);
-#ifdef INVARIANTS
-	/* XXXJHB: Doesn't this break the ref_cnt in the ICL_NOCOPY case? */
-	bzero(icp, sizeof(*icp));
-#endif
-#ifdef DIAGNOSTIC
-	refcount_release(&icc->ic.ic_outstanding_pdus);
-#endif
+	ip->ip_bhs_mbuf = NULL;
+	ip->ip_data_mbuf = NULL;
+	ip->ip_bhs = NULL;
 
 	return (m);
 }

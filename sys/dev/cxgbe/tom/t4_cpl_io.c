@@ -917,7 +917,7 @@ t4_push_frames(struct adapter *sc, struct toepcb *toep, int drop)
 static inline void
 rqdrop_locked(struct mbufq *q, int plen)
 {
-	struct mbuf *m, *n;
+	struct mbuf *m;
 
 	while (plen > 0) {
 		m = mbufq_dequeue(q);
@@ -930,31 +930,7 @@ rqdrop_locked(struct mbufq *q, int plen)
 		MPASS(plen >= m->m_pkthdr.len);
 
 		plen -= m->m_pkthdr.len;
-		n = m->m_next;
 
-		/*
-		 * For an iSCSI PDU chain, the first mbuf in the chain
-		 * contains the icl_cxgbei_pdu structure.  However,
-		 * mbufs in the chain using an external cluster due to
-		 * ICL_NOCOPY also hold a reference to this structure
-		 * and share it's ref_cnt.  As a result, 'm' has to be
-		 * free'd after the rest of the chain.
-		 *
-		 * XXXJHB: This seems very hokey.  For the ICL_NOCOPY
-		 * case, the mbufs do share icp->ref_cnt and do call a
-		 * completion routine that uses the icp.  However,
-		 * various places uses mbufq_drain() directly to
-		 * cleanup that won't honor this.  It seems instead we
-		 * really need to manage the allocation of 'icp'
-		 * directly instead of having it live as part of the
-		 * first mbuf.  icp_soft does this by freeing the
-		 * equivalent structure from the mbuf callback instead
-		 * of storing it in the mbuf.
-		 */
-		if (n != NULL && (n->m_flags & M_EXT) != 0) {
-			m->m_next = NULL;
-			m_freem(n);
-		}
 		m_freem(m);
 	}
 }
