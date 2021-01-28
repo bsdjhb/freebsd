@@ -582,7 +582,7 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 	ic->ic_max_data_segment_length = 16384;
 	ic->ic_name = name;
 	ic->ic_offload = "cxgbei";
-	ic->ic_unmapped = false;
+	ic->ic_unmapped = true;
 
 	CTR2(KTR_CXGBE, "%s: icc %p", __func__, icc);
 
@@ -982,20 +982,42 @@ no_ddp:
 		goto no_ddp;
 	}
 
-	/* XXX add support for all CAM_DATA_ types */
-	MPASS((csio->ccb_h.flags & CAM_DATA_MASK) == CAM_DATA_VADDR);
-	rc = t4_alloc_page_pods_for_buf(pr, (vm_offset_t)csio->data_ptr,
-	    csio->dxfer_len, prsv);
-	if (rc != 0) {
-		uma_zfree(prsv_zone, prsv);
-		goto no_ddp;
-	}
+	switch (csio->ccb_h.flags & CAM_DATA_MASK) {
+	case CAM_DATA_BIO:
+		rc = t4_alloc_page_pods_for_bio(pr,
+		    (struct bio *)csio->data_ptr, prsv);
+		if (rc != 0) {
+			uma_zfree(prsv_zone, prsv);
+			goto no_ddp;
+		}
 
-	rc = t4_write_page_pods_for_buf(sc, toep, prsv,
-	    (vm_offset_t)csio->data_ptr, csio->dxfer_len);
-	if (__predict_false(rc != 0)) {
-		t4_free_page_pods(prsv);
+		rc = t4_write_page_pods_for_bio(sc, toep, prsv,
+		    (struct bio *)csio->data_ptr);
+		if (__predict_false(rc != 0)) {
+			t4_free_page_pods(prsv);
+			uma_zfree(prsv_zone, prsv);
+			goto no_ddp;
+		}
+		break;
+	case CAM_DATA_VADDR:
+		rc = t4_alloc_page_pods_for_buf(pr, (vm_offset_t)csio->data_ptr,
+		    csio->dxfer_len, prsv);
+		if (rc != 0) {
+			uma_zfree(prsv_zone, prsv);
+			goto no_ddp;
+		}
+
+		rc = t4_write_page_pods_for_buf(sc, toep, prsv,
+		    (vm_offset_t)csio->data_ptr, csio->dxfer_len);
+		if (__predict_false(rc != 0)) {
+			t4_free_page_pods(prsv);
+			uma_zfree(prsv_zone, prsv);
+			goto no_ddp;
+		}
+		break;
+	default:
 		uma_zfree(prsv_zone, prsv);
+		rc = EINVAL;
 		goto no_ddp;
 	}
 
