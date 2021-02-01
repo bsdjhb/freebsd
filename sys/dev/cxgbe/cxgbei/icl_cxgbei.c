@@ -496,6 +496,7 @@ void
 icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 			     icl_pdu_cb cb)
 {
+	struct epoch_tracker et;
 	struct icl_cxgbei_conn *icc = ic_to_icc(ic);
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 	struct socket *so = ic->ic_socket;
@@ -529,6 +530,8 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 	 * already.
 	 */
 	inp = sotoinpcb(so);
+	CURVNET_SET(toep->vnet);
+	NET_EPOCH_ENTER(et);
 	INP_WLOCK(inp);
 	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) ||
 	    __predict_false((toep->flags & TPF_ATTACHED) == 0))
@@ -548,11 +551,11 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 			    ic->ic_max_data_segment_length);
 			set_mbuf_iscsi_iso_hdrlen(m, iscsi_hdr_len);
 		}
-		CURVNET_SET(toep->vnet);
 		t4_push_pdus(icc->sc, toep, 0);
-		CURVNET_RESTORE();
 	}
 	INP_WUNLOCK(inp);
+	NET_EPOCH_EXIT(et);
+	CURVNET_RESTORE();
 }
 
 static struct icl_conn *
