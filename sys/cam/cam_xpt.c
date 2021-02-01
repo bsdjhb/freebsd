@@ -3203,6 +3203,9 @@ xpt_poll_setup(union ccb *start_ccb)
 	devq = sim->devq;
 	dev = start_ccb->ccb_h.path->device;
 
+	if (!cam_sim_pollable(sim))
+		return (0);
+
 	/*
 	 * Steal an opening so that no other queued requests
 	 * can get it before us while we simulate interrupts.
@@ -3226,13 +3229,16 @@ void
 xpt_pollwait(union ccb *start_ccb, uint32_t timeout)
 {
 
-	while (--timeout > 0) {
-		xpt_sim_poll(start_ccb->ccb_h.path->bus->sim);
-		if ((start_ccb->ccb_h.status & CAM_STATUS_MASK)
-		    != CAM_REQ_INPROG)
-			break;
-		DELAY(100);
-	}
+	if (cam_sim_pollable(start_ccb->ccb_h.path->bus->sim)) {
+		while (--timeout > 0) {
+			xpt_sim_poll(start_ccb->ccb_h.path->bus->sim);
+			if ((start_ccb->ccb_h.status & CAM_STATUS_MASK)
+			    != CAM_REQ_INPROG)
+				break;
+			DELAY(100);
+		}
+	} else
+		timeout = 0;
 
 	if (timeout == 0) {
 		/*
