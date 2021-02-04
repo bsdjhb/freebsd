@@ -77,7 +77,13 @@ static struct lpc_uart_softc {
 	int	enabled;
 } lpc_uart_softc[LPC_UART_NUM];
 
-static const char *lpc_uart_names[LPC_UART_NUM] = { "com1", "com2", "com3", "com4" };
+static const char *lpc_uart_names[LPC_UART_NUM] = {
+	"com1", "com2", "com3", "com4"
+};
+
+static const char *lpc_uart_acpi_names[LPC_UART_NUM] = {
+	"COM1", "COM2", "COM3", "COM4"
+};
 
 /*
  * LPC device configuration is in the following form:
@@ -362,7 +368,7 @@ pci_lpc_uart_dsdt(void)
 		if (!sc->enabled)
 			continue;
 		dsdt_line("");
-		dsdt_line("Device (%s)", lpc_uart_names[unit]);
+		dsdt_line("Device (%s)", lpc_uart_acpi_names[unit]);
 		dsdt_line("{");
 		dsdt_line("  Name (_HID, EisaId (\"PNP0501\"))");
 		dsdt_line("  Name (_UID, %d)", unit + 1);
