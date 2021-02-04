@@ -11,7 +11,7 @@ per-device settings.
 Internal nodes in this tree do not have a value,
 only leaf nodes have values.
 This manual describes the configuration variables understood by
-.Xr bhyve 8.
+.Xr bhyve 8 .
 If additional variables are defined,
 .Xr bhyve 8
 will ignore them and will not emit errors for unknown variables.
@@ -176,7 +176,7 @@ Intel e82545 network interface.
 .It Li fbuf
 VGA framebuffer device attached to VNC server.
 .It Li lpc
-LPC PCI-ISA bridge with COM1 and COM2 16550 serial ports,
+LPC PCI-ISA bridge with COM1-COM4 16550 serial ports,
 a boot ROM,
 and an optional debug/test device.
 This device must be configured on bus 0.
@@ -415,6 +415,10 @@ also enabled for use by the boot ROM.
 Settings for the COM1 serial port device.
 .It Va com2 Ta node Ta Ta
 Settings for the COM2 serial port device.
+.It Va com3 Ta node Ta Ta
+Settings for the COM3 serial port device.
+.It Va com4 Ta node Ta Ta
+Settings for the COM4 serial port device.
 .It Va pc-testdev Ta bool Ta false Ta
 Enable the PC debug/test device.
 .El
@@ -522,7 +526,7 @@ Initiator ID to use when sending requests to the CTL port.
 .Xr expand_number 3 ,
 .Xr getaddrinfo 3 ,
 .Xr strtol 3 ,
-.Xr netgraph ,
+.Xr netgraph 4 ,
 .Xr netmap 4 ,
 .Xr ng_socket 4 ,
 .Xr tap 4 ,
