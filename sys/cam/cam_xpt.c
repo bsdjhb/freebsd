@@ -3181,6 +3181,7 @@ xpt_sim_poll(struct cam_sim *sim)
 {
 	struct mtx *mtx;
 
+	KASSERT(cam_sim_pollable(sim), ("%s: non-pollable sim", __func__));
 	mtx = sim->mtx;
 	if (mtx)
 		mtx_lock(mtx);
@@ -3203,8 +3204,7 @@ xpt_poll_setup(union ccb *start_ccb)
 	devq = sim->devq;
 	dev = start_ccb->ccb_h.path->device;
 
-	if (!cam_sim_pollable(sim))
-		return (0);
+	KASSERT(cam_sim_pollable(sim), ("%s: non-pollable sim", __func__));
 
 	/*
 	 * Steal an opening so that no other queued requests
@@ -3229,16 +3229,14 @@ void
 xpt_pollwait(union ccb *start_ccb, uint32_t timeout)
 {
 
-	if (cam_sim_pollable(start_ccb->ccb_h.path->bus->sim)) {
-		while (--timeout > 0) {
-			xpt_sim_poll(start_ccb->ccb_h.path->bus->sim);
-			if ((start_ccb->ccb_h.status & CAM_STATUS_MASK)
-			    != CAM_REQ_INPROG)
-				break;
-			DELAY(100);
-		}
-	} else
-		timeout = 0;
+	KASSERT(cam_sim_pollable(sim), ("%s: non-pollable sim", __func__));
+	while (--timeout > 0) {
+		xpt_sim_poll(start_ccb->ccb_h.path->bus->sim);
+		if ((start_ccb->ccb_h.status & CAM_STATUS_MASK)
+		    != CAM_REQ_INPROG)
+			break;
+		DELAY(100);
+	}
 
 	if (timeout == 0) {
 		/*
