@@ -340,17 +340,17 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp,
 		last = m_last(m);
 
 		/*
-		 * Round up the data segment to a 4B boundary.	Pad with 0 if
-		 * necessary.  There will definitely be room in the mbuf.
+		 * Pad with 0 if necessary.  There will definitely be
+		 * room in the mbuf.
 		 */
-		if (padding) {
+		if (padding != 0) {
+			MPASS(padding <= M_TRAILINGSPACE(m));
 			bzero(mtod(last, uint8_t *) + last->m_len, padding);
 			last->m_len += padding;
 		}
 	} else {
 		MPASS(ip->ip_data_len == 0);
 		ulp_submode &= ~ULP_CRC_DATA;
-		padding = 0;
 	}
 
 	/*
@@ -520,6 +520,9 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 		return;
 	}
 
+	/*
+	 * Round up the data segment to a 4B boundary.
+	 */
 	padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
 	m = finalize_pdu(icc, icp, padding);
 	M_ASSERTPKTHDR(m);
