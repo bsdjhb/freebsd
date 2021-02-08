@@ -88,6 +88,7 @@ enum {
 	DDP_DEAD	= (1 << 6),	/* toepcb is shutting down */
 };
 
+struct bio;
 struct ctl_sg_entry;
 struct sockopt;
 struct offload_settings;
