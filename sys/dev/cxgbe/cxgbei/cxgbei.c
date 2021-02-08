@@ -341,8 +341,8 @@ do_rx_iscsi_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m
 	}
 
 #if 0
-	CTR3(KTR_CXGBE, "%s: tid %u, cpl->len %u", __func__, tid,
-	    be16toh(cpl->len));
+	CTR4(KTR_CXGBE, "%s: tid %u, cpl->len %u, icp %p", __func__, tid,
+	    be16toh(cpl->len), icp);
 #endif
 
 	return (0);
@@ -541,6 +541,12 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		icp = ip_to_icp(ip);
 	}
 	pdu_len = G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp));
+
+#if 0
+	CTR5(KTR_CXGBE,
+	    "%s: tid %u, cpl->len %u, ddpvld 0x%08x, icp %p",
+	    __func__, tid, pdu_len, val, icp);
+#endif
 
 	/* Copy header */
 	m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
