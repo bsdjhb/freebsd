@@ -1339,7 +1339,7 @@ iflib_netmap_timer(void *arg)
 #define iflib_netmap_detach(ifp) netmap_detach(ifp)
 
 #else
-#define iflib_netmap_txq_init(ctx, txq) (0)
+#define iflib_netmap_txq_init(ctx, txq)
 #define iflib_netmap_rxq_init(ctx, rxq) (0)
 #define iflib_netmap_detach(ifp)
 #define netmap_enable_all_rings(ifp)
