@@ -512,6 +512,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct toepcb *toep = lookup_tid(sc, tid);
 	struct icl_cxgbei_pdu *icp = toep->ulpcb2;
 	struct icl_pdu *ip;
+	struct cxgbei_cmp *cmp;
 	struct inpcb *inp = toep->inp;
 	uint16_t len = be16toh(cpl->len);
 	struct socket *so;
@@ -522,7 +523,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct iscsi_bhs_data_out *bhsdo;
 	u_int val = be32toh(cpl->ddpvld);
 	u_int pdu_len, data_digest_len, hdr_digest_len;
-	uint32_t datasn, prev_seg_hdrs, prev_seg_len;
+	uint32_t npdus, prev_seg_hdrs, prev_seg_len;
 
 	M_ASSERTPKTHDR(m);
 	MPASS(m->m_pkthdr.len == len + sizeof(*cpl));
@@ -565,39 +566,75 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		icp->icp_flags |= ICPF_HCRC_ERR;
 	if (val & F_DDP_DATACRC_ERR)
 		icp->icp_flags |= ICPF_DCRC_ERR;
+
+	INP_WLOCK(inp);
 	if (val & F_DDP_PDU && ip->ip_data_mbuf == NULL) {
 		MPASS((icp->icp_flags & ICPF_RX_FLBUF) == 0);
 		MPASS(ip->ip_data_len > 0);
 		icp->icp_flags |= ICPF_RX_DDP;
 		bhsdo = (struct iscsi_bhs_data_out *)ip->ip_bhs;
 
+		switch (ip->ip_bhs->bhs_opcode & ~ISCSI_BHS_OPCODE_IMMEDIATE) {
+		case ISCSI_BHS_OPCODE_SCSI_DATA_IN:
+			cmp = cxgbei_find_cmp(icc,
+			    be32toh(bhsdo->bhsdo_initiator_task_tag));
+			break;
+		case ISCSI_BHS_OPCODE_SCSI_DATA_OUT:
+			cmp = cxgbei_find_cmp(icc,
+			    be32toh(bhsdo->bhsdo_target_transfer_tag));
+			break;
+		default:
+			__assert_unreachable();
+		}
+		MPASS(cmp != NULL);
+
 		/* Must be the final PDU. */
 		MPASS(bhsdo->bhsdo_flags & BHSDO_FLAGS_F);
-		datasn = be32toh(bhsdo->bhsdo_datasn);
-		if (datasn == 0)
+		npdus = 1;
+		if (icp->icp_seq == tp->rcv_nxt) {
+			MPASS(be32toh(bhsdo->bhsdo_buffer_offset) ==
+			    cmp->next_buffer_offset);
 			goto single_segment;
+		}
 
-		/* Amount of headers in previous segments. */
-		prev_seg_hdrs = datasn * (sizeof(struct iscsi_bhs_data_out) +
+		/*
+		 * The difference between the end of the last burst
+		 * and the offset of the last PDU in this burst is
+		 * the additional data received via DDP.
+		 */
+		prev_seg_len = be32toh(bhsdo->bhsdo_buffer_offset) -
+		    cmp->next_buffer_offset;
+
+		/*
+		 * The other data in the gap in TCP sequence space
+		 * besides the DDP data are all protocol headers.
+		 * This is used to determine how many PDUs were
+		 * contained in this burst.
+		 */
+		MPASS(icp->icp_seq - tp->rcv_nxt > prev_seg_len);
+		prev_seg_hdrs = (icp->icp_seq - tp->rcv_nxt) - prev_seg_len;
+		MPASS(prev_seg_hdrs % (sizeof(struct iscsi_bhs_data_out) +
+		    hdr_digest_len + data_digest_len) == 0);
+		npdus += prev_seg_hdrs / (sizeof(struct iscsi_bhs_data_out) +
 		    hdr_digest_len + data_digest_len);
-		prev_seg_len = (icp->icp_seq - tp->rcv_nxt) - prev_seg_hdrs;
-		ip->ip_data_len += prev_seg_len;
-		pdu_len += (icp->icp_seq - tp->rcv_nxt);
 
 		/*
 		 * Since cfiscsi doesn't know about previous headers,
 		 * pretend that the entire r2t data length was
 		 * received in this single segment.
 		 */
+		ip->ip_data_len += prev_seg_len;
+		pdu_len += (icp->icp_seq - tp->rcv_nxt);
 		bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
 		bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
 		bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
-		bhsdo->bhsdo_datasn = 0;
-		bhsdo->bhsdo_buffer_offset = htobe32(
-		    be32toh(bhsdo->bhsdo_buffer_offset) - prev_seg_len);
+		bhsdo->bhsdo_buffer_offset = htobe32(cmp->next_buffer_offset);
 
 single_segment:
-		counter_u64_add(ci->ddp_pdus, datasn + 1);
+		cmp->next_buffer_offset += ip->ip_data_len;
+		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
+		cmp->next_datasn++;
+		counter_u64_add(ci->ddp_pdus, npdus);
 		counter_u64_add(ci->ddp_bytes, ip->ip_data_len);
 	} else {
 		MPASS(icp->icp_flags & (ICPF_RX_FLBUF));
@@ -605,7 +642,6 @@ single_segment:
 		MPASS(icp->icp_seq == tp->rcv_nxt);
 	}
 
-	INP_WLOCK(inp);
 	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
 		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
 		    __func__, tid, pdu_len, inp->inp_flags);

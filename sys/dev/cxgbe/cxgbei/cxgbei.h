@@ -53,6 +53,16 @@ enum {
 	RXF_ACTIVE	= 1 << 0,	/* In the worker thread's queue */
 };
 
+struct cxgbei_cmp {
+	LIST_ENTRY(cxgbei_cmp) link;
+
+	uint32_t tt;		/* Transfer tag. */
+
+	uint32_t next_datasn;
+	uint32_t next_buffer_offset;
+};
+LIST_HEAD(cxgbei_cmp_head, cxgbei_cmp);
+
 struct icl_cxgbei_conn {
 	struct icl_conn ic;
 
@@ -67,6 +77,9 @@ struct icl_cxgbei_conn {
 	u_int cwt;
 	STAILQ_HEAD(, icl_pdu) rcvd_pdus;	/* protected by so_rcv lock */
 	TAILQ_ENTRY(icl_cxgbei_conn) rx_link;	/* protected by cwt lock */
+
+	struct cxgbei_cmp_head *cmp_table;	/* protected by inp lock */
+	unsigned long cmp_hash_mask;
 };
 
 static inline struct icl_cxgbei_conn *
@@ -131,4 +144,5 @@ u_int cxgbei_select_worker_thread(struct icl_cxgbei_conn *);
 /* icl_cxgbei.c */
 int icl_cxgbei_mod_load(void);
 int icl_cxgbei_mod_unload(void);
+struct cxgbei_cmp *cxgbei_find_cmp(struct icl_cxgbei_conn *, uint32_t);
 #endif
