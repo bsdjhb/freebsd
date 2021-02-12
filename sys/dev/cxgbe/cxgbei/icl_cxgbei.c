@@ -965,6 +965,8 @@ cxgbei_insert_cmp(struct icl_cxgbei_conn *icc, struct cxgbei_cmp *cmp,
 #endif
 
 	cmp->tt = tt;
+	CTR3(KTR_CXGBE, "%s: tt %#x offset %u", __func__, tt,
+	    cmp->next_buffer_offset);
 
 	INP_WLOCK(inp);
 #ifdef INVARIANTS
@@ -999,6 +1001,8 @@ cxgbei_rm_cmp(struct icl_cxgbei_conn *icc, struct cxgbei_cmp *cmp)
 	struct cxgbei_cmp *cmp2;
 #endif
 
+	CTR3(KTR_CXGBE, "%s: tt %#x offset %u", __func__, cmp->tt,
+	    cmp->next_buffer_offset);
 	INP_WLOCK(inp);
 
 #ifdef INVARIANTS
@@ -1164,6 +1168,9 @@ icl_cxgbei_conn_transfer_setup(struct icl_conn *ic, union ctl_io *io,
 	/* This is for the offload driver's state.  Must not be set already. */
 	MPASS(arg != NULL);
 	MPASS(*arg == NULL);
+
+	CTR4(KTR_CXGBE, "%s: kern_rel_offset %u, ext_data_filled %u, arg %p", __func__,
+	    ctsio->kern_rel_offset, ctsio->ext_data_filled, arg);
 
 	if (ctsio->ext_data_filled == 0) {
 		int first_burst;

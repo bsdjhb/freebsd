@@ -597,6 +597,11 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			goto single_segment;
 		}
 
+		CTR3(KTR_CXGBE, "%s: multi-PDU burst, buffer offset delta %d,"
+		    " TCP seq delta %d", __func__,
+		    be32toh(bhsdo->bhsdo_buffer_offset) - cmp->next_buffer_offset,
+		    icp->icp_seq - tp->rcv_nxt);
+
 		/*
 		 * The difference between the end of the last burst
 		 * and the offset of the last PDU in this burst is
@@ -613,6 +618,8 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		 */
 		MPASS(icp->icp_seq - tp->rcv_nxt > prev_seg_len);
 		prev_seg_hdrs = (icp->icp_seq - tp->rcv_nxt) - prev_seg_len;
+		CTR3(KTR_CXGBE, "%s: prev segment headers %u, data %u", __func__,
+		    prev_seg_hdrs, prev_seg_len);
 		MPASS(prev_seg_hdrs % (sizeof(struct iscsi_bhs_data_out) +
 		    hdr_digest_len + data_digest_len) == 0);
 		npdus += prev_seg_hdrs / (sizeof(struct iscsi_bhs_data_out) +
@@ -623,15 +630,24 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		 * pretend that the entire r2t data length was
 		 * received in this single segment.
 		 */
+		CTR3(KTR_CXGBE, "%s: ip_data_len %d => %d", __func__, ip->ip_data_len,
+		    ip->ip_data_len + prev_seg_len);
 		ip->ip_data_len += prev_seg_len;
+		CTR3(KTR_CXGBE, "%s: pdu_len %d => %d", __func__, pdu_len,
+		    pdu_len + (icp->icp_seq - tp->rcv_nxt));
 		pdu_len += (icp->icp_seq - tp->rcv_nxt);
 		bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
 		bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
 		bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
+		CTR3(KTR_CXGBE, "%s: buffer_offset %u -> %u", __func__,
+		    be32toh(bhsdo->bhsdo_buffer_offset),
+		    cmp->next_buffer_offset);
 		bhsdo->bhsdo_buffer_offset = htobe32(cmp->next_buffer_offset);
 
 single_segment:
 		cmp->next_buffer_offset += ip->ip_data_len;
+		CTR3(KTR_CXGBE, "%s: datasn %u -> %u", __func__,
+		    be32toh(bhsdo->bhsdo_datasn), cmp->next_datasn);
 		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
 		cmp->next_datasn++;
 		counter_u64_add(ci->ddp_pdus, npdus);
