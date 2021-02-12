@@ -44,7 +44,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/file.h>
 #include <sys/kernel.h>
 #include <sys/kthread.h>
-#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
@@ -2822,8 +2821,6 @@ cfiscsi_datamove_out(union ctl_io *io)
 	 * MaxBurstLength.
 	 */
 	bhsr2t->bhsr2t_desired_data_transfer_length = htonl(r2t_len);
-	CTR3(KTR_SPARE3, "%s: sending R2T with offset %u, len %u", __func__,
-	    r2t_off, r2t_len);
 	cfiscsi_pdu_queue(response);
 }
 
