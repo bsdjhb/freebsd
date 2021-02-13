@@ -201,7 +201,6 @@ icl_cxgbei_pdu_call_cb(struct icl_pdu *ip)
 {
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 
-	KASSERT(icp->ref_cnt == 0, ("freeing active PDU"));
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 
 	if (icp->cb != NULL)
@@ -244,6 +243,11 @@ icl_cxgbei_mbuf_done(struct mbuf *mb)
 
 	struct icl_cxgbei_pdu *icp = (struct icl_cxgbei_pdu *)mb->m_ext.ext_arg1;
 
+	/*
+	 * NB: mb_free_mext() might leave ref_cnt as 1 without
+	 * decrementing it if it hits the fast path in the ref_cnt
+	 * check.
+	 */
 	icl_cxgbei_pdu_call_cb(&icp->ip);
 }
 
@@ -382,6 +386,13 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp,
 	ip->ip_bhs_mbuf = NULL;
 	ip->ip_data_mbuf = NULL;
 	ip->ip_bhs = NULL;
+
+	/*
+	 * Drop PDU reference on icp.  Additional references might
+	 * still be held by zero-copy PDU buffers (ICL_NOCOPY).
+	 */
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1)
+		icl_cxgbei_pdu_call_cb(ip);
 
 	return (m);
 }
