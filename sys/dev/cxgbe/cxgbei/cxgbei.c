@@ -270,6 +270,7 @@ do_rx_iscsi_hdr(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	ip = icl_cxgbei_new_pdu(M_NOWAIT);
 	if (ip == NULL)
 		CXGBE_UNIMPLEMENTED("PDU allocation failure");
+	CTR2(KTR_CXGBE, "%s: %p", __func__, ip);
 	m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
 	ip->ip_data_len = G_ISCSI_PDU_LEN(len_ddp) - len;
 	icp = ip_to_icp(ip);
@@ -312,6 +313,7 @@ do_rx_iscsi_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m
 	        ip = icl_cxgbei_new_pdu(M_NOWAIT);
 	        if (ip == NULL)
         	        CXGBE_UNIMPLEMENTED("PDU allocation failure");
+		CTR2(KTR_CXGBE, "%s: %p", __func__, ip);
 		icp = ip_to_icp(ip);
 	} else {
 		/* T5 mode, header is already received. */
@@ -401,6 +403,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
 		    __func__, tid, pdu_len, inp->inp_flags);
 		INP_WUNLOCK(inp);
+		CTR2(KTR_CXGBE, "%s: icl_cxgbei_conn_pdu_free(%p)", __func__, ip);
 		icl_cxgbei_conn_pdu_free(NULL, ip);
 		toep->ulpcb2 = NULL;
 		return (0);
@@ -437,6 +440,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		NET_EPOCH_EXIT(et);
 		CURVNET_RESTORE();
 
+		CTR2(KTR_CXGBE, "%s: icl_cxgbei_conn_pdu_free(%p)", __func__, ip);
 		icl_cxgbei_conn_pdu_free(NULL, ip);
 		toep->ulpcb2 = NULL;
 		return (0);
@@ -467,6 +471,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			ip0 = icl_cxgbei_new_pdu(M_NOWAIT);
 			if (ip0 == NULL)
 				CXGBE_UNIMPLEMENTED("PDU allocation failure");
+			CTR2(KTR_CXGBE, "%s: %p", __func__, ip);
 			icl_cxgbei_new_pdu_set_conn(ip0, ic);
 			icp0 = ip_to_icp(ip0);
 			icp0->icp_seq = 0; /* XXX */
@@ -536,6 +541,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		ip = icl_cxgbei_new_pdu(M_NOWAIT);
 		if (ip == NULL)
 			CXGBE_UNIMPLEMENTED("PDU allocation failure");
+		CTR2(KTR_CXGBE, "%s: %p", __func__, ip);
 		icp = ip_to_icp(ip);
 	}
 	pdu_len = G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp));
@@ -643,6 +649,7 @@ single_segment:
 		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
 		    __func__, tid, pdu_len, inp->inp_flags);
 		INP_WUNLOCK(inp);
+		CTR2(KTR_CXGBE, "%s: icl_cxgbei_conn_pdu_free(%p)", __func__, ip);
 		icl_cxgbei_conn_pdu_free(NULL, ip);
 		toep->ulpcb2 = NULL;
 		m_freem(m);
@@ -676,6 +683,7 @@ single_segment:
 		NET_EPOCH_EXIT(et);
 		CURVNET_RESTORE();
 
+		CTR2(KTR_CXGBE, "%s: icl_cxgbei_conn_pdu_free(%p)", __func__, ip);
 		icl_cxgbei_conn_pdu_free(NULL, ip);
 		toep->ulpcb2 = NULL;
 		m_freem(m);

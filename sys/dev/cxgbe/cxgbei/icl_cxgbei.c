@@ -186,9 +186,12 @@ icl_cxgbei_conn_pdu_free(struct icl_conn *ic, struct icl_pdu *ip)
 	KASSERT(ic != NULL || icp->ref_cnt == 1,
 	    ("orphaned PDU has oustanding references"));
 
+	CTR3(KTR_CXGBE, "%s: %p ref_cnt %d", __func__, icp, icp->ref_cnt);
+
 	if (atomic_fetchadd_int(&icp->ref_cnt, -1) != 1)
 		return;
 
+	CTR2(KTR_CXGBE, "%s: free(%p)", __func__, icp);
 	free(icp, M_CXGBEI);
 #ifdef DIAGNOSTIC
 	if (__predict_true(ic != NULL))
@@ -209,6 +212,7 @@ icl_cxgbei_pdu_call_cb(struct icl_pdu *ip)
 	if (__predict_true(ip->ip_conn != NULL))
 		refcount_release(&ip->ip_conn->ic_outstanding_pdus);
 #endif
+	CTR2(KTR_CXGBE, "%s: free(%p)", __func__, icp);
 	free(icp, M_CXGBEI);
 }
 
@@ -262,12 +266,14 @@ icl_cxgbei_new_pdu(int flags)
 	if (__predict_false(icp == NULL))
 		return (NULL);
 
+	CTR2(KTR_CXGBE, "%s: %p = malloc()", __func__, icp);
 	icp->icp_signature = CXGBEI_PDU_SIGNATURE;
 	icp->ref_cnt = 1;
 	ip = &icp->ip;
 
 	m = m_gethdr(flags, MT_DATA);
 	if (__predict_false(m == NULL)) {
+		CTR2(KTR_CXGBE, "%s: free(%p)", __func__, icp);
 		free(icp, M_CXGBEI);
 		return (NULL);
 	}
@@ -303,6 +309,7 @@ icl_cxgbei_conn_new_pdu(struct icl_conn *ic, int flags)
 	if (__predict_false(ip == NULL))
 		return (NULL);
 	icl_cxgbei_new_pdu_set_conn(ip, ic);
+	CTR2(KTR_CXGBE, "%s: %p", __func__, ip);
 
 	return (ip);
 }
