@@ -918,10 +918,10 @@ have_pgsz:
 
 	nppods = pages_to_nppods(npages, pr->pr_page_shift[idx]);
 	if (alloc_page_pods(pr, nppods, idx, prsv) != 0)
-		return (0);
+		return (ENOMEM);
 	MPASS(prsv->prsv_nppods > 0);
 
-	return (1);
+	return (0);
 }
 
 int
@@ -1496,7 +1496,7 @@ prep_pageset(struct adapter *sc, struct toepcb *toep, struct pageset *ps)
 	struct tom_data *td = sc->tom_softc;
 
 	if (ps->prsv.prsv_nppods == 0 &&
-	    !t4_alloc_page_pods_for_ps(&td->pr, ps)) {
+	    t4_alloc_page_pods_for_ps(&td->pr, ps) != 0) {
 		return (0);
 	}
 	if (!(ps->flags & PS_PPODS_WRITTEN) &&
