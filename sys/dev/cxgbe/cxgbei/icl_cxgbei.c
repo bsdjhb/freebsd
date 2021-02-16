@@ -473,7 +473,6 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 			ip->ip_data_len = len;
 		} else {
 			m_tail->m_next = m;
-			m_tail = m_tail->m_next;
 			ip->ip_data_len += len;
 		}
 		for (; m != NULL; m = m->m_next) {
