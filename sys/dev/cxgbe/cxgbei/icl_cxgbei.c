@@ -604,7 +604,7 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 	ic->ic_max_data_segment_length = 16384;
 	ic->ic_name = name;
 	ic->ic_offload = "cxgbei";
-	ic->ic_unmapped = true;
+	ic->ic_unmapped = false;
 
 	CTR2(KTR_CXGBE, "%s: icc %p", __func__, icc);
 
