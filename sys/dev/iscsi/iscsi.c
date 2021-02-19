@@ -33,7 +33,6 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
-#include <sys/bio.h>
 #include <sys/condvar.h>
 #include <sys/conf.h>
 #include <sys/endian.h>
@@ -49,7 +48,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/sx.h>
-#include <sys/uio.h>
 #include <vm/uma.h>
 
 #include <cam/cam.h>
@@ -1029,50 +1027,6 @@ iscsi_pdu_handle_task_response(struct icl_pdu *response)
 }
 
 static void
-iscsi_copyto_bio(struct bio *bp, size_t offset, void *buf, size_t len)
-{
-	struct uio uio;
-	struct iovec iov;
-	vm_page_t *ma;
-
-	iov.iov_base = buf;
-	iov.iov_len = len;
-	memset(&uio, 0, sizeof(uio));
-	uio.uio_resid = len;
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_rw = UIO_WRITE;
-	uio.uio_segflg = UIO_SYSSPACE;
-
-	offset += bp->bio_ma_offset;
-	ma = bp->bio_ma + (offset / PAGE_SIZE);
-	offset %= PAGE_SIZE;
-	(void)uiomove_fromphys(ma, offset, len, &uio);
-}
-
-static void
-iscsi_copyfrom_bio(struct bio *bp, size_t offset, void *buf, size_t len)
-{
-	struct uio uio;
-	struct iovec iov;
-	vm_page_t *ma;
-
-	iov.iov_base = buf;
-	iov.iov_len = len;
-	memset(&uio, 0, sizeof(uio));
-	uio.uio_resid = len;
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_rw = UIO_READ;
-	uio.uio_segflg = UIO_SYSSPACE;
-
-	offset += bp->bio_ma_offset;
-	ma = bp->bio_ma + (offset / PAGE_SIZE);
-	offset %= PAGE_SIZE;
-	(void)uiomove_fromphys(ma, offset, len, &uio);
-}
-
-static void
 iscsi_pdu_handle_data_in(struct icl_pdu *response)
 {
 	struct iscsi_bhs_data_in *bhsdi;
@@ -1080,8 +1034,6 @@ iscsi_pdu_handle_data_in(struct icl_pdu *response)
 	struct iscsi_session *is;
 	union ccb *ccb;
 	struct ccb_scsiio *csio;
-	struct bio *bp;
-	char *data_ptr;
 	size_t data_segment_len, received, oreceived;
 
 	is = PDU_SESSION(response);
@@ -1135,36 +1087,13 @@ iscsi_pdu_handle_data_in(struct icl_pdu *response)
 	}
 
 	oreceived = io->io_received;
-
-	if ((csio->ccb_h.flags & CAM_DATA_MASK) == CAM_DATA_BIO) {
-		bp = (struct bio *)csio->data_ptr;
-		MPASS(bp->bio_flags & BIO_UNMAPPED);
-		data_ptr = malloc(data_segment_len, M_ISCSI, M_NOWAIT);
-		if (data_ptr == NULL) {
-			ISCSI_SESSION_WARN(is,
-			    "failed to allocate temporary buffer (%zd bytes)",
-			    data_segment_len);
-			icl_pdu_free(response);
-			iscsi_session_reconnect(is);
-			ISCSI_SESSION_UNLOCK(is);
-			return;
-		}
-	} else {
-		bp = NULL;
-		data_ptr = csio->data_ptr + oreceived;
-	}
-
 	io->io_received += data_segment_len;
 	received = io->io_received;
 	if ((bhsdi->bhsdi_flags & BHSDI_FLAGS_S) != 0)
 		iscsi_outstanding_remove(is, io);
 	ISCSI_SESSION_UNLOCK(is);
 
-	icl_pdu_get_data(response, 0, data_ptr, data_segment_len);
-	if (bp != NULL) {
-		iscsi_copyto_bio(bp, oreceived, data_ptr, data_segment_len);
-		free(data_ptr, M_ISCSI);
-	}
+	icl_pdu_get_data(response, 0, csio->data_ptr + oreceived, data_segment_len);
 
 	/*
 	 * XXX: Check DataSN.
@@ -1225,8 +1154,6 @@ iscsi_pdu_handle_r2t(struct icl_pdu *response)
 	struct iscsi_bhs_data_out *bhsdo;
 	struct iscsi_outstanding *io;
 	struct ccb_scsiio *csio;
-	struct bio *bp;
-	char *data_ptr;
 	size_t off, len, total_len;
 	int error;
 	uint32_t datasn = 0;
@@ -1274,12 +1201,6 @@ iscsi_pdu_handle_r2t(struct icl_pdu *response)
 		return;
 	}
 
-	if ((csio->ccb_h.flags & CAM_DATA_MASK) == CAM_DATA_BIO) {
-		bp = (struct bio *)csio->data_ptr;
-		MPASS(bp->bio_flags & BIO_UNMAPPED);
-	} else
-		bp = NULL;
-
 	//ISCSI_SESSION_DEBUG(is, "r2t; off %zd, len %zd", off, total_len);
 
 	for (;;) {
@@ -1313,23 +1234,8 @@ iscsi_pdu_handle_r2t(struct icl_pdu *response)
 		    bhsr2t->bhsr2t_target_transfer_tag;
 		bhsdo->bhsdo_datasn = htonl(datasn++);
 		bhsdo->bhsdo_buffer_offset = htonl(off);
-
-		if (bp != NULL) {
-			data_ptr = malloc(len, M_ISCSI, M_NOWAIT);
-			if (data_ptr == NULL) {
-				ISCSI_SESSION_WARN(is,
-				    "failed to allocate memory; reconnecting");
-				icl_pdu_free(request);
-				icl_pdu_free(response);
-				iscsi_session_reconnect(is);
-				return;
-			}
-			iscsi_copyfrom_bio(bp, off, data_ptr, len);
-		} else
-			data_ptr = csio->data_ptr + off;
-		error = icl_pdu_append_data(request, data_ptr, len, M_NOWAIT);
-		if (bp != NULL)
-			free(data_ptr, M_ISCSI);
+		error = icl_pdu_append_data(request, csio->data_ptr + off, len,
+		    M_NOWAIT);
 		if (error != 0) {
 			ISCSI_SESSION_WARN(is, "failed to allocate memory; "
 			    "reconnecting");
@@ -2315,8 +2221,6 @@ iscsi_action_scsiio(struct iscsi_session *is, union ccb *ccb)
 	struct iscsi_bhs_scsi_command *bhssc;
 	struct ccb_scsiio *csio;
 	struct iscsi_outstanding *io;
-	struct bio *bp;
-	char *data_ptr;
 	size_t len;
 	uint32_t initiator_task_tag;
 	int error;
@@ -2427,24 +2331,7 @@ iscsi_action_scsiio(struct iscsi_session *is, union ccb *ccb)
 			len = is->is_max_send_data_segment_length;
 		}
 
-		error = 0;
-		if ((csio->ccb_h.flags & CAM_DATA_MASK) == CAM_DATA_BIO) {
-			bp = (struct bio *)csio->data_ptr;
-			MPASS(bp->bio_flags & BIO_UNMAPPED);
-			data_ptr = malloc(len, M_ISCSI, M_NOWAIT);
-			if (data_ptr == NULL)
-				error = ENOMEM;
-			else
-				iscsi_copyfrom_bio(bp, 0, data_ptr, len);
-		} else {
-			bp = NULL;
-			data_ptr = csio->data_ptr;
-		}
-		if (error == 0)
-			error = icl_pdu_append_data(request, data_ptr, len,
-			    M_NOWAIT);
-		if (bp != NULL)
-			free(data_ptr, M_ISCSI);
+		error = icl_pdu_append_data(request, csio->data_ptr, len, M_NOWAIT);
 		if (error != 0) {
 			iscsi_outstanding_remove(is, io);
 			icl_pdu_free(request);
