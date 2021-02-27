@@ -187,10 +187,10 @@ struct ktls_session {
 	u_int	wq_index;
 	volatile u_int refcount;
 	int mode;
+	bool reset_pending;
 
 	struct task reset_tag_task;
 	struct inpcb *inp;
-	bool reset_pending;
 } __aligned(CACHE_LINE_SIZE);
 
 void ktls_check_rx(struct sockbuf *sb);

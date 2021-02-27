@@ -50,8 +50,8 @@ __FBSDID("$FreeBSD$");
 struct ocf_session {
 	crypto_session_t sid;
 	crypto_session_t mac_sid;
-	int mac_len;
 	struct mtx lock;
+	int mac_len;
 	bool implicit_iv;
 
 	/* Only used for TLS 1.0 with the implicit IV. */
