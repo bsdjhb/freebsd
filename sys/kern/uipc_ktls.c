@@ -1897,16 +1897,13 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	counter_u64_add(ktls_cnt_tx_queued, 1);
 }
 
-#define	MAX_TLS_PAGES	(1 + btoc(TLS_MAX_MSG_SIZE_V10_2))
-
 static __noinline void
 ktls_encrypt(struct mbuf *top)
 {
+	struct ktls_ocf_state state;
 	struct ktls_session *tls;
 	struct socket *so;
 	struct mbuf *m;
-	vm_paddr_t parray[MAX_TLS_PAGES + 1];
-	struct iovec dst_iov[MAX_TLS_PAGES + 2];
 	vm_page_t pg;
 	int error, i, npages, off, total_pages;
 
@@ -1937,6 +1934,12 @@ ktls_encrypt(struct mbuf *top)
 	 *
 	 * Each mbuf holds an entire TLS record.
 	 */
+
+	if (soisdisconnected(so)) {
+		error = ENOTCONN;
+		goto out;
+	}
+
 	error = 0;
 	for (m = top; npages != total_pages; m = m->m_next) {
 		KASSERT(m->m_epg_tls == tls,
@@ -1956,7 +1959,7 @@ ktls_encrypt(struct mbuf *top)
 		 * encryption destination.
 		 */
 		if ((m->m_epg_flags & EPG_FLAG_ANON) != 0) {
-			error = (*tls->sw_encrypt)(tls, m, NULL);
+			error = (*tls->sw_encrypt)(&state, tls, m, NULL);
 		} else {
 			off = m->m_epg_1st_off;
 			for (i = 0; i < m->m_epg_npgs; i++, off = 0) {
@@ -1968,24 +1971,25 @@ retry_page:
 					vm_wait(NULL);
 					goto retry_page;
 				}
-				parray[i] = VM_PAGE_TO_PHYS(pg);
-				dst_iov[i].iov_base =
-				    (void *)PHYS_TO_DMAP(parray[i] + off);
-				dst_iov[i].iov_len = m_epg_pagelen(m, i, off);
+				state.parray[i] = VM_PAGE_TO_PHYS(pg);
+				state.dst_iov[i].iov_base =
+				    (void *)PHYS_TO_DMAP(state.parray[i] + off);
+				state.dst_iov[i].iov_len = m_epg_pagelen(m, i,
+				    off);
 			}
-			KASSERT(m->m_epg_npgs + 1 <= nitems(dst_iov),
+			KASSERT(m->m_epg_npgs + 1 <= nitems(state.dst_iov),
 			    ("dst_iov is too small"));
-			dst_iov[m->m_epg_npgs].iov_base = m->m_epg_trail;
-			dst_iov[m->m_epg_npgs].iov_len = m->m_epg_trllen;
+			state.dst_iov[m->m_epg_npgs].iov_base = m->m_epg_trail;
+			state.dst_iov[m->m_epg_npgs].iov_len = m->m_epg_trllen;
 
-			error = (*tls->sw_encrypt)(tls, m, dst_iov);
+			error = (*tls->sw_encrypt)(&state, tls, m, dst_iov);
 
 			/* Free the old pages. */
 			m->m_ext.ext_free(m);
 
 			/* Replace them with the new pages. */
 			for (i = 0; i < m->m_epg_npgs; i++)
-				m->m_epg_pa[i] = parray[i];
+				m->m_epg_pa[i] = state.parray[i];
 
 			/* Use the basic free routine. */
 			m->m_ext.ext_free = mb_free_mext_pgs;
@@ -2015,8 +2019,11 @@ retry_page:
 		ktls_free(tls);
 	}
 
+out:
 	CURVNET_SET(so->so_vnet);
-	if (error == 0) {
+	if (soisdisconnected(so)) {
+		mb_free_notready(top, total_pages);
+	} if (error == 0) {
 		(void)(*so->so_proto->pr_usrreqs->pru_ready)(so, top, npages);
 	} else {
 		so->so_proto->pr_usrreqs->pru_abort(so);
@@ -2028,6 +2035,168 @@ retry_page:
 	sorele(so);
 	CURVNET_RESTORE();
 }
+
+
+void
+ktls_encrypt_cb(struct ktls_ocf_state *state, int error)
+{
+	struct ktls_session *tls;
+	struct socket *so;
+	struct mbuf *m;
+	int i, npages;
+
+	m = state->m;
+
+	/* Free the old pages. */
+	m->m_ext.ext_free(m);
+
+	/* Replace them with the new pages. */
+	for (i = 0; i < m->m_epg_npgs; i++)
+		m->m_epg_pa[i] = state->parray[i];
+
+	/* Use the basic free routine. */
+	m->m_ext.ext_free = mb_free_mext_pgs;
+
+	/* Pages are now writable. */
+	m->m_epg_flags |= EPG_FLAG_ANON;
+
+	so = state->so;
+	free(state, M_KTLS);
+
+	/*
+	 * Drop a reference to the session now that it is no longer
+	 * needed.  Existing code depends on encrypted records having
+	 * no associated session vs yet-to-be-encrypted records having
+	 * an associated session.
+	 */
+	tls = m->m_epg_tls;
+	m->m_epg_tls = NULL;
+	ktls_free(tls);
+
+	if (error != 0) {
+		counter_u64_add(ktls_offload_failed_crypto, 1);
+	}
+
+	CURVNET_SET(so->so_vnet);
+	npages = m->m_epg_npgs == 0 ? 1 : m->m_epg_npgs;
+
+	/*
+	 * XXX TODO: If the socket has encountered an error from a
+	 * previous request, this should just mb_free_notready().
+	 * However, we also need to mark as ready any other mbufs
+	 * in the socket buffer still waiting to be encrypted.  Perhaps
+	 * could do this by checking for soisdisconnected() in ktls_encrypt()
+	 * and ktls_encrypt_async(), as well as here, but that is racey.
+	 */
+	if (soisdisconnected(so)) {
+		mb_free_notready(m, npages);
+	} else if (error == 0) {
+		(void)(*so->so_proto->pr_usrreqs->pru_ready)(so, m, npages);
+	} else {
+		so->so_proto->pr_usrreqs->pru_abort(so);
+		so->so_error = EIO;
+		mb_free_notready(m, npages);
+	}
+
+	SOCK_LOCK(so);
+	sorele(so);
+	CURVNET_RESTORE();
+}
+
+/*
+ * Similar to ktls_encrypt, but used with asynchronous OCF backends
+ * (coprocessors) where encryption does not use host CPU resources and
+ * it can be beneficial to queue more requests than CPUs.
+ */
+static __noinline void
+ktls_encrypt_async(struct mbuf *top)
+{
+	struct ktls_ocf_state *state;
+	struct ktls_session *tls;
+	struct socket *so;
+	struct mbuf *m;
+	vm_page_t pg;
+	int error, i, npages, off, total_pages;
+
+	so = top->m_epg_so;
+	tls = top->m_epg_tls;
+	KASSERT(tls != NULL, ("tls = NULL, top = %p\n", top));
+	KASSERT(so != NULL, ("so = NULL, top = %p\n", top));
+#ifdef INVARIANTS
+	top->m_epg_so = NULL;
+#endif
+	total_pages = top->m_epg_enc_cnt;
+	npages = 0;
+
+	/* XXX TODO: Need to handle soisdisconnected(). */
+	error = 0;
+	for (m = top; npages != total_pages; m = m->m_next) {
+		KASSERT(m->m_epg_tls == tls,
+		    ("different TLS sessions in a single mbuf chain: %p vs %p",
+		    tls, m->m_epg_tls));
+		KASSERT((m->m_flags & (M_EXTPG | M_NOTREADY)) ==
+		    (M_EXTPG | M_NOTREADY),
+		    ("%p not unready & nomap mbuf (top = %p)\n", m, top));
+		KASSERT(npages + m->m_epg_npgs <= total_pages,
+		    ("page count mismatch: top %p, total_pages %d, m %p", top,
+		    total_pages, m));
+
+		state = malloc(sizeof(*state), M_KTLS, M_WAITOK | M_ZERO);
+		soref(so);
+		state->so = so;
+		state->m = m;
+
+		/*
+		 * For anonymous mbufs, encryption is done in place.
+		 * For file-backed mbufs (from sendfile), anonymous
+		 * wired pages are allocated and used as the
+		 * encryption destination.
+		 */
+		if ((m->m_epg_flags & EPG_FLAG_ANON) != 0) {
+			error = (*tls->sw_encrypt)(state, tls, m, NULL);
+		} else {
+			off = m->m_epg_1st_off;
+			for (i = 0; i < m->m_epg_npgs; i++, off = 0) {
+retry_page:
+				pg = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL |
+				    VM_ALLOC_NOOBJ | VM_ALLOC_NODUMP |
+				    VM_ALLOC_WIRED);
+				if (pg == NULL) {
+					vm_wait(NULL);
+					goto retry_page;
+				}
+				state->parray[i] = VM_PAGE_TO_PHYS(pg);
+				state->dst_iov[i].iov_base =
+				    (void *)PHYS_TO_DMAP(state->parray[i] + off);
+				state->dst_iov[i].iov_len = m_epg_pagelen(m, i,
+				    off);
+			}
+
+			error = (*tls->sw_encrypt)(state, tls, m, dst_iov);
+
+			if (__predict_false(error != 0)) {
+				/* Free the anonymous pages. */
+				for (i = 0; i < m->m_epg_npgs; i++) {
+					pg = PHYS_TO_VM_PAGE(state->parray[i]);
+					vm_page_unwire_noq(pg);
+					vm_page_free(pg);
+				}
+			}
+		}
+		if (error) {
+			counter_u64_add(ktls_offload_failed_crypto, 1);
+			free(state, M_KTLS);
+			break;
+		}
+
+		if (__predict_false(m->m_epg_npgs == 0)) {
+			/* TLS 1.0 empty fragment. */
+			npages++;
+		} else
+			npages += m->m_epg_npgs;
+	}
+}
+
 
 static void
 ktls_work_thread(void *ctx)
@@ -2065,7 +2234,10 @@ ktls_work_thread(void *ctx)
 				ktls_free(m->m_epg_tls);
 				uma_zfree(zone_mbuf, m);
 			} else {
-				ktls_encrypt(m);
+				if (m->m_epg_tls->sync_dispatch)
+					ktls_encrypt(m);
+				else
+					ktls_encrypt_async(m);
 				counter_u64_add(ktls_cnt_tx_queued, -1);
 			}
 		}

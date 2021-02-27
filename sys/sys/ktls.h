@@ -173,7 +173,8 @@ struct socket;
 
 struct ktls_session {
 	union {
-		int	(*sw_encrypt)(struct ktls_session *tls, struct mbuf *m,
+		int	(*sw_encrypt)(struct ktls_ocf_state *state,
+		    struct ktls_session *tls, struct mbuf *m,
 		    struct iovec *dst);
 		int	(*sw_decrypt)(struct ktls_session *tls,
 		    const struct tls_record_layer *hdr, struct mbuf *m,
@@ -188,15 +189,39 @@ struct ktls_session {
 	volatile u_int refcount;
 	int mode;
 	bool reset_pending;
+	bool sync_dispatch;
 
 	struct task reset_tag_task;
 	struct inpcb *inp;
 } __aligned(CACHE_LINE_SIZE);
 
+/*
+ * XXX: Temporary to permit ktls_ocf.c to stay separate.  Long term it
+ * would be merged into uipc_ktls.c and this could be saved there, or
+ * ktls_encrypt moves to ktls_ocf.c.
+ */
+#define	MAX_TLS_PAGES	(1 + btoc(TLS_MAX_MSG_SIZE_V10_2))
+
+struct ktls_ocf_state {
+	struct socket *so;
+	struct mbuf *m;
+	struct iovec dst_iov[MAX_TLS_PAGES + 2];
+	vm_paddr_t parray[MAX_TLS_PAGES + 1];
+
+	struct crypto crp;
+	struct uio uio;
+	union {
+		struct tls_mac_data mac;
+		struct tls_aead_data aead;
+		struct tls_aead_data_13 aead13;
+	};
+};
+
 void ktls_check_rx(struct sockbuf *sb);
 int ktls_enable_rx(struct socket *so, struct tls_enable *en);
 int ktls_enable_tx(struct socket *so, struct tls_enable *en);
 void ktls_destroy(struct ktls_session *tls);
+void ktls_encrypt_cb(struct ktls_ocf_state *state, int error);
 void ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
 void ktls_ocf_free(struct ktls_session *tls);
