@@ -284,12 +284,7 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_session *tls, struct mbuf *m,
 		memcpy(crp.crp_iv, hdr + 1, AES_BLOCK_LEN);
 
 	if (outiov != NULL) {
-		/* Duplicate iovec and append vector for trailer. */
-		memcpy(iov, outiov, m->m_epg_npgs * sizeof(struct iovec));
-		iov[m->m_epg_npgs].iov_base = m->m_epg_trail;
-		iov[m->m_epg_npgs].iov_len = m->m_epg_trllen;
-
-		uio.uio_iov = iov;
+		uio.uio_iov = outiov;
 		uio.uio_iovcnt = m->m_epg_npgs + 1;
 		uio.uio_offset = 0;
 		uio.uio_segflg = UIO_SYSSPACE;
@@ -334,7 +329,6 @@ ktls_ocf_tls12_aead_encrypt(struct ktls_session *tls, struct mbuf *m,
 	struct tls_aead_data ad;
 	struct cryptop crp;
 	struct ocf_session *os;
-	struct iovec iov[m->m_epg_npgs + 1];
 	int error;
 	uint16_t tls_comp_len;
 
@@ -374,13 +368,9 @@ ktls_ocf_tls12_aead_encrypt(struct ktls_session *tls, struct mbuf *m,
 	crp.crp_payload_length = m->m_len - (m->m_epg_hdrlen + m->m_epg_trllen);
 
 	if (outiov != NULL) {
-		/* Duplicate iovec and append vector for tag. */
-		memcpy(iov, outiov, m->m_epg_npgs * sizeof(struct iovec));
-		iov[m->m_epg_npgs].iov_base = m->m_epg_trail;
-		iov[m->m_epg_npgs].iov_len = tls->params.tls_tlen;
 		crp.crp_digest_start = crp.crp_payload_length;
 
-		uio.uio_iov = iov;
+		uio.uio_iov = outiov;
 		uio.uio_iovcnt = m->m_epg_npgs + 1;
 		uio.uio_offset = 0;
 		uio.uio_segflg = UIO_SYSSPACE;
@@ -484,7 +474,6 @@ ktls_ocf_tls13_aead_encrypt(struct ktls_session *tls, struct mbuf *m,
 	char nonce[12];
 	struct cryptop crp;
 	struct ocf_session *os;
-	struct iovec iov[m->m_epg_npgs + 1];
 	int error;
 
 	os = tls->cipher;
@@ -514,13 +503,9 @@ ktls_ocf_tls13_aead_encrypt(struct ktls_session *tls, struct mbuf *m,
 	crp.crp_payload_length++;
 
 	if (outiov != NULL) {
-		/* Duplicate iovec and append vector for tag. */
-		memcpy(iov, outiov, m->m_epg_npgs * sizeof(struct iovec));
-		iov[m->m_epg_npgs].iov_base = m->m_epg_trail;
-		iov[m->m_epg_npgs].iov_len = tls->params.tls_tlen;
 		crp.crp_digest_start = crp.crp_payload_length;
 
-		uio.uio_iov = iov;
+		uio.uio_iov = outiov;
 		uio.uio_iovcnt = m->m_epg_npgs + 1;
 		uio.uio_offset = 0;
 		uio.uio_segflg = UIO_SYSSPACE;
