@@ -167,6 +167,7 @@ struct tls_session_params {
 #define	KTLS_RX		2
 
 struct iovec;
+struct ktls_ocf_state;
 struct ktls_session;
 struct m_snd_tag;
 struct mbuf;
@@ -175,8 +176,9 @@ struct socket;
 
 struct ktls_session {
 	union {
-		int	(*sw_encrypt)(struct ktls_session *tls, struct mbuf *m,
-		    struct iovec *dst, int iovcnt);
+		int	(*sw_encrypt)(struct ktls_ocf_state *state,
+		    struct ktls_session *tls, struct mbuf *m,
+		    struct iovec *outiov, int outiovcnt);
 		int	(*sw_decrypt)(struct ktls_session *tls,
 		    const struct tls_record_layer *hdr, struct mbuf *m,
 		    uint64_t seqno, int *trailer_len);
@@ -195,7 +197,34 @@ struct ktls_session {
 	struct inpcb *inp;
 	bool reset_pending;
 	bool disable_ifnet_pending;
+	bool sync_dispatch;
 } __aligned(CACHE_LINE_SIZE);
+
+/*
+ * XXX: Temporary to permit ktls_ocf.c to stay separate.  Long term it
+ * would be merged into uipc_ktls.c and this could be saved there, or
+ * ktls_encrypt moves to ktls_ocf.c.
+ */
+#include <sys/malloc.h>
+#include <sys/uio.h>
+#include <opencrypto/cryptodev.h>
+#define	MAX_TLS_PAGES	(1 + btoc(TLS_MAX_MSG_SIZE_V10_2))
+
+struct ktls_ocf_state {
+	struct socket *so;
+	struct mbuf *m;
+	void *cbuf;
+	struct iovec dst_iov[MAX_TLS_PAGES + 2];
+	vm_paddr_t parray[MAX_TLS_PAGES + 1];
+
+	struct cryptop crp;
+	struct uio uio;
+	union {
+		struct tls_mac_data mac;
+		struct tls_aead_data aead;
+		struct tls_aead_data_13 aead13;
+	};
+};
 
 extern unsigned int ktls_ifnet_max_rexmit_pct;
 
@@ -204,6 +233,7 @@ void ktls_disable_ifnet(void *arg);
 int ktls_enable_rx(struct socket *so, struct tls_enable *en);
 int ktls_enable_tx(struct socket *so, struct tls_enable *en);
 void ktls_destroy(struct ktls_session *tls);
+void ktls_encrypt_cb(struct ktls_ocf_state *state, int error);
 void ktls_frame(struct mbuf *m, struct ktls_session *tls, int *enqueue_cnt,
     uint8_t record_type);
 void ktls_ocf_free(struct ktls_session *tls);
