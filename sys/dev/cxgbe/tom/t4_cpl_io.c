@@ -1767,6 +1767,36 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		CTR2(KTR_CXGBE, "%s: tid %d calling t4_push_frames", __func__,
 		    tid);
 #endif
+
+		if (ulp_mode(toep) == ULP_MODE_ISCSI) {
+			struct sockbuf *sb = &so->so_snd;
+			int sbu;
+
+			/*
+			 * An unlocked read is ok here as the data
+			 * should only transition from a non-zero
+			 * value to either another non-zero value or
+			 * zero.  Once it is zero it should stay zero.
+			 */
+			if (__predict_false(sbused(sb)) > 0) {
+				SOCKBUF_LOCK(sb);
+				sbu = sbused(sb);
+				if (sbu > 0) {
+					/*
+					 * The data transmitted before
+					 * the tid's ULP mode changed
+					 * to ISCSI is still in
+					 * so_snd.  Incoming credits
+					 * should account for so_snd
+					 * first.
+					 */
+					sbdrop_locked(sb, min(sbu, plen));
+					plen -= min(sbu, plen);
+				}
+				sowwakeup_locked(so);	/* unlocks so_snd */
+			}
+		}
+
 		toep->flags &= ~TPF_TX_SUSPENDED;
 		CURVNET_SET(toep->vnet);
 		t4_push_data(sc, toep, plen);
