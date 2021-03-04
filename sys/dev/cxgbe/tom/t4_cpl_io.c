@@ -925,6 +925,64 @@ rqdrop_locked(struct mbufq *q, int plen)
 	}
 }
 
+static bool
+t4_ctrlq_wr_in_ofldq(struct adapter *sc, struct mbuf *m, struct toepcb *toep,
+    struct ofld_tx_sdesc *txsd)
+{
+	struct fw_ulptx_wr *ulptx_wr;
+	struct wrqe *wr;
+	u_int plen, credits;
+	int tx_credits;
+
+	M_ASSERTPKTHDR(m);
+	plen = m->m_pkthdr.len;
+	tx_credits = min(toep->tx_credits, MAX_OFLD_TX_CREDITS);
+	KASSERT(tx_credits >= 0 && tx_credits <= MAX_OFLD_TX_CREDITS,
+	    ("%s: %d credits", __func__, tx_credits));
+	KASSERT(plen <= SGE_MAX_WR_LEN,
+	    ("%s: plen %u is greater than max WR len", __func__, plen));
+	if (plen > (tx_credits * 16)) {
+		toep->flags |= TPF_TX_SUSPENDED;
+		return (false);
+	}
+	wr = alloc_wrqe(roundup2(plen, 16), toep->ofld_txq);
+	if (__predict_false(wr == NULL)) {
+		toep->flags |= TPF_TX_SUSPENDED;
+		return (false);
+	}
+
+	credits = howmany(wr->wr_len, 16);
+	m_copydata(m, 0, plen, wrtod(wr));
+
+	KASSERT(toep->tx_credits >= credits,
+	    ("%s: not enough credits", __func__));
+
+	m = mbufq_dequeue(&toep->ulp_pduq);
+	mbufq_enqueue(&toep->ulp_pdu_reclaimq, m);
+
+	toep->tx_credits -= credits;
+	toep->tx_nocompl += credits;
+	toep->plen_nocompl += plen;
+	if (toep->tx_credits <= toep->tx_total * 5 / 8 &&
+	    toep->tx_nocompl >= toep->tx_total / 4) {
+		ulptx_wr = wrtod(wr);
+		ulptx_wr->op_to_compl |= htobe32(F_FW_WR_COMPL);
+		toep->tx_nocompl = 0;
+		toep->plen_nocompl = 0;
+	}
+	KASSERT(toep->txsd_avail > 0, ("%s: no txsd", __func__));
+	txsd->plen = plen;
+	txsd->tx_credits = credits;
+	toep->txsd_avail--;
+
+#ifdef VERBOSE_TRACES
+	CTR2(KTR_CXGBE, "%s: ulptx WR sent in ofld queue, credits : %u",
+	    __func__, credits);
+#endif
+	t4_wrq_tx(sc, wr);
+	return (true);
+}
+
 void
 t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 {
@@ -963,6 +1021,18 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 		rqdrop_locked(&toep->ulp_pdu_reclaimq, drop);
 
 	while ((sndptr = mbufq_first(pduq)) != NULL) {
+		if (mbuf_ctrlq_wr(sndptr)) {
+			if (!t4_ctrlq_wr_in_ofldq(sc, sndptr, toep, txsd) != 0)
+				return;
+			txsd++;
+			if (__predict_false(++toep->txsd_pidx ==
+			    toep->txsd_total)) {
+				toep->txsd_pidx = 0;
+				txsd = &toep->txsd[0];
+			}
+			continue;
+		}
+
 		M_ASSERTPKTHDR(sndptr);
 
 		tx_credits = min(toep->tx_credits, MAX_OFLD_TX_CREDITS);
@@ -1065,7 +1135,14 @@ t4_push_pdus(struct adapter *sc, struct toepcb *toep, int drop)
 		toep->tx_credits -= credits;
 		toep->tx_nocompl += credits;
 		toep->plen_nocompl += plen;
-		if (toep->tx_credits <= toep->tx_total * 3 / 8 &&
+
+		/*
+		 * Since we are also sending ulp_tx WR through offload
+		 * queue, make sure that this condition sets
+		 * F_FW_WR_COMPL flag when the available credits is <=
+		 * max ulp_tx WR size.
+		 */
+		if (toep->tx_credits <= toep->tx_total * 5 / 8 &&
 		    toep->tx_nocompl >= toep->tx_total / 4) {
 			txwr->op_to_immdlen |= htobe32(F_FW_WR_COMPL);
 			toep->tx_nocompl = 0;
