@@ -1313,9 +1313,12 @@ icl_cxgbei_limits(struct icl_drv_limits *idl)
 	idl->idl_max_recv_data_segment_length = (1 << 24) - 1;
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
-	/* These are somewhat arbitrary. */
-	idl->idl_max_burst_length = 2 * 1024 * 1024;
-	idl->idl_first_burst_length = 8192;
+	/*
+	 * Burst size shouldn't exceed total rx_credits since credits
+	 * will be returned only at completion cpl.
+	 */
+	idl->idl_max_burst_length = 256 * 1024;
+	idl->idl_first_burst_length = 65536;
 
 	t4_iterate(cxgbei_limits, idl);
 
