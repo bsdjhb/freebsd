@@ -113,10 +113,10 @@ static MALLOC_DEFINE(M_CXGBEI, "cxgbei", "cxgbei(4)");
 
 SYSCTL_NODE(_kern_icl, OID_AUTO, cxgbei, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Chelsio iSCSI offload");
-static int first_burst_length = 8192;
+static int first_burst_length = 65536;
 SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, first_burst_length, CTLFLAG_RWTUN,
     &first_burst_length, 0, "First burst length");
-static int max_burst_length = 2 * 1024 * 1024;
+static int max_burst_length = 256 * 1024;
 SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, max_burst_length, CTLFLAG_RWTUN,
     &max_burst_length, 0, "Maximum burst length");
 static int sendspace = 1048576;
@@ -1324,7 +1324,10 @@ icl_cxgbei_limits(struct icl_drv_limits *idl)
 	idl->idl_max_recv_data_segment_length = (1 << 24) - 1;
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
-	/* These are somewhat arbitrary. */
+	/*
+	 * Burst size shouldn't exceed total rx_credits since credits
+	 * will be returned only at completion cpl.
+	 */
 	idl->idl_max_burst_length = max_burst_length;
 	idl->idl_first_burst_length = first_burst_length;
 
