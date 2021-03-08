@@ -362,6 +362,74 @@ mbuf_ulp_submode(struct mbuf *m)
 	return (m->m_pkthdr.PH_per.eight[0]);
 }
 
+static inline void
+set_mbuf_iscsi_iso(struct mbuf *m, uint8_t iso)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[1] = iso;
+}
+
+static inline uint8_t
+mbuf_iscsi_iso(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return (m->m_pkthdr.PH_per.eight[1]);
+}
+
+/* Flags for iSCSI segmentation offload. */
+#define	CXGBIT_ISO_FSLICE	0x1
+#define	CXGBIT_ISO_LSLICE	0x2
+
+static inline void
+set_mbuf_iscsi_iso_flags(struct mbuf *m, uint8_t flags)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[2] = flags;
+}
+
+static inline uint8_t
+mbuf_iscsi_iso_flags(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return (m->m_pkthdr.PH_per.eight[2]);
+}
+
+static inline void
+set_mbuf_iscsi_iso_hdrlen(struct mbuf *m, uint8_t hdrlen)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.eight[3] = hdrlen;
+}
+
+static inline uint8_t
+mbuf_iscsi_iso_hdrlen(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return (m->m_pkthdr.PH_per.eight[3]);
+}
+
+static inline void
+set_mbuf_iscsi_iso_mss(struct mbuf *m, uint16_t mss)
+{
+
+	M_ASSERTPKTHDR(m);
+	m->m_pkthdr.PH_per.sixteen[2] = mss;
+}
+
+static inline uint16_t
+mbuf_iscsi_iso_mss(struct mbuf *m)
+{
+
+	M_ASSERTPKTHDR(m);
+	return (m->m_pkthdr.PH_per.sixteen[2]);
+}
+
 /* t4_tom.c */
 struct toepcb *alloc_toepcb(struct vi_info *, int);
 int init_toepcb(struct vi_info *, struct toepcb *);
