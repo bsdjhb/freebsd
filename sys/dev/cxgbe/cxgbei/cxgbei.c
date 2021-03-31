@@ -546,7 +546,11 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	    ISCSI_DATA_DIGEST_SIZE : 0;
 	hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
 	    ISCSI_HEADER_DIGEST_SIZE : 0;
-	ip->ip_data_len = pdu_len - len - data_digest_len;
+	bhsdo = (struct iscsi_bhs_data_out *)ip->ip_bhs;
+	ip->ip_data_len = bhsdo->bhsdo_data_segment_len[0] << 16 |
+	    bhsdo->bhsdo_data_segment_len[1] << 8 |
+	    bhsdo->bhsdo_data_segment_len[2];
+	MPASS(roundup2(ip->ip_data_len, 4) == pdu_len - len - data_digest_len);
 	icp->icp_seq = ntohl(cpl->seq);
 	icp->icp_flags |= ICPF_RX_HDR;
 	icp->icp_flags |= ICPF_RX_STATUS;
