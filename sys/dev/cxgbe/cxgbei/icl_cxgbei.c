@@ -1268,6 +1268,7 @@ icl_cxgbei_conn_transfer_done(struct icl_conn *ic, void *arg)
 		    ic->ic_disconnecting) {
 			t4_free_page_pods(&ddp->prsv);
 			free(ddp, M_CXGBEI);
+			io_to_ddp_state(ctsio) = NULL;
 		}
 	}
 }
