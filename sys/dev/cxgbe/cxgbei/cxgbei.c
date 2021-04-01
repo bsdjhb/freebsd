@@ -505,7 +505,9 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct icl_pdu *ip;
 	struct cxgbei_cmp *cmp;
 	struct inpcb *inp = toep->inp;
+#ifdef INVARIANTS
 	uint16_t len = be16toh(cpl->len);
+#endif
 	struct socket *so;
 	struct sockbuf *sb;
 	struct tcpcb *tp = intotcpcb(inp);
