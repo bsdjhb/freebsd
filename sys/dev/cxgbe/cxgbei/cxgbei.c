@@ -400,9 +400,16 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		return (0);
 	}
 
+	/*
+	 * If the connection is broken in the middle of a PDU burst on
+	 * T6, then this CPL is received with the pdu_len reflecting
+	 * the length of the last PDU received, so always compute
+	 * rcv_nxt from icp_seq.
+	 */
+	icc = toep->ulpcb;
 	tp = intotcpcb(inp);
-	MPASS(icp->icp_seq == tp->rcv_nxt);
-	tp->rcv_nxt += pdu_len;
+	MPASS(icc == NULL || icp->icp_seq == tp->rcv_nxt);
+	tp->rcv_nxt = icp->icp_seq + pdu_len;
 	tp->t_rcvtime = ticks;
 
 	/*
@@ -413,8 +420,6 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
-
-	icc = toep->ulpcb;
 	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
 		CTR5(KTR_CXGBE,
 		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
@@ -510,9 +515,9 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 #endif
 	struct socket *so;
 	struct sockbuf *sb;
-	struct tcpcb *tp = intotcpcb(inp);
-	struct icl_cxgbei_conn *icc = toep->ulpcb;
-	struct icl_conn *ic = &icc->ic;
+	struct tcpcb *tp;
+	struct icl_cxgbei_conn *icc;
+	struct icl_conn *ic;
 	struct iscsi_bhs_data_out *bhsdo;
 	u_int val = be32toh(cpl->ddpvld);
 	u_int pdu_len, data_digest_len, hdr_digest_len;
@@ -544,15 +549,10 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	/* Copy header */
 	m_copydata(m, sizeof(*cpl), ISCSI_BHS_SIZE, (caddr_t)ip->ip_bhs);
-	data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ?
-	    ISCSI_DATA_DIGEST_SIZE : 0;
-	hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
-	    ISCSI_HEADER_DIGEST_SIZE : 0;
 	bhsdo = (struct iscsi_bhs_data_out *)ip->ip_bhs;
 	ip->ip_data_len = bhsdo->bhsdo_data_segment_len[0] << 16 |
 	    bhsdo->bhsdo_data_segment_len[1] << 8 |
 	    bhsdo->bhsdo_data_segment_len[2];
-	MPASS(roundup2(ip->ip_data_len, 4) == pdu_len - len - data_digest_len);
 	icp->icp_seq = ntohl(cpl->seq);
 	icp->icp_flags |= ICPF_RX_HDR;
 	icp->icp_flags |= ICPF_RX_STATUS;
@@ -565,6 +565,20 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		icp->icp_flags |= ICPF_DCRC_ERR;
 
 	INP_WLOCK(inp);
+	icc = toep->ulpcb;
+	if (__predict_false(icc == NULL)) {
+		data_digest_len = 0;
+		hdr_digest_len = 0;
+	} else {
+		data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ?
+		    ISCSI_DATA_DIGEST_SIZE : 0;
+		hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
+		    ISCSI_HEADER_DIGEST_SIZE : 0;
+		MPASS(roundup2(ip->ip_data_len, 4) == pdu_len - len -
+		    data_digest_len);
+	}
+
+	tp = intotcpcb(inp);
 	if (val & F_DDP_PDU && ip->ip_data_mbuf == NULL) {
 		MPASS((icp->icp_flags & ICPF_RX_FLBUF) == 0);
 		MPASS(ip->ip_data_len > 0);
@@ -681,8 +695,8 @@ single_segment:
 		m_freem(m);
 		return (0);
 	}
-
 	MPASS(icc->icc_signature == CXGBEI_CONN_SIGNATURE);
+	ic = &icc->ic;
 	icl_cxgbei_new_pdu_set_conn(ip, ic);
 
 	/* Enqueue the PDU to the received pdus queue. */
