@@ -69,6 +69,13 @@
 .Op Fl D Ar destdir
 .Op Fl L Ar logfile
 .Nm
+.Cm revert
+.Op Fl p
+.Op Fl d Ar workdir
+.Op Fl D Ar destdir
+.Op Fl L Ar logfile
+.Ar
+.Nm
 .Cm status
 .Op Fl d Ar workdir
 .Op Fl D Ar destdir
@@ -342,6 +349,14 @@ tree and discard any local changes made to the file.
 .It (h)  help
 Display the list of commands.
 .El
+.Ss Revert Mode
+The
+.Cm revert
+mode is used to restore the stock versions of files.
+In this mode,
+.Nm
+installs the stock version of requested files.
+This mode cannot be used to restore directories, only individual files.
 .Ss Status Mode
 The
 .Cm status
