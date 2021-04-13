@@ -78,7 +78,8 @@ struct icl_cxgbei_conn {
 	STAILQ_HEAD(, icl_pdu) rcvd_pdus;	/* protected by so_rcv lock */
 	TAILQ_ENTRY(icl_cxgbei_conn) rx_link;	/* protected by cwt lock */
 
-	struct cxgbei_cmp_head *cmp_table;	/* protected by inp lock */
+	struct cxgbei_cmp_head *cmp_table;	/* protected by cmp_lock */
+	struct mtx cmp_lock;
 	unsigned long cmp_hash_mask;
 };
 

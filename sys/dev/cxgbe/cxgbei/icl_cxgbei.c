@@ -589,6 +589,7 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 	STAILQ_INIT(&icc->rcvd_pdus);
 
 	icc->cmp_table = hashinit(64, M_CXGBEI, &icc->cmp_hash_mask);
+	mtx_init(&icc->cmp_lock, "cxgbei_cmp", NULL, MTX_DEF);
 
 	ic = &icc->ic;
 	ic->ic_lock = lock;
@@ -623,6 +624,7 @@ icl_cxgbei_conn_free(struct icl_conn *ic)
 	cv_destroy(&ic->ic_send_cv);
 	cv_destroy(&ic->ic_receive_cv);
 
+	mtx_destroy(&icc->cmp_lock);
 	hashdestroy(icc->cmp_table, M_CXGBEI, icc->cmp_hash_mask);
 	kobj_delete((struct kobj *)icc, M_CXGBE);
 	refcount_release(&icl_cxgbei_ncons);
@@ -964,22 +966,20 @@ static void
 cxgbei_insert_cmp(struct icl_cxgbei_conn *icc, struct cxgbei_cmp *cmp,
     uint32_t tt)
 {
-	struct toepcb *toep = icc->toep;
-	struct inpcb *inp = toep->inp;
 #ifdef INVARIANTS
 	struct cxgbei_cmp *cmp2;
 #endif
 
 	cmp->tt = tt;
 
-	INP_WLOCK(inp);
+	mtx_lock(&icc->cmp_lock);
 #ifdef INVARIANTS
 	LIST_FOREACH(cmp2, &icc->cmp_table[TT_HASH(icc, tt)], link) {
 		KASSERT(cmp2->tt != tt, ("%s: duplicate cmp", __func__));
 	}
 #endif
 	LIST_INSERT_HEAD(&icc->cmp_table[TT_HASH(icc, tt)], cmp, link);
-	INP_WUNLOCK(inp);
+	mtx_unlock(&icc->cmp_lock);
 }
 
 struct cxgbei_cmp *
@@ -987,25 +987,23 @@ cxgbei_find_cmp(struct icl_cxgbei_conn *icc, uint32_t tt)
 {
 	struct cxgbei_cmp *cmp;
 
-	INP_LOCK_ASSERT(icc->toep->inp);
-
+	mtx_lock(&icc->cmp_lock);
 	LIST_FOREACH(cmp, &icc->cmp_table[TT_HASH(icc, tt)], link) {
 		if (cmp->tt == tt)
-			return (cmp);
+			break;
 	}
-	return (NULL);
+	mtx_unlock(&icc->cmp_lock);
+	return (cmp);
 }
 
 static void
 cxgbei_rm_cmp(struct icl_cxgbei_conn *icc, struct cxgbei_cmp *cmp)
 {
-	struct toepcb *toep = icc->toep;
-	struct inpcb *inp = toep->inp;
 #ifdef INVARIANTS
 	struct cxgbei_cmp *cmp2;
 #endif
 
-	INP_WLOCK(inp);
+	mtx_lock(&icc->cmp_lock);
 
 #ifdef INVARIANTS
 	LIST_FOREACH(cmp2, &icc->cmp_table[TT_HASH(icc, cmp->tt)], link) {
@@ -1016,7 +1014,7 @@ cxgbei_rm_cmp(struct icl_cxgbei_conn *icc, struct cxgbei_cmp *cmp)
 found:
 #endif
 	LIST_REMOVE(cmp, link);
-	INP_WUNLOCK(inp);
+	mtx_unlock(&icc->cmp_lock);
 }
 
 int
