@@ -330,13 +330,12 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	/*
 	 * If the connection is broken in the middle of a PDU burst on
-	 * T6, then this CPL is received with the pdu_len reflecting
+	 * T6+, then this CPL is received with the pdu_len reflecting
 	 * the length of the last PDU received, so always compute
 	 * rcv_nxt from icp_seq.
 	 */
-	icc = toep->ulpcb;
 	tp = intotcpcb(inp);
-	MPASS(icc == NULL || icp->icp_seq == tp->rcv_nxt);
+	MPASS(chip_id(sc) >= CHELSIO_T6 || icp->icp_seq == tp->rcv_nxt);
 	tp->rcv_nxt = icp->icp_seq + pdu_len;
 	tp->t_rcvtime = ticks;
 
@@ -348,7 +347,10 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
-	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
+
+	icc = toep->ulpcb;
+	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE ||
+	    chip_id(sc) >= CHELSIO_T6)) {
 		CTR5(KTR_CXGBE,
 		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
 		    __func__, tid, pdu_len, icc, sb->sb_state);
@@ -492,20 +494,47 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		icp->icp_flags |= ICPF_DCRC_ERR;
 
 	INP_WLOCK(inp);
-	icc = toep->ulpcb;
-	if (__predict_false(icc == NULL)) {
-		data_digest_len = 0;
-		hdr_digest_len = 0;
-	} else {
-		data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ?
-		    ISCSI_DATA_DIGEST_SIZE : 0;
-		hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
-		    ISCSI_HEADER_DIGEST_SIZE : 0;
-		MPASS(roundup2(ip->ip_data_len, 4) == pdu_len - len -
-		    data_digest_len);
+	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
+		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
+		    __func__, tid, pdu_len, inp->inp_flags);
+		INP_WUNLOCK(inp);
+		icl_cxgbei_conn_pdu_free(NULL, ip);
+		toep->ulpcb2 = NULL;
+		m_freem(m);
+		return (0);
 	}
 
 	tp = intotcpcb(inp);
+
+	/*
+	 * If icc is NULL, the connection is being closed in
+	 * icl_cxgbei_conn_close(), just drop this data.
+	 */
+	icc = toep->ulpcb;
+	if (__predict_false(icc == NULL)) {
+		CTR4(KTR_CXGBE, "%s: tid %u, excess rx (%d bytes), icc %p",
+		    __func__, tid, pdu_len, icc);
+
+		/*
+		 * Update rcv_nxt so the sequence number of the FIN
+		 * doesn't appear wrong.
+		 */
+		tp->rcv_nxt = icp->icp_seq + pdu_len;
+		tp->t_rcvtime = ticks;
+		INP_WUNLOCK(inp);
+
+		icl_cxgbei_conn_pdu_free(NULL, ip);
+		toep->ulpcb2 = NULL;
+		m_freem(m);
+		return (0);
+	}
+
+	data_digest_len = (icc->ulp_submode & ULP_CRC_DATA) ?
+	    ISCSI_DATA_DIGEST_SIZE : 0;
+	hdr_digest_len = (icc->ulp_submode & ULP_CRC_HEADER) ?
+	    ISCSI_HEADER_DIGEST_SIZE : 0;
+	MPASS(roundup2(ip->ip_data_len, 4) == pdu_len - len - data_digest_len);
+
 	if (val & F_DDP_PDU && ip->ip_data_mbuf == NULL) {
 		MPASS((icp->icp_flags & ICPF_RX_FLBUF) == 0);
 		MPASS(ip->ip_data_len > 0);
@@ -580,16 +609,6 @@ single_segment:
 		MPASS(icp->icp_seq == tp->rcv_nxt);
 	}
 
-	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT))) {
-		CTR4(KTR_CXGBE, "%s: tid %u, rx (%d bytes), inp_flags 0x%x",
-		    __func__, tid, pdu_len, inp->inp_flags);
-		INP_WUNLOCK(inp);
-		icl_cxgbei_conn_pdu_free(NULL, ip);
-		toep->ulpcb2 = NULL;
-		m_freem(m);
-		return (0);
-	}
-
 	tp->rcv_nxt += pdu_len;
 	tp->t_rcvtime = ticks;
 
@@ -601,7 +620,7 @@ single_segment:
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
-	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
+	if (__predict_false(sb->sb_state & SBS_CANTRCVMORE)) {
 		CTR5(KTR_CXGBE,
 		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
 		    __func__, tid, pdu_len, icc, sb->sb_state);
