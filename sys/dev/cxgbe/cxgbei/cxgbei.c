@@ -334,8 +334,9 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	 * the length of the last PDU received, so always compute
 	 * rcv_nxt from icp_seq.
 	 */
+	icc = toep->ulpcb;
 	tp = intotcpcb(inp);
-	MPASS(chip_id(sc) >= CHELSIO_T6 || icp->icp_seq == tp->rcv_nxt);
+	MPASS(icc == NULL || icp->icp_seq == tp->rcv_nxt);
 	tp->rcv_nxt = icp->icp_seq + pdu_len;
 	tp->t_rcvtime = ticks;
 
@@ -347,10 +348,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
-
-	icc = toep->ulpcb;
-	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE ||
-	    chip_id(sc) >= CHELSIO_T6)) {
+	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
 		CTR5(KTR_CXGBE,
 		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
 		    __func__, tid, pdu_len, icc, sb->sb_state);
