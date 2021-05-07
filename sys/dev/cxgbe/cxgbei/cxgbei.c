@@ -205,9 +205,9 @@ do_rx_iscsi_hdr(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	MPASS(toep->ulpcb2 == NULL);
 	toep->ulpcb2 = icp;
 
-#if 0
-	CTR5(KTR_CXGBE, "%s: tid %u, cpl->len %u, pdu_len_ddp 0x%04x, icp %p",
-	    __func__, tid, len, len_ddp, icp);
+#if 1
+	CTR6(KTR_CXGBE, "%s: tid %u, seq %u, cpl->len %u, pdu_len_ddp 0x%04x, icp %p",
+	    __func__, tid, icp->icp_seq, len, len_ddp, icp);
 #endif
 
 	m_freem(m);
@@ -260,7 +260,7 @@ do_rx_iscsi_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m
 		toep->ulpcb2 = icp;
 	}
 
-#if 0
+#if 1
 	CTR4(KTR_CXGBE, "%s: tid %u, cpl->len %u, icp %p", __func__, tid,
 	    be16toh(cpl->len), icp);
 #endif
@@ -296,10 +296,10 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	pdu_len = be16toh(cpl->len);	/* includes everything. */
 	val = be32toh(cpl->ddpvld);
 
-#if 0
-	CTR5(KTR_CXGBE,
-	    "%s: tid %u, cpl->len %u, ddpvld 0x%08x, icp_flags 0x%08x",
-	    __func__, tid, pdu_len, val, icp->icp_flags);
+#if 1
+	CTR6(KTR_CXGBE,
+	    "%s: tid %u, seq %u, cpl->len %u, ddpvld 0x%08x, icp_flags 0x%08x",
+	    __func__, tid, ntohl(cpl->seq), pdu_len, val, icp->icp_flags);
 #endif
 
 	icp->icp_flags |= ICPF_RX_STATUS;
@@ -468,10 +468,10 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 	pdu_len = G_ISCSI_PDU_LEN(be16toh(cpl->pdu_len_ddp));
 
-#if 0
-	CTR5(KTR_CXGBE,
-	    "%s: tid %u, cpl->len %u, ddpvld 0x%08x, icp %p",
-	    __func__, tid, pdu_len, val, icp);
+#if 1
+	CTR6(KTR_CXGBE,
+	    "%s: tid %u, seq %u, cpl->len %u, ddpvld 0x%08x, icp %p",
+	    __func__, tid, ntohl(cpl->seq), pdu_len, val, icp);
 #endif
 
 	/* Copy header */
