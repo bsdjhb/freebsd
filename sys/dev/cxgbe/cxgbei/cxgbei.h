@@ -81,6 +81,7 @@ struct icl_cxgbei_conn {
 	struct cxgbei_cmp_head *cmp_table;	/* protected by cmp_lock */
 	struct mtx cmp_lock;
 	unsigned long cmp_hash_mask;
+	uint32_t cmp_pending_data;		/* protected by inp lock */
 };
 
 static inline struct icl_cxgbei_conn *
