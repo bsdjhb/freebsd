@@ -1867,7 +1867,7 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		}
 	}
 
-#ifdef VERBOSE_TRACES_XX
+#ifdef VERBOSE_TRACES
 	CTR3(KTR_CXGBE, "%s: tid %d credits %u", __func__, tid, credits);
 #endif
 	so = inp->inp_socket;
@@ -1900,7 +1900,7 @@ do_fw4_ack(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	if (toep->flags & TPF_TX_SUSPENDED &&
 	    toep->tx_credits >= toep->tx_total / 4) {
-#ifdef VERBOSE_TRACES_XXX
+#ifdef VERBOSE_TRACES
 		CTR2(KTR_CXGBE, "%s: tid %d calling t4_push_frames", __func__,
 		    tid);
 #endif
