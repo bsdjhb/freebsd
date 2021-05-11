@@ -368,8 +368,8 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp,
 	MPASS(m->m_len == sizeof(struct iscsi_bhs));
 
 	data_len = ip->ip_data_len;
-	if (data_len > icc->ic.ic_max_data_segment_length)
-		data_len = icc->ic.ic_max_data_segment_length;
+	if (data_len > icc->ic.ic_max_send_data_segment_length)
+		data_len = icc->ic.ic_max_send_data_segment_length;
 
 	bhs = ip->ip_bhs;
 	bhs->bhs_data_segment_len[2] = data_len;
@@ -482,7 +482,7 @@ icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
 		}
 		MPASS(len == 0);
 	}
-	MPASS(ip->ip_data_len <= max(ic->ic_max_data_segment_length,
+	MPASS(ip->ip_data_len <= max(ic->ic_max_send_data_segment_length,
 	    ic->ic_hw_offload_length));
 
 	return (0);
@@ -559,12 +559,12 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 		if (ISCSI_BHS_OPCODE_SCSI_DATA_IN == *mtod(m, uint8_t *) &&
 		    ic->ic_hw_offload_length != 0 && padding == 0 &&
 		    (m->m_pkthdr.len - iscsi_hdr_len) >
-		    ic->ic_max_data_segment_length) {
+		    ic->ic_max_send_data_segment_length) {
 			set_mbuf_iscsi_iso(m, 1);
 			set_mbuf_iscsi_iso_flags(m, CXGBIT_ISO_FSLICE |
 			    CXGBIT_ISO_LSLICE);
 			set_mbuf_iscsi_iso_mss(m,
-			    ic->ic_max_data_segment_length);
+			    ic->ic_max_send_data_segment_length);
 			set_mbuf_iscsi_iso_hdrlen(m, iscsi_hdr_len);
 		}
 		t4_push_pdus(icc->sc, toep, 0);
@@ -600,8 +600,6 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 #ifdef DIAGNOSTIC
 	refcount_init(&ic->ic_outstanding_pdus, 0);
 #endif
-	/* This is a stop-gap value that will be corrected during handoff. */
-	ic->ic_max_data_segment_length = 16384;
 	ic->ic_name = name;
 	ic->ic_offload = "cxgbei";
 	ic->ic_unmapped = false;
@@ -843,33 +841,18 @@ icl_cxgbei_conn_handoff(struct icl_conn *ic, int fd)
 		icc->toep = toep;
 		icc->cwt = cxgbei_select_worker_thread(icc);
 
-		/*
-		 * We maintain the _send_ DSL in this field just to have a
-		 * convenient way to assert that the kernel never sends
-		 * oversized PDUs.  This field is otherwise unused in the driver
-		 * or the kernel.
-		 */
-		ic->ic_max_data_segment_length = ci->max_tx_pdu_len -
-		    ISCSI_BHS_SIZE;
-
 		icc->ulp_submode = 0;
-		if (ic->ic_header_crc32c) {
+		if (ic->ic_header_crc32c)
 			icc->ulp_submode |= ULP_CRC_HEADER;
-			ic->ic_max_data_segment_length -=
-			    ISCSI_HEADER_DIGEST_SIZE;
-		}			
-		if (ic->ic_data_crc32c) {
+		if (ic->ic_data_crc32c)
 			icc->ulp_submode |= ULP_CRC_DATA;
-			ic->ic_max_data_segment_length -=
-			    ISCSI_DATA_DIGEST_SIZE;
-		}
 
 		/* XXXJHB: This belongs in a header? */
 #define MAX_HW_ISO_LENGTH 65535
 
 		max_iso_pdus = MAX_HW_ISO_LENGTH / ci->max_tx_pdu_len;
 		ic->ic_hw_offload_length = max_iso_pdus *
-		    ic->ic_max_data_segment_length;
+		    ic->ic_max_send_data_segment_length;
 
 		so->so_options |= SO_NO_DDP;
 		toep->params.ulp_mode = ULP_MODE_ISCSI;

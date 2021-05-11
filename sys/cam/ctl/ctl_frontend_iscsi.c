@@ -1568,8 +1568,10 @@ cfiscsi_ioctl_handoff(struct ctl_iscsi *ci)
 	 */
 	cs->cs_cmdsn = cihp->cmdsn;
 	cs->cs_statsn = cihp->statsn;
-	cs->cs_max_recv_data_segment_length = cihp->max_recv_data_segment_length;
-	cs->cs_max_send_data_segment_length = cihp->max_send_data_segment_length;
+	cs->cs_conn->ic_max_recv_data_segment_length =
+	    cihp->max_recv_data_segment_length;
+	cs->cs_conn->ic_max_send_data_segment_length =
+	    cihp->max_send_data_segment_length;
 	cs->cs_max_burst_length = cihp->max_burst_length;
 	cs->cs_first_burst_length = cihp->first_burst_length;
 	cs->cs_immediate_data = !!cihp->immediate_data;
@@ -1734,8 +1736,8 @@ cfiscsi_ioctl_list(struct ctl_iscsi *ci)
 		    cs->cs_target->ct_tag,
 		    cs->cs_conn->ic_header_crc32c ? "CRC32C" : "None",
 		    cs->cs_conn->ic_data_crc32c ? "CRC32C" : "None",
-		    cs->cs_max_recv_data_segment_length,
-		    cs->cs_max_send_data_segment_length,
+		    cs->cs_conn->ic_max_recv_data_segment_length,
+		    cs->cs_conn->ic_max_send_data_segment_length,
 		    cs->cs_max_burst_length,
 		    cs->cs_first_burst_length,
 		    cs->cs_immediate_data,
@@ -2502,7 +2504,12 @@ cfiscsi_datamove_in(union ctl_io *io)
 	sg_len = 0;
 	response = NULL;
 	bhsdi = NULL;
-	hw_offload_length = request->ip_conn->ic_hw_offload_length;
+	hw_offload_length = cs->cs_conn->ic_hw_offload_length;
+	if (hw_offload_length != 0)
+		max_send_segment_length = hw_offload_length;
+	else
+		max_send_segment_length =
+		    cs->cs_conn->ic_max_send_data_segment_length;
 	for (;;) {
 		if (response == NULL) {
 			response = cfiscsi_pdu_new_response(request, M_NOWAIT);
@@ -2534,10 +2541,6 @@ cfiscsi_datamove_in(union ctl_io *io)
 
 		len = sg_len;
 
-		if (hw_offload_length != 0)
-			max_send_segment_length = hw_offload_length;
-		else
-			max_send_segment_length = cs->cs_max_send_data_segment_length;
 
 		/*
 		 * Truncate to maximum data segment length.
@@ -2624,7 +2627,7 @@ cfiscsi_datamove_in(union ctl_io *io)
 			}
 			if (hw_offload_length != 0)
 				PRIV_EXPDATASN(io) += howmany(response->ip_data_len,
-				    cs->cs_max_send_data_segment_length);
+				    cs->cs_conn->ic_max_send_data_segment_length);
 			if (cb != NULL) {
 				response->ip_prv0 = io->scsiio.kern_data_ref;
 				response->ip_prv1 = io->scsiio.kern_data_arg;
@@ -2639,7 +2642,7 @@ cfiscsi_datamove_in(union ctl_io *io)
 		buffer_offset += response->ip_data_len;
 		if (buffer_offset == io->scsiio.kern_total_len ||
 		    buffer_offset == expected_len) {
-			if (response->ip_data_len <= cs->cs_max_send_data_segment_length)
+			if (response->ip_data_len <= cs->cs_conn->ic_max_send_data_segment_length)
 				bhsdi->bhsdi_flags |= BHSDI_FLAGS_F;
 			if (io->io_hdr.status == CTL_SUCCESS) {
 				bhsdi->bhsdi_flags |= BHSDI_FLAGS_S;
@@ -2663,7 +2666,7 @@ cfiscsi_datamove_in(union ctl_io *io)
 		KASSERT(response->ip_data_len > 0, ("sending empty Data-In"));
 		if (hw_offload_length != 0)
 			PRIV_EXPDATASN(io) += howmany(response->ip_data_len,
-			    cs->cs_max_send_data_segment_length);
+			    cs->cs_conn->ic_max_send_data_segment_length);
 		if (cb != NULL) {
 			response->ip_prv0 = io->scsiio.kern_data_ref;
 			response->ip_prv1 = io->scsiio.kern_data_arg;
