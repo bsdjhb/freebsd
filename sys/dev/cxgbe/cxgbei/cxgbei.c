@@ -329,25 +329,11 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 
 	/*
-	 * T6+ can receive a control PDU in the middle of a burst of
-	 * data PDUs.  In that case, there will be a gap in the TCP
-	 * sequence space for the partially-received burst.  Save the
-	 * length of this gap for later use in the CMP handler when
-	 * the burst completes.  This assumes only one burst of data
-	 * PDUs is pending at a time.
+	 * T6+ does not report data PDUs received via DDP without F
+	 * set.  This can result in gaps in the TCP sequence space.
 	 */
-	icc = toep->ulpcb;
 	tp = intotcpcb(inp);
-	if (icp->icp_seq != tp->rcv_nxt) {
-		MPASS(chip_id(sc) >= CHELSIO_T6);
-
-		/*
-		 * icc can be NULL if the connection is being shut
-		 * down.
-		 */
-		if (icc != NULL)
-			icc->cmp_pending_data += icp->icp_seq - tp->rcv_nxt;
-	}
+	MPASS(chip_id(sc) >= CHELSIO_T6 || icp->icp_seq == tp->rcv_nxt);
 	tp->rcv_nxt = icp->icp_seq + pdu_len;
 	tp->t_rcvtime = ticks;
 
@@ -359,6 +345,8 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	so = inp->inp_socket;
 	sb = &so->so_rcv;
 	SOCKBUF_LOCK(sb);
+
+	icc = toep->ulpcb;
 	if (__predict_false(icc == NULL || sb->sb_state & SBS_CANTRCVMORE)) {
 		CTR5(KTR_CXGBE,
 		    "%s: tid %u, excess rx (%d bytes), icc %p, sb_state 0x%x",
@@ -459,7 +447,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct iscsi_bhs_data_out *bhsdo;
 	u_int val = be32toh(cpl->ddpvld);
 	u_int pdu_len, data_digest_len, hdr_digest_len;
-	uint32_t npdus, prev_seg_hdrs, prev_seg_len;
+	uint32_t prev_seg_len;
 
 	M_ASSERTPKTHDR(m);
 	MPASS(m->m_pkthdr.len == len + sizeof(*cpl));
@@ -568,37 +556,12 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		MPASS(bhsdo->bhsdo_flags & BHSDO_FLAGS_F);
 
 		/*
-		 * Account for any pending data received between this
-		 * final PDU and the last received PDU.
-		 */
-		icc->cmp_pending_data += icp->icp_seq - tp->rcv_nxt;
-		npdus = 1;
-		if (icc->cmp_pending_data == 0) {
-			MPASS(be32toh(bhsdo->bhsdo_buffer_offset) ==
-			    cmp->next_buffer_offset);
-			goto single_segment;
-		}
-
-		/*
 		 * The difference between the end of the last burst
 		 * and the offset of the last PDU in this burst is
 		 * the additional data received via DDP.
 		 */
 		prev_seg_len = be32toh(bhsdo->bhsdo_buffer_offset) -
 		    cmp->next_buffer_offset;
-
-		/*
-		 * The other data in the gap in TCP sequence space
-		 * besides the DDP data are all protocol headers.
-		 * This is used to determine how many PDUs were
-		 * contained in this burst.
-		 */
-		MPASS(icc->cmp_pending_data > prev_seg_len);
-		prev_seg_hdrs = icc->cmp_pending_data - prev_seg_len;
-		MPASS(prev_seg_hdrs % (sizeof(struct iscsi_bhs_data_out) +
-		    hdr_digest_len + data_digest_len) == 0);
-		npdus += prev_seg_hdrs / (sizeof(struct iscsi_bhs_data_out) +
-		    hdr_digest_len + data_digest_len);
 
 		/*
 		 * Since cfiscsi doesn't know about previous headers,
@@ -610,18 +573,15 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
 		bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
 		bhsdo->bhsdo_buffer_offset = htobe32(cmp->next_buffer_offset);
-		icc->cmp_pending_data = 0;
 
-single_segment:
 		cmp->next_buffer_offset += ip->ip_data_len;
 		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
 		cmp->next_datasn++;
-		toep->ofld_rxq->rx_iscsi_ddp_pdus += npdus;
+		toep->ofld_rxq->rx_iscsi_ddp_pdus += 1;
 		toep->ofld_rxq->rx_iscsi_ddp_octets += ip->ip_data_len;
 	} else {
 		MPASS(icp->icp_flags & (ICPF_RX_FLBUF));
 		MPASS(ip->ip_data_len == ip->ip_data_mbuf->m_pkthdr.len);
-		MPASS(icc->cmp_pending_data == 0);
 		MPASS(icp->icp_seq == tp->rcv_nxt);
 	}
 
