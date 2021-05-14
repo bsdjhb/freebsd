@@ -583,6 +583,12 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			npdus = 1;
 		}
 
+#if 1
+		CTR5(KTR_CXGBE,
+		    "%s: tid %u, npdus %d, last_datasn %d, datasn %d",
+		    __func__, tid, npdus, cmp->last_datasn,
+		    htobe32(bhsdo->bhsdo_datasn));
+#endif
 		cmp->next_buffer_offset += ip->ip_data_len;
 		cmp->last_datasn = htobe32(bhsdo->bhsdo_datasn);
 		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
