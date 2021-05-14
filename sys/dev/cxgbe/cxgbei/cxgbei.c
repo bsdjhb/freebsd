@@ -446,7 +446,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	struct icl_conn *ic;
 	struct iscsi_bhs_data_out *bhsdo;
 	u_int val = be32toh(cpl->ddpvld);
-	u_int pdu_len, data_digest_len, hdr_digest_len;
+	u_int npdus, pdu_len, data_digest_len, hdr_digest_len;
 	uint32_t prev_seg_len;
 
 	M_ASSERTPKTHDR(m);
@@ -563,21 +563,31 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		prev_seg_len = be32toh(bhsdo->bhsdo_buffer_offset) -
 		    cmp->next_buffer_offset;
 
-		/*
-		 * Since cfiscsi doesn't know about previous headers,
-		 * pretend that the entire r2t data length was
-		 * received in this single segment.
-		 */
-		ip->ip_data_len += prev_seg_len;
-		bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
-		bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
-		bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
-		bhsdo->bhsdo_buffer_offset = htobe32(cmp->next_buffer_offset);
+		if (prev_seg_len != 0) {
+			/*
+			 * Since cfiscsi doesn't know about previous
+			 * headers, pretend that the entire r2t data
+			 * length was received in this single segment.
+			 */
+			ip->ip_data_len += prev_seg_len;
+			bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
+			bhsdo->bhsdo_data_segment_len[1] = ip->ip_data_len >> 8;
+			bhsdo->bhsdo_data_segment_len[0] = ip->ip_data_len >> 16;
+			bhsdo->bhsdo_buffer_offset =
+			    htobe32(cmp->next_buffer_offset);
+
+			npdus = htobe32(bhsdo->bhsdo_datasn) - cmp->last_datasn;
+		} else {
+			MPASS(htobe32(bhsdo->bhsdo_datasn) ==
+			    cmp->last_datasn + 1);
+			npdus = 1;
+		}
 
 		cmp->next_buffer_offset += ip->ip_data_len;
+		cmp->last_datasn = htobe32(bhsdo->bhsdo_datasn);
 		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
 		cmp->next_datasn++;
-		toep->ofld_rxq->rx_iscsi_ddp_pdus += 1;
+		toep->ofld_rxq->rx_iscsi_ddp_pdus += npdus;
 		toep->ofld_rxq->rx_iscsi_ddp_octets += ip->ip_data_len;
 	} else {
 		MPASS(icp->icp_flags & (ICPF_RX_FLBUF));

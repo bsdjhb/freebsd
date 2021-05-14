@@ -1069,6 +1069,7 @@ no_ddp:
 		goto no_ddp;
 	}
 
+	ddp->cmp.last_datasn = -1;
 	cxgbei_insert_cmp(icc, &ddp->cmp, prsv->prsv_tag);
 	*ittp = htobe32(prsv->prsv_tag);
 	*arg = prsv;
@@ -1215,6 +1216,7 @@ no_ddp:
 
 		ddp->cmp.next_buffer_offset = ctsio->kern_rel_offset +
 		    first_burst;
+		ddp->cmp.last_datasn = -1;
 		cxgbei_insert_cmp(icc, &ddp->cmp, prsv->prsv_tag);
 		*tttp = htobe32(prsv->prsv_tag);
 		io_to_ddp_state(io) = ddp;
@@ -1238,6 +1240,7 @@ no_ddp:
 	prsv->prsv_tag |= alias << pr->pr_alias_shift & pr->pr_alias_mask;
 
 	ddp->cmp.next_datasn = 0;
+	ddp->cmp.last_datasn = -1;
 	cxgbei_insert_cmp(icc, &ddp->cmp, prsv->prsv_tag);
 	*tttp = htobe32(prsv->prsv_tag);
 	*arg = ctsio;

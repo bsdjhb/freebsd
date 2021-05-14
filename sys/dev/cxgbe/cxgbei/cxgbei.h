@@ -60,6 +60,7 @@ struct cxgbei_cmp {
 
 	uint32_t next_datasn;
 	uint32_t next_buffer_offset;
+	uint32_t last_datasn;
 };
 LIST_HEAD(cxgbei_cmp_head, cxgbei_cmp);
 
