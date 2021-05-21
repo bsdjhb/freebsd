@@ -1079,7 +1079,7 @@ no_ddp:
 	 */
 	inp = sotoinpcb(ic->ic_socket);
 	INP_WLOCK(inp);
-	if ((toep->flags & TPF_ABORT_SHUTDOWN) != 0) {
+	if ((inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) == 0) {
 		INP_WUNLOCK(inp);
 		mbufq_drain(&mq);
 		t4_free_page_pods(prsv);
@@ -1244,7 +1244,7 @@ no_ddp:
 		 */
 		inp = sotoinpcb(ic->ic_socket);
 		INP_WLOCK(inp);
-		if ((toep->flags & TPF_ABORT_SHUTDOWN) != 0) {
+		if ((inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) == 0) {
 			INP_WUNLOCK(inp);
 			mbufq_drain(&mq);
 			t4_free_page_pods(prsv);
