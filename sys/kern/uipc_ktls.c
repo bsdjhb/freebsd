@@ -1776,6 +1776,11 @@ ktls_decrypt(struct socket *so)
 			SOCKBUF_UNLOCK(sb);
 			counter_u64_add(ktls_offload_corrupted_records, 1);
 
+			printf("%s: corrupted header: (error = %d)\n",
+			    __func__, error);
+			hexdump(hdr, sizeof(*hdr), NULL, 0);
+			panic("oof");
+
 			CURVNET_SET(so->so_vnet);
 			so->so_proto->pr_usrreqs->pru_abort(so);
 			so->so_error = error;

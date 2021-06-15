@@ -54,6 +54,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/sx.h>
 #include <sys/sysctl.h>
 
+#include <netinet/tcp.h> /* XXX */
+
 /*
  * Function pointer set by the AIO routines so that the socket buffer code
  * can call back into the AIO module if it is loaded.
@@ -931,6 +933,8 @@ sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 
 	SBLASTMBUFCHK(sb);
 
+	MPASS(sb->sb_tls_info->mode == TCP_TLS_MODE_SW);
+
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */
 	m_demote(m, 1, 0);
 
@@ -1367,6 +1371,7 @@ sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 {
 
 	SOCKBUF_LOCK_ASSERT(sb);
+	MPASS(sb->sb_tls_info->mode == TCP_TLS_MODE_SW);
 
 	while (m) {
 		KASSERT((m->m_flags & M_EOR) == 0,

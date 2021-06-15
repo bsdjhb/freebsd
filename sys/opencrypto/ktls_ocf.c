@@ -461,6 +461,46 @@ ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
 		counter_u64_add(ocf_tls12_chacha20_crypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
 
+	if (error != 0) {
+		const struct crypto_session_params *csp = crypto_get_params(os->sid);
+		printf("%s: failed decryption: %d\n", __func__, error);
+		printf("%d session key:\n", csp->csp_cipher_alg);
+		hexdump(csp->csp_cipher_key, csp->csp_cipher_klen, NULL,
+		    HD_OMIT_CHARS);
+		printf("IV:\n");
+		hexdump(crp.crp_iv, csp->csp_ivlen, NULL, HD_OMIT_CHARS |
+		    HD_OMIT_COUNT);
+		printf("AAD:\n");
+		hexdump(&ad, sizeof(ad), NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+
+		printf("body:\n");
+		struct crypto_buffer_cursor cc;
+		crypto_cursor_init(&cc, &crp.crp_buf);
+		crypto_cursor_advance(&cc, tls->params.tls_hlen);
+		size_t resid = tls_comp_len;
+		while (resid > 0) {
+			size_t len;
+			void *p = crypto_cursor_segment(&cc, &len);
+			if (len > resid)
+				len = resid;
+			hexdump(p, len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+			crypto_cursor_advance(&cc, len);
+			resid -= len;
+		}
+
+		printf("trailer:\n");
+		resid = tls->params.tls_tlen;
+		while (resid > 0) {
+			size_t len;
+			void *p = crypto_cursor_segment(&cc, &len);
+			if (len > resid)
+				len = resid;
+			hexdump(p, len, NULL, HD_OMIT_CHARS | HD_OMIT_COUNT);
+			crypto_cursor_advance(&cc, len);
+			resid -= len;
+		}
+	}
+
 	crypto_destroyreq(&crp);
 	*trailer_len = tls->params.tls_tlen;
 	return (error);
