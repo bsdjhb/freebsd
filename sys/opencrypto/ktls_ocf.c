@@ -217,6 +217,9 @@ ktls_ocf_dispatch_async(struct ktls_ocf_state *state, struct cryptop *crp)
 	return (error);
 }
 
+static int ktls_ocf_tls_cbc_encrypt_cb1(struct cryptop *);
+static int ktls_ocf_tls_cbc_encrypt_cb2(struct cryptop *);
+
 static int
 ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
     struct ktls_session *tls, struct mbuf *m, struct iovec *outiov,
@@ -227,19 +230,21 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 	struct tls_mac_data *ad;
 	struct cryptop *crp;
 	struct ocf_session *os;
-	struct iovec iov[m->m_epg_npgs + 2];
+	struct iovec *mac_iov;
 	u_int pgoff;
 	int i, error;
 	uint16_t tls_comp_len;
-	uint8_t pad;
 
-	MPASS(outiovcnt + 1 <= nitems(iov));
+	MPASS(outiovcnt + 1 <= nitems(state->mac_iov));
 
 	os = tls->cipher;
 	hdr = (const struct tls_record_layer *)m->m_epg_hdr;
 	crp = &state->crp;
 	uio = &state->uio;
-	MPASS(tls->sync_dispatch);
+	mac_iov = state->mac_iov;
+
+	state->outiov = outiov;
+	state->outiovcnt = outiovcnt;
 
 #ifdef INVARIANTS
 	if (os->implicit_iv) {
@@ -271,17 +276,17 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 	ad->tls_length = htons(tls_comp_len);
 
 	/* First, compute the MAC. */
-	iov[0].iov_base = ad;
-	iov[0].iov_len = sizeof(*ad);
+	mac_iov[0].iov_base = ad;
+	mac_iov[0].iov_len = sizeof(*ad);
 	pgoff = m->m_epg_1st_off;
 	for (i = 0; i < m->m_epg_npgs; i++, pgoff = 0) {
-		iov[i + 1].iov_base = (void *)PHYS_TO_DMAP(m->m_epg_pa[i] +
+		mac_iov[i + 1].iov_base = (void *)PHYS_TO_DMAP(m->m_epg_pa[i] +
 		    pgoff);
-		iov[i + 1].iov_len = m_epg_pagelen(m, i, pgoff);
+		mac_iov[i + 1].iov_len = m_epg_pagelen(m, i, pgoff);
 	}
-	iov[m->m_epg_npgs + 1].iov_base = m->m_epg_trail;
-	iov[m->m_epg_npgs + 1].iov_len = os->mac_len;
-	uio->uio_iov = iov;
+	mac_iov[m->m_epg_npgs + 1].iov_base = m->m_epg_trail;
+	mac_iov[m->m_epg_npgs + 1].iov_len = os->mac_len;
+	uio->uio_iov = mac_iov;
 	uio->uio_iovcnt = m->m_epg_npgs + 2;
 	uio->uio_offset = 0;
 	uio->uio_segflg = UIO_SYSSPACE;
@@ -295,10 +300,12 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 	crp->crp_op = CRYPTO_OP_COMPUTE_DIGEST;
 	crp->crp_flags = CRYPTO_F_CBIMM;
 	crypto_use_uio(crp, uio);
-	error = ktls_ocf_dispatch(os, crp);
 
-	crypto_destroyreq(crp);
-	if (error) {
+	crp->crp_opaque = state;
+	crp->crp_callback = ktls_ocf_tls_cbc_encrypt_cb1;
+	error = crypto_dispatch(crp);
+	if (error != 0) {
+		crypto_destroyreq(crp);
 #ifdef INVARIANTS
 		if (os->implicit_iv) {
 			mtx_lock(&os->lock);
@@ -306,8 +313,69 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 			mtx_unlock(&os->lock);
 		}
 #endif
-		return (error);
 	}
+	return (error);
+}
+
+static int
+ktls_ocf_tls_cbc_encrypt_cb1(struct cryptop *crp)
+{
+	const struct tls_record_layer *hdr;
+	struct ktls_ocf_state *state;
+	struct ktls_session *tls;
+	struct ocf_session *os;
+	struct iovec *outiov;
+	struct uio *uio;
+	struct mbuf *m;
+	int i, error, outiovcnt;
+	uint16_t tls_comp_len;
+	uint8_t pad;
+
+	state = crp->crp_opaque;
+	m = state->m;
+	tls = m->m_epg_tls;
+	os = tls->cipher;
+
+	if (crp->crp_etype == EAGAIN) {
+		crp->crp_etype = 0;
+		crp->crp_flags &= ~CRYPTO_F_DONE;
+		counter_u64_add(ocf_retries, 1);
+		error = crypto_dispatch(crp);
+		if (error != 0) {
+			crypto_destroyreq(crp);
+#ifdef INVARIANTS
+			if (os->implicit_iv) {
+				mtx_lock(&os->lock);
+				os->in_progress = false;
+				mtx_unlock(&os->lock);
+			}
+#endif
+			ktls_encrypt_cb(state, error);
+		}
+		return (0);
+	}
+
+	error = crp->crp_etype;
+	crypto_destroyreq(crp);
+	if (error != 0) {
+#ifdef INVARIANTS
+		if (os->implicit_iv) {
+			mtx_lock(&os->lock);
+			os->in_progress = false;
+			mtx_unlock(&os->lock);
+		}
+#endif
+		ktls_encrypt_cb(state, error);
+		return (0);
+	}
+
+	hdr = (const struct tls_record_layer *)m->m_epg_hdr;
+	uio = &state->uio;
+	outiov = state->outiov;
+	outiovcnt = state->outiovcnt;
+
+	/* Payload length. */
+	tls_comp_len = m->m_len - (m->m_epg_hdrlen + m->m_epg_trllen);
 
 	/* Second, add the padding. */
 	pad = m->m_epg_trllen - os->mac_len - 1;
@@ -346,12 +414,59 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 		counter_u64_add(ocf_separate_output, 1);
 	else
 		counter_u64_add(ocf_inplace, 1);
-	error = ktls_ocf_dispatch(os, crp);
 
+	crp->crp_opaque = state;
+	crp->crp_callback = ktls_ocf_tls_cbc_encrypt_cb2;
+	error = crypto_dispatch(crp);
+	if (error != 0) {
+		crypto_destroyreq(crp);
+#ifdef INVARIANTS
+		if (os->implicit_iv) {
+			mtx_lock(&os->lock);
+			os->in_progress = false;
+			mtx_unlock(&os->lock);
+		}
+#endif
+		ktls_encrypt_cb(state, error);
+	}
+	return (0);
+}
+
+static int
+ktls_ocf_tls_cbc_encrypt_cb2(struct cryptop *crp)
+{
+	struct ktls_ocf_state *state;
+	struct ocf_session *os;
+	struct mbuf *m;
+	int error;
+
+	state = crp->crp_opaque;
+	m = state->m;
+	os = m->m_epg_tls->cipher;
+	if (crp->crp_etype == EAGAIN) {
+		crp->crp_etype = 0;
+		crp->crp_flags &= ~CRYPTO_F_DONE;
+		counter_u64_add(ocf_retries, 1);
+		error = crypto_dispatch(crp);
+		if (error != 0) {
+			crypto_destroyreq(crp);
+#ifdef INVARIANTS
+			if (os->implicit_iv) {
+				mtx_lock(&os->lock);
+				os->in_progress = false;
+				mtx_unlock(&os->lock);
+			}
+#endif
+			ktls_encrypt_cb(state, error);
+		}
+		return (0);
+	}
+
+	error = crp->crp_etype;
 	crypto_destroyreq(crp);
 
 	if (os->implicit_iv) {
-		KASSERT(os->mac_len + pad + 1 >= AES_BLOCK_LEN,
+		KASSERT(m->m_epg_trllen >= AES_BLOCK_LEN,
 		    ("trailer too short to read IV"));
 		memcpy(os->iv, m->m_epg_trail + m->m_epg_trllen - AES_BLOCK_LEN,
 		    AES_BLOCK_LEN);
@@ -362,8 +477,10 @@ ktls_ocf_tls_cbc_encrypt(struct ktls_ocf_state *state,
 		mtx_unlock(&os->lock);
 #endif
 	}
-	return (error);
+	ktls_encrypt_cb(state, error);
+	return (0);
 }
+
 
 static int
 ktls_ocf_tls12_aead_encrypt(struct ktls_ocf_state *state,
@@ -440,10 +557,12 @@ ktls_ocf_tls12_aead_encrypt(struct ktls_ocf_state *state,
 		counter_u64_add(ocf_separate_output, 1);
 	else
 		counter_u64_add(ocf_inplace, 1);
+#if 0
 	if (tls->sync_dispatch) {
 		error = ktls_ocf_dispatch(os, crp);
 		crypto_destroyreq(crp);
 	} else
+#endif
 		error = ktls_ocf_dispatch_async(state, crp);
 	return (error);
 }
@@ -585,10 +704,12 @@ ktls_ocf_tls13_aead_encrypt(struct ktls_ocf_state *state,
 		counter_u64_add(ocf_separate_output, 1);
 	else
 		counter_u64_add(ocf_inplace, 1);
+#if 0
 	if (tls->sync_dispatch) {
 		error = ktls_ocf_dispatch(os, crp);
 		crypto_destroyreq(crp);
 	} else
+#endif
 		error = ktls_ocf_dispatch_async(state, crp);
 	return (error);
 }
@@ -761,7 +882,11 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 			memcpy(os->iv, tls->params.iv, AES_BLOCK_LEN);
 		}
 	}
+#if 0
 	tls->sync_dispatch = CRYPTO_SESS_SYNC(os->sid) ||
 	    tls->params.cipher_algorithm == CRYPTO_AES_CBC;
+#else
+	tls->sync_dispatch = CRYPTO_SESS_SYNC(os->sid);
+#endif
 	return (0);
 }

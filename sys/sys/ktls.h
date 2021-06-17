@@ -224,6 +224,11 @@ struct ktls_ocf_state {
 		struct tls_aead_data aead;
 		struct tls_aead_data_13 aead13;
 	};
+
+	/* Only needed for CBC due to its two-stage process. */
+	struct iovec mac_iov[MAX_TLS_PAGES + 2];
+	struct iovec *outiov;
+	int outiovcnt;
 };
 
 extern unsigned int ktls_ifnet_max_rexmit_pct;

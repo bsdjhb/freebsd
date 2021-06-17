@@ -2235,6 +2235,7 @@ ktls_finish_nonanon(struct mbuf *m, struct ktls_ocf_state *state)
 	m->m_epg_flags |= EPG_FLAG_ANON;
 }
 
+#if 0
 static __noinline void
 ktls_encrypt(struct ktls_wq *wq, struct mbuf *top)
 {
@@ -2315,6 +2316,7 @@ ktls_encrypt(struct ktls_wq *wq, struct mbuf *top)
 	sorele(so);
 	CURVNET_RESTORE();
 }
+#endif
 
 void
 ktls_encrypt_cb(struct ktls_ocf_state *state, int error)
@@ -2526,9 +2528,11 @@ ktls_work_thread(void *ctx)
 				ktls_free(m->m_epg_tls);
 				m_free_raw(m);
 			} else {
+#if 0
 				if (m->m_epg_tls->sync_dispatch)
 					ktls_encrypt(wq, m);
 				else
+#endif
 					ktls_encrypt_async(wq, m);
 				counter_u64_add(ktls_cnt_tx_queued, -1);
 			}
