@@ -160,6 +160,11 @@ static COUNTER_U64_DEFINE_EARLY(ktls_tasks_active);
 SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
     &ktls_tasks_active, "Number of active tasks");
 
+static COUNTER_U64_DEFINE_EARLY(ktls_cnt_tx_dispatched);
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_tx_dispatched, CTLFLAG_RD,
+    &ktls_cnt_tx_dispatched,
+    "Number of TLS records dispatched directly for co-processor encryption");
+
 static COUNTER_U64_DEFINE_EARLY(ktls_cnt_tx_queued);
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_tx_inqueue, CTLFLAG_RD,
     &ktls_cnt_tx_queued,
@@ -233,6 +238,11 @@ static COUNTER_U64_DEFINE_EARLY(ktls_sw_chacha20);
 SYSCTL_COUNTER_U64(_kern_ipc_tls_sw, OID_AUTO, chacha20, CTLFLAG_RD,
     &ktls_sw_chacha20,
     "Active number of software TLS sessions using Chacha20-Poly1305");
+
+static int ktls_sw_dispatch;
+SYSCTL_UINT(_kern_ipc_tls_sw, OID_AUTO, dispatch, CTLFLAG_RWTUN,
+    &ktls_sw_dispatch, 1,
+    "Whether to use direct dispatch with co-processor-backed TLS sessions");
 
 static COUNTER_U64_DEFINE_EARLY(ktls_ifnet_cbc);
 SYSCTL_COUNTER_U64(_kern_ipc_tls_ifnet, OID_AUTO, cbc, CTLFLAG_RD,
@@ -2089,6 +2099,65 @@ ktls_encrypt_one(struct ktls_wq *wq, struct mbuf *m,
 	return (error);
 }
 
+static struct mbuf *
+ktls_direct_dispatch(struct mbuf *m, struct socket *so, int *page_count,
+    struct ktls_wq *wq)
+{
+	struct ktls_ocf_state *state;
+	struct ktls_session *tls;
+	int error, mpages;
+
+	tls = m->m_epg_tls;
+	error = 0;
+	while (*page_count != 0) {
+		KASSERT(m->m_epg_tls == tls,
+		    ("different TLS sessions in a single mbuf chain: %p vs %p",
+		    tls, m->m_epg_tls));
+
+		state = malloc(sizeof(*state), M_KTLS, M_NOWAIT | M_ZERO);
+		if (state == NULL)
+			return (m);
+
+		soref(so);
+		state->so = so;
+		state->m = m;
+
+		mpages = m->m_epg_nrdy;
+
+		KASSERT(*page_count >= mpages,
+		    ("page count mismatch: m %p, page_count %d", m,
+		    *page_count));
+
+		error = ktls_encrypt_one(wq, m, tls, state);
+		if (error) {
+			counter_u64_add(ktls_offload_failed_crypto, 1);
+			free(state, M_KTLS);
+			CURVNET_SET(so->so_vnet);
+			SOCK_LOCK(so);
+			sorele(so);
+			CURVNET_RESTORE();
+			break;
+		}
+
+		*page_count -= mpages;
+		m = m->m_next;
+		counter_u64_add(ktls_cnt_tx_dispatched, 1);
+	}
+
+	CURVNET_SET(so->so_vnet);
+	if (error != 0) {
+		so->so_proto->pr_usrreqs->pru_abort(so);
+		so->so_error = EIO;
+		mb_free_notready(m, *page_count);
+	}
+
+	SOCK_LOCK(so);
+	sorele(so);
+	CURVNET_RESTORE();
+
+	return (NULL);
+}
+
 void
 ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
@@ -2102,6 +2171,19 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 
 	KASSERT(m->m_epg_tls->mode == TCP_TLS_MODE_SW, ("!SW TLS mbuf"));
 
+	wq = &ktls_wq[m->m_epg_tls->wq_index];
+
+	/*
+	 * If this session uses async dispatch, try to dispatch
+	 * encryption requests directly.  This may only queue some of
+	 * the mbufs.
+	 */
+	if (ktls_sw_dispatch && !m->m_epg_tls->sync_dispatch) {
+		m = ktls_direct_dispatch(m, so, &page_count, wq);
+		if (m == NULL)
+			return;
+	}
+
 	m->m_epg_enc_cnt = page_count;
 
 	/*
@@ -2110,7 +2192,6 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	 */
 	m->m_epg_so = so;
 
-	wq = &ktls_wq[m->m_epg_tls->wq_index];
 	mtx_lock(&wq->mtx);
 	STAILQ_INSERT_TAIL(&wq->m_head, m, m_epg_stailq);
 	running = wq->running;
