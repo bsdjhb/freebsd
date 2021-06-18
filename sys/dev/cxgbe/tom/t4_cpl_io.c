@@ -1368,7 +1368,8 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		DDP_UNLOCK(toep);
 	}
 
-	if (ulp_mode(toep) != ULP_MODE_RDMA) {
+	if (ulp_mode(toep) != ULP_MODE_RDMA &&
+	    ulp_mode(toep) != ULP_MODE_ISCSI) {
 		KASSERT(tp->rcv_nxt == be32toh(cpl->rcv_nxt),
 	    		("%s: rcv_nxt mismatch: %u %u", __func__, tp->rcv_nxt,
 	    		be32toh(cpl->rcv_nxt)));
