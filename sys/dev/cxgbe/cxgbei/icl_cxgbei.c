@@ -399,11 +399,20 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
 		set_mbuf_iscsi_iso(m, true);
 		set_mbuf_iscsi_iso_flags(m, flags);
 		set_mbuf_iscsi_iso_mss(m, data_len);
+#ifdef VERBOSE_TRACES
+		CTR5(KTR_CXGBE, "%s: ISO pdu opc %#x len %d, mss %d, flags %#x",
+		    __func__, bhs->bhs_opcode, ip->ip_data_len, data_len,
+		    flags);
+#endif
 	}
 
 	bhs->bhs_data_segment_len[2] = data_len;
 	bhs->bhs_data_segment_len[1] = data_len >> 8;
 	bhs->bhs_data_segment_len[0] = data_len >> 16;
+#ifdef VERBOSE_TRACES
+	CTR4(KTR_CXGBE, "%s: PDU opc %#x data_len %d, padding %d", __func__,
+	    bhs->bhs_opcode, data_len, padding);
+#endif
 
 	/*
 	 * Extract mbuf chain from PDU.
