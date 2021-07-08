@@ -985,6 +985,11 @@ write_tx_data_iso(void *dst, u_int ulp_submode, uint8_t flags, uint16_t mss,
 	cpl->datasn_offset = htonl(0);
 	cpl->buffer_offset = htonl(0);
 	cpl->reserved3 = 0;
+#ifdef VERBOSE_TRACES
+	CTR6(KTR_CXGBE, "%s: type %d, F %d, len %d, burst_size %d, npdu %d",
+	    __func__, CXGBE_ISO_TYPE(flags), !!(flags & CXGBE_ISO_F), len,
+	    burst_size, npdu);
+#endif
 }
 
 static struct wrqe *
