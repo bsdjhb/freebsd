@@ -966,6 +966,13 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 			icl_cxgbei_pdu_done(ip, ENOTCONN);
 		}
 		SOCKBUF_UNLOCK(sb);
+
+		/*
+		 * Grab a reference to use when waiting for the final
+		 * CPL to be received.
+		 */
+		toep = hold_toepcb(toep);
+		toep->flags |= TPF_WAITING_FOR_FINAL;
 	}
 	INP_WUNLOCK(inp);
 
@@ -978,7 +985,6 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 	 * queues were purged instead of delivered reliably but soabort isn't
 	 * really general purpose and wouldn't do the right thing here.
 	 */
-	soref(so);
 	soclose(so);
 
 	/*
@@ -988,12 +994,15 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 	 * Callers assume that it is safe to free buffers for tasks
 	 * and transfers after this function returns.
 	 */
-	SOCK_LOCK(so);
-	while ((so->so_state & SS_ISDISCONNECTED) == 0)
-		mtx_sleep(&so->so_timeo, SOCK_MTX(so), PSOCK, "conclo2", 0);
-	CURVNET_SET(so->so_vnet);
-	sorele(so);
-	CURVNET_RESTORE();
+	if (toep != NULL) {
+		struct mtx *lock = mtx_pool_find(mtxpool_sleep, toep);
+
+		mtx_lock(lock);
+		while ((toep->flags & TPF_WAITING_FOR_FINAL) != 0)
+			mtx_sleep(toep, lock, PSOCK, "conclo2", 0);
+		mtx_unlock(lock);
+		free_toepcb(toep);
+	}
 }
 
 static void
