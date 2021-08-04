@@ -1008,6 +1008,10 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 		while ((toep->flags & TPF_WAITING_FOR_FINAL) != 0)
 			mtx_sleep(toep, lock, PSOCK, "conclo2", 0);
 		mtx_unlock(lock);
+
+		CTR2(KTR_CXGBE, "%s: tid %d, socket has closed", __func__,
+		    toep ? toep->tid : -1);
+
 		free_toepcb(toep);
 	}
 }
