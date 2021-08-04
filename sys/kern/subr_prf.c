@@ -122,7 +122,7 @@ static char *ksprintn(char *nbuf, uintmax_t num, int base, int *len, int upper);
 static void  snprintf_func(int ch, void *arg);
 
 static bool msgbufmapped;		/* Set when safe to use msgbuf */
-int msgbuftrigger;
+volatile int msgbuftrigger;
 struct msgbuf *msgbufp;
 
 #ifndef BOOT_TAG_SZ
@@ -264,7 +264,7 @@ vtprintf(struct proc *p, int pri, const char *fmt, va_list ap)
 		tty_unlock(pca.tty);
 	if (sess != NULL)
 		sess_release(sess);
-	msgbuftrigger = 1;
+	atomic_store_int(&msgbuftrigger, 1);
 }
 
 static int
@@ -323,7 +323,7 @@ vlog(int level, const char *fmt, va_list ap)
 {
 
 	(void)_vprintf(level, log_open ? TOLOG : TOCONS | TOLOG, fmt, ap);
-	msgbuftrigger = 1;
+	atomic_store_int(&msgbuftrigger, 1);
 }
 
 #define CONSCHUNK 128
@@ -386,7 +386,7 @@ log_console(struct uio *uio)
 		consbuffer[1] = '\0';
 		msglogstr(consbuffer, pri, /*filter_cr*/ 1);
 	}
-	msgbuftrigger = 1;
+	atomic_store_int(&msgbuftrigger, 1);
 	freeuio(uio);
 	free(consbuffer, M_TEMP);
 }
@@ -412,7 +412,7 @@ vprintf(const char *fmt, va_list ap)
 	retval = _vprintf(-1, TOCONS | TOLOG, fmt, ap);
 
 	if (!KERNEL_PANICKED())
-		msgbuftrigger = 1;
+		atomic_store_int(&msgbuftrigger, 1);
 
 	return (retval);
 }

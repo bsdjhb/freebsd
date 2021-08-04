@@ -230,9 +230,8 @@ logtimeout(void *arg)
 
 	if (!log_open)
 		return;
-	if (msgbuftrigger == 0)
+	if (atomic_readandclear_int(&msgbuftrigger) == 0)
 		goto done;
-	msgbuftrigger = 0;
 	selwakeuppri(&logsoftc.sc_selp, LOG_RDPRI);
 	KNOTE_LOCKED(&logsoftc.sc_selp.si_note, 0);
 	if ((logsoftc.sc_state & LOG_ASYNC) && logsoftc.sc_sigio != NULL)

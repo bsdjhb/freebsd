@@ -62,7 +62,7 @@ struct msgbuf {
 
 #ifdef _KERNEL
 extern int	msgbufsize;
-extern int	msgbuftrigger;
+extern volatile int msgbuftrigger;
 extern struct	msgbuf *msgbufp;
 extern struct	mtx msgbuf_lock;
 
