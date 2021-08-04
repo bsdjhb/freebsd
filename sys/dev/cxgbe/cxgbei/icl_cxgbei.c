@@ -991,10 +991,6 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 	SOCK_LOCK(so);
 	while ((so->so_state & SS_ISDISCONNECTED) == 0)
 		mtx_sleep(&so->so_timeo, SOCK_MTX(so), PSOCK, "conclo2", 0);
-
-	CTR2(KTR_CXGBE, "%s: tid %d, socket has closed", __func__,
-	    toep ? toep->tid : -1);
-
 	CURVNET_SET(so->so_vnet);
 	sorele(so);
 	CURVNET_RESTORE();
