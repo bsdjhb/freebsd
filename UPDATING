@@ -27,6 +27,14 @@ NOTE TO PEOPLE WHO THINK THAT FreeBSD 14.x IS SLOW:
 	world, or to merely disable the most expensive debugging functionality
 	at runtime, run "ln -s 'abort:false,junk:false' /etc/malloc.conf".)
 
+2021xxxx:
+	OpenSSL no longer enables kernel TLS by default.  Users can
+	enable kernel TLS via the "KTLS" SSL option.  This can be
+	enabled globally by using a custom OpenSSL config file via
+	OPENSSL_CONF or via an application-specific configuration
+	option for applications which permit setting SSL options via
+	SSL_CONF_cmd(3).
+
 20210730:
 	Commit b69019c14cd8 removes pf's DIOCGETSTATESNV ioctl.
 	As of be70c7a50d32 it is no longer used by userspace, but it does mean
