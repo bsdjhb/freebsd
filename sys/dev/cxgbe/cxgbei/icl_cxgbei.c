@@ -969,10 +969,15 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 
 		/*
 		 * Grab a reference to use when waiting for the final
-		 * CPL to be received.
+		 * CPL to be received.  If toep->inp is NULL, then
+		 * final_cpl_received() has already been called (e.g.
+		 * due to the peer sending a RST).
 		 */
-		toep = hold_toepcb(toep);
-		toep->flags |= TPF_WAITING_FOR_FINAL;
+		if (toep->inp != NULL) {
+			toep = hold_toepcb(toep);
+			toep->flags |= TPF_WAITING_FOR_FINAL;
+		} else
+			toep = NULL;
 	}
 	INP_WUNLOCK(inp);
 
