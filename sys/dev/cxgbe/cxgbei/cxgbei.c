@@ -123,6 +123,8 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_data_len,
 	tx_len -= ISCSI_BHS_SIZE + ISCSI_HEADER_DIGEST_SIZE +
 	    ISCSI_DATA_DIGEST_SIZE;
 
+	uint32_t rx_len_save = rx_len;
+
 	/*
 	 * DDP can place only 4 pages for a single PDU.  A single
 	 * request might use larger pages than the smallest page size,
@@ -130,6 +132,12 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_data_len,
 	 * page size for this limit.
 	 */
 	rx_len = min(rx_len, 4 * (1U << pr->pr_page_shift[0]));
+
+	if (rx_len_save != rx_len)
+		device_printf(sc->dev, "DDP capped rx_len from %u -> %u\n",
+		    rx_len_save, rx_len);
+
+	device_printf(sc->dev, "rx_len %u tx_len %u\n", rx_len, tx_len);
 
 	if (chip_id(sc) == CHELSIO_T5) {
 		rx_len = rounddown2(rx_len, 512);
