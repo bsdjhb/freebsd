@@ -140,6 +140,8 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_data_len,
 	device_printf(sc->dev, "rx_len %u tx_len %u\n", rx_len, tx_len);
 
 	if (chip_id(sc) == CHELSIO_T5) {
+		tx_len = min(tx_len, 15360);
+
 		rx_len = rounddown2(rx_len, 512);
 		tx_len = rounddown2(tx_len, 512);
 	}
