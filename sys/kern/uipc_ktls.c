@@ -103,6 +103,7 @@ static struct ktls_wq *ktls_wq;
 static struct proc *ktls_proc;
 static uma_zone_t ktls_session_zone;
 static uma_zone_t ktls_buffer_zone;
+static uma_zone_t ktls_ocf_encrypt_state_zone;
 static uint16_t ktls_cpuid_lookup[MAXCPU];
 static int ktls_init_state;
 static struct sx ktls_init_lock;
@@ -489,6 +490,9 @@ ktls_init(void)
 	ktls_session_zone = uma_zcreate("ktls_session",
 	    sizeof(struct ktls_session),
 	    NULL, NULL, NULL, NULL,
+	    UMA_ALIGN_CACHE, 0);
+	ktls_ocf_encrypt_state_zone = uma_zcreate("klts_ocf_encrypt_state",
+	    sizeof(struct ktls_ocf_encrypt_state), NULL, NULL, NULL, NULL,
 	    UMA_ALIGN_CACHE, 0);
 
 	if (ktls_sw_buffer_cache) {
@@ -3114,7 +3118,7 @@ ktls_encrypt_cb(struct ktls_ocf_encrypt_state *state, int error)
 	m->m_flags |= M_RDONLY;
 
 	so = state->so;
-	free(state, M_KTLS);
+	uma_zfree(ktls_ocf_encrypt_state_zone, state);
 
 	/*
 	 * Drop a reference to the session now that it is no longer
@@ -3176,7 +3180,8 @@ ktls_encrypt_async(struct ktls_wq *wq, struct mbuf *top)
 		    ("page count mismatch: top %p, total_pages %d, m %p", top,
 		    total_pages, m));
 
-		state = malloc(sizeof(*state), M_KTLS, M_WAITOK | M_ZERO);
+		state = uma_zalloc(ktls_ocf_encrypt_state_zone,
+		    M_WAITOK | M_ZERO);
 		soref(so);
 		state->so = so;
 		state->m = m;
@@ -3187,7 +3192,7 @@ ktls_encrypt_async(struct ktls_wq *wq, struct mbuf *top)
 		error = ktls_encrypt_record(wq, m, tls, state);
 		if (error) {
 			counter_u64_add(ktls_offload_failed_crypto, 1);
-			free(state, M_KTLS);
+			uma_zfree(ktls_ocf_encrypt_state_zone, state);
 			CURVNET_SET(so->so_vnet);
 			sorele(so);
 			CURVNET_RESTORE();
