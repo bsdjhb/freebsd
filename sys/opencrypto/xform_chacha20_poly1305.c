@@ -50,9 +50,12 @@ chacha20_poly1305_setkey(void *vctx, const uint8_t *key, int len)
 }
 
 static void
-chacha20_poly1305_reinit(void *vctx, const uint8_t *iv)
+chacha20_poly1305_reinit(void *vctx, const uint8_t *iv, size_t len)
 {
 	struct chacha20_poly1305_cipher_ctx *ctx = vctx;
+
+	KASSERT(len == sizeof(ctx->nonce),
+	    ("%s: invalid nonce length", __func__));
 
 	/* Block 0 is used for the poly1305 key. */
 	memcpy(ctx->nonce, iv, sizeof(ctx->nonce));
