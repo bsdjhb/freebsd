@@ -243,9 +243,6 @@ def GenTestCase(cname):
         def runCCMEncryptWithParser(self, parser):
             for data in next(parser):
                 Nlen = int(data['Nlen'])
-                if Nlen != 12:
-                    # OCF only supports 12 byte IVs
-                    continue
                 key = binascii.unhexlify(data['Key'])
                 nonce = binascii.unhexlify(data['Nonce'])
                 Alen = int(data['Alen'])
@@ -261,7 +258,7 @@ def GenTestCase(cname):
                         cipher=cryptodev.CRYPTO_AES_CCM_16,
                         key=key,
                         mac=cryptodev.CRYPTO_AES_CCM_CBC_MAC,
-                        mackey=key, maclen=16)
+                        mackey=key, maclen=16, ivlen=Nlen)
                     r, tag = Crypto.encrypt(c, payload,
                         nonce, aad)
                 except EnvironmentError as e:
@@ -280,19 +277,9 @@ def GenTestCase(cname):
                 self.runCCMDecryptWithParser(parser)
 
         def runCCMDecryptWithParser(self, parser):
-            # XXX: Note that all of the current CCM
-            # decryption test vectors use IV and tag sizes
-            # that aren't supported by OCF none of the
-            # tests are actually ran.
             for data in next(parser):
                 Nlen = int(data['Nlen'])
-                if Nlen != 12:
-                    # OCF only supports 12 byte IVs
-                    continue
                 Tlen = int(data['Tlen'])
-                if Tlen != 16:
-                    # OCF only supports 16 byte tags
-                    continue
                 key = binascii.unhexlify(data['Key'])
                 nonce = binascii.unhexlify(data['Nonce'])
                 Alen = int(data['Alen'])
@@ -309,7 +296,7 @@ def GenTestCase(cname):
                         cipher=cryptodev.CRYPTO_AES_CCM_16,
                         key=key,
                         mac=cryptodev.CRYPTO_AES_CCM_CBC_MAC,
-                        mackey=key, maclen=16)
+                        mackey=key, maclen=Tlen, ivlen=Nlen)
                 except EnvironmentError as e:
                     if e.errno != errno.EOPNOTSUPP:
                         raise

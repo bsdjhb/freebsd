@@ -79,10 +79,10 @@ class SessionOp2(dpkt.Packet):
         ('mackey',    'P', 0),
         ('ses',       'I', 0),
         ('crid',      'i', 0),
+        ('ivlen',     'i', 0),
+        ('maclen',    'i', 0),
         ('pad0',      'i', 0),
         ('pad1',      'i', 0),
-        ('pad2',      'i', 0),
-        ('pad3',      'i', 0),
     )
 
 class CryptOp(dpkt.Packet):
@@ -169,7 +169,8 @@ class Crypto:
         return _findop(crid, '')[1]
 
     def __init__(self, cipher=0, key=None, mac=0, mackey=None,
-        crid=CRYPTOCAP_F_SOFTWARE | CRYPTOCAP_F_HARDWARE, maclen=None):
+        crid=CRYPTOCAP_F_SOFTWARE | CRYPTOCAP_F_HARDWARE, maclen=None,
+        ivlen=None):
         self._ses = None
         self._maclen = maclen
         ses = SessionOp2()
@@ -191,6 +192,10 @@ class Crypto:
         if not cipher and not mac:
             raise ValueError('one of cipher or mac MUST be specified.')
         ses.crid = crid
+        if ivlen:
+            ses.ivlen = ivlen
+        if maclen:
+            ses.maclen = maclen
         #print(ses)
         s = array.array('B', ses.pack_hdr())
         #print(s)
