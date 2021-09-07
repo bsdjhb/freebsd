@@ -866,6 +866,7 @@ cryptodev_op(struct csession *cse, const struct crypt_op *cop)
 			goto bail;
 		}
 		break;
+	case CSP_MODE_AEAD:
 	case CSP_MODE_ETA:
 		switch (cop->op) {
 		case COP_ENCRYPT:
