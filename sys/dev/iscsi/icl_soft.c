@@ -117,6 +117,17 @@ SYSCTL_INT(_kern_icl_soft, OID_AUTO, sendspace, CTLFLAG_RWTUN,
 static int recvspace = 1536 * 1024;
 SYSCTL_INT(_kern_icl_soft, OID_AUTO, recvspace, CTLFLAG_RWTUN,
     &recvspace, 0, "Default receive socket buffer size");
+static int inject_padding_errors = 0;
+SYSCTL_INT(_kern_icl_soft, OID_AUTO, inject_padding_errors, CTLFLAG_RWTUN,
+    &inject_padding_errors, 0, "Percentage of padding errors to inject");
+static int inject_header_digest_errors = 0;
+SYSCTL_INT(_kern_icl_soft, OID_AUTO, inject_header_digest_errors, CTLFLAG_RWTUN,
+    &inject_header_digest_errors, 0,
+    "Percentage of header digest errors to inject");
+static int inject_data_digest_errors = 0;
+SYSCTL_INT(_kern_icl_soft, OID_AUTO, inject_data_digest_errors, CTLFLAG_RWTUN,
+    &inject_data_digest_errors, 0,
+    "Percentage of data digest errors to inject");
 
 static MALLOC_DEFINE(M_ICL_SOFT, "icl_soft", "iSCSI software backend");
 static uma_zone_t icl_soft_pdu_zone;
@@ -810,9 +821,12 @@ static int
 icl_pdu_finalize(struct icl_pdu *request)
 {
 	size_t padding, pdu_len;
-	uint32_t digest, zero = 0;
+	uint32_t digest, zero = 0, ones = 0x01010101;
 	int ok;
 	struct icl_conn *ic;
+	u_int error_token;
+
+	error_token = arc4random() % 100;
 
 	ic = request->ip_conn;
 
@@ -822,6 +836,9 @@ icl_pdu_finalize(struct icl_pdu *request)
 
 	if (ic->ic_header_crc32c) {
 		digest = icl_mbuf_to_crc32c(request->ip_bhs_mbuf);
+		if (inject_header_digest_errors > 0 &&
+		    error_token <= inject_header_digest_errors)
+			digest ^= 1;
 		ok = m_append(request->ip_bhs_mbuf, sizeof(digest),
 		    (void *)&digest);
 		if (ok != 1) {
@@ -833,8 +850,13 @@ icl_pdu_finalize(struct icl_pdu *request)
 	if (request->ip_data_len != 0) {
 		padding = icl_pdu_padding(request);
 		if (padding > 0) {
-			ok = m_append(request->ip_data_mbuf, padding,
-			    (void *)&zero);
+			if (inject_padding_errors > 0 &&
+			    error_token <= inject_padding_errors)
+				ok = m_append(request->ip_data_mbuf, padding,
+				    (void *)&ones);
+			else
+				ok = m_append(request->ip_data_mbuf, padding,
+				    (void *)&zero);
 			if (ok != 1) {
 				ICL_WARN("failed to append padding");
 				return (1);
@@ -843,6 +865,9 @@ icl_pdu_finalize(struct icl_pdu *request)
 
 		if (ic->ic_data_crc32c) {
 			digest = icl_mbuf_to_crc32c(request->ip_data_mbuf);
+			if (inject_data_digest_errors > 0 &&
+			    error_token <= inject_data_digest_errors)
+				digest ^= 1;
 
 			ok = m_append(request->ip_data_mbuf, sizeof(digest),
 			    (void *)&digest);
