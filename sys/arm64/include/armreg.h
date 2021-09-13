@@ -1993,4 +1993,20 @@
 #define	ZCR_LEN_MASK		(0xf << ZCR_LEN_SHIFT)
 #define	ZCR_LEN_BYTES(x)	((((x) & ZCR_LEN_MASK) + 1) * 16)
 
+/*
+ * binutils' gas does not recognize some system registers recognized
+ * by clang's integrated assembler.  These macros provide aliases for
+ * by gas.
+ */
+#ifndef __clang__
+#define	icc_PMR_el1	s3_0_c4_c6_0
+#define	icc_EOIR1_el1	s3_0_c12_c8_1
+#define	icc_SGI1R_el1	s3_0_c12_c11_5
+#define	icc_IAR1_el1	s3_0_c12_c12_0
+#define	icc_CTLR_el1	s3_0_c12_c12_4
+#define	icc_sre_el1	s3_0_c12_c12_5
+#define	icc_IGRPEN1_el1	s3_0_c12_c12_7
+#define	icc_sre_el2	s3_4_c12_c9_5
+#endif
+
 #endif /* !_MACHINE_ARMREG_H_ */

@@ -613,7 +613,11 @@ arm_gic_v3_intr(void *arg)
 			 */
 			__asm __volatile(
 			    "nop;nop;nop;nop;nop;nop;nop;nop;	\n"
+#ifdef __clang__
 			    "mrs %0, ICC_IAR1_EL1		\n"
+#else
+			    "mrs %0, s3_0_c12_c12_0		\n"
+#endif
 			    "nop;nop;nop;nop;			\n"
 			    "dsb sy				\n"
 			    : "=&r" (active_irq));
