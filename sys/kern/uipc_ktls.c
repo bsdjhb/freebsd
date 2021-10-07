@@ -162,6 +162,11 @@ static COUNTER_U64_DEFINE_EARLY(ktls_tasks_active);
 SYSCTL_COUNTER_U64(_kern_ipc_tls, OID_AUTO, tasks_active, CTLFLAG_RD,
     &ktls_tasks_active, "Number of active tasks");
 
+static COUNTER_U64_DEFINE_EARLY(ktls_cnt_tx_pending);
+SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_tx_pending, CTLFLAG_RD,
+    &ktls_cnt_tx_pending,
+    "Number of TLS 1.0 records waiting for earlier TLS records");
+
 static COUNTER_U64_DEFINE_EARLY(ktls_cnt_tx_queued);
 SYSCTL_COUNTER_U64(_kern_ipc_tls_stats, OID_AUTO, sw_tx_inqueue, CTLFLAG_RD,
     &ktls_cnt_tx_queued,
@@ -608,6 +613,9 @@ ktls_create_session(struct socket *so, struct tls_enable *en,
 		case CRYPTO_SHA1_HMAC:
 			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
 				/* Implicit IV, no nonce. */
+				tls->sequential_records = true;
+				tls->next_seqno = be64dec(en->rec_seq);
+				STAILQ_INIT(&tls->pending_records);
 			} else {
 				tls->params.tls_hlen += AES_BLOCK_LEN;
 			}
@@ -1486,6 +1494,22 @@ void
 ktls_destroy(struct ktls_session *tls)
 {
 
+	if (tls->sequential_records) {
+		struct mbuf *m, *n, *p;
+		int page_count;
+
+		STAILQ_FOREACH_SAFE(m, &tls->pending_records, m_epg_stailq, n) {
+			page_count = m->m_epg_enc_cnt;
+			while (page_count > 0) {
+				KASSERT(page_count >= m->m_epg_nrdy,
+				    ("%s: too few pages", __func__));
+				page_count -= m->m_epg_nrdy;
+				p = m->m_next;
+				m_free(m);
+				m = p;
+			}
+		}
+	}
 	ktls_cleanup(tls);
 	uma_zfree(ktls_session_zone, tls);
 }
@@ -2088,10 +2112,29 @@ ktls_encrypt_record(struct ktls_wq *wq, struct mbuf *m,
 	return (error);
 }
 
+/* Number of TLS records in a batch passed to ktls_enqueue(). */
+static u_int
+ktls_batched_records(struct mbuf *m)
+{
+	int page_count, records;
+
+	records = 0;
+	page_count = m->m_epg_enc_cnt;
+	while (page_count > 0) {
+		records++;
+		page_count -= m->m_epg_nrdy;
+		m = m->m_next;
+	}
+	KASSERT(page_count == 0, ("%s: mismatched page count", __func__));
+	return (records);
+}
+
 void
 ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 {
+	struct ktls_session *tls;
 	struct ktls_wq *wq;
+	int queued;
 	bool running;
 
 	KASSERT(((m->m_flags & (M_EXTPG | M_NOTREADY)) ==
@@ -2109,14 +2152,58 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	 */
 	m->m_epg_so = so;
 
-	wq = &ktls_wq[m->m_epg_tls->wq_index];
+	queued = 1;
+	tls = m->m_epg_tls;
+	wq = &ktls_wq[tls->wq_index];
 	mtx_lock(&wq->mtx);
-	STAILQ_INSERT_TAIL(&wq->m_head, m, m_epg_stailq);
+	if (__predict_false(tls->sequential_records)) {
+		if (m->m_epg_seqno != tls->next_seqno) {
+			struct mbuf *n, *p;
+
+			p = NULL;
+			STAILQ_FOREACH(n, &tls->pending_records, m_epg_stailq) {
+				if (n->m_epg_seqno > m->m_epg_seqno)
+					break;
+				p = n;
+			}
+			if (n == NULL)
+				STAILQ_INSERT_TAIL(&tls->pending_records, m,
+				    m_epg_stailq);
+			else if (p == NULL)
+				STAILQ_INSERT_HEAD(&tls->pending_records, m,
+				    m_epg_stailq);
+			else
+				STAILQ_INSERT_AFTER(&tls->pending_records, p, m,
+				    m_epg_stailq);
+			mtx_unlock(&wq->mtx);
+			counter_u64_add(ktls_cnt_tx_pending, 1);
+			return;
+		}
+
+		tls->next_seqno += ktls_batched_records(m);
+		STAILQ_INSERT_TAIL(&wq->m_head, m, m_epg_stailq);
+
+		while (!STAILQ_EMPTY(&tls->pending_records)) {
+			struct mbuf *n;
+
+			n = STAILQ_FIRST(&tls->pending_records);
+			if (n->m_epg_seqno != tls->next_seqno)
+				break;
+
+			queued++;
+			STAILQ_REMOVE_HEAD(&tls->pending_records, m_epg_stailq);
+			tls->next_seqno += ktls_batched_records(n);
+			STAILQ_INSERT_TAIL(&wq->m_head, n, m_epg_stailq);
+		}
+		counter_u64_add(ktls_cnt_tx_pending, -(queued - 1));
+	} else
+		STAILQ_INSERT_TAIL(&wq->m_head, m, m_epg_stailq);
+
 	running = wq->running;
 	mtx_unlock(&wq->mtx);
 	if (!running)
 		wakeup(wq);
-	counter_u64_add(ktls_cnt_tx_queued, 1);
+	counter_u64_add(ktls_cnt_tx_queued, queued);
 }
 
 /*
