@@ -37,6 +37,7 @@
 #include <sys/domainset.h>
 #include <sys/endian.h>
 #include <sys/ktls.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
@@ -2945,20 +2946,32 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 					break;
 				p = n;
 			}
-			if (n == NULL)
+			if (n == NULL) {
+				CTR2(KTR_SPARE3,
+				    "%s: queueing TLS seq %lu at the end",
+				    __func__, m->m_epg_seqno);
 				STAILQ_INSERT_TAIL(&tls->pending_records, m,
 				    m_epg_stailq);
-			else if (p == NULL)
+			} else if (p == NULL) {
+				CTR2(KTR_SPARE3,
+				    "%s: queueing TLS seq %lu at the head",
+				    __func__, m->m_epg_seqno);
 				STAILQ_INSERT_HEAD(&tls->pending_records, m,
 				    m_epg_stailq);
-			else
+			} else {
+				CTR3(KTR_SPARE3,
+				    "%s: queueing TLS seq %lu after %lu",
+				    __func__, m->m_epg_seqno, p->m_epg_seqno);
 				STAILQ_INSERT_AFTER(&tls->pending_records, p, m,
 				    m_epg_stailq);
+			}
 			mtx_unlock(&wq->mtx);
 			counter_u64_add(ktls_cnt_tx_pending, 1);
 			return;
 		}
 
+		CTR2(KTR_SPARE3, "%s: encrypting TLS seq %lu", __func__,
+		    m->m_epg_seqno);
 		tls->next_seqno += ktls_batched_records(m);
 		STAILQ_INSERT_TAIL(&wq->m_head, m, m_epg_stailq);
 
@@ -2969,6 +2982,8 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 			if (n->m_epg_seqno != tls->next_seqno)
 				break;
 
+			CTR2(KTR_SPARE3, "%s: unpending TLS seq %lu",
+			    __func__, n->m_epg_seqno);
 			queued++;
 			STAILQ_REMOVE_HEAD(&tls->pending_records, m_epg_stailq);
 			tls->next_seqno += ktls_batched_records(n);

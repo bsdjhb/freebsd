@@ -36,6 +36,7 @@
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/ktls.h>
+#include <sys/ktr.h>
 #include <sys/mutex.h>
 #include <sys/malloc.h>
 #include <sys/mman.h>
@@ -97,6 +98,7 @@ struct sf_io {
 #ifdef KERN_TLS
 	struct ktls_session *tls;
 #endif
+	struct callout	timer;
 	vm_page_t	pa[];
 };
 
@@ -283,6 +285,18 @@ sendfile_iowait(struct sf_io *sfio, const char *wmesg)
 		pause(wmesg, 1);
 }
 
+#if 1
+static void
+ktls_enqueue_timeout(void *arg)
+{
+	struct sf_io *sfio = arg;
+
+	CTR2(KTR_SPARE3, "%s: queueing %p", __func__, sfio);
+	ktls_enqueue(sfio->m, sfio->so, sfio->npages);
+	free(sfio, M_SENDFILE);
+}
+#endif
+
 /*
  * I/O completion callback.
  */
@@ -393,15 +407,27 @@ sendfile_iodone(void *arg, vm_page_t *pa, int count, int error)
 		 * Donate the socket reference from sfio to rather
 		 * than explicitly invoking soref().
 		 */
+#if 1
+		CTR2(KTR_SPARE3, "%s: delaying %p", __func__, sfio);
+		callout_init(&sfio->timer, 1);
+		callout_reset(&sfio->timer, (arc4random() % 1000) + 10,
+		    ktls_enqueue_timeout, sfio);
+		CURVNET_RESTORE();
+		return;
+#else
+		CTR2(KTR_SPARE3, "%s: queueing %p", __func__, sfio);
 		ktls_enqueue(sfio->m, so, sfio->npages);
 		goto out_with_ref;
+#endif
 #endif
 	} else
 		(void)so->so_proto->pr_ready(so, sfio->m, sfio->npages);
 
 	sorele(so);
+#if 0
 #ifdef KERN_TLS
 out_with_ref:
+#endif
 #endif
 	CURVNET_RESTORE();
 	free(sfio, M_SENDFILE);
@@ -1167,6 +1193,8 @@ prepend_header:
 			 */
 			if (sfio != NULL)
 				sendfile_iodone(sfio, NULL, 0, 0);
+			CTR3(KTR_SPARE3, "%s: no I/O for %u data at offset %lu",
+			    __func__, space, off - space);
 #ifdef KERN_TLS
 			if (tls != NULL && tls->mode == TCP_TLS_MODE_SW) {
 				error = so->so_proto->pr_send(so,
@@ -1182,6 +1210,9 @@ prepend_header:
 				error = so->so_proto->pr_send(so, 0, m, NULL,
 				    NULL, td);
 		} else {
+			CTR5(KTR_SPARE3,
+		    "%s: %d I/O requests for %u data at offset %lu (%p)",
+			    __func__, nios, space, off - space, sfio);
 			sfio->so = so;
 			sfio->m = m0;
 			soref(so);
