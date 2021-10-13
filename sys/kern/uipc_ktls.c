@@ -1496,7 +1496,7 @@ ktls_destroy(struct ktls_session *tls)
 {
 
 	if (tls->sequential_records) {
-		struct mbuf *m, *n, *p;
+		struct mbuf *m, *n;
 		int page_count;
 
 		STAILQ_FOREACH_SAFE(m, &tls->pending_records, m_epg_stailq, n) {
@@ -1505,9 +1505,7 @@ ktls_destroy(struct ktls_session *tls)
 				KASSERT(page_count >= m->m_epg_nrdy,
 				    ("%s: too few pages", __func__));
 				page_count -= m->m_epg_nrdy;
-				p = m->m_next;
-				m_free(m);
-				m = p;
+				m = m_free(m);
 			}
 		}
 	}
@@ -2158,6 +2156,28 @@ ktls_enqueue(struct mbuf *m, struct socket *so, int page_count)
 	wq = &ktls_wq[tls->wq_index];
 	mtx_lock(&wq->mtx);
 	if (__predict_false(tls->sequential_records)) {
+		/*
+		 * For TLS 1.0, records must be encrypted
+		 * sequentially.  For a given connection, all records
+		 * queued to the associated work queue are processed
+		 * sequentially.  However, sendfile(2) might complete
+		 * I/O requests spanning multiple TLS records out of
+		 * order.  Here we ensure TLS records are enqueued to
+		 * the work queue in FIFO order.
+		 *
+		 * tls->next_seqno holds the sequence number of the
+		 * next TLS record that should be enqueued to the work
+		 * queue.  If this next record is not tls->next_seqno,
+		 * it must be a future record, so insert it, sorted by
+		 * TLS sequence number, into tls->pending_records and
+		 * return.
+		 *
+		 * If this TLS record matches tls->next_seqno, place
+		 * it in the work queue and then check
+		 * tls->pending_records to see if any
+		 * previously-queued records are now ready for
+		 * encryption.
+		 */
 		if (m->m_epg_seqno != tls->next_seqno) {
 			struct mbuf *n, *p;
 
