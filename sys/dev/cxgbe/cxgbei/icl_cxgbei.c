@@ -543,12 +543,9 @@ void
 icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 			     icl_pdu_cb cb)
 {
-	struct epoch_tracker et;
 	struct icl_cxgbei_conn *icc = ic_to_icc(ic);
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 	struct socket *so = ic->ic_socket;
-	struct toepcb *toep = icc->toep;
-	struct inpcb *inp;
 	struct mbuf *m;
 
 	MPASS(ic == ip->ip_conn);
@@ -570,24 +567,11 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 	M_ASSERTPKTHDR(m);
 	MPASS((m->m_pkthdr.len & 3) == 0);
 
-	/*
-	 * Do not get inp from toep->inp as the toepcb might have detached
-	 * already.
-	 */
-	inp = sotoinpcb(so);
-	CURVNET_SET(toep->vnet);
-	NET_EPOCH_ENTER(et);
-	INP_WLOCK(inp);
-	if (__predict_false(inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) ||
-	    __predict_false((toep->flags & TPF_ATTACHED) == 0))
-		m_freem(m);
-	else {
-		mbufq_enqueue(&toep->ulp_pduq, m);
-		t4_push_pdus(icc->sc, toep, 0);
+	mbufq_enqueue(&icc->sent_pdus, m);
+	if (!icc->tx_active) {
+		icc->tx_active = true;
+		cwt_queue_for_tx(icc);
 	}
-	INP_WUNLOCK(inp);
-	NET_EPOCH_EXIT(et);
-	CURVNET_RESTORE();
 }
 
 static struct icl_conn *
@@ -602,6 +586,7 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 	    M_WAITOK | M_ZERO);
 	icc->icc_signature = CXGBEI_CONN_SIGNATURE;
 	STAILQ_INIT(&icc->rcvd_pdus);
+	mbufq_init(&icc->sent_pdus, INT_MAX);
 
 	icc->cmp_table = hashinit(64, M_CXGBEI, &icc->cmp_hash_mask);
 	mtx_init(&icc->cmp_lock, "cxgbei_cmp", NULL, MTX_DEF);
@@ -946,21 +931,29 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 	if (toep != NULL) {	/* NULL if connection was never offloaded. */
 		toep->ulpcb = NULL;
 
+		/*
+		 * Wait for the cwt threads to stop processing this
+		 * connection for transmit.
+		 */
+		while (icc->tx_active)
+			rw_sleep(inp, &inp->inp_lock, 0, "conclo", 1);
+
 		/* Discard PDUs queued for TX. */
+		mbufq_drain(&icc->sent_pdus);
 		mbufq_drain(&toep->ulp_pduq);
 
 		/*
 		 * Wait for the cwt threads to stop processing this
-		 * connection.
+		 * connection for receive.
 		 */
 		SOCKBUF_LOCK(sb);
-		if (icc->rx_flags & RXF_ACTIVE) {
-			volatile u_int *p = &icc->rx_flags;
+		if (icc->rx_active) {
+			volatile bool *p = &icc->rx_active;
 
 			SOCKBUF_UNLOCK(sb);
 			INP_WUNLOCK(inp);
 
-			while (*p & RXF_ACTIVE)
+			while (*p)
 				pause("conclo", 1);
 
 			INP_WLOCK(inp);
