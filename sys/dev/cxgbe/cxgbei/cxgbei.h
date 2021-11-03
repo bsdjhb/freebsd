@@ -80,7 +80,7 @@ struct icl_cxgbei_conn {
 
 	/* Transmit related. */
 	bool tx_active;				/* protected by ic lock */
-	struct mbufq sent_pdus;			/* protected by ic lock */
+	STAILQ_HEAD(, icl_pdu) sent_pdus;	/* protected by ic lock */
 	TAILQ_ENTRY(icl_cxgbei_conn) tx_link;	/* protected by cwt lock */
 };
 
@@ -138,6 +138,7 @@ u_int cxgbei_select_worker_thread(struct icl_cxgbei_conn *);
 void cwt_queue_for_tx(struct icl_cxgbei_conn *);
 
 /* icl_cxgbei.c */
+void cwt_tx_main(void *);
 int icl_cxgbei_mod_load(void);
 int icl_cxgbei_mod_unload(void);
 struct icl_pdu *icl_cxgbei_new_pdu(int);
