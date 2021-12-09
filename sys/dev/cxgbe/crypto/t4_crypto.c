@@ -2405,15 +2405,10 @@ ccr_newsession(device_t dev, crypto_session_t cses,
 
 	s = crypto_get_driver_session(cses);
 	mtx_init(&s->lock, "ccr session", NULL, MTX_DEF);
-	s->sg_input = sglist_alloc(TX_SGL_SEGS, M_NOWAIT);
-	s->sg_output = sglist_alloc(TX_SGL_SEGS, M_NOWAIT);
-	s->sg_ulptx = sglist_alloc(TX_SGL_SEGS, M_NOWAIT);
-	s->sg_dsgl = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_NOWAIT);
-	if (s->sg_input == NULL || s->sg_output == NULL ||
-	    s->sg_ulptx == NULL || s->sg_dsgl == NULL) {
-		ccr_delete_session(s);
-		return (ENOMEM);
-	}
+	s->sg_input = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
+	s->sg_output = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
+	s->sg_ulptx = sglist_alloc(TX_SGL_SEGS, M_WAITOK);
+	s->sg_dsgl = sglist_alloc(MAX_RX_PHYS_DSGL_SGE, M_WAITOK);
 
 	if (csp->csp_mode == CSP_MODE_AEAD) {
 		error = crypto_newsession(&s->sw_session, csp,
