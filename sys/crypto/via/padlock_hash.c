@@ -363,7 +363,7 @@ padlock_hash_check(const struct crypto_session_params *csp)
 	return (padlock_hash_lookup(csp->csp_auth_alg) != NULL);
 }
 
-int
+void
 padlock_hash_setup(struct padlock_session *ses,
     const struct crypto_session_params *csp)
 {
@@ -376,18 +376,15 @@ padlock_hash_setup(struct padlock_session *ses,
 
 	/* Allocate memory for HMAC inner and outer contexts. */
 	ses->ses_ictx = malloc(ses->ses_axf->ctxsize, M_PADLOCK,
-	    M_ZERO | M_NOWAIT);
+	    M_ZERO | M_WAITOK);
 	ses->ses_octx = malloc(ses->ses_axf->ctxsize, M_PADLOCK,
-	    M_ZERO | M_NOWAIT);
-	if (ses->ses_ictx == NULL || ses->ses_octx == NULL)
-		return (ENOMEM);
+	    M_ZERO | M_WAITOK);
 
 	/* Setup key if given. */
 	if (csp->csp_auth_key != NULL) {
 		padlock_hash_key_setup(ses, csp->csp_auth_key,
 		    csp->csp_auth_klen);
 	}
-	return (0);
 }
 
 int

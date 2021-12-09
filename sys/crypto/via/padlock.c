@@ -197,12 +197,8 @@ padlock_newsession(device_t dev, crypto_session_t cses,
 		td = curthread;
 		fpu_kern_enter(td, ses->ses_fpu_ctx, FPU_KERN_NORMAL |
 		    FPU_KERN_KTHR);
-		error = padlock_hash_setup(ses, csp);
+		padlock_hash_setup(ses, csp);
 		fpu_kern_leave(td, ses->ses_fpu_ctx);
-		if (error != 0) {
-			padlock_freesession_one(sc, ses);
-			return (error);
-		}
 	}
 
 	return (0);
