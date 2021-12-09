@@ -1277,12 +1277,9 @@ swcr_setup_cipher(struct swcr_session *ses,
 	swe = &ses->swcr_encdec;
 	txf = crypto_cipher(csp);
 	if (csp->csp_cipher_key != NULL) {
-		if (txf->ctxsize != 0) {
+		if (txf->ctxsize != 0)
 			swe->sw_ctx = malloc(txf->ctxsize, M_CRYPTO_DATA,
-			    M_NOWAIT);
-			if (swe->sw_ctx == NULL)
-				return (ENOMEM);
-		}
+			    M_WAITOK);
 		error = txf->setkey(swe->sw_ctx,
 		    csp->csp_cipher_key, csp->csp_cipher_klen);
 		if (error)
@@ -1309,12 +1306,9 @@ swcr_setup_auth(struct swcr_session *ses,
 		swa->sw_mlen = axf->hashsize;
 	else
 		swa->sw_mlen = csp->csp_auth_mlen;
-	if (csp->csp_auth_klen == 0 || csp->csp_auth_key != NULL) {
+	if (csp->csp_auth_klen == 0 || csp->csp_auth_key != NULL)
 		swa->sw_ictx = malloc(axf->ctxsize, M_CRYPTO_DATA,
-		    M_NOWAIT);
-		if (swa->sw_ictx == NULL)
-			return (ENOBUFS);
-	}
+		    M_WAITOK);
 
 	switch (csp->csp_auth_alg) {
 	case CRYPTO_SHA1_HMAC:
@@ -1326,9 +1320,7 @@ swcr_setup_auth(struct swcr_session *ses,
 		swa->sw_hmac = true;
 		if (csp->csp_auth_key != NULL) {
 			swa->sw_octx = malloc(axf->ctxsize, M_CRYPTO_DATA,
-			    M_NOWAIT);
-			if (swa->sw_octx == NULL)
-				return (ENOBUFS);
+			    M_WAITOK);
 			hmac_init_ipad(axf, csp->csp_auth_key,
 			    csp->csp_auth_klen, swa->sw_ictx);
 			hmac_init_opad(axf, csp->csp_auth_key,
