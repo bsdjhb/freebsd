@@ -36,11 +36,9 @@
 
 struct pthread;
 
-#ifdef __amd64__
-
 /*
  * Variant II tcb, first two members are required by rtld,
- * %fs points to the structure.
+ * %fs (amd64) / %gs (i386) points to the structure.
  */
 struct tcb {
 	struct tcb		*tcb_self;	/* required by rtld */
@@ -48,56 +46,36 @@ struct tcb {
 	struct pthread		*tcb_thread;
 };
 
-#define	TLS_TCB_ALIGN	16
-
-static __inline void
-_tcb_set(struct tcb *tcb)
-{
-	amd64_set_fsbase(tcb);
-}
-
-static __inline struct tcb *
-_tcb_get(void)
-{
-	struct tcb *tcb;
-
-	__asm __volatile("movq %%fs:0, %0" : "=r" (tcb));
-	return (tcb);
-}
-
-#else /* __i386__ */
-
-/*
- * Variant II tcb, first two members are required by rtld,
- * %gs points to the structure.
- */
-struct tcb {
-	struct tcb		*tcb_self;	/* required by rtld */
-	uintptr_t		*tcb_dtv;	/* required by rtld */
-	struct pthread		*tcb_thread;
-};
-
-#define	TLS_TCB_ALIGN	4
-
-static __inline void
-_tcb_set(struct tcb *tcb)
-{
- 	i386_set_gsbase(tcb);
-}
-
-static __inline struct tcb *
-_tcb_get(void)
-{
-	struct tcb *tcb;
-
-	__asm __volatile("movl %%gs:0, %0" : "=r" (tcb));
-	return (tcb);
-}
-
-#endif /* !__amd64__ */
-
-#define	TLS_TP_OFFSET	0
-#define	TLS_TCB_SIZE	sizeof(struct tcb)
 #define	TLS_DTV_OFFSET	0
+#ifdef __amd64__
+#define	TLS_TCB_ALIGN	16
+#else
+#define	TLS_TCB_ALIGN	4
+#endif
+#define	TLS_TCB_SIZE	sizeof(struct tcb)
+#define	TLS_TP_OFFSET	0
+
+static __inline void
+_tcb_set(struct tcb *tcb)
+{
+#ifdef __amd64__
+	amd64_set_fsbase(tcb);
+#else
+ 	i386_set_gsbase(tcb);
+#endif
+}
+
+static __inline struct tcb *
+_tcb_get(void)
+{
+	struct tcb *tcb;
+
+#ifdef __amd64__
+	__asm __volatile("movq %%fs:0, %0" : "=r" (tcb));
+#else
+	__asm __volatile("movl %%gs:0, %0" : "=r" (tcb));
+#endif
+	return (tcb);
+}
 
 #endif /* !_MACHINE_TLS_H_ */
