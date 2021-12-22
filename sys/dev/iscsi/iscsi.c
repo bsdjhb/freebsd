@@ -2240,6 +2240,8 @@ iscsi_action_abort(struct iscsi_session *is, union ccb *ccb)
 
 	request = icl_pdu_new(is->is_conn, M_NOWAIT);
 	if (request == NULL) {
+		xpt_print(ccb->ccb_h.path, ": %s failed to allocate PDU\n",
+		    __func__);
 		ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 		xpt_done(ccb);
 		return;
@@ -2251,6 +2253,8 @@ iscsi_action_abort(struct iscsi_session *is, union ccb *ccb)
 
 	io = iscsi_outstanding_add(is, request, NULL, &initiator_task_tag);
 	if (io == NULL) {
+		xpt_print(ccb->ccb_h.path, ": %s failed to allocate io\n",
+		    __func__);
 		icl_pdu_free(request);
 		ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 		xpt_done(ccb);
@@ -2302,6 +2306,8 @@ iscsi_action_scsiio(struct iscsi_session *is, union ccb *ccb)
 			xpt_freeze_devq(ccb->ccb_h.path, 1);
 			ISCSI_SESSION_DEBUG(is, "freezing devq");
 		}
+		xpt_print(ccb->ccb_h.path, ": %s failed to allocate PDU\n",
+		    __func__);
 		ccb->ccb_h.status = CAM_RESRC_UNAVAIL | CAM_DEV_QFRZN;
 		xpt_done(ccb);
 		return;
@@ -2318,6 +2324,8 @@ iscsi_action_scsiio(struct iscsi_session *is, union ccb *ccb)
 			xpt_freeze_devq(ccb->ccb_h.path, 1);
 			ISCSI_SESSION_DEBUG(is, "freezing devq");
 		}
+		xpt_print(ccb->ccb_h.path, ": %s failed to allocate io\n",
+		    __func__);
 		ccb->ccb_h.status = CAM_RESRC_UNAVAIL | CAM_DEV_QFRZN;
 		xpt_done(ccb);
 		return;
@@ -2393,6 +2401,8 @@ iscsi_action_scsiio(struct iscsi_session *is, union ccb *ccb)
 				xpt_freeze_devq(ccb->ccb_h.path, 1);
 				ISCSI_SESSION_DEBUG(is, "freezing devq");
 			}
+			xpt_print(ccb->ccb_h.path, ": %s failed to append data to PDU\n",
+			    __func__);
 			ccb->ccb_h.status = CAM_RESRC_UNAVAIL | CAM_DEV_QFRZN;
 			xpt_done(ccb);
 			return;

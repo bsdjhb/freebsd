@@ -2990,6 +2990,8 @@ call_sim:
 			cur_entry = malloc(sizeof(*cur_entry), M_CAMXPT,
 					   M_NOWAIT);
 			if (cur_entry == NULL) {
+				xpt_print(path, ": failed to allocate "
+				    "cur_entry for XPT_SASYNC_CB\n");
 				csa->ccb_h.status = CAM_RESRC_UNAVAIL;
 				break;
 			}
@@ -3101,6 +3103,8 @@ call_sim:
 					    start_ccb->ccb_h.target_id,
 					    start_ccb->ccb_h.target_lun) !=
 					    CAM_REQ_CMP) {
+				xpt_print(path, ": failed to create path "
+				    "for XPT_DEBUG\n");
 				start_ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 			} else {
 				cam_dflags = start_ccb->cdbg.flags;
@@ -3533,6 +3537,7 @@ xpt_create_path(struct cam_path **new_path_ptr, struct cam_periph *perph,
 	path = (struct cam_path *)malloc(sizeof(*path), M_CAMPATH, M_NOWAIT);
 
 	if (path == NULL) {
+		printf("%s: failed to create path\n", __func__);
 		status = CAM_RESRC_UNAVAIL;
 		return(status);
 	}
@@ -3585,6 +3590,8 @@ xpt_compile_path(struct cam_path *new_path, struct cam_periph *perph,
 
 			new_target = xpt_alloc_target(bus, target_id);
 			if (new_target == NULL) {
+				printf("%s: failed to allocate target\n",
+				    __func__);
 				status = CAM_RESRC_UNAVAIL;
 			} else {
 				target = new_target;
@@ -3602,6 +3609,8 @@ xpt_compile_path(struct cam_path *new_path, struct cam_periph *perph,
 								       target,
 								       lun_id);
 				if (new_device == NULL) {
+					printf("%s: failed to allocate device\n",
+					    __func__);
 					status = CAM_RESRC_UNAVAIL;
 				} else {
 					device = new_device;

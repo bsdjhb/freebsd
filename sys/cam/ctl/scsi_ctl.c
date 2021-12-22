@@ -503,12 +503,16 @@ ctlferegister(struct cam_periph *periph, void *arg)
 		new_ccb = (union ccb *)malloc(sizeof(*new_ccb), M_CTLFE,
 					      M_ZERO|M_NOWAIT);
 		if (new_ccb == NULL) {
+			xpt_print(periph->path, ": %s failed to allocate ccb\n",
+			    __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
 		new_io = ctl_alloc_io_nowait(bus_softc->port.ctl_pool_ref);
 		if (new_io == NULL) {
 			free(new_ccb, M_CTLFE);
+			xpt_print(periph->path, ": %s failed to allocate io\n",
+			    __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
@@ -517,6 +521,8 @@ ctlferegister(struct cam_periph *periph, void *arg)
 		if (cmd_info == NULL) {
 			ctl_free_io(new_io);
 			free(new_ccb, M_CTLFE);
+			xpt_print(periph->path, ": %s failed to allocate "
+			    "cmd_info\n", __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
@@ -559,12 +565,16 @@ ctlferegister(struct cam_periph *periph, void *arg)
 		new_ccb = (union ccb *)malloc(sizeof(*new_ccb), M_CTLFE,
 					      M_ZERO|M_NOWAIT);
 		if (new_ccb == NULL) {
+			xpt_print(periph->path, ": %s failed to allocate ccb (2)\n",
+			    __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
 		new_io = ctl_alloc_io_nowait(bus_softc->port.ctl_pool_ref);
 		if (new_io == NULL) {
 			free(new_ccb, M_CTLFE);
+			xpt_print(periph->path, ": %s failed to allocate io (2)\n",
+			    __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}

@@ -238,8 +238,10 @@ cam_periph_alloc(periph_ctor_t *periph_ctor,
 	periph = (struct cam_periph *)malloc(sizeof(*periph), M_CAMPERIPH,
 					     M_NOWAIT|M_ZERO);
 
-	if (periph == NULL)
+	if (periph == NULL) {
+		xpt_print(path, ": failed to allocate periph %s\n", name);
 		return (CAM_RESRC_UNAVAIL);
+	}
 
 	init_level++;
 

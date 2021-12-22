@@ -1952,6 +1952,9 @@ scsi_scan_bus(struct cam_periph *periph, union ccb *request_ccb)
 		/* Find out the characteristics of the bus */
 		work_ccb = xpt_alloc_ccb_nowait();
 		if (work_ccb == NULL) {
+			xpt_print(request_ccb->ccb_h.path,
+			    ": %s failed to allocate ccb for XPT_PATH_INQ\n",
+			    __func__);
 			request_ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 			xpt_done(request_ccb);
 			return;
@@ -2002,6 +2005,9 @@ scsi_scan_bus(struct cam_periph *periph, union ccb *request_ccb)
 		scan_info = (scsi_scan_bus_info *) malloc(sizeof(scsi_scan_bus_info) +
 		    (work_ccb->cpi.max_target * sizeof (u_int)), M_CAMXPT, M_ZERO|M_NOWAIT);
 		if (scan_info == NULL) {
+			xpt_print(request_ccb->ccb_h.path,
+			    ": %s failed to allocate scan_info for XPT_SCAN\n",
+			    __func__);
 			request_ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 			xpt_free_ccb(work_ccb);
 			xpt_done(request_ccb);
@@ -2056,6 +2062,8 @@ scsi_scan_bus(struct cam_periph *periph, union ccb *request_ccb)
 			}
 			work_ccb = xpt_alloc_ccb_nowait();
 			if (work_ccb == NULL) {
+				xpt_print(path, ": %s failed to allocate ccb "
+				    "for XPT_SCAN_LUN\n", __func__);
 				xpt_free_ccb((union ccb *)scan_info->cpi);
 				free(scan_info, M_CAMXPT);
 				xpt_free_path(path);

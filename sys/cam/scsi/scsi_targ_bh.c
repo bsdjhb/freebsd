@@ -270,6 +270,8 @@ targbhenlun(struct cam_periph *periph)
 		atio = (struct ccb_accept_tio*)malloc(sizeof(*atio), M_SCSIBH,
 						      M_ZERO | M_NOWAIT);
 		if (atio == NULL) {
+			xpt_print(periph->path, ": %s failed to allocate "
+			    "atio\n", __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
@@ -278,6 +280,8 @@ targbhenlun(struct cam_periph *periph)
 
 		if (atio->ccb_h.ccb_descr == NULL) {
 			free(atio, M_SCSIBH);
+			xpt_print(periph->path, ": %s failed to allocate "
+			    "ccb_descr\n", __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}
@@ -313,6 +317,8 @@ targbhenlun(struct cam_periph *periph)
 			    M_SCSIBH, M_ZERO | M_NOWAIT);
 
 		if (inot == NULL) {
+			xpt_print(periph->path, ": %s failed to allocate inot\n",
+			    __func__);
 			status = CAM_RESRC_UNAVAIL;
 			break;
 		}

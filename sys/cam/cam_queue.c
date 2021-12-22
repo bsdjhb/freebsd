@@ -99,6 +99,7 @@ camq_resize(struct camq *queue, int new_size)
 	new_array = malloc((new_size + 1) * sizeof(cam_pinfo *), M_CAMQ,
 	    M_NOWAIT);
 	if (new_array == NULL) {
+		printf("%s: failed to allocate array\n", __func__);
 		/* Couldn't satisfy request */
 		return (CAM_RESRC_UNAVAIL);
 	}
