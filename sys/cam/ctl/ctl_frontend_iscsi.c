@@ -1110,19 +1110,19 @@ cfiscsi_data_wait_free(struct cfiscsi_session *cs,
 
 static void
 cfiscsi_data_wait_abort(struct cfiscsi_session *cs,
-    struct cfiscsi_data_wait *cdw, int status)
+    struct cfiscsi_data_wait *cdw)
 {
 	union ctl_io *cdw_io;
 
 	/*
-	 * Set nonzero port status; this prevents backends from
+	 * Set CTL_FLAG_ABORT to prevents backends from
 	 * assuming that the data transfer actually succeeded
-	 * and writing uninitialized data to disk.
+	 * and writing uninitialized data to disk.  This also
+	 * avoids sending a response to the initiator.
 	 */
-	MPASS(status != 0);
 	cdw_io = cdw->cdw_ctl_io;
 	cdw_io->io_hdr.flags &= ~CTL_FLAG_DMA_INPROG;
-	cdw_io->scsiio.io_hdr.port_status = status;
+	cdw_io->io_hdr.flags |= CTL_FLAG_ABORT;
 	cfiscsi_data_wait_free(cs, cdw);
 	ctl_datamove_done(cdw_io, false);
 }
@@ -1158,7 +1158,7 @@ cfiscsi_session_terminate_tasks(struct cfiscsi_session *cs)
 	while ((cdw = TAILQ_FIRST(&cs->cs_waiting_for_data_out)) != NULL) {
 		TAILQ_REMOVE(&cs->cs_waiting_for_data_out, cdw, cdw_next);
 		CFISCSI_SESSION_UNLOCK(cs);
-		cfiscsi_data_wait_abort(cs, cdw, 42);
+		cfiscsi_data_wait_abort(cs, cdw);
 		CFISCSI_SESSION_LOCK(cs);
 	}
 	CFISCSI_SESSION_UNLOCK(cs);
@@ -2785,7 +2785,7 @@ cfiscsi_datamove_out(union ctl_io *io)
 	CFISCSI_SESSION_LOCK(cs);
 	if (cs->cs_terminating) {
 		CFISCSI_SESSION_UNLOCK(cs);
-		cfiscsi_data_wait_abort(cs, cdw, 44);
+		cfiscsi_data_wait_abort(cs, cdw);
 		return;
 	}
 	TAILQ_INSERT_TAIL(&cs->cs_waiting_for_data_out, cdw, cdw_next);
@@ -2979,7 +2979,7 @@ cfiscsi_task_management_done(union ctl_io *io)
 #endif
 			TAILQ_REMOVE(&cs->cs_waiting_for_data_out,
 			    cdw, cdw_next);
-			cfiscsi_data_wait_abort(cs, cdw, 43);
+			cfiscsi_data_wait_abort(cs, cdw);
 		}
 		CFISCSI_SESSION_UNLOCK(cs);
 	}
