@@ -2785,7 +2785,6 @@ cfiscsi_datamove_out(union ctl_io *io)
 	CFISCSI_SESSION_LOCK(cs);
 	if (cs->cs_terminating) {
 		CFISCSI_SESSION_UNLOCK(cs);
-		io->io_hdr.flags |= CTL_FLAG_ABORT;
 		cfiscsi_data_wait_abort(cs, cdw, 44);
 		return;
 	}
