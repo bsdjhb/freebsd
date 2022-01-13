@@ -92,6 +92,7 @@ SUBDIR=	\
 	${_cpuctl} \
 	${_cpufreq} \
 	${_crypto} \
+	${_cryptobench} \
 	${_cryptodev} \
 	ctl \
 	${_cxgb} \
@@ -417,6 +418,7 @@ SUBDIR+=	opensolaris
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
 .if exists(${SRCTOP}/sys/opencrypto)
 _crypto=	crypto
+_cryptobench=	cryptobench
 _cryptodev=	cryptodev
 _random_fortuna=random_fortuna
 _random_other=	random_other
