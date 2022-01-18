@@ -450,6 +450,8 @@ parse_pdus(struct icl_cxgbei_conn *icc, struct sockbuf *sb)
 			return;
 		}
 
+		CXGBEI_TRACE_PDU(icc, "parsed", ip);
+
 		if (lastip == NULL)
 			STAILQ_INSERT_HEAD(&icc->rcvd_pdus, ip, ip_next);
 		else
@@ -584,6 +586,7 @@ do_rx_iscsi_ddp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 
 	icl_cxgbei_new_pdu_set_conn(ip, ic);
 
+	CXGBEI_TRACE_PDU(icc, "received", ip);
 	STAILQ_INSERT_TAIL(&icc->rcvd_pdus, ip, ip_next);
 	if ((icc->rx_flags & RXF_ACTIVE) == 0) {
 		struct cxgbei_worker_thread_softc *cwt = &cwt_softc[icc->cwt];
@@ -835,6 +838,7 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	icl_cxgbei_new_pdu_set_conn(ip, ic);
 
 	/* Enqueue the PDU to the received pdus queue. */
+	CXGBEI_TRACE_PDU(icc, "received", ip);
 	STAILQ_INSERT_TAIL(&icc->rcvd_pdus, ip, ip_next);
 	if ((icc->rx_flags & RXF_ACTIVE) == 0) {
 		struct cxgbei_worker_thread_softc *cwt = &cwt_softc[icc->cwt];

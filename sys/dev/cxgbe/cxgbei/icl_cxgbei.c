@@ -557,6 +557,8 @@ icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 		return;
 	}
 
+	CXGBEI_TRACE_PDU(icc, "sending", ip);
+
 	m = finalize_pdu(icc, icp);
 	M_ASSERTPKTHDR(m);
 	MPASS((m->m_pkthdr.len & 3) == 0);

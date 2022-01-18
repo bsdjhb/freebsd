@@ -132,6 +132,105 @@ struct cxgbei_data {
 
 #define CXGBEI_MAX_ISO_PAYLOAD	65535
 
+#define	CXGBEI_TRACE_PDU(icc, action, ip) do {				\
+	struct iscsi_bhs *_bhs = (ip)->ip_bhs;				\
+	u_int _tid = (icc)->toep->tid;					\
+	uint32_t _datalen = _bhs->bhs_data_segment_len[0] << 16 |	\
+	    _bhs->bhs_data_segment_len[1] << 8 |			\
+	    _bhs->bhs_data_segment_len[0];				\
+									\
+	switch (_bhs->bhs_opcode & ~ISCSI_BHS_OPCODE_IMMEDIATE) {	\
+	case ISCSI_BHS_OPCODE_NOP_OUT:					\
+	{								\
+		struct iscsi_bhs_nop_out *_bhsno = (void *)_bhs;	\
+									\
+		CTR5(KTR_CXGBE, "%s: tid %u " action " NOP-OUT "	\
+		    "datalen %u cmdsn %u expstatsn %u", __func__, _tid,	\
+		    _datalen, be32toh(_bhsno->bhsno_cmdsn),		\
+		    be32toh(_bhsno->bhsno_expstatsn));			\
+		(void)_bhsno;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_COMMAND:				\
+	{								\
+		struct iscsi_bhs_scsi_command *_bhssc = (void *)_bhs;	\
+									\
+		CTR5(KTR_CXGBE, "%s: tid %u " action " COMMAND "	\
+		    "datalen %u cmdsn %u expstatsn %u", __func__, _tid,	\
+		    _datalen, be32toh(_bhssc->bhssc_cmdsn),		\
+		    be32toh(_bhssc->bhssc_expstatsn));			\
+		(void)_bhssc;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_DATA_OUT:				\
+	{								\
+		struct iscsi_bhs_data_out *_bhsdo = (void *)_bhs;	\
+									\
+		CTR5(KTR_CXGBE, "%s: tid %u " action " DATA-OUT "	\
+		    "datalen %u datasn %u expstatsn %u", __func__, _tid,\
+		    _datalen, be32toh(_bhsdo->bhsdo_datasn),		\
+		    be32toh(_bhsdo->bhsdo_expstatsn));			\
+		(void)_bhsdo;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_NOP_IN:					\
+	{								\
+		struct iscsi_bhs_nop_in *_bhsni = (void *)_bhs;		\
+									\
+		CTR5(KTR_CXGBE, "%s: tid %u " action " NOP-IN "		\
+		    "datalen %u statsn %u expcmdsn %u", __func__, _tid,	\
+		    _datalen, be32toh(_bhsni->bhsni_statsn),		\
+		    be32toh(_bhsni->bhsni_expcmdsn));			\
+		(void)_bhsni;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_RESPONSE:				\
+	{								\
+		struct iscsi_bhs_scsi_response *_bhssr = (void *)_bhs;	\
+									\
+		CTR6(KTR_CXGBE, "%s: tid %u " action " RESPONSE "	\
+		    "datalen %u statsn %u expcmdsn %u expdatasn %u",	\
+		    __func__, _tid, _datalen,				\
+		    be32toh(_bhssr->bhssr_statsn),			\
+		    be32toh(_bhssr->bhssr_expcmdsn),			\
+		    be32toh(_bhssr->bhssr_expdatasn));			\
+		(void)_bhssr;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_DATA_IN:				\
+	{								\
+		struct iscsi_bhs_data_in *_bhsdi = (void *)_bhs;	\
+									\
+		CTR6(KTR_CXGBE, "%s: tid %u " action " DATA-IN "	\
+		    "datalen %u datasn %u statsn %u expcmdsn %u",	\
+		    __func__, _tid, _datalen,				\
+		    be32toh(_bhsdi->bhsdi_datasn),			\
+		    be32toh(_bhsdi->bhsdi_statsn),			\
+		    be32toh(_bhsdi->bhsdi_expcmdsn));			\
+		(void)_bhsdi;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_R2T:					\
+	{								\
+		struct iscsi_bhs_r2t *_bhsr2t = (void *)_bhs;		\
+									\
+		CTR6(KTR_CXGBE, "%s: tid %u " action " R2T statsn %u "	\
+		    "datalen %u expcmdsn %u r2tsn %u", __func__, _tid,	\
+		    _datalen, be32toh(_bhsr2t->bhsr2t_statsn),		\
+		    be32toh(_bhsr2t->bhsr2t_expcmdsn),			\
+		    be32toh(_bhsr2t->bhsr2t_r2tsn));			\
+		(void)_bhsr2t;						\
+		break;							\
+	}								\
+	default:							\
+		CTR4(KTR_CXGBE, "%s: tid %u " action " opcode 0x%02x "	\
+		    "datalen %u", __func__, _tid, _bhs->bhs_opcode,	\
+		    _datalen);						\
+	}								\
+	(void)_tid;							\
+	(void)_datalen;							\
+} while (0)
+
 /* cxgbei.c */
 u_int cxgbei_select_worker_thread(struct icl_cxgbei_conn *);
 
