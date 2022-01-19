@@ -1626,6 +1626,7 @@ cfiscsi_ioctl_handoff(struct ctl_iscsi *ci)
 		return;
 	}
 	cs->cs_target = ct;
+	printf("%s: target %s cs %p\n", __func__, cihp->target_name, cs);
 	mtx_unlock(&softc->lock);
 
 restart:
