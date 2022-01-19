@@ -255,7 +255,7 @@ iscsi_pdu_queue_locked(struct icl_pdu *request)
 	iscsi_session_send_postponed(is);
 	postpone = iscsi_pdu_prepare(request);
 	if (postpone) {
-		if (STAILQ_EMPTY(&is->is_postponed))
+		if (STAILQ_EMPTY(&is->is_postponed) && is->is_sim != NULL)
 			xpt_freeze_simq(is->is_sim, 1);
 		STAILQ_INSERT_TAIL(&is->is_postponed, request, ip_next);
 		return;
@@ -340,8 +340,11 @@ iscsi_session_cleanup(struct iscsi_session *is, bool destroy_sim)
 
 	/*
 	 * Remove postponed PDUs.
+	 *
+	 * XXX: This releases simq while is_simq_frozen is true, and
+	 * this can end up with an "extra" xpt_release_simq below.
 	 */
-	if (!STAILQ_EMPTY(&is->is_postponed))
+	if (!STAILQ_EMPTY(&is->is_postponed) && is->is_sim != NULL)
 		xpt_release_simq(is->is_sim, 1);
 	while ((pdu = STAILQ_FIRST(&is->is_postponed)) != NULL) {
 		STAILQ_REMOVE_HEAD(&is->is_postponed, ip_next);
