@@ -41,9 +41,11 @@ __FBSDID("$FreeBSD$");
 #include <sys/condvar.h>
 #include <sys/conf.h>
 #include <sys/gsb_crc32.h>
+#include <sys/endian.h>
 #include <sys/file.h>
 #include <sys/kernel.h>
 #include <sys/kthread.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
@@ -68,6 +70,106 @@ __FBSDID("$FreeBSD$");
 #define ICL_CONN_STATE_HEADER_DIGEST	3
 #define ICL_CONN_STATE_DATA		4
 #define ICL_CONN_STATE_DATA_DIGEST	5
+
+#define	ICL_TRACE_PDU(isc, action, ip) do {				\
+	struct iscsi_bhs *_bhs = (ip)->ip_bhs;				\
+	void *_prv0 = (isc)->ic.ic_prv0;				\
+	uint32_t _datalen = _bhs->bhs_data_segment_len[0] << 16 |	\
+	    _bhs->bhs_data_segment_len[1] << 8 |			\
+	    _bhs->bhs_data_segment_len[0];				\
+									\
+	switch (_bhs->bhs_opcode & ~ISCSI_BHS_OPCODE_IMMEDIATE) {	\
+	case ISCSI_BHS_OPCODE_NOP_OUT:					\
+	{								\
+		struct iscsi_bhs_nop_out *_bhsno = (void *)_bhs;	\
+									\
+		CTR5(KTR_SPARE3, "%s: ic_prv0 %p " action " NOP-OUT "	\
+		    "datalen %u cmdsn %u expstatsn %u", __func__,	\
+		    _prv0, _datalen, be32toh(_bhsno->bhsno_cmdsn),	\
+		    be32toh(_bhsno->bhsno_expstatsn));			\
+		(void)_bhsno;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_COMMAND:				\
+	{								\
+		struct iscsi_bhs_scsi_command *_bhssc = (void *)_bhs;	\
+									\
+		CTR5(KTR_SPARE3, "%s: ic_prv0 %p " action " COMMAND "	\
+		    "datalen %u cmdsn %u expstatsn %u", __func__,	\
+		    _prv0, _datalen, be32toh(_bhssc->bhssc_cmdsn),	\
+		    be32toh(_bhssc->bhssc_expstatsn));			\
+		(void)_bhssc;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_DATA_OUT:				\
+	{								\
+		struct iscsi_bhs_data_out *_bhsdo = (void *)_bhs;	\
+									\
+		CTR5(KTR_SPARE3, "%s: ic_prv0 %p " action " DATA-OUT "	\
+		    "datalen %u datasn %u expstatsn %u", __func__,	\
+		    _prv0, _datalen, be32toh(_bhsdo->bhsdo_datasn),	\
+		    be32toh(_bhsdo->bhsdo_expstatsn));			\
+		(void)_bhsdo;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_NOP_IN:					\
+	{								\
+		struct iscsi_bhs_nop_in *_bhsni = (void *)_bhs;		\
+									\
+		CTR5(KTR_SPARE3, "%s: ic_prv0 %p " action " NOP-IN "	\
+		    "datalen %u statsn %u expcmdsn %u", __func__,	\
+		    _prv0, _datalen, be32toh(_bhsni->bhsni_statsn),	\
+		    be32toh(_bhsni->bhsni_expcmdsn));			\
+		(void)_bhsni;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_RESPONSE:				\
+	{								\
+		struct iscsi_bhs_scsi_response *_bhssr = (void *)_bhs;	\
+									\
+		CTR6(KTR_SPARE3, "%s: ic_prv0 %p " action " RESPONSE "	\
+		    "datalen %u statsn %u expcmdsn %u expdatasn %u",	\
+		    __func__, _prv0, _datalen,				\
+		    be32toh(_bhssr->bhssr_statsn),			\
+		    be32toh(_bhssr->bhssr_expcmdsn),			\
+		    be32toh(_bhssr->bhssr_expdatasn));			\
+		(void)_bhssr;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_SCSI_DATA_IN:				\
+	{								\
+		struct iscsi_bhs_data_in *_bhsdi = (void *)_bhs;	\
+									\
+		CTR6(KTR_SPARE3, "%s: ic_prv0 %p " action " DATA-IN "	\
+		    "datalen %u datasn %u statsn %u expcmdsn %u",	\
+		    __func__, _prv0, _datalen,				\
+		    be32toh(_bhsdi->bhsdi_datasn),			\
+		    be32toh(_bhsdi->bhsdi_statsn),			\
+		    be32toh(_bhsdi->bhsdi_expcmdsn));			\
+		(void)_bhsdi;						\
+		break;							\
+	}								\
+	case ISCSI_BHS_OPCODE_R2T:					\
+	{								\
+		struct iscsi_bhs_r2t *_bhsr2t = (void *)_bhs;		\
+									\
+		CTR6(KTR_SPARE3, "%s: ic_prv0 %p " action " R2T "	\
+		    "datalen %u statsn %u expcmdsn %u r2tsn %u",	\
+		    __func__, _prv0, _datalen,				\
+		    be32toh(_bhsr2t->bhsr2t_statsn),			\
+		    be32toh(_bhsr2t->bhsr2t_expcmdsn),			\
+		    be32toh(_bhsr2t->bhsr2t_r2tsn));			\
+		(void)_bhsr2t;						\
+		break;							\
+	}								\
+	default:							\
+		CTR4(KTR_SPARE3, "%s: ic_prv0 %p " action		\
+		    " opcode 0x%02x datalen %u", __func__, _prv0,	\
+		    _bhs->bhs_opcode, _datalen);			\
+	}								\
+	(void)_prv0;							\
+	(void)_datalen;							\
+} while (0)
 
 struct icl_soft_conn {
 	struct icl_conn	 ic;
@@ -712,6 +814,7 @@ icl_conn_receive_pdus(struct icl_soft_conn *isc, struct mbuf **r, size_t *rs)
 			return;
 		}
 
+		ICL_TRACE_PDU(isc, "received", response);
 		(ic->ic_receive)(response);
 	}
 }
@@ -1142,10 +1245,12 @@ icl_soft_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
 
 	if (ic->ic_disconnecting || ic->ic_socket == NULL) {
 		ICL_DEBUG("icl_pdu_queue on closed connection");
+		ICL_TRACE_PDU(isc, "discarding", ip);
 		icl_soft_pdu_done(ip, ENOTCONN);
 		return;
 	}
 
+	ICL_TRACE_PDU(isc, "sending", ip);
 	if (!STAILQ_EMPTY(&isc->to_send)) {
 		STAILQ_INSERT_TAIL(&isc->to_send, ip, ip_next);
 		/*
