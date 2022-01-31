@@ -1478,6 +1478,8 @@ icl_soft_conn_handoff(struct icl_conn *ic, int fd)
 	fp->f_ops = &badfileops;
 	fp->f_data = NULL;
 	fdrop(fp, curthread);
+
+	CTR2(KTR_SPARE3, "%s: ic_prv0 %p", __func__, ic->ic_prv0);
 	ICL_CONN_UNLOCK(ic);
 
 	error = icl_conn_start(ic);
@@ -1497,6 +1499,7 @@ icl_soft_conn_close(struct icl_conn *ic)
 	 * Receive thread sleeps on so->so_rcv lock, send on ic->ic_lock.
 	 */
 	ICL_CONN_LOCK(ic);
+	CTR2(KTR_SPARE3, "%s: ic_prv0 %p", __func__, ic->ic_prv0);
 	if (!ic->ic_disconnecting) {
 		so = ic->ic_socket;
 		if (so)
