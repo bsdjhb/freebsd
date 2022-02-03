@@ -1800,6 +1800,9 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		}
 	}
 
+#if 1
+	CTR3(KTR_CXGBE, "%s: tid %u, received %d bytes", __func__, tid, len);
+#endif
 	sbappendstream_locked(sb, m, 0);
 	rx_credits = sbspace(sb) > tp->rcv_wnd ? sbspace(sb) - tp->rcv_wnd : 0;
 	if (rx_credits > 0 && sbused(sb) + tp->rcv_wnd < sb->sb_lowat) {
