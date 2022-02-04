@@ -890,7 +890,6 @@ icl_cxgbei_conn_handoff(struct icl_conn *ic, int fd)
 
 	toep->params.ulp_mode = ULP_MODE_ISCSI;
 	toep->ulpcb = icc;
-	printf("%s: tid %u ic_prv0 %p\n", __func__, toep->tid, ic->ic_prv0);
 
 	send_iscsi_flowc_wr(icc->sc, toep,
 	    roundup(max_iso_pdus * max_tx_pdu_len, tp->t_maxseg));
