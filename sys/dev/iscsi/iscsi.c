@@ -1509,7 +1509,6 @@ iscsi_ioctl_daemon_handoff(struct iscsi_softc *sc,
 	is->is_connected = true;
 	is->is_reason[0] = '\0';
 
-	printf("%s: target %s is %p\n", __func__, is->is_conf.isc_target, is);
 	ISCSI_SESSION_UNLOCK(is);
 
 	/*
