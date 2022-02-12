@@ -554,6 +554,7 @@ int
 efi_find_framebuffer(teken_gfx_t *gfx_state)
 {
 	EFI_HANDLE *hlist;
+	EFI_PHYSICAL_ADDRESS addr;
 	UINTN nhandles, i, hsize;
 	struct efi_fb efifb;
 	EFI_STATUS status;
@@ -649,15 +650,16 @@ efi_find_framebuffer(teken_gfx_t *gfx_state)
 	    efifb.fb_mask_blue | efifb.fb_mask_reserved);
 
 	if (gfx_state->tg_shadow_fb != NULL)
-		BS->FreePages((EFI_PHYSICAL_ADDRESS)gfx_state->tg_shadow_fb,
+		BS->FreePages((uintptr_t)gfx_state->tg_shadow_fb,
 		    gfx_state->tg_shadow_sz);
 	gfx_state->tg_shadow_sz =
 	    EFI_SIZE_TO_PAGES(efifb.fb_height * efifb.fb_width *
 	    sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
 	status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData,
-	    gfx_state->tg_shadow_sz,
-	    (EFI_PHYSICAL_ADDRESS *)&gfx_state->tg_shadow_fb);
-	if (status != EFI_SUCCESS)
+	    gfx_state->tg_shadow_sz, &addr);
+	if (status == EFI_SUCCESS)
+		gfx_state->tg_shadow_fb = (void *)(uintptr_t)addr;
+	else
 		gfx_state->tg_shadow_fb = NULL;
 
 	return (0);
