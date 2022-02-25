@@ -129,6 +129,14 @@ static int recvspace = 1048576;
 SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, recvspace, CTLFLAG_RWTUN,
     &recvspace, 0, "Default receive socket buffer size");
 
+static COUNTER_U64_DEFINE_EARLY(cxgbei_unmapped_tasks);
+SYSCTL_COUNTER_U64(_kern_icl_cxgbei, OID_AUTO, unmapped_tasks, CTLFLAG_RD,
+    &cxgbei_unmapped_tasks, "unmapped I/O requests");
+
+static COUNTER_U64_DEFINE_EARLY(cxgbei_unmapped_mbufs);
+SYSCTL_COUNTER_U64(_kern_icl_cxgbei, OID_AUTO, unmapped_mbufs, CTLFLAG_RD,
+    &cxgbei_unmapped_mbufs, "unmapped mbufs");
+
 static volatile u_int icl_cxgbei_ncons;
 
 static icl_conn_new_pdu_t	icl_cxgbei_conn_new_pdu;
@@ -660,6 +668,8 @@ icl_cxgbei_conn_pdu_append_bio(struct icl_conn *ic, struct icl_pdu *ip,
 				atomic_add_int(&icp->ref_cnt, 1);
 				m->m_ext.ext_arg1 = icp;
 				m->m_epg_1st_off = page_offset;
+
+				counter_u64_add(cxgbei_unmapped_mbufs, 1);
 			}
 
 			todo = MIN(len, PAGE_SIZE - page_offset);
@@ -1474,6 +1484,8 @@ no_ddp:
 			free(ddp, M_CXGBEI);
 			goto no_ddp;
 		}
+
+		counter_u64_add(cxgbei_unmapped_tasks, 1);
 		break;
 	case CAM_DATA_VADDR:
 		rc = t4_alloc_page_pods_for_buf(pr, (vm_offset_t)csio->data_ptr,

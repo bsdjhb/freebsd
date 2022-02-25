@@ -33,9 +33,11 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#include <sys/systm.h>
 #include <sys/bio.h>
 #include <sys/condvar.h>
 #include <sys/conf.h>
+#include <sys/counter.h>
 #include <sys/endian.h>
 #include <sys/eventhandler.h>
 #include <sys/file.h>
@@ -49,7 +51,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/sockopt.h>
 #include <sys/sysctl.h>
-#include <sys/systm.h>
 #include <sys/sx.h>
 #include <vm/uma.h>
 
@@ -108,6 +109,17 @@ SYSCTL_INT(_kern_iscsi, OID_AUTO, fail_on_disconnection, CTLFLAG_RWTUN,
 static int fail_on_shutdown = 1;
 SYSCTL_INT(_kern_iscsi, OID_AUTO, fail_on_shutdown, CTLFLAG_RWTUN,
     &fail_on_shutdown, 0, "Fail disconnected sessions on shutdown");
+
+SYSCTL_NODE(_kern_iscsi, OID_AUTO, stats, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
+    "iSCSI initiator stats");
+static COUNTER_U64_DEFINE_EARLY(iscsi_get_unmapped);
+SYSCTL_COUNTER_U64(_kern_iscsi_stats, OID_AUTO, iscsi_get_unmapped, CTLFLAG_RD,
+    &iscsi_get_unmapped, "icl_pdu_get_data calls on unmapped I/O requests");
+
+static COUNTER_U64_DEFINE_EARLY(iscsi_append_unmapped);
+SYSCTL_COUNTER_U64(_kern_iscsi_stats, OID_AUTO, iscsi_append_unmapped,
+    CTLFLAG_RD, &iscsi_append_unmapped,
+    "icl_pdu_append_data calls on unmapped I/O requests");
 
 static MALLOC_DEFINE(M_ISCSI, "iSCSI", "iSCSI initiator");
 static uma_zone_t iscsi_outstanding_zone;
@@ -1092,6 +1104,7 @@ iscsi_pdu_get_data_csio(struct icl_pdu *response, size_t pdu_offset,
 {
 	switch (csio->ccb_h.flags & CAM_DATA_MASK) {
 	case CAM_DATA_BIO:
+		counter_u64_add(iscsi_get_unmapped, 1);
 		icl_pdu_get_bio(response, pdu_offset,
 		    (struct bio *)csio->data_ptr, oreceived, data_segment_len);
 		break;
@@ -1239,6 +1252,7 @@ iscsi_pdu_append_data_csio(struct icl_pdu *request, struct ccb_scsiio *csio,
 {
 	switch (csio->ccb_h.flags & CAM_DATA_MASK) {
 	case CAM_DATA_BIO:
+		counter_u64_add(iscsi_append_unmapped, 1);
 		return (icl_pdu_append_bio(request,
 			(struct bio *)csio->data_ptr, off, len, how));
 	case CAM_DATA_VADDR:
