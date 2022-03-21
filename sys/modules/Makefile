@@ -292,6 +292,7 @@ SUBDIR=	\
 	${_nvd} \
 	${_nvdimm} \
 	${_nvme} \
+	nvmf \
 	${_nvram} \
 	oce \
 	${_ocs_fc} \
