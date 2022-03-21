@@ -30,6 +30,7 @@
 
 #ifdef _KERNEL
 #include <sys/memdesc.h>
+#include <dev/nvmf/nvmf_proto.h>
 
 struct module;
 
@@ -82,7 +83,8 @@ struct nvmf_transport_ops {
 	void (*free_capsule)(struct nvmf_capsule *nc);
 	int (*transmit_capsule)(struct nvmf_capsule *nc);
 
-	const char *name;
+	enum nvmf_trtype trtype;
+	const char *offload;
 };
 
 struct nvmf_transport {
@@ -107,7 +109,8 @@ void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
 void	nvmf_receive_capsule(struct nvmf_capsule *nc);
 
-struct nvmf_transport *nvmf_find_transport(const char *name);
+struct nvmf_transport *nvmf_find_transport(enum nvmf_trtype trtype,
+    const char *offload);
 int	nvmf_transport_module_handler(struct module *, int, void *);
 
 #define	NVMF_TRANSPORT(name, ops)					\
