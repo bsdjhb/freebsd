@@ -34,7 +34,6 @@
 #include <sys/sx.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
-#include <dev/nvmf/nvmf_proto.h>
 
 /* Transport-independent support for fabrics queue pairs and commands. */
 
@@ -136,18 +135,42 @@ nvmf_receive_capsule(struct nvmf_capsule *nc)
 	nc->nc_qpair->nq_receive(nc);
 }
 
+static bool
+transport_ops_matches(struct nvmf_transport_ops *ops, enum nvmf_trtype trtype,
+    const char *offload)
+{
+	return (ops->trtype == trtype &&
+	    (ops->offload == offload || strcmp(ops->offload, offload) == 0));
+}
+
 struct nvmf_transport *
-nvmf_find_transport(const char *name)
+nvmf_find_transport(enum nvmf_trtype trtype, const char *offload)
 {
 	struct nvmf_transport *nt;
 
 	/* XXX: Racey, probably not really the API we want. */
 	sx_slock(&nvmf_transports_lock);
-	TAILQ_FOREACH(nt, &nvmf_transports, nt_link)
-		if (strcmp(nt->nt_ops->name, name) == 0)
+	TAILQ_FOREACH(nt, &nvmf_transports, nt_link) {
+		if (transport_ops_matches(nt->nt_ops, trtype, offload))
 			break;
+	}
 	sx_sunlock(&nvmf_transports_lock);
 	return (nt);
+}
+
+static const char *
+nvmf_transport_type_name(enum nvmf_trtype trtype)
+{
+	switch (trtype) {
+	case NVMF_TRTYPE_RDMA:
+		return ("RDMA");
+	case NVMF_TRTYPE_FC:
+		return ("FC");
+	case NVMF_TRTYPE_TCP:
+		return ("TCP");
+	case NVMF_TRTYPE_INTRA_HOST:
+		return ("loopback");
+	}
 }
 
 int
@@ -160,10 +183,14 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 	case MOD_LOAD:
 		sx_xlock(&nvmf_transports_lock);
 		TAILQ_FOREACH(nt, &nvmf_transports, nt_link) {
-			if (strcmp(nt->nt_ops->name, ops->name) == 0) {
+			if (transport_ops_matches(nt->nt_ops, ops->trtype,
+			    ops->offload)) {
 				sx_xunlock(&nvmf_transports_lock);
-				printf("NVMF: Attempt to register duplicate transport %s\n",
-				    ops->name);
+				printf("NVMF: Attempt to register duplicate transport %s",
+				    nvmf_transport_type_name(ops->trtype));
+				if (ops->offload != NULL)
+					printf(" (%s)", ops->offload);
+				printf("\n");
 				return (EBUSY);
 			}
 		}
