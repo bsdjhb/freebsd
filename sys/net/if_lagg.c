@@ -1766,6 +1766,14 @@ static const struct if_snd_tag_sw lagg_snd_tag_tls_sw = {
 	.type = IF_SND_TAG_TYPE_TLS
 };
 
+static const struct if_snd_tag_sw lagg_snd_tag_tls_rx_sw = {
+	.snd_tag_modify = lagg_snd_tag_modify,
+	.snd_tag_query = lagg_snd_tag_query,
+	.snd_tag_free = lagg_snd_tag_free,
+	.next_snd_tag = lagg_next_snd_tag,
+	.type = IF_SND_TAG_TYPE_TLS_RX
+};
+
 #ifdef RATELIMIT
 static const struct if_snd_tag_sw lagg_snd_tag_tls_rl_sw = {
 	.snd_tag_modify = lagg_snd_tag_modify,
@@ -1850,6 +1858,9 @@ lagg_snd_tag_alloc(struct ifnet *ifp,
 #ifdef KERN_TLS
 	case IF_SND_TAG_TYPE_TLS:
 		sw = &lagg_snd_tag_tls_sw;
+		break;
+	case IF_SND_TAG_TYPE_TLS_RX:
+		sw = &lagg_snd_tag_tls_rx_sw;
 		break;
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:

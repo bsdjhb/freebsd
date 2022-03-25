@@ -39,11 +39,13 @@ __FBSDID("$FreeBSD$");
 #include <sys/mbuf.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
+#include <sys/sockbuf.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <vm/vm_param.h>
+#include <netinet/in.h>
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/ktls.h>
 
@@ -470,9 +472,9 @@ ktls_ocf_tls12_aead_encrypt(struct ktls_ocf_encrypt_state *state,
 }
 
 static int
-ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
+ktls_ocf_tls12_aead_xxcrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, struct mbuf *m, uint64_t seqno,
-    int *trailer_len)
+    int crp_op)
 {
 	struct tls_aead_data ad;
 	struct cryptop crp;
@@ -517,7 +519,7 @@ ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
 	crp.crp_payload_length = tls_comp_len;
 	crp.crp_digest_start = crp.crp_payload_start + crp.crp_payload_length;
 
-	crp.crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
+	crp.crp_op = crp_op;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
 
@@ -528,7 +530,107 @@ ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
+	return (error);
+}
+
+static int
+ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
+    const struct tls_record_layer *hdr, struct mbuf *m, uint64_t seqno,
+    int *trailer_len)
+{
 	*trailer_len = tls->params.tls_tlen;
+
+	return (ktls_ocf_tls12_aead_xxcrypt(tls, hdr, m, seqno,
+	    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST));
+}
+
+static struct mbuf *
+ktls_ocf_zero_dup(struct mbuf *m, int *psize)
+{
+	struct mbuf *top;
+	struct mbuf **pp;
+
+	MPASS(m != NULL);
+
+	pp = &top;
+	*psize = 0;
+
+	do {
+		/* round up to nearest 32-bits */
+		const int sz = (m->m_len + 3) & ~3;
+		/* get an mbuf */
+		*pp = m_get2(sz, M_WAITOK, MT_DATA, M_NOTREADY);
+		(*pp)->m_len = m->m_len;
+		(*psize) += m->m_len;
+		memset(mtod(*pp, void *), 0, sz);
+		pp = &(*pp)->m_next;
+	} while ((m = m->m_next) != NULL);
+
+	*pp = NULL;
+
+	return (top);
+}
+
+/*
+ * Reconstruct encrypted mbuf data in input buffer.
+ */
+static void
+ktls_ocf_recrypt_fixup(struct mbuf *m0, struct mbuf *m1)
+{
+	while (m0 != NULL) {
+		MPASS(m1 != NULL);
+		MPASS(m0->m_len == m1->m_len);
+
+		if (m0->m_flags & M_DECRYPTED) {
+			uintptr_t align = mtod(m0, uintptr_t) | mtod(m1, uintptr_t);
+
+			/* check if we can do 32-bit XORs */
+			if ((align & 3) == 0) {
+				for (int off = 0; off != howmany(m0->m_len, 4); off++)
+					mtod(m0, uint32_t *)[off] ^= mtod(m1, uint32_t *)[off];
+			} else {
+				for (int off = 0; off != m0->m_len; off++)
+					mtod(m0, uint8_t *)[off] ^= mtod(m1, uint8_t *)[off];
+			}
+		}
+		m0 = m0->m_next;
+		m1 = m1->m_next;
+	}
+
+	MPASS(m0 == NULL);
+	MPASS(m1 == NULL);
+}
+
+static const uint8_t ktls_ocf_zero_hash[MAX(AES_GMAC_HASH_LEN, POLY1305_HASH_LEN)];
+
+static int
+ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
+    const struct tls_record_layer *hdr, struct mbuf *m,
+    uint64_t seqno, int *trailer_len)
+{
+	struct mbuf *mzero;
+	int error;
+	int size;
+
+	*trailer_len = tls->params.tls_tlen;
+
+	mzero = ktls_ocf_zero_dup(m, &size);
+
+	error = ktls_ocf_tls12_aead_xxcrypt(tls, hdr, mzero, seqno,
+	    CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST);
+
+	if (__predict_true(error == 0)) {
+		/* Keep the hash tag intact. */
+		m_copyback(mzero, size - *trailer_len, *trailer_len, ktls_ocf_zero_hash);
+
+		ktls_ocf_recrypt_fixup(m, mzero);
+
+		error = ktls_ocf_tls12_aead_xxcrypt(tls, hdr, m, seqno,
+		    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST);
+	}
+
+	m_freem(mzero);
+
 	return (error);
 }
 
@@ -611,9 +713,9 @@ ktls_ocf_tls13_aead_encrypt(struct ktls_ocf_encrypt_state *state,
 }
 
 static int
-ktls_ocf_tls13_aead_decrypt(struct ktls_session *tls,
+ktls_ocf_tls13_aead_xxcrypt(struct ktls_session *tls,
     const struct tls_record_layer *hdr, struct mbuf *m, uint64_t seqno,
-    int *trailer_len)
+    int crp_op)
 {
 	struct tls_aead_data_13 ad;
 	struct cryptop crp;
@@ -647,7 +749,7 @@ ktls_ocf_tls13_aead_decrypt(struct ktls_session *tls,
 	crp.crp_payload_length = ntohs(hdr->tls_length) - tag_len;
 	crp.crp_digest_start = crp.crp_payload_start + crp.crp_payload_length;
 
-	crp.crp_op = CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST;
+	crp.crp_op = crp_op;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
 
@@ -658,7 +760,48 @@ ktls_ocf_tls13_aead_decrypt(struct ktls_session *tls,
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
-	*trailer_len = tag_len;
+	return (error);
+}
+
+static int
+ktls_ocf_tls13_aead_decrypt(struct ktls_session *tls,
+    const struct tls_record_layer *hdr, struct mbuf *m, uint64_t seqno,
+    int *trailer_len)
+{
+	*trailer_len = tls->params.tls_tlen - 1;
+
+	return (ktls_ocf_tls13_aead_xxcrypt(tls, hdr, m, seqno,
+	    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST));
+}
+
+static int
+ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
+    const struct tls_record_layer *hdr, struct mbuf *m,
+    uint64_t seqno, int *trailer_len)
+{
+	struct mbuf *mzero;
+	int error;
+	int size;
+
+	*trailer_len = tls->params.tls_tlen - 1;
+
+	mzero = ktls_ocf_zero_dup(m, &size);
+
+	error = ktls_ocf_tls13_aead_xxcrypt(tls, hdr, mzero, seqno,
+	    CRYPTO_OP_ENCRYPT | CRYPTO_OP_COMPUTE_DIGEST);
+
+	if (__predict_true(error == 0)) {
+		/* Keep the hash tag intact. */
+		m_copyback(mzero, size - *trailer_len, *trailer_len, ktls_ocf_zero_hash);
+
+		ktls_ocf_recrypt_fixup(m, mzero);
+
+		error = ktls_ocf_tls13_aead_xxcrypt(tls, hdr, m, seqno,
+		    CRYPTO_OP_DECRYPT | CRYPTO_OP_VERIFY_DIGEST);
+	}
+
+	m_freem(mzero);
+
 	return (error);
 }
 
@@ -806,15 +949,21 @@ ktls_ocf_try(struct socket *so, struct ktls_session *tls, int direction)
 	if (tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16 ||
 	    tls->params.cipher_algorithm == CRYPTO_CHACHA20_POLY1305) {
 		if (direction == KTLS_TX) {
-			if (tls->params.tls_vminor == TLS_MINOR_VER_THREE)
+			if (tls->params.tls_vminor == TLS_MINOR_VER_THREE) {
+				tls->sw_decrypt = NULL;
 				tls->sw_encrypt = ktls_ocf_tls13_aead_encrypt;
-			else
+			} else {
+				tls->sw_decrypt = NULL;
 				tls->sw_encrypt = ktls_ocf_tls12_aead_encrypt;
+			}
 		} else {
-			if (tls->params.tls_vminor == TLS_MINOR_VER_THREE)
+			if (tls->params.tls_vminor == TLS_MINOR_VER_THREE) {
 				tls->sw_decrypt = ktls_ocf_tls13_aead_decrypt;
-			else
+				tls->sw_recrypt = ktls_ocf_tls13_aead_recrypt;
+			} else {
 				tls->sw_decrypt = ktls_ocf_tls12_aead_decrypt;
+				tls->sw_recrypt = ktls_ocf_tls12_aead_recrypt;
+			}
 		}
 	} else {
 		tls->sw_encrypt = ktls_ocf_tls_cbc_encrypt;
