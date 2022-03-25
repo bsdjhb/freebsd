@@ -1077,7 +1077,8 @@ out:
 }
 
 static int
-ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction, bool force)
+ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction,
+    bool force)
 {
 	struct m_snd_tag *mst;
 	int error;
