@@ -1094,7 +1094,7 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction, bool 
 			goto done;
 		break;
 	default:
-		return (EINVAL);
+		__assert_unreachable();
 	}
 
 	tls->mode = TCP_TLS_MODE_IFNET;
@@ -1641,7 +1641,7 @@ ktls_reset_send_tag(void *context, int pending)
 		error = ktls_alloc_rcv_tag(inp, tls, true, &new);
 		break;
 	default:
-		goto drop_connection;
+		__assert_unreachable();
 	}
 	if (error != 0)
 		goto drop_connection;
