@@ -280,7 +280,7 @@ done:
 #ifdef KERN_TLS
 	if (tls != NULL) {
 		if (error == EAGAIN)
-			error = ktls_output_eagain(inp, tls);
+			error = ktls_output_eagain(inp);
 		ktls_free(tls);
 	}
 #endif

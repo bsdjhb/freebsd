@@ -366,6 +366,14 @@ static const struct if_snd_tag_sw vlan_snd_tag_tls_sw = {
 	.type = IF_SND_TAG_TYPE_TLS
 };
 
+static const struct if_snd_tag_sw vlan_snd_tag_tls_rx_sw = {
+	.snd_tag_modify = vlan_snd_tag_modify,
+	.snd_tag_query = vlan_snd_tag_query,
+	.snd_tag_free = vlan_snd_tag_free,
+	.next_snd_tag = vlan_next_snd_tag,
+	.type = IF_SND_TAG_TYPE_TLS_RX
+};
+
 #ifdef RATELIMIT
 static const struct if_snd_tag_sw vlan_snd_tag_tls_rl_sw = {
 	.snd_tag_modify = vlan_snd_tag_modify,
@@ -2206,6 +2214,9 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
 	struct ifnet *parent;
 	int error;
 
+	NET_EPOCH_ENTER(et);
+	ifv = ifp->if_softc;
+
 	switch (params->hdr.type) {
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_UNLIMITED:
@@ -2219,6 +2230,12 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
 	case IF_SND_TAG_TYPE_TLS:
 		sw = &vlan_snd_tag_tls_sw;
 		break;
+	case IF_SND_TAG_TYPE_TLS_RX:
+		sw = &vlan_snd_tag_tls_rx_sw;
+		if (params->tls_rx.vlan_id != 0)
+			goto failure;
+		params->tls_rx.vlan_id = ifv->ifv_vid;
+		break;
 #ifdef RATELIMIT
 	case IF_SND_TAG_TYPE_TLS_RATE_LIMIT:
 		sw = &vlan_snd_tag_tls_rl_sw;
@@ -2226,19 +2243,15 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
 #endif
 #endif
 	default:
-		return (EOPNOTSUPP);
+		goto failure;
 	}
 
-	NET_EPOCH_ENTER(et);
-	ifv = ifp->if_softc;
 	if (ifv->ifv_trunk != NULL)
 		parent = PARENT(ifv);
 	else
 		parent = NULL;
-	if (parent == NULL) {
-		NET_EPOCH_EXIT(et);
-		return (EOPNOTSUPP);
-	}
+	if (parent == NULL)
+		goto failure;
 	if_ref(parent);
 	NET_EPOCH_EXIT(et);
 
@@ -2259,6 +2272,9 @@ vlan_snd_tag_alloc(struct ifnet *ifp,
 
 	*ppmt = &vst->com;
 	return (0);
+failure:
+	NET_EPOCH_EXIT(et);
+	return (EOPNOTSUPP);
 }
 
 static struct m_snd_tag *

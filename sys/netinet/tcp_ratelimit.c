@@ -1361,7 +1361,7 @@ tcp_set_pacing_rate(struct tcpcb *tp, struct ifnet *ifp,
 			 * tag to a TLS ratelimit tag.
 			 */
 			MPASS(tls->snd_tag->sw->type == IF_SND_TAG_TYPE_TLS);
-			ktls_output_eagain(tp->t_inpcb, tls);
+			ktls_output_eagain(tp->t_inpcb);
 		}
 #endif
 	} else {

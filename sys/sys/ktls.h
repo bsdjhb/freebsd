@@ -184,6 +184,7 @@ struct ktls_session {
 	u_int	wq_index;
 	volatile u_int refcount;
 	int mode;
+	int direction;
 
 	struct task reset_tag_task;
 	struct task disable_ifnet_task;
@@ -201,6 +202,10 @@ struct ktls_session {
 extern unsigned int ktls_ifnet_max_rexmit_pct;
 
 void ktls_check_rx(struct sockbuf *sb);
+int ktls_mbuf_crypto_state(struct mbuf *mb, int offset, int len);
+#define	KTLS_MBUF_CRYPTO_ST_MIXED 0
+#define	KTLS_MBUF_CRYPTO_ST_ENCRYPTED 1
+#define	KTLS_MBUF_CRYPTO_ST_DECRYPTED -1
 void ktls_disable_ifnet(void *arg);
 int ktls_enable_rx(struct socket *so, struct tls_enable *en);
 int ktls_enable_tx(struct socket *so, struct tls_enable *en);
@@ -215,7 +220,7 @@ int ktls_get_rx_mode(struct socket *so, int *modep);
 int ktls_set_tx_mode(struct socket *so, int mode);
 int ktls_get_tx_mode(struct socket *so, int *modep);
 int ktls_get_rx_sequence(struct inpcb *inp, uint32_t *tcpseq, uint64_t *tlsseq);
-int ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls);
+int ktls_output_eagain(struct inpcb *inp);
 #ifdef RATELIMIT
 int ktls_modify_txrtlmt(struct ktls_session *tls, uint64_t max_pacing_rate);
 #endif

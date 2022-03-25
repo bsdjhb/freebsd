@@ -54,6 +54,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/sx.h>
 #include <sys/sysctl.h>
 
+#include <netinet/in.h>
+
 /*
  * Function pointer set by the AIO routines so that the socket buffer code
  * can call back into the AIO module if it is loaded.
@@ -964,14 +966,30 @@ static void
 sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 {
 	struct mbuf *n;
+	int flags = 0;
 
 	SBLASTMBUFCHK(sb);
 
-	/* Remove all packet headers and mbuf tags to get a pure data chain. */
-	m_demote(m, 1, 0);
+	/* Mbuf chain must start with a packet header. */
+	MPASS((m->m_flags & M_PKTHDR) != 0);
 
-	for (n = m; n != NULL; n = n->m_next)
-		n->m_flags |= M_NOTREADY;
+	/* Remove all packet headers and mbuf tags to get a pure data chain. */
+	for (n = m; n != NULL; n = n->m_next) {
+		if (n->m_flags & M_PKTHDR) {
+			if ((n->m_pkthdr.csum_flags & CSUM_TLS_MASK) == CSUM_TLS_DECRYPTED) {
+				/* mark all subsequent packets decrypted */
+				flags = M_NOTREADY | M_DECRYPTED;
+			} else {
+				/* mark all subsequent packets not ready */
+				flags = M_NOTREADY;
+			}
+			m_demote_pkthdr(n);
+		}
+
+		n->m_flags &= M_DEMOTEFLAGS;
+		n->m_flags |= flags;
+	}
+
 	sbcompress_ktls_rx(sb, m, sb->sb_mtlstail);
 	ktls_check_rx(sb);
 }
@@ -1427,7 +1445,8 @@ sbcompress_ktls_rx(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 		if (n &&
 		    M_WRITABLE(n) &&
 		    ((sb->sb_flags & SB_NOCOALESCE) == 0) &&
-		    !(n->m_flags & (M_EXTPG)) &&
+		    !((m->m_flags ^ n->m_flags) & M_DECRYPTED) &&
+		    !(n->m_flags & M_EXTPG) &&
 		    m->m_len <= MCLBYTES / 4 && /* XXX: Don't copy too much */
 		    m->m_len <= M_TRAILINGSPACE(n)) {
 			m_copydata(m, 0, m->m_len, mtodo(n, n->m_len));
