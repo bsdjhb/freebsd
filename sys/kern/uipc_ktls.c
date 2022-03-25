@@ -1002,6 +1002,9 @@ ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	struct tcpcb *tp;
 	int error;
 
+	if (!ktls_ocf_recrypt_supported(tls))
+		return (ENXIO);
+
 	INP_RLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_RUNLOCK(inp);
