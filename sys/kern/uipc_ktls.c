@@ -1605,8 +1605,7 @@ ktls_reset_send_tag(void *context, int pending)
 {
 	struct epoch_tracker et;
 	struct ktls_session *tls;
-	struct m_snd_tag *snd_old;
-	struct m_snd_tag *snd_new;
+	struct m_snd_tag *old, *new;
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	int error;
@@ -1627,19 +1626,19 @@ ktls_reset_send_tag(void *context, int pending)
 	 * pointer.
 	 */
 	INP_WLOCK(inp);
-	snd_old = tls->snd_tag;
+	old = tls->snd_tag;
 	tls->snd_tag = NULL;
 	INP_WUNLOCK(inp);
 
-	if (snd_old != NULL)
-		m_snd_tag_rele(snd_old);
+	if (old != NULL)
+		m_snd_tag_rele(old);
 
 	switch (tls->direction) {
 	case KTLS_TX:
-		error = ktls_alloc_snd_tag(inp, tls, true, &snd_new);
+		error = ktls_alloc_snd_tag(inp, tls, true, &new);
 		break;
 	case KTLS_RX:
-		error = ktls_alloc_rcv_tag(inp, tls, true, &snd_new);
+		error = ktls_alloc_rcv_tag(inp, tls, true, &new);
 		break;
 	default:
 		goto drop_connection;
@@ -1648,7 +1647,7 @@ ktls_reset_send_tag(void *context, int pending)
 		goto drop_connection;
 
 	INP_WLOCK(inp);
-	tls->snd_tag = snd_new;
+	tls->snd_tag = new;
 
 	mtx_pool_lock(mtxpool_sleep, tls);
 	tls->reset_pending = false;
