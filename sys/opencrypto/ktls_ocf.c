@@ -673,7 +673,7 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 		len -= tls->params.tls_hlen;
 
 		/*
-		 * If a drop occured in the tag, all of the payload
+		 * If a drop occurred in the tag, all of the payload
 		 * might be marked as decrypted.  We still need to
 		 * re-encrypt the data to check the tag, but we don't
 		 * want to modify the tag, so clamp the range to
@@ -886,7 +886,7 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 		len -= tls->params.tls_hlen;
 
 		/*
-		 * If a drop occured in the tag, all of the payload
+		 * If a drop occurred in the tag, all of the payload
 		 * might be marked as decrypted.  We still need to
 		 * re-encrypt the data to check the tag, but we don't
 		 * want to modify the tag, so clamp the range to
