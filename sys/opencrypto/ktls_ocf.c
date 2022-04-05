@@ -685,7 +685,7 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 
 	os = tls->ocf_session;
 
-	crypto_initreq(&crp, os->sid);
+	crypto_initreq(&crp, os->recrypt_sid);
 
 	KASSERT(tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
 	    ("%s: only AES-GCM is supported", __func__));
@@ -897,7 +897,7 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 
 	os = tls->ocf_session;
 
-	crypto_initreq(&crp, os->sid);
+	crypto_initreq(&crp, os->recrypt_sid);
 
 	KASSERT(tls->params.cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
 	    ("%s: only AES-GCM is supported", __func__));
