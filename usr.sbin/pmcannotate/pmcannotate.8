@@ -39,6 +39,7 @@
 .Op Fl h
 .Op Fl k Ar pathname
 .Op Fl l Ar level
+.Op Fl m Ar mode
 .Ar pmcout.out binaryobj
 .Sh DESCRIPTION
 The
@@ -86,6 +87,18 @@ This directory specifies where
 should look for the kernel and its modules.
 The default is
 .Pa /boot/kernel .
+.It Fl m Ar mode
+Format to use when annotating source or assembly lines.
+One of:
+.Bl -tag -width indent
+.It Cm block
+Display percentage of matching samples relative to samples
+falling in the current block.
+.It Cm global
+Display percentage of matching samples relative to all samples.
+.It Cm raw
+Display the raw count of matching samples.
+.El
 .El
 .Sh LIMITATIONS
 As long as
