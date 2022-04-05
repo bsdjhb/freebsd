@@ -904,7 +904,7 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 
 	/* Setup the IV. */
 	memcpy(nonce, tls->params.iv, tls->params.iv_len);
-	*(uint64_t *)(nonce + 4) ^= htobe64(m->m_epg_seqno);
+	*(uint64_t *)(nonce + 4) ^= htobe64(seqno);
 	memcpy(crp.crp_iv, nonce, sizeof(nonce));
 	be32enc(crp.crp_iv + sizeof(nonce), 2);
 
