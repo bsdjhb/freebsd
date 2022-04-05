@@ -714,7 +714,8 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 	crypto_destroyreq(&crp);
 
 	if (error == 0 && len == 0)
-		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, len, buf);
+		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, payload_len,
+		    buf);
 
 	free(buf, M_KTLS_OCF);
 	return (error);
@@ -927,7 +928,8 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 	crypto_destroyreq(&crp);
 
 	if (error == 0 && len == 0)
-		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, len, buf);
+		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, payload_len,
+		    buf);
 
 	free(buf, M_KTLS_OCF);
 	return (error);
