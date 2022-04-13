@@ -701,13 +701,13 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 		crypto_use_output_buf(&crp, buf, payload_len);
 	} else {
 		buf = NULL;
-		crp.crp_payload_start = tls->params.tls_hlen;
 		crp.crp_payload_length = len;
 	}
 
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
+	crp.crp_payload_start = tls->params.tls_hlen;
 	counter_u64_add(ocf_tls12_gcm_recrypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
 
@@ -915,13 +915,13 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 		crypto_use_output_buf(&crp, buf, payload_len);
 	} else {
 		buf = NULL;
-		crp.crp_payload_start = tls->params.tls_hlen;
 		crp.crp_payload_length = len;
 	}
 
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
+	crp.crp_payload_start = tls->params.tls_hlen;
 	counter_u64_add(ocf_tls13_gcm_recrypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
 
