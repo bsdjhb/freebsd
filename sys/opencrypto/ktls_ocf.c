@@ -171,21 +171,6 @@ SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, retries, CTLFLAG_RD,
     &ocf_retries,
     "Number of OCF encryption operation retries");
 
-static COUNTER_U64_DEFINE_EARLY(ocf_recrypt_encrypt_start);
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, recrypt_encrypt_start,
-    CTLFLAG_RD, &ocf_recrypt_encrypt_start,
-    "Total number of recrypt operations where first mbuf was not M_DECRYPTED");
-
-static COUNTER_U64_DEFINE_EARLY(ocf_recrypt_encrypt_multiple);
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, recrypt_encrypt_multiple,
-    CTLFLAG_RD, &ocf_recrypt_encrypt_multiple,
-    "Total number of recrypt operations with multiple decrypted regions");
-
-static COUNTER_U64_DEFINE_EARLY(ocf_recrypt_null_header);
-SYSCTL_COUNTER_U64(_kern_ipc_tls_stats_ocf, OID_AUTO, recrypt_null_header,
-    CTLFLAG_RD, &ocf_recrypt_null_header,
-    "Total number of no-op recrypt operations");
-
 static int
 ktls_ocf_callback_sync(struct cryptop *crp __unused)
 {
@@ -582,41 +567,6 @@ ktls_ocf_tls12_aead_decrypt(struct ktls_session *tls,
 }
 
 /*
- * If a partially encrypted TLS record has a single decrypted region
- * at the head of the chain, return the length of that region permitting
- * OCF to modify the mbuf in place.
- *
- * JHB: I suspect this is actually always true.
- */
-static u_int
-ktls_ocf_recrypt_length(struct mbuf *m)
-{
-	u_int len;
-
-	if ((m->m_flags & M_DECRYPTED) == 0) {
-		counter_u64_add(ocf_recrypt_encrypt_start, 1);
-		return (0);
-	}
-
-	len = 0;
-	while ((m->m_flags & M_DECRYPTED) != 0) {
-		len += m->m_len;
-		m = m->m_next;
-		KASSERT(m != NULL, ("%s: all mbufs were decrypted", __func__));
-	}
-
-	/* Verify all remaining mbufs are encrypted. */
-	while (m != NULL) {
-		if ((m->m_flags & M_DECRYPTED) != 0) {
-			counter_u64_add(ocf_recrypt_encrypt_multiple, 1);
-			return (0);
-		}
-		m = m->m_next;
-	}
-	return (len);
-}
-
-/*
  * Reconstruct encrypted mbuf data in input buffer.
  */
 static void
@@ -652,36 +602,8 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 	struct cryptop crp;
 	struct ktls_ocf_session *os;
 	char *buf;
-	u_int len, payload_len;
+	u_int payload_len;
 	int error;
-
-	/* Determine how much of the payload is decrypted. */
-	payload_len = ntohs(hdr->tls_length) -
-	    (AES_GMAC_HASH_LEN + sizeof(uint64_t));
-	len = ktls_ocf_recrypt_length(m);
-	if (len > 0) {
-		/*
-		 * If a drop occurred in the header, assume the entire record
-		 * is encrypted and just return.
-		 */
-		if (len <= tls->params.tls_hlen) {
-			counter_u64_add(ocf_recrypt_null_header, 1);
-			return (0);
-		}
-
-		/* Skip over the header. */
-		len -= tls->params.tls_hlen;
-
-		/*
-		 * If a drop occurred in the tag, all of the payload
-		 * might be marked as decrypted.  We still need to
-		 * re-encrypt the data to check the tag, but we don't
-		 * want to modify the tag, so clamp the range to
-		 * re-encrypt to the payload.
-		 */
-		if (len > payload_len)
-			len = payload_len;
-	}
 
 	os = tls->ocf_session;
 
@@ -695,25 +617,23 @@ ktls_ocf_tls12_aead_recrypt(struct ktls_session *tls,
 	memcpy(crp.crp_iv + TLS_AEAD_GCM_LEN, hdr + 1, sizeof(uint64_t));
 	be32enc(crp.crp_iv + AES_GCM_IV_LEN, 2);
 
-	if (len == 0) {
-		buf = malloc(payload_len, M_KTLS_OCF, M_WAITOK);
-		crp.crp_payload_length = payload_len;
-		crypto_use_output_buf(&crp, buf, payload_len);
-	} else {
-		buf = NULL;
-		crp.crp_payload_length = len;
-	}
-
+	payload_len = ntohs(hdr->tls_length) -
+	    (AES_GMAC_HASH_LEN + sizeof(uint64_t));
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
 	crp.crp_payload_start = tls->params.tls_hlen;
+	crp.crp_payload_length = payload_len;
+
+	buf = malloc(payload_len, M_KTLS_OCF, M_WAITOK);
+	crypto_use_output_buf(&crp, buf, payload_len);
+
 	counter_u64_add(ocf_tls12_gcm_recrypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
 
-	if (error == 0 && len == 0)
+	if (error == 0)
 		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, payload_len,
 		    buf);
 
@@ -866,35 +786,8 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 	struct ktls_ocf_session *os;
 	char *buf;
 	char nonce[12];
-	u_int len, payload_len;
+	u_int payload_len;
 	int error;
-
-	/* Determine how much of the payload is decrypted. */
-	payload_len = ntohs(hdr->tls_length) - AES_GMAC_HASH_LEN;
-	len = ktls_ocf_recrypt_length(m);
-	if (len > 0) {
-		/*
-		 * If a drop occurred in the header, assume the entire record
-		 * is encrypted and just return.
-		 */
-		if (len <= tls->params.tls_hlen) {
-			counter_u64_add(ocf_recrypt_null_header, 1);
-			return (0);
-		}
-
-		/* Skip over the header. */
-		len -= tls->params.tls_hlen;
-
-		/*
-		 * If a drop occurred in the tag, all of the payload
-		 * might be marked as decrypted.  We still need to
-		 * re-encrypt the data to check the tag, but we don't
-		 * want to modify the tag, so clamp the range to
-		 * re-encrypt to the payload.
-		 */
-		if (len > payload_len)
-			len = payload_len;
-	}
 
 	os = tls->ocf_session;
 
@@ -909,25 +802,22 @@ ktls_ocf_tls13_aead_recrypt(struct ktls_session *tls,
 	memcpy(crp.crp_iv, nonce, sizeof(nonce));
 	be32enc(crp.crp_iv + sizeof(nonce), 2);
 
-	if (len == 0) {
-		buf = malloc(payload_len, M_KTLS_OCF, M_WAITOK);
-		crp.crp_payload_length = payload_len;
-		crypto_use_output_buf(&crp, buf, payload_len);
-	} else {
-		buf = NULL;
-		crp.crp_payload_length = len;
-	}
-
+	payload_len = ntohs(hdr->tls_length) - AES_GMAC_HASH_LEN;
 	crp.crp_op = CRYPTO_OP_ENCRYPT;
 	crp.crp_flags = CRYPTO_F_CBIMM | CRYPTO_F_IV_SEPARATE;
 	crypto_use_mbuf(&crp, m);
 	crp.crp_payload_start = tls->params.tls_hlen;
+	crp.crp_payload_length = payload_len;
+
+	buf = malloc(payload_len, M_KTLS_OCF, M_WAITOK);
+	crypto_use_output_buf(&crp, buf, payload_len);
+
 	counter_u64_add(ocf_tls13_gcm_recrypts, 1);
 	error = ktls_ocf_dispatch(os, &crp);
 
 	crypto_destroyreq(&crp);
 
-	if (error == 0 && len == 0)
+	if (error == 0)
 		ktls_ocf_recrypt_fixup(m, tls->params.tls_hlen, payload_len,
 		    buf);
 
