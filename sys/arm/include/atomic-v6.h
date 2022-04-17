@@ -199,7 +199,7 @@ ATOMIC_ACQ_REL_LONG(clear)
 	    "   str" SUF "ne   %[tmp], [%[oldv]]         \n"  \
 	    "   movne          %[ret], #0                \n"  \
 	    "   strex" SUF "eq %[ret], %[newv], [%[ptr]] \n"  \
-	    "   eorseq         %[ret], #1                \n"  \
+	    "   eoreqs         %[ret], #1                \n"  \
 	    "   beq            1b                        \n"  \
 	    : [ret] "=&r" (RET),                              \
 	      [tmp] "=&r" (tmp)                               \
@@ -223,7 +223,7 @@ ATOMIC_ACQ_REL_LONG(clear)
 	    "   movne    %[ret], #0                           \n"  \
 	    "   strdne   %[cmp], [%[oldv]]                    \n"  \
 	    "   strexdeq %[ret], %Q[newv], %R[newv], [%[ptr]] \n"  \
-	    "   eorseq   %[ret], #1                           \n"  \
+	    "   eoreqs   %[ret], #1                           \n"  \
 	    "   beq      1b                                   \n"  \
 	    : [ret] "=&r" (RET),                                   \
 	      [cmp] "=&r" (cmp),                                   \
@@ -389,7 +389,7 @@ atomic_fcmpset_rel_64(volatile uint64_t *_ptr, uint64_t *_old, uint64_t _new)
 	    "   itee           ne                        \n" \
 	    "   movne          %[ret], #0                \n" \
 	    "   strex" SUF "eq %[ret], %[newv], [%[ptr]] \n" \
-	    "   eorseq         %[ret], #1                \n" \
+	    "   eoreqs         %[ret], #1                \n" \
 	    "   beq            1b                        \n" \
 	    : [ret] "=&r" (RET)                              \
 	    : [ptr] "r"   (_ptr),                            \
@@ -410,7 +410,7 @@ atomic_fcmpset_rel_64(volatile uint64_t *_ptr, uint64_t *_old, uint64_t _new)
 	    "   itee     ne                                   \n" \
 	    "   movne    %[ret], #0                           \n" \
 	    "   strexdeq %[ret], %Q[newv], %R[newv], [%[ptr]] \n" \
-	    "   eorseq   %[ret], #1                           \n" \
+	    "   eoreqs   %[ret], #1                           \n" \
 	    "   beq      1b                                   \n" \
 	    : [ret] "=&r" (RET),                                  \
 	      [tmp] "=&r" (tmp)                                   \
