@@ -2386,8 +2386,11 @@ sched_wakeup(struct thread *td, int srqflags)
 	 * priority.
 	 */
 	if (PRI_BASE(td->td_pri_class) == PRI_ITHD &&
-	    td->td_priority != td->td_base_ithread_pri)
+	    td->td_base_pri != td->td_base_ithread_pri) {
+		CTR(KTR_SPARE4, "sched_wakeup: tid %ld prio %u -> %u",
+		    td->td_tid, td->td_base_pri, td->td_base_ithread_pri);
 		sched_prio(td, td->td_base_ithread_pri);
+	}
 
 	/*
 	 * Reset the slice value since we slept and advanced the round-robin.
@@ -2641,9 +2644,15 @@ sched_clock(struct thread *td, int cnt)
 		 */
 		if (PRI_BASE(td->td_pri_class) == PRI_ITHD) {
 			SCHED_STAT_INC(ithread_preemptions);
+			CTR(KTR_SPARE4, "sched_clock: tid %ld preempted",
+			    td->td_tid);
 			td->td_owepreempt = 1;
 			if (td->td_base_pri + RQ_PPQ < PRI_MAX_ITHD) {
 				SCHED_STAT_INC(ithread_demotions);
+				CTR(KTR_SPARE4,
+				    "sched_clock: tid %ld prio %u -> %u",
+				    td->td_tid, td->td_base_pri,
+				    td->td_base_pri + RQ_PPQ);
 				sched_prio(td, td->td_base_pri + RQ_PPQ);
 			}
 		} else {
