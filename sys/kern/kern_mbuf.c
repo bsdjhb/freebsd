@@ -1645,12 +1645,21 @@ m_rcvif_serialize(struct mbuf *m)
 	gen = m->m_pkthdr.rcvif->if_idxgen;
 	m->m_pkthdr.rcvidx = idx;
 	m->m_pkthdr.rcvgen = gen;
+	if (m->m_pkthdr.leaf_rcvif != NULL) {
+		idx = m->m_pkthdr.leaf_rcvif->if_index;
+		gen = m->m_pkthdr.leaf_rcvif->if_idxgen;
+	} else {
+		idx = -1;
+		gen = 0;
+	}
+	m->m_pkthdr.leaf_rcvidx = idx;
+	m->m_pkthdr.leaf_rcvgen = gen;
 }
 
 struct ifnet *
 m_rcvif_restore(struct mbuf *m)
 {
-	struct ifnet *ifp;
+	struct ifnet *ifp, *leaf_ifp;
 
 	M_ASSERTPKTHDR(m);
 	NET_EPOCH_ASSERT();
@@ -1658,6 +1667,15 @@ m_rcvif_restore(struct mbuf *m)
 	ifp = ifnet_byindexgen(m->m_pkthdr.rcvidx, m->m_pkthdr.rcvgen);
 	if (ifp == NULL || (ifp->if_flags & IFF_DYING))
 		return (NULL);
+
+	if (m->m_pkthdr.leaf_rcvidx == (u_short)-1)
+		leaf_ifp = NULL;
+	else {
+		leaf_ifp = ifnet_byindexgen(m->m_pkthdr.leaf_rcvidx,
+		    m->m_pkthdr.leaf_rcvgen);
+		if (leaf_ifp != NULL && (leaf_ifp->if_flags & IFF_DYING))
+			leaf_ifp = NULL;
+	}
 
 	return (m->m_pkthdr.rcvif = ifp);
 }
