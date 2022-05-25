@@ -965,6 +965,7 @@ sbappend(struct sockbuf *sb, struct mbuf *m, int flags)
 static void
 sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 {
+	struct ifnet *ifp;
 	struct mbuf *n;
 	int flags = 0;
 
@@ -976,22 +977,26 @@ sbappend_ktls_rx(struct sockbuf *sb, struct mbuf *m)
 	/* Remove all packet headers and mbuf tags to get a pure data chain. */
 	for (n = m; n != NULL; n = n->m_next) {
 		if (n->m_flags & M_PKTHDR) {
-			if ((n->m_pkthdr.csum_flags & CSUM_TLS_MASK) == CSUM_TLS_DECRYPTED) {
-				/* mark all subsequent packets decrypted */
-				flags = M_NOTREADY | M_DECRYPTED;
+			ifp = m->m_pkthdr.leaf_rcvif;
+			if ((n->m_pkthdr.csum_flags & CSUM_TLS_MASK) ==
+			    CSUM_TLS_DECRYPTED) {
+				/* Mark all mbufs in this packet decrypted. */
+				flags = M_DECRYPTED;
 			} else {
-				/* mark all subsequent packets not ready */
-				flags = M_NOTREADY;
+				flags = 0;
 			}
 			m_demote_pkthdr(n);
 		}
 
 		n->m_flags &= M_DEMOTEFLAGS;
-		n->m_flags |= flags;
+		n->m_flags |= M_NOTREADY | flags;
 	}
 
 	sbcompress_ktls_rx(sb, m, sb->sb_mtlstail);
 	ktls_check_rx(sb);
+	if (ifp != NULL && sb->sb_tls_info->rx_ifp != NULL &&
+	    sb->sb_tls_info->rx_ifp != ifp)
+		ktls_input_ifp_mismatch(sb, ifp);
 }
 #endif
 

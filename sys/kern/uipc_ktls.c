@@ -299,6 +299,7 @@ static MALLOC_DEFINE(M_KTLS, "ktls", "Kernel TLS");
 
 static void ktls_cleanup(struct ktls_session *tls);
 #if defined(INET) || defined(INET6)
+static void ktls_reset_receive_tag(void *context, int pending);
 static void ktls_reset_send_tag(void *context, int pending);
 #endif
 static void ktls_work_thread(void *ctx);
@@ -619,10 +620,12 @@ ktls_create_session(struct socket *so, struct tls_enable *en,
 	counter_u64_add(ktls_offload_active, 1);
 
 	refcount_init(&tls->refcount, 1);
-	TASK_INIT(&tls->reset_tag_task, 0, ktls_reset_send_tag, tls);
+	if (direction == KTLS_RX)
+		TASK_INIT(&tls->reset_tag_task, 0, ktls_reset_receive_tag, tls);
+	else
+		TASK_INIT(&tls->reset_tag_task, 0, ktls_reset_send_tag, tls);
 
 	tls->wq_index = ktls_get_cpu(so);
-	tls->direction = direction;
 
 	tls->params.cipher_algorithm = en->cipher_algorithm;
 	tls->params.auth_algorithm = en->auth_algorithm;
@@ -746,7 +749,7 @@ out:
 }
 
 static struct ktls_session *
-ktls_clone_session(struct ktls_session *tls)
+ktls_clone_session(struct ktls_session *tls, int direction)
 {
 	struct ktls_session *tls_new;
 
@@ -755,12 +758,16 @@ ktls_clone_session(struct ktls_session *tls)
 	counter_u64_add(ktls_offload_active, 1);
 
 	refcount_init(&tls_new->refcount, 1);
-	TASK_INIT(&tls_new->reset_tag_task, 0, ktls_reset_send_tag, tls_new);
+	if (direction == KTLS_RX)
+		TASK_INIT(&tls_new->reset_tag_task, 0, ktls_reset_receive_tag,
+		    tls_new);
+	else
+		TASK_INIT(&tls_new->reset_tag_task, 0, ktls_reset_send_tag,
+		    tls_new);
 
 	/* Copy fields from existing session. */
 	tls_new->params = tls->params;
 	tls_new->wq_index = tls->wq_index;
-	tls_new->direction = tls->direction;
 
 	/* Deep copy keys. */
 	if (tls_new->params.auth_key != NULL) {
@@ -812,6 +819,8 @@ ktls_cleanup(struct ktls_session *tls)
 		}
 		if (tls->snd_tag != NULL)
 			m_snd_tag_rele(tls->snd_tag);
+		if (tls->rx_ifp != NULL)
+			if_rele(tls->rx_ifp);
 		break;
 #ifdef TCP_OFFLOAD
 	case TCP_TLS_MODE_TOE:
@@ -986,14 +995,16 @@ out:
 }
 
 /*
- * Common code for allocating a TLS receive tag for doing HW
- * decryption of TLS data.
+ * Allocate an initial TLS receive tag for doing HW decryption of TLS
+ * data.
  *
  * This function allocates a new TLS receive tag on whatever interface
- * the connection is currently routed over.
+ * the connection is currently routed over.  If the connection ends up
+ * using a different interface for receive this will get fixed up via
+ * ktls_input_ifp_mismatch as future packets arrive.
  */
 static int
-ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
+ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls,
     struct m_snd_tag **mstp)
 {
 	union if_snd_tag_alloc_params params;
@@ -1017,21 +1028,15 @@ ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	/*
 	 * Check administrative controls on ifnet TLS to determine if
 	 * ifnet TLS should be denied.
-	 *
-	 * - Always permit 'force' requests.
-	 * - ktls_ifnet_permitted == 0: always deny.
 	 */
-	if (!force && ktls_ifnet_permitted == 0) {
+	if (ktls_ifnet_permitted == 0) {
 		INP_RUNLOCK(inp);
 		return (ENXIO);
 	}
 
 	/*
-	 * XXX: Use the cached route in the inpcb to find the
-	 * interface.  This should perhaps instead use
-	 * rtalloc1_fib(dst, 0, 0, fibnum).  Since KTLS is only
-	 * enabled after a connection has completed key negotiation in
-	 * userland, the cached route will be present in practice.
+	 * XXX: As with ktls_alloc_snd_tag, use the cached route in
+	 * the inpcb to find the interface.
 	 */
 	nh = inp->inp_route.ro_nh;
 	if (nh == NULL) {
@@ -1040,6 +1045,7 @@ ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 	}
 	ifp = nh->nh_ifp;
 	if_ref(ifp);
+	tls->rx_ifp = ifp;
 
 	params.hdr.type = IF_SND_TAG_TYPE_TLS_RX;
 	params.hdr.flowid = inp->inp_flowid;
@@ -1063,8 +1069,17 @@ ktls_alloc_rcv_tag(struct inpcb *inp, struct ktls_session *tls, bool force,
 		}
 	}
 	error = m_snd_tag_alloc(ifp, &params, mstp);
+
+	/*
+	 * If this connection is over a vlan, vlan_snd_tag_alloc
+	 * rewrites vlan_id with the saved interface.  Save the VLAN
+	 * ID for use in ktls_reset_receive_tag which allocates new
+	 * receive tags directly from the leaf interface bypassing
+	 * if_vlan.
+	 */
+	if (error == 0)
+		tls->rx_vlan_id = params.tls_rx.vlan_id;
 out:
-	if_rele(ifp);
 	return (error);
 }
 
@@ -1082,7 +1097,8 @@ ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction,
 			goto done;
 		break;
 	case KTLS_RX:
-		error = ktls_alloc_rcv_tag(so->so_pcb, tls, force, &mst);
+		KASSERT(!force, ("%s: forced receive tag", __func__));
+		error = ktls_alloc_rcv_tag(so->so_pcb, tls, &mst);
 		if (__predict_false(error != 0))
 			goto done;
 		break;
@@ -1523,7 +1539,7 @@ ktls_set_tx_mode(struct socket *so, int mode)
 	SOCKBUF_UNLOCK(&so->so_snd);
 	INP_WUNLOCK(inp);
 
-	tls_new = ktls_clone_session(tls);
+	tls_new = ktls_clone_session(tls, KTLS_TX);
 
 	if (mode == TCP_TLS_MODE_IFNET)
 		error = ktls_try_ifnet(so, tls_new, KTLS_TX, true);
@@ -1585,13 +1601,95 @@ ktls_set_tx_mode(struct socket *so, int mode)
 }
 
 /*
- * ktls_reset_send_tag - try to allocate a new TLS send or receive tag.
- *
- * This task is scheduled when ip_output detects a route change while
- * trying to transmit a packet holding a TLS record. If a new tag is
- * allocated, replace the tag in the TLS session. Subsequent packets
- * on the connection will use the new tag. If a new tag cannot be
- * allocated, drop the connection.
+ * Try to allocate a new TLS receive tag.  This task is scheduled when
+ * sbappend_ktls_rx detects an input path change.  If a new tag is
+ * allocated, replace the tag in the TLS session.  If a new tag cannot
+ * be allocated, let the session fall back to software decryption.
+ */
+static void
+ktls_reset_receive_tag(void *context, int pending)
+{
+	union if_snd_tag_alloc_params params;
+	struct ktls_session *tls;
+	struct m_snd_tag *mst;
+	struct inpcb *inp;
+	struct ifnet *ifp;
+	struct socket *so;
+	int error;
+
+	MPASS(pending == 1);
+
+	tls = context;
+	so = tls->so;
+	inp = so->so_pcb;
+	ifp = NULL;
+
+	INP_RLOCK(inp);
+	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_RUNLOCK(inp);
+		goto out;
+	}
+
+	SOCKBUF_LOCK(&so->so_rcv);
+	m_snd_tag_rele(tls->snd_tag);
+	tls->snd_tag = NULL;
+
+	ifp = tls->rx_ifp;
+	if_ref(ifp);
+	SOCKBUF_UNLOCK(&so->so_rcv);
+
+	params.hdr.type = IF_SND_TAG_TYPE_TLS_RX;
+	params.hdr.flowid = inp->inp_flowid;
+	params.hdr.flowtype = inp->inp_flowtype;
+	params.hdr.numa_domain = inp->inp_numa_domain;
+	params.tls_rx.inp = inp;
+	params.tls_rx.tls = tls;
+	params.tls_rx.vlan_id = tls->rx_vlan_id;
+	INP_RUNLOCK(inp);
+
+	if (inp->inp_vflag & INP_IPV6) {
+		if ((ifp->if_capenable2 & IFCAP2_RXTLS6) == 0)
+			goto out;
+	} else {
+		if ((ifp->if_capenable2 & IFCAP2_RXTLS4) == 0)
+			goto out;
+	}
+
+	error = m_snd_tag_alloc(ifp, &params, &mst);
+	if (error == 0) {
+		SOCKBUF_LOCK(&so->so_rcv);
+		tls->snd_tag = mst;
+		SOCKBUF_UNLOCK(&so->so_rcv);
+
+		counter_u64_add(ktls_ifnet_reset, 1);
+	} else {
+		/*
+		 * Just fall back to software decryption if a tag
+		 * cannot be allocated leaving the connection intact.
+		 * If a future input path change switches to another
+		 * interface this connection will resume ifnet TLS.
+		 */
+		counter_u64_add(ktls_ifnet_reset_failed, 1);
+	}
+
+out:
+	mtx_pool_lock(mtxpool_sleep, tls);
+	tls->reset_pending = false;
+	mtx_pool_unlock(mtxpool_sleep, tls);
+
+	if (ifp != NULL)
+		if_rele(ifp);
+	sorele(so);
+	ktls_free(tls);
+}
+
+/*
+ * Try to allocate a new TLS send tag.  This task is scheduled when
+ * ip_output detects a route change while trying to transmit a packet
+ * holding a TLS record.  If a new tag is allocated, replace the tag
+ * in the TLS session.  Subsequent packets on the connection will use
+ * the new tag.  If a new tag cannot be allocated, drop the
+ * connection.
  */
 static void
 ktls_reset_send_tag(void *context, int pending)
@@ -1622,73 +1720,96 @@ ktls_reset_send_tag(void *context, int pending)
 	old = tls->snd_tag;
 	tls->snd_tag = NULL;
 	INP_WUNLOCK(inp);
-
 	if (old != NULL)
 		m_snd_tag_rele(old);
 
-	switch (tls->direction) {
-	case KTLS_TX:
-		error = ktls_alloc_snd_tag(inp, tls, true, &new);
-		break;
-	case KTLS_RX:
-		error = ktls_alloc_rcv_tag(inp, tls, true, &new);
-		break;
-	default:
-		__assert_unreachable();
-	}
-	if (error != 0)
-		goto drop_connection;
+	error = ktls_alloc_snd_tag(inp, tls, true, &new);
 
-	INP_WLOCK(inp);
-	tls->snd_tag = new;
+	if (error == 0) {
+		INP_WLOCK(inp);
+		tls->snd_tag = new;
+		mtx_pool_lock(mtxpool_sleep, tls);
+		tls->reset_pending = false;
+		mtx_pool_unlock(mtxpool_sleep, tls);
 
-	mtx_pool_lock(mtxpool_sleep, tls);
-	tls->reset_pending = false;
-	mtx_pool_unlock(mtxpool_sleep, tls);
-
-	if (!in_pcbrele_wlocked(inp))
-		INP_WUNLOCK(inp);
-
-	counter_u64_add(ktls_ifnet_reset, 1);
-
-	ktls_free(tls);
-
-	/*
-	 * XXX: Should we kick tcp_output explicitly now that
-	 * the send tag is fixed or just rely on timers?
-	 */
-	return;
-
-drop_connection:
-	NET_EPOCH_ENTER(et);
-	INP_WLOCK(inp);
-	if (!in_pcbrele_wlocked(inp)) {
-		if (!(inp->inp_flags & INP_TIMEWAIT) &&
-		    !(inp->inp_flags & INP_DROPPED)) {
-			tp = intotcpcb(inp);
-			CURVNET_SET(tp->t_vnet);
-			tp = tcp_drop(tp, ECONNABORTED);
-			CURVNET_RESTORE();
-			if (tp != NULL)
-				INP_WUNLOCK(inp);
-			counter_u64_add(ktls_ifnet_reset_dropped, 1);
-		} else
+		if (!in_pcbrele_wlocked(inp))
 			INP_WUNLOCK(inp);
+
+		counter_u64_add(ktls_ifnet_reset, 1);
+
+		/*
+		 * XXX: Should we kick tcp_output explicitly now that
+		 * the send tag is fixed or just rely on timers?
+		 */
+	} else {
+		NET_EPOCH_ENTER(et);
+		INP_WLOCK(inp);
+		if (!in_pcbrele_wlocked(inp)) {
+			if (!(inp->inp_flags & INP_TIMEWAIT) &&
+			    !(inp->inp_flags & INP_DROPPED)) {
+				tp = intotcpcb(inp);
+				CURVNET_SET(tp->t_vnet);
+				tp = tcp_drop(tp, ECONNABORTED);
+				CURVNET_RESTORE();
+				if (tp != NULL)
+					INP_WUNLOCK(inp);
+				counter_u64_add(ktls_ifnet_reset_dropped, 1);
+			} else
+				INP_WUNLOCK(inp);
+		}
+		NET_EPOCH_EXIT(et);
+
+		counter_u64_add(ktls_ifnet_reset_failed, 1);
+
+		/*
+		 * Leave reset_pending true to avoid future tasks while
+		 * the socket goes away.
+		 */
 	}
-	NET_EPOCH_EXIT(et);
 
-	counter_u64_add(ktls_ifnet_reset_failed, 1);
-
-	/*
-	 * Leave reset_pending true to avoid future tasks while
-	 * the socket goes away.
-	 */
 	ktls_free(tls);
 }
 
-static void
-ktls_output_eagain_tls(struct inpcb *inp, struct ktls_session *tls)
+void
+ktls_input_ifp_mismatch(struct sockbuf *sb, struct ifnet *ifp)
 {
+	struct ktls_session *tls;
+	struct socket *so;
+
+	SOCKBUF_LOCK_ASSERT(sb);
+	KASSERT(sb->sb_flags & SB_TLS_RX, ("%s: sockbuf %p isn't TLS RX",
+	    __func__, sb));
+	so = __containerof(sb, struct socket, so_rcv);
+
+	tls = sb->sb_tls_info;
+	if_rele(tls->rx_ifp);
+	if_ref(ifp);
+	tls->rx_ifp = ifp;
+
+	/*
+	 * See if we should schedule a task to update the receive tag for
+	 * this session.
+	 */
+	mtx_pool_lock(mtxpool_sleep, tls);
+	if (!tls->reset_pending) {
+		(void) ktls_hold(tls);
+		soref(so);
+		tls->so = so;
+		tls->reset_pending = true;
+		taskqueue_enqueue(taskqueue_thread, &tls->reset_tag_task);
+	}
+	mtx_pool_unlock(mtxpool_sleep, tls);
+}
+
+int
+ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls)
+{
+
+	if (inp == NULL)
+		return (ENOBUFS);
+
+	INP_LOCK_ASSERT(inp);
+
 	/*
 	 * See if we should schedule a task to update the send tag for
 	 * this session.
@@ -1702,30 +1823,6 @@ ktls_output_eagain_tls(struct inpcb *inp, struct ktls_session *tls)
 		taskqueue_enqueue(taskqueue_thread, &tls->reset_tag_task);
 	}
 	mtx_pool_unlock(mtxpool_sleep, tls);
-}
-
-int
-ktls_output_eagain(struct inpcb *inp)
-{
-	struct socket *so;
-	struct ktls_session *tls;
-
-	if (__predict_false(inp == NULL))
-		goto done;
-	INP_LOCK_ASSERT(inp);
-
-	so = inp->inp_socket;
-	if (__predict_false(so == NULL))
-		goto done;
-
-	tls = so->so_rcv.sb_tls_info;
-	if (__predict_true(tls != NULL))
-		ktls_output_eagain_tls(inp, tls);
-
-	tls = so->so_snd.sb_tls_info;
-	if (__predict_true(tls != NULL))
-		ktls_output_eagain_tls(inp, tls);
-done:
 	return (ENOBUFS);
 }
 
