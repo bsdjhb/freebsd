@@ -234,6 +234,7 @@ struct tom_tunables {
 	int autorcvbuf_inc;
 	int update_hc_on_pmtu_change;
 	int iso;
+	int iscsi_mss_dsl;
 };
 
 /* iWARP driver tunables */

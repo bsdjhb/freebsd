@@ -7624,6 +7624,11 @@ t4_sysctls(struct adapter *sc)
 		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "iso", CTLFLAG_RW,
 		    &sc->tt.iso, 0, "Enable iSCSI segmentation offload");
 
+		sc->tt.iscsi_mss_dsl = 1;
+		SYSCTL_ADD_INT(ctx, children, OID_AUTO, "iscsi_mss_dsl",
+		    CTLFLAG_RW, &sc->tt.iscsi_mss_dsl, 0,
+		    "Use MSS to compute iSCSI MaxRecvDataSegmentLength");
+
 		SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "timer_tick",
 		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, sc, 0,
 		    sysctl_tp_tick, "A", "TP timer tick (us)");

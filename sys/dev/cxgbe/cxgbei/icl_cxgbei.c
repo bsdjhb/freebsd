@@ -1777,6 +1777,38 @@ cxgbei_limits(struct adapter *sc, void *arg)
 #endif
 
 static int
+cxgbei_mss_rx_limit(struct socket *so)
+{
+	struct inpcb *inp;
+	struct tcpcb *tp;
+	u_int limit, mss, overhead;
+
+	inp = sotoinpcb(so);
+	INP_RLOCK(inp);
+	tp = intotcpcb(inp);
+	if (inp->inp_flags & (INP_DROPPED | INP_TIMEWAIT)) {
+		INP_RUNLOCK(inp);
+		return (-1);
+	}
+
+	/*
+	 * Receive cut-through in the TOE requires PDUs to fit in one
+	 * MSS.  However, we also can't request a limit lower than 512
+	 * per RFC 7143.  Note that since this is pre-negotation, we
+	 * don't know if we will be using digests or not.
+	 */
+	mss = tcp_maxseg(tp);
+	INP_RUNLOCK(inp);
+	overhead = ISCSI_BHS_SIZE + ISCSI_HEADER_DIGEST_SIZE +
+	    ISCSI_DATA_DIGEST_SIZE;
+	if (overhead + 512 > mss)
+		limit = 512;
+	else
+		limit = mss - overhead;
+	return (limit);
+}
+
+static int
 cxgbei_limits_fd(struct icl_drv_limits *idl, int fd)
 {
 	struct find_ofld_adapter_rr fa;
@@ -1785,6 +1817,7 @@ cxgbei_limits_fd(struct icl_drv_limits *idl, int fd)
 	struct adapter *sc;
 	struct cxgbei_data *ci;
 	cap_rights_t rights;
+	u_int mss_rx_limit;
 	int error;
 
 	error = fget(curthread, fd,
@@ -1810,6 +1843,11 @@ cxgbei_limits_fd(struct icl_drv_limits *idl, int fd)
 		fdrop(fp, curthread);
 		return (ENXIO);
 	}
+	mss_rx_limit = cxgbei_mss_rx_limit(so);
+	if (mss_rx_limit <= 0) {
+		fdrop(fp, curthread);
+		return (ECONNRESET);
+	}
 	fdrop(fp, curthread);
 
 	sc = fa.sc;
@@ -1821,7 +1859,12 @@ cxgbei_limits_fd(struct icl_drv_limits *idl, int fd)
 		ci = sc->iscsi_ulp_softc;
 		MPASS(ci != NULL);
 
-		idl->idl_max_recv_data_segment_length = ci->max_rx_data_len;
+		if (sc->tt.iscsi_mss_dsl)
+			idl->idl_max_recv_data_segment_length =
+			    min(mss_rx_limit, ci->max_rx_data_len);
+		else
+			idl->idl_max_recv_data_segment_length =
+			    ci->max_rx_data_len;
 		idl->idl_max_send_data_segment_length = ci->max_tx_data_len;
 	} else
 		error = ENXIO;
