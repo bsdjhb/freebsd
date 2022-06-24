@@ -3570,6 +3570,17 @@ soopt_mcopyout(struct sockopt *sopt, struct mbuf *m)
 	return (0);
 }
 
+int
+sogetsockaddr(struct socket *so, struct sockaddr **nam)
+{
+	int error;
+
+	CURVNET_SET(so->so_vnet);
+	error = (*so->so_proto->pr_usrreqs->pru_sockaddr)(so, nam);
+	CURVNET_RESTORE();
+	return (error);
+}
+
 /*
  * sohasoutofband(): protocol notifies socket layer of the arrival of new
  * out-of-band data, which will then notify socket consumers.

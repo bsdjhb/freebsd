@@ -480,6 +480,7 @@ int	sodisconnect(struct socket *so);
 void	sodtor_set(struct socket *, so_dtor_t *);
 struct	sockaddr *sodupsockaddr(const struct sockaddr *sa, int mflags);
 void	sofree(struct socket *so);
+int	sogetsockaddr(struct socket *so, struct sockaddr **nam);
 void	sohasoutofband(struct socket *so);
 int	solisten(struct socket *so, int backlog, struct thread *td);
 void	solisten_proto(struct socket *so, int backlog);
