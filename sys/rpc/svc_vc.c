@@ -177,9 +177,7 @@ svc_vc_create(SVCPOOL *pool, struct socket *so, size_t sendsize,
 	xprt->xp_p2 = NULL;
 	xprt->xp_ops = &svc_vc_rendezvous_ops;
 
-	CURVNET_SET(so->so_vnet);
-	error = so->so_proto->pr_usrreqs->pru_sockaddr(so, &sa);
-	CURVNET_RESTORE();
+	error = sogetsockaddr(so, &sa);
 	if (error) {
 		goto cleanup_svc_vc_create;
 	}
@@ -261,9 +259,7 @@ svc_vc_create_conn(SVCPOOL *pool, struct socket *so, struct sockaddr *raddr)
 
 	memcpy(&xprt->xp_rtaddr, raddr, raddr->sa_len);
 
-	CURVNET_SET(so->so_vnet);
-	error = so->so_proto->pr_usrreqs->pru_sockaddr(so, &sa);
-	CURVNET_RESTORE();
+	error = sogetsockaddr(so, &sa);
 	if (error)
 		goto cleanup_svc_vc_create;
 
