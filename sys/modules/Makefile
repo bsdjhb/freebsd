@@ -162,6 +162,7 @@ SUBDIR=	\
 	if_tuntap \
 	if_vlan \
 	if_vxlan \
+	${_if_wg} \
 	iflib \
 	${_igc} \
 	imgact_binmisc \
@@ -461,6 +462,9 @@ _if_stf=	if_stf
 
 .if ${MK_INET_SUPPORT} != "no" || defined(ALL_MODULES)
 _if_me=		if_me
+.if ${MK_CRYPT} != "no"
+_if_wg=		if_wg
+.endif
 _ipdivert=	ipdivert
 _ipfw=		ipfw
 .if ${MK_INET6_SUPPORT} != "no" || defined(ALL_MODULES)
