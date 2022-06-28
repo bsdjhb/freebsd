@@ -5,6 +5,6 @@ KMOD= if_wg
 SRCS= if_wg.c wg_noise.c wg_cookie.c wg_crypto.c
 SRCS+= opt_inet.h opt_inet6.h device_if.h bus_if.h
 
-CFLAGS+= -include ${SRCTOP}/sys/dev/wg/compat.h
-
 .include <bsd.kmod.mk>
+
+CFLAGS+= -include ${SRCTOP}/sys/dev/wg/compat.h
