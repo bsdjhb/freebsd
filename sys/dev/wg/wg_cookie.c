@@ -6,14 +6,18 @@
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
-#include <sys/types.h>
-#include <sys/systm.h>
+
 #include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/lock.h>
+#include <sys/mutex.h>
 #include <sys/rwlock.h>
 #include <sys/socket.h>
+#include <crypto/siphash/siphash.h>
+#include <netinet/in.h>
+#include <vm/uma.h>
 
-#include "support.h"
 #include "wg_cookie.h"
 
 #define COOKIE_MAC1_KEY_LABEL	"mac1----"

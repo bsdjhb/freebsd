@@ -4,9 +4,9 @@
  */
 
 #include <sys/types.h>
-#include <sys/endian.h>
-#include <sys/malloc.h>
 #include <sys/systm.h>
+#include <sys/endian.h>
+#include <sys/mbuf.h>
 #include <opencrypto/cryptodev.h>
 
 #include "crypto.h"

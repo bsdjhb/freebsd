@@ -6,70 +6,45 @@
  * Copyright (c) 2021 Kyle Evans <kevans@FreeBSD.org>
  */
 
-/* TODO audit imports */
 #include "opt_inet.h"
 #include "opt_inet6.h"
 
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
-#include <sys/types.h>
 #include <sys/systm.h>
-#include <vm/uma.h>
-
-#include <sys/mbuf.h>
-#include <sys/socket.h>
-#include <sys/kernel.h>
-
-#include <sys/sockio.h>
-#include <sys/socketvar.h>
-#include <sys/errno.h>
-#include <sys/jail.h>
-#include <sys/priv.h>
-#include <sys/proc.h>
-#include <sys/lock.h>
-#include <sys/rwlock.h>
-#include <sys/rmlock.h>
-#include <sys/protosw.h>
-#include <sys/module.h>
-#include <sys/endian.h>
-#include <sys/kdb.h>
-#include <sys/sx.h>
-#include <sys/sysctl.h>
+#include <sys/counter.h>
 #include <sys/gtaskqueue.h>
-#include <sys/smp.h>
+#include <sys/jail.h>
+#include <sys/kernel.h>
+#include <sys/lock.h>
+#include <sys/mbuf.h>
+#include <sys/module.h>
 #include <sys/nv.h>
-
+#include <sys/priv.h>
+#include <sys/rmlock.h>
+#include <sys/rwlock.h>
+#include <sys/smp.h>
+#include <sys/socket.h>
+#include <sys/socketvar.h>
+#include <sys/sockio.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <machine/_inttypes.h>
 #include <net/bpf.h>
-
-#include <sys/syslog.h>
-
+#include <net/ethernet.h>
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/if_clone.h>
 #include <net/if_types.h>
-#include <net/ethernet.h>
-#include <net/radix.h>
+#include <net/if_var.h>
 #include <net/netisr.h>
-
+#include <net/radix.h>
 #include <netinet/in.h>
-#include <netinet/in_var.h>
+#include <netinet6/in6_var.h>
 #include <netinet/ip.h>
-#include <netinet/ip_var.h>
 #include <netinet/ip6.h>
-#include <netinet6/ip6_var.h>
-#include <netinet6/scope6_var.h>
-#include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
-#include <netinet/in_pcb.h>
-#include <netinet6/in6_pcb.h>
 #include <netinet/udp_var.h>
 #include <netinet6/nd6.h>
-
-#include <machine/in_cksum.h>
-#include <machine/_inttypes.h>
 
 #include "support.h"
 #include "wg_noise.h"

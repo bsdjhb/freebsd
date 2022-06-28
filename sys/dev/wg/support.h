@@ -10,11 +10,6 @@
 #ifndef _WG_SUPPORT
 #define _WG_SUPPORT
 
-#include <sys/socket.h>
-#include <sys/socketvar.h>
-#include <sys/protosw.h>
-#include <net/vnet.h>
-
 #ifndef ck_pr_store_bool
 #define ck_pr_store_bool(dst, val) ck_pr_store_8((uint8_t *)(dst), (uint8_t)(val))
 #endif

@@ -7,7 +7,8 @@
 #define _WG_CRYPTO
 
 #include <sys/param.h>
-#include <sys/mbuf.h>
+
+struct mbuf;
 
 int crypto_init(void);
 void crypto_deinit(void);

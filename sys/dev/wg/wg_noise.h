@@ -7,10 +7,6 @@
 #ifndef __NOISE_H__
 #define __NOISE_H__
 
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/rwlock.h>
-
 #include "crypto.h"
 
 #define NOISE_PUBLIC_KEY_LEN	CURVE25519_KEY_SIZE

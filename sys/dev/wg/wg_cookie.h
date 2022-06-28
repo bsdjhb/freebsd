@@ -7,12 +7,6 @@
 #ifndef __COOKIE_H__
 #define __COOKIE_H__
 
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/rwlock.h>
-#include <sys/queue.h>
-#include <netinet/in.h>
-#include <crypto/siphash/siphash.h>
 #include "crypto.h"
 
 #define COOKIE_MAC_SIZE		16
@@ -22,6 +16,8 @@
 #define COOKIE_SECRET_SIZE	32
 #define COOKIE_INPUT_SIZE	32
 #define COOKIE_ENCRYPTED_SIZE	(COOKIE_COOKIE_SIZE + COOKIE_MAC_SIZE)
+
+struct vnet;
 
 struct cookie_macs {
 	uint8_t	mac1[COOKIE_MAC_SIZE];

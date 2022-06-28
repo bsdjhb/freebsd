@@ -4,16 +4,17 @@
  * Copyright (C) 2019-2021 Matt Dunwoodie <ncon@noconroy.net>
  */
 
-#include <sys/types.h>
 #include <sys/param.h>
-#include <sys/lock.h>
-#include <sys/rwlock.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
-#include <sys/refcount.h>
-#include <sys/epoch.h>
 #include <sys/ck.h>
 #include <sys/endian.h>
+#include <sys/epoch.h>
+#include <sys/kernel.h>
+#include <sys/lock.h>
+#include <sys/malloc.h>
+#include <sys/mutex.h>
+#include <sys/refcount.h>
+#include <sys/rwlock.h>
 #include <crypto/siphash/siphash.h>
 
 #include "crypto.h"
