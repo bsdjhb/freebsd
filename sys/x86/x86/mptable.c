@@ -196,7 +196,7 @@ static int	mptable_setup_io(void);
 static void	mptable_walk_extended_table(
     mptable_extended_entry_handler *handler, void *arg);
 static void	mptable_walk_table(mptable_entry_handler *handler, void *arg);
-static int	search_for_sig(u_int32_t target, int count);
+static vm_paddr_t search_for_sig(vm_paddr_t target, int count);
 
 static struct apic_enumerator mptable_enumerator = {
 	.apic_name = "MPTable",
@@ -210,17 +210,21 @@ static struct apic_enumerator mptable_enumerator = {
  * look for the MP spec signature
  */
 
-static int
-search_for_sig(u_int32_t target, int count)
+static vm_paddr_t
+search_for_sig(vm_paddr_t target, int count)
 {
 	int     x;
-	u_int32_t *addr;
+	uint32_t *addr;
 
-	addr = (u_int32_t *)BIOS_PADDRTOVADDR(target);
-	for (x = 0; x < count; x += 4)
-		if (addr[x] == MP_SIG)
+	addr = pmap_mapbios(target, count);
+	for (x = 0; x < count; x += 4) {
+		if (addr[x] == MP_SIG) {
+			pmap_unmapbios(addr, count);
 			/* make array index a byte index */
-			return (target + (x * sizeof(u_int32_t)));
+			return (target + (x * sizeof(uint32_t)));
+		}
+	}
+	pmap_unmapbios(addr, count);
 	return (-1);
 }
 
@@ -270,27 +274,27 @@ compute_entry_count(void)
 static int
 mptable_probe(void)
 {
-	int     x;
+	u_short *ebda;
+	vm_paddr_t pa;
 	u_long  segment;
-	u_int32_t target;
+	size_t length;
 
 	/* see if EBDA exists */
-	if ((segment = *(u_short *)BIOS_PADDRTOVADDR(0x40e)) != 0) {
-		/* search first 1K of EBDA */
-		target = (u_int32_t) (segment << 4);
-		if ((x = search_for_sig(target, 1024 / 4)) >= 0)
-			goto found;
+	ebda = pmap_mapbios(0x40e, sizeof(*ebda));
+	segment = *ebda;
+	pmap_unmapbios(ebda, sizeof(*ebda));
+
+	if (segment != 0) {
+		pa = search_for_sig(segment << 4, 1024 / 4);
 	} else {
 		/* last 1K of base memory, effective 'top of base' passed in */
-		target = (u_int32_t) ((basemem * 1024) - 0x400);
-		if ((x = search_for_sig(target, 1024 / 4)) >= 0)
-			goto found;
+		pa = search_for_sig((basemem * 1024) - 0x400, 1024 / 4);
 	}
 
-	/* search the BIOS */
-	target = (u_int32_t) BIOS_BASE;
-	if ((x = search_for_sig(target, BIOS_COUNT)) >= 0)
-		goto found;
+	if (pa == (vm_paddr_t)-1) {
+		/* search the BIOS */
+		pa = search_for_sig(BIOS_BASE, BIOS_COUNT);
+	}
 
 #ifdef MPTABLE_LINUX_BUG_COMPAT
 	/*
@@ -299,15 +303,16 @@ mptable_probe(void)
 	 * address is present in the system memory map.  Some VM systems
 	 * rely on this buggy behaviour.
 	 */
-	if ((x = search_for_sig(639 * 1024, 1024 / 4)) >= 0)
-		goto found;
+	if (pa == (vm_paddr_t)-1)
+		pa = search_for_sig(639 * 1024, 1024 / 4);
 #endif
 
-	/* nothing found */
-	return (ENXIO);
+	if (pa == (vm_paddr_t)-1) {
+		/* nothing found */
+		return (ENXIO);
+	}
 
-found:
-	mpfps = (mpfps_t)BIOS_PADDRTOVADDR(x);
+	mpfps = pmap_mapbios(pa, sizeof(*mpfps));
 
 	/* Map in the configuration table if it exists. */
 	if (mpfps->config_type != 0) {
@@ -323,34 +328,34 @@ found:
 		}
 		mpct = NULL;
 	} else {
-		if ((uintptr_t)mpfps->pap >= 1024 * 1024) {
+		mpct = pmap_mapbios(mpfps->pap, sizeof(*mpct));
+		if (mpct == NULL) {
 			printf("%s: Unable to map MP Configuration Table\n",
 			    __func__);
 			return (ENXIO);
 		}
-		mpct = (mpcth_t)BIOS_PADDRTOVADDR((uintptr_t)mpfps->pap);
-		if (mpct->base_table_length + (uintptr_t)mpfps->pap >=
-		    1024 * 1024) {
-			printf("%s: Unable to map end of MP Config Table\n",
-			    __func__);
-			return (ENXIO);
-		}
-		if (mpct->extended_table_length != 0 &&
-		    mpct->extended_table_length + mpct->base_table_length +
-		    (uintptr_t)mpfps->pap < 1024 * 1024)
-			mpet = (ext_entry_ptr)((char *)mpct +
-			    mpct->base_table_length);
+
 		if (mpct->signature[0] != 'P' || mpct->signature[1] != 'C' ||
 		    mpct->signature[2] != 'M' || mpct->signature[3] != 'P') {
 			printf("%s: MP Config Table has bad signature: %c%c%c%c\n",
 			    __func__, mpct->signature[0], mpct->signature[1],
 			    mpct->signature[2], mpct->signature[3]);
+			pmap_unmapbios(mpct, sizeof(*mpct));
+			return (ENXIO);
+		}
+		length = mpct->base_table_length + mpct->extended_table_length;
+		pmap_unmapbios(mpct, sizeof(*mpct));
+
+		mpct = pmap_mapbios(mpfps->pap, length);
+		if (mpct == NULL) {
+			printf("%s: Unable to map end of MP Config Table\n",
+			    __func__);
 			return (ENXIO);
 		}
 		if (bootverbose)
 			printf(
-			"MP Configuration Table version 1.%d found at %p\n",
-			    mpct->spec_rev, mpct);
+			"MP Configuration Table version 1.%d found at %#x\n",
+			    mpct->spec_rev, mpfps->pap);
 #ifdef MPTABLE_LINUX_BUG_COMPAT
 		/*
 		 * Linux ignores entry_count and instead scans the MP table
