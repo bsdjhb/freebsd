@@ -52,46 +52,7 @@ The interfaces can be created at runtime using the
 .Ic ifconfig Cm wg Ns Ar N Cm create
 command.
 The interface itself can be configured with
-.Xr ifconfig 8 .
-.Pp
-The following parameters are available:
-.Bl -tag -width indent
-.It Cm listen-port
-The listing port of the
-.Nm
-interface.
-.It Cm public-key
-The public key of the
-.Nm
-interface.
-.It Cm private-key
-The private key of the
-.Nm
-interface.
-.It Cm preshared-key
-Defines a pre-shared key for the
-.Nm
-interface.
-.It Cm allowed-ips
-A list of allowed IP addresses.
-.It Cm endpoint
-The IP address of the WiredGuard to connect to.
-.It Cm peers
-A list of peering IP addresses to connect to.
-.It Cm persistent-keepalive-interval
-Interval, in seconds, at which to send persistent keepalive packets.
-.El
-.Pp
-The
-.Nm
-interfaces support the following
-.Xr ioctl 2 Ns s :
-.Bl -tag -width Ds -offset indent
-.It Dv SIOCSWG Fa "struct  wg_device_io *"
-Set the device configuration.
-.It Dv SIOCGWG Fa "struct wg_device_io *"
-Get the device configuration.
-.El
+.Xr wg 8 .
 .Pp
 The following glossary provides a brief overview of WireGuard
 terminology:
@@ -152,46 +113,38 @@ The Curve25519 keys and the pre-shared keys are both 32 bytes
 long and are commonly encoded in base64 for ease of use.
 .Pp
 Keys can be generated with
-.Xr openssl 1
+.Xr wg 8
 as follows:
 .Pp
-.Dl $ openssl rand -base64 32
+.Dl $ wg genkey
 .Pp
 Although a valid Curve25519 key must have 5 bits set to
 specific values, this is done by the interface and so it
 will accept any random 32-byte base64 string.
-.Pp
-When an interface has a private key set with
-.Nm public-key ,
-the corresponding
-public key is shown in the status output of the interface:
-.Bd -literal -offset indent
-# ifconfig wg0 | grep public-key
-       public-key:  7lWtsDdqaGB3EY9WNxRN3hVaHMtu1zXw71+bOjNOVUw=
-.Ed
 .Sh EXAMPLES
 Create a
 .Nm
 interface and set random private key.
 .Bd -literal -offset indent
-# ifconfig wg0 create listen-port 54321 private-key `openssl rand -base64 32`
+# ifconfig wg0 create
+# wg genkey | wg set wg0 listen-port 54321 private-key /dev/stdin
 .Ed
 .Pp
 Retrieve the associated public key from a
 .Nm
 interface.
 .Bd -literal -offset indent
-$ ifconfig wg0 | awk '/public-key/ { print $2 }'`
+$ wg show wg0 public-key
 .Ed
 .Pp
 Connect to a specific endpoint using its public-key and set the allowed IP address
 .Bd -literal -offset indent
-# ifconfig wg0 peer public-key '7lWtsDdqaGB3EY9WNxRN3hVaHMtu1zXw71+bOjNOVUw=' endpoint 10.0.1.100:54321 allowed-ips 192.168.2.100/32
+# wg set wg0 peer '7lWtsDdqaGB3EY9WNxRN3hVaHMtu1zXw71+bOjNOVUw=' endpoint 10.0.1.100:54321 allowed-ips 192.168.2.100/32
 .Ed
 .Pp
 Remove a peer
 .Bd -literal -offset indent
-# ifconfig wg0 -peer public-key '7lWtsDdqaGB3EY9WNxRN3hVaHMtu1zXw71+bOjNOVUw='
+# wg set wg0 peer '7lWtsDdqaGB3EY9WNxRN3hVaHMtu1zXw71+bOjNOVUw=' remove
 .Ed
 .Sh DIAGNOSTICS
 The
@@ -232,7 +185,8 @@ is not assigned to the allowed IPs of Peer X.
 .Xr ipf 5 ,
 .Xr pf.conf 5 ,
 .Xr ifconfig 8 ,
-.Xr ipfw 8
+.Xr ipfw 8 ,
+.Xr wg 8
 .Rs
 .%T WireGuard whitepaper
 .%U https://www.wireguard.com/papers/wireguard.pdf
