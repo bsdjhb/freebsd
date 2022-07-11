@@ -796,7 +796,7 @@ noise_keypair_nonce_next(struct noise_keypair *kp, uint64_t *send)
 		return (EINVAL);
 
 #ifdef __LP64__
-	*send = ck_pr_faa_64(&kp->kp_nonce_send, 1);
+	*send = atomic_fetchadd_64(&kp->kp_nonce_send, 1) + 1;
 #else
 	rw_wlock(&kp->kp_nonce_lock);
 	*send = kp->kp_nonce_send++;
@@ -835,7 +835,7 @@ noise_keypair_nonce_check(struct noise_keypair *kp, uint64_t recv)
 			    (i + index_current) &
 				((COUNTER_BITS_TOTAL / COUNTER_BITS) - 1)] = 0;
 #ifdef __LP64__
-		ck_pr_store_64(&kp->kp_nonce_recv, recv);
+		atomic_store_64(&kp->kp_nonce_recv, recv);
 #else
 		kp->kp_nonce_recv = recv;
 #endif
@@ -867,7 +867,7 @@ noise_keep_key_fresh_send(struct noise_remote *r)
 	if (!keep_key_fresh)
 		goto out;
 #ifdef __LP64__
-	nonce = ck_pr_load_64(&current->kp_nonce_send);
+	nonce = atomic_load_64(&current->kp_nonce_send);
 #else
 	rw_rlock(&current->kp_nonce_lock);
 	nonce = current->kp_nonce_send;
@@ -920,7 +920,7 @@ noise_keypair_decrypt(struct noise_keypair *kp, uint64_t nonce, struct mbuf *m)
 	int ret;
 
 #ifdef __LP64__
-	cur_nonce = ck_pr_load_64(&kp->kp_nonce_recv);
+	cur_nonce = atomic_load_64(&kp->kp_nonce_recv);
 #else
 	rw_rlock(&kp->kp_nonce_lock);
 	cur_nonce = kp->kp_nonce_recv;
