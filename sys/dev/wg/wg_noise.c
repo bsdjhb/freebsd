@@ -588,10 +588,10 @@ noise_remote_expire_current(struct noise_remote *r)
 	NET_EPOCH_ENTER(et);
 	kp = r->r_next;
 	if (kp != NULL)
-		ck_pr_store_bool(&kp->kp_can_send, false);
+		kp->kp_can_send = false;
 	kp = r->r_current;
 	if (kp != NULL)
-		ck_pr_store_bool(&kp->kp_can_send, false);
+		kp->kp_can_send = false;
 	NET_EPOCH_EXIT(et);
 }
 
@@ -704,9 +704,9 @@ noise_keypair_current(struct noise_remote *r)
 
 	NET_EPOCH_ENTER(et);
 	kp = r->r_current;
-	if (kp != NULL && ck_pr_load_bool(&kp->kp_can_send)) {
+	if (kp != NULL && kp->kp_can_send) {
 		if (noise_timer_expired(kp->kp_birthdate, REJECT_AFTER_TIME, 0))
-			ck_pr_store_bool(&kp->kp_can_send, false);
+			kp->kp_can_send = false;
 		else if (refcount_acquire_if_not_zero(&kp->kp_refcnt))
 			ret = kp;
 	}
@@ -792,7 +792,7 @@ noise_keypair_remote(struct noise_keypair *kp)
 int
 noise_keypair_nonce_next(struct noise_keypair *kp, uint64_t *send)
 {
-	if (!ck_pr_load_bool(&kp->kp_can_send))
+	if (!kp->kp_can_send)
 		return (EINVAL);
 
 #ifdef __LP64__
@@ -804,7 +804,7 @@ noise_keypair_nonce_next(struct noise_keypair *kp, uint64_t *send)
 #endif
 	if (*send < REJECT_AFTER_MESSAGES)
 		return (0);
-	ck_pr_store_bool(&kp->kp_can_send, false);
+	kp->kp_can_send = false;
 	return (EINVAL);
 }
 
@@ -863,7 +863,7 @@ noise_keep_key_fresh_send(struct noise_remote *r)
 
 	NET_EPOCH_ENTER(et);
 	current = r->r_current;
-	keep_key_fresh = current != NULL && ck_pr_load_bool(&current->kp_can_send);
+	keep_key_fresh = current != NULL && current->kp_can_send;
 	if (!keep_key_fresh)
 		goto out;
 #ifdef __LP64__
@@ -892,7 +892,7 @@ noise_keep_key_fresh_recv(struct noise_remote *r)
 
 	NET_EPOCH_ENTER(et);
 	current = r->r_current;
-	keep_key_fresh = current != NULL && ck_pr_load_bool(&current->kp_can_send) &&
+	keep_key_fresh = current != NULL && current->kp_can_send &&
 	    current->kp_is_initiator && noise_timer_expired(current->kp_birthdate,
 			REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT, 0);
 	NET_EPOCH_EXIT(et);
