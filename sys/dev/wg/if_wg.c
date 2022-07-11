@@ -785,10 +785,10 @@ wg_socket_set(struct wg_softc *sc, struct socket *new_so4, struct socket *new_so
 
 	sx_assert(&sc->sc_lock, SX_XLOCKED);
 
-	so4 = ck_pr_load_ptr(&so->so_so4);
-	so6 = ck_pr_load_ptr(&so->so_so6);
-	ck_pr_store_ptr(&so->so_so4, new_so4);
-	ck_pr_store_ptr(&so->so_so6, new_so6);
+	so4 = so->so_so4;
+	so6 = so->so_so6;
+	so->so_so4 = new_so4;
+	so->so_so6 = new_so6;
 
 	if (!so4 && !so6)
 		return;
@@ -891,8 +891,8 @@ wg_send(struct wg_softc *sc, struct wg_endpoint *e, struct mbuf *m)
 	sa = &e->e_remote.r_sa;
 
 	NET_EPOCH_ENTER(et);
-	so4 = ck_pr_load_ptr(&so->so_so4);
-	so6 = ck_pr_load_ptr(&so->so_so6);
+	so4 = so->so_so4;
+	so6 = so->so_so6;
 	if (e->e_remote.r_sa.sa_family == AF_INET && so4 != NULL)
 		ret = sosend(so4, sa, NULL, m, control, 0, curthread);
 	else if (e->e_remote.r_sa.sa_family == AF_INET6 && so6 != NULL)
