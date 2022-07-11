@@ -563,16 +563,16 @@ noise_remote_keypairs_clear(struct noise_remote *r)
 	struct noise_keypair *kp;
 
 	mtx_lock(&r->r_keypair_mtx);
-	kp = ck_pr_load_ptr(&r->r_next);
-	ck_pr_store_ptr(&r->r_next, NULL);
+	kp = r->r_next;
+	r->r_next = NULL;
 	noise_keypair_drop(kp);
 
-	kp = ck_pr_load_ptr(&r->r_current);
-	ck_pr_store_ptr(&r->r_current, NULL);
+	kp = r->r_current;
+	r->r_current = NULL;
 	noise_keypair_drop(kp);
 
-	kp = ck_pr_load_ptr(&r->r_previous);
-	ck_pr_store_ptr(&r->r_previous, NULL);
+	kp = r->r_previous;
+	r->r_previous = NULL;
 	noise_keypair_drop(kp);
 	mtx_unlock(&r->r_keypair_mtx);
 }
@@ -586,10 +586,10 @@ noise_remote_expire_current(struct noise_remote *r)
 	noise_remote_handshake_clear(r);
 
 	NET_EPOCH_ENTER(et);
-	kp = ck_pr_load_ptr(&r->r_next);
+	kp = r->r_next;
 	if (kp != NULL)
 		ck_pr_store_bool(&kp->kp_can_send, false);
-	kp = ck_pr_load_ptr(&r->r_current);
+	kp = r->r_current;
 	if (kp != NULL)
 		ck_pr_store_bool(&kp->kp_can_send, false);
 	NET_EPOCH_EXIT(et);
@@ -605,24 +605,24 @@ noise_add_new_keypair(struct noise_local *l, struct noise_remote *r,
 
 	/* Insert into the keypair table */
 	mtx_lock(&r->r_keypair_mtx);
-	next = ck_pr_load_ptr(&r->r_next);
-	current = ck_pr_load_ptr(&r->r_current);
-	previous = ck_pr_load_ptr(&r->r_previous);
+	next = r->r_next;
+	current = r->r_current;
+	previous = r->r_previous;
 
 	if (kp->kp_is_initiator) {
 		if (next != NULL) {
-			ck_pr_store_ptr(&r->r_next, NULL);
-			ck_pr_store_ptr(&r->r_previous, next);
+			r->r_next = NULL;
+			r->r_previous = next;
 			noise_keypair_drop(current);
 		} else {
-			ck_pr_store_ptr(&r->r_previous, current);
+			r->r_previous = current;
 		}
 		noise_keypair_drop(previous);
-		ck_pr_store_ptr(&r->r_current, kp);
+		r->r_current = kp;
 	} else {
-		ck_pr_store_ptr(&r->r_next, kp);
+		r->r_next = kp;
 		noise_keypair_drop(next);
-		ck_pr_store_ptr(&r->r_previous, NULL);
+		r->r_previous = NULL;
 		noise_keypair_drop(previous);
 
 	}
@@ -703,7 +703,7 @@ noise_keypair_current(struct noise_remote *r)
 	struct noise_keypair *kp, *ret = NULL;
 
 	NET_EPOCH_ENTER(et);
-	kp = ck_pr_load_ptr(&r->r_current);
+	kp = r->r_current;
 	if (kp != NULL && ck_pr_load_bool(&kp->kp_can_send)) {
 		if (noise_timer_expired(kp->kp_birthdate, REJECT_AFTER_TIME, 0))
 			ck_pr_store_bool(&kp->kp_can_send, false);
@@ -727,20 +727,20 @@ noise_keypair_received_with(struct noise_keypair *kp)
 	struct noise_keypair *old;
 	struct noise_remote *r = kp->kp_remote;
 
-	if (kp != ck_pr_load_ptr(&r->r_next))
+	if (kp != r->r_next)
 		return (0);
 
 	mtx_lock(&r->r_keypair_mtx);
-	if (kp != ck_pr_load_ptr(&r->r_next)) {
+	if (kp != r->r_next) {
 		mtx_unlock(&r->r_keypair_mtx);
 		return (0);
 	}
 
-	old = ck_pr_load_ptr(&r->r_previous);
-	ck_pr_store_ptr(&r->r_previous, ck_pr_load_ptr(&r->r_current));
+	old = r->r_previous;
+	r->r_previous = r->r_current;
 	noise_keypair_drop(old);
-	ck_pr_store_ptr(&r->r_current, kp);
-	ck_pr_store_ptr(&r->r_next, NULL);
+	r->r_current = kp;
+	r->r_next = NULL;
 	mtx_unlock(&r->r_keypair_mtx);
 
 	return (ECONNRESET);
@@ -862,7 +862,7 @@ noise_keep_key_fresh_send(struct noise_remote *r)
 	uint64_t nonce;
 
 	NET_EPOCH_ENTER(et);
-	current = ck_pr_load_ptr(&r->r_current);
+	current = r->r_current;
 	keep_key_fresh = current != NULL && ck_pr_load_bool(&current->kp_can_send);
 	if (!keep_key_fresh)
 		goto out;
@@ -891,7 +891,7 @@ noise_keep_key_fresh_recv(struct noise_remote *r)
 	int keep_key_fresh;
 
 	NET_EPOCH_ENTER(et);
-	current = ck_pr_load_ptr(&r->r_current);
+	current = r->r_current;
 	keep_key_fresh = current != NULL && ck_pr_load_bool(&current->kp_can_send) &&
 	    current->kp_is_initiator && noise_timer_expired(current->kp_birthdate,
 			REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT, 0);
