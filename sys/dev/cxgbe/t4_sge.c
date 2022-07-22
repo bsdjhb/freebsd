@@ -240,7 +240,7 @@ static int service_iq(struct sge_iq *, int);
 static int service_iq_fl(struct sge_iq *, int);
 static struct mbuf *get_fl_payload(struct adapter *, struct sge_fl *, uint32_t);
 static int eth_rx(struct adapter *, struct sge_rxq *, const struct iq_desc *,
-    u_int);
+    u_int, struct mbuf **);
 static inline void init_iq(struct sge_iq *, struct adapter *, int, int, int,
     int, int, int);
 static inline void init_fl(struct adapter *, struct sge_fl *, int, int, char *);
@@ -1580,14 +1580,15 @@ static int
 service_iq_fl(struct sge_iq *iq, int budget)
 {
 	struct sge_rxq *rxq = iq_to_rxq(iq);
+	struct ifnet *ifp = rxq->ifp;
 	struct sge_fl *fl;
 	struct adapter *sc = iq->adapter;
 	struct iq_desc *d = &iq->desc[iq->cidx];
-	int ndescs, limit;
+	int error, ndescs, limit;
 	int rsp_type, starved;
 	uint32_t lq;
 	uint16_t fl_hw_cidx;
-	struct mbuf *m0;
+	struct mbuf *m0, *mlast, *top;
 #if defined(INET) || defined(INET6)
 	const struct timeval lro_timeout = {0, sc->lro_timeout};
 	struct lro_ctrl *lro = &rxq->lro;
@@ -1614,6 +1615,7 @@ service_iq_fl(struct sge_iq *iq, int budget)
 	MPASS((iq->flags & IQ_ADJ_CREDIT) == 0);
 #endif
 
+	top = mlast = NULL;
 	limit = budget ? budget : iq->qsize / 16;
 	fl = &rxq->fl;
 	fl_hw_cidx = fl->hw_cidx;	/* stable snapshot */
@@ -1640,9 +1642,19 @@ service_iq_fl(struct sge_iq *iq, int budget)
 			}
 
 			if (d->rss.opcode == CPL_RX_PKT) {
-				if (__predict_true(eth_rx(sc, rxq, d, lq) == 0))
-					break;
-				goto out;
+				error = eth_rx(sc, rxq, d, lq, &m0);
+				if (__predict_false(error != 0))
+					goto out;
+				if (m0 != NULL) {
+					if (top == NULL) {
+						top = m0;
+						mlast = top;
+					} else {
+						mlast->m_nextpkt = m0;
+						mlast = m0;
+					}
+				}
+				break;
 			}
 			m0 = get_fl_payload(sc, fl, lq);
 			if (__predict_false(m0 == NULL))
@@ -1692,6 +1704,10 @@ service_iq_fl(struct sge_iq *iq, int budget)
 			    V_INGRESSQID(iq->cntxt_id) |
 			    V_SEINTARM(V_QINTR_TIMER_IDX(X_TIMERREG_UPDATE_CIDX)));
 
+			if (top != NULL) {
+				ifp->if_input(ifp, top);
+				top = mlast = NULL;
+			}
 #if defined(INET) || defined(INET6)
 			if (iq->flags & IQ_LRO_ENABLED &&
 			    !sort_before_lro(lro) &&
@@ -1705,6 +1721,8 @@ service_iq_fl(struct sge_iq *iq, int budget)
 		}
 	}
 out:
+	if (top != NULL)
+		ifp->if_input(ifp, top);
 #if defined(INET) || defined(INET6)
 	if (iq->flags & IQ_LRO_ENABLED) {
 		if (ndescs > 0 && lro->lro_mbuf_count > 8) {
@@ -1941,7 +1959,7 @@ get_segment_len(struct adapter *sc, struct sge_fl *fl, int plen)
 
 static int
 eth_rx(struct adapter *sc, struct sge_rxq *rxq, const struct iq_desc *d,
-    u_int plen)
+    u_int plen, struct mbuf **mpp)
 {
 	struct mbuf *m0;
 	struct ifnet *ifp = rxq->ifp;
@@ -1987,6 +2005,7 @@ eth_rx(struct adapter *sc, struct sge_rxq *rxq, const struct iq_desc *d,
 		},
 	};
 
+	*mpp = NULL;
 	MPASS(plen > sc->params.sge.fl_pktshift);
 	if (vi->pfil != NULL && PFIL_HOOKED_IN(vi->pfil) &&
 	    __predict_true((fl->flags & FL_BUF_RESUME) == 0)) {
@@ -2129,7 +2148,7 @@ have_mbuf:
 			return (0); /* queued for LRO */
 	}
 #endif
-	ifp->if_input(ifp, m0);
+	*mpp = m0;
 
 	return (0);
 }
