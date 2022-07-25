@@ -102,6 +102,7 @@ struct sysctl_netisr_proto {
 #define	NETISR_SNP_FLAGS_M2FLOW		0x00000001	/* nh_m2flow */
 #define	NETISR_SNP_FLAGS_M2CPUID	0x00000002	/* nh_m2cpuid */
 #define	NETISR_SNP_FLAGS_DRAINEDCPU	0x00000004	/* nh_drainedcpu */
+#define	NETISR_SNP_FLAGS_BATCHES	0x00000008	/* NH_FLAG_BATCHES */
 
 /*
  * Next, a structure per-workstream, with per-protocol data, exported as
@@ -197,9 +198,12 @@ struct netisr_handler {
 	u_int		 nh_qlimit;	/* Maximum per-CPU queue depth. */
 	u_int		 nh_policy;	/* Work placement policy. */
 	u_int		 nh_dispatch;	/* Dispatch policy. */
-	u_int		 nh_ispare[4];	/* For future use. */
+	u_int		 nh_flags;	/* Various flags. */
+	u_int		 nh_ispare[3];	/* For future use. */
 	void		*nh_pspare[4];	/* For future use. */
 };
+
+#define	NETISR_FLAG_BATCHES	0x00000001	/* Supports packet batches. */
 
 /*
  * Register, unregister, and other netisr handler management functions.

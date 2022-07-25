@@ -67,6 +67,7 @@ struct netisr_proto {
 	u_int		 np_qlimit;	/* Maximum per-CPU queue depth. */
 	u_int		 np_policy;	/* Work placement policy. */
 	u_int		 np_dispatch;	/* Work dispatch policy. */
+	u_int		 np_flags;	/* Various flags. */
 };
 
 #define	NETISR_MAXPROT	16		/* Compile-time limit. */

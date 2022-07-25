@@ -421,6 +421,9 @@ netisr_register(const struct netisr_handler *nhp)
 	    nhp->nh_dispatch == NETISR_DISPATCH_DIRECT,
 	    ("%s: invalid nh_dispatch (%u)", __func__, nhp->nh_dispatch));
 
+	KASSERT((nhp->nh_flags & ~(NETISR_FLAG_BATCHES)) == 0,
+	    ("%s: invalid nh_flags (%#x)", __func__, nhp->nh_flags));
+
 	KASSERT(proto < NETISR_MAXPROT,
 	    ("%s(%u, %s): protocol too big", __func__, proto, name));
 
@@ -449,6 +452,7 @@ netisr_register(const struct netisr_handler *nhp)
 		netisr_proto[proto].np_qlimit = nhp->nh_qlimit;
 	netisr_proto[proto].np_policy = nhp->nh_policy;
 	netisr_proto[proto].np_dispatch = nhp->nh_dispatch;
+	netisr_proto[proto].np_flags = nhp->nh_flags;
 	CPU_FOREACH(i) {
 		npwp = &(DPCPU_ID_PTR(i, nws))->nws_work[proto];
 		bzero(npwp, sizeof(*npwp));
@@ -881,7 +885,8 @@ netisr_process_workstream_proto(struct netisr_workstream *nwsp, u_int proto)
 {
 	struct netisr_work local_npw, *npwp;
 	u_int handled;
-	struct mbuf *m, *n;
+	struct mbuf *last, *m, *n, *top;
+	bool batch_packets;
 
 	NETISR_LOCK_ASSERT();
 	NWS_LOCK_ASSERT(nwsp);
@@ -909,6 +914,9 @@ netisr_process_workstream_proto(struct netisr_workstream *nwsp, u_int proto)
 	npwp->nw_len = 0;
 	nwsp->nws_pendingbits &= ~(1 << proto);
 	NWS_UNLOCK(nwsp);
+	batch_packets =
+	    (netisr_proto[proto].np_flags & NETISR_FLAG_BATCHES) != 0;
+	top = last = NULL;
 	MBUF_FOREACH_PACKET_SAFE(m, local_npw.nw_head, n) {
 		m->m_nextpkt = NULL;
 		local_npw.nw_len--;
@@ -916,8 +924,29 @@ netisr_process_workstream_proto(struct netisr_workstream *nwsp, u_int proto)
 			m_freem(m);
 			continue;
 		}
-		CURVNET_SET(m->m_pkthdr.rcvif->if_vnet);
-		netisr_proto[proto].np_handler(m);
+		if (batch_packets) {
+			if (top == NULL) {
+				top = m;
+				last = m;
+			} else if (top->m_pkthdr.rcvif == m->m_pkthdr.rcvif) {
+				last->m_nextpkt = m;
+				last = m;
+			} else {
+				CURVNET_SET(top->m_pkthdr.rcvif->if_vnet);
+				netisr_proto[proto].np_handler(top);
+				CURVNET_RESTORE();
+				top = m;
+				last = m;
+			}
+		} else {
+			CURVNET_SET(m->m_pkthdr.rcvif->if_vnet);
+			netisr_proto[proto].np_handler(m);
+			CURVNET_RESTORE();
+		}
+	}
+	if (batch_packets) {
+		CURVNET_SET(top->m_pkthdr.rcvif->if_vnet);
+		netisr_proto[proto].np_handler(top);
 		CURVNET_RESTORE();
 	}
 	KASSERT(local_npw.nw_len == 0,
@@ -982,21 +1011,26 @@ static int
 netisr_queue_workstream(struct netisr_workstream *nwsp, u_int proto,
     struct netisr_work *npwp, struct mbuf *m, int *dosignalp)
 {
+	struct mbuf *last, *n;
+	u_int count;
 
 	NWS_LOCK_ASSERT(nwsp);
 
+	count = m_countpkts(m, &last);
+
 	*dosignalp = 0;
-	if (npwp->nw_len < npwp->nw_qlimit) {
-		m_rcvif_serialize(m);
-		m->m_nextpkt = NULL;
+	if (npwp->nw_len + count <= npwp->nw_qlimit) {
+		MBUF_FOREACH_PACKET(n, m) {
+			m_rcvif_serialize(n);
+		}
 		if (npwp->nw_head == NULL) {
 			npwp->nw_head = m;
-			npwp->nw_tail = m;
+			npwp->nw_tail = last;
 		} else {
 			npwp->nw_tail->m_nextpkt = m;
-			npwp->nw_tail = m;
+			npwp->nw_tail = last;
 		}
-		npwp->nw_len++;
+		npwp->nw_len += count;
 		if (npwp->nw_len > npwp->nw_watermark)
 			npwp->nw_watermark = npwp->nw_len;
 
@@ -1010,11 +1044,11 @@ netisr_queue_workstream(struct netisr_workstream *nwsp, u_int proto,
 			nwsp->nws_flags |= NWS_SCHEDULED;
 			*dosignalp = 1;	/* Defer until unlocked. */
 		}
-		npwp->nw_queued++;
+		npwp->nw_queued += count;
 		return (0);
 	} else {
-		m_freem(m);
-		npwp->nw_qdrops++;
+		m_freepkts(m);
+		npwp->nw_qdrops += count;
 		return (ENOBUFS);
 	}
 }
@@ -1046,11 +1080,13 @@ netisr_queue_internal(u_int proto, struct mbuf *m, u_int cpuid)
 }
 
 int
-netisr_queue_src(u_int proto, uintptr_t source, struct mbuf *m)
+netisr_queue_src(u_int proto, uintptr_t source, struct mbuf *m0)
 {
 #ifdef NETISR_LOCKING
 	struct rm_priotracker tracker;
 #endif
+	struct netisr_proto *npp;
+	struct mbuf *m, *n;
 	u_int cpuid;
 	int error;
 
@@ -1060,26 +1096,36 @@ netisr_queue_src(u_int proto, uintptr_t source, struct mbuf *m)
 #ifdef NETISR_LOCKING
 	NETISR_RLOCK(&tracker);
 #endif
-	KASSERT(netisr_proto[proto].np_handler != NULL,
+	npp = &netisr_proto[proto];
+	KASSERT(npp->np_handler != NULL,
 	    ("%s: invalid proto %u", __func__, proto));
 
 #ifdef VIMAGE
 	if (V_netisr_enable[proto] == 0) {
-		m_freem(m);
+		m_freepkts(m0);
 		return (ENOPROTOOPT);
 	}
 #endif
 
-	m = netisr_select_cpuid(&netisr_proto[proto], NETISR_DISPATCH_DEFERRED,
-	    source, m, &cpuid);
-	if (m != NULL) {
-		KASSERT(!CPU_ABSENT(cpuid), ("%s: CPU %u absent", __func__,
-		    cpuid));
-		VNET_ASSERT(m->m_pkthdr.rcvif != NULL,
-		    ("%s:%d rcvif == NULL: m=%p", __func__, __LINE__, m));
-		error = netisr_queue_internal(proto, m, cpuid);
-	} else
-		error = ENOBUFS;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+		m = netisr_select_cpuid(npp, NETISR_DISPATCH_DEFERRED,
+		    source, m, &cpuid);
+
+		if (m != NULL) {
+			KASSERT(!CPU_ABSENT(cpuid), ("%s: CPU %u absent",
+			    __func__, cpuid));
+			VNET_ASSERT(m->m_pkthdr.rcvif != NULL,
+			    ("%s:%d rcvif == NULL: m=%p", __func__, __LINE__,
+			    m));
+			error = netisr_queue_internal(proto, m, cpuid);
+		} else
+			error = ENOBUFS;
+		if (error != 0) {
+			m_freepkts(n);
+			break;
+		}
+	}
 #ifdef NETISR_LOCKING
 	NETISR_RUNLOCK(&tracker);
 #endif
@@ -1098,7 +1144,7 @@ netisr_queue(u_int proto, struct mbuf *m)
  * calling context.
  */
 int
-netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
+netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m0)
 {
 #ifdef NETISR_LOCKING
 	struct rm_priotracker tracker;
@@ -1106,8 +1152,9 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	struct netisr_workstream *nwsp;
 	struct netisr_proto *npp;
 	struct netisr_work *npwp;
+	struct mbuf *last, *m, *n, *top;
 	int dosignal, error;
-	u_int cpuid, dispatch_policy;
+	u_int count, cpuid, dispatch_policy;
 
 	NET_EPOCH_ASSERT();
 	KASSERT(proto < NETISR_MAXPROT,
@@ -1121,14 +1168,14 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 
 #ifdef VIMAGE
 	if (V_netisr_enable[proto] == 0) {
-		m_freem(m);
+		m_freepkts(m0);
 		return (ENOPROTOOPT);
 	}
 #endif
 
 	dispatch_policy = netisr_get_dispatch(npp);
 	if (dispatch_policy == NETISR_DISPATCH_DEFERRED)
-		return (netisr_queue_src(proto, source, m));
+		return (netisr_queue_src(proto, source, m0));
 
 	/*
 	 * If direct dispatch is forced, then unconditionally dispatch
@@ -1140,9 +1187,17 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	if (dispatch_policy == NETISR_DISPATCH_DIRECT) {
 		nwsp = DPCPU_PTR(nws);
 		npwp = &nwsp->nws_work[proto];
-		npwp->nw_dispatched++;
-		npwp->nw_handled++;
-		netisr_proto[proto].np_handler(m);
+		count = m_countpkts(m0, NULL);
+		npwp->nw_dispatched += count;
+		npwp->nw_handled += count;
+		if ((npp->np_flags & NETISR_FLAG_BATCHES) != 0)
+			npp->np_handler(m0);
+		else {
+			MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+				m->m_nextpkt = NULL;
+				npp->np_handler(m);
+			}
+		}
 		error = 0;
 		goto out_unlock;
 	}
@@ -1154,17 +1209,51 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	 * Otherwise, we execute in a hybrid mode where we will try to direct
 	 * dispatch if we're on the right CPU and the netisr worker isn't
 	 * already running.
+	 *
+	 * First, make a pass over the packets queueing packets
+	 * destined for other CPUs and building a queue of packets for
+	 * the current CPU headed by 'top'.
 	 */
+	count = 0;
+	top = last = NULL;
 	sched_pin();
-	m = netisr_select_cpuid(&netisr_proto[proto], NETISR_DISPATCH_HYBRID,
-	    source, m, &cpuid);
-	if (m == NULL) {
-		error = ENOBUFS;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+		m = netisr_select_cpuid(npp, NETISR_DISPATCH_HYBRID,
+		    source, m, &cpuid);
+		if (m == NULL) {
+			error = ENOBUFS;
+			m_freepkts(top);
+			m_freepkts(n);
+			goto out_unpin;
+		}
+		KASSERT(!CPU_ABSENT(cpuid), ("%s: CPU %u absent", __func__,
+		    cpuid));
+		if (cpuid != curcpu) {
+			error = netisr_queue_internal(proto, m, cpuid);
+			if (error != 0) {
+				m_freepkts(top);
+				m_freepkts(n);
+				goto out_unpin;
+			}
+			continue;
+		}
+
+		if (top == NULL) {
+			top = m;
+			last = m;
+		} else {
+			last->m_nextpkt = m;
+			last = m;
+		}
+		count++;
+	}
+
+	if (top == NULL) {
+		error = 0;
 		goto out_unpin;
 	}
-	KASSERT(!CPU_ABSENT(cpuid), ("%s: CPU %u absent", __func__, cpuid));
-	if (cpuid != curcpu)
-		goto queue_fallback;
+
 	nwsp = DPCPU_PTR(nws);
 	npwp = &nwsp->nws_work[proto];
 
@@ -1177,7 +1266,7 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	 */
 	NWS_LOCK(nwsp);
 	if (nwsp->nws_flags & (NWS_RUNNING | NWS_DISPATCHING | NWS_SCHEDULED)) {
-		error = netisr_queue_workstream(nwsp, proto, npwp, m,
+		error = netisr_queue_workstream(nwsp, proto, npwp, top,
 		    &dosignal);
 		NWS_UNLOCK(nwsp);
 		if (dosignal)
@@ -1193,11 +1282,18 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	 */
 	nwsp->nws_flags |= NWS_DISPATCHING;
 	NWS_UNLOCK(nwsp);
-	netisr_proto[proto].np_handler(m);
+	if ((npp->np_flags & NETISR_FLAG_BATCHES) != 0)
+		npp->np_handler(top);
+	else {
+		MBUF_FOREACH_PACKET_SAFE(m, top, n) {
+			m->m_nextpkt = NULL;
+			npp->np_handler(m);
+		}
+	}
 	NWS_LOCK(nwsp);
 	nwsp->nws_flags &= ~NWS_DISPATCHING;
-	npwp->nw_handled++;
-	npwp->nw_hybrid_dispatched++;
+	npwp->nw_handled += count;
+	npwp->nw_hybrid_dispatched += count;
 
 	/*
 	 * If other work was enqueued by another thread while we were direct
@@ -1218,8 +1314,6 @@ netisr_dispatch_src(u_int proto, uintptr_t source, struct mbuf *m)
 	error = 0;
 	goto out_unpin;
 
-queue_fallback:
-	error = netisr_queue_internal(proto, m, cpuid);
 out_unpin:
 	sched_unpin();
 out_unlock:
@@ -1394,6 +1488,8 @@ sysctl_netisr_proto(SYSCTL_HANDLER_ARGS)
 			snpp->snp_flags |= NETISR_SNP_FLAGS_M2CPUID;
 		if (npp->np_drainedcpu != NULL)
 			snpp->snp_flags |= NETISR_SNP_FLAGS_DRAINEDCPU;
+		if ((npp->np_flags & NETISR_FLAG_BATCHES) != 0)
+			snpp->snp_flags |= NETISR_SNP_FLAGS_BATCHES;
 		counter++;
 	}
 	NETISR_RUNLOCK(&tracker);
