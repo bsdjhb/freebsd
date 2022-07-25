@@ -1296,6 +1296,7 @@ mb_free_extpg(struct mbuf *m)
  *
  * m_free()	- free single mbuf with its tags and ext, sys/mbuf.h.
  * m_freem()	- free chain of mbufs.
+ * m_freepkts() - free queue of mbuf chains.
  */
 
 int
@@ -1569,6 +1570,19 @@ m_freem(struct mbuf *mb)
 	MBUF_PROBE1(m__freem, mb);
 	while (mb != NULL)
 		mb = m_free(mb);
+}
+
+/* Free a queue of mbuf chains. */
+void
+m_freepkts(struct mbuf *mb)
+{
+	struct mbuf *n;
+
+	MBUF_PROBE1(m__freepkts, mb);
+	MBUF_FOREACH_PACKET_SAFE(mb, mb, n) {
+		mb->m_nextpkt = NULL;
+		m_freem(mb);
+	}
 }
 
 /*

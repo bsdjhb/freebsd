@@ -92,6 +92,8 @@
 .Fn m_free "struct mbuf *mbuf"
 .Ft void
 .Fn m_freem "struct mbuf *mbuf"
+.Ft void
+.Fn m_freepkts "struct mbuf *mbuf"
 .\"
 .Ss Mbuf utility functions
 .Ft void
@@ -681,6 +683,9 @@ Returns
 .Va m_next
 of the freed
 .Vt mbuf .
+.It Fn m_freepkts mbuf.
+Frees a queue of mbuf chains linked by
+.Va m_nextpkt .
 .El
 .Pp
 The functions below operate on
