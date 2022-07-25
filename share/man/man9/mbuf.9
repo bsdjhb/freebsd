@@ -139,6 +139,8 @@
 .Ft void
 .Fn m_move_pkthdr "struct mbuf *to" "struct mbuf *from"
 .Ft u_int
+.Fn m_countpkts "struct mbuf *mbuf" "struct mbuf **last"
+.Ft u_int
 .Fn m_length "struct mbuf *mbuf" "struct mbuf **last"
 .Ft struct mbuf *
 .Fn m_split "struct mbuf *mbuf" "int len" "int how"
@@ -686,6 +688,10 @@ of the freed
 .It Fn m_freepkts mbuf.
 Frees a queue of mbuf chains linked by
 .Va m_nextpkt .
+.It Fn m_countpkts mbuf last
+Return the number of packets in the queue headed by
+.Vt mbuf ,
+and optionally a pointer to the last packet.
 .El
 .Pp
 The functions below operate on

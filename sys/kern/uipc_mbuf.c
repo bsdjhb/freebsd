@@ -1487,6 +1487,23 @@ m_length(struct mbuf *m0, struct mbuf **last)
 	return (len);
 }
 
+u_int
+m_countpkts(struct mbuf *m0, struct mbuf **last)
+{
+	struct mbuf *m;
+	u_int count;
+
+	count = 0;
+	MBUF_FOREACH_PACKET(m, m0) {
+		count++;
+		if (m->m_nextpkt == NULL)
+			break;
+	}
+	if (last != NULL)
+		*last = m;
+	return (count);
+}
+
 /*
  * Defragment a mbuf chain, returning the shortest possible
  * chain of mbufs and clusters.  If allocation fails and

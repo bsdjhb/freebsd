@@ -846,6 +846,7 @@ struct mbuf	*m_copym(struct mbuf *, int, int, int);
 struct mbuf	*m_copypacket(struct mbuf *, int);
 void		 m_copy_pkthdr(struct mbuf *, struct mbuf *);
 struct mbuf	*m_copyup(struct mbuf *, int, int);
+u_int		 m_countpkts(struct mbuf *, struct mbuf **);
 struct mbuf	*m_defrag(struct mbuf *, int);
 void		 m_demote_pkthdr(struct mbuf *);
 void		 m_demote(struct mbuf *, int, int);
