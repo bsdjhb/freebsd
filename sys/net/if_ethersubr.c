@@ -116,6 +116,7 @@ struct mbuf *(*lagg_input_ethernet_p)(struct ifnet *, struct mbuf *);
 static const u_char etherbroadcastaddr[ETHER_ADDR_LEN] =
 			{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
+static	int ether_demux_one(struct ifnet *, struct mbuf **);
 static	int ether_resolvemulti(struct ifnet *, struct sockaddr **,
 		struct sockaddr *);
 static	int ether_requestencap(struct ifnet *, struct if_encap_req *);
@@ -517,23 +518,14 @@ ether_output_frame(struct ifnet *ifp, struct mbuf *m)
  * Process a received Ethernet packet; the packet is in the
  * mbuf chain m with the ethernet header at the front.
  */
-static void
-ether_input_internal(struct ifnet *ifp, struct mbuf *m)
+static int
+ether_input_internal(struct ifnet *ifp, struct mbuf **mp)
 {
+	struct mbuf *m;
 	struct ether_header *eh;
 	u_short etype;
 
-	if ((ifp->if_flags & IFF_UP) == 0) {
-		m_freem(m);
-		return;
-	}
-#ifdef DIAGNOSTIC
-	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0) {
-		if_printf(ifp, "discard frame at !IFF_DRV_RUNNING\n");
-		m_freem(m);
-		return;
-	}
-#endif
+	m = *mp;
 	if (m->m_len < ETHER_HDR_LEN) {
 		/* XXX maybe should pullup? */
 		if_printf(ifp, "discard frame w/o leading ethernet "
@@ -541,7 +533,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 				m->m_len, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		m_freem(m);
-		return;
+		return (-1);
 	}
 	eh = mtod(m, struct ether_header *);
 	etype = ntohs(eh->ether_type);
@@ -557,15 +549,13 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 		case ETHERTYPE_ARP:
 		case ETHERTYPE_REVARP:
 			m_freem(m);
-			return;
+			return (-1);
 			/* NOTREACHED */
 			break;
 		};
 	}
 #endif
 #endif
-
-	CURVNET_SET_QUIET(ifp->if_vnet);
 
 	if (ETHER_IS_MULTICAST(eh->ether_dhost)) {
 		if (ETHER_IS_BROADCAST(eh->ether_dhost))
@@ -604,8 +594,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 	/* Allow monitor mode to claim this frame, after stats are updated. */
 	if (ifp->if_flags & IFF_MONITOR) {
 		m_freem(m);
-		CURVNET_RESTORE();
-		return;
+		return (-1);
 	}
 
 	/* Handle input from a lagg(4) port */
@@ -616,8 +605,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 		if (m != NULL)
 			ifp = m->m_pkthdr.rcvif;
 		else {
-			CURVNET_RESTORE();
-			return;
+			return (-1);
 		}
 	}
 
@@ -636,8 +624,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 			if_printf(ifp, "cannot pullup VLAN header\n");
 #endif
 			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
-			CURVNET_RESTORE();
-			return;
+			return (-1);
 		}
 
 		evl = mtod(m, struct ether_vlan_header *);
@@ -659,8 +646,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 		m->m_flags &= ~M_PROMISC;
 		(*ng_ether_input_p)(ifp, &m);
 		if (m == NULL) {
-			CURVNET_RESTORE();
-			return;
+			return (-1);
 		}
 		eh = mtod(m, struct ether_header *);
 	}
@@ -674,8 +660,7 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 		m->m_flags &= ~M_PROMISC;
 		BRIDGE_INPUT(ifp, m);
 		if (m == NULL) {
-			CURVNET_RESTORE();
-			return;
+			return (-1);
 		}
 		eh = mtod(m, struct ether_header *);
 	}
@@ -708,8 +693,8 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
 			m->m_flags |= M_PROMISC;
 	}
 
-	ether_demux(ifp, m);
-	CURVNET_RESTORE();
+	*mp = m;
+	return (ether_demux_one(ifp, mp));
 }
 
 /*
@@ -732,13 +717,58 @@ ether_input_internal(struct ifnet *ifp, struct mbuf *m)
  * direct dispatch.
  */
 static void
-ether_nh_input(struct mbuf *m)
+ether_nh_input(struct mbuf *m0)
 {
+	struct ifnet *ifp;
+	struct mbuf *last, *m, *n, *top;
+	int isr, prev_isr;
 
-	M_ASSERTPKTHDR(m);
-	KASSERT(m->m_pkthdr.rcvif != NULL,
-	    ("%s: NULL interface pointer", __func__));
-	ether_input_internal(m->m_pkthdr.rcvif, m);
+	M_ASSERTPKTHDR(m0);
+	ifp = m0->m_pkthdr.rcvif;
+	KASSERT(ifp != NULL, ("%s: NULL interface pointer", __func__));
+
+	if ((ifp->if_flags & IFF_UP) == 0) {
+		m_freepkts(m0);
+		return;
+	}
+#ifdef DIAGNOSTIC
+	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0) {
+		if_printf(ifp, "discard frame at !IFF_DRV_RUNNING\n");
+		m_freepkts(m0);
+		return;
+	}
+#endif
+
+	CURVNET_SET_QUIET(ifp->if_vnet);
+	top = last = NULL;
+	prev_isr = -1;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+		M_ASSERTPKTHDR(m);
+		KASSERT(m->m_pkthdr.rcvif == ifp,
+		    ("%s: interface mismatch", __func__));
+		isr = ether_input_internal(ifp, &m);
+		if (isr == -1)
+			continue;
+
+		if (top == NULL) {
+			top = m;
+			last = m;
+			prev_isr = isr;
+		} else if (prev_isr == isr &&
+		    last->m_pkthdr.rcvif == m->m_pkthdr.rcvif) {
+			last->m_nextpkt = m;
+			last = m;
+		} else {
+			netisr_dispatch(prev_isr, top);
+			top = m;
+			last = m;
+			prev_isr = isr;
+		}
+	}
+	if (top != NULL)
+		netisr_dispatch(prev_isr, top);
+	CURVNET_RESTORE();
 }
 
 static struct netisr_handler	ether_nh = {
@@ -753,6 +783,7 @@ static struct netisr_handler	ether_nh = {
 	.nh_policy = NETISR_POLICY_SOURCE,
 	.nh_dispatch = NETISR_DISPATCH_DIRECT,
 #endif
+	.nh_flags = NETISR_FLAG_BATCHES,
 };
 
 static void
@@ -805,33 +836,30 @@ static void
 ether_input(struct ifnet *ifp, struct mbuf *m)
 {
 	struct epoch_tracker et;
-	struct mbuf *mn;
+	struct mbuf *n __diagused;
 	bool needs_epoch;
 
 	needs_epoch = !(ifp->if_flags & IFF_KNOWSEPOCH);
 
 	/*
 	 * The drivers are allowed to pass in a chain of packets linked with
-	 * m_nextpkt. We split them up into separate packets here and pass
-	 * them up. This allows the drivers to amortize the receive lock.
+	 * m_nextpkt.  This allows the drivers to amortize the receive lock.
 	 */
 	CURVNET_SET_QUIET(ifp->if_vnet);
 	if (__predict_false(needs_epoch))
 		NET_EPOCH_ENTER(et);
-	while (m) {
-		mn = m->m_nextpkt;
-		m->m_nextpkt = NULL;
-
+#ifdef INVARIANTS
+	MBUF_FOREACH_PACKET(n, m) {
 		/*
 		 * We will rely on rcvif being set properly in the deferred
 		 * context, so assert it is correct here.
 		 */
-		MPASS((m->m_pkthdr.csum_flags & CSUM_SND_TAG) == 0);
-		KASSERT(m->m_pkthdr.rcvif == ifp, ("%s: ifnet mismatch m %p "
-		    "rcvif %p ifp %p", __func__, m, m->m_pkthdr.rcvif, ifp));
-		netisr_dispatch(NETISR_ETHER, m);
-		m = mn;
+		MPASS((n->m_pkthdr.csum_flags & CSUM_SND_TAG) == 0);
+		KASSERT(n->m_pkthdr.rcvif == ifp, ("%s: ifnet mismatch m %p "
+		    "rcvif %p ifp %p", __func__, n, n->m_pkthdr.rcvif, ifp));
 	}
+#endif
+	netisr_dispatch(NETISR_ETHER, m);
 	if (__predict_false(needs_epoch))
 		NET_EPOCH_EXIT(et);
 	CURVNET_RESTORE();
@@ -840,13 +868,15 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 /*
  * Upper layer processing for a received Ethernet packet.
  */
-void
-ether_demux(struct ifnet *ifp, struct mbuf *m)
+static int
+ether_demux_one(struct ifnet *ifp, struct mbuf **mp)
 {
 	struct ether_header *eh;
+	struct mbuf *m;
 	int i, isr;
 	u_short ether_type;
 
+	m = *mp;
 	NET_EPOCH_ASSERT();
 	KASSERT(ifp != NULL, ("%s: NULL interface pointer", __func__));
 
@@ -854,7 +884,7 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 	if (PFIL_HOOKED_IN(V_link_pfil_head) && !(m->m_flags & M_PROMISC)) {
 		i = pfil_run_hooks(V_link_pfil_head, &m, ifp, PFIL_IN, NULL);
 		if (i != 0 || m == NULL)
-			return;
+			return (-1);
 	}
 
 	eh = mtod(m, struct ether_header *);
@@ -869,14 +899,14 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 		if (ifp->if_vlantrunk == NULL) {
 			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			m_freem(m);
-			return;
+			return (-1);
 		}
 		KASSERT(vlan_input_p != NULL,("%s: VLAN not loaded!",
 		    __func__));
 		/* Clear before possibly re-entering ether_input(). */
 		m->m_flags &= ~M_PROMISC;
 		(*vlan_input_p)(ifp, m);
-		return;
+		return (-1);
 	}
 
 	/*
@@ -885,7 +915,7 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 	 */
 	if ((ifp->if_flags & IFF_PPROMISC) == 0 && (m->m_flags & M_PROMISC)) {
 		m_freem(m);
-		return;
+		return (-1);
 	}
 
 	/*
@@ -907,7 +937,7 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 		if (ifp->if_flags & IFF_NOARP) {
 			/* Discard packet if ARP is disabled on interface */
 			m_freem(m);
-			return;
+			return (-1);
 		}
 		isr = NETISR_ARP;
 		break;
@@ -924,8 +954,8 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 	/* Strip off Ethernet header. */
 	m_adj(m, ETHER_HDR_LEN);
 
-	netisr_dispatch(isr, m);
-	return;
+	*mp = m;
+	return (isr);
 
 discard:
 	/*
@@ -937,9 +967,21 @@ discard:
 		KASSERT(ng_ether_input_orphan_p != NULL,
 		    ("ng_ether_input_orphan_p is NULL"));
 		(*ng_ether_input_orphan_p)(ifp, m);
-		return;
+		return (-1);
 	}
 	m_freem(m);
+	return (-1);
+}
+
+void
+ether_demux(struct ifnet *ifp, struct mbuf *m)
+{
+	int isr;
+
+	MPASS(m->m_nextpkt == NULL);
+	isr = ether_demux_one(ifp, &m);
+	if (isr != -1)
+		netisr_dispatch(isr, m);
 }
 
 /*
