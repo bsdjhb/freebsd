@@ -348,7 +348,12 @@ static int ethofld_fw4_ack(struct sge_iq *, const struct rss_header *,
 #endif
 
 static counter_u64_t extfree_refs;
+SYSCTL_COUNTER_U64(_hw_cxgbe, OID_AUTO, extfree_refs, CTLFLAG_RD, &extfree_refs,
+    "Number of extfree references taken");
+
 static counter_u64_t extfree_rels;
+SYSCTL_COUNTER_U64(_hw_cxgbe, OID_AUTO, extfree_rels, CTLFLAG_RD, &extfree_rels,
+    "Number of extfree references released");
 
 an_handler_t t4_an_handler;
 fw_msg_handler_t t4_fw_msg_handler[NUM_FW6_TYPES];
