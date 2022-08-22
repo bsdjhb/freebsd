@@ -137,9 +137,11 @@ SYSCTL_BOOL(_net_inet_ip, OID_AUTO, source_address_validation,
 
 VNET_DEFINE(pfil_head_t, inet_pfil_head);	/* Packet filter hooks */
 
+static void ip_nh_input(struct mbuf *);
+
 static struct netisr_handler ip_nh = {
 	.nh_name = "ip",
-	.nh_handler = ip_input,
+	.nh_handler = ip_nh_input,
 	.nh_proto = NETISR_IP,
 #ifdef	RSS
 	.nh_m2cpuid = rss_soft_m2cpuid_v4,
@@ -148,6 +150,7 @@ static struct netisr_handler ip_nh = {
 #else
 	.nh_policy = NETISR_POLICY_FLOW,
 #endif
+	.nh_flags = NETISR_FLAG_BATCHES,
 };
 
 #ifdef	RSS
@@ -418,7 +421,6 @@ ip_destroy(void *unused __unused)
 VNET_SYSUNINIT(ip, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD, ip_destroy, NULL);
 #endif
 
-#ifdef	RSS
 /*
  * IP direct input routine.
  *
@@ -443,14 +445,13 @@ ip_direct_input(struct mbuf *m)
 	IPSTAT_INC(ips_delivered);
 	ip_protox[ip->ip_p](m, hlen, ip->ip_p);
 }
-#endif
 
 /*
  * Ip input routine.  Checksum and byte swap header.  If fragmented
  * try to reassemble.  Process options.  Pass to next level.
  */
-void
-ip_input(struct mbuf *m)
+static struct mbuf *
+ip_input_one(struct mbuf *m)
 {
 	struct ip *ip = NULL;
 	struct in_ifaddr *ia = NULL;
@@ -483,7 +484,7 @@ ip_input(struct mbuf *m)
 		m = m_pullup(m, sizeof(struct ip));
 		if (__predict_false(m == NULL)) {
 			IPSTAT_INC(ips_toosmall);
-			return;
+			return (NULL);
 		}
 	}
 	ip = mtod(m, struct ip *);
@@ -502,7 +503,7 @@ ip_input(struct mbuf *m)
 		m = m_pullup(m, hlen);
 		if (__predict_false(m == NULL)) {
 			IPSTAT_INC(ips_badhlen);
-			return;
+			return (NULL);
 		}
 		ip = mtod(m, struct ip *);
 	}
@@ -580,7 +581,7 @@ tooshort:
 		 * any IP options case) case for redirects in ip_tryforward().
 		 */
 		if ((m = ip_tryforward(m)) == NULL)
-			return;
+			return (NULL);
 		if (m->m_flags & M_FASTFWD_OURS) {
 			m->m_flags &= ~M_FASTFWD_OURS;
 			ip = mtod(m, struct ip *);
@@ -612,9 +613,9 @@ tooshort:
 	odst = ip->ip_dst;
 	if (pfil_mbuf_in(V_inet_pfil_head, &m, ifp, NULL) !=
 	    PFIL_PASS)
-		return;
+		return (NULL);
 	if (m == NULL)			/* consumed by filter */
-		return;
+		return (NULL);
 
 	ip = mtod(m, struct ip *);
 	dchg = (odst.s_addr != ip->ip_dst.s_addr);
@@ -631,7 +632,7 @@ tooshort:
 			 * to some other directly connected host.
 			 */
 			ip_forward(m, 1);
-			return;
+			return (NULL);
 		}
 	}
 passin:
@@ -643,7 +644,7 @@ passin:
 	 * to be sent and the original packet to be freed).
 	 */
 	if (hlen > sizeof (struct ip) && ip_dooptions(m, 0))
-		return;
+		return (NULL);
 
         /* greedy RSVP, snatches any PATH packet of the RSVP protocol and no
          * matter if it is destined to another node, or whether it is
@@ -757,7 +758,7 @@ passin:
 			if (ip_mforward && ip_mforward(ip, ifp, m, 0) != 0) {
 				IPSTAT_INC(ips_cantforward);
 				m_freem(m);
-				return;
+				return (NULL);
 			}
 
 			/*
@@ -786,7 +787,7 @@ passin:
 	    IN_LINKLOCAL(ntohl(ip->ip_src.s_addr))) {
 		IPSTAT_INC(ips_cantforward);
 		m_freem(m);
-		return;
+		return (NULL);
 	}
 
 	/*
@@ -798,7 +799,7 @@ passin:
 	} else {
 		ip_forward(m, dchg);
 	}
-	return;
+	return (NULL);
 
 ours:
 #ifdef IPSTEALTH
@@ -807,7 +808,7 @@ ours:
 	 * if the packet is destined for us.
 	 */
 	if (V_ipstealth && hlen > sizeof (struct ip) && ip_dooptions(m, 1))
-		return;
+		return (NULL);
 #endif /* IPSTEALTH */
 
 	/*
@@ -818,28 +819,54 @@ ours:
 		/* XXXGL: shouldn't we save & set m_flags? */
 		m = ip_reass(m);
 		if (m == NULL)
-			return;
+			return (NULL);
 		ip = mtod(m, struct ip *);
 		/* Get the header length of the reassembled packet */
 		hlen = ip->ip_hl << 2;
 	}
 
-#if defined(IPSEC) || defined(IPSEC_SUPPORT)
-	if (IPSEC_ENABLED(ipv4)) {
-		if (IPSEC_INPUT(ipv4, m, hlen, ip->ip_p) != 0)
-			return;
-	}
-#endif /* IPSEC */
-
-	/*
-	 * Switch out to protocol's input routine.
-	 */
-	IPSTAT_INC(ips_delivered);
-
-	ip_protox[ip->ip_p](m, hlen, ip->ip_p);
-	return;
+	return (m);
 bad:
 	m_freem(m);
+	return (NULL);
+}
+
+void
+ip_input(struct mbuf *m)
+{
+	MPASS(m->m_nextpkt == NULL);
+	m = ip_input_one(m);
+	if (m == NULL)
+		return;
+
+	ip_direct_input(m);
+}
+
+static void
+ip_nh_input(struct mbuf *m0)
+{
+	struct mbuf *last, *m, *n, *top;
+
+	top = last = NULL;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+		m = ip_input_one(m);
+		if (m == NULL)
+			continue;
+
+		if (top == NULL) {
+			top = m;
+			last = m;
+		} else {
+			last->m_nextpkt = m;
+			last = m;
+		}
+	}
+
+	MBUF_FOREACH_PACKET_SAFE(m, top, n) {
+		m->m_nextpkt = NULL;
+		ip_direct_input(m);
+	}
 }
 
 int
