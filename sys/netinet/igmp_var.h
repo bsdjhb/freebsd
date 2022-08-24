@@ -226,7 +226,7 @@ struct igmp_ifsoftc *
 	igmp_domifattach(struct ifnet *);
 void	igmp_domifdetach(struct ifnet *);
 void	igmp_ifdetach(struct ifnet *);
-int	igmp_input(struct mbuf **, int *, int);
+void	igmp_input(struct mbuf *, int, int);
 
 SYSCTL_DECL(_net_inet_igmp);
 

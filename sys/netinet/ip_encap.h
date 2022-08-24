@@ -38,7 +38,7 @@
 
 #ifdef _KERNEL
 
-int	encap4_input(struct mbuf **, int *, int);
+void	encap4_input(struct mbuf *, int, int);
 int	encap6_input(struct mbuf **, int *, int);
 
 typedef int (*encap_lookup_t)(const struct mbuf *, int, int, void **);

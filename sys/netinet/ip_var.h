@@ -229,15 +229,15 @@ void	ip_savecontrol(struct inpcb *, struct mbuf **, struct ip *,
 void	ip_fillid(struct ip *);
 int	rip_ctloutput(struct socket *, struct sockopt *);
 int	ipip_input(struct mbuf **, int *, int);
-int	rsvp_input(struct mbuf **, int *, int);
+void	rsvp_input(struct mbuf *, int, int);
 
 int	ip_rsvp_init(struct socket *);
 int	ip_rsvp_done(void);
 extern int	(*ip_rsvp_vif)(struct socket *, struct sockopt *);
 extern void	(*ip_rsvp_force_done)(struct socket *);
-extern int	(*rsvp_input_p)(struct mbuf **, int *, int);
+extern void	(*rsvp_input_p)(struct mbuf *, int, int);
 
-typedef int	ipproto_input_t(struct mbuf **, int *, int);
+typedef void	ipproto_input_t(struct mbuf *, int, int);
 struct icmp;
 typedef void	ipproto_ctlinput_t(struct icmp *);
 int	ipproto_register(uint8_t, ipproto_input_t, ipproto_ctlinput_t);

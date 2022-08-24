@@ -445,22 +445,20 @@ carp_hmac_verify(struct carp_softc *sc, uint32_t counter[2],
  * but it seems more efficient this way or not possible otherwise.
  */
 #ifdef INET
-static int
-carp_input(struct mbuf **mp, int *offp, int proto)
+static void
+carp_input(struct mbuf *m, int off, int proto)
 {
-	struct mbuf *m = *mp;
 	struct ip *ip = mtod(m, struct ip *);
 	struct carp_header *ch;
 	int iplen, len;
 
-	iplen = *offp;
-	*mp = NULL;
+	iplen = off;
 
 	CARPSTATS_INC(carps_ipackets);
 
 	if (!V_carp_allow) {
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	/* verify that the IP TTL is 255.  */
@@ -470,7 +468,7 @@ carp_input(struct mbuf **mp, int *offp, int proto)
 		    ip->ip_ttl,
 		    m->m_pkthdr.rcvif->if_xname);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	iplen = ip->ip_hl << 2;
@@ -481,14 +479,14 @@ carp_input(struct mbuf **mp, int *offp, int proto)
 		    "on %s\n", __func__, m->m_len - sizeof(struct ip),
 		    m->m_pkthdr.rcvif->if_xname);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	if (iplen + sizeof(*ch) < m->m_len) {
 		if ((m = m_pullup(m, iplen + sizeof(*ch))) == NULL) {
 			CARPSTATS_INC(carps_hdrops);
 			CARP_DEBUG("%s: pullup failed\n", __func__);
-			return (IPPROTO_DONE);
+			return;
 		}
 		ip = mtod(m, struct ip *);
 	}
@@ -505,12 +503,12 @@ carp_input(struct mbuf **mp, int *offp, int proto)
 		    m->m_pkthdr.len,
 		    m->m_pkthdr.rcvif->if_xname);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	if ((m = m_pullup(m, len)) == NULL) {
 		CARPSTATS_INC(carps_hdrops);
-		return (IPPROTO_DONE);
+		return;
 	}
 	ip = mtod(m, struct ip *);
 	ch = (struct carp_header *)((char *)ip + iplen);
@@ -522,12 +520,11 @@ carp_input(struct mbuf **mp, int *offp, int proto)
 		CARP_DEBUG("%s: checksum failed on %s\n", __func__,
 		    m->m_pkthdr.rcvif->if_xname);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 	m->m_data -= iplen;
 
 	carp_input_c(m, ch, AF_INET);
-	return (IPPROTO_DONE);
 }
 #endif
 

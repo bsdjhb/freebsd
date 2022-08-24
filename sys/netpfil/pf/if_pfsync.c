@@ -631,11 +631,10 @@ cleanup_state:	/* pf_state_insert() frees the state keys. */
 }
 
 #ifdef INET
-static int
-pfsync_input(struct mbuf **mp, int *offp __unused, int proto __unused)
+static void
+pfsync_input(struct mbuf *m, int off __unused, int proto __unused)
 {
 	struct pfsync_softc *sc = V_pfsyncif;
-	struct mbuf *m = *mp;
 	struct ip *ip = mtod(m, struct ip *);
 	struct pfsync_header *ph;
 	struct pfsync_subheader subh;
@@ -646,7 +645,6 @@ pfsync_input(struct mbuf **mp, int *offp __unused, int proto __unused)
 
 	PF_RULES_RLOCK_TRACKER;
 
-	*mp = NULL;
 	V_pfsyncstats.pfsyncs_ipackets++;
 
 	/* Verify that we have a sync interface configured. */
@@ -677,7 +675,7 @@ pfsync_input(struct mbuf **mp, int *offp __unused, int proto __unused)
 	if (offset + sizeof(*ph) > m->m_len) {
 		if (m_pullup(m, offset + sizeof(*ph)) == NULL) {
 			V_pfsyncstats.pfsyncs_hdrops++;
-			return (IPPROTO_DONE);
+			return;
 		}
 		ip = mtod(m, struct ip *);
 	}
@@ -719,7 +717,7 @@ pfsync_input(struct mbuf **mp, int *offp __unused, int proto __unused)
 		rv = (*pfsync_acts[subh.action])(m, offset, count, flags);
 		if (rv == -1) {
 			PF_RULES_RUNLOCK();
-			return (IPPROTO_DONE);
+			return;
 		}
 
 		offset += rv;
@@ -728,7 +726,6 @@ pfsync_input(struct mbuf **mp, int *offp __unused, int proto __unused)
 
 done:
 	m_freem(m);
-	return (IPPROTO_DONE);
 }
 #endif
 

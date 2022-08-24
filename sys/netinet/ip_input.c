@@ -441,7 +441,7 @@ ip_direct_input(struct mbuf *m)
 	}
 #endif /* IPSEC */
 	IPSTAT_INC(ips_delivered);
-	ip_protox[ip->ip_p](&m, &hlen, ip->ip_p);
+	ip_protox[ip->ip_p](m, hlen, ip->ip_p);
 }
 #endif
 
@@ -836,7 +836,7 @@ ours:
 	 */
 	IPSTAT_INC(ips_delivered);
 
-	ip_protox[ip->ip_p](&m, &hlen, ip->ip_p);
+	ip_protox[ip->ip_p](m, hlen, ip->ip_p);
 	return;
 bad:
 	m_freem(m);
@@ -1331,18 +1331,13 @@ ip_rsvp_done(void)
 	return 0;
 }
 
-int
-rsvp_input(struct mbuf **mp, int *offp, int proto)
+void
+rsvp_input(struct mbuf *m, int off, int proto)
 {
-	struct mbuf *m;
-
-	m = *mp;
-	*mp = NULL;
 
 	if (rsvp_input_p) { /* call the real one if loaded */
-		*mp = m;
-		rsvp_input_p(mp, offp, proto);
-		return (IPPROTO_DONE);
+		rsvp_input_p(m, off, proto);
+		return;
 	}
 
 	/* Can still get packets with rsvp_on = 0 if there is a local member
@@ -1352,15 +1347,13 @@ rsvp_input(struct mbuf **mp, int *offp, int proto)
 
 	if (!V_rsvp_on) {
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	if (V_ip_rsvpd != NULL) {
-		*mp = m;
-		rip_input(mp, offp, proto);
-		return (IPPROTO_DONE);
+		rip_input(m, off, proto);
+		return;
 	}
 	/* Drop the packet */
 	m_freem(m);
-	return (IPPROTO_DONE);
 }

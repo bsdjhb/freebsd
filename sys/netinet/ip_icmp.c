@@ -454,22 +454,19 @@ icmp_errmap(const struct icmp *icp)
 /*
  * Process a received ICMP message.
  */
-int
-icmp_input(struct mbuf **mp, int *offp, int proto)
+void
+icmp_input(struct mbuf *m, int off, int proto)
 {
 	struct icmp *icp;
 	struct in_ifaddr *ia;
-	struct mbuf *m = *mp;
 	struct ip *ip = mtod(m, struct ip *);
 	struct sockaddr_in icmpsrc, icmpdst, icmpgw;
-	int hlen = *offp;
-	int icmplen = ntohs(ip->ip_len) - *offp;
+	int hlen = off;
+	int icmplen = ntohs(ip->ip_len) - off;
 	int i, code;
 	int fibnum;
 
 	NET_EPOCH_ASSERT();
-
-	*mp = NULL;
 
 	/*
 	 * Locate icmp structure in mbuf, and check
@@ -492,7 +489,7 @@ icmp_input(struct mbuf **mp, int *offp, int proto)
 	i = hlen + min(icmplen, ICMP_ADVLENMIN);
 	if (m->m_len < i && (m = m_pullup(m, i)) == NULL)  {
 		ICMPSTAT_INC(icps_tooshort);
-		return (IPPROTO_DONE);
+		return;
 	}
 	ip = mtod(m, struct ip *);
 	m->m_len -= hlen;
@@ -575,7 +572,7 @@ icmp_input(struct mbuf **mp, int *offp, int proto)
 		if (m->m_len < i && (m = m_pullup(m, i)) == NULL) {
 			/* This should actually not happen */
 			ICMPSTAT_INC(icps_tooshort);
-			return (IPPROTO_DONE);
+			return;
 		}
 		ip = mtod(m, struct ip *);
 		icp = (struct icmp *)(ip + 1);
@@ -664,7 +661,7 @@ reflect:
 		ICMPSTAT_INC(icps_reflect);
 		ICMPSTAT_INC(icps_outhist[icp->icmp_type]);
 		icmp_reflect(m);
-		return (IPPROTO_DONE);
+		return;
 
 	case ICMP_REDIRECT:
 		if (V_log_redirect) {
@@ -759,13 +756,11 @@ reflect:
 	}
 
 raw:
-	*mp = m;
-	rip_input(mp, offp, proto);
-	return (IPPROTO_DONE);
+	rip_input(m, off, proto);
+	return;
 
 freeit:
 	m_freem(m);
-	return (IPPROTO_DONE);
 }
 
 /*

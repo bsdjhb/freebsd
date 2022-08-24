@@ -1802,16 +1802,12 @@ X_ip_rsvp_force_done(struct socket *so __unused)
 
 }
 
-static int
-X_rsvp_input(struct mbuf **mp, int *offp, int proto)
+static void
+X_rsvp_input(struct mbuf *m, int off, int proto)
 {
-	struct mbuf *m;
 
-	m = *mp;
-	*mp = NULL;
 	if (!V_rsvp_on)
 		m_freem(m);
-	return (IPPROTO_DONE);
 }
 
 /*
@@ -2699,7 +2695,8 @@ pim_input_to_daemon:
      * XXX: the outer IP header pkt size of a Register is not adjust to
      * reflect the fact that the inner multicast data is truncated.
      */
-    return (rip_input(&m, &off, proto));
+    rip_input(m, off, proto);
+    return (IPPROTO_DONE);
 }
 
 static int

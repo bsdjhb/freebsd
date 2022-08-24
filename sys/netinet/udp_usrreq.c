@@ -389,7 +389,7 @@ udp_multi_match(const struct inpcb *inp, void *v)
 	return (true);
 }
 
-static int
+static void
 udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
 {
 	struct ip *ip = mtod(m, struct ip *);
@@ -478,12 +478,10 @@ udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
 			UDPSTAT_INC(udps_noportbcast);
 	}
 	m_freem(m);
-
-	return (IPPROTO_DONE);
 }
 
-static int
-udp_input(struct mbuf **mp, int *offp, int proto)
+static void
+udp_input(struct mbuf *m, int off, int proto)
 {
 	struct ip *ip;
 	struct udphdr *uh;
@@ -492,14 +490,11 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 	uint16_t len, ip_len;
 	struct inpcbinfo *pcbinfo;
 	struct sockaddr_in udp_in[2];
-	struct mbuf *m;
 	struct m_tag *fwd_tag;
 	int cscov_partial, iphlen;
 
-	m = *mp;
-	iphlen = *offp;
+	iphlen = off;
 	ifp = m->m_pkthdr.rcvif;
-	*mp = NULL;
 	UDPSTAT_INC(udps_ipackets);
 
 	/*
@@ -518,7 +513,7 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 	if (m->m_len < iphlen + sizeof(struct udphdr)) {
 		if ((m = m_pullup(m, iphlen + sizeof(struct udphdr))) == NULL) {
 			UDPSTAT_INC(udps_hdrops);
-			return (IPPROTO_DONE);
+			return;
 		}
 	}
 	ip = mtod(m, struct ip *);
@@ -595,7 +590,7 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 		if (uh_sum) {
 			UDPSTAT_INC(udps_badsum);
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 	} else {
 		if (proto == IPPROTO_UDP) {
@@ -604,13 +599,15 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 			/* UDPLite requires a checksum */
 			/* XXX: What is the right UDPLite MIB counter here? */
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 	}
 
 	if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) ||
-	    in_broadcast(ip->ip_dst, ifp))
-		return (udp_multi_input(m, proto, udp_in));
+	    in_broadcast(ip->ip_dst, ifp)) {
+		udp_multi_input(m, proto, udp_in);
+		return;
+	}
 
 	pcbinfo = udp_get_inpcbinfo(proto);
 
@@ -675,7 +672,7 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 		if (badport_bandlim(BANDLIM_ICMP_UNREACH) < 0)
 			goto badunlocked;
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	/*
@@ -689,7 +686,7 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 			UDP_PROBE(receive, NULL, inp, ip, inp, uh);
 		INP_RUNLOCK(inp);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 	if (cscov_partial) {
 		struct udpcb *up;
@@ -698,7 +695,7 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 		if (up->u_rxcslen == 0 || up->u_rxcslen > len) {
 			INP_RUNLOCK(inp);
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 	}
 
@@ -708,11 +705,10 @@ udp_input(struct mbuf **mp, int *offp, int proto)
 		UDP_PROBE(receive, NULL, inp, ip, inp, uh);
 	if (udp_append(inp, ip, m, iphlen, udp_in) == 0)
 		INP_RUNLOCK(inp);
-	return (IPPROTO_DONE);
+	return;
 
 badunlocked:
 	m_freem(m);
-	return (IPPROTO_DONE);
 }
 #endif /* INET */
 

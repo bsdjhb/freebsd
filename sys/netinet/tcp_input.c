@@ -559,20 +559,17 @@ cc_ecnpkt_handler(struct tcpcb *tp, struct tcphdr *th, uint8_t iptos)
  *	establishing, established and closing connections
  */
 #ifdef INET6
-int
-tcp6_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
+void
+tcp6_input_with_port(struct mbuf *m, int off, int proto, uint16_t port)
 {
-	struct mbuf *m;
 	struct in6_ifaddr *ia6;
 	struct ip6_hdr *ip6;
 
-	m = *mp;
-	if (m->m_len < *offp + sizeof(struct tcphdr)) {
-		m = m_pullup(m, *offp + sizeof(struct tcphdr));
+	if (m->m_len < off + sizeof(struct tcphdr)) {
+		m = m_pullup(m, off + sizeof(struct tcphdr));
 		if (m == NULL) {
-			*mp = m;
 			TCPSTAT_INC(tcps_rcvshort);
-			return (IPPROTO_DONE);
+			return;
 		}
 	}
 
@@ -585,33 +582,30 @@ tcp6_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 	if (ia6 && (ia6->ia6_flags & IN6_IFF_ANYCAST)) {
 		icmp6_error(m, ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_ADDR,
 			    (caddr_t)&ip6->ip6_dst - (caddr_t)ip6);
-		*mp = NULL;
-		return (IPPROTO_DONE);
+		return;
 	}
 
-	*mp = m;
-	return (tcp_input_with_port(mp, offp, proto, port));
+	tcp_input_with_port(m, off, proto, port);
 }
 
 int
 tcp6_input(struct mbuf **mp, int *offp, int proto)
 {
 
-	return(tcp6_input_with_port(mp, offp, proto, 0));
+	tcp6_input_with_port(*mp, *offp, proto, 0);
+	return (IPPROTO_DONE);
 }
 #endif /* INET6 */
 
-int
-tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
+void
+tcp_input_with_port(struct mbuf *m, int off0, int proto, uint16_t port)
 {
-	struct mbuf *m = *mp;
 	struct tcphdr *th = NULL;
 	struct ip *ip = NULL;
 	struct inpcb *inp = NULL;
 	struct tcpcb *tp = NULL;
 	struct socket *so = NULL;
 	u_char *optp = NULL;
-	int off0;
 	int optlen = 0;
 #ifdef INET
 	int len;
@@ -648,9 +642,6 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 	isipv6 = (mtod(m, struct ip *)->ip_v == 6) ? 1 : 0;
 #endif
 
-	off0 = *offp;
-	m = *mp;
-	*mp = NULL;
 	to.to_flags = 0;
 	TCPSTAT_INC(tcps_rcvtotal);
 
@@ -707,7 +698,7 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 			if ((m = m_pullup(m, sizeof (struct tcpiphdr)))
 			    == NULL) {
 				TCPSTAT_INC(tcps_rcvshort);
-				return (IPPROTO_DONE);
+				return;
 			}
 		}
 		ip = mtod(m, struct ip *);
@@ -771,7 +762,7 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 				m = m_pullup(m, off0 + off);
 				if (m == NULL) {
 					TCPSTAT_INC(tcps_rcvshort);
-					return (IPPROTO_DONE);
+					return;
 				}
 			}
 			ip6 = mtod(m, struct ip6_hdr *);
@@ -787,7 +778,7 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 				if ((m = m_pullup(m, sizeof (struct ip) + off))
 				    == NULL) {
 					TCPSTAT_INC(tcps_rcvshort);
-					return (IPPROTO_DONE);
+					return;
 				}
 				ip = mtod(m, struct ip *);
 				th = (struct tcphdr *)((caddr_t)ip + off0);
@@ -991,7 +982,7 @@ findpcb:
 		 */
 		if (tcp_twcheck(inp, &to, th, m, tlen))
 			goto findpcb;
-		return (IPPROTO_DONE);
+		return;
 	case TCPS_CLOSED:
 		/*
 		 * The TCPCB may no longer exist if the connection is winding
@@ -1158,7 +1149,7 @@ tfo_socket_result:
 			TCP_PROBE5(receive, NULL, tp, m, tp, th);
 			tp->t_fb->tfb_tcp_do_segment(m, th, so, tp, drop_hdrlen, tlen,
 			    iptos);
-			return (IPPROTO_DONE);
+			return;
 		}
 		/*
 		 * Segment flag validation for new connection attempts:
@@ -1359,7 +1350,7 @@ tfo_socket_result:
 		 * Entry added to syncache and mbuf consumed.
 		 * Only the listen socket is unlocked by syncache_add().
 		 */
-		return (IPPROTO_DONE);
+		return;
 	} else if (tp->t_state == TCPS_LISTEN) {
 		/*
 		 * When a listen socket is torn down the SO_ACCEPTCONN
@@ -1399,7 +1390,7 @@ tfo_socket_result:
 		goto dropunlock;
 
 	tp->t_fb->tfb_tcp_do_segment(m, th, so, tp, drop_hdrlen, tlen, iptos);
-	return (IPPROTO_DONE);
+	return;
 
 dropwithreset:
 	TCP_PROBE5(receive, NULL, tp, m, tp, th);
@@ -1424,7 +1415,6 @@ drop:
 		free(s, M_TCPLOG);
 	if (m != NULL)
 		m_freem(m);
-	return (IPPROTO_DONE);
 }
 
 /*
@@ -1490,10 +1480,10 @@ tcp_autorcvbuf(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	return (newsize);
 }
 
-int
-tcp_input(struct mbuf **mp, int *offp, int proto)
+void
+tcp_input(struct mbuf *m, int off, int proto)
 {
-	return(tcp_input_with_port(mp, offp, proto, 0));
+	tcp_input_with_port(m, off, proto, 0);
 }
 
 static void

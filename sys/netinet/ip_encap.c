@@ -365,13 +365,12 @@ ip_encap_detach(const struct encaptab *cookie)
 	return (encap_detach(&ipv4_encaptab, cookie));
 }
 
-int
-encap4_input(struct mbuf **mp, int *offp, int proto)
+void
+encap4_input(struct mbuf *m, int off, int proto)
 {
 
-	if (encap_input(&ipv4_encaptab, *mp, *offp, proto) != IPPROTO_DONE)
-		return (rip_input(mp, offp, proto));
-	return (IPPROTO_DONE);
+	if (encap_input(&ipv4_encaptab, m, off, proto) != IPPROTO_DONE)
+		rip_input(m, off, proto);
 }
 #endif /* INET */
 

@@ -571,7 +571,7 @@ ipsec6_ctlinput(ipsec_ctlinput_param_t param)
 	return (0);
 }
 
-extern ipproto_input_t	*ip6_protox[];
+extern ip6proto_input_t	*ip6_protox[];
 
 /*
  * IPsec input callback, called by the transform callback. Takes care of

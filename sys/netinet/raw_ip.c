@@ -128,7 +128,7 @@ int (*mrt_ioctl)(u_long, caddr_t, int);
 int (*legal_vif_num)(int);
 u_long (*ip_mcast_src)(int);
 
-int (*rsvp_input_p)(struct mbuf **, int *, int);
+void (*rsvp_input_p)(struct mbuf *, int, int);
 int (*ip_rsvp_vif)(struct socket *, struct sockopt *);
 void (*ip_rsvp_force_done)(struct socket *);
 #endif /* INET */
@@ -294,22 +294,20 @@ rip_inp_match2(const struct inpcb *inp, void *v)
  * Setup generic address and protocol structures for raw_input routine, then
  * pass them along with mbuf chain.
  */
-int
-rip_input(struct mbuf **mp, int *offp, int proto)
+void
+rip_input(struct mbuf *m, int off, int proto)
 {
 	struct rip_inp_match_ctx ctx = {
-		.ip = mtod(*mp, struct ip *),
+		.ip = mtod(m, struct ip *),
 		.proto = proto,
 	};
 	struct inpcb_iterator inpi = INP_ITERATOR(&V_ripcbinfo,
 	    INPLOOKUP_RLOCKPCB, rip_inp_match1, &ctx);
 	struct ifnet *ifp;
-	struct mbuf *m = *mp;
 	struct inpcb *inp;
 	struct sockaddr_in ripsrc;
 	int appended;
 
-	*mp = NULL;
 	appended = 0;
 
 	bzero(&ripsrc, sizeof(ripsrc));
@@ -398,7 +396,6 @@ rip_input(struct mbuf **mp, int *offp, int proto)
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PROTOCOL, 0, 0);
 	} else
 		m_freem(m);
-	return (IPPROTO_DONE);
 }
 
 /*

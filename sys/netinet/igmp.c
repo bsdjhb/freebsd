@@ -1458,28 +1458,25 @@ out_locked:
 	return (0);
 }
 
-int
-igmp_input(struct mbuf **mp, int *offp, int proto)
+void
+igmp_input(struct mbuf *m, int off, int proto)
 {
 	int iphlen;
 	struct ifnet *ifp;
 	struct igmp *igmp;
 	struct ip *ip;
-	struct mbuf *m;
 	int igmplen;
 	int minlen;
 	int queryver;
 
-	CTR3(KTR_IGMPV3, "%s: called w/mbuf (%p,%d)", __func__, *mp, *offp);
+	CTR3(KTR_IGMPV3, "%s: called w/mbuf (%p,%d)", __func__, m, off);
 
-	m = *mp;
 	ifp = m->m_pkthdr.rcvif;
-	*mp = NULL;
 
 	IGMPSTAT_INC(igps_rcv_total);
 
 	ip = mtod(m, struct ip *);
-	iphlen = *offp;
+	iphlen = off;
 	igmplen = ntohs(ip->ip_len) - iphlen;
 
 	/*
@@ -1488,7 +1485,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 	if (igmplen < IGMP_MINLEN) {
 		IGMPSTAT_INC(igps_rcv_tooshort);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	/*
@@ -1503,7 +1500,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 	if ((!M_WRITABLE(m) || m->m_len < minlen) &&
 	    (m = m_pullup(m, minlen)) == NULL) {
 		IGMPSTAT_INC(igps_rcv_tooshort);
-		return (IPPROTO_DONE);
+		return;
 	}
 	ip = mtod(m, struct ip *);
 
@@ -1516,7 +1513,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 	if (in_cksum(m, igmplen)) {
 		IGMPSTAT_INC(igps_rcv_badsum);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 	m->m_data -= iphlen;
 	m->m_len += iphlen;
@@ -1529,7 +1526,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 	if (igmp->igmp_type != IGMP_DVMRP && ip->ip_ttl != 1) {
 		IGMPSTAT_INC(igps_rcv_badttl);
 		m_freem(m);
-		return (IPPROTO_DONE);
+		return;
 	}
 
 	switch (igmp->igmp_type) {
@@ -1544,7 +1541,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 		} else {
 			IGMPSTAT_INC(igps_rcv_tooshort);
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 
 		switch (queryver) {
@@ -1554,7 +1551,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 				break;
 			if (igmp_input_v1_query(ifp, ip, igmp) != 0) {
 				m_freem(m);
-				return (IPPROTO_DONE);
+				return;
 			}
 			break;
 
@@ -1564,7 +1561,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 				break;
 			if (igmp_input_v2_query(ifp, ip, igmp) != 0) {
 				m_freem(m);
-				return (IPPROTO_DONE);
+				return;
 			}
 			break;
 
@@ -1583,7 +1580,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 				    UINT16_MAX - iphlen - IGMP_V3_QUERY_MINLEN) {
 					IGMPSTAT_INC(igps_rcv_tooshort);
 					m_freem(m);
-					return (IPPROTO_DONE);
+					return;
 				}
 				/*
 				 * m_pullup() may modify m, so pullup in
@@ -1595,13 +1592,13 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 				     m->m_len < igmpv3len) &&
 				    (m = m_pullup(m, igmpv3len)) == NULL) {
 					IGMPSTAT_INC(igps_rcv_tooshort);
-					return (IPPROTO_DONE);
+					return;
 				}
 				igmpv3 = (struct igmpv3 *)(mtod(m, uint8_t *)
 				    + iphlen);
 				if (igmp_input_v3_query(ifp, ip, igmpv3) != 0) {
 					m_freem(m);
-					return (IPPROTO_DONE);
+					return;
 				}
 			}
 			break;
@@ -1613,7 +1610,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 			break;
 		if (igmp_input_v1_report(ifp, ip, igmp) != 0) {
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 		break;
 
@@ -1624,7 +1621,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 			IGMPSTAT_INC(igps_rcv_nora);
 		if (igmp_input_v2_report(ifp, ip, igmp) != 0) {
 			m_freem(m);
-			return (IPPROTO_DONE);
+			return;
 		}
 		break;
 
@@ -1645,8 +1642,7 @@ igmp_input(struct mbuf **mp, int *offp, int proto)
 	 * Pass all valid IGMP packets up to any process(es) listening on a
 	 * raw IGMP socket.
 	 */
-	*mp = m;
-	return (rip_input(mp, offp, proto));
+	rip_input(m, off, proto);
 }
 
 /*

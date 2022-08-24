@@ -5746,14 +5746,9 @@ out:
 extern int *sctp_cpuarry;
 #endif
 
-int
-sctp_input(struct mbuf **mp, int *offp, int proto SCTP_UNUSED)
+void
+sctp_input(struct mbuf *m, int off, int proto SCTP_UNUSED)
 {
-	struct mbuf *m;
-	int off;
-
-	m = *mp;
-	off = *offp;
 #if defined(SCTP_MCORE_INPUT) && defined(SMP)
 	if (mp_ncpus > 1) {
 		struct ip *ip;
@@ -5773,7 +5768,7 @@ sctp_input(struct mbuf **mp, int *offp, int proto SCTP_UNUSED)
 			if (SCTP_BUF_LEN(m) < offset) {
 				if ((m = m_pullup(m, offset)) == NULL) {
 					SCTP_STAT_INCR(sctps_hdrops);
-					return (IPPROTO_DONE);
+					return;
 				}
 			}
 			ip = mtod(m, struct ip *);
@@ -5785,10 +5780,9 @@ sctp_input(struct mbuf **mp, int *offp, int proto SCTP_UNUSED)
 		}
 		cpu_to_use = sctp_cpuarry[flowid % mp_ncpus];
 		sctp_queue_to_mcore(m, off, cpu_to_use);
-		return (IPPROTO_DONE);
+		return;
 	}
 #endif
 	sctp_input_with_port(m, off, 0);
-	return (IPPROTO_DONE);
 }
 #endif

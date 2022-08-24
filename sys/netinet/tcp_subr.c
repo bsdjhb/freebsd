@@ -648,14 +648,14 @@ tcp_recv_udp_tunneled_packet(struct mbuf *m, int off, struct inpcb *inp,
 #ifdef INET
 	case IPVERSION:
 		iph->ip_len = htons(ntohs(iph->ip_len) - sizeof(struct udphdr));
-		tcp_input_with_port(&m, &off, IPPROTO_TCP, port);
+		tcp_input_with_port(m, off, IPPROTO_TCP, port);
 		break;
 #endif
 #ifdef INET6
 	case IPV6_VERSION >> 4:
 		ip6 = mtod(m, struct ip6_hdr *);
 		ip6->ip6_plen = htons(ntohs(ip6->ip6_plen) - sizeof(struct udphdr));
-		tcp6_input_with_port(&m, &off, IPPROTO_TCP, port);
+		tcp6_input_with_port(m, off, IPPROTO_TCP, port);
 		break;
 #endif
 	default:
