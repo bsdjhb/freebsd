@@ -2641,7 +2641,7 @@ pfsync_init(void)
 
 	pfsync_detach_ifnet_ptr = pfsync_detach_ifnet;
 
-	error = ipproto_register(IPPROTO_PFSYNC, pfsync_input, NULL);
+	error = ipproto_register(IPPROTO_PFSYNC, pfsync_input, NULL, 0);
 	if (error)
 		return (error);
 #endif

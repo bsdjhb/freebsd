@@ -64,7 +64,7 @@ sctp_module_load(void)
 	error = protosw_register(&inetdomain, &sctp_seqpacket_protosw);
 	if (error != 0)
 		return (error);
-	error = ipproto_register(IPPROTO_SCTP, sctp_input, sctp_ctlinput);
+	error = ipproto_register(IPPROTO_SCTP, sctp_input, sctp_ctlinput, 0);
 	if (error != 0)
 		return (error);
 #endif

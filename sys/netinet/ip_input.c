@@ -168,9 +168,11 @@ static struct netisr_handler ip_direct_nh = {
 	.nh_m2cpuid = rss_soft_m2cpuid_v4,
 	.nh_policy = NETISR_POLICY_CPU,
 	.nh_dispatch = NETISR_DISPATCH_HYBRID,
+	.nh_flags = NETISR_FLAG_BATCHES,
 };
 #endif
 
+int			 ip_protoflagsx[IPPROTO_MAX];
 ipproto_input_t		*ip_protox[IPPROTO_MAX] = {
 			    [0 ... IPPROTO_MAX - 1] = rip_input };
 ipproto_ctlinput_t	*ip_ctlprotox[IPPROTO_MAX] = {
@@ -428,22 +430,54 @@ VNET_SYSUNINIT(ip, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD, ip_destroy, NULL);
  * all of the previous checking and book-keeping has been done.
  */
 void
-ip_direct_input(struct mbuf *m)
+ip_direct_input(struct mbuf *m0)
 {
+	struct mbuf *last, *m, *n, *top;
 	struct ip *ip;
-	int hlen;
+	int hlen, proto, top_hlen;
 
-	ip = mtod(m, struct ip *);
-	hlen = ip->ip_hl << 2;
+	top = NULL;
+	top_hlen = proto = -1;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+
+		ip = mtod(m, struct ip *);
+		hlen = ip->ip_hl << 2;
 
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
-	if (IPSEC_ENABLED(ipv4)) {
-		if (IPSEC_INPUT(ipv4, m, hlen, ip->ip_p) != 0)
-			return;
-	}
+		if (IPSEC_ENABLED(ipv4)) {
+			if (IPSEC_INPUT(ipv4, m, hlen, ip->ip_p) != 0)
+				continue;
+		}
 #endif /* IPSEC */
-	IPSTAT_INC(ips_delivered);
-	ip_protox[ip->ip_p](m, hlen, ip->ip_p);
+
+		IPSTAT_INC(ips_delivered);
+		if ((ip_protoflagsx[ip->ip_p] & IPPROTO_FLAG_BATCHES) != 0) {
+			if (top == NULL) {
+				top = m;
+				last = m;
+				proto = ip->ip_p;
+				top_hlen = hlen;
+			} else if (hlen == top_hlen && ip->ip_p == proto) {
+				last->m_nextpkt = m;
+				last = m;
+			} else {
+				ip_protox[ip->ip_p](top, top_hlen, proto);
+				top = m;
+				last = m;
+				proto = ip->ip_p;
+				top_hlen = hlen;
+			}
+		} else {
+			if (top != NULL) {
+				ip_protox[ip->ip_p](top, top_hlen, proto);
+				top = NULL;
+			}
+			ip_protox[ip->ip_p](m, hlen, ip->ip_p);
+		}
+	}
+	if (top != NULL)
+		ip_protox[ip->ip_p](top, top_hlen, proto);
 }
 
 /*
@@ -845,32 +879,60 @@ ip_input(struct mbuf *m)
 static void
 ip_nh_input(struct mbuf *m0)
 {
+	struct ip *ip;
 	struct mbuf *last, *m, *n, *top;
+	int hlen, proto, top_hlen;
 
-	top = last = NULL;
+	top = NULL;
+	top_hlen = proto = -1;
 	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
 		m->m_nextpkt = NULL;
 		m = ip_input_one(m);
 		if (m == NULL)
 			continue;
 
-		if (top == NULL) {
-			top = m;
-			last = m;
+		ip = mtod(m, struct ip *);
+		hlen = ip->ip_hl << 2;
+
+#if defined(IPSEC) || defined(IPSEC_SUPPORT)
+		if (IPSEC_ENABLED(ipv4)) {
+			if (IPSEC_INPUT(ipv4, m, hlen, ip->ip_p) != 0)
+				continue;
+		}
+#endif /* IPSEC */
+
+		IPSTAT_INC(ips_delivered);
+		if ((ip_protoflagsx[ip->ip_p] & IPPROTO_FLAG_BATCHES) != 0) {
+			if (top == NULL) {
+				top = m;
+				last = m;
+				proto = ip->ip_p;
+				top_hlen = hlen;
+			} else if (hlen == top_hlen && ip->ip_p == proto) {
+				last->m_nextpkt = m;
+				last = m;
+			} else {
+				ip_protox[ip->ip_p](top, top_hlen, proto);
+				top = m;
+				last = m;
+				proto = ip->ip_p;
+				top_hlen = hlen;
+			}
 		} else {
-			last->m_nextpkt = m;
-			last = m;
+			if (top != NULL) {
+				ip_protox[ip->ip_p](top, top_hlen, proto);
+				top = NULL;
+			}
+			ip_protox[ip->ip_p](m, hlen, ip->ip_p);
 		}
 	}
-
-	MBUF_FOREACH_PACKET_SAFE(m, top, n) {
-		m->m_nextpkt = NULL;
-		ip_direct_input(m);
-	}
+	if (top != NULL)
+		ip_protox[ip->ip_p](top, top_hlen, proto);
 }
 
 int
-ipproto_register(uint8_t proto, ipproto_input_t input, ipproto_ctlinput_t ctl)
+ipproto_register(uint8_t proto, ipproto_input_t input, ipproto_ctlinput_t ctl,
+    int flags)
 {
 
 	MPASS(proto > 0);
@@ -882,6 +944,7 @@ ipproto_register(uint8_t proto, ipproto_input_t input, ipproto_ctlinput_t ctl)
 	if (ip_protox[proto] == rip_input) {
 		ip_protox[proto] = input;
 		ip_ctlprotox[proto] = ctl;
+		ip_protoflagsx[proto] = flags;
 		return (0);
 	} else
 		return (EEXIST);
@@ -896,6 +959,7 @@ ipproto_unregister(uint8_t proto)
 	if (ip_protox[proto] != rip_input) {
 		ip_protox[proto] = rip_input;
 		ip_ctlprotox[proto] = rip_ctlinput;
+		ip_protoflagsx[proto] = 0;
 		return (0);
 	} else
 		return (ENOENT);

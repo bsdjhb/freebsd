@@ -2223,7 +2223,7 @@ carp_mod_load(void)
 #endif
 #ifdef INET
 	carp_iamatch_p = carp_iamatch;
-	err = ipproto_register(IPPROTO_CARP, carp_input, NULL);
+	err = ipproto_register(IPPROTO_CARP, carp_input, NULL, 0);
 	if (err) {
 		printf("carp: error %d registering with INET\n", err);
 		carp_mod_cleanup();

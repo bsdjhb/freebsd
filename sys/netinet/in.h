@@ -672,6 +672,9 @@ int	getsourcefilter(int, uint32_t, struct sockaddr *, socklen_t,
 
 #ifdef _KERNEL
 
+/* Flags for ipproto_register. */
+#define	IPPROTO_FLAG_BATCHES	0x0001	/* input handler accepts packet batches */
+
 struct ifnet; struct mbuf;	/* forward declarations for Standard C */
 struct in_ifaddr;
 

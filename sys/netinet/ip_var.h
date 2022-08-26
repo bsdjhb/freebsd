@@ -237,16 +237,21 @@ extern int	(*ip_rsvp_vif)(struct socket *, struct sockopt *);
 extern void	(*ip_rsvp_force_done)(struct socket *);
 extern void	(*rsvp_input_p)(struct mbuf *, int, int);
 
+/* Flags for ipproto_register. */
+#define	IPPROTO_FLAG_BATCHES	0x0001	/* input handler accepts packet batches */
+
 typedef void	ipproto_input_t(struct mbuf *, int, int);
 struct icmp;
 typedef void	ipproto_ctlinput_t(struct icmp *);
-int	ipproto_register(uint8_t, ipproto_input_t, ipproto_ctlinput_t);
+int	ipproto_register(uint8_t, ipproto_input_t, ipproto_ctlinput_t, int);
 int	ipproto_unregister(uint8_t);
-#define	IPPROTO_REGISTER(prot, input, ctl)	do {			\
+#define	IPPROTO_REGISTER_FLAGS(prot, input, ctl, flags)	do {		\
 	int error __diagused;						\
-	error = ipproto_register(prot, input, ctl);			\
+	error = ipproto_register(prot, input, ctl, flags);		\
 	MPASS(error == 0);						\
 } while (0)
+#define	IPPROTO_REGISTER(prot, input, ctl)				\
+	IPPROTO_REGISTER_FLAGS(prot, input, ctl, 0)
 
 ipproto_input_t		rip_input;
 ipproto_ctlinput_t	rip_ctlinput;
