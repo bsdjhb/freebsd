@@ -491,9 +491,8 @@ udp_input(struct mbuf *m, int off, int proto)
 	struct inpcbinfo *pcbinfo;
 	struct sockaddr_in udp_in[2];
 	struct m_tag *fwd_tag;
-	int cscov_partial, iphlen;
+	bool cscov_partial;
 
-	iphlen = off;
 	ifp = m->m_pkthdr.rcvif;
 	UDPSTAT_INC(udps_ipackets);
 
@@ -502,23 +501,22 @@ udp_input(struct mbuf *m, int off, int proto)
 	 * user, and use on returned packets, but we don't yet have a way to
 	 * check the checksum with options still present.
 	 */
-	if (iphlen > sizeof (struct ip)) {
+	if (off > sizeof(struct ip))
 		ip_stripoptions(m);
-		iphlen = sizeof(struct ip);
-	}
 
 	/*
 	 * Get IP and UDP header together in first mbuf.
 	 */
-	if (m->m_len < iphlen + sizeof(struct udphdr)) {
-		if ((m = m_pullup(m, iphlen + sizeof(struct udphdr))) == NULL) {
+	if (m->m_len < sizeof(struct ip) + sizeof(struct udphdr)) {
+		m = m_pullup(m, sizeof(struct ip) + sizeof(struct udphdr));
+		if (m == NULL) {
 			UDPSTAT_INC(udps_hdrops);
 			return;
 		}
 	}
 	ip = mtod(m, struct ip *);
-	uh = (struct udphdr *)((caddr_t)ip + iphlen);
-	cscov_partial = (proto == IPPROTO_UDPLITE) ? 1 : 0;
+	uh = (struct udphdr *)((caddr_t)ip + sizeof(struct ip));
+	cscov_partial = (proto == IPPROTO_UDPLITE);
 
 	/*
 	 * Destination port of 0 is illegal, based on RFC768.
@@ -545,12 +543,12 @@ udp_input(struct mbuf *m, int off, int proto)
 	 * reflect UDP length, drop.
 	 */
 	len = ntohs((u_short)uh->uh_ulen);
-	ip_len = ntohs(ip->ip_len) - iphlen;
+	ip_len = ntohs(ip->ip_len) - sizeof(struct ip);
 	if (proto == IPPROTO_UDPLITE && (len == 0 || len == ip_len)) {
 		/* Zero means checksum over the complete packet. */
 		if (len == 0)
 			len = ip_len;
-		cscov_partial = 0;
+		cscov_partial = false;
 	}
 	if (ip_len != len) {
 		if (len > ip_len || len < sizeof(struct udphdr)) {
@@ -703,7 +701,7 @@ udp_input(struct mbuf *m, int off, int proto)
 		UDPLITE_PROBE(receive, NULL, inp, ip, inp, uh);
 	else
 		UDP_PROBE(receive, NULL, inp, ip, inp, uh);
-	if (udp_append(inp, ip, m, iphlen, udp_in) == 0)
+	if (udp_append(inp, ip, m, sizeof(struct ip), udp_in) == 0)
 		INP_RUNLOCK(inp);
 	return;
 
