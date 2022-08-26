@@ -104,6 +104,13 @@ __FBSDID("$FreeBSD$");
 #include <security/mac/mac_framework.h>
 
 /*
+ * Holds the partial checksum length for UDPLite packets.  Normal UDP
+ * and fully-checksummed packets store zero.
+ */
+#define	udplite_csum_len	PH_loc.sixteen[0]
+#define	udp_appended		PH_loc.eight[2]
+
+/*
  * UDP and UDP-Lite protocols implementation.
  * Per RFC 768, August, 1980.
  * Per RFC 3828, July, 2004.
@@ -390,20 +397,22 @@ udp_multi_match(const struct inpcb *inp, void *v)
 }
 
 static void
-udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
+udp_multi_input(struct mbuf *m0, int proto, struct sockaddr_in *udp_in)
 {
-	struct ip *ip = mtod(m, struct ip *);
+	struct ip *ip = mtod(m0, struct ip *);
 	struct inpcb_iterator inpi = INP_ITERATOR(udp_get_inpcbinfo(proto),
 	    INPLOOKUP_RLOCKPCB, udp_multi_match, ip);
 #ifdef KDTRACE_HOOKS
 	struct udphdr *uh = (struct udphdr *)(ip + 1);
 #endif
 	struct inpcb *inp;
-	struct mbuf *n;
-	int appends = 0;
+	struct mbuf *m, *n;
+	u_int count;
+	bool multicast = IN_MULTICAST(ntohl(ip->ip_dst.s_addr));
 
 	MPASS(ip->ip_hl == sizeof(struct ip) >> 2);
 
+	count = 0;
 	while ((inp = inp_next(&inpi)) != NULL) {
 		/*
 		 * XXXRW: Because we weren't holding either the inpcb
@@ -415,7 +424,7 @@ udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
 		 * Handle socket delivery policy for any-source
 		 * and source-specific multicast. [RFC3678]
 		 */
-		if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr))) {
+		if (multicast) {
 			struct ip_moptions	*imo;
 			struct sockaddr_in	 group;
 			int			 blocked;
@@ -428,27 +437,36 @@ udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
 			group.sin_family = AF_INET;
 			group.sin_addr = ip->ip_dst;
 
-			blocked = imo_multi_filter(imo, m->m_pkthdr.rcvif,
+			blocked = imo_multi_filter(imo, m0->m_pkthdr.rcvif,
 				(struct sockaddr *)&group,
 				(struct sockaddr *)&udp_in[0]);
 			if (blocked != MCAST_PASS) {
+				if (count == 0)
+					count = m_countpkts(m0, NULL);
 				if (blocked == MCAST_NOTGMEMBER)
-					IPSTAT_INC(ips_notmember);
+					IPSTAT_ADD(ips_notmember, count);
 				if (blocked == MCAST_NOTSMEMBER ||
 				    blocked == MCAST_MUTED)
-					UDPSTAT_INC(udps_filtermcast);
+					UDPSTAT_ADD(udps_filtermcast, count);
 				continue;
 			}
 		}
-		if ((n = m_copym(m, 0, M_COPYALL, M_NOWAIT)) != NULL) {
-			if (proto == IPPROTO_UDPLITE)
-				UDPLITE_PROBE(receive, NULL, inp, ip, inp, uh);
-			else
-				UDP_PROBE(receive, NULL, inp, ip, inp, uh);
-			if (udp_append(inp, ip, n, sizeof(struct ip), udp_in)) {
-				break;
-			} else
-				appends++;
+
+		MBUF_FOREACH_PACKET(m, m0) {
+			n = m_copym(m, 0, M_COPYALL, M_NOWAIT);
+			if (n != NULL) {
+				if (proto == IPPROTO_UDPLITE)
+					UDPLITE_PROBE(receive, NULL, inp, ip,
+					    inp, uh);
+				else
+					UDP_PROBE(receive, NULL, inp, ip, inp,
+					    uh);
+				if (udp_append(inp, ip, n, sizeof(struct ip),
+				    udp_in))
+					goto out;
+				else
+					m->m_pkthdr.udp_appended = 1;
+			}
 		}
 		/*
 		 * Don't look for additional matches if this one does
@@ -465,35 +483,36 @@ udp_multi_input(struct mbuf *m, int proto, struct sockaddr_in *udp_in)
 		}
 	}
 
-	if (appends == 0) {
-		/*
-		 * No matching pcb found; discard datagram.  (No need
-		 * to send an ICMP Port Unreachable for a broadcast
-		 * or multicast datgram.)
-		 */
-		UDPSTAT_INC(udps_noport);
-		if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)))
-			UDPSTAT_INC(udps_noportmcast);
-		else
-			UDPSTAT_INC(udps_noportbcast);
+out:
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		if (m->m_pkthdr.udp_appended == 0) {
+			/*
+			 * No matching pcb found; discard datagram.  (No need
+			 * to send an ICMP Port Unreachable for a broadcast
+			 * or multicast datgram.)
+			 */
+			UDPSTAT_INC(udps_noport);
+			if (multicast)
+				UDPSTAT_INC(udps_noportmcast);
+			else
+				UDPSTAT_INC(udps_noportbcast);
+		}
+		m_freem(m);
 	}
-	m_freem(m);
 }
 
-static void
-udp_input(struct mbuf *m, int off, int proto)
+/*
+ * Per-packet checks prior to locating a PCB.  Returns NULL if the
+ * packet is dropped.
+ */
+static struct mbuf *
+udp_parse_pkt(struct mbuf *m, int off, int proto)
 {
 	struct ip *ip;
 	struct udphdr *uh;
-	struct ifnet *ifp;
-	struct inpcb *inp;
 	uint16_t len, ip_len;
-	struct inpcbinfo *pcbinfo;
-	struct sockaddr_in udp_in[2];
-	struct m_tag *fwd_tag;
 	bool cscov_partial;
 
-	ifp = m->m_pkthdr.rcvif;
 	UDPSTAT_INC(udps_ipackets);
 
 	/*
@@ -511,36 +530,23 @@ udp_input(struct mbuf *m, int off, int proto)
 		m = m_pullup(m, sizeof(struct ip) + sizeof(struct udphdr));
 		if (m == NULL) {
 			UDPSTAT_INC(udps_hdrops);
-			return;
+			return (NULL);
 		}
 	}
 	ip = mtod(m, struct ip *);
-	uh = (struct udphdr *)((caddr_t)ip + sizeof(struct ip));
+	uh = (struct udphdr *)(ip + 1);
 	cscov_partial = (proto == IPPROTO_UDPLITE);
 
 	/*
 	 * Destination port of 0 is illegal, based on RFC768.
 	 */
 	if (uh->uh_dport == 0)
-		goto badunlocked;
-
-	/*
-	 * Construct sockaddr format source address.  Stuff source address
-	 * and datagram in user buffer.
-	 */
-	bzero(&udp_in[0], sizeof(struct sockaddr_in) * 2);
-	udp_in[0].sin_len = sizeof(struct sockaddr_in);
-	udp_in[0].sin_family = AF_INET;
-	udp_in[0].sin_port = uh->uh_sport;
-	udp_in[0].sin_addr = ip->ip_src;
-	udp_in[1].sin_len = sizeof(struct sockaddr_in);
-	udp_in[1].sin_family = AF_INET;
-	udp_in[1].sin_port = uh->uh_dport;
-	udp_in[1].sin_addr = ip->ip_dst;
+		goto bad;
 
 	/*
 	 * Make mbuf data length reflect UDP length.  If not enough data to
-	 * reflect UDP length, drop.
+	 * reflect UDP length, drop.  For UDPLite the length determines the
+	 * amount of data to be checksummed (zero means complete packet).
 	 */
 	len = ntohs((u_short)uh->uh_ulen);
 	ip_len = ntohs(ip->ip_len) - sizeof(struct ip);
@@ -553,11 +559,16 @@ udp_input(struct mbuf *m, int off, int proto)
 	if (ip_len != len) {
 		if (len > ip_len || len < sizeof(struct udphdr)) {
 			UDPSTAT_INC(udps_badlen);
-			goto badunlocked;
+			goto bad;
 		}
 		if (proto == IPPROTO_UDP)
 			m_adj(m, len - ip_len);
 	}
+	if (cscov_partial)
+		m->m_pkthdr.udplite_csum_len = len;
+	else
+		m->m_pkthdr.udplite_csum_len = 0;
+	m->m_pkthdr.udp_appended = 0;
 
 	/*
 	 * Checksum extended UDP header and data.
@@ -588,7 +599,7 @@ udp_input(struct mbuf *m, int off, int proto)
 		if (uh_sum) {
 			UDPSTAT_INC(udps_badsum);
 			m_freem(m);
-			return;
+			return (NULL);
 		}
 	} else {
 		if (proto == IPPROTO_UDP) {
@@ -597,9 +608,41 @@ udp_input(struct mbuf *m, int off, int proto)
 			/* UDPLite requires a checksum */
 			/* XXX: What is the right UDPLite MIB counter here? */
 			m_freem(m);
-			return;
+			return (NULL);
 		}
 	}
+
+	return (m);
+bad:
+	m_freem(m);
+	return (NULL);
+}
+
+static void
+udp_deliver_batch(struct mbuf *m, struct ip *ip, struct udphdr *uh, int proto)
+{
+	struct ifnet *ifp;
+	struct inpcb *inp;
+	struct inpcbinfo *pcbinfo;
+	struct mbuf *n;
+	struct sockaddr_in udp_in[2];
+	struct m_tag *fwd_tag;
+	u_int count;
+
+	ifp = m->m_pkthdr.rcvif;
+
+	/*
+	 * Construct sockaddr format source address.
+	 */
+	bzero(&udp_in[0], sizeof(struct sockaddr_in) * 2);
+	udp_in[0].sin_len = sizeof(struct sockaddr_in);
+	udp_in[0].sin_family = AF_INET;
+	udp_in[0].sin_port = uh->uh_sport;
+	udp_in[0].sin_addr = ip->ip_src;
+	udp_in[1].sin_len = sizeof(struct sockaddr_in);
+	udp_in[1].sin_family = AF_INET;
+	udp_in[1].sin_port = uh->uh_dport;
+	udp_in[1].sin_addr = ip->ip_dst;
 
 	if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) ||
 	    in_broadcast(ip->ip_dst, ifp)) {
@@ -619,6 +662,7 @@ udp_input(struct mbuf *m, int off, int proto)
 		struct sockaddr_in *next_hop;
 
 		next_hop = (struct sockaddr_in *)(fwd_tag + 1);
+		MPASS(m->m_nextpkt == NULL);
 
 		/*
 		 * Transparently forwarded. Pretend to be the destination.
@@ -655,13 +699,14 @@ udp_input(struct mbuf *m, int off, int proto)
 			    inet_ntoa_r(ip->ip_dst, dst), ntohs(uh->uh_dport),
 			    inet_ntoa_r(ip->ip_src, src), ntohs(uh->uh_sport));
 		}
+		count = m_countpkts(m, NULL);
 		if (proto == IPPROTO_UDPLITE)
 			UDPLITE_PROBE(receive, NULL, NULL, ip, NULL, uh);
 		else
 			UDP_PROBE(receive, NULL, NULL, ip, NULL, uh);
-		UDPSTAT_INC(udps_noport);
+		UDPSTAT_ADD(udps_noport, count);
 		if (m->m_flags & (M_BCAST | M_MCAST)) {
-			UDPSTAT_INC(udps_noportbcast);
+			UDPSTAT_ADD(udps_noportbcast, count);
 			goto badunlocked;
 		}
 		if (V_udp_blackhole && (V_udp_blackhole_local ||
@@ -669,44 +714,108 @@ udp_input(struct mbuf *m, int off, int proto)
 			goto badunlocked;
 		if (badport_bandlim(BANDLIM_ICMP_UNREACH) < 0)
 			goto badunlocked;
+		m_freepkts(m->m_nextpkt);
+		m->m_nextpkt = NULL;
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
 		return;
 	}
 
-	/*
-	 * Check the minimum TTL for socket.
-	 */
 	INP_RLOCK_ASSERT(inp);
-	if (inp->inp_ip_minttl && inp->inp_ip_minttl > ip->ip_ttl) {
+	MBUF_FOREACH_PACKET_SAFE(m, m, n) {
+		m->m_nextpkt = NULL;
+
+		ip = mtod(m, struct ip *);
+		uh = (struct udphdr *)(ip + 1);
+
+		/*
+		 * Check the minimum TTL for socket.
+		 */
+		if (inp->inp_ip_minttl && inp->inp_ip_minttl > ip->ip_ttl) {
+			if (proto == IPPROTO_UDPLITE)
+				UDPLITE_PROBE(receive, NULL, inp, ip, inp, uh);
+			else
+				UDP_PROBE(receive, NULL, inp, ip, inp, uh);
+			m_freem(m);
+			continue;
+		}
+		if (m->m_pkthdr.udplite_csum_len != 0) {
+			struct udpcb *up;
+
+			up = intoudpcb(inp);
+			if (up->u_rxcslen == 0 ||
+			    up->u_rxcslen > m->m_pkthdr.udplite_csum_len) {
+				m_freem(m);
+				continue;
+			}
+		}
+
 		if (proto == IPPROTO_UDPLITE)
 			UDPLITE_PROBE(receive, NULL, inp, ip, inp, uh);
 		else
 			UDP_PROBE(receive, NULL, inp, ip, inp, uh);
-		INP_RUNLOCK(inp);
-		m_freem(m);
-		return;
-	}
-	if (cscov_partial) {
-		struct udpcb *up;
-
-		up = intoudpcb(inp);
-		if (up->u_rxcslen == 0 || up->u_rxcslen > len) {
-			INP_RUNLOCK(inp);
-			m_freem(m);
+		if (udp_append(inp, ip, m, sizeof(struct ip), udp_in)) {
+			m_freepkts(n);
 			return;
 		}
 	}
-
-	if (proto == IPPROTO_UDPLITE)
-		UDPLITE_PROBE(receive, NULL, inp, ip, inp, uh);
-	else
-		UDP_PROBE(receive, NULL, inp, ip, inp, uh);
-	if (udp_append(inp, ip, m, sizeof(struct ip), udp_in) == 0)
-		INP_RUNLOCK(inp);
+	INP_RUNLOCK(inp);
 	return;
 
 badunlocked:
-	m_freem(m);
+	m_freepkts(m);
+}
+
+static void
+udp_input(struct mbuf *m0, int off, int proto)
+{
+	struct ip *ip, *top_ip;
+	struct udphdr *uh, *top_uh;
+	struct ifnet *ifp __diagused = m0->m_pkthdr.rcvif;
+	struct mbuf *last, *m, *n, *top;
+
+	top = NULL;
+	MBUF_FOREACH_PACKET_SAFE(m, m0, n) {
+		m->m_nextpkt = NULL;
+
+		/* Lower layers only pass batches with the same ifp. */
+		MPASS(m->m_pkthdr.rcvif == ifp);
+
+		m = udp_parse_pkt(m, off, proto);
+		if (m == NULL)
+			continue;
+
+		if ((m->m_flags & M_IP_NEXTHOP) != 0) {
+			if (top != NULL) {
+				udp_deliver_batch(top, top_ip, top_uh, proto);
+				top = NULL;
+			}
+			udp_deliver_batch(m, ip, uh, proto);
+			continue;
+		}
+
+		ip = mtod(m, struct ip *);
+		uh = (struct udphdr *)(ip + 1);
+		if (top == NULL) {
+			top = m;
+			last = m;
+			top_ip = ip;
+			top_uh = uh;
+		} else if (ip->ip_src.s_addr == top_ip->ip_src.s_addr &&
+		    ip->ip_dst.s_addr == top_ip->ip_dst.s_addr &&
+		    uh->uh_sport == top_uh->uh_sport &&
+		    uh->uh_dport == top_uh->uh_dport) {
+			last->m_nextpkt = m;
+			last = m;
+		} else {
+			udp_deliver_batch(top, top_ip, top_uh, proto);
+			top = m;
+			last = m;
+			top_ip = ip;
+			top_uh = uh;
+		}
+	}
+	if (top != NULL)
+		udp_deliver_batch(top, top_ip, top_uh, proto);
 }
 #endif /* INET */
 
@@ -1754,8 +1863,10 @@ static void
 udp_init(void *arg __unused)
 {
 
-	IPPROTO_REGISTER(IPPROTO_UDP, udp_input, udp_ctlinput);
-	IPPROTO_REGISTER(IPPROTO_UDPLITE, udp_input, udplite_ctlinput);
+	IPPROTO_REGISTER_FLAGS(IPPROTO_UDP, udp_input, udp_ctlinput,
+	    IPPROTO_FLAG_BATCHES);
+	IPPROTO_REGISTER_FLAGS(IPPROTO_UDPLITE, udp_input, udplite_ctlinput,
+	    IPPROTO_FLAG_BATCHES);
 }
 SYSINIT(udp_init, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD, udp_init, NULL);
 #endif /* INET */
