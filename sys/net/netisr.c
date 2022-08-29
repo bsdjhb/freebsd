@@ -608,20 +608,18 @@ netisr_setqlimit(const struct netisr_handler *nhp, u_int qlimit)
 static void
 netisr_drain_proto(struct netisr_work *npwp)
 {
-	struct mbuf *m;
+	struct mbuf *m, *n;
 
 	/*
 	 * We would assert the lock on the workstream but it's not passed in.
 	 */
-	while ((m = npwp->nw_head) != NULL) {
-		npwp->nw_head = m->m_nextpkt;
+	MBUF_FOREACH_PACKET_SAFE(m, npwp->nw_head, n) {
 		m->m_nextpkt = NULL;
-		if (npwp->nw_head == NULL)
-			npwp->nw_tail = NULL;
 		npwp->nw_len--;
 		m_freem(m);
 	}
-	KASSERT(npwp->nw_tail == NULL, ("%s: tail", __func__));
+	npwp->nw_head = NULL;
+	npwp->nw_tail = NULL;
 	KASSERT(npwp->nw_len == 0, ("%s: len", __func__));
 }
 
@@ -723,12 +721,9 @@ netisr_drain_proto_vnet(struct vnet *vnet, u_int proto)
 		 * update the head and tail pointers at the end.  All packets
 		 * matching the given vnet are freed.
 		 */
-		m = npwp->nw_head;
 		n = ne = NULL;
 		NET_EPOCH_ENTER(et);
-		while (m != NULL) {
-			mp = m;
-			m = m->m_nextpkt;
+		MBUF_FOREACH_PACKET_SAFE(mp, npwp->nw_head, m) {
 			mp->m_nextpkt = NULL;
 			if ((ifp = ifnet_byindexgen(mp->m_pkthdr.rcvidx,
 			    mp->m_pkthdr.rcvgen)) != NULL &&
@@ -886,7 +881,7 @@ netisr_process_workstream_proto(struct netisr_workstream *nwsp, u_int proto)
 {
 	struct netisr_work local_npw, *npwp;
 	u_int handled;
-	struct mbuf *m;
+	struct mbuf *m, *n;
 
 	NETISR_LOCK_ASSERT();
 	NWS_LOCK_ASSERT(nwsp);
@@ -914,11 +909,8 @@ netisr_process_workstream_proto(struct netisr_workstream *nwsp, u_int proto)
 	npwp->nw_len = 0;
 	nwsp->nws_pendingbits &= ~(1 << proto);
 	NWS_UNLOCK(nwsp);
-	while ((m = local_npw.nw_head) != NULL) {
-		local_npw.nw_head = m->m_nextpkt;
+	MBUF_FOREACH_PACKET_SAFE(m, local_npw.nw_head, n) {
 		m->m_nextpkt = NULL;
-		if (local_npw.nw_head == NULL)
-			local_npw.nw_tail = NULL;
 		local_npw.nw_len--;
 		if (__predict_false(m_rcvif_restore(m) == NULL)) {
 			m_freem(m);
