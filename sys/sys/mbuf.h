@@ -413,6 +413,19 @@ struct mbuf {
 };
 
 #ifdef _KERNEL
+/*
+ * Iterate over a chain of packets linked by m_nextpkt.
+ */
+#define	MBUF_FOREACH_PACKET(m, top)				\
+	for ((m) = (top);					\
+	     (m) != NULL;					\
+	     (m) = (m)->m_nextpkt)
+
+#define	MBUF_FOREACH_PACKET_SAFE(m, top, n)			\
+	for ((m) = (top);					\
+	     (m) != NULL && ((n) = (m)->m_nextpkt, 1);		\
+	     (m) = (n))
+
 static inline int
 m_epg_pagelen(const struct mbuf *m, int pidx, int pgoff)
 {

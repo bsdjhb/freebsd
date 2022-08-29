@@ -66,6 +66,12 @@
 .Fn MCHTYPE "struct mbuf *mbuf" "short type"
 .Ft int
 .Fn M_WRITABLE "struct mbuf *mbuf"
+.Fn MBUF_FOREACH_PACKET "struct mbuf *m" "struct mbuf *top"
+.Fo MBUF_FOREACH_PACKET_SAFE
+.Fa "struct mbuf *m"
+.Fa "struct mbuf *top"
+.Fa "struct mbuf *n"
+.Fc
 .\"
 .Ss Mbuf allocation functions
 .Ft struct mbuf *
@@ -564,6 +570,24 @@ Change the type of
 to
 .Fa type .
 This is a relatively expensive operation and should be avoided.
+.It Fn MBUF_FOREACH_PACKET m top
+Traverse a chain of packets starting at
+.Fa top
+assigning the head of each packet's mbuf chain to
+.Fa m
+in turn.
+.It Fn MBUF_FOREACH_PACKET_SAFE m top n
+Traverse a chain of packets starting at
+.Fa top
+assigning the head of each packet's mbuf chain to
+.Fa m
+in turn.
+Unlike
+.Fn MBUF_FOREACH_PACKET
+it is permitted to remove
+.Fa m
+from the packet chain as well as free it from within the loop safely
+without interfering with the traversal.
 .El
 .Pp
 The functions are:
