@@ -167,6 +167,10 @@ udp6_append(struct inpcb *inp, struct mbuf *n, int off,
 		INP_RLOCK(inp);
 		if (filtered)
 			return (in_pcbrele_rlocked(inp));
+		if (in_pcbrele_rlocked(inp)) {
+			m_freem(n);
+			return (1);
+		}
 	}
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 	/* Check AH/ESP integrity. */
