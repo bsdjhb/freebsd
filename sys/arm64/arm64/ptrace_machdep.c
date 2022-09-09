@@ -141,7 +141,7 @@ get_arm_tls(struct regset *rs, struct thread *td, void *buf,
 
 		KASSERT(*sizep == sizeof(uint32_t),
 		    ("%s: invalid size", __func__));
-		tp = (uint32_t)td->td_pcb->pcb_tpidr_el0;
+		tp = (uint32_t)td->td_pcb->pcb_tpidrro_el0;
 		memcpy(buf, &tp, sizeof(tp));
 	}
 	*sizep = sizeof(uint32_t);
