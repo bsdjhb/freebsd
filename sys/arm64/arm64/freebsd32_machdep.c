@@ -194,6 +194,8 @@ get_mcontext32(struct thread *td, mcontext32_t *mcp, int flags)
 
 	mcp->mc_vfp_size = 0;
 	mcp->mc_vfp_ptr = 0;
+	mcp->mc_flags = _MC_TLS_VALID;
+	mcp->mc_tpidrurw = READ_SPECIALREG(tpidrro_el0);
 
 	memset(mcp->mc_spare, 0, sizeof(mcp->mc_spare));
 }
@@ -231,6 +233,11 @@ set_mcontext32(struct thread *td, mcontext32_t *mcp)
 		tf->tf_x[i] = mcp->mc_gregset[i];
 	tf->tf_elr = mcp->mc_gregset[15];
 	tf->tf_spsr = spsr;
+	if ((mcp->mc_flags & _MC_TLS_VALID) != 0) {
+		/* Set both to match cpu_set_user_tls */
+		WRITE_SPECIALREG(tpidr_el0, mcp->mc_tpidrurw);
+		WRITE_SPECIALREG(tpidrro_el0, mcp->mc_tpidrurw);
+	}
 #ifdef VFP
 	if (mcp->mc_vfp_size == sizeof(mc_vfp) && mcp->mc_vfp_ptr != 0) {
 		if (copyin((void *)(uintptr_t)mcp->mc_vfp_ptr, &mc_vfp,

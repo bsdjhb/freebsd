@@ -55,8 +55,10 @@ struct __mcontext {
 	struct fpregs	mc_fpregs;
 	int		mc_flags;
 #define	_MC_FP_VALID	0x1		/* Set when mc_fpregs has valid data */
+#define	_MC_TLS_VALID	0x2		/* Set when mc_tpidr is valid */
 	int		mc_pad;		/* Padding */
-	__uint64_t	mc_spare[8];	/* Space for expansion, set to zero */
+	__register_t	mc_tpidr;
+	__uint64_t	mc_spare[7];	/* Space for expansion, set to zero */
 };
 
 typedef struct __mcontext mcontext_t;
@@ -67,7 +69,9 @@ typedef struct __mcontext32 {
 	uint32_t		mc_gregset[17];
 	uint32_t		mc_vfp_size;
 	uint32_t		mc_vfp_ptr;
-	uint32_t		mc_spare[33];
+	uint32_t		mc_flags;
+	uint32_t		mc_tpidrurw;
+	uint32_t		mc_spare[31];
 } mcontext32_t;
 
 typedef struct __ucontext32 {
