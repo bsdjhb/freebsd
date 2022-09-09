@@ -80,7 +80,10 @@ typedef struct {
 	 */
 	__size_t	mc_vfp_size;
 	void 		*mc_vfp_ptr;
-	unsigned int	mc_spare[33];
+	unsigned int	mc_flags;
+#define _MC_TLS_VALID	0x2		/* Set when mc_tpidr is valid */
+        __greg_t	mc_tpidr;
+	unsigned int	mc_spare[31];
 } mcontext_t;
 
 #define UC_

@@ -493,6 +493,8 @@ get_mcontext(struct thread *td, mcontext_t *mcp, int clear_ret)
 	mcp->mc_gpregs.gp_sp = tf->tf_sp;
 	mcp->mc_gpregs.gp_lr = tf->tf_lr;
 	mcp->mc_gpregs.gp_elr = tf->tf_elr;
+	mcp->mc_flags = _MC_TLS_VALID;
+	mcp->mc_tpidr = READ_SPECIALREG(tpidr_el0);
 	get_fpcontext(td, mcp);
 
 	return (0);
@@ -548,6 +550,8 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 		isb();
 	}
 
+	if ((mcp->mc_flags & _MC_TLS_VALID) != 0)
+		WRITE_SPECIALREG(tpidr_el0, mcp->mc_tpidr);
 	set_fpcontext(td, mcp);
 
 	/* Read any register contexts we find */

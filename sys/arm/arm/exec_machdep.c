@@ -197,6 +197,8 @@ get_mcontext(struct thread *td, mcontext_t *mcp, int clear_ret)
 
 	mcp->mc_vfp_size = 0;
 	mcp->mc_vfp_ptr = NULL;
+	mcp->mc_flags = _MC_TLS_VALID;
+	mcp->mc_tpidr = (register_t)get_tls();
 	memset(&mcp->mc_spare, 0, sizeof(mcp->mc_spare));
 
 	return (0);
@@ -265,6 +267,8 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 	if (vfp != NULL)
 		set_vfpcontext(td, vfp);
 #endif
+	if ((mcp->mc_flags & _MC_TLS_VALID) != 0)
+		set_tls((void *)mcp->mc_tpidr);
 	return (0);
 }
 
