@@ -1530,6 +1530,8 @@ t4_tstmp_to_ns(struct adapter *sc, uint64_t lf)
 	uint64_t hw_clocks;
 	uint64_t rt_cur_to_prev, res_s, res_n, res_s_modulo, res;
 	uint64_t hw_clk_div, cclk;
+	sbintime_t sbt_cur_to_prev, sbt;
+	uint64_t res2;
 	uint64_t hw_tstmp = lf & 0xfffffffffffffffULL;	/* 60b, not 64b. */
 	uint32_t gen;
 
@@ -1586,6 +1588,18 @@ t4_tstmp_to_ns(struct adapter *sc, uint64_t lf)
 	res = res_s + res_n;
 	/* And now add in the base time to get to the real timestamp */
 	res += dcur.rt_prev;
+
+	/* Version using sbintime_t. */
+	sbt_cur_to_prev = (dcur.sbt_cur - dcur.sbt_prev);
+	sbt = hw_clocks * sbt_cur_to_prev / hw_clk_div + dcur.sbt_prev;
+	res2 = sbttons(sbt);
+	if (res2 != res) {
+		printf("%s: res %lu vs res2 %lu delta %ld\n", __func__,
+		    res, res2, res2 - res);
+		printf("\thw_clocks %lu sbt_cur_to_prev %lu hw_clk_div %lu\n",
+		    hw_clocks, sbt_cur_to_prev, hw_clk_div);
+	}
+
 	return (res);
 }
 

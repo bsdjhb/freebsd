@@ -1131,6 +1131,7 @@ static void
 t4_calibration(void *arg)
 {
 	struct adapter *sc;
+	struct bintime bt;
 	struct timespec ts;
 	struct clock_sync *cur, *nex;
 	int next_up;
@@ -1143,16 +1144,21 @@ t4_calibration(void *arg)
 	if (__predict_false(sc->cal_count == 0)) {
 		/* First time in, just get the values in */
 		cur->hw_cur = t4_read_reg64(sc, A_SGE_TIMESTAMP_LO);
-		nanouptime(&ts);
+		binuptime(&bt);
+		cur->sbt_cur = bttosbt(bt);
+		bintime2timespec(&bt, &ts);
 		cur->rt_cur = t4_get_ns_timestamp(&ts);
 		sc->cal_count++;
 		goto done;
 	}
 	nex->hw_prev = cur->hw_cur;
 	nex->rt_prev = cur->rt_cur;
-	KASSERT((hw_off_limits(sc) == 0), ("hw_off_limits at t4_calibtration"));
+	nex->sbt_prev = cur->sbt_cur;
+	KASSERT((hw_off_limits(sc) == 0), ("hw_off_limits at t4_calibration"));
 	nex->hw_cur = t4_read_reg64(sc, A_SGE_TIMESTAMP_LO);
-	nanouptime(&ts);	
+	binuptime(&bt);
+	nex->sbt_cur = bttosbt(bt);
+	bintime2timespec(&bt, &ts);
 	nex->rt_cur = t4_get_ns_timestamp(&ts);
 	if ((nex->hw_cur - nex->hw_prev) == 0) {
 		/* The clock is not advancing? */
@@ -1168,12 +1174,10 @@ t4_calibration(void *arg)
 		sc->cal_count++;
 done:
 	callout_reset_sbt_curcpu(&sc->cal_callout,
-				 ((sc->cal_count < t4_fast_2_normal)  ?
-				 t4_clocksync_fast : t4_clocksync_normal) * SBT_1S, 0,
-				 t4_calibration, sc, C_DIRECT_EXEC);
+	    ((sc->cal_count < t4_fast_2_normal) ? t4_clocksync_fast :
+	    t4_clocksync_normal) * SBT_1S, 0, t4_calibration, sc,
+	    C_DIRECT_EXEC);
 }
-
-
 
 static void
 t4_calibration_start(struct adapter *sc)
