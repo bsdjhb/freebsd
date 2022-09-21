@@ -236,6 +236,7 @@ struct vi_info {
 	int ofld_pktc_idx;
 	int qsize_rxq;
 	int qsize_txq;
+	int rx_batch;
 
 	struct timeval last_refreshed;
 	struct fw_vi_stats_vf stats;
@@ -1284,6 +1285,7 @@ extern int t4_tmr_idx;
 extern int t4_pktc_idx;
 extern unsigned int t4_qsize_rxq;
 extern unsigned int t4_qsize_txq;
+extern int t4_rx_batch;
 extern device_method_t cxgbe_methods[];
 
 int t4_os_find_pci_capability(struct adapter *, int);

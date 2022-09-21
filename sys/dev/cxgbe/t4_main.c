@@ -471,6 +471,13 @@ SYSCTL_INT(_hw_cxgbe, OID_AUTO, qsize_rxq, CTLFLAG_RDTUN, &t4_qsize_rxq, 0,
     "Number of descriptors in each RX queue");
 
 /*
+ * Max receive packets to batch before passing to the stack.
+ */
+int t4_rx_batch = -1;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, rx_batch, CTLFLAG_RDTUN, &t4_rx_batch, 0,
+    "Maximum number of RX packets to batch");
+
+/*
  * Interrupt types allowed (bits 0, 1, 2 = INTx, MSI, MSI-X respectively).
  */
 int t4_intr_types = INTR_MSIX | INTR_MSI | INTR_INTX;
@@ -784,6 +791,7 @@ static int sysctl_holdoff_tmr_idx(SYSCTL_HANDLER_ARGS);
 static int sysctl_holdoff_pktc_idx(SYSCTL_HANDLER_ARGS);
 static int sysctl_qsize_rxq(SYSCTL_HANDLER_ARGS);
 static int sysctl_qsize_txq(SYSCTL_HANDLER_ARGS);
+static int sysctl_rx_batch(SYSCTL_HANDLER_ARGS);
 static int sysctl_pause_settings(SYSCTL_HANDLER_ARGS);
 static int sysctl_link_fec(SYSCTL_HANDLER_ARGS);
 static int sysctl_requested_fec(SYSCTL_HANDLER_ARGS);
@@ -1553,6 +1561,7 @@ t4_attach(device_t dev)
 			vi->first_intr = -1;
 			vi->qsize_rxq = t4_qsize_rxq;
 			vi->qsize_txq = t4_qsize_txq;
+			vi->rx_batch = t4_rx_batch;
 
 			vi->first_rxq = rqidx;
 			vi->first_txq = tqidx;
@@ -7890,6 +7899,9 @@ vi_sysctls(struct vi_info *vi)
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "qsize_txq",
 	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
 	    sysctl_qsize_txq, "I", "tx queue size");
+	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "rx_batch",
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, vi, 0,
+	    sysctl_rx_batch, "I", "rx packets to batch");
 }
 
 static void
@@ -8379,6 +8391,33 @@ sysctl_qsize_txq(SYSCTL_HANDLER_ARGS)
 		rc = EBUSY; /* cannot be changed once the queues are created */
 	else
 		vi->qsize_txq = qsize;
+
+	end_synchronized_op(sc, LOCK_HELD);
+	return (rc);
+}
+
+static int
+sysctl_rx_batch(SYSCTL_HANDLER_ARGS)
+{
+	struct vi_info *vi = arg1;
+	struct adapter *sc = vi->adapter;
+	int rx_batch, rc;
+
+	rx_batch = vi->rx_batch;
+
+	rc = sysctl_handle_int(oidp, &rx_batch, 0, req);
+	if (rc != 0 || req->newptr == NULL)
+		return (rc);
+
+	if (rx_batch < 1)
+		return (EINVAL);
+
+	rc = begin_synchronized_op(sc, vi, HOLD_LOCK | SLEEP_OK | INTR_OK,
+	    "t4rxbs");
+	if (rc)
+		return (rc);
+
+	vi->rx_batch = rx_batch;
 
 	end_synchronized_op(sc, LOCK_HELD);
 	return (rc);
@@ -12786,6 +12825,8 @@ tweak_tunables(void)
 		t4_qsize_rxq = 128;
 	while (t4_qsize_rxq & 7)
 		t4_qsize_rxq++;
+	if (t4_rx_batch <= 0)
+		t4_rx_batch = t4_qsize_rxq / 16;
 
 	t4_intr_types &= INTR_MSIX | INTR_MSI | INTR_INTX;
 

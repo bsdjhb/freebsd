@@ -1586,6 +1586,7 @@ service_iq_fl(struct sge_iq *iq, int budget)
 {
 	struct sge_rxq *rxq = iq_to_rxq(iq);
 	struct ifnet *ifp = rxq->ifp;
+	struct vi_info *vi = ifp->if_softc;
 	struct sge_fl *fl;
 	struct adapter *sc = iq->adapter;
 	struct iq_desc *d = &iq->desc[iq->cidx];
@@ -1621,7 +1622,7 @@ service_iq_fl(struct sge_iq *iq, int budget)
 #endif
 
 	top = mlast = NULL;
-	limit = budget ? budget : iq->qsize / 16;
+	limit = budget ? budget : vi->rx_batch;
 	fl = &rxq->fl;
 	fl_hw_cidx = fl->hw_cidx;	/* stable snapshot */
 	while ((d->rsp.u.type_gen & F_RSPD_GEN) == iq->gen) {

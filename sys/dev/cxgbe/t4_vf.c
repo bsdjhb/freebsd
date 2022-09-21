@@ -729,6 +729,7 @@ t4vf_attach(device_t dev)
 			vi->adapter = sc;
 			vi->qsize_rxq = t4_qsize_rxq;
 			vi->qsize_txq = t4_qsize_txq;
+			vi->rx_batch = t4_rx_batch;
 
 			vi->first_rxq = rqidx;
 			vi->first_txq = tqidx;
