@@ -1109,18 +1109,10 @@ t4_ifnet_unit(struct adapter *sc, struct port_info *pi)
 	return (-1);
 }
 
-static inline uint64_t
-t4_get_ns_timestamp(struct timespec *ts)
-{
-	return ((ts->tv_sec * 1000000000) + ts->tv_nsec);
-}
-
 static void
 t4_calibration(void *arg)
 {
 	struct adapter *sc;
-	struct bintime bt;
-	struct timespec ts;
 	struct clock_sync *cur, *nex;
 	int next_up;
 
@@ -1132,22 +1124,15 @@ t4_calibration(void *arg)
 	if (__predict_false(sc->cal_count == 0)) {
 		/* First time in, just get the values in */
 		cur->hw_cur = t4_read_reg64(sc, A_SGE_TIMESTAMP_LO);
-		binuptime(&bt);
-		cur->sbt_cur = bttosbt(bt);
-		bintime2timespec(&bt, &ts);
-		cur->rt_cur = t4_get_ns_timestamp(&ts);
+		cur->sbt_cur = sbinuptime();
 		sc->cal_count++;
 		goto done;
 	}
 	nex->hw_prev = cur->hw_cur;
-	nex->rt_prev = cur->rt_cur;
 	nex->sbt_prev = cur->sbt_cur;
 	KASSERT((hw_off_limits(sc) == 0), ("hw_off_limits at t4_calibration"));
 	nex->hw_cur = t4_read_reg64(sc, A_SGE_TIMESTAMP_LO);
-	binuptime(&bt);
-	nex->sbt_cur = bttosbt(bt);
-	bintime2timespec(&bt, &ts);
-	nex->rt_cur = t4_get_ns_timestamp(&ts);
+	nex->sbt_cur = sbinuptime();
 	if ((nex->hw_cur - nex->hw_prev) == 0) {
 		/* The clock is not advancing? */
 		sc->cal_count = 0;
