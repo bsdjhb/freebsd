@@ -1189,6 +1189,7 @@ t4_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 	sysctl_ctx_init(&sc->ctx);
+	sc->debug_flags = DF_DISABLE_TCB_CACHE;
 	TUNABLE_INT_FETCH("hw.cxgbe.dflags", &sc->debug_flags);
 
 	if ((pci_get_device(dev) & 0xff00) == 0x5400)
