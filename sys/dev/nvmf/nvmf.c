@@ -37,31 +37,80 @@
 
 /* Transport-independent support for fabrics queue pairs and commands. */
 
+struct nvmf_transport {
+	struct nvmf_transport_ops *nt_ops;
+
+	volatile u_int nt_active_connections;
+	bool nt_detaching;
+	TAILQ_ENTRY(nvmf_transport) nt_link;
+};
+
 static TAILQ_HEAD(, nvmf_transport) nvmf_transports;
 static struct sx nvmf_transports_lock;
 
 static MALLOC_DEFINE(M_NVMF, "nvmf", "NVMe over Fabrics");
 
+static bool
+transport_ops_matches(struct nvmf_transport_ops *ops, enum nvmf_trtype trtype,
+    const char *offload)
+{
+	return (ops->trtype == trtype &&
+	    (ops->offload == offload || strcmp(ops->offload, offload) == 0));
+}
+
+static struct nvmf_connection *
+nvmf_allocate_connection(enum nvmf_trtype trtype, const char *offload,
+    bool controller, union nvmf_connection_params *params)
+{
+	struct nvmf_connection *nc;
+	struct nvmf_transport *nt;
+
+	sx_slock(&nvmf_transports_lock);
+	TAILQ_FOREACH(nt, &nvmf_transports, nt_link) {
+		if (transport_ops_matches(nt->nt_ops, trtype, offload))
+			break;
+	}
+
+	if (nt == NULL || nt->nt_detaching ||
+	    !refcount_acquire_checked(&nt->nt_active_connections)) {
+		sx_sunlock(&nvmf_transports_lock);
+		return (NULL);
+	}
+	sx_sunlock(&nvmf_transports_lock);
+
+	nc = nt->nt_ops->allocate_connection(controller, params);
+	if (nc == NULL) {
+		if (refcount_release(&nt->nt_active_connections))
+			wakeup(nt);
+	}
+	return (nc);
+}
+
+static void
+nvmf_free_connection(struct nvmf_connection *nc)
+{
+	struct nvmf_transport *nt;
+
+	nt = nc->nc_transport;
+	nt->nt_ops->free_connection(nc);
+	if (refcount_release(&nt->nt_active_connections))
+		wakeup(nt);
+}
+
 struct nvmf_qpair *
-nvmf_allocate_qpair(struct nvmf_transport *nt, bool admin,
+nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
     nvmf_capsule_receive_t *receive_cb)
 {
 	struct nvmf_qpair *qp;
 
-	sx_xlock(&nvmf_transports_lock);
-	if (nt->nt_detaching || nt->nt_active_qpairs == UINT_MAX) {
-		sx_xunlock(&nvmf_transports_lock);
+	KASSERT(!nc->nc_disconnecting, ("%s: connection is shutting down",
+	    __func__));
+
+	qp = nc->nc_ops->allocate_qpair(nc);
+	if (qp == NULL)
 		return (NULL);
-	}
 
-	qp = nt->nt_ops->allocate_qpair();
-	if (qp == NULL) {
-		sx_xunlock(&nvmf_transports_lock);
-		return (qp);
-	}
-	nt->nt_active_qpairs++;
-	sx_xunlock(&nvmf_transports_lock);
-
+	qp->nq_connection = nc;
 	qp->nq_receive = receive_cb;
 	qp->nq_admin = admin;
 	return (qp);
@@ -70,17 +119,7 @@ nvmf_allocate_qpair(struct nvmf_transport *nt, bool admin,
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
-	struct nvmf_transport *nt;
-	bool last_qpair;
-
-	nt = qp->nq_transport;
-	nt->nt_ops->free_qpair(qp);
-	sx_xlock(&nvmf_transports_lock);
-	nt->nt_active_qpairs--;
-	last_qpair = nt->nt_active_qpairs == 0;
-	sx_xlock(&nvmf_transports_lock);
-	if (last_qpair)
-		wakeup(nt);
+	qp->nq_connection->nc_ops->free_qpair(qp);
 }
 
 struct nvmf_capsule *
@@ -88,7 +127,7 @@ nvmf_allocate_command(struct nvmf_qpair *qp)
 {
 	struct nvmf_capsule *nc;
 
-	nc = qp->nq_transport->nt_ops->allocate_command(qp);
+	nc = qp->nq_connection->nc_ops->allocate_command(qp);
 	if (nc == NULL)
 		return (NULL);
 
@@ -106,7 +145,7 @@ nvmf_allocate_response(struct nvmf_capsule *cmd)
 	struct nvmf_qpair *qp;
 
 	qp = cmd->nc_qpair;
-	nc = qp->nq_transport->nt_ops->allocate_response(qp);
+	nc = qp->nq_connection->nc_ops->allocate_response(qp);
 	if (nc == NULL)
 		return (NULL);
 
@@ -120,42 +159,19 @@ nvmf_allocate_response(struct nvmf_capsule *cmd)
 void
 nvmf_free_capsule(struct nvmf_capsule *nc)
 {
-	nc->nc_qpair->nq_transport->nt_ops->free_capsule(nc);
+	nc->nc_qpair->nq_connection->nc_ops->free_capsule(nc);
 }
 
 int
 nvmf_transmit_capsule(struct nvmf_capsule *nc)
 {
-	return (nc->nc_qpair->nq_transport->nt_ops->transmit_capsule(nc));
+	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
 }
 
 void
 nvmf_receive_capsule(struct nvmf_capsule *nc)
 {
 	nc->nc_qpair->nq_receive(nc);
-}
-
-static bool
-transport_ops_matches(struct nvmf_transport_ops *ops, enum nvmf_trtype trtype,
-    const char *offload)
-{
-	return (ops->trtype == trtype &&
-	    (ops->offload == offload || strcmp(ops->offload, offload) == 0));
-}
-
-struct nvmf_transport *
-nvmf_find_transport(enum nvmf_trtype trtype, const char *offload)
-{
-	struct nvmf_transport *nt;
-
-	/* XXX: Racey, probably not really the API we want. */
-	sx_slock(&nvmf_transports_lock);
-	TAILQ_FOREACH(nt, &nvmf_transports, nt_link) {
-		if (transport_ops_matches(nt->nt_ops, trtype, offload))
-			break;
-	}
-	sx_sunlock(&nvmf_transports_lock);
-	return (nt);
 }
 
 static const char *
@@ -178,6 +194,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 {
 	struct nvmf_transport_ops *ops = arg;
 	struct nvmf_transport *nt;
+	int error;
 
 	switch (what) {
 	case MOD_LOAD:
@@ -209,7 +226,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			sx_sunlock(&nvmf_transports_lock);
 			return (ENXIO);
 		}
-		if (nt->nt_active_qpairs != 0) {
+		if (nt->nt_active_connections != 0) {
 			sx_sunlock(&nvmf_transports_lock);
 			return (EBUSY);
 		}
@@ -226,8 +243,15 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			return (ENXIO);
 		}
 		nt->nt_detaching = true;
-		while (nt->nt_active_qpairs != 0)
-			sx_sleep(nt, &nvmf_transports_lock, 0, "nftunld", 0);
+		error = 0;
+		while (nt->nt_active_qpairs != 0 && error = 0)
+			error = sx_sleep(nt, &nvmf_transports_lock, PCATCH,
+			    "nftunld", 0);
+		if (error != 0) {
+			nt->nt_detaching = false;
+			sx_xunlock(&nvmf_transports_lock);
+			return (error);
+		}
 		TAILQ_REMOVE(&nvmf_transports, nt, nt_link);
 		sx_xunlock(&nvmf_transports_lock);
 		free(nt, M_NVMF);
