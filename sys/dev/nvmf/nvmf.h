@@ -28,6 +28,9 @@
 #ifndef __NVMF_H__
 #define	__NVMF_H__
 
+union nvmf_connection_params {
+};
+
 #ifdef _KERNEL
 #include <sys/memdesc.h>
 #include <dev/nvmf/nvmf_proto.h>
@@ -45,9 +48,9 @@ struct nvmf_capsule {
 	void 	*nc_qe;
 
 	/*
-	 * Data buffer contains ncb_data_len bytes starting at offset
-	 * ncb_data_offset of the backing store described by
-	 * ncb_data_mem.
+	 * Data buffer contains nc_data_len bytes starting at offset
+	 * nc_data_offset of the backing store described by
+	 * nc_data_mem.
 	 */
 	struct memdesc nc_data_mem;
 	size_t	nc_data_len;
@@ -64,7 +67,7 @@ typedef void nvmf_capsule_receive_t(struct nvmf_capsule *);
 
 /* Either an Admin or I/O Submission/Completion Queue pair. */
 struct nvmf_qpair {
-	struct nvmf_transport *nq_transport;
+	struct nvmf_connection *nq_connection;
 
 	nvmf_capsule_receive_t *nq_receive;
 	bool nq_admin;
@@ -73,8 +76,13 @@ struct nvmf_qpair {
 };
 
 struct nvmf_transport_ops {
+	/* Connection management. */
+	struct nvmf_connection *(*allocate_connection)(bool controller,
+	    union nvmf_connection_params *params);
+	void (*free_connection)(struct nvmf_connection *nc);
+
 	/* Queue pair management. */
-	struct nvmf_qpair *(*allocate_qpair)(void);
+	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_connection *nt);
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
 	/* Capsule operations. */
@@ -87,19 +95,22 @@ struct nvmf_transport_ops {
 	const char *offload;
 };
 
-struct nvmf_transport {
-	struct nvmf_transport_ops *nt_ops;
+struct nvmf_connection {
+	struct nvmf_transport_ops *nc_ops;
 
 	/*
-	 * XXX: Some other refcount?  Probably more like open sessions
-	 * than open qpairs.
+	 * XXX: Some other refcount?
 	 */
-	u_int nt_active_qpairs;
-	bool nt_detaching;
-	TAILQ_ENTRY(nvmf_transport) nt_link;
+
+	struct nvmf_transport *nc_transport;
+	bool nc_disconnecting;
 };
 
-struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_transport *nt, bool admin,
+struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
+    const char *offload, bool controller, union nvmf_connection_params *params);
+void	nvmf_free_connection(struct nvmf_connection *nc);
+
+struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
     nvmf_capsule_receive_t *receive_cb);
 void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
@@ -109,8 +120,6 @@ void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
 void	nvmf_receive_capsule(struct nvmf_capsule *nc);
 
-struct nvmf_transport *nvmf_find_transport(enum nvmf_trtype trtype,
-    const char *offload);
 int	nvmf_transport_module_handler(struct module *, int, void *);
 
 #define	NVMF_TRANSPORT(name, ops)					\
