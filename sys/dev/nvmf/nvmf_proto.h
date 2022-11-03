@@ -601,6 +601,8 @@ _Static_assert(offsetof(struct nvme_tcp_common_pdu_hdr, plen) == 4, "Incorrect o
 
 #define NVME_TCP_CH_FLAGS_HDGSTF		(1u << 0)
 #define NVME_TCP_CH_FLAGS_DDGSTF		(1u << 1)
+#define NVME_TCP_CH_FLAGS_LAST_PDU		(1u << 2)
+#define NVME_TCP_CH_FLAGS_SUCCESS		(1u << 3)
 
 /**
  * ICReq
