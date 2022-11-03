@@ -2,7 +2,8 @@
 
 KMOD=	nvmf
 
-SRCS=	nvmf.c
+SRCS=	nvmf.c \
+	nvmf_tcp.c
 
 EXPORT_SYMS=	YES
 

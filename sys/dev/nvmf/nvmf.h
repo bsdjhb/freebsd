@@ -29,6 +29,13 @@
 #define	__NVMF_H__
 
 union nvmf_connection_params {
+	struct {
+		int	fd;
+		uint8_t	pda;
+		uint8_t	dgst;
+		uint32_t maxr2t;
+		uint32_t maxh2cdata;
+	} tcp;
 };
 
 #ifdef _KERNEL
