@@ -905,7 +905,7 @@ do_rx_tls_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	 * record as a CSUM_TLS_DECRYPTED packet to 'sb_mtls' rather
 	 * than as a decrypted record to 'sb_m'.
 	 */
-	if (sb->sb_mtls != NULL)
+	if (sb->sb_mtls != NULL || true)
 		control = NULL;
 	else
 		control = sbcreatecontrol(NULL, sizeof(*tgr), TLS_GET_RECORD,
