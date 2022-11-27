@@ -111,6 +111,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *tc, uint16_t fes,
 	SOCKBUF_LOCK(&so->so_snd);
 	mbufq_drain(&tc->tx_pdus);
 	mbufq_enqueue(&tc->tx_pdus, m);
+	/* XXX: Do we need to handle sb_hiwat being wrong? */
 	if (sowriteable(so))
 		cv_signal(&tc->tx_cv);
 	SOCKBUF_UNLOCK(&so->so_snd);
@@ -196,12 +197,12 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 		break;
 	case NVME_TCP_PDU_TYPE_H2C_DATA:
 		valid_flags = NVME_TCP_CH_FLAGS_HDGSTF |
-		    NVME_TCP_CH_FLAGS_DDGSTF | NVME_TCP_CH_FLAGS_LAST_PDU;
+		    NVME_TCP_CH_FLAGS_DDGSTF | NVME_TCP_H2C_DATA_FLAGS_LAST_PDU;
 		break;
 	case NVME_TCP_PDU_TYPE_C2H_DATA:
 		valid_flags = NVME_TCP_CH_FLAGS_HDGSTF |
-		    NVME_TCP_CH_FLAGS_DDGSTF | NVME_TCP_CH_FLAGS_LAST_PDU |
-		    NVME_TCP_CH_FLAGS_SUCCESS;
+		    NVME_TCP_CH_FLAGS_DDGSTF | NVME_TCP_C2H_DATA_FLAGS_LAST_PDU |
+		    NVME_TCP_C2H_DATA_FLAGS_SUCCESS;
 		break;
 	}
 	if ((ch->flags & ~valid_flags) != 0) {
@@ -210,7 +211,7 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, m, hlen);
 		return (EBADMSG);
 	}
-		
+
 	/* Validate hlen. */
 	switch (ch->pdu_type) {
 	default:
@@ -271,6 +272,7 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 		if (full_hlen == plen && ch->pdo == 0)
 			break;
 
+		/* XXX: NVME_TCP_PDU_PDO_MAX_OFFSET? */
 		/* XXX: Should verify against any PDA we advertised. */
 		if (ch->pdo < full_hlen || ch->pdo > plen) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
@@ -403,7 +405,6 @@ nvmf_tcp_receive(void *arg)
 	SOCKBUF_LOCK(&so->so_rcv);
 	while (!tc->rx_shutdown) {
 		/* Wait until there is enough data for the next step. */
-		avail = sbavail(&so->so_rcv);
 		if (so->so_error != 0) {
 			SOCKBUF_UNLOCK(&so->so_rcv);
 		error:
@@ -413,6 +414,7 @@ nvmf_tcp_receive(void *arg)
 				cv_wait(&tc->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			break;
 		}
+		avail = sbavail(&so->so_rcv);
 		if (avail < needed) {
 			cv_wait(&tc->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			continue;
@@ -424,7 +426,7 @@ nvmf_tcp_receive(void *arg)
 			iov[0].iov_base = &ch;
 			iov[0].iov_len = sizeof(ch);
 			uio.uio_iov = iov;
-			uio.uio_iovcnt = 1;			
+			uio.uio_iovcnt = 1;
 			uio.uio_resid = sizeof(ch);
 			uio.uio_segflg = UIO_SYSSPACE;
 			uio.uio_rw = UIO_READ;
@@ -491,24 +493,67 @@ nvmf_tcp_receive(void *arg)
 	kthread_exit();
 }
 
+static struct mbuf *
+capsule_to_pdu(struct nvmf_tcp_connection *tc, struct nvmf_tcp_capsule *tcap)
+{
+}
+
 static void
 nvmf_tcp_send(void *arg)
 {
 	struct nvmf_tcp_connection *tc = arg;
+	struct nvmf_tcp_capsule *tcap;
 	struct socket *so = tc->so;
 	struct mbuf *m;
+	u_int avail;
+	int error;
 
-	m = NULL;
 	SOCKBUF_LOCK(&so->so_snd);
 	while (!tc->tx_shutdown) {
+		if (so->so_error != 0) {
+			SOCKBUF_UNLOCK(&so->so_snd);
+		error:
+			nvmf_connection_error(&tc->nc);
+			SOCKBUF_LOCK(&so->so_snd);
+			while (!tc->tx_shutdown)
+				cv_wait(&tc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			break;
+		}
+
 		/* Next PDU to send. */
-		if (m == NULL)
-			m = mbufq_dequeue(mq);
+		m = mbufq_first(&tc->tx_pdus);
+		if (m == NULL) {
+			if (STAILQ_EMPTY(&tc->tx_capsules)) {
+				cv_wait(&tc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+				continue;
+			}
+
+			/* Convert a capsule into a PDU. */
+			tcap = STAILQ_FIRST(&tc->tx_capsules);
+			STAILQ_REMOVE_HEAD(&tc->tx_capsules, link);
+			SOCKBUF_UNLOCK(&so->so_snd);
+
+			m = capsule_to_pdu(tc, tcap);
+
+			SOCKBUF_LOCK(&so->so_snd);
+			mbufq_enqueue(&tc->tx_pdus, m);
+			continue;
+		}
+
+		/* Wait until there is enough room to send this PDU. */
+		avail = sbavail(&so->so_snd);
+		if (avail < m->m_pkthdr.len) {
+			cv_wait(&tc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			continue;
+		}
+		SOCKBUF_UNLOCK(&so->so_snd);
+
+		error = sosend(so, NULL, NULL, m, NULL, MSG_DONTWAIT, NULL);
+		if (error != 0)
+			goto error;
 	}
-	m_freem(m);
 	SOCKBUF_UNLOCK(&so->so_snd);
 	kthread_exit();
-	
 }
 
 static int
@@ -538,6 +583,7 @@ tcp_allocate_connection(bool controller, union nvmf_connection_params *params)
 	struct socket *so;
 	struct file *fp;
 	cap_rights_t rights;
+	u_long recvspace, sendspace;
 	int error;
 
 	error = fget(curthread, params->tcp.fd, cap_rights_init_one(&rights,
@@ -555,11 +601,20 @@ tcp_allocate_connection(bool controller, union nvmf_connection_params *params)
 		return (NULL);
 	}
 
+	/* Ensure socket send buffers are large enough to hold at least one PDU. */
+	recvspace = ulmax(so->so_rcv.sb_hiwat, NVMF_TCP_MAX_PDU_SIZE);
+	sendspace = ulmax(so->so_snd.sb_hiwat, NVMF_TCP_MAX_PDU_SIZE);
+	error = soreserve(so, recvspace, sendspace);
+	if (error != 0) {
+		fdrop(fp, curthread);
+		return (NULL);
+	}
+
 	/* Claim socket from file descriptor. */
 	fp->f_ops = &badfileops;
 	fp->f_data = NULL;
 	fdrop(fp, curthread);
-	
+
 	tc = malloc(sizeof(*tc), M_NVMF_TCP, M_WAITOK | M_ZERO);
 	tc->so = so;
 	tc->controller = controller;
