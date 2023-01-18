@@ -25,7 +25,25 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/param.h>
+#include <sys/capsicum.h>
+#include <sys/condvar.h>
+#include <sys/file.h>
+#include <sys/gsb_crc32.h>
+#include <sys/kernel.h>
+#include <sys/kthread.h>
+#include <sys/limits.h>
+#include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/mbuf.h>
+#include <sys/module.h>
+#include <sys/mutex.h>
+#include <sys/protosw.h>
+#include <sys/socket.h>
+#include <sys/socketvar.h>
+#include <sys/uio.h>
+#include <netinet/in.h>
+#include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
 
 struct nvmf_tcp_capsule {
@@ -46,12 +64,12 @@ struct nvmf_tcp_connection {
 
 	/* Receive state. */
 	struct thread *rx_thread;
-	struct condvar *rx_cv;
+	struct cv rx_cv;
 	bool	rx_shutdown;
 
 	/* Transmit state. */
 	struct thread *tx_thread;
-	struct condvar *tx_cv;
+	struct cv tx_cv;
 	bool	tx_shutdown;
 	struct mbufq tx_pdus;
 	STAILQ_HEAD(, nvmf_tcp_capsule) tx_capsules;
@@ -59,6 +77,9 @@ struct nvmf_tcp_connection {
 
 #define	TCONN(nc)	((struct nvmf_tcp_connection *)(nc))
 #define	TCAPSULE(nc)	((struct nvmf_tcp_capsule *)(nc))
+
+static void	tcp_free_capsule(struct nvmf_capsule *nc);
+static void	tcp_free_connection(struct nvmf_connection *nc);
 
 static MALLOC_DEFINE(M_NVMF_TCP, "nvmf_tcp", "NVMe over TCP");
 
@@ -95,7 +116,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *tc, uint16_t fes,
 		hlen = min(hlen, m_length(rx_pdu, NULL));
 	}
 
-	m = m_get2(sizeof(*hdr) + hlen, MT_DATA, M_WAITOK);
+	m = m_get2(sizeof(*hdr) + hlen, M_WAITOK, MT_DATA, M_PKTHDR);
 	MPASS(m->m_len == sizeof(*hdr) + hlen);
 	hdr = mtod(m, void *);
 	memset(hdr, 0, sizeof(*hdr));
@@ -106,7 +127,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *tc, uint16_t fes,
 	hdr->fes = htole16(fes);
 	le32enc(hdr->fei, fei);
 	if (hlen != 0)
-		m_copydata(rx_pdu, 0, hlen, hdr + 1);
+		m_copydata(rx_pdu, 0, hlen, (caddr_t)(hdr + 1));
 
 	SOCKBUF_LOCK(&so->so_snd);
 	mbufq_drain(&tc->tx_pdus);
@@ -335,12 +356,12 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 	/* Check header digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_HDGSTF) != 0) {
 		digest = mbuf_crc32c(m, 0, ch->hlen);
-		m_copydata(m, ch->hlen, sizeof(rx_digest), &rx_digest);
+		m_copydata(m, ch->hlen, sizeof(rx_digest), (caddr_t)&rx_digest);
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Header digest mismatch\n");
 			nvmf_tcp_report_error(tc,
 			    NVME_TCP_TERM_REQ_FES_HDGST_ERROR, rx_digest, m,
-			    len);
+			    full_hlen);
 			return (EBADMSG);
 		}
 	}
@@ -350,8 +371,8 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 	if ((ch->flags & NVME_TCP_CH_FLAGS_DDGSTF) != 0) {
 		data_len -= sizeof(rx_digest);
 		digest = mbuf_crc32c(m, ch->pdo, data_len);
-		m_copydata(m, ch->pdu_len - sizeof(rx_digest),
-		    sizeof(rx_digest), &rx_digest);
+		m_copydata(m, plen - sizeof(rx_digest), sizeof(rx_digest),
+		    (caddr_t)&rx_digest);
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Data digest mismatch\n");
 			data_digest_mismatch = true;
@@ -385,6 +406,9 @@ nvmf_tcp_parse_pdu(struct nvmf_tcp_connection *tc,
 		/* TODO */
 		break;
 	}
+
+	/* XXX */
+	return (EDOOFUS);
 }
 
 static void
@@ -496,6 +520,8 @@ nvmf_tcp_receive(void *arg)
 static struct mbuf *
 capsule_to_pdu(struct nvmf_tcp_connection *tc, struct nvmf_tcp_capsule *tcap)
 {
+	/* XXX */
+	return (NULL);
 }
 
 static void
@@ -688,7 +714,7 @@ tcp_free_connection(struct nvmf_connection *nc)
 	STAILQ_FOREACH_SAFE(tcap, &tc->tx_capsules, link, ncap) {
 		tcp_free_capsule(&tcap->nc);
 	}
-	mbufq_drain(&tcap->tx_pdus);
+	mbufq_drain(&tc->tx_pdus);
 
 	soclose(so);
 
@@ -697,7 +723,7 @@ tcp_free_connection(struct nvmf_connection *nc)
 }
 
 static struct nvmf_qpair *
-tcp_allocate_qpair(struct nvmf_transport *nt)
+tcp_allocate_qpair(struct nvmf_connection *nc)
 {
 	struct nvmf_qpair *qp;
 

@@ -31,6 +31,7 @@
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
+#include <sys/refcount.h>
 #include <sys/sx.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
@@ -58,7 +59,7 @@ transport_ops_matches(struct nvmf_transport_ops *ops, enum nvmf_trtype trtype,
 	    (ops->offload == offload || strcmp(ops->offload, offload) == 0));
 }
 
-static struct nvmf_connection *
+struct nvmf_connection *
 nvmf_allocate_connection(enum nvmf_trtype trtype, const char *offload,
     bool controller, union nvmf_connection_params *params)
 {
@@ -86,7 +87,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, const char *offload,
 	return (nc);
 }
 
-static void
+void
 nvmf_free_connection(struct nvmf_connection *nc)
 {
 	struct nvmf_transport *nt;
@@ -244,7 +245,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 		}
 		nt->nt_detaching = true;
 		error = 0;
-		while (nt->nt_active_qpairs != 0 && error = 0)
+		while (nt->nt_active_connections != 0 && error == 0)
 			error = sx_sleep(nt, &nvmf_transports_lock, PCATCH,
 			    "nftunld", 0);
 		if (error != 0) {
