@@ -115,6 +115,7 @@ struct nvmf_connection {
 
 struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
     const char *offload, bool controller, union nvmf_connection_params *params);
+void	nvmf_connection_error(struct nvmf_connection *nc);
 void	nvmf_free_connection(struct nvmf_connection *nc);
 
 struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
@@ -130,7 +131,7 @@ void	nvmf_receive_capsule(struct nvmf_capsule *nc);
 int	nvmf_transport_module_handler(struct module *, int, void *);
 
 #define	NVMF_TRANSPORT(name, ops)					\
-static module_data_t nvmf_transport_##name##_mod = {			\
+static moduledata_t nvmf_transport_##name##_mod = {			\
 	"nvmf/" #name,							\
 	nvmf_transport_module_handler,					\
 	&(ops)								\
