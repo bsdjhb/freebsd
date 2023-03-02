@@ -52,6 +52,9 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2023xxxx: Only install sys/dev/nvme/nvme.h to /usr/include
+OLD_FILES+=usr/include/dev/nvme/nvme_private.h
+
 # 20230614: caroot bundle updated
 OLD_FILES+=usr/share/certs/trusted/Cybertrust_Global_Root.pem
 OLD_FILES+=usr/share/certs/trusted/DST_Root_CA_X3.pem
