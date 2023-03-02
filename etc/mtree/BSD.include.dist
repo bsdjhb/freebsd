@@ -155,6 +155,8 @@
         ..
         nvme
         ..
+        nvmf
+        ..
         ofw
         ..
         pbio
