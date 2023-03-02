@@ -178,6 +178,11 @@ OPENCRYPTODIR=	${INCLUDEDIR}/crypto
 NVME=		nvme.h
 NVMEDIR=	${INCLUDEDIR}/dev/nvme
 
+.PATH: ${SRCTOP}/sys/dev/nvmf
+NVMF=		nvmf.h \
+		nvmf_proto.h
+NVMFDIR=	${INCLUDEDIR}/dev/nvmf
+
 .PATH: ${SRCTOP}/sys/dev/pci
 PCI=		pcireg.h
 PCIDIR=		${INCLUDEDIR}/dev/pci
@@ -250,6 +255,7 @@ INCSGROUPS=	INCS \
 		HYPERV \
 		OPENCRYPTO \
 		NVME \
+		NVMF \
 		PCI \
 		RPC \
 		SECAUDIT \
