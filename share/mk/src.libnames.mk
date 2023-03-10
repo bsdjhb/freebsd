@@ -55,6 +55,7 @@ _INTERNALLIBS=	\
 		netbsd \
 		ntp \
 		ntpevent \
+		nvmf \
 		openbsd \
 		opts \
 		parse \
@@ -594,6 +595,9 @@ LIBNV?=		${LIBNVDIR}/libnv${PIE_SUFFIX}.a
 
 LIBISCSIUTILDIR=	${_LIB_OBJTOP}/lib/libiscsiutil
 LIBISCSIUTIL?=	${LIBISCSIUTILDIR}/libiscsiutil${PIE_SUFFIX}.a
+
+LIBNVMFDIR=	${_LIB_OBJTOP}/lib/libnvmf
+LIBNVMF?=	${LIBISCSIUTILDIR}/libnvmf${PIE_SUFFIX}.a
 
 LIBTELNETDIR=	${_LIB_OBJTOP}/lib/libtelnet
 LIBTELNET?=	${LIBTELNETDIR}/libtelnet${PIE_SUFFIX}.a
