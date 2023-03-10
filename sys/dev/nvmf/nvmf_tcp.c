@@ -603,7 +603,8 @@ nvmf_soupcall_send(struct socket *so, void *arg, int waitflag)
 }
 
 static struct nvmf_connection *
-tcp_allocate_connection(bool controller, union nvmf_connection_params *params)
+tcp_allocate_connection(bool controller,
+    const union nvmf_connection_params *params)
 {
 	struct nvmf_tcp_connection *tc;
 	struct socket *so;

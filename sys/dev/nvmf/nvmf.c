@@ -61,7 +61,7 @@ transport_ops_matches(struct nvmf_transport_ops *ops, enum nvmf_trtype trtype,
 
 struct nvmf_connection *
 nvmf_allocate_connection(enum nvmf_trtype trtype, const char *offload,
-    bool controller, union nvmf_connection_params *params)
+    bool controller, const union nvmf_connection_params *params)
 {
 	struct nvmf_connection *nc;
 	struct nvmf_transport *nt;
@@ -83,7 +83,8 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, const char *offload,
 	if (nc == NULL) {
 		if (refcount_release(&nt->nt_active_connections))
 			wakeup(nt);
-	}
+	} else
+		nc->nc_transport = nt;
 	return (nc);
 }
 
@@ -107,7 +108,7 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
 	KASSERT(!nc->nc_disconnecting, ("%s: connection is shutting down",
 	    __func__));
 
-	qp = nc->nc_ops->allocate_qpair(nc);
+	qp = nc->nc_transport->nt_ops->allocate_qpair(nc);
 	if (qp == NULL)
 		return (NULL);
 
@@ -120,7 +121,7 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
-	qp->nq_connection->nc_ops->free_qpair(qp);
+	qp->nq_connection->nc_transport->nt_ops->free_qpair(qp);
 }
 
 struct nvmf_capsule *
@@ -128,7 +129,7 @@ nvmf_allocate_command(struct nvmf_qpair *qp)
 {
 	struct nvmf_capsule *nc;
 
-	nc = qp->nq_connection->nc_ops->allocate_command(qp);
+	nc = qp->nq_connection->nc_transport->nt_ops->allocate_command(qp);
 	if (nc == NULL)
 		return (NULL);
 
@@ -146,7 +147,7 @@ nvmf_allocate_response(struct nvmf_capsule *cmd)
 	struct nvmf_qpair *qp;
 
 	qp = cmd->nc_qpair;
-	nc = qp->nq_connection->nc_ops->allocate_response(qp);
+	nc = qp->nq_connection->nc_transport->nt_ops->allocate_response(qp);
 	if (nc == NULL)
 		return (NULL);
 
@@ -160,13 +161,13 @@ nvmf_allocate_response(struct nvmf_capsule *cmd)
 void
 nvmf_free_capsule(struct nvmf_capsule *nc)
 {
-	nc->nc_qpair->nq_connection->nc_ops->free_capsule(nc);
+	nc->nc_qpair->nq_connection->nc_transport->nt_ops->free_capsule(nc);
 }
 
 int
 nvmf_transmit_capsule(struct nvmf_capsule *nc)
 {
-	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
+	return (nc->nc_qpair->nq_connection->nc_transport->nt_ops->transmit_capsule(nc));
 }
 
 void

@@ -85,7 +85,7 @@ struct nvmf_qpair {
 struct nvmf_transport_ops {
 	/* Connection management. */
 	struct nvmf_connection *(*allocate_connection)(bool controller,
-	    union nvmf_connection_params *params);
+	    const union nvmf_connection_params *params);
 	void (*free_connection)(struct nvmf_connection *nc);
 
 	/* Queue pair management. */
@@ -103,8 +103,6 @@ struct nvmf_transport_ops {
 };
 
 struct nvmf_connection {
-	struct nvmf_transport_ops *nc_ops;
-
 	/*
 	 * XXX: Some other refcount?
 	 */
