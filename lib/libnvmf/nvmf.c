@@ -36,6 +36,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 {
 	struct nvmf_transport_ops *ops;
 	struct nvmf_connection *nc;
+	int error;
 
 	switch (trtype) {
 	case NVMF_TRTYPE_TCP:
@@ -50,9 +51,18 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 		return (NULL);
 
 	nc = ops->allocate_connection(controller, params);
-	if (nc != NULL) {
-		nc->nc_ops = ops;
-		nc->nc_controller = controller;
+	if (nc == NULL)
+		return (NULL);
+
+	nc->nc_ops = ops;
+	nc->nc_controller = controller;
+	if (controller)
+		error = ops->accept(nc, params);
+	else
+		error = ops->connect(nc, params);
+	if (error != 0) {
+		nvmf_free_connection(nc);
+		return (NULL);
 	}
 	return (nc);
 }
