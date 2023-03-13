@@ -32,6 +32,10 @@ struct nvmf_transport_ops {
 	/* Connection management. */
 	struct nvmf_connection *(*allocate_connection)(bool controller,
 	    const union nvmf_connection_params *params);
+	int (*connect)(struct nvmf_connection *nc,
+	    const union nvmf_connection_params *params);
+	int (*accept)(struct nvmf_connection *nc,
+	    const union nvmf_connection_params *params);
 	void (*free_connection)(struct nvmf_connection *nc);
 
 	/* Queue pair management. */

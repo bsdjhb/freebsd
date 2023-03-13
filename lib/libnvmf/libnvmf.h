@@ -39,6 +39,8 @@ struct nvmf_connection;
 struct nvmf_qpair;
 
 /* Transport-independent APIs. */
+
+/* params contains requested values for this side of the negotiation. */
 struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
     bool controller, const union nvmf_connection_params *params);
 void	nvmf_free_connection(struct nvmf_connection *nc);
@@ -55,7 +57,5 @@ int	nvmf_receive_capsule(struct nvmf_capsule **nc);
 /* TCP transport-specific APIs. */
 int	nvmf_tcp_read_pdu(struct nvmf_connection *nc,
     struct nvme_tcp_common_pdu_hdr **pdu);
-int	nvmf_tcp_read_ic_req(int s, struct nvme_tcp_ic_req *pdu);
-int	nvmf_tcp_read_ic_resp(int s, struct nvme_tcp_ic_resp *pdu);
 
 #endif /* !__LIBNVMF_H__ */

@@ -40,15 +40,23 @@
 
 struct nvmf_tcp_connection {
 	struct nvmf_connection nc;
-
 	int s;
+
+	uint8_t	txpda;
+	uint8_t rxpda;
+	bool header_digests;
+	bool data_digests;
+	union {
+		uint32_t maxr2t;
+		uint32_t maxh2cdata;
+	};
 };
 
 #define	TCONN(nc)	((struct nvmf_tcp_connection *)(nc))
 
 static void
 nvmf_tcp_report_error(int s, bool controller, uint16_t fes, uint32_t fei,
-    void *rx_pdu, size_t pdu_len, u_int hlen)
+    const void *rx_pdu, size_t pdu_len, u_int hlen)
 {
 	struct nvme_tcp_term_req_hdr hdr;
 	struct iovec iov[2];
@@ -69,7 +77,7 @@ nvmf_tcp_report_error(int s, bool controller, uint16_t fes, uint32_t fei,
 	le32enc(hdr.fei, fei);
 	iov[0].iov_base = &hdr;
 	iov[0].iov_len = sizeof(hdr);
-	iov[1].iov_base = rx_pdu;
+	iov[1].iov_base = __DECONST(void *, rx_pdu);
 	iov[1].iov_len = hlen;
 
 	(void)writev(s, iov, nitems(iov));
@@ -77,7 +85,7 @@ nvmf_tcp_report_error(int s, bool controller, uint16_t fes, uint32_t fei,
 
 static int
 nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
-    struct nvme_tcp_common_pdu_hdr *ch, size_t pdu_len)
+    const struct nvme_tcp_common_pdu_hdr *ch, size_t pdu_len)
 {
 	uint32_t data_len, plen;
 	uint32_t digest, rx_digest;
@@ -297,8 +305,10 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 
 	/* Check header digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_HDGSTF) != 0) {
-		digest = calculate_crc32c(0xffffffff, (void *)ch, ch->hlen);
-		memcpy(&rx_digest, (char *)ch + ch->hlen, sizeof(rx_digest));
+		digest = calculate_crc32c(0xffffffff, (const void *)ch,
+		    ch->hlen);
+		memcpy(&rx_digest, (const char *)ch + ch->hlen,
+		    sizeof(rx_digest));
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Header digest mismatch\n");
 			nvmf_tcp_report_error(ntc->s, ntc->nc.nc_controller,
@@ -311,9 +321,9 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	/* Check data digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_DDGSTF) != 0) {
 		data_len -= sizeof(rx_digest);
-		digest = calculate_crc32c(0xffffffff, (char *)ch + ch->pdo,
-		    data_len);
-		memcpy(&rx_digest, (char *)ch + plen - sizeof(rx_digest),
+		digest = calculate_crc32c(0xffffffff,
+		    (const char *)ch + ch->pdo, data_len);
+		memcpy(&rx_digest, (const char *)ch + plen - sizeof(rx_digest),
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Data digest mismatch\n");
@@ -373,8 +383,9 @@ nvmf_tcp_read_pdu(struct nvmf_connection *nc,
 
 static int
 nvmf_tcp_validate_ic_pdu(int s, bool controller,
-    struct nvme_tcp_common_pdu_hdr *ch, size_t pdu_len)
+    const struct nvme_tcp_common_pdu_hdr *ch, size_t pdu_len)
 {
+	const struct nvme_tcp_ic_req *pdu;
 	uint32_t plen;
 	u_int hlen;
 
@@ -448,10 +459,46 @@ nvmf_tcp_validate_ic_pdu(int s, bool controller,
 		return (EBADMSG);
 	}
 
+	/* Validate fields common to both ICReq and ICResp. */
+	pdu = (const struct nvme_tcp_ic_req *)ch;
+	if (le16toh(pdu->pfv) != 0) {
+		nvmf_tcp_report_error(s, controller,
+		    NVME_TCP_TERM_REQ_FES_INVALID_DATA_UNSUPPORTED_PARAMETER,
+		    8, ch, pdu_len, hlen);
+		return (EBADMSG);
+	}
+
+	if (pdu->hpda > NVME_TCP_CPDA_MAX) {
+		nvmf_tcp_report_error(s, controller,
+		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 10, ch, pdu_len,
+		    hlen);
+		return (EBADMSG);
+	}
+
+	if (pdu->dgst.bits.reserved != 0) {
+		nvmf_tcp_report_error(s, controller,
+		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 11, ch, pdu_len,
+		    hlen);
+		return (EBADMSG);
+	}
+
 	return (0);
 }
 
-int
+static int
+nvmf_tcp_write_pdu(int s, void *pdu, size_t len)
+{
+	ssize_t nwritten;
+
+	nwritten = write(s, pdu, len);
+	if (nwritten < 0)
+		return (errno);
+	if ((size_t)nwritten != len)
+		return (ECONNRESET);
+	return (0);
+}
+
+static int
 nvmf_tcp_read_ic_req(int s, struct nvme_tcp_ic_req *pdu)
 {
 	ssize_t nread;
@@ -468,7 +515,7 @@ nvmf_tcp_read_ic_req(int s, struct nvme_tcp_ic_req *pdu)
 	    sizeof(*pdu)));	
 }
 
-int
+static int
 nvmf_tcp_read_ic_resp(int s, struct nvme_tcp_ic_resp *pdu)
 {
 	ssize_t nread;
@@ -494,6 +541,109 @@ tcp_allocate_connection(bool controller __unused,
 	ntc->s = params->tcp.fd;
 
 	return (&ntc->nc);
+}
+
+static int
+tcp_connect(struct nvmf_connection *nc,
+    const union nvmf_connection_params *params)
+{
+	struct nvmf_tcp_connection *ntc = TCONN(nc);
+	struct nvme_tcp_ic_req ic_req;
+	struct nvme_tcp_ic_resp ic_resp;
+	int error;
+
+	if (!nc->nc_controller)
+		return (EINVAL);
+
+	memset(&ic_req, 0, sizeof(ic_req));
+	ic_req.common.pdu_type = NVME_TCP_PDU_TYPE_IC_REQ;
+	ic_req.common.hlen = sizeof(ic_req);
+	ic_req.common.plen = htole32(sizeof(ic_req));
+	ic_req.pfv = htole16(0);
+	ic_req.hpda = params->tcp.pda;
+	if (params->tcp.header_digests)
+		ic_req.dgst.bits.hdgst_enable = 1;
+	if (params->tcp.data_digests)
+		ic_req.dgst.bits.ddgst_enable = 1;
+	ic_req.maxr2t = htole32(params->tcp.maxr2t);
+
+	error = nvmf_tcp_write_pdu(ntc->s, &ic_req, sizeof(ic_req));
+	if (error != 0)
+		return (error);
+
+	error = nvmf_tcp_read_ic_resp(ntc->s, &ic_resp);
+	if (error != 0)
+		return (error);
+
+	/* Ensure the host didn't enable digests we didn't request. */
+	if ((!params->tcp.header_digests &&
+	    ic_resp.dgst.bits.hdgst_enable != 0) ||
+	    (!params->tcp.data_digests &&
+	    ic_resp.dgst.bits.ddgst_enable != 0)) {
+		nvmf_tcp_report_error(ntc->s, true,
+		    NVME_TCP_TERM_REQ_FES_INVALID_DATA_UNSUPPORTED_PARAMETER,
+		    11, &ic_resp, sizeof(ic_resp), sizeof(ic_resp));
+		return (EBADMSG);
+	}
+
+	/*
+	 * XXX: Is there an upper-bound to enforce here?  Perhaps pick
+	 * some large value and report larger values as an unsupported
+	 * parameter?
+	 */
+	if (le32toh(ic_resp.maxh2cdata) < 4096) {
+		nvmf_tcp_report_error(ntc->s, true,
+		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 12, &ic_resp,
+		    sizeof(ic_resp), sizeof(ic_resp));
+		return (EBADMSG);
+	}
+
+	ntc->txpda = params->tcp.pda;
+	ntc->rxpda = ic_resp.cpda;
+	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
+	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
+	ntc->maxh2cdata = le32toh(ic_resp.maxh2cdata);
+	return (0);
+}
+
+static int
+tcp_accept(struct nvmf_connection *nc,
+    const union nvmf_connection_params *params)
+{
+	struct nvmf_tcp_connection *ntc = TCONN(nc);
+	struct nvme_tcp_ic_req ic_req;
+	struct nvme_tcp_ic_resp ic_resp;
+	int error;
+
+	if (nc->nc_controller)
+		return (EINVAL);
+
+	error = nvmf_tcp_read_ic_req(ntc->s, &ic_req);
+	if (error != 0)
+		return (error);
+
+	memset(&ic_resp, 0, sizeof(ic_resp));
+	ic_resp.common.pdu_type = NVME_TCP_PDU_TYPE_IC_RESP;
+	ic_resp.common.hlen = sizeof(ic_req);
+	ic_resp.common.plen = htole32(sizeof(ic_req));
+	ic_resp.pfv = htole16(0);
+	ic_resp.cpda = params->tcp.pda;
+	if (params->tcp.header_digests && ic_req.dgst.bits.hdgst_enable != 0)
+		ic_resp.dgst.bits.hdgst_enable = 1;
+	if (params->tcp.data_digests && ic_req.dgst.bits.ddgst_enable != 0)
+		ic_resp.dgst.bits.ddgst_enable = 1;
+	ic_resp.maxh2cdata = htole32(params->tcp.maxh2cdata);
+
+	error = nvmf_tcp_write_pdu(ntc->s, &ic_req, sizeof(ic_req));
+	if (error != 0)
+		return (error);
+
+	ntc->txpda = params->tcp.pda;
+	ntc->rxpda = ic_req.hpda;
+	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
+	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
+	ntc->maxr2t = le32toh(ic_req.maxr2t);
+	return (0);
 }
 
 static void
@@ -567,6 +717,8 @@ tcp_receive_capsule(struct nvmf_connection *nc, struct nvmf_capsule **nc)
 
 struct nvmf_transport_ops tcp_ops = {
 	.allocate_connection = tcp_allocate_connection,
+	.connect = tcp_connect,
+	.accept = tcp_accept,
 	.free_connection = tcp_free_connection,
 	.allocate_qpair = tcp_allocate_qpair,
 	.free_qpair = tcp_free_qpair,
