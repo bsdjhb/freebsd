@@ -909,13 +909,20 @@ tcp_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
 		return (tcp_transmit_response(nc));
 }
 
-#if 0
 static int
-tcp_receive_capsule(struct nvmf_connection *nc, struct nvmf_capsule **nc)
+tcp_receive_capsule(struct nvmf_qpair *nq __unused, struct nvmf_capsule **nc __unused)
 {
 	/* TODO */
+	return (EOPNOTSUPP);
 }
-#endif
+
+static int
+tcp_receive_controller_data(struct nvmf_capsule *nc __unused, off_t data_offset __unused,
+    struct iovec *iov __unused, u_int iovcnt __unused)
+{
+	/* TODO */
+	return (EOPNOTSUPP);
+}
 
 struct nvmf_transport_ops tcp_ops = {
 	.allocate_connection = tcp_allocate_connection,
@@ -927,7 +934,6 @@ struct nvmf_transport_ops tcp_ops = {
 	.allocate_capsule = tcp_allocate_capsule,
 	.free_capsule = tcp_free_capsule,
 	.transmit_capsule = tcp_transmit_capsule,
-#if 0
 	.receive_capsule = tcp_receive_capsule,
-#endif
+	.receive_controller_data = tcp_receive_controller_data,
 };

@@ -28,8 +28,6 @@
 #ifndef __LIBNVMF_INTERNAL_H__
 #define __LIBNVMF_INTERNAL_H__
 
-#include <sys/uio.h>
-
 struct nvmf_transport_ops {
 	/* Connection management. */
 	struct nvmf_connection *(*allocate_connection)(bool controller,
@@ -49,9 +47,11 @@ struct nvmf_transport_ops {
 	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
 	void (*free_capsule)(struct nvmf_capsule *nc);
 	int (*transmit_capsule)(struct nvmf_capsule *nc, bool send_data);
-#if 0
-	int (*receive_capsule)(struct nvmf_capsule **nc);
-#endif
+	int (*receive_capsule)(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
+
+	/* Receiving controller data. */
+	int (*receive_controller_data)(struct nvmf_capsule *nc,
+	    off_t data_offset, struct iovec *iov, u_int iovcnt);
 };
 
 struct nvmf_connection {
