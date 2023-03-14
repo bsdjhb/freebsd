@@ -45,13 +45,29 @@ struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
     bool controller, const union nvmf_connection_params *params);
 void	nvmf_free_connection(struct nvmf_connection *nc);
 
+/*
+ * A queue pair represents either an Admin or I/O
+ * submission/completion queue pair.  TCP requires a separate
+ * connection for each queue pair.
+ */
 struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin);
 void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
-struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp);
-struct nvmf_capsule *nvmf_allocate_response(struct nvmf_capsule *nc);
+/*
+ * Capsules are either commands (host -> controller) or responses
+ * (controller -> host).  One or more data buffer segments may be
+ * associated with a capsule.  Transmitted data is not copied by
+ * this API but instead must be preserved until the capsule is
+ * transmitted and freed.
+ */
+struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp,
+    const void *sqe);
+struct nvmf_capsule *nvmf_allocate_response(struct nvmf_capsule *nc,
+    const void *cqe);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
-int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
+int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
+    const void *buf, size_t len);
+int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 int	nvmf_receive_capsule(struct nvmf_capsule **nc);
 
 /* TCP transport-specific APIs. */

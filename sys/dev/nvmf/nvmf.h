@@ -29,6 +29,7 @@
 #define	__NVMF_H__
 
 union nvmf_connection_params {
+	uint32_t ioccsz;
 	struct {
 		int	fd;
 		uint8_t	pda;
