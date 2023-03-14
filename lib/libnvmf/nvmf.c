@@ -163,10 +163,16 @@ nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
 	    send_data));
 }
 
-#if 0
 int
-nvmf_receive_capsule(struct nvmf_capsule **nc)
+nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc)
 {
-	return (nc->nc_qpair->nq_receive_capsule(nc));
+	return (qp->nq_connection->nc_ops->receive_capsule(qp, nc));
 }
-#endif
+
+int
+nvmf_receive_controller_data(struct nvmf_capsule *nc, off_t data_offset,
+    struct iovec *iov, u_int iovcnt)
+{
+	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
+	    data_offset, iov, iovcnt));
+}
