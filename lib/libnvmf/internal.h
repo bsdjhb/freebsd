@@ -28,6 +28,8 @@
 #ifndef __LIBNVMF_INTERNAL_H__
 #define __LIBNVMF_INTERNAL_H__
 
+#include <sys/uio.h>
+
 struct nvmf_transport_ops {
 	/* Connection management. */
 	struct nvmf_connection *(*allocate_connection)(bool controller,
@@ -39,14 +41,14 @@ struct nvmf_transport_ops {
 	void (*free_connection)(struct nvmf_connection *nc);
 
 	/* Queue pair management. */
-	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_connection *nt);
+	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_connection *nt,
+	    bool admin);
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
 	/* Capsule operations. */
-	struct nvmf_capsule *(*allocate_command)(struct nvmf_qpair *qp);
-	struct nvmf_capsule *(*allocate_response)(struct nvmf_qpair *qp);
+	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
 	void (*free_capsule)(struct nvmf_capsule *nc);
-	int (*transmit_capsule)(struct nvmf_capsule *nc);
+	int (*transmit_capsule)(struct nvmf_capsule *nc, bool send_data);
 #if 0
 	int (*receive_capsule)(struct nvmf_capsule **nc);
 #endif
@@ -66,12 +68,16 @@ struct nvmf_capsule {
 	struct nvmf_qpair *nc_qpair;
 
 	/* Either a SQE or CQE. */
-	void 	*nc_qe;
-
-	void	*nc_data;
-	size_t	nc_data_len;
-
+	union {
+		struct nvme_command nc_sqe;
+		struct nvme_completion nc_cqe;
+	};
 	int	nc_qe_len;
+
+	/* Data buffer. */
+	u_int	nc_data_iovcnt;
+	size_t	nc_data_len;
+	struct iovec *nc_data_iov;
 };
 
 extern struct nvmf_transport_ops tcp_ops;

@@ -27,6 +27,7 @@
 
 #include <sys/endian.h>
 #include <sys/gsb_crc32.h>
+#include <sys/queue.h>
 #include <sys/uio.h>
 #include <assert.h>
 #include <errno.h>
@@ -37,6 +38,22 @@
 
 #include "libnvmf.h"
 #include "internal.h"
+
+struct nvmf_tcp_qpair;
+
+struct nvmf_tcp_buffer {
+	struct nvmf_tcp_qpair *nb_qpair;
+
+	struct iovec *nb_data_iov;
+	u_int	nb_data_iovcnt;
+	size_t	nb_data_len;
+	size_t	nb_data_xfered;
+
+	uint16_t nb_cid;
+	bool nb_c2hdata;
+
+	TAILQ_ENTRY(nvmf_tcp_buffer) link;
+};
 
 struct nvmf_tcp_connection {
 	struct nvmf_connection nc;
@@ -50,9 +67,41 @@ struct nvmf_tcp_connection {
 		uint32_t maxr2t;
 		uint32_t maxh2cdata;
 	};
+	uint32_t max_io_icd;
+};
+
+struct nvmf_tcp_qpair {
+	struct nvmf_qpair qp;
+
+	uint32_t max_icd;
+
+	TAILQ_HEAD(, nvmf_tcp_buffer) buffers;
 };
 
 #define	TCONN(nc)	((struct nvmf_tcp_connection *)(nc))
+#define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
+
+static const char zero_padding[NVME_TCP_PDU_PDO_MAX_OFFSET];
+
+static uint32_t
+compute_digest_iov(const struct iovec *iov, u_int iovcnt)
+{
+	uint32_t digest;
+
+	digest = 0xffffffff;
+	while (iovcnt > 0) {
+		digest = calculate_crc32c(digest, iov->iov_base, iov->iov_len);
+		iov++;
+		iovcnt--;
+	}
+	return (digest);
+}
+
+static uint32_t
+compute_digest(const void *buf, size_t len)
+{
+	return (calculate_crc32c(0xffffffff, buf, len));
+}
 
 static void
 nvmf_tcp_report_error(int s, bool controller, uint16_t fes, uint32_t fei,
@@ -242,9 +291,8 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		if (full_hlen == plen && ch->pdo == 0)
 			break;
 
-		/* XXX: NVME_TCP_PDU_PDO_MAX_OFFSET? */
-		/* XXX: Should verify against any PDA we advertised. */
-		if (ch->pdo < full_hlen || ch->pdo > plen) {
+		if (ch->pdo < full_hlen || ch->pdo > plen ||
+		    ch->pdo % ntc->rxpda != 0) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
 			    ch->pdo);
 			nvmf_tcp_report_error(ntc->s, ntc->nc.nc_controller,
@@ -305,8 +353,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 
 	/* Check header digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_HDGSTF) != 0) {
-		digest = calculate_crc32c(0xffffffff, (const void *)ch,
-		    ch->hlen);
+		digest = compute_digest(ch, ch->hlen);
 		memcpy(&rx_digest, (const char *)ch + ch->hlen,
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
@@ -321,8 +368,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	/* Check data digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_DDGSTF) != 0) {
 		data_len -= sizeof(rx_digest);
-		digest = calculate_crc32c(0xffffffff,
-		    (const char *)ch + ch->pdo, data_len);
+		digest = compute_digest((const char *)ch + ch->pdo, data_len);
 		memcpy(&rx_digest, (const char *)ch + plen - sizeof(rx_digest),
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
@@ -537,8 +583,12 @@ tcp_allocate_connection(bool controller __unused,
 {
 	struct nvmf_tcp_connection *ntc;
 
+	if (params->ioccsz < 4)
+		return (NULL);
+
 	ntc = calloc(1, sizeof(*ntc));
 	ntc->s = params->tcp.fd;
+	ntc->max_io_icd = (params->ioccsz - 4) * 16;
 
 	return (&ntc->nc);
 }
@@ -598,8 +648,8 @@ tcp_connect(struct nvmf_connection *nc,
 		return (EBADMSG);
 	}
 
-	ntc->txpda = params->tcp.pda;
-	ntc->rxpda = ic_resp.cpda;
+	ntc->txpda = params->tcp.pda * 4;
+	ntc->rxpda = ic_resp.cpda * 4;
 	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
 	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
 	ntc->maxh2cdata = le32toh(ic_resp.maxh2cdata);
@@ -638,8 +688,8 @@ tcp_accept(struct nvmf_connection *nc,
 	if (error != 0)
 		return (error);
 
-	ntc->txpda = params->tcp.pda;
-	ntc->rxpda = ic_req.hpda;
+	ntc->txpda = params->tcp.pda * 4;
+	ntc->rxpda = ic_req.hpda * 4;
 	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
 	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
 	ntc->maxr2t = le32toh(ic_req.maxr2t);
@@ -656,12 +706,20 @@ tcp_free_connection(struct nvmf_connection *nc)
 }
 
 static struct nvmf_qpair *
-tcp_allocate_qpair(struct nvmf_connection *nc __unused)
+tcp_allocate_qpair(struct nvmf_connection *nc, bool admin)
 {
-	struct nvmf_qpair *qp;
+	struct nvmf_tcp_connection *ntc = TCONN(nc);
+	struct nvmf_tcp_qpair *qp;
 
 	qp = calloc(1, sizeof(*qp));
-	return (qp);
+	if (admin)
+		/* 7.4.3 */
+		qp->max_icd = 8192;
+	else
+		qp->max_icd = ntc->max_io_icd;
+	TAILQ_INIT(&qp->buffers);
+
+	return (&qp->qp);
 }
 
 static void
@@ -671,40 +729,184 @@ tcp_free_qpair(struct nvmf_qpair *qp)
 }
 
 static struct nvmf_capsule *
-tcp_allocate_command(struct nvmf_qpair *qp __unused)
+tcp_allocate_capsule(struct nvmf_qpair *qp __unused)
 {
 	struct nvmf_capsule *nc;
 
 	nc = calloc(1, sizeof(*nc));
-	nc->nc_qe_len = sizeof(struct nvmf_fabric_connect_cmd);
-	nc->nc_qe = malloc(nc->nc_qe_len);
-	return (nc);
-}
-
-static struct nvmf_capsule *
-tcp_allocate_response(struct nvmf_qpair *qp __unused)
-{
-	struct nvmf_capsule *nc;
-
-	nc = calloc(1, sizeof(*nc));
-	nc->nc_qe_len = sizeof(struct nvmf_fabric_connect_rsp);
-	nc->nc_qe = malloc(nc->nc_qe_len);
 	return (nc);
 }
 
 static void
 tcp_free_capsule(struct nvmf_capsule *nc)
 {
-	free(nc->nc_data);
-	free(nc->nc_qe);
 	free(nc);
 }
 
-static int
-tcp_transmit_capsule(struct nvmf_capsule *nc __unused)
+static void
+tcp_alloc_command_buffer(struct nvmf_tcp_qpair *qp, struct iovec *iov,
+    u_int iovcnt, size_t data_len, uint16_t cid, bool c2hdata)
 {
-	/* TODO */
+	struct nvmf_tcp_buffer *nb;
+
+	nb = malloc(sizeof(*nb));
+	nb->nb_qpair = qp;
+	nb->nb_data_iov = iov;
+	nb->nb_data_iovcnt = iovcnt;
+	nb->nb_data_len = data_len;
+	nb->nb_data_xfered = 0;
+	nb->nb_cid = cid;
+	nb->nb_c2hdata = c2hdata;
+
+	TAILQ_INSERT_TAIL(&qp->buffers, nb, link);
+}
+
+static int
+tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
+{
+	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
+	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
+	struct nvme_tcp_cmd cmd;
+	struct nvme_command *sqe;
+	struct iovec *iov, *iov2;
+	ssize_t nwritten;
+	uint32_t data_digest, header_digest, pad, plen;
+	u_int iovcnt;
+	bool use_icd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_CMD;
+	if (ntc->header_digests)
+		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+	cmd.common.hlen = sizeof(cmd);
+	cmd.ccsqe = nc->nc_sqe;
+	sqe = &cmd.ccsqe;
+	plen = sizeof(cmd);
+	iovcnt = 1;
+
+	/* Populate SGL in SQE. */
+	use_icd = false;
+	if (nc->nc_data_len != 0) {
+		struct nvme_sgl_descriptor *sgl;
+
+		sgl = (struct nvme_sgl_descriptor *)&sqe->prp1;
+		memset(sgl, 0, sizeof(*sgl));
+		sgl->address = 0;
+		sgl->unkeyed.length = htole32(nc->nc_data_len);
+		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
+		if (send_data && nc->nc_data_len <= qp->max_icd) {
+			/* Use in-capsule data. */
+			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
+			use_icd = true;
+		} else {
+			/* Use a command buffer. */
+			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
+		}
+		sqe->fuse &= ~NVMEB(NVME_CMD_PSDT);
+		sqe->fuse |= NVME_PSDT_SGL << NVME_CMD_PSDT_SHIFT;
+	}
+
+	if (ntc->header_digests) {
+		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+		plen += sizeof(header_digest);
+		iovcnt++;
+	}
+
+	pad = 0;
+	if (use_icd) {
+		if (ntc->txpda == 0)
+			cmd.common.pdo = plen;
+		else {
+			cmd.common.pdo = roundup2(plen, ntc->txpda);
+			pad = cmd.common.pdo - plen;
+			if (pad != 0) {
+				iovcnt++;
+				plen += pad;
+			}
+		}
+
+		iovcnt += nc->nc_data_iovcnt;
+		if (ntc->data_digests) {
+			cmd.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
+			plen += sizeof(data_digest);
+			iovcnt++;
+
+			data_digest = compute_digest_iov(nc->nc_data_iov,
+			    nc->nc_data_iovcnt);
+		}
+	}
+
+	cmd.common.plen = htole32(plen);
+	if (ntc->header_digests)
+		header_digest = compute_digest(&cmd, sizeof(cmd));
+
+	iov = alloca(iovcnt * sizeof(*iov));
+	iov2 = iov;
+
+	/* CH + PSH */
+	iov2->iov_base = &cmd;
+	iov2->iov_len = sizeof(cmd);
+	iov2++;
+
+	/* HDGST */
+	if (ntc->header_digests) {
+		iov2->iov_base = &header_digest;
+		iov2->iov_len = sizeof(header_digest);
+		iov2++;
+	}
+
+	if (use_icd) {
+		/* PAD */
+		if (pad != 0) {
+			iov2->iov_base = __DECONST(char *, zero_padding);
+			iov2->iov_len = pad;
+			iov2++;
+		}
+
+		/* DATA */
+		memcpy(iov2, nc->nc_data_iov, nc->nc_data_iovcnt *
+		    sizeof(*iov2));
+		iov2 += nc->nc_data_iovcnt;
+
+		/* DDGST */
+		if (ntc->data_digests) {
+			iov2->iov_base = &data_digest;
+			iov2->iov_len = sizeof(data_digest);
+			iov2++;
+		}
+	}
+
+	/* Send command capsule. */
+	nwritten = writev(ntc->s, iov, iovcnt);
+	if (nwritten < 0)
+		return (errno);
+	if ((size_t)nwritten != plen)
+		return (ECONNRESET);
+
+	/*
+	 * If using a command buffer, allocate a buffer structure and
+	 * queue it.
+	 */
+	if (nc->nc_data_len != 0 && !use_icd)
+		tcp_alloc_command_buffer(qp, nc->nc_data_iov,
+		    nc->nc_data_iovcnt, nc->nc_data_len, sqe->cid, !send_data);
+
+	return (0);
+}
+
+static int
+tcp_transmit_response(struct nvmf_capsule *nc __unused)
+{
 	return (EINVAL);
+}
+
+static int
+tcp_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
+{
+	if (nc->nc_qe_len == sizeof(struct nvmf_fabric_connect_cmd))
+		return (tcp_transmit_command(nc, send_data));
+	else
+		return (tcp_transmit_response(nc));
 }
 
 #if 0
@@ -722,8 +924,7 @@ struct nvmf_transport_ops tcp_ops = {
 	.free_connection = tcp_free_connection,
 	.allocate_qpair = tcp_allocate_qpair,
 	.free_qpair = tcp_free_qpair,
-	.allocate_command = tcp_allocate_command,
-	.allocate_response = tcp_allocate_response,
+	.allocate_capsule = tcp_allocate_capsule,
 	.free_capsule = tcp_free_capsule,
 	.transmit_capsule = tcp_transmit_capsule,
 #if 0

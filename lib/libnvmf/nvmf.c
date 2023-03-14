@@ -26,6 +26,9 @@
  */
 
 #include <assert.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "libnvmf.h"
 #include "internal.h"
@@ -78,7 +81,7 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin)
 {
 	struct nvmf_qpair *qp;
 
-	qp = nc->nc_ops->allocate_qpair(nc);
+	qp = nc->nc_ops->allocate_qpair(nc, admin);
 	if (qp == NULL)
 		return (NULL);
 
@@ -94,35 +97,57 @@ nvmf_free_qpair(struct nvmf_qpair *qp)
 }
 
 struct nvmf_capsule *
-nvmf_allocate_command(struct nvmf_qpair *qp)
+nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe)
 {
 	struct nvmf_capsule *nc;
 
-	nc = qp->nq_connection->nc_ops->allocate_command(qp);
+	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
 	if (nc == NULL)
 		return (NULL);
 
-	assert(nc->nc_qe != NULL);
-	assert(nc->nc_qe_len == sizeof(struct nvmf_fabric_connect_cmd));
 	nc->nc_qpair = qp;
+	nc->nc_qe_len = sizeof(struct nvme_command);
+	memcpy(&nc->nc_sqe, sqe, nc->nc_qe_len);
 	return (nc);
 }
 
 struct nvmf_capsule *
-nvmf_allocate_response(struct nvmf_capsule *cmd)
+nvmf_allocate_response(struct nvmf_capsule *cmd, const void *cqe)
 {
 	struct nvmf_capsule *nc;
 	struct nvmf_qpair *qp;
 
 	qp = cmd->nc_qpair;
-	nc = qp->nq_connection->nc_ops->allocate_response(qp);
+	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
 	if (nc == NULL)
 		return (NULL);
 
-	assert(nc->nc_qe != NULL);
-	assert(nc->nc_qe_len == sizeof(struct nvmf_fabric_connect_rsp));
 	nc->nc_qpair = qp;
+	nc->nc_qe_len = sizeof(struct nvme_completion);
+	memcpy(&nc->nc_cqe, cqe, nc->nc_qe_len);
 	return (nc);
+}
+
+int
+nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len)
+{
+	struct iovec *new_iov;
+
+	if (nc->nc_data_iovcnt >= INT_MAX)
+		return (EFBIG);
+	if (nc->nc_data_len + len < nc->nc_data_len)
+		return (EFBIG);
+
+	new_iov = realloc(nc->nc_data_iov, (nc->nc_data_iovcnt + 1) *
+	    sizeof(*new_iov));
+	if (new_iov == NULL)
+		return (ENOMEM);
+	new_iov[nc->nc_data_iovcnt].iov_base = __DECONST(void *, buf);
+	new_iov[nc->nc_data_iovcnt].iov_len = len;
+	nc->nc_data_iov = new_iov;
+	nc->nc_data_iovcnt++;
+	nc->nc_data_len += len;
+	return (0);
 }
 
 void
@@ -132,9 +157,10 @@ nvmf_free_capsule(struct nvmf_capsule *nc)
 }
 
 int
-nvmf_transmit_capsule(struct nvmf_capsule *nc)
+nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
 {
-	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
+	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc,
+	    send_data));
 }
 
 #if 0
