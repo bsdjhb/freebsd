@@ -170,9 +170,11 @@ nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc)
 }
 
 int
-nvmf_receive_controller_data(struct nvmf_capsule *nc, off_t data_offset,
+nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)
 {
+	if (NVMEV(NVME_CMD_PSDT, nc->nc_sqe.fuse) != NVME_PSDT_SGL)
+		return (EINVAL);
 	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
 	    data_offset, iov, iovcnt));
 }

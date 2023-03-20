@@ -51,7 +51,7 @@ struct nvmf_transport_ops {
 
 	/* Receiving controller data. */
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
-	    off_t data_offset, struct iovec *iov, u_int iovcnt);
+	    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
 };
 
 struct nvmf_connection {

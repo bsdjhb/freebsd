@@ -72,16 +72,14 @@ int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
 
 /*
- * A controller calls this function to receive data from a host,
- * e.g. the data for a WRITE request.  The received capsule for the
- * command should be passed in 'nc'.  The received data is stored in
- * the passed in I/O vector.
+ * A host calls this function to receive data associated with a
+ * command capsule (e.g. the data for a WRITE command).  This can
+ * either return in-capsule data or fetch data from the controller
+ * (e.g. using R2T PDUs over TCP).  The received command capsule
+ * should be passed in 'nc'.  The received data is stored in the
+ * passed in I/O vector.
  */
-int	nvmf_receive_controller_data(struct nvmf_capsule *nc, off_t data_offset,
-    struct iovec *iov, u_int iovcnt);
-
-/* TCP transport-specific APIs. */
-int	nvmf_tcp_read_pdu(struct nvmf_connection *nc,
-    struct nvme_tcp_common_pdu_hdr **pdu);
+int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
+    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
 
 #endif /* !__LIBNVMF_H__ */
