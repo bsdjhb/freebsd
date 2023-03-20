@@ -112,10 +112,9 @@ nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe)
 }
 
 struct nvmf_capsule *
-nvmf_allocate_response(struct nvmf_capsule *cmd, const void *cqe)
+nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 {
 	struct nvmf_capsule *nc;
-	struct nvmf_qpair *qp;
 
 	qp = cmd->nc_qpair;
 	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
