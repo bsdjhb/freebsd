@@ -63,7 +63,7 @@ void	nvmf_free_qpair(struct nvmf_qpair *qp);
  */
 struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp,
     const void *sqe);
-struct nvmf_capsule *nvmf_allocate_response(struct nvmf_capsule *nc,
+struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
     const void *cqe);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
