@@ -49,9 +49,11 @@ struct nvmf_transport_ops {
 	int (*transmit_capsule)(struct nvmf_capsule *nc, bool send_data);
 	int (*receive_capsule)(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
 
-	/* Receiving controller data. */
+	/* Transferring controller data. */
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
 	    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
+	int (*send_controller_data)(struct nvmf_capsule *nc, struct iovec *iov,
+	    u_int iovcnt);
 };
 
 struct nvmf_connection {

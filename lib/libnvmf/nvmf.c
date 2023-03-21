@@ -116,7 +116,6 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 {
 	struct nvmf_capsule *nc;
 
-	qp = cmd->nc_qpair;
 	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
 	if (nc == NULL)
 		return (NULL);
@@ -132,6 +131,8 @@ nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len)
 {
 	struct iovec *new_iov;
 
+	if (nc->nc_qe_len == sizeof(struct nvme_completion))
+		return (EINVAL);
 	if (nc->nc_data_iovcnt >= INT_MAX)
 		return (EFBIG);
 	if (nc->nc_data_len + len < nc->nc_data_len)
@@ -176,4 +177,14 @@ nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 		return (EINVAL);
 	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
 	    data_offset, iov, iovcnt));
+}
+
+int
+nvmf_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
+    u_int iovcnt)
+{
+	if (NVMEV(NVME_CMD_PSDT, nc->nc_sqe.fuse) != NVME_PSDT_SGL)
+		return (EINVAL);
+	return (nc->nc_qpair->nq_connection->nc_ops->send_controller_data(nc,
+	    iov, iovcnt));
 }

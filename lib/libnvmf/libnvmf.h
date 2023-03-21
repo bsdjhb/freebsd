@@ -57,8 +57,8 @@ void	nvmf_free_qpair(struct nvmf_qpair *qp);
 /*
  * Capsules are either commands (host -> controller) or responses
  * (controller -> host).  One or more data buffer segments may be
- * associated with a capsule.  Transmitted data is not copied by
- * this API but instead must be preserved until the capsule is
+ * associated with a command capsule.  Transmitted data is not copied
+ * by this API but instead must be preserved until the capsule is
  * transmitted and freed.
  */
 struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp,
@@ -72,14 +72,23 @@ int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
 
 /*
- * A host calls this function to receive data associated with a
+ * A controller calls this function to receive data associated with a
  * command capsule (e.g. the data for a WRITE command).  This can
- * either return in-capsule data or fetch data from the controller
- * (e.g. using R2T PDUs over TCP).  The received command capsule
+ * either return in-capsule data or fetch data from the host
+ * (e.g. using a R2T PDU over TCP).  The received command capsule
  * should be passed in 'nc'.  The received data is stored in the
  * passed in I/O vector.
  */
 int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
     uint32_t data_offset, struct iovec *iov, u_int iovcnt);
+
+/*
+ * A controller calls this function to send data in response to a
+ * command prior to sending a response capsule.
+ *
+ * TODO: Support for SUCCESS flag for final TCP C2H_DATA PDU?
+ */
+int	nvmf_send_controller_data(struct nvmf_capsule *nc,
+    struct iovec *iov, u_int iovcnt);
 
 #endif /* !__LIBNVMF_H__ */
