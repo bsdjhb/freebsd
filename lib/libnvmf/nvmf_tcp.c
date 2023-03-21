@@ -1656,6 +1656,125 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 		    iovcnt));
 }
 
+/* NB: cid is little-endian already. */
+static int
+tcp_send_c2h_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid,
+    uint32_t data_offset, void *buf, size_t len, bool last_pdu)
+{
+	struct {
+		struct nvme_tcp_c2h_data_hdr hdr;
+		uint32_t digest;
+	} c2h;
+	struct iovec iov[4];
+	ssize_t nwritten;
+	u_int iovcnt;
+	uint32_t data_digest, pad, plen;
+
+	memset(&c2h, 0, sizeof(c2h));
+	c2h.hdr.common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
+	c2h.hdr.common.hlen = sizeof(c2h.hdr);
+	plen = sizeof(c2h.hdr);
+	if (last_pdu)
+		c2h.hdr.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
+	if (ntc->header_digests) {
+		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+		plen += sizeof(c2h.digest);
+	}
+	if (ntc->txpda == 0) {
+		c2h.hdr.common.pdo = plen;
+		pad = 0;
+	} else {
+		c2h.hdr.common.pdo = roundup2(plen, ntc->txpda);
+		pad = c2h.hdr.common.pdo - plen;
+	}
+	c2h.hdr.cccid = cid;
+	c2h.hdr.datao = htole32(data_offset);
+	c2h.hdr.datal = htole32(len);
+
+	/* CH + PSH + optional HDGST */
+	iov[0].iov_base = &c2h;
+	iov[0].iov_len = plen;
+	iovcnt = 1;
+
+	if (pad != 0) {
+		/* PAD */
+		plen += pad;
+		iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
+		iov[iovcnt].iov_len = pad;
+		iovcnt++;
+	}
+
+	/* DATA */
+	plen += len;
+	iov[iovcnt].iov_base = buf;
+	iov[iovcnt].iov_len = len;
+	iovcnt++;
+
+	/* DDGST */
+	if (ntc->data_digests) {
+		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
+		plen += sizeof(data_digest);
+		iov[iovcnt].iov_base = &data_digest;
+		iov[iovcnt].iov_len = sizeof(data_digest);
+		iovcnt++;
+
+		data_digest = compute_digest(buf, len);
+	}
+
+	c2h.hdr.common.plen = htole32(plen);
+	if (ntc->header_digests)
+		c2h.digest = compute_digest(&c2h.hdr, sizeof(c2h.hdr));
+
+	nwritten = writev(ntc->s, iov, iovcnt);
+	if (nwritten < 0)
+		return (errno);
+	if ((size_t)nwritten != plen)
+		return (ECONNRESET);
+	return (0);
+}
+
+static int
+tcp_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
+    u_int iovcnt)
+{
+	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
+	struct nvme_sgl_descriptor *sgl;
+	size_t data_len, iov_len;
+	uint32_t data_offset;
+	u_int i;
+	int error;
+
+	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
+	    ntc->nc.nc_controller)
+		return (EINVAL);
+
+	iov_len = 0;
+	for (i = 0; i < iovcnt; i++)
+		iov_len += iov[i].iov_len;
+
+	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
+	data_len = le32toh(sgl->unkeyed.length);
+	if (iov_len != data_len)
+		return (EFBIG);
+
+	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
+		return (EINVAL);
+
+	/*
+	 * Write out one or more C2H_DATA PDUs containing the data.
+	 * To avoid copying and constructing more iovecs, send one
+	 * iovec entry at a time.
+	 */
+	data_offset = 0;
+	for (i = 0; i < iovcnt; i++) {
+		error = tcp_send_c2h_pdu(ntc, nc->nc_sqe.cid, data_offset,
+		    iov[i].iov_base, iov[i].iov_len, i == iovcnt);
+		if (error != 0)
+			return (error);
+	}
+	return (0);
+}
+
 struct nvmf_transport_ops tcp_ops = {
 	.allocate_connection = tcp_allocate_connection,
 	.connect = tcp_connect,
@@ -1668,4 +1787,5 @@ struct nvmf_transport_ops tcp_ops = {
 	.transmit_capsule = tcp_transmit_capsule,
 	.receive_capsule = tcp_receive_capsule,
 	.receive_controller_data = tcp_receive_controller_data,
+	.send_controller_data = tcp_send_controller_data,
 };
