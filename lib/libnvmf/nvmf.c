@@ -35,7 +35,7 @@
 
 struct nvmf_connection *
 nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
-    const union nvmf_connection_params *params)
+    const struct nvmf_connection_params *params)
 {
 	struct nvmf_transport_ops *ops;
 	struct nvmf_connection *nc;
@@ -59,6 +59,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 
 	nc->nc_ops = ops;
 	nc->nc_controller = controller;
+	nc->nc_sq_flow_control = params->sq_flow_control;
 	if (controller)
 		error = ops->accept(nc, params);
 	else

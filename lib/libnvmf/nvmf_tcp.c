@@ -67,10 +67,12 @@ struct nvmf_tcp_connection {
 	bool header_digests;
 	bool data_digests;
 	union {
-		uint32_t maxr2t;
-		uint32_t maxh2cdata;
+		uint32_t maxr2t;	/* Controller only */
+		uint32_t maxh2cdata;	/* Host only */
 	};
-	uint32_t max_io_icd;
+	uint32_t ioccsz;	/* Host only */
+
+	bool qp_allocated;
 };
 
 struct nvmf_tcp_rxpdu {
@@ -90,8 +92,8 @@ struct nvmf_tcp_capsule {
 struct nvmf_tcp_qpair {
 	struct nvmf_qpair qp;
 
-	uint32_t max_icd;
-	uint16_t next_ttag;
+	uint32_t max_icd;	/* Host only */
+	uint16_t next_ttag;	/* Controller only */
 
 	struct nvmf_tcp_command_buffer_list tx_buffers;
 	struct nvmf_tcp_command_buffer_list rx_buffers;
@@ -617,6 +619,7 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 	if (nc == NULL)
 		return (ENOMEM);
 
+	nc->nc_sqhd_valid = true;
 	tc = TCAP(nc);
 	tc->rx_pdu = *pdu;
 
@@ -810,6 +813,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 			nvmf_tcp_free_pdu(pdu);
 			return (ENOMEM);
 		}
+		nc->nc_sqhd_valid = false;
 
 		tc = TCAP(nc);
 		TAILQ_INSERT_TAIL(&qp->rx_capsules, tc, link);
@@ -1172,23 +1176,20 @@ nvmf_tcp_read_ic_resp(struct nvmf_tcp_connection *ntc,
 
 static struct nvmf_connection *
 tcp_allocate_connection(bool controller __unused,
-    const union nvmf_connection_params *params)
+    const struct nvmf_connection_params *params)
 {
 	struct nvmf_tcp_connection *ntc;
 
-	if (params->ioccsz < 4)
-		return (NULL);
-
 	ntc = calloc(1, sizeof(*ntc));
 	ntc->s = params->tcp.fd;
-	ntc->max_io_icd = (params->ioccsz - 4) * 16;
+	ntc->ioccsz = params->ioccsz;
 
 	return (&ntc->nc);
 }
 
 static int
 tcp_connect(struct nvmf_connection *nc,
-    const union nvmf_connection_params *params)
+    const struct nvmf_connection_params *params)
 {
 	struct nvmf_tcp_connection *ntc = TCONN(nc);
 	struct nvme_tcp_ic_req ic_req;
@@ -1251,7 +1252,7 @@ tcp_connect(struct nvmf_connection *nc,
 
 static int
 tcp_accept(struct nvmf_connection *nc,
-    const union nvmf_connection_params *params)
+    const struct nvmf_connection_params *params)
 {
 	struct nvmf_tcp_connection *ntc = TCONN(nc);
 	struct nvme_tcp_ic_req ic_req;
@@ -1305,12 +1306,22 @@ tcp_allocate_qpair(struct nvmf_connection *nc, bool admin)
 	struct nvmf_tcp_connection *ntc = TCONN(nc);
 	struct nvmf_tcp_qpair *qp;
 
+	if (ntc->qp_allocated)
+		return (NULL);
+
 	qp = calloc(1, sizeof(*qp));
-	if (admin)
-		/* 7.4.3 */
-		qp->max_icd = 8192;
-	else
-		qp->max_icd = ntc->max_io_icd;
+	if (!nc->nc_controller) {
+		if (admin)
+			/* 7.4.3 */
+			qp->max_icd = 8192;
+		else {
+			if (ntc->ioccsz < 4) {
+				free(qp);
+				return (NULL);
+			}
+			qp->max_icd = (ntc->ioccsz - 4) * 16;
+		}
+	}
 	LIST_INIT(&qp->rx_buffers);
 	LIST_INIT(&qp->tx_buffers);
 	TAILQ_INIT(&qp->rx_capsules);
@@ -1325,6 +1336,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	struct nvmf_tcp_capsule *ntc, *tc;
 	struct nvmf_tcp_command_buffer *ncb, *cb;
 
+	assert(TCONN(nq->nq_connection)->qp_allocated);
 	TAILQ_FOREACH_SAFE(tc, &qp->rx_capsules, link, ntc) {
 		TAILQ_REMOVE(&qp->rx_capsules, tc, link);
 		nvmf_free_capsule(&tc->nc);

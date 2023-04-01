@@ -28,14 +28,21 @@
 #ifndef __LIBNVMF_INTERNAL_H__
 #define __LIBNVMF_INTERNAL_H__
 
+/* XXX: Should be in nvme.h */
+#define NVME_MIN_ADMIN_ENTRIES	(2)
+#define NVME_MAX_ADMIN_ENTRIES	(4096)
+
+#define NVME_MIN_IO_ENTRIES	(2)
+#define NVME_MAX_IO_ENTRIES	(65536)
+
 struct nvmf_transport_ops {
 	/* Connection management. */
 	struct nvmf_connection *(*allocate_connection)(bool controller,
-	    const union nvmf_connection_params *params);
+	    const struct nvmf_connection_params *params);
 	int (*connect)(struct nvmf_connection *nc,
-	    const union nvmf_connection_params *params);
+	    const struct nvmf_connection_params *params);
 	int (*accept)(struct nvmf_connection *nc,
-	    const union nvmf_connection_params *params);
+	    const struct nvmf_connection_params *params);
 	void (*free_connection)(struct nvmf_connection *nc);
 
 	/* Queue pair management. */
@@ -59,11 +66,28 @@ struct nvmf_transport_ops {
 struct nvmf_connection {
 	struct nvmf_transport_ops *nc_ops;
 	bool nc_controller;
+	bool nc_sq_flow_control;
 };
 
 struct nvmf_qpair {
 	struct nvmf_connection *nq_connection;
 	bool nq_admin;
+
+	uint16_t nq_cid;
+
+	/*
+	 * Queue sizes.  This assumes the same size for both the
+	 * completion and submission queues within a pair.
+	 */
+	uint16_t nq_qsize;
+
+	/* Flow control management for submission queues. */
+	bool nq_flow_control;
+	uint16_t nq_sqhd;
+	uint16_t nq_sqtail;	/* host only */
+
+	/* Value in response from CONNECT. */
+	uint16_t nq_cntlid;	/* host only */
 };
 
 struct nvmf_capsule {
@@ -75,6 +99,12 @@ struct nvmf_capsule {
 		struct nvme_completion nc_cqe;
 	};
 	int	nc_qe_len;
+
+	/*
+	 * Is SQHD in received capsule valid?  False for locally-
+	 * synthesized responses.
+	 */
+	bool	nc_sqhd_valid;
 
 	/* Data buffer. */
 	u_int	nc_data_iovcnt;

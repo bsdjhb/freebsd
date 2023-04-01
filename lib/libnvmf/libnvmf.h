@@ -43,7 +43,7 @@ struct nvmf_qpair;
 
 /* params contains requested values for this side of the negotiation. */
 struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
-    bool controller, const union nvmf_connection_params *params);
+    bool controller, const struct nvmf_connection_params *params);
 void	nvmf_free_connection(struct nvmf_connection *nc);
 
 /*
@@ -90,5 +90,18 @@ int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
  */
 int	nvmf_send_controller_data(struct nvmf_capsule *nc,
     struct iovec *iov, u_int iovcnt);
+
+/* Host-specific APIs. */
+
+/* Connect to an admin or I/O queue. */
+struct nvmf_qpair *nvmf_connect(struct nvmf_connection *nc, uint16_t qid,
+    u_int queue_size, const uint8_t hostid[16], uint16_t cntlid,
+    const char *subnqn, const char *hostnqn);
+
+/* Return the CNTLID for a queue returned from CONNECT. */
+uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
+
+/* Build a KeepAlive command. */
+struct nvmf_capsule *nvmf_keepalive(struct nvmf_qpair *qp);
 
 #endif /* !__LIBNVMF_H__ */

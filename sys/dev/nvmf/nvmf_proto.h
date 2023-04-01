@@ -285,6 +285,10 @@ struct nvmf_fabric_connect_cmd {
 };
 _Static_assert(sizeof(struct nvmf_fabric_connect_cmd) == 64, "Incorrect size");
 
+#define NVMF_CONNECT_ATTR_PRIORITY_CLASS	(0x3)
+#define NVMF_CONNECT_ATTR_DISABLE_SQ_FC		(1u << 2)
+#define NVMF_CONNECT_ATTR_IO_QUEUE_DELETION	(1u << 3)
+
 struct nvmf_fabric_connect_rsp {
 	union {
 		struct {
