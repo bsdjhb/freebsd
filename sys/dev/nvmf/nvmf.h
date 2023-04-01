@@ -28,16 +28,19 @@
 #ifndef __NVMF_H__
 #define	__NVMF_H__
 
-union nvmf_connection_params {
+struct nvmf_connection_params {
 	uint32_t ioccsz;
-	struct {
-		int	fd;
-		uint8_t	pda;
-		bool	header_digests;
-		bool	data_digests;
-		uint32_t maxr2t;
-		uint32_t maxh2cdata;
-	} tcp;
+	bool sq_flow_control;
+	union {
+		struct {
+			int	fd;
+			uint8_t	pda;
+			bool	header_digests;
+			bool	data_digests;
+			uint32_t maxr2t;
+			uint32_t maxh2cdata;
+		} tcp;
+	};
 };
 
 #ifdef _KERNEL
