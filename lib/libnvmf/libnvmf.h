@@ -152,4 +152,8 @@ int	nvmf_hostid_from_hostuuid(uint8_t hostid[16]);
 /* Construct a NQN from kern.hostuuid. */
 int	nvmf_nqn_from_hostuuid(char nqn[NVMF_NQN_MAX_LEN]);
 
+/* Fetch controller data via IDENTIFY. */
+int	nvmf_host_identify_controller(struct nvmf_qpair *qp,
+    struct nvme_controller_data *data);
+
 #endif /* !__LIBNVMF_H__ */
