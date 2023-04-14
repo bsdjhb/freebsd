@@ -88,12 +88,19 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin)
 
 	qp->nq_connection = nc;
 	qp->nq_admin = admin;
+	TAILQ_INIT(&qp->nq_rx_capsules);
 	return (qp);
 }
 
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
+	struct nvmf_capsule *ncap, *tcap;
+
+	TAILQ_FOREACH_SAFE(ncap, &qp->nq_rx_capsules, nc_link, tcap) {
+		TAILQ_REMOVE(&qp->nq_rx_capsules, ncap, nc_link);
+		nvmf_free_capsule(ncap);
+	}
 	qp->nq_connection->nc_ops->free_qpair(qp);
 }
 

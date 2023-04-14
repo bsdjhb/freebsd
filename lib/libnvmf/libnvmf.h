@@ -35,6 +35,20 @@
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_proto.h>
 
+/* XXX: Should be in nvme.h */
+#define NVME_MIN_ADMIN_ENTRIES	(2)
+#define NVME_MAX_ADMIN_ENTRIES	(4096)
+
+#define NVME_MIN_IO_ENTRIES	(2)
+#define NVME_MAX_IO_ENTRIES	(65536)
+
+/* XXX: Should be in nvmf_proto.h */
+#define	NVMF_CNTLID_DYNAMIC	0xFFFF
+#define	NVMF_CNTLID_STATIC_ANY	0xFFFE
+
+/* 5.21.1.15 in NVMe */
+#define	NVMF_KATO_DEFAULT	(120000)
+
 struct nvmf_capsule;
 struct nvmf_connection;
 struct nvmf_qpair;
@@ -96,12 +110,46 @@ int	nvmf_send_controller_data(struct nvmf_capsule *nc,
 /* Connect to an admin or I/O queue. */
 struct nvmf_qpair *nvmf_connect(struct nvmf_connection *nc, uint16_t qid,
     u_int queue_size, const uint8_t hostid[16], uint16_t cntlid,
-    const char *subnqn, const char *hostnqn);
+    const char *subnqn, const char *hostnqn, uint32_t kato);
 
 /* Return the CNTLID for a queue returned from CONNECT. */
 uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
 
+/*
+ * Send a command to the controller.  This can fail with EBUSY if the
+ * submission queue is full.
+ */
+int	nvmf_host_transmit_command(struct nvmf_capsule *ncap, bool send_data);
+
+/*
+ * Wait for a response to a command.  If there are no outstanding
+ * commands in the SQ, fails with EWOULDBLOCK.
+ */
+int	nvmf_host_receive_response(struct nvmf_qpair *qp,
+    struct nvmf_capsule **rcapp);
+
+/*
+ * Wait for a response to a specific command.  The command must have been
+ * succesfully sent previously.
+ */
+int	nvmf_host_wait_for_response(struct nvmf_capsule *ncap,
+    struct nvmf_capsule **rcap);
+
 /* Build a KeepAlive command. */
 struct nvmf_capsule *nvmf_keepalive(struct nvmf_qpair *qp);
+
+/* Read a controller property. */
+int	nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
+    uint64_t *value);
+
+/* Write a controller property. */
+int	nvmf_write_property(struct nvmf_qpair *qp, uint32_t offset,
+    uint8_t size, uint64_t value);
+
+/* Construct a 16-byte HostId from kern.hostuuid. */
+int	nvmf_hostid_from_hostuuid(uint8_t hostid[16]);
+
+/* Construct a NQN from kern.hostuuid. */
+int	nvmf_nqn_from_hostuuid(char nqn[NVMF_NQN_MAX_LEN]);
 
 #endif /* !__LIBNVMF_H__ */
