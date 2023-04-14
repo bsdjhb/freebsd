@@ -35,13 +35,21 @@
 #include "internal.h"
 
 static void
+nvmf_init_sqe(struct nvmf_qpair *qp, void *sqe, uint8_t opcode)
+{
+	struct nvme_command *cmd = sqe;
+
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->opc = opcode;
+	cmd->cid = htole16(qp->nq_cid++);
+}
+
+static void
 nvmf_init_fabrics_sqe(struct nvmf_qpair *qp, void *sqe, uint8_t fctype)
 {
 	struct nvmf_capsule_cmd *cmd = sqe;
 
-	memset(cmd, 0, sizeof(*cmd));
-	cmd->opcode = NVME_OPC_FABRIC;
-	cmd->cid = htole16(qp->nq_cid++);
+	nvmf_init_sqe(qp, sqe, NVME_OPC_FABRIC);
 	cmd->fctype = fctype;
 }
 
@@ -282,9 +290,7 @@ nvmf_keepalive(struct nvmf_qpair *qp)
 {
 	struct nvme_command cmd;
 
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opc = NVME_OPC_KEEP_ALIVE;
-	cmd.cid = htole16(qp->nq_cid++);
+	nvmf_init_sqe(qp, &cmd, NVME_OPC_KEEP_ALIVE);
 
 	return (nvmf_allocate_command(qp, &cmd));
 }
@@ -324,7 +330,7 @@ nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap, true);
+	error = nvmf_host_transmit_command(ncap, false);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -388,7 +394,7 @@ nvmf_write_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap, true);
+	error = nvmf_host_transmit_command(ncap, false);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -448,5 +454,51 @@ nvmf_nqn_from_hostuuid(char nqn[NVMF_NQN_MAX_LEN])
 
 	strlcpy(nqn, NVMF_NQN_UUID_PRE, NVMF_NQN_MAX_LEN);
 	strlcat(nqn, hostuuid_str, NVMF_NQN_MAX_LEN);
+	return (0);
+}
+
+int
+nvmf_host_identify_controller(struct nvmf_qpair *qp,
+    struct nvme_controller_data *cdata)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *ncap, *rcap;
+	int error;
+	uint16_t status;
+
+	nvmf_init_sqe(qp, &cmd, NVME_OPC_IDENTIFY);
+
+	/* 5.15.1 Use CNS of 0x01 for controller data. */
+	cmd.cdw10 = htole32(1);
+
+	ncap = nvmf_allocate_command(qp, &cmd);
+	if (ncap == NULL)
+		return (errno);
+
+	error = nvmf_capsule_append_data(ncap, cdata, sizeof(*cdata));
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_transmit_command(ncap, false);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_wait_for_response(ncap, &rcap);
+	nvmf_free_capsule(ncap);
+	if (error != 0)
+		return (error);
+
+	status = le16toh(rcap->nc_cqe.status);
+	if (status != 0) {
+		printf("NVMF: IDENTIFY failed, status %#x\n", status);
+		nvmf_free_capsule(rcap);
+		return (EIO);
+	}
+
+	nvmf_free_capsule(rcap);
 	return (0);
 }
