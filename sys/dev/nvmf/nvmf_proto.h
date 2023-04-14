@@ -316,6 +316,12 @@ _Static_assert(sizeof(struct nvmf_fabric_connect_rsp) == 16, "Incorrect size");
 #define NVMF_PROP_SIZE_4	0
 #define NVMF_PROP_SIZE_8	1
 
+#define	NVMF_PROP_CAP		0x00	/* Controller Capabilities */
+#define	NVMF_PROP_VS		0x08	/* Version */
+#define	NVMF_PROP_CC		0x14	/* Controller Configuration */
+#define	NVMF_PROP_CSTS		0x1C	/* Controller Status */
+#define	NVMF_PROP_NSSR		0x20	/* NVM Subsystem Reset */
+
 struct nvmf_fabric_prop_get_cmd {
 	uint8_t		opcode;
 	uint8_t		reserved1;

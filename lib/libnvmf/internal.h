@@ -28,12 +28,7 @@
 #ifndef __LIBNVMF_INTERNAL_H__
 #define __LIBNVMF_INTERNAL_H__
 
-/* XXX: Should be in nvme.h */
-#define NVME_MIN_ADMIN_ENTRIES	(2)
-#define NVME_MAX_ADMIN_ENTRIES	(4096)
-
-#define NVME_MIN_IO_ENTRIES	(2)
-#define NVME_MAX_IO_ENTRIES	(65536)
+#include <sys/queue.h>
 
 struct nvmf_transport_ops {
 	/* Connection management. */
@@ -88,6 +83,8 @@ struct nvmf_qpair {
 
 	/* Value in response from CONNECT. */
 	uint16_t nq_cntlid;	/* host only */
+
+	TAILQ_HEAD(, nvmf_capsule) nq_rx_capsules;
 };
 
 struct nvmf_capsule {
@@ -110,6 +107,8 @@ struct nvmf_capsule {
 	u_int	nc_data_iovcnt;
 	size_t	nc_data_len;
 	struct iovec *nc_data_iov;
+
+	TAILQ_ENTRY(nvmf_capsule) nc_link;
 };
 
 extern struct nvmf_transport_ops tcp_ops;
