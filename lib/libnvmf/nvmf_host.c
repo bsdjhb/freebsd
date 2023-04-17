@@ -93,7 +93,9 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	nvmf_init_fabrics_sqe(qp, &cmd, NVMF_FABRIC_COMMAND_CONNECT);
 	cmd.recfmt = 0;
 	cmd.qid = htole16(qid);
-	cmd.sqsize = htole16(queue_size);
+
+	/* N.B. sqsize is 0's based. */
+	cmd.sqsize = htole16(queue_size - 1);
 	if (!nc->nc_sq_flow_control)
 		cmd.cattr |= NVMF_CONNECT_ATTR_DISABLE_SQ_FC;
 	cmd.kato = htole32(kato);
