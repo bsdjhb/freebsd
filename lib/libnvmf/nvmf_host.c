@@ -157,7 +157,7 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	} else {
 		qp->nq_flow_control = true;
 		qp->nq_sqhd = sqhd;
-		qp->nq_sqtail = 0;
+		qp->nq_sqtail = sqhd;
 	}
 
 	if (rsp->status_code_specific.success.authreq) {
