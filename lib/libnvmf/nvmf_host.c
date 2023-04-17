@@ -273,7 +273,7 @@ nvmf_host_wait_for_response(struct nvmf_capsule *ncap,
 
 	/* Wait for a response. */
 	for (;;) {
-		error = nvmf_receive_capsule(qp, &rcap);
+		error = nvmf_host_receive_capsule(qp, &rcap);
 		if (error != 0)
 			return (error);
 
