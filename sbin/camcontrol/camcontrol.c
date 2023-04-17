@@ -2497,7 +2497,7 @@ nvmeidentify(struct cam_device *device, int retry_count __unused, int timeout __
 
 	if (nvme_get_cdata(device, &cdata))
 		return (1);
-	nvme_print_controller(&cdata);
+	nvme_print_controller(&cdata, false);
 
 	return (0);
 }

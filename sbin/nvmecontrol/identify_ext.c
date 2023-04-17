@@ -42,7 +42,7 @@
 #include "nvmecontrol_ext.h"
 
 void
-nvme_print_controller(struct nvme_controller_data *cdata)
+nvme_print_controller(struct nvme_controller_data *cdata, bool fabrics)
 {
 	uint8_t str[128];
 	char cbuf[UINT128_DIG + 1];
@@ -248,4 +248,18 @@ nvme_print_controller(struct nvme_controller_data *cdata)
 
 	if (cdata->ver >= 0x010201)
 		printf("\nNVM Subsystem Name:          %.256s\n", cdata->subnqn);
+
+	if (fabrics) {
+		printf("\n");
+		printf("Fabrics Attributes\n");
+		printf("==================\n");
+		printf("I/O Command Capsule Size:    %d\n", cdata->ioccsz);
+		printf("I/O Response Capsule Size:   %d\n", cdata->iorcsz);
+		printf("In Capsule Data Offset:      %d\n", cdata->icdoff);
+		printf("Controller Model:            %s\n",
+		    (cdata->fcatt & 1) == 0 ? "Dynamic" : "Static");
+		printf("Max SGL Descriptors:         %d\n", cdata->msdbd);
+		printf("Disconnect of I/O Queues:    %sSupported\n",
+		    (cdata->ofcs & 1) == 1 ? "" : "Not ");
+	}
 }

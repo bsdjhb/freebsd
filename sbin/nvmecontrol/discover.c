@@ -1,0 +1,200 @@
+/*-
+ * Copyright (c) 2023 Chelsio Communications, Inc.
+ * All rights reserved.
+ * Written by: John Baldwin <jhb@FreeBSD.org>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <err.h>
+#include <netdb.h>
+#include <libnvmf.h>
+#include <string.h>
+#include <sysexits.h>
+#include <unistd.h>
+
+#include "comnd.h"
+#include "nvmecontrol_ext.h"
+
+static struct options {
+	const char	*transport;
+	const char	*address;
+	const char	*port;
+} opt = {
+	.transport = "tcp",
+	.address = NULL,
+	.port = NULL,
+};
+
+static void
+tcp_configure(struct nvmf_connection_params *params)
+{
+	struct addrinfo hints, *ai, *list;
+	const char *port;
+	int error, s;
+
+	/* 7.4.9.3 Default port for discovery */
+	port = "8009";
+	if (opt.port != NULL)
+		port = opt.port;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_protocol = IPPROTO_TCP;
+	error = getaddrinfo(opt.address, port, &hints, &list);
+	if (error != 0)
+		errx(EX_NOHOST, "%s", gai_strerror(error));
+
+	for (ai = list; ai != NULL; ai = ai->ai_next) {
+		s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (s == -1)
+			continue;
+
+		if (connect(s, ai->ai_addr, ai->ai_addrlen) != 0) {
+			close(s);
+			continue;
+		}
+
+		params->tcp.fd = s;
+		params->tcp.pda = 0;
+		params->tcp.header_digests = false;
+		params->tcp.data_digests = false;
+		params->tcp.maxr2t = 1;
+		freeaddrinfo(list);
+		return;
+	}
+	err(EX_NOHOST, "Failed to connect to controller");
+}
+
+static void
+discover(const struct cmd *f, int argc, char *argv[])
+{
+	enum nvmf_trtype trtype;
+	struct nvme_controller_data cdata;
+	struct nvmf_connection_params params;
+	struct nvmf_connection *nc;
+	struct nvmf_qpair *qp;
+	char nqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint64_t cap, cc, csts;
+	int error, timo;
+
+	if (arg_parse(argc, argv, f))
+		return;
+
+	params.ioccsz = 0;
+	params.sq_flow_control = true;
+	if (strcasecmp(opt.transport, "tcp") == 0) {
+		trtype = NVMF_TRTYPE_TCP;
+		tcp_configure(&params);
+	} else
+		errx(EX_USAGE, "Unsupported or invalid transport");
+
+	error = nvmf_hostid_from_hostuuid(hostid);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to generate hostid");
+	error = nvmf_nqn_from_hostuuid(nqn);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to generate host NQN");
+
+	nc = nvmf_allocate_connection(trtype, false, &params);
+	if (nc == NULL)
+		err(EX_IOERR, "Failed to allocate connection");
+	qp = nvmf_connect(nc, 0, NVME_MIN_ADMIN_ENTRIES, hostid,
+	    NVMF_CNTLID_DYNAMIC, NVMF_DISCOVERY_NQN, nqn, 0);
+	if (qp == NULL)
+		err(EX_IOERR, "Failed to connect to controller");
+
+	/* Fetch Controller Capabilities Property */
+	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to fetch CAP");
+
+	/* Set Controller Configuration Property (CC.EN=1) */
+	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to fetch CC");
+
+	/* Clear IOCQES, IOSQES, AMS, MPS, and CSS. */
+	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
+	    NVMEB(NVME_CC_REG_AMS) | NVMEB(NVME_CC_REG_MPS) |
+	    NVMEB(NVME_CC_REG_CSS));
+	cc |= (1 << NVME_CC_REG_EN_SHIFT);
+	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to set CC");
+
+	/* Wait for CSTS.RDY in Controller Status */
+	timo = NVME_CAP_LO_TO(cap);
+	for (;;) {
+		error = nvmf_read_property(qp, NVMF_PROP_CSTS, 4, &csts);
+		if (error != 0)
+			errc(EX_IOERR, error, "Failed to fetch CSTS");
+
+		if (NVMEV(NVME_CSTS_REG_RDY, csts) != 0)
+			break;
+
+		if (timo == 0)
+			errx(EX_IOERR, "Controller failed to become ready");
+		timo--;
+		usleep(500 * 1000);
+	}
+
+	/* Use Identify to fetch controller data */
+	error = nvmf_host_identify_controller(qp, &cdata);
+	if (error != 0)
+		errc(EX_IOERR, error, "Failed to fetch controller data");
+	nvme_print_controller(&cdata, true);
+
+	/* Fetch Log pages */
+
+	nvmf_free_qpair(qp);
+	nvmf_free_connection(nc);
+}
+
+static const struct opts discover_opts[] = {
+#define OPT(l, s, t, opt, addr, desc) { l, s, t, &opt.addr, desc }
+	OPT("transport", 't', arg_string, opt, transport,
+	    "Transport type"),
+	OPT("port", 'p', arg_string, opt, port,
+	    "Port"),
+	{ NULL, 0, arg_none, NULL, NULL }
+};
+#undef OPT
+
+static const struct args discover_args[] = {
+	{ arg_string, &opt.address, "address" },
+	{ arg_none, NULL, NULL },
+};
+
+static struct cmd discover_cmd = {
+	.name = "discover",
+	.fn = discover,
+	.descr = "List discovery log pages from a fabrics controller",
+	.ctx_size = sizeof(opt),
+	.opts = discover_opts,
+	.args = discover_args,
+};
+
+CMD_COMMAND(discover_cmd);

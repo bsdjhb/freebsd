@@ -204,7 +204,7 @@ identify_ctrlr(int fd)
 		exit(0);
 	}
 
-	nvme_print_controller(&cdata);
+	nvme_print_controller(&cdata, false);
 	exit(0);
 }
 
