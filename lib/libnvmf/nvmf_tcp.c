@@ -1436,6 +1436,8 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 			}
 		}
 
+		plen += nc->nc_data_len;
+
 		iovcnt += nc->nc_data_iovcnt;
 		if (ntc->data_digests) {
 			cmd.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
