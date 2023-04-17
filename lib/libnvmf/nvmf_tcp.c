@@ -847,13 +847,8 @@ tcp_send_h2c_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
 		h2c.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
 		plen += sizeof(h2c.digest);
 	}
-	if (ntc->txpda == 0) {
-		h2c.hdr.common.pdo = plen;
-		pad = 0;
-	} else {
-		h2c.hdr.common.pdo = roundup2(plen, ntc->txpda);
-		pad = h2c.hdr.common.pdo - plen;
-	}
+	h2c.hdr.common.pdo = roundup2(plen, ntc->txpda);
+	pad = h2c.hdr.common.pdo - plen;
 	h2c.hdr.cccid = cid;
 	h2c.hdr.ttag = ttag;
 	h2c.hdr.datao = htole32(data_offset);
@@ -1199,6 +1194,9 @@ tcp_connect(struct nvmf_connection *nc,
 	if (nc->nc_controller)
 		return (EINVAL);
 
+	if (params->tcp.pda > NVME_TCP_CPDA_MAX)
+		return (EINVAL);
+
 	memset(&ic_req, 0, sizeof(ic_req));
 	ic_req.common.pdu_type = NVME_TCP_PDU_TYPE_IC_REQ;
 	ic_req.common.hlen = sizeof(ic_req);
@@ -1242,8 +1240,8 @@ tcp_connect(struct nvmf_connection *nc,
 		return (EBADMSG);
 	}
 
-	ntc->txpda = params->tcp.pda * 4;
-	ntc->rxpda = ic_resp.cpda * 4;
+	ntc->txpda = (params->tcp.pda + 1) * 4;
+	ntc->rxpda = (ic_resp.cpda + 1) * 4;
 	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
 	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
 	ntc->maxh2cdata = le32toh(ic_resp.maxh2cdata);
@@ -1260,6 +1258,9 @@ tcp_accept(struct nvmf_connection *nc,
 	int error;
 
 	if (!nc->nc_controller)
+		return (EINVAL);
+
+	if (params->tcp.pda > NVME_TCP_CPDA_MAX)
 		return (EINVAL);
 
 	error = nvmf_tcp_read_ic_req(ntc, &ic_req);
@@ -1282,8 +1283,8 @@ tcp_accept(struct nvmf_connection *nc,
 	if (error != 0)
 		return (error);
 
-	ntc->txpda = params->tcp.pda * 4;
-	ntc->rxpda = ic_req.hpda * 4;
+	ntc->txpda = (params->tcp.pda + 1) * 4;
+	ntc->rxpda = (ic_req.hpda + 1) * 4;
 	ntc->header_digests = ic_resp.dgst.bits.hdgst_enable != 0;
 	ntc->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
 	ntc->maxr2t = le32toh(ic_req.maxr2t);
