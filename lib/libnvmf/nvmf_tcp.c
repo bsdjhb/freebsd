@@ -1196,7 +1196,7 @@ tcp_connect(struct nvmf_connection *nc,
 	struct nvme_tcp_ic_resp ic_resp;
 	int error;
 
-	if (!nc->nc_controller)
+	if (nc->nc_controller)
 		return (EINVAL);
 
 	memset(&ic_req, 0, sizeof(ic_req));
@@ -1259,7 +1259,7 @@ tcp_accept(struct nvmf_connection *nc,
 	struct nvme_tcp_ic_resp ic_resp;
 	int error;
 
-	if (nc->nc_controller)
+	if (!nc->nc_controller)
 		return (EINVAL);
 
 	error = nvmf_tcp_read_ic_req(ntc, &ic_req);
@@ -1325,6 +1325,7 @@ tcp_allocate_qpair(struct nvmf_connection *nc, bool admin)
 	LIST_INIT(&qp->rx_buffers);
 	LIST_INIT(&qp->tx_buffers);
 	TAILQ_INIT(&qp->rx_capsules);
+	ntc->qp_allocated = true;
 
 	return (&qp->qp);
 }
@@ -1649,7 +1650,7 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	u_int i;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
-	    ntc->nc.nc_controller)
+	    !ntc->nc.nc_controller)
 		return (EINVAL);
 
 	iov_len = 0;
@@ -1757,7 +1758,7 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
 	int error;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
-	    ntc->nc.nc_controller)
+	    !ntc->nc.nc_controller)
 		return (EINVAL);
 
 	iov_len = 0;
