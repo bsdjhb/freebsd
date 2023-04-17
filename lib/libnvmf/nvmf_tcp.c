@@ -1378,7 +1378,6 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvme_tcp_cmd cmd;
-	struct nvme_command *sqe;
 	struct iovec *iov, *iov2;
 	ssize_t nwritten;
 	uint32_t data_digest, header_digest, pad, plen;
@@ -1391,7 +1390,6 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
 	cmd.common.hlen = sizeof(cmd);
 	cmd.ccsqe = nc->nc_sqe;
-	sqe = &cmd.ccsqe;
 	plen = sizeof(cmd);
 	iovcnt = 1;
 
@@ -1400,7 +1398,7 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 	if (nc->nc_data_len != 0) {
 		struct nvme_sgl_descriptor *sgl;
 
-		sgl = (struct nvme_sgl_descriptor *)&sqe->prp1;
+		sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
 		memset(sgl, 0, sizeof(*sgl));
 		sgl->address = 0;
 		sgl->unkeyed.length = htole32(nc->nc_data_len);
@@ -1413,8 +1411,6 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 			/* Use a command buffer. */
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
 		}
-		sqe->fuse &= ~NVMEB(NVME_CMD_PSDT);
-		sqe->fuse |= NVME_PSDT_SGL << NVME_CMD_PSDT_SHIFT;
 	}
 
 	if (ntc->header_digests) {
@@ -1502,7 +1498,7 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 	 */
 	if (nc->nc_data_len != 0 && !use_icd)
 		tc->cb = tcp_alloc_command_buffer(qp, nc->nc_data_iov,
-		    nc->nc_data_iovcnt, 0, nc->nc_data_len, sqe->cid, 0,
+		    nc->nc_data_iovcnt, 0, nc->nc_data_len, cmd.ccsqe.cid, 0,
 		    !send_data);
 
 	return (0);
