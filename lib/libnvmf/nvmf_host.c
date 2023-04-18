@@ -28,6 +28,7 @@
 #include <sys/sysctl.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <uuid.h>
 
@@ -502,5 +503,125 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 	}
 
 	nvmf_free_capsule(rcap);
+	return (0);
+}
+
+static int
+nvmf_get_discovery_log_page(struct nvmf_qpair *qp, uint64_t offset, void *buf,
+    size_t len)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *ncap, *rcap;
+	size_t numd;
+	int error;
+	uint16_t status;
+
+	if (len % 4 != 0 || len == 0 || offset % 4 != 0)
+		return (EINVAL);
+
+	numd = (len / 4) - 1;
+	nvmf_init_sqe(qp, &cmd, NVME_OPC_GET_LOG_PAGE);
+	cmd.cdw10 = htole32(numd << 16 | NVME_LOG_DISCOVERY);
+	cmd.cdw11 = htole32(numd >> 16);
+	cmd.cdw12 = htole32(offset);
+	cmd.cdw13 = htole32(offset >> 32);
+
+	ncap = nvmf_allocate_command(qp, &cmd);
+	if (ncap == NULL)
+		return (errno);
+
+	error = nvmf_capsule_append_data(ncap, buf, len);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_transmit_command(ncap, false);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_wait_for_response(ncap, &rcap);
+	nvmf_free_capsule(ncap);
+	if (error != 0)
+		return (error);
+
+	status = le16toh(rcap->nc_cqe.status);
+	if (NVMEV(NVME_STATUS_SC, status) ==
+	    NVMF_FABRIC_SC_LOG_RESTART_DISCOVERY) {
+		nvmf_free_capsule(rcap);
+		return (EAGAIN);
+	}
+	if (status != 0) {
+		printf("NVMF: GET_LOG_PAGE failed, status %#x\n", status);
+		nvmf_free_capsule(rcap);
+		return (EIO);
+	}
+
+	nvmf_free_capsule(rcap);
+	return (0);
+}
+
+int
+nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
+    struct nvme_discovery_log **logp)
+{
+	struct nvme_discovery_log hdr, *log;
+	size_t payload_len;
+	int error;
+
+	log = NULL;
+	for (;;) {
+		error = nvmf_get_discovery_log_page(qp, 0, &hdr, sizeof(hdr));
+		if (error != 0)
+			return (error);
+		nvme_discovery_log_swapbytes(&hdr);
+
+		if (hdr.recfmt != 0) {
+			printf("NVMF: Unsupported discovery log format: %d\n",
+			    hdr.recfmt);
+			return (EINVAL);
+		}
+
+		if (hdr.numrec > 1024) {
+			printf("NVMF: Too many discovery log entries: %ju\n",
+			    (uintmax_t)hdr.numrec);
+			return (EFBIG);
+		}
+
+		payload_len = sizeof(log->entries[0]) * hdr.numrec;
+		log = reallocf(log, sizeof(*log) + payload_len);
+		if (log == NULL)
+			return (ENOMEM);
+		*log = hdr;
+		if (hdr.numrec == 0)
+			break;
+
+		error = nvmf_get_discovery_log_page(qp, sizeof(hdr),
+		    log->entries, payload_len);
+		if (error == EAGAIN)
+			continue;
+		if (error != 0) {
+			free(log);
+			return (error);
+		}
+
+		/* Re-read the header and check the generation count. */
+		error = nvmf_get_discovery_log_page(qp, 0, &hdr, sizeof(hdr));
+		if (error != 0) {
+			free(log);
+			return (error);
+		}
+		nvme_discovery_log_swapbytes(&hdr);
+
+		if (log->genctr != hdr.genctr)
+			continue;
+
+		for (u_int i = 0; i < log->numrec; i++)
+			nvme_discovery_log_entry_swapbytes(&log->entries[i]);
+		break;
+	}
+	*logp = log;
 	return (0);
 }
