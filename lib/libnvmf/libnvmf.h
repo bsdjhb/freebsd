@@ -156,4 +156,12 @@ int	nvmf_nqn_from_hostuuid(char nqn[NVMF_NQN_MAX_LEN]);
 int	nvmf_host_identify_controller(struct nvmf_qpair *qp,
     struct nvme_controller_data *data);
 
+/*
+ * Fetch discovery log page.  The memory for the log page is allocated
+ * by malloc() and returned in *logp.  The caller must free the
+ * memory.
+ */
+int	nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
+    struct nvme_discovery_log **logp);
+
 #endif /* !__LIBNVMF_H__ */
