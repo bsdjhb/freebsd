@@ -274,15 +274,16 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 }
 
 static int
-nvmf_io(struct nvmf_qpair *qp, u_int nsid, enum rw command, off_t offset,
-    off_t length)
+validate_namespace(struct nvmf_qpair *qp, u_int nsid, u_int *block_size)
 {
 	struct nvme_namespace_data nsdata;
-	char *buf;
-	ssize_t rv;
-	u_int block_size, todo;
 	int error;
 	uint8_t lbads, lbaf;
+
+	if (nsid > info.nn) {
+		warnx("Invalid namespace ID %u", nsid);
+		return (ERANGE);
+	}
 
 	error = nvmf_host_identify_namespace(qp, nsid, &nsdata);
 	if (error != 0) {
@@ -312,15 +313,26 @@ nvmf_io(struct nvmf_qpair *qp, u_int nsid, enum rw command, off_t offset,
 		return (EINVAL);
 	}
 
-	block_size = 1 << lbads;
+	*block_size = 1 << lbads;
+	fprintf(stderr, "Detected block size %u\n", *block_size);
+	return (0);
+}
+
+static int
+nvmf_io(struct nvmf_qpair *qp, u_int nsid, u_int block_size, enum rw command,
+    off_t offset, off_t length)
+{
+	char *buf;
+	ssize_t rv;
+	u_int todo;
+	int error;
+
 	if (offset % block_size != 0) {
-		warn("Misaligned offset (block size is %u)", block_size);
+		warnx("Misaligned offset");
 		return (EINVAL);
 	}
-	fprintf(stderr, "Detected block size %u\n", block_size);
-	if (length % block_size != 0 && command == WRITE) {
-		warn("Length is not multiple of block size, will zero pad");
-	}
+	if (length % block_size != 0 && command == WRITE)
+		warnx("Length is not multiple of block size, will zero pad");
 
 	buf = malloc(block_size);
 	error = 0;
@@ -376,7 +388,7 @@ main(int ac, char **av)
 	enum nvmf_trtype trtype;
 	off_t offset, length;
 	int ch, error;
-	u_int cntlid, nsid, queues;
+	u_int block_size, cntlid, nsid, queues;
 
 	cntlid = NVMF_CNTLID_DYNAMIC;
 	offset = 0;
@@ -457,9 +469,10 @@ main(int ac, char **av)
 	if (admin.qp == NULL)
 		err(1, "Failed to create admin queue");
 
-	if (nsid > info.nn) {
+	error = validate_namespace(admin.qp, nsid, &block_size);
+	if (error != 0) {
 		shutdown_controller(admin.nc, admin.qp);
-		errx(1, "Invalid namespace ID %u", nsid);
+		return (1);
 	}
 
 	params.ioccsz = info.ioccsz;
@@ -486,7 +499,7 @@ main(int ac, char **av)
 		return (1);
 	}
 
-	error = nvmf_io(io.qp, nsid, command, offset, length);
+	error = nvmf_io(io.qp, nsid, block_size, command, offset, length);
 
 	disconnect_queue(io.nc, io.qp);
 	shutdown_controller(admin.nc, admin.qp);
