@@ -1,0 +1,495 @@
+/*-
+ * Copyright (c) 2023 Chelsio Communications, Inc.
+ * All rights reserved.
+ * Written by: John Baldwin <jhb@FreeBSD.org>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <sys/socket.h>
+#include <err.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <libnvmf.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <unistd.h>
+#include <netinet/in.h>
+
+static struct controller_info {
+	uint32_t ioccsz;
+	uint32_t nn;
+	uint16_t mqes;
+	bool	disconnect_supported;
+} info;
+
+struct qpair {
+	struct nvmf_connection *nc;
+	struct nvmf_qpair *qp;
+};
+
+enum rw { READ, WRITE };
+
+static void
+usage(void)
+{
+	fprintf(stderr, "nvmfdd [-c cntlid] [-t transport] [-o offset] [-l length] [-n nsid]\n"
+	    "\tread|write <address:port> <nqn>\n");
+	exit(1);
+}
+
+static void
+tcp_configure(struct nvmf_connection_params *params, const char *address,
+    const char *port)
+{
+	struct addrinfo hints, *ai, *list;
+	int error, s;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_protocol = IPPROTO_TCP;
+	error = getaddrinfo(address, port, &hints, &list);
+	if (error != 0)
+		errx(1, "%s", gai_strerror(error));
+
+	for (ai = list; ai != NULL; ai = ai->ai_next) {
+		s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (s == -1)
+			continue;
+
+		if (connect(s, ai->ai_addr, ai->ai_addrlen) != 0) {
+			close(s);
+			continue;
+		}
+
+		params->tcp.fd = s;
+		params->tcp.pda = 0;
+		params->tcp.header_digests = false;
+		params->tcp.data_digests = false;
+		params->tcp.maxr2t = 1;
+		freeaddrinfo(list);
+		return;
+	}
+	err(1, "Failed to connect to discovery controller");
+}
+
+static struct nvmf_connection *
+create_connection(enum nvmf_trtype trtype,
+    struct nvmf_connection_params *params, const char *address,
+    const char *port)
+{
+	switch (trtype) {
+	case NVMF_TRTYPE_TCP:
+		tcp_configure(params, address, port);
+		break;
+	default:
+		__builtin_unreachable();
+	}
+
+	return (nvmf_allocate_connection(trtype, false, params));
+}
+
+static struct nvmf_qpair *
+connect_admin_queue(struct nvmf_connection *nc, const uint8_t hostid[16],
+    uint16_t cntlid, const char *hostnqn, const char *subnqn)
+{
+	struct nvme_controller_data cdata;
+	struct nvmf_qpair *qp;
+	uint64_t cap, cc, csts;
+	u_int mps, mpsmin, mpsmax;
+	int error, timo;
+
+	qp = nvmf_connect(nc, 0, 32, hostid, cntlid, subnqn, hostnqn, 0);
+	if (qp == NULL)
+		return (NULL);
+
+	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
+	if (error != 0)
+		errc(1, error, "Failed to fetch CAP");
+
+	/* Require the NVM command set. */
+	if (NVME_CAP_HI_CSS_NVM(cap >> 32) == 0)
+		errx(1, "Controller does not support the NVM command set");
+
+	/* Prefer native host page size if it fits. */
+	mpsmin = NVMEV(NVME_CAP_HI_REG_MPSMIN, cap >> 32);
+	mpsmax = NVMEV(NVME_CAP_HI_REG_MPSMAX, cap >> 32);
+	mps = ffs(getpagesize()) - 1;
+	if (mps < mpsmin + 12)
+		mps = mpsmin;
+	else if (mps > mpsmax + 12)
+		mps = mpsmax;
+	else
+		mps -= 12;
+
+	/* Configure controller. */
+	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
+	if (error != 0)
+		errc(1, error, "Failed to fetch CC");
+
+	/* Clear known fields preserving any reserved fields. */
+	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
+	    NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
+	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
+
+	cc |= 4 << NVME_CC_REG_IOCQES_SHIFT;	/* CQE entry size == 16 */
+	cc |= 6 << NVME_CC_REG_IOSQES_SHIFT;	/* SEQ entry size == 64 */
+	cc |= 0 << NVME_CC_REG_AMS_SHIFT;	/* AMS 0 (Round-robin) */
+	cc |= mps << NVME_CC_REG_MPS_SHIFT;
+	cc |= 0 << NVME_CC_REG_CSS_SHIFT;	/* NVM command set */
+	cc |= (1 << NVME_CC_REG_EN_SHIFT);	/* EN = 1 */
+
+	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
+	if (error != 0)
+		errc(1, error, "Failed to set CC");
+
+	/* Wait for CSTS.RDY in Controller Status */
+	timo = NVME_CAP_LO_TO(cap);
+	for (;;) {
+		error = nvmf_read_property(qp, NVMF_PROP_CSTS, 4, &csts);
+		if (error != 0)
+			errc(1, error, "Failed to fetch CSTS");
+
+		if (NVMEV(NVME_CSTS_REG_RDY, csts) != 0)
+			break;
+
+		if (timo == 0)
+			errx(1, "Controller failed to become ready");
+		timo--;
+		usleep(500 * 1000);
+	}
+
+	/* Fetch controller data. */
+	error = nvmf_host_identify_controller(qp, &cdata);
+	if (error != 0)
+		errc(1, error, "Failed to fetch controller data");
+
+	info.mqes = NVME_CAP_LO_MQES(cap);
+	info.nn = cdata.nn;
+	info.ioccsz = cdata.ioccsz;
+	info.disconnect_supported = (cdata.ofcs & 1) != 0;
+
+	return (qp);
+}
+
+static void
+shutdown_controller(struct nvmf_connection *nc, struct nvmf_qpair *qp)
+{
+	uint64_t cc;
+	int error;
+
+	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
+	if (error != 0)
+		errc(1, error, "Failed to fetch CC");
+
+	cc |= NVME_SHN_NORMAL << NVME_CC_REG_SHN_SHIFT;
+
+	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
+	if (error != 0)
+		errc(1, error, "Failed to set CC to trigger shutdown");
+
+	nvmf_free_qpair(qp);
+	nvmf_free_connection(nc);
+}
+
+static void
+disconnect_queue(struct nvmf_connection *nc, struct nvmf_qpair *qp)
+{
+	nvmf_free_qpair(qp);
+	nvmf_free_connection(nc);
+}
+
+static int
+nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
+    uint64_t slba, uint16_t nlb, void *buffer, size_t length)
+{
+	struct nvme_command cmd;
+	const struct nvme_completion *cqe;
+	struct nvmf_capsule *ncap, *rcap;
+	int error;
+	uint16_t status;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opc = command == WRITE ? NVME_OPC_WRITE : NVME_OPC_READ;
+	cmd.nsid = htole32(nsid);
+	cmd.cdw10 = htole32(slba);
+	cmd.cdw11 = htole32(slba >> 32);
+	cmd.cdw12 = htole32(nlb);
+	/* Sequential Request in cdw13? */
+
+	ncap = nvmf_allocate_command(qp, &cmd);
+	if (ncap == NULL)
+		return (errno);
+
+	error = nvmf_capsule_append_data(ncap, buffer, length);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_transmit_command(ncap, command == WRITE);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_wait_for_response(ncap, &rcap);
+	nvmf_free_capsule(ncap);
+	if (error != 0)
+		return (error);
+
+	cqe = nvmf_capsule_cqe(rcap);
+	status = le16toh(cqe->status);
+	if (status != 0) {
+		printf("NVMF: %s failed, status %#x\n", command == WRITE ?
+		    "WRITE" : "READ", status);
+		nvmf_free_capsule(rcap);
+		return (EIO);
+	}
+
+	nvmf_free_capsule(rcap);
+	return (0);
+}
+
+static int
+nvmf_io(struct nvmf_qpair *qp, u_int nsid, enum rw command, off_t offset,
+    off_t length)
+{
+	struct nvme_namespace_data nsdata;
+	char *buf;
+	ssize_t rv;
+	u_int block_size, todo;
+	int error;
+	uint8_t lbads, lbaf;
+
+	error = nvmf_host_identify_namespace(qp, nsid, &nsdata);
+	if (error != 0) {
+		warnc(error, "Failed to identify namespace");
+		return (error);
+	}
+
+	if (NVMEV(NVME_NS_DATA_DPS_PIT, nsdata.dps) != 0) {
+		warn("End-to-end data protection is not supported");
+		return (EINVAL);
+	}
+
+	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, nsdata.flbas);
+	if (lbaf > nsdata.nlbaf) {
+		warn("Invalid LBA format index");
+		return (EINVAL);
+	}
+	
+	if (NVMEV(NVME_NS_DATA_LBAF_MS, nsdata.lbaf[lbaf]) != 0) {
+		warn("Namespaces with metadata are not supported");
+		return (EINVAL);
+	}
+
+	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, nsdata.lbaf[lbaf]);
+	if (lbads == 0) {
+		warn("Invalid LBA format index");
+		return (EINVAL);
+	}
+
+	block_size = 1 << lbads;
+	if (offset % block_size != 0) {
+		warn("Misaligned offset (block size is %u)", block_size);
+		return (EINVAL);
+	}
+	fprintf(stderr, "Detected block size %u\n", block_size);
+	if (length % block_size != 0 && command == WRITE) {
+		warn("Length is not multiple of block size, will zero pad");
+	}
+
+	buf = malloc(block_size);
+	error = 0;
+	while (length != 0) {
+		todo = length;
+		if (todo > block_size)
+			todo = block_size;
+
+		if (command == WRITE) {
+			rv = read(STDIN_FILENO, buf, todo);
+			if (rv == -1) {
+				error = errno;
+				break;
+			}
+			if (rv != todo) {
+				warn("Short read on input");
+				error = EIO;
+				break;
+			}
+
+			if (todo < block_size)
+				memset(buf + todo, 0, block_size - todo);
+		}
+
+		error = nvmf_io_command(qp, nsid, command, offset / block_size,
+		    1, buf, block_size);
+		if (error != 0) {
+			warnc(error, "Failed I/O request");
+			break;
+		}
+
+		if (command == READ)
+			(void)write(STDOUT_FILENO, buf, todo);
+
+		offset += block_size;
+		length -= todo;
+	}
+
+	free(buf);
+	return (error);
+}
+
+int
+main(int ac, char **av)
+{
+	const char *transport;
+	char *address, *port;
+	enum rw command;
+	struct nvmf_connection_params params;
+	struct qpair admin, io;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	enum nvmf_trtype trtype;
+	off_t offset, length;
+	int ch, error;
+	u_int cntlid, nsid, queues;
+
+	cntlid = NVMF_CNTLID_DYNAMIC;
+	offset = 0;
+	length = 512;
+	nsid = 1;
+	port = NULL;
+	transport = "tcp";
+	while ((ch = getopt(ac, av, "c:l:n:o:p:t:")) != -1) {
+		switch (ch) {
+		case 'c':
+			if (strcasecmp(optarg, "dynamic") == 0)
+				cntlid = NVMF_CNTLID_DYNAMIC;
+			else if (strcasecmp(optarg, "static") == 0)
+				cntlid = NVMF_CNTLID_STATIC_ANY;
+			else
+				cntlid = strtoul(optarg, NULL, 0);
+			break;
+		case 'l':
+			length = strtoumax(optarg, NULL, 0);
+			break;
+		case 'n':
+			nsid = strtoul(optarg, NULL, 0);
+			break;
+		case 'o':
+			offset = strtoumax(optarg, NULL, 0);
+			break;
+		case 't':
+			transport = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+
+	av += optind;
+	ac -= optind;
+
+	if (ac != 3)
+		usage();
+
+	if (nsid == 0 || nsid >= 0xffffffff)
+		errx(1, "Invalid namespace ID %u", nsid);
+
+	if (strcasecmp(av[0], "read") == 0)
+		command = READ;
+	else if (strcasecmp(av[0], "write") == 0)
+		command = WRITE;
+	else
+		errx(1, "Invalid command %s", av[0]);
+
+	address = av[1];
+	port = strrchr(address, ':');
+	if (port == NULL || port[1] == '\0')
+		errx(1, "Invalid address %s", address);
+	*port = '\0';
+	port++;
+
+	params.ioccsz = 0;
+	params.sq_flow_control = true;
+	if (strcasecmp(transport, "tcp") == 0) {
+		trtype = NVMF_TRTYPE_TCP;
+	} else
+		errx(1, "Invalid transport %s", transport);
+
+	error = nvmf_hostid_from_hostuuid(hostid);
+	if (error != 0)
+		errc(1, error, "Failed to generate hostid");
+	error = nvmf_nqn_from_hostuuid(hostnqn);
+	if (error != 0)
+		errc(1, error, "Failed to generate host NQN");
+
+	admin.nc = create_connection(trtype, &params, address, port);
+	if (admin.nc == NULL)
+		err(1, "Failed to connect to controller (admin)");
+
+	admin.qp = connect_admin_queue(admin.nc, hostid, cntlid, hostnqn,
+	    av[2]);
+	if (admin.qp == NULL)
+		err(1, "Failed to create admin queue");
+
+	if (nsid > info.nn) {
+		shutdown_controller(admin.nc, admin.qp);
+		errx(1, "Invalid namespace ID %u", nsid);
+	}
+
+	params.ioccsz = info.ioccsz;
+
+	error = nvmf_host_request_queues(admin.qp, 1, &queues);
+	if (error != 0) {
+		shutdown_controller(admin.nc, admin.qp);
+		errc(1, error, "Failed to request I/O queues");
+	}
+
+	io.nc = create_connection(trtype, &params, address, port);
+	if (io.nc == NULL) {
+		warn("Failed to connect to controller (I/O)");
+		shutdown_controller(admin.nc, admin.qp);
+		return (1);
+	}
+
+	io.qp = nvmf_connect(io.nc, 1, info.mqes + 1, hostid,
+	    nvmf_cntlid(admin.qp), av[2], hostnqn, 0);
+	if (io.qp == NULL) {
+		warn("Failed to create I/O queue");
+		nvmf_free_connection(io.nc);
+		shutdown_controller(admin.nc, admin.qp);
+		return (1);
+	}
+
+	error = nvmf_io(io.qp, nsid, command, offset, length);
+
+	disconnect_queue(io.nc, io.qp);
+	shutdown_controller(admin.nc, admin.qp);
+	return (error == 0 ? 0 : 1);
+}
+
