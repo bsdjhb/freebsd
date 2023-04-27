@@ -104,6 +104,7 @@ SUBDIR=	alias \
 	nice \
 	nl \
 	nohup \
+	nvmfdd \
 	pagesize \
 	passwd \
 	paste \
