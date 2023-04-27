@@ -84,6 +84,8 @@ int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
     const void *buf, size_t len);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
+const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
+const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 
 /*
  * A controller calls this function to receive data associated with a
@@ -156,6 +158,10 @@ int	nvmf_nqn_from_hostuuid(char nqn[NVMF_NQN_MAX_LEN]);
 int	nvmf_host_identify_controller(struct nvmf_qpair *qp,
     struct nvme_controller_data *data);
 
+/* Fetch namespace data via IDENTIFY. */
+int	nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
+    struct nvme_namespace_data *nsdata);
+
 /*
  * Fetch discovery log page.  The memory for the log page is allocated
  * by malloc() and returned in *logp.  The caller must free the
@@ -163,5 +169,13 @@ int	nvmf_host_identify_controller(struct nvmf_qpair *qp,
  */
 int	nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
     struct nvme_discovery_log **logp);
+
+/*
+ * Request a desired number of I/O queues via SET_FEATURES.  The
+ * number of actual I/O queues available is returned in *actual on
+ * success.
+ */
+int	nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested,
+    u_int *actual);
 
 #endif /* !__LIBNVMF_H__ */

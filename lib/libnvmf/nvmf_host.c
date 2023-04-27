@@ -36,21 +36,20 @@
 #include "internal.h"
 
 static void
-nvmf_init_sqe(struct nvmf_qpair *qp, void *sqe, uint8_t opcode)
+nvmf_init_sqe(void *sqe, uint8_t opcode)
 {
 	struct nvme_command *cmd = sqe;
 
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->opc = opcode;
-	cmd->cid = htole16(qp->nq_cid++);
 }
 
 static void
-nvmf_init_fabrics_sqe(struct nvmf_qpair *qp, void *sqe, uint8_t fctype)
+nvmf_init_fabrics_sqe(void *sqe, uint8_t fctype)
 {
 	struct nvmf_capsule_cmd *cmd = sqe;
 
-	nvmf_init_sqe(qp, sqe, NVME_OPC_FABRIC);
+	nvmf_init_sqe(sqe, NVME_OPC_FABRIC);
 	cmd->fctype = fctype;
 }
 
@@ -91,7 +90,7 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	if (qp == NULL)
 		goto error;
 
-	nvmf_init_fabrics_sqe(qp, &cmd, NVMF_FABRIC_COMMAND_CONNECT);
+	nvmf_init_fabrics_sqe(&cmd, NVMF_FABRIC_COMMAND_CONNECT);
 	cmd.recfmt = 0;
 	cmd.qid = htole16(qid);
 
@@ -201,6 +200,13 @@ nvmf_host_transmit_command(struct nvmf_capsule *ncap, bool send_data)
 	if (new_sqtail == qp->nq_sqhd)
 		return (EBUSY);
 
+	ncap->nc_sqe.cid = htole16(qp->nq_cid);
+
+	/* 4.2 Skip CID of 0xFFFF. */
+	qp->nq_cid++;
+	if (qp->nq_cid == 0xFFFF)
+		qp->nq_cid = 0;
+
 	error = nvmf_transmit_capsule(ncap, send_data);
 	if (error != 0)
 		return (error);
@@ -293,7 +299,12 @@ nvmf_keepalive(struct nvmf_qpair *qp)
 {
 	struct nvme_command cmd;
 
-	nvmf_init_sqe(qp, &cmd, NVME_OPC_KEEP_ALIVE);
+	if (!qp->nq_admin) {
+		errno = EINVAL;
+		return (NULL);
+	}
+
+	nvmf_init_sqe(&cmd, NVME_OPC_KEEP_ALIVE);
 
 	return (nvmf_allocate_command(qp, &cmd));
 }
@@ -303,7 +314,7 @@ nvmf_get_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size)
 {
 	struct nvmf_fabric_prop_get_cmd cmd;
 
-	nvmf_init_fabrics_sqe(qp, &cmd, NVMF_FABRIC_COMMAND_PROPERTY_GET);
+	nvmf_init_fabrics_sqe(&cmd, NVMF_FABRIC_COMMAND_PROPERTY_GET);
 	switch (size) {
 	case 4:
 		cmd.attrib.size = NVMF_PROP_SIZE_4;
@@ -328,6 +339,9 @@ nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	const struct nvmf_fabric_prop_get_rsp *rsp;
 	uint16_t status;
 	int error;
+
+	if (!qp->nq_admin)
+		return (EINVAL);
 
 	ncap = nvmf_get_property(qp, offset, size);
 	if (ncap == NULL)
@@ -366,7 +380,7 @@ nvmf_set_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 {
 	struct nvmf_fabric_prop_set_cmd cmd;
 
-	nvmf_init_fabrics_sqe(qp, &cmd, NVMF_FABRIC_COMMAND_PROPERTY_SET);
+	nvmf_init_fabrics_sqe(&cmd, NVMF_FABRIC_COMMAND_PROPERTY_SET);
 	switch (size) {
 	case 4:
 		cmd.attrib.size = NVMF_PROP_SIZE_4;
@@ -392,6 +406,9 @@ nvmf_write_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	struct nvmf_capsule *ncap, *rcap;
 	uint16_t status;
 	int error;
+
+	if (!qp->nq_admin)
+		return (EINVAL);
 
 	ncap = nvmf_set_property(qp, offset, size, value);
 	if (ncap == NULL)
@@ -469,7 +486,10 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 	int error;
 	uint16_t status;
 
-	nvmf_init_sqe(qp, &cmd, NVME_OPC_IDENTIFY);
+	if (!qp->nq_admin)
+		return (EINVAL);
+
+	nvmf_init_sqe(&cmd, NVME_OPC_IDENTIFY);
 
 	/* 5.15.1 Use CNS of 0x01 for controller data. */
 	cmd.cdw10 = htole32(1);
@@ -479,6 +499,56 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 		return (errno);
 
 	error = nvmf_capsule_append_data(ncap, cdata, sizeof(*cdata));
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_transmit_command(ncap, false);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_wait_for_response(ncap, &rcap);
+	nvmf_free_capsule(ncap);
+	if (error != 0)
+		return (error);
+
+	status = le16toh(rcap->nc_cqe.status);
+	if (status != 0) {
+		printf("NVMF: IDENTIFY failed, status %#x\n", status);
+		nvmf_free_capsule(rcap);
+		return (EIO);
+	}
+
+	nvmf_free_capsule(rcap);
+	return (0);
+}
+
+int
+nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
+    struct nvme_namespace_data *nsdata)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *ncap, *rcap;
+	int error;
+	uint16_t status;
+
+	if (!qp->nq_admin)
+		return (EINVAL);
+
+	nvmf_init_sqe(&cmd, NVME_OPC_IDENTIFY);
+
+	/* 5.15.1 Use CNS of 0x00 for namespace data. */
+	cmd.cdw10 = htole32(0);
+	cmd.nsid = htole32(nsid);
+
+	ncap = nvmf_allocate_command(qp, &cmd);
+	if (ncap == NULL)
+		return (errno);
+
+	error = nvmf_capsule_append_data(ncap, nsdata, sizeof(*nsdata));
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -520,7 +590,7 @@ nvmf_get_discovery_log_page(struct nvmf_qpair *qp, uint64_t offset, void *buf,
 		return (EINVAL);
 
 	numd = (len / 4) - 1;
-	nvmf_init_sqe(qp, &cmd, NVME_OPC_GET_LOG_PAGE);
+	nvmf_init_sqe(&cmd, NVME_OPC_GET_LOG_PAGE);
 	cmd.cdw10 = htole32(numd << 16 | NVME_LOG_DISCOVERY);
 	cmd.cdw11 = htole32(numd >> 16);
 	cmd.cdw12 = htole32(offset);
@@ -570,6 +640,9 @@ nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
 	struct nvme_discovery_log hdr, *log;
 	size_t payload_len;
 	int error;
+
+	if (!qp->nq_admin)
+		return (EINVAL);
 
 	log = NULL;
 	for (;;) {
@@ -623,5 +696,52 @@ nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
 		break;
 	}
 	*logp = log;
+	return (0);
+}
+
+int
+nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *ncap, *rcap;
+	int error;
+	uint16_t status;
+
+	if (!qp->nq_admin || requested < 1 || requested > 65535)
+		return (EINVAL);
+
+	/* The number of queues is 0's based. */
+	requested--;
+
+	nvmf_init_sqe(&cmd, NVME_OPC_SET_FEATURES);
+	cmd.cdw10 = htole32(NVME_FEAT_NUMBER_OF_QUEUES);
+
+	/* Same number of completion and submission queues. */
+	cmd.cdw11 = htole32((requested << 16) | requested);
+
+	ncap = nvmf_allocate_command(qp, &cmd);
+	if (ncap == NULL)
+		return (errno);
+
+	error = nvmf_host_transmit_command(ncap, false);
+	if (error != 0) {
+		nvmf_free_capsule(ncap);
+		return (error);
+	}
+
+	error = nvmf_host_wait_for_response(ncap, &rcap);
+	nvmf_free_capsule(ncap);
+	if (error != 0)
+		return (error);
+
+	status = le16toh(rcap->nc_cqe.status);
+	if (status != 0) {
+		printf("NVMF: SET_FEATURES failed, status %#x\n", status);
+		nvmf_free_capsule(rcap);
+		return (EIO);
+	}
+
+	*actual = le32toh(rcap->nc_cqe.cdw0) & 0xffff;
+	nvmf_free_capsule(rcap);
 	return (0);
 }
