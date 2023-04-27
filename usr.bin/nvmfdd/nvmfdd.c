@@ -222,6 +222,51 @@ disconnect_queue(struct nvmf_connection *nc, struct nvmf_qpair *qp)
 }
 
 static int
+validate_namespace(struct nvmf_qpair *qp, u_int nsid, u_int *block_size)
+{
+	struct nvme_namespace_data nsdata;
+	int error;
+	uint8_t lbads, lbaf;
+
+	if (nsid > info.nn) {
+		warnx("Invalid namespace ID %u", nsid);
+		return (ERANGE);
+	}
+
+	error = nvmf_host_identify_namespace(qp, nsid, &nsdata);
+	if (error != 0) {
+		warnc(error, "Failed to identify namespace");
+		return (error);
+	}
+
+	if (NVMEV(NVME_NS_DATA_DPS_PIT, nsdata.dps) != 0) {
+		warn("End-to-end data protection is not supported");
+		return (EINVAL);
+	}
+
+	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, nsdata.flbas);
+	if (lbaf > nsdata.nlbaf) {
+		warn("Invalid LBA format index");
+		return (EINVAL);
+	}
+
+	if (NVMEV(NVME_NS_DATA_LBAF_MS, nsdata.lbaf[lbaf]) != 0) {
+		warn("Namespaces with metadata are not supported");
+		return (EINVAL);
+	}
+
+	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, nsdata.lbaf[lbaf]);
+	if (lbads == 0) {
+		warn("Invalid LBA format index");
+		return (EINVAL);
+	}
+
+	*block_size = 1 << lbads;
+	fprintf(stderr, "Detected block size %u\n", *block_size);
+	return (0);
+}
+
+static int
 nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
     uint64_t slba, uint16_t nlb, void *buffer, size_t length)
 {
@@ -236,7 +281,7 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 	cmd.nsid = htole32(nsid);
 	cmd.cdw10 = htole32(slba);
 	cmd.cdw11 = htole32(slba >> 32);
-	cmd.cdw12 = htole32(nlb);
+	cmd.cdw12 = htole32(nlb - 1);
 	/* Sequential Request in cdw13? */
 
 	ncap = nvmf_allocate_command(qp, &cmd);
@@ -270,51 +315,6 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 	}
 
 	nvmf_free_capsule(rcap);
-	return (0);
-}
-
-static int
-validate_namespace(struct nvmf_qpair *qp, u_int nsid, u_int *block_size)
-{
-	struct nvme_namespace_data nsdata;
-	int error;
-	uint8_t lbads, lbaf;
-
-	if (nsid > info.nn) {
-		warnx("Invalid namespace ID %u", nsid);
-		return (ERANGE);
-	}
-
-	error = nvmf_host_identify_namespace(qp, nsid, &nsdata);
-	if (error != 0) {
-		warnc(error, "Failed to identify namespace");
-		return (error);
-	}
-
-	if (NVMEV(NVME_NS_DATA_DPS_PIT, nsdata.dps) != 0) {
-		warn("End-to-end data protection is not supported");
-		return (EINVAL);
-	}
-
-	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, nsdata.flbas);
-	if (lbaf > nsdata.nlbaf) {
-		warn("Invalid LBA format index");
-		return (EINVAL);
-	}
-	
-	if (NVMEV(NVME_NS_DATA_LBAF_MS, nsdata.lbaf[lbaf]) != 0) {
-		warn("Namespaces with metadata are not supported");
-		return (EINVAL);
-	}
-
-	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, nsdata.lbaf[lbaf]);
-	if (lbads == 0) {
-		warn("Invalid LBA format index");
-		return (EINVAL);
-	}
-
-	*block_size = 1 << lbads;
-	fprintf(stderr, "Detected block size %u\n", *block_size);
 	return (0);
 }
 
