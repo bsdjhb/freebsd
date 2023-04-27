@@ -181,6 +181,20 @@ nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc)
 	return (qp->nq_connection->nc_ops->receive_capsule(qp, nc));
 }
 
+const void *
+nvmf_capsule_sqe(struct nvmf_capsule *nc)
+{
+	assert(nc->nc_qe_len == sizeof(struct nvme_command));
+	return (&nc->nc_sqe);
+}
+
+const void *
+nvmf_capsule_cqe(struct nvmf_capsule *nc)
+{
+	assert(nc->nc_qe_len == sizeof(struct nvme_completion));
+	return (&nc->nc_cqe);
+}
+
 int
 nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)
