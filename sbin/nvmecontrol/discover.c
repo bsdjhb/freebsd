@@ -28,8 +28,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <err.h>
-#include <netdb.h>
 #include <libnvmf.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -368,11 +368,14 @@ discover(const struct cmd *f, int argc, char *argv[])
 	if (error != 0)
 		errc(EX_IOERR, error, "Failed to fetch CC");
 
-	/* Clear IOCQES, IOSQES, AMS, MPS, and CSS. */
-	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
-	    NVMEB(NVME_CC_REG_AMS) | NVMEB(NVME_CC_REG_MPS) |
-	    NVMEB(NVME_CC_REG_CSS));
+	/* Clear known fields preserving any reserved fields. */
+	cc &= ~(NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
+	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
+
+	/* Leave AMS, MPS, and CSS as 0. */
+
 	cc |= (1 << NVME_CC_REG_EN_SHIFT);
+
 	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
 	if (error != 0)
 		errc(EX_IOERR, error, "Failed to set CC");
