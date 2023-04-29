@@ -35,6 +35,8 @@
 #include <sys/sx.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
+#include <dev/nvmf/nvmf_transport.h>
+#include <dev/nvmf/nvmf_transport_internal.h>
 
 /* Transport-independent support for fabrics queue pairs and commands. */
 
