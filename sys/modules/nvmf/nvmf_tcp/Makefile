@@ -1,10 +1,7 @@
 .PATH: ${SRCTOP}/sys/dev/nvmf
 
-KMOD=	nvmf
+KMOD=	nvmf_tcp
 
-SRCS=	nvmf.c \
-	nvmf_tcp.c
-
-EXPORT_SYMS=	YES
+SRCS=	nvmf_tcp.c
 
 .include <bsd.kmod.mk>
