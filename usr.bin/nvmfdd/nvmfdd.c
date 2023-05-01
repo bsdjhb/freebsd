@@ -52,10 +52,12 @@ struct qpair {
 
 enum rw { READ, WRITE };
 
+static bool data_digests, flow_control_disable, header_digests;
+
 static void
 usage(void)
 {
-	fprintf(stderr, "nvmfdd [-c cntlid] [-t transport] [-o offset] [-l length] [-n nsid]\n"
+	fprintf(stderr, "nvmfdd [-DFH] [-c cntlid] [-t transport] [-o offset] [-l length] [-n nsid]\n"
 	    "\tread|write <address:port> <nqn>\n");
 	exit(1);
 }
@@ -86,8 +88,8 @@ tcp_configure(struct nvmf_connection_params *params, const char *address,
 
 		params->tcp.fd = s;
 		params->tcp.pda = 0;
-		params->tcp.header_digests = false;
-		params->tcp.data_digests = false;
+		params->tcp.header_digests = header_digests;
+		params->tcp.data_digests = data_digests;
 		params->tcp.maxr2t = 1;
 		freeaddrinfo(list);
 		return;
@@ -396,8 +398,17 @@ main(int ac, char **av)
 	nsid = 1;
 	port = NULL;
 	transport = "tcp";
-	while ((ch = getopt(ac, av, "c:l:n:o:p:t:")) != -1) {
+	while ((ch = getopt(ac, av, "DFHc:l:n:o:p:t:")) != -1) {
 		switch (ch) {
+		case 'D':
+			data_digests = true;
+			break;
+		case 'F':
+			flow_control_disable = true;
+			break;
+		case 'H':
+			header_digests = true;
+			break;
 		case 'c':
 			if (strcasecmp(optarg, "dynamic") == 0)
 				cntlid = NVMF_CNTLID_DYNAMIC;
@@ -447,7 +458,7 @@ main(int ac, char **av)
 	port++;
 
 	params.ioccsz = 0;
-	params.sq_flow_control = true;
+	params.sq_flow_control = !flow_control_disable;
 	if (strcasecmp(transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
 	} else
