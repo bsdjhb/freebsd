@@ -864,7 +864,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	}
 
 	if ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_SUCCESS) != 0) {
-		struct nvme_command cqe;
+		struct nvme_completion cqe;
 		struct nvmf_tcp_capsule *tc;
 		struct nvmf_capsule *nc;
 
