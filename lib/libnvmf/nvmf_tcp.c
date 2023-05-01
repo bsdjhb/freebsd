@@ -600,6 +600,19 @@ nvmf_tcp_write_pdu_iov(struct nvmf_tcp_connection *ntc, struct iovec *iov,
 }
 
 static int
+nvmf_tcp_handle_term_req(struct nvmf_tcp_rxpdu *pdu)
+{
+	struct nvme_tcp_term_req_hdr *hdr;
+
+	hdr = (void *)pdu->hdr;
+
+	printf("NVMe/TCP: Received termination request: fes %#x fei %#x\n",
+	    le16toh(hdr->fes), le32dec(hdr->fei));
+	nvmf_tcp_free_pdu(pdu);
+	return (ECONNRESET);
+}
+
+static int
 nvmf_tcp_save_command_capsule(struct nvmf_tcp_qpair *qp,
     struct nvmf_tcp_rxpdu *pdu)
 {
@@ -1025,8 +1038,7 @@ nvmf_tcp_receive_pdu(struct nvmf_tcp_qpair *qp)
 		break;
 	case NVME_TCP_PDU_TYPE_H2C_TERM_REQ:
 	case NVME_TCP_PDU_TYPE_C2H_TERM_REQ:
-		nvmf_tcp_free_pdu(&pdu);
-		return (ECONNRESET);
+		return (nvmf_tcp_handle_term_req(&pdu));
 	case NVME_TCP_PDU_TYPE_CAPSULE_CMD:
 		return (nvmf_tcp_save_command_capsule(qp, &pdu));
 	case NVME_TCP_PDU_TYPE_CAPSULE_RESP:
