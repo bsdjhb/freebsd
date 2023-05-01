@@ -80,6 +80,16 @@ int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
 const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 
+/* Controller-specific APIs. */
+
+/*
+ * A controller calls this function to check for any
+ * transport-specific errors (invalid fields) in a received command
+ * capsule.  The callback returns a generic command status value:
+ * NVME_SC_SUCCESS if no error is found.
+ */
+uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
+
 /*
  * A controller calls this function to receive data associated with a
  * command capsule (e.g. the data for a WRITE command).  This can
