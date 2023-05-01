@@ -117,13 +117,14 @@ compute_digest_iov(const struct iovec *iov, u_int iovcnt)
 		iov++;
 		iovcnt--;
 	}
+	digest ^= 0xffffffff;
 	return (digest);
 }
 
 static uint32_t
 compute_digest(const void *buf, size_t len)
 {
-	return (calculate_crc32c(0xffffffff, buf, len));
+	return (calculate_crc32c(0xffffffff, buf, len) ^ 0xffffffff);
 }
 
 static struct nvmf_tcp_command_buffer *
