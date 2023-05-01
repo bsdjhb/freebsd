@@ -195,6 +195,17 @@ nvmf_capsule_cqe(struct nvmf_capsule *nc)
 	return (&nc->nc_cqe);
 }
 
+uint8_t
+nvmf_validate_command_capsule(struct nvmf_capsule *nc)
+{
+	assert(nc->nc_qe_len == sizeof(struct nvme_command));
+
+	if (NVMEV(NVME_CMD_PSDT, nc->nc_sqe.fuse) != NVME_PSDT_SGL)
+		return (NVME_SC_INVALID_FIELD);
+
+	return (nc->nc_qpair->nq_connection->nc_ops->validate_command_capsule(nc));
+}
+
 int
 nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)
