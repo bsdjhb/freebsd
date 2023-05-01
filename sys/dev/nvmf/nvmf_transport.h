@@ -50,7 +50,6 @@ typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);
 struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
     bool controller, const struct nvmf_connection_params *params,
     nvmf_connection_error_t *error_cb, void *cb_arg);
-void	nvmf_connection_error(struct nvmf_connection *nc);
 void	nvmf_free_connection(struct nvmf_connection *nc);
 
 /*

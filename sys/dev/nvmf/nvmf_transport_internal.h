@@ -147,6 +147,12 @@ struct nvmf_capsule {
 	/* XXX: TAILQ_ENTRY probably?  refcount? */
 };
 
+static void __inline
+nvmf_connection_error(struct nvmf_connection *nc)
+{
+	nc->nc_error(nc->nc_error_arg);
+}
+
 int	nvmf_transport_module_handler(struct module *, int, void *);
 
 #define	NVMF_TRANSPORT(name, ops)					\
