@@ -173,6 +173,49 @@ tcp_free_command_buffer(struct nvmf_tcp_command_buffer *cb)
 	free(cb);
 }
 
+static int
+nvmf_tcp_write_pdu(struct nvmf_tcp_connection *ntc, const void *pdu, size_t len)
+{
+	ssize_t nwritten;
+	const char *cp;
+
+	cp = pdu;
+	while (len != 0) {
+		nwritten = write(ntc->s, cp, len);
+		if (nwritten < 0)
+			return (errno);
+		len -= nwritten;
+		cp += nwritten;
+	}
+	return (0);
+}
+
+static int
+nvmf_tcp_write_pdu_iov(struct nvmf_tcp_connection *ntc, struct iovec *iov,
+    u_int iovcnt, size_t len)
+{
+	ssize_t nwritten;
+
+	for (;;) {
+		nwritten = writev(ntc->s, iov, iovcnt);
+		if (nwritten < 0)
+			return (errno);
+
+		len -= nwritten;
+		if (len == 0)
+			return (0);
+
+		while (iov->iov_len <= (size_t)nwritten) {
+			nwritten -= iov->iov_len;
+			iovcnt--;
+			iov++;
+		}
+
+		iov->iov_base = (char *)iov->iov_base + nwritten;
+		iov->iov_len -= nwritten;
+	}
+}
+
 static void
 nvmf_tcp_report_error(struct nvmf_tcp_connection *ntc, uint16_t fes,
     uint32_t fei, const void *rx_pdu, size_t pdu_len, u_int hlen)
@@ -199,7 +242,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *ntc, uint16_t fes,
 	iov[1].iov_base = __DECONST(void *, rx_pdu);
 	iov[1].iov_len = hlen;
 
-	(void)writev(ntc->s, iov, nitems(iov));
+	(void)nvmf_tcp_write_pdu_iov(ntc, iov, nitems(iov), sizeof(hdr) + hlen);
 	close(ntc->s);
 	ntc->s = -1;
 }
@@ -554,49 +597,6 @@ nvmf_tcp_free_pdu(struct nvmf_tcp_rxpdu *pdu)
 {
 	free(pdu->hdr);
 	pdu->hdr = NULL;
-}
-
-static int
-nvmf_tcp_write_pdu(struct nvmf_tcp_connection *ntc, const void *pdu, size_t len)
-{
-	ssize_t nwritten;
-	const char *cp;
-
-	cp = pdu;
-	while (len != 0) {
-		nwritten = write(ntc->s, cp, len);
-		if (nwritten < 0)
-			return (errno);
-		len -= nwritten;
-		cp += nwritten;
-	}
-	return (0);
-}
-
-static int
-nvmf_tcp_write_pdu_iov(struct nvmf_tcp_connection *ntc, struct iovec *iov,
-    u_int iovcnt, size_t len)
-{
-	ssize_t nwritten;
-
-	for (;;) {
-		nwritten = writev(ntc->s, iov, iovcnt);
-		if (nwritten < 0)
-			return (errno);
-
-		len -= nwritten;
-		if (len == 0)
-			return (0);
-
-		while (iov->iov_len <= (size_t)nwritten) {
-			nwritten -= iov->iov_len;
-			iovcnt--;
-			iov++;
-		}
-
-		iov->iov_base = (char *)iov->iov_base + nwritten;
-		iov->iov_len -= nwritten;
-	}
 }
 
 static int
