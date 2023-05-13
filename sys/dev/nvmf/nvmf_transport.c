@@ -158,14 +158,16 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 
 int
 nvmf_capsule_append_data(struct nvmf_capsule *nc, struct memdesc *mem,
-    size_t len, u_int offset)
+    size_t len, u_int offset, nvmf_io_complete_t *complete_cb, void *cb_arg)
 {
-	if (nc->nc_data_len != 0)
+	if (nc->nc_data.io_len != 0)
 		return (EBUSY);
 
-	nc->nc_data_mem = *mem;
-	nc->nc_data_len = len;
-	nc->nc_data_offset = offset;
+	nc->nc_data.io_mem = *mem;
+	nc->nc_data.io_len = len;
+	nc->nc_data.io_offset = offset;
+	nc->nc_data.io_complete = complete_cb;
+	nc->nc_data.io_complete_arg = cb_arg;
 	return (0);
 }
 
@@ -212,18 +214,33 @@ nvmf_validate_command_capsule(struct nvmf_capsule *nc)
 
 int
 nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
-    struct memdesc *mem, size_t len, int offset)
+    struct memdesc *mem, size_t len, int offset,
+    nvmf_io_complete_t *complete_cb, void *cb_arg)
 {
+	struct nvmf_io_request io;
+
+	io.io_data.mem = mem;
+	io.io_data.len = len;
+	io.io_data.offset = offset;
+	io.io_complete = complete_cb;
+	io.io_complete_arg = cb_arg;
 	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
-	    data_offset, mem, len, offset));
+	    data_offset, &io));
 }
 
 int
 nvmf_send_controller_data(struct nvmf_capsule *nc, struct memdesc *mem,
-    size_t len, u_int offset)
+    size_t len, u_int offset, nvmf_io_complete_t *complete_cb, void *cb_arg)
 {
+	struct nvmf_io_request io;
+
+	io.io_data.mem = mem;
+	io.io_data.len = len;
+	io.io_data.offset = offset;
+	io.io_complete = complete_cb;
+	io.io_complete_arg = cb_arg;
 	return (nc->nc_qpair->nq_connection->nc_ops->send_controller_data(nc,
-	    mem, len, offset));
+	    &io));
 }
 
 int
