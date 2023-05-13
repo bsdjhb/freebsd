@@ -87,7 +87,7 @@ tcp_configure(struct nvmf_connection_params *params, const char *address,
 		}
 
 		params->tcp.fd = s;
-		params->tcp.pda = 0;
+		params->tcp.hpda = 0;
 		params->tcp.header_digests = header_digests;
 		params->tcp.data_digests = data_digests;
 		params->tcp.maxr2t = 1;
