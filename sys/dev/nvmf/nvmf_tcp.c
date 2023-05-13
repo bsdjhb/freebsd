@@ -598,6 +598,83 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 }
 
 /*
+ * Construct a PDU that contains an optional data payload.  This
+ * includes dealing with digests and the length fields in the common
+ * header.
+ */
+static struct mbuf *
+nvmf_tcp_construct_pdu(struct nvmf_tcp_connection *ntc, void *hdr, size_t hlen,
+    struct mbuf *data, uint32_t data_len)
+{
+	struct nvme_tcp_common_pdu_hdr *ch;
+	struct mbuf *top;
+	uint32_t digest, pad, pdo, plen, mlen;
+
+	plen = hlen;
+	if (ntc->header_digests)
+		plen += sizeof(digest);
+	if (data_len != 0) {
+		KASSERT(m_length(data, NULL) == data_len, ("length mismatch"));
+		pdo = roundup2(plen, ntc->txpda);
+		pad = pdo - plen;
+		plen = pdo + data_len;
+		if (ntc->data_digests)
+			plen += sizeof(digest);
+		mlen = pdo;
+	} else {
+		KASSERT(data == NULL, ("payload mbuf with zero length"));
+		pdo = 0;
+		pad = 0;
+		mlen = plen;
+	}
+
+	top = m_get2(mlen, M_WAITOK, MT_DATA, M_PKTHDR);
+	ch = mtod(top, void *);
+	memcpy(ch, hdr, hlen);
+	ch->hlen = hlen;
+	if (ntc->header_digests)
+		ch->flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+	if (ntc->data_digests && data_len != 0)
+		ch->flags |= NVME_TCP_CH_FLAGS_DDGSTF;
+	ch->pdo = pdo;
+	ch->plen = htole32(plen);
+
+	/* HDGST */
+	if (ntc->header_digests) {
+		digest = compute_digest(ch, hlen);
+		memcpy((char *)ch + hlen, &digest, sizeof(digest));
+	}
+
+	if (pad != 0) {
+		/* PAD */
+		memset((char *)ch + pdo - pad, 0, pad);
+	}
+
+	if (data_len != 0) {
+		top->m_pkthdr.len = plen;
+
+		/* DATA */
+		top->m_next = data;
+
+		/* DDGST */
+		if (ntc->data_digests) {
+			digest = mbuf_crc32c(data, 0, data_len);
+
+			/* XXX: Can't use m_append as it uses M_NOWAIT. */
+			while (data->m_next != NULL)
+				data = data->m_next;
+
+			data->m_next = m_get(M_WAITOK, MT_DATA);
+			data->m_next->m_len = sizeof(digest);
+			memcpy(mtod(data->m_next, void *), &digest,
+			    sizeof(digest));
+		}
+	}
+
+	return (top);
+}
+
+/*
  * Copy len bytes starting at offset skip from an mbuf chain into an
  * I/O buffer at destination offset io_offset.
  */
@@ -1404,65 +1481,19 @@ static void
 tcp_send_h2c_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, struct mbuf *m, size_t len, bool last_pdu)
 {
-	struct nvme_tcp_h2c_data_hdr *hdr;
+	struct nvme_tcp_h2c_data_hdr h2c;
 	struct mbuf *top;
-	uint32_t digest, pad, pdo, plen;
 
-	plen = sizeof(*hdr);
-	if (ntc->header_digests)
-		plen += sizeof(digest);
-	pdo = roundup2(plen, ntc->txpda);
-	pad = pdo - plen;
-	plen = pdo + len;
-	if (ntc->data_digests)
-		plen += sizeof(digest);
-
-	top = m_get2(pdo, M_WAITOK, MT_DATA, M_PKTHDR);
-	top->m_pkthdr.len = plen;
-	hdr = mtod(top, void *);
-	memset(hdr, 0, sizeof(*hdr));
-	hdr->common.pdu_type = NVME_TCP_PDU_TYPE_H2C_DATA;
-	hdr->common.hlen = sizeof(*hdr);
+	memset(&h2c, 0, sizeof(h2c));
+	h2c.common.pdu_type = NVME_TCP_PDU_TYPE_H2C_DATA;
 	if (last_pdu)
-		hdr->common.flags |= NVME_TCP_H2C_DATA_FLAGS_LAST_PDU;
-	if (ntc->header_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	if (ntc->data_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-	hdr->common.pdo = pdo;
-	hdr->common.plen = htole32(plen);
-	hdr->cccid = cid;
-	hdr->ttag = ttag;
-	hdr->datao = htole32(data_offset);
-	hdr->datal = htole32(len);
+		h2c.common.flags |= NVME_TCP_H2C_DATA_FLAGS_LAST_PDU;
+	h2c.cccid = cid;
+	h2c.ttag = ttag;
+	h2c.datao = htole32(data_offset);
+	h2c.datal = htole32(len);
 
-	/* HDGST */
-	if (ntc->header_digests) {
-		digest = compute_digest(hdr, sizeof(*hdr));
-		memcpy(hdr + 1, &digest, sizeof(digest));
-	}
-
-	if (pad != 0) {
-		/* PAD */
-		memset((char *)hdr + pdo - pad, 0, pad);
-	}
-
-	/* DATA */
-	top->m_next = m;
-
-	/* DDGST */
-	if (ntc->data_digests) {
-		digest = mbuf_crc32c(m, 0, len);
-
-		/* XXX: Can't use m_append as it uses M_NOWAIT. */
-		while (m->m_next != NULL)
-			m = m->m_next;
-
-		m->m_next = m_get(M_WAITOK, MT_DATA);
-		m->m_next->m_len = sizeof(digest);
-		memcpy(mtod(m->m_next, void *), &digest, sizeof(digest));
-	}
-
+	top = nvmf_tcp_construct_pdu(ntc, &h2c, sizeof(h2c), m, len);
 	nvmf_tcp_write_pdu(ntc, top);
 }
 
@@ -1717,21 +1748,24 @@ tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 	struct nvmf_capsule *nc = &tc->nc;
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
-	struct nvme_tcp_cmd *cmd;
+	struct nvme_tcp_cmd cmd;
 	struct mbuf *top, *m;
-	uint32_t digest, pad, pdo, plen;
 	bool use_icd;
 
 	use_icd = false;
 	cb = NULL;
+	m = NULL;
 
 	if (nc->nc_data.io_len != 0) {
 		cb = tcp_alloc_command_buffer(qp, &nc->nc_data, 0,
 		    nc->nc_data.io_len, nc->nc_sqe.cid);
 
-		if (tc->send_data && nc->nc_data.io_len <= qp->max_icd)
+		if (tc->send_data && nc->nc_data.io_len <= qp->max_icd) {
 			use_icd = true;
-		else if (tc->send_data) {
+			m = nvmf_tcp_command_buffer_mbuf(cb, 0,
+			    nc->nc_data.io_len, NULL, false);
+			tcp_release_command_buffer(cb);
+		} else if (tc->send_data) {
 			mtx_lock(&qp->tx_buffers.lock);
 			tcp_add_command_buffer(&qp->tx_buffers, cb);
 			mtx_unlock(&qp->tx_buffers.lock);
@@ -1742,41 +1776,15 @@ tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 		}
 	}
 
-	plen = sizeof(cmd);
-	if (ntc->header_digests)
-		plen += sizeof(digest);
-	if (use_icd) {
-		pdo = roundup2(plen, ntc->txpda);
-		pad = plen - pdo;
-		plen = pdo;
-	} else {
-		pdo = 0;
-		pad = 0;
-	}
-
-	top = m_get2(plen, M_WAITOK, MT_DATA, M_PKTHDR);
-	if (use_icd) {
-		plen += nc->nc_data.io_len;
-		if (ntc->data_digests)
-			plen += sizeof(digest);
-	}
-	top->m_pkthdr.len = plen;
-	cmd = mtod(top, void *);
-	memset(cmd, 0, sizeof(*cmd));
-	cmd->common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_CMD;
-	cmd->common.hlen = sizeof(cmd);
-	if (ntc->header_digests)
-		cmd->common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	if (ntc->data_digests && use_icd)
-		cmd->common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-	cmd->common.plen = htole32(plen);
-	cmd->ccsqe = nc->nc_sqe;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_CMD;
+	cmd.ccsqe = nc->nc_sqe;
 
 	/* Populate SGL in SQE. */
 	if (nc->nc_data.io_len != 0) {
 		struct nvme_sgl_descriptor *sgl;
 
-		sgl = (struct nvme_sgl_descriptor *)&cmd->ccsqe.prp1;
+		sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
 		memset(sgl, 0, sizeof(*sgl));
 		sgl->address = 0;
 		sgl->unkeyed.length = htole32(nc->nc_data.io_len);
@@ -1790,38 +1798,8 @@ tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 		}
 	}
 
-	/* HDGST */
-	if (ntc->header_digests) {
-		digest = compute_digest(cmd, sizeof(*cmd));
-		memcpy(cmd + 1, &digest, sizeof(digest));
-	}
-
-	if (pad != 0) {
-		/* PAD */
-		memset((char *)cmd + pdo - pad, 0, pad);
-	}
-
-	/* DATA + DDGST */
-	if (use_icd) {
-		m = nvmf_tcp_command_buffer_mbuf(cb, 0, nc->nc_data.io_len,
-		    NULL, false);
-		top->m_next = m;
-
-		if (ntc->data_digests) {
-			digest = mbuf_crc32c(m, 0, nc->nc_data.io_len);
-
-			/* XXX: Can't use m_append as it uses M_NOWAIT. */
-			while (m->m_next != NULL)
-				m = m->m_next;
-
-			m->m_next = m_get(M_WAITOK, MT_DATA);
-			m->m_next->m_len = sizeof(digest);
-			memcpy(mtod(m->m_next, void *), &digest,
-			    sizeof(digest));
-		}
-
-		tcp_release_command_buffer(cb);
-	}
+	top = nvmf_tcp_construct_pdu(ntc, &cmd, sizeof(cmd), m, m != NULL ?
+	    nc->nc_data.io_len : 0);
 	return (top);
 }
 
@@ -1829,30 +1807,13 @@ static struct mbuf *
 tcp_response_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 {
 	struct nvmf_capsule *nc = &tc->nc;
-	struct nvme_tcp_rsp *hdr;
-	struct mbuf *m;
-	uint32_t digest, plen;
+	struct nvme_tcp_rsp rsp;
 
-	plen = sizeof(*hdr);
-	if (ntc->header_digests)
-		plen += sizeof(digest);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_RESP;
+	rsp.rccqe = nc->nc_cqe;
 
-	m = m_get2(plen, M_WAITOK, MT_DATA, M_PKTHDR);
-	hdr = mtod(m, void *);
-	memset(hdr, 0, sizeof(*hdr));
-	hdr->common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_RESP;
-	hdr->common.hlen = sizeof(*hdr);
-	if (ntc->header_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	hdr->common.plen = htole32(plen);
-	hdr->rccqe = nc->nc_cqe;
-
-	if (ntc->header_digests) {
-		digest = compute_digest(hdr, sizeof(*hdr));
-		memcpy(hdr + 1, &digest, sizeof(digest));
-	}
-
-	return (m);
+	return (nvmf_tcp_construct_pdu(ntc, &rsp, sizeof(rsp), NULL, 0));
 }
 
 static struct mbuf *
@@ -2207,32 +2168,17 @@ static void
 tcp_send_r2t(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, uint32_t data_len)
 {
-	struct nvme_tcp_r2t_hdr *hdr;
+	struct nvme_tcp_r2t_hdr r2t;
 	struct mbuf *m;
-	uint32_t digest, plen;
 
-	plen = sizeof(*hdr);
-	if (ntc->header_digests)
-		plen += sizeof(digest);
+	memset(&r2t, 0, sizeof(r2t));
+	r2t.common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
+	r2t.cccid = cid;
+	r2t.ttag = ttag;
+	r2t.r2to = htole32(data_offset);
+	r2t.r2tl = htole32(data_len);
 
-	m = m_get2(plen, M_WAITOK, MT_DATA, M_PKTHDR);
-	hdr = mtod(m, void *);
-	memset(hdr, 0, sizeof(*hdr));
-	hdr->common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
-	hdr->common.hlen = sizeof(*hdr);
-	if (ntc->header_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	hdr->common.plen = htole32(plen);
-	hdr->cccid = cid;
-	hdr->ttag = ttag;
-	hdr->r2to = htole32(data_offset);
-	hdr->r2tl = htole32(data_len);
-
-	if (ntc->header_digests) {
-		digest = compute_digest(hdr, sizeof(*hdr));
-		memcpy(hdr + 1, &digest, sizeof(digest));
-	}
-
+	m = nvmf_tcp_construct_pdu(ntc, &r2t, sizeof(r2t), NULL, 0);
 	nvmf_tcp_write_pdu(ntc, m);
 }
 
@@ -2308,64 +2254,18 @@ static void
 tcp_send_c2h_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid,
     uint32_t data_offset, struct mbuf *m, size_t len, bool last_pdu)
 {
-	struct nvme_tcp_c2h_data_hdr *hdr;
+	struct nvme_tcp_c2h_data_hdr c2h;
 	struct mbuf *top;
-	uint32_t digest, pad, pdo, plen;
 
-	plen = sizeof(*hdr);
-	if (ntc->header_digests)
-		plen += sizeof(digest);
-	pdo = roundup2(plen, ntc->txpda);
-	pad = pdo - plen;
-	plen = pdo + len;
-	if (ntc->data_digests)
-		plen += sizeof(digest);
-
-	top = m_get2(pdo, M_WAITOK, MT_DATA, M_PKTHDR);
-	top->m_pkthdr.len = plen;
-	hdr = mtod(top, void *);
-	memset(hdr, 0, sizeof(*hdr));
-	hdr->common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
-	hdr->common.hlen = sizeof(*hdr);
+	memset(&c2h, 0, sizeof(c2h));
+	c2h.common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
 	if (last_pdu)
-		hdr->common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
-	if (ntc->header_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	if (ntc->data_digests)
-		hdr->common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-	hdr->common.pdo = pdo;
-	hdr->common.plen = htole32(plen);
-	hdr->cccid = cid;
-	hdr->datao = htole32(data_offset);
-	hdr->datal = htole32(len);
+		c2h.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
+	c2h.cccid = cid;
+	c2h.datao = htole32(data_offset);
+	c2h.datal = htole32(len);
 
-	/* HDGST */
-	if (ntc->header_digests) {
-		digest = compute_digest(hdr, sizeof(*hdr));
-		memcpy(hdr + 1, &digest, sizeof(digest));
-	}
-
-	if (pad != 0) {
-		/* PAD */
-		memset((char *)hdr + pdo - pad, 0, pad);
-	}
-
-	/* DATA */
-	top->m_next = m;
-
-	/* DDGST */
-	if (ntc->data_digests) {
-		digest = mbuf_crc32c(m, 0, len);
-
-		/* XXX: Can't use m_append as it uses M_NOWAIT. */
-		while (m->m_next != NULL)
-			m = m->m_next;
-
-		m->m_next = m_get(M_WAITOK, MT_DATA);
-		m->m_next->m_len = sizeof(digest);
-		memcpy(mtod(m->m_next, void *), &digest, sizeof(digest));
-	}
-
+	top = nvmf_tcp_construct_pdu(ntc, &c2h, sizeof(c2h), m, len);
 	nvmf_tcp_write_pdu(ntc, top);
 }
 
