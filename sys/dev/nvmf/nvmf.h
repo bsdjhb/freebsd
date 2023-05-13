@@ -34,7 +34,8 @@ struct nvmf_connection_params {
 	union {
 		struct {
 			int	fd;
-			uint8_t	pda;
+			uint8_t	cpda;
+			uint8_t	hpda;
 			bool	header_digests;
 			bool	data_digests;
 			uint32_t maxr2t;
