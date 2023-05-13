@@ -214,14 +214,14 @@ nvmf_validate_command_capsule(struct nvmf_capsule *nc)
 
 int
 nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
-    struct memdesc *mem, size_t len, int offset,
+    struct memdesc *mem, size_t len, u_int offset,
     nvmf_io_complete_t *complete_cb, void *cb_arg)
 {
 	struct nvmf_io_request io;
 
-	io.io_data.mem = mem;
-	io.io_data.len = len;
-	io.io_data.offset = offset;
+	io.io_mem = *mem;
+	io.io_len = len;
+	io.io_offset = offset;
 	io.io_complete = complete_cb;
 	io.io_complete_arg = cb_arg;
 	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
@@ -234,9 +234,9 @@ nvmf_send_controller_data(struct nvmf_capsule *nc, struct memdesc *mem,
 {
 	struct nvmf_io_request io;
 
-	io.io_data.mem = mem;
-	io.io_data.len = len;
-	io.io_data.offset = offset;
+	io.io_mem = *mem;
+	io.io_len = len;
+	io.io_offset = offset;
 	io.io_complete = complete_cb;
 	io.io_complete_arg = cb_arg;
 	return (nc->nc_qpair->nq_connection->nc_ops->send_controller_data(nc,
