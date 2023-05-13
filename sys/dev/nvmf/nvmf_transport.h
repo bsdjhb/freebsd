@@ -46,6 +46,13 @@ typedef void nvmf_connection_error_t(void *);
 /* Callback to invoke when a capsule is received. */
 typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);
 
+/*
+ * Callback to invoke when an I/O request has completed.  The last
+ * parameter is an error value which is non-zero if the request did
+ * not complete successfully.
+ */
+typedef void nvmf_io_complete_t(void *, int);
+
 /* params contains negotiated values passed in from userland. */
 struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
     bool controller, const struct nvmf_connection_params *params,
@@ -65,8 +72,8 @@ void	nvmf_free_qpair(struct nvmf_qpair *qp);
  * Capsules are either commands (host -> controller) or responses
  * (controller -> host).  A data buffer may be associated with a
  * command capsule.  Transmitted data is not copied by this API but
- * instead must be preserved until the capsule is transmitted and
- * freed.
+ * instead must be preserved until the completion callback is invoked
+ * to indicate capsule transmission has completed.
  */
 struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp,
     const void *sqe);
@@ -74,7 +81,8 @@ struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
     const void *cqe);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
-    struct memdesc *mem, size_t len, u_int offset);
+    struct memdesc *mem, size_t len, u_int offset,
+    nvmf_io_complete_t *complete_cb, void *cb_arg);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
 const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
 const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
@@ -95,19 +103,27 @@ uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
  * either return in-capsule data or fetch data from the host
  * (e.g. using a R2T PDU over TCP).  The received command capsule
  * should be passed in 'nc'.  The received data is stored in the
- * passed in I/O vector.
+ * passed in memory descriptor.  If this function returns success,
+ * then the callback will be invoked once the operation has completed.
+ * Note that the callback might be invoked before this function
+ * returns.
  */
 int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
-    uint32_t data_offset, struct memdesc *mem, size_t len, int offset);
+    uint32_t data_offset, struct memdesc *mem, size_t len, u_int offset,
+    nvmf_io_complete_t *complete_cb, void *cb_arg);
 
 /*
  * A controller calls this function to send data in response to a
- * command prior to sending a response capsule.
+ * command prior to sending a response capsule.  If this function
+ * returns success, then the callback will be invoked once the
+ * operation has completed.  Note that the callback might be invoked
+ * before this function returns.
  *
  * TODO: Support for SUCCESS flag for final TCP C2H_DATA PDU?
  */
 int	nvmf_send_controller_data(struct nvmf_capsule *nc,
-    struct memdesc *mem, size_t len, u_int offset);
+    struct memdesc *mem, size_t len, u_int offset,
+    nvmf_io_complete_t *complete_cb, void *cb_arg);
 
 int	nvmf_transport_module_handler(struct module *, int, void *);
 

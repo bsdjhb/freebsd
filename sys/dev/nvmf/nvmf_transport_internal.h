@@ -36,6 +36,7 @@
  */
 
 struct module;
+struct nvmf_io_request;
 
 struct nvmf_transport_ops {
 	/* Connection management. */
@@ -56,10 +57,9 @@ struct nvmf_transport_ops {
 
 	/* Transferring controller data. */
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
-	    uint32_t data_offset, struct memdesc *mem, size_t len,
-	    u_int offset);
+	    uint32_t data_offset, struct nvmf_io_request *io);
 	int (*send_controller_data)(struct nvmf_capsule *nc,
-	    struct memdesc *mem, size_t len, u_int offset);
+	    struct nvmf_io_request *io);
 
 	enum nvmf_trtype trtype;
 	int priority;
@@ -114,6 +114,18 @@ struct nvmf_qpair {
 	/* XXX: TAILQ_ENTRY probably?  refcount? */
 };
 
+struct nvmf_io_request {
+	/*
+	 * Data buffer contains len bytes starting at offset offset of
+	 * the backing store described by mem.
+	 */
+	struct memdesc io_mem;
+	size_t	io_len;
+	u_int	io_offset;
+	nvmf_io_complete_t *io_complete;
+	void	*io_complete_arg;
+};
+
 /*
  * Fabrics Command and Response Capsules.  The Fabrics host
  * (initiator) and controller (target) drivers work with capsules that
@@ -135,14 +147,7 @@ struct nvmf_capsule {
 	 */
 	bool	nc_sqhd_valid;
 
-	/*
-	 * Data buffer contains nc_data_len bytes starting at offset
-	 * nc_data_offset of the backing store described by
-	 * nc_data_mem.
-	 */
-	struct memdesc nc_data_mem;
-	size_t	nc_data_len;
-	u_int	nc_data_offset;
+	struct nvmf_io_request nc_data;
 
 	/* XXX: TAILQ_ENTRY probably?  refcount? */
 };
@@ -151,6 +156,18 @@ static void __inline
 nvmf_connection_error(struct nvmf_connection *nc)
 {
 	nc->nc_error(nc->nc_error_arg);
+}
+
+static void __inline
+nvmf_capsule_received(struct nvmf_qpair *nq, struct nvmf_capsule *nc)
+{
+	nq->nq_receive(nq->nq_receive_arg, nc);
+}
+
+static void __inline
+nvmf_complete_io_request(struct nvmf_io_request *io, int error)
+{
+	io->io_complete(io->io_complete_arg, error);
 }
 
 int	nvmf_transport_module_handler(struct module *, int, void *);
