@@ -66,10 +66,8 @@ struct nvmf_tcp_connection {
 	uint8_t rxpda;
 	bool header_digests;
 	bool data_digests;
-	union {
-		uint32_t maxr2t;	/* Controller only */
-		uint32_t maxh2cdata;	/* Host only */
-	};
+	uint32_t maxr2t;	/* Controller only */
+	uint32_t maxh2cdata;
 	uint32_t ioccsz;	/* Host only */
 
 	bool qp_allocated;
@@ -1435,15 +1433,11 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 
 	pad = 0;
 	if (use_icd) {
-		if (ntc->txpda == 0)
-			cmd.common.pdo = plen;
-		else {
-			cmd.common.pdo = roundup2(plen, ntc->txpda);
-			pad = cmd.common.pdo - plen;
-			if (pad != 0) {
-				iovcnt++;
-				plen += pad;
-			}
+		cmd.common.pdo = roundup2(plen, ntc->txpda);
+		pad = cmd.common.pdo - plen;
+		if (pad != 0) {
+			iovcnt++;
+			plen += pad;
 		}
 
 		plen += nc->nc_data_len;
@@ -1742,13 +1736,8 @@ tcp_send_c2h_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid,
 		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
 		plen += sizeof(c2h.digest);
 	}
-	if (ntc->txpda == 0) {
-		c2h.hdr.common.pdo = plen;
-		pad = 0;
-	} else {
-		c2h.hdr.common.pdo = roundup2(plen, ntc->txpda);
-		pad = c2h.hdr.common.pdo - plen;
-	}
+	c2h.hdr.common.pdo = roundup2(plen, ntc->txpda);
+	pad = c2h.hdr.common.pdo - plen;
 	c2h.hdr.cccid = cid;
 	c2h.hdr.datao = htole32(data_offset);
 	c2h.hdr.datal = htole32(len);
@@ -1796,8 +1785,8 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
 {
 	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
 	struct nvme_sgl_descriptor *sgl;
-	size_t data_len, iov_len;
-	uint32_t data_offset;
+	size_t iov_len;
+	uint32_t data_len, data_offset;
 	u_int i;
 	int error;
 
