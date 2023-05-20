@@ -33,12 +33,15 @@
  * (target) to send and receive capsules and associated data.
  */
 
+#include <sys/sysctl.h>
 #include <dev/nvmf/nvmf_proto.h>
 
 struct memdesc;
 struct nvmf_capsule;
 struct nvmf_connection;
 struct nvmf_qpair;
+
+SYSCTL_DECL(_kern_nvmf);
 
 /* Callback to invoke when an error occurs for a connection. */
 typedef void nvmf_connection_error_t(void *);

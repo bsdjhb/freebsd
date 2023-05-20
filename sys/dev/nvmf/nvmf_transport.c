@@ -32,6 +32,7 @@
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/refcount.h>
+#include <sys/sysctl.h>
 #include <sys/sx.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
@@ -52,6 +53,9 @@ static SLIST_HEAD(, nvmf_transport) nvmf_transports[NVMF_TRTYPE_TCP + 1];
 static struct sx nvmf_transports_lock;
 
 static MALLOC_DEFINE(M_NVMF, "nvmf", "NVMe over Fabrics");
+
+SYSCTL_NODE(_kern, OID_AUTO, nvmf, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
+    "NVMe over Fabrics");
 
 static bool
 nvmf_supported_trtype(enum nvmf_trtype trtype)
