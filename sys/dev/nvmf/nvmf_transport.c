@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2022 Chelsio Communications, Inc.
+ * Copyright (c) 2022-2023 Chelsio Communications, Inc.
  * All rights reserved.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
@@ -353,12 +353,26 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 	}
 }
 
-static void
-nvmf_transport_init(void * __unused dummy)
+static int
+nvmf_transport_modevent(module_t mod __unused, int what, void *arg __unused)
 {
-	for (u_int i = 0; i < nitems(nvmf_transports); i++)
-		SLIST_INIT(&nvmf_transports[i]);
-	sx_init(&nvmf_transports_lock, "nvmf transports");
+	switch (what) {
+	case MOD_LOAD:
+		for (u_int i = 0; i < nitems(nvmf_transports); i++)
+			SLIST_INIT(&nvmf_transports[i]);
+		sx_init(&nvmf_transports_lock, "nvmf transports");
+		return (0);
+	default:
+		return (EOPNOTSUPP);
+	}
 }
-SYSINIT(nvmf_transport_init, SI_SUB_DRIVERS, SI_ORDER_FIRST,
-    nvmf_transport_init, NULL);
+
+static moduledata_t nvmf_transport_mod = {
+	"nvmf_transport",
+	nvmf_transport_modevent,
+	0
+};
+
+DECLARE_MODULE(nvmf_transport, nvmf_transport_mod, SI_SUB_DRIVERS,
+    SI_ORDER_FIRST);
+MODULE_VERSION(nvmf_transport, 1);
