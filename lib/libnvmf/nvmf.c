@@ -25,6 +25,7 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/refcount.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -60,6 +61,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 	nc->nc_ops = ops;
 	nc->nc_controller = controller;
 	nc->nc_sq_flow_control = params->sq_flow_control;
+	refcount_init(&nc->nc_refs, 1);
 	if (controller)
 		error = ops->accept(nc, params);
 	else
@@ -74,7 +76,8 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 void
 nvmf_free_connection(struct nvmf_connection *nc)
 {
-	nc->nc_ops->free_connection(nc);
+	if (refcount_release(&nc->nc_refs))
+		nc->nc_ops->free_connection(nc);
 }
 
 struct nvmf_qpair *
@@ -86,6 +89,7 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin)
 	if (qp == NULL)
 		return (NULL);
 
+	refcount_acquire(&nc->nc_refs);
 	qp->nq_connection = nc;
 	qp->nq_admin = admin;
 	TAILQ_INIT(&qp->nq_rx_capsules);
@@ -95,13 +99,16 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin)
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
+	struct nvmf_connection *nc;
 	struct nvmf_capsule *ncap, *tcap;
 
 	TAILQ_FOREACH_SAFE(ncap, &qp->nq_rx_capsules, nc_link, tcap) {
 		TAILQ_REMOVE(&qp->nq_rx_capsules, ncap, nc_link);
 		nvmf_free_capsule(ncap);
 	}
-	qp->nq_connection->nc_ops->free_qpair(qp);
+	nc = qp->nq_connection;
+	nc->nc_ops->free_qpair(qp);
+	nvmf_free_connection(nc);
 }
 
 struct nvmf_capsule *

@@ -63,6 +63,9 @@ struct nvmf_connection {
 	struct nvmf_transport_ops *nc_ops;
 	bool nc_controller;
 	bool nc_sq_flow_control;
+
+	/* Each qpair holds a reference on a connection. */
+	u_int nc_refs;
 };
 
 struct nvmf_qpair {

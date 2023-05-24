@@ -357,6 +357,7 @@ discover(const struct cmd *f, int argc, char *argv[])
 	    NVMF_CNTLID_DYNAMIC, NVMF_DISCOVERY_NQN, nqn, 0);
 	if (qp == NULL)
 		err(EX_IOERR, "Failed to connect to controller");
+	nvmf_free_connection(nc);
 
 	/* Fetch Controller Capabilities Property */
 	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
@@ -406,7 +407,6 @@ discover(const struct cmd *f, int argc, char *argv[])
 	dump_discovery_log_page(qp);
 
 	nvmf_free_qpair(qp);
-	nvmf_free_connection(nc);
 }
 
 static const struct opts discover_opts[] = {

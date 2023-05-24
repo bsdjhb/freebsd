@@ -71,10 +71,13 @@ struct nvmf_connection {
 	bool nc_controller;
 	bool nc_sq_flow_control;
 
+	/* Each qpair holds a reference on a connection. */
+	u_int nc_refs;
+
 	/* Callback to invoke for an error. */
 	nvmf_connection_error_t *nc_error;
 	void *nc_error_arg;
-	
+
 #ifdef notsure
 	bool nc_disconnecting;
 #endif
