@@ -4,7 +4,7 @@
 PACKAGE=nvme-tools
 PROG=	nvmecontrol
 SRCS=	comnd.c nvmecontrol.c
-SRCS+=	devlist.c discover.c firmware.c format.c
+SRCS+=	connect.c devlist.c disconnect.c discover.c firmware.c format.c
 SRCS+=	identify.c logpage.c ns.c nsid.c
 SRCS+=	perftest.c power.c reset.c resv.c sanitize.c
 SRCS+=	passthru.c
