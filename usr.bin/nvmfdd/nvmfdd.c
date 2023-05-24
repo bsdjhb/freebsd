@@ -45,11 +45,6 @@ static struct controller_info {
 	bool	disconnect_supported;
 } info;
 
-struct qpair {
-	struct nvmf_connection *nc;
-	struct nvmf_qpair *qp;
-};
-
 enum rw { READ, WRITE };
 
 static bool data_digests, flow_control_disable, header_digests;
@@ -197,7 +192,7 @@ connect_admin_queue(struct nvmf_connection *nc, const uint8_t hostid[16],
 }
 
 static void
-shutdown_controller(struct nvmf_connection *nc, struct nvmf_qpair *qp)
+shutdown_controller(struct nvmf_qpair *qp)
 {
 	uint64_t cc;
 	int error;
@@ -213,14 +208,12 @@ shutdown_controller(struct nvmf_connection *nc, struct nvmf_qpair *qp)
 		errc(1, error, "Failed to set CC to trigger shutdown");
 
 	nvmf_free_qpair(qp);
-	nvmf_free_connection(nc);
 }
 
 static void
-disconnect_queue(struct nvmf_connection *nc, struct nvmf_qpair *qp)
+disconnect_queue(struct nvmf_qpair *qp)
 {
 	nvmf_free_qpair(qp);
-	nvmf_free_connection(nc);
 }
 
 static int
@@ -384,7 +377,8 @@ main(int ac, char **av)
 	char *address, *port;
 	enum rw command;
 	struct nvmf_connection_params params;
-	struct qpair admin, io;
+	struct nvmf_connection *nc;
+	struct nvmf_qpair *admin, *io;
 	char hostnqn[NVMF_NQN_MAX_LEN];
 	uint8_t hostid[16];
 	enum nvmf_trtype trtype;
@@ -471,49 +465,50 @@ main(int ac, char **av)
 	if (error != 0)
 		errc(1, error, "Failed to generate host NQN");
 
-	admin.nc = create_connection(trtype, &params, address, port);
-	if (admin.nc == NULL)
+	nc = create_connection(trtype, &params, address, port);
+	if (nc == NULL)
 		err(1, "Failed to connect to controller (admin)");
 
-	admin.qp = connect_admin_queue(admin.nc, hostid, cntlid, hostnqn,
+	admin = connect_admin_queue(nc, hostid, cntlid, hostnqn,
 	    av[2]);
-	if (admin.qp == NULL)
+	if (admin == NULL)
 		err(1, "Failed to create admin queue");
+	nvmf_free_connection(nc);
 
-	error = validate_namespace(admin.qp, nsid, &block_size);
+	error = validate_namespace(admin, nsid, &block_size);
 	if (error != 0) {
-		shutdown_controller(admin.nc, admin.qp);
+		shutdown_controller(admin);
 		return (1);
 	}
 
 	params.ioccsz = info.ioccsz;
 
-	error = nvmf_host_request_queues(admin.qp, 1, &queues);
+	error = nvmf_host_request_queues(admin, 1, &queues);
 	if (error != 0) {
-		shutdown_controller(admin.nc, admin.qp);
+		shutdown_controller(admin);
 		errc(1, error, "Failed to request I/O queues");
 	}
 
-	io.nc = create_connection(trtype, &params, address, port);
-	if (io.nc == NULL) {
+	nc = create_connection(trtype, &params, address, port);
+	if (nc == NULL) {
 		warn("Failed to connect to controller (I/O)");
-		shutdown_controller(admin.nc, admin.qp);
+		shutdown_controller(admin);
 		return (1);
 	}
 
-	io.qp = nvmf_connect(io.nc, 1, info.mqes + 1, hostid,
-	    nvmf_cntlid(admin.qp), av[2], hostnqn, 0);
-	if (io.qp == NULL) {
+	io = nvmf_connect(nc, 1, info.mqes + 1, hostid,
+	    nvmf_cntlid(admin), av[2], hostnqn, 0);
+	if (io == NULL) {
 		warn("Failed to create I/O queue");
-		nvmf_free_connection(io.nc);
-		shutdown_controller(admin.nc, admin.qp);
+		nvmf_free_connection(nc);
+		shutdown_controller(admin);
 		return (1);
 	}
+	nvmf_free_connection(nc);
 
-	error = nvmf_io(io.qp, nsid, block_size, command, offset, length);
+	error = nvmf_io(io, nsid, block_size, command, offset, length);
 
-	disconnect_queue(io.nc, io.qp);
-	shutdown_controller(admin.nc, admin.qp);
+	disconnect_queue(io);
+	shutdown_controller(admin);
 	return (error == 0 ? 0 : 1);
 }
-

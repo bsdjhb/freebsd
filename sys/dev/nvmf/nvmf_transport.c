@@ -85,6 +85,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 		nc->nc_transport = nt;
 		nc->nc_ops = nt->nt_ops;
 		nc->nc_controller = controller;
+		refcount_init(&nc->nc_refs, 1);
 		nc->nc_error = error_cb;
 		nc->nc_error_arg = cb_arg;
 	}
@@ -96,6 +97,9 @@ void
 nvmf_free_connection(struct nvmf_connection *nc)
 {
 	struct nvmf_transport *nt;
+
+	if (!refcount_release(&nc->nc_refs))
+		return;
 
 	nt = nc->nc_transport;
 	nt->nt_ops->free_connection(nc);
@@ -113,6 +117,7 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
 	if (qp == NULL)
 		return (NULL);
 
+	refcount_acquire(&nc->nc_refs);
 	qp->nq_connection = nc;
 	qp->nq_receive = receive_cb;
 	qp->nq_receive_arg = cb_arg;
@@ -123,7 +128,11 @@ nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
-	qp->nq_connection->nc_ops->free_qpair(qp);
+	struct nvmf_connection *nc;
+
+	nc = qp->nq_connection;
+	nc->nc_ops->free_qpair(qp);
+	nvmf_free_connection(nc);
 }
 
 struct nvmf_capsule *

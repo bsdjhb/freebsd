@@ -66,6 +66,10 @@ void	nvmf_free_connection(struct nvmf_connection *nc);
  * A queue pair represents either an Admin or I/O
  * submission/completion queue pair.  TCP requires a separate
  * connection for each queue pair.
+ *
+ * Each open qpair holds a reference on its associated connection.
+ * Once queue pairs are allocated, callers can safely free the
+ * associated connections to ease bookkeeping.
  */
 struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc,
     bool admin, nvmf_capsule_receive_t *receive_cb, void *cb_arg);
