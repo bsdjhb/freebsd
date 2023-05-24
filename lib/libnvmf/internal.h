@@ -45,6 +45,10 @@ struct nvmf_transport_ops {
 	    bool admin);
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
+	/* Create params for kernel handoff. */
+	int (*kernel_handoff_params)(struct nvmf_qpair *qp,
+	    struct nvmf_connection_params *cparams);
+
 	/* Capsule operations. */
 	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
 	void (*free_capsule)(struct nvmf_capsule *nc);
@@ -61,6 +65,7 @@ struct nvmf_transport_ops {
 
 struct nvmf_connection {
 	struct nvmf_transport_ops *nc_ops;
+	enum nvmf_trtype nc_trtype;
 	bool nc_controller;
 	bool nc_sq_flow_control;
 
@@ -116,5 +121,8 @@ struct nvmf_capsule {
 };
 
 extern struct nvmf_transport_ops tcp_ops;
+
+int	nvmf_kernel_handoff_params(struct nvmf_qpair *qp,
+    struct nvmf_connection_params *cparams, struct nvmf_qpair_params *qparams);
 
 #endif /* !__LIBNVMF_INTERNAL_H__ */

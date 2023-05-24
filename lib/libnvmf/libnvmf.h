@@ -192,4 +192,11 @@ int	nvmf_host_fetch_discovery_log_page(struct nvmf_qpair *qp,
 int	nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested,
     u_int *actual);
 
+/*
+ * Handoff active host connection to the kernel.  This frees the
+ * connections and qpairs (even on error).
+ */
+int	nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
+    struct nvmf_qpair **io_queues);
+
 #endif /* !__LIBNVMF_H__ */

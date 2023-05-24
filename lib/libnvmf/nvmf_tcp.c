@@ -66,9 +66,9 @@ struct nvmf_tcp_connection {
 	uint8_t rxpda;
 	bool header_digests;
 	bool data_digests;
-	uint32_t maxr2t;	/* Controller only */
+	uint32_t maxr2t;
 	uint32_t maxh2cdata;
-	uint32_t ioccsz;	/* Host only */
+	uint32_t ioccsz;
 
 	bool qp_allocated;
 };
@@ -1363,6 +1363,29 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	free(qp);
 }
 
+static int
+tcp_kernel_handoff_params(struct nvmf_qpair *nq,
+    struct nvmf_connection_params *cparams)
+{
+	struct nvmf_tcp_connection *ntc = TCONN(nq->nq_connection);
+
+	cparams->ioccsz = ntc->ioccsz;
+	cparams->tcp.fd = ntc->s;
+	if (ntc->nc.nc_controller) {
+		cparams->tcp.cpda = ntc->txpda;
+		cparams->tcp.hpda = ntc->rxpda;
+	} else {
+		cparams->tcp.cpda = ntc->rxpda;
+		cparams->tcp.hpda = ntc->txpda;
+	}
+	cparams->tcp.header_digests = ntc->header_digests;
+	cparams->tcp.data_digests = ntc->data_digests;
+	cparams->tcp.maxr2t = ntc->maxr2t;
+	cparams->tcp.maxh2cdata = ntc->maxh2cdata;
+
+	return (0);
+}
+
 static struct nvmf_capsule *
 tcp_allocate_capsule(struct nvmf_qpair *qp __unused)
 {
@@ -1828,6 +1851,7 @@ struct nvmf_transport_ops tcp_ops = {
 	.free_connection = tcp_free_connection,
 	.allocate_qpair = tcp_allocate_qpair,
 	.free_qpair = tcp_free_qpair,
+	.kernel_handoff_params = tcp_kernel_handoff_params,
 	.allocate_capsule = tcp_allocate_capsule,
 	.free_capsule = tcp_free_capsule,
 	.transmit_capsule = tcp_transmit_capsule,

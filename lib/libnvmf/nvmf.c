@@ -59,6 +59,7 @@ nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
 		return (NULL);
 
 	nc->nc_ops = ops;
+	nc->nc_trtype = trtype;
 	nc->nc_controller = controller;
 	nc->nc_sq_flow_control = params->sq_flow_control;
 	refcount_init(&nc->nc_refs, 1);
@@ -227,4 +228,18 @@ nvmf_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
 {
 	return (nc->nc_qpair->nq_connection->nc_ops->send_controller_data(nc,
 	    iov, iovcnt));
+}
+
+int
+nvmf_kernel_handoff_params(struct nvmf_qpair *qp,
+    struct nvmf_connection_params *cparams, struct nvmf_qpair_params *qparams)
+{
+	memset(cparams, 0, sizeof(*cparams));
+	memset(qparams, 0, sizeof(*qparams));
+	qparams->admin = qp->nq_admin;
+	qparams->sq_flow_control = qp->nq_flow_control;
+	qparams->qsize = qp->nq_qsize;
+	qparams->sqhd = qp->nq_sqhd;
+	qparams->sqtail = qp->nq_sqtail;
+	return (qp->nq_connection->nc_ops->kernel_handoff_params(qp, cparams));
 }

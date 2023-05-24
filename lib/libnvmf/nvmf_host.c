@@ -27,9 +27,11 @@
 
 #include <sys/sysctl.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <uuid.h>
 
 #include "libnvmf.h"
@@ -744,4 +746,72 @@ nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
 	*actual = le32toh(rcap->nc_cqe.cdw0) & 0xffff;
 	nvmf_free_capsule(rcap);
 	return (0);
+}
+
+static bool
+is_queue_pair_idle(struct nvmf_qpair *qp)
+{
+	if (qp->nq_sqhd != qp->nq_sqtail)
+		return (false);
+	if (!TAILQ_EMPTY(&qp->nq_rx_capsules))
+		return (false);
+	return (true);
+}
+
+int
+nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
+    struct nvmf_qpair **io_queues)
+{
+	struct nvmf_handoff_host hh;
+	u_int i;
+	int error, fd;
+
+	fd = -1;
+	memset(&hh, 0, sizeof(hh));
+
+	/* All queue pairs must be idle. */
+	if (!is_queue_pair_idle(admin_qp)) {
+		error = EBUSY;
+		goto out;
+	}
+	for (i = 0; i < num_queues; i++) {
+		if (!is_queue_pair_idle(io_queues[i])) {
+			error = EBUSY;
+			goto out;
+		}
+	}
+
+	fd = open("/dev/nvmf", O_RDWR);
+	if (fd == -1) {
+		error = errno;
+		goto out;
+	}
+
+	/* First, the admin queue. */
+	hh.trtype = admin_qp->nq_connection->nc_trtype;
+	error = nvmf_kernel_handoff_params(admin_qp, &hh.admin.cp,
+	    &hh.admin.qp);
+	if (error)
+		goto out;
+
+	/* Next, the I/O queues. */
+	hh.num_io_queues = num_queues;
+	hh.io = calloc(num_queues, sizeof(*hh.io));
+	for (i = 0; i < num_queues; i++) {
+		error = nvmf_kernel_handoff_params(io_queues[i], &hh.io[i].cp,
+		    &hh.io[i].qp);
+		if (error)
+			goto out;
+	}
+
+	if (ioctl(fd, NVMF_HANDOFF_HOST, &hh) == -1)
+		error = errno;
+out:
+	if (fd >= 0)
+		close(fd);
+	free(hh.io);
+	for (i = 0; i < num_queues; i++)
+		(void)nvmf_free_qpair(io_queues[i]);
+	(void)nvmf_free_qpair(admin_qp);
+	return (error);
 }
