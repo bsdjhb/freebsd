@@ -182,6 +182,7 @@ static moduledata_t nvmf_transport_##name##_mod = {			\
 	&(ops)								\
 };									\
 DECLARE_MODULE(nvmf_transport_##name, nvmf_transport_##name##_mod,	\
-    SI_SUB_DRIVERS, SI_ORDER_ANY)
+    SI_SUB_DRIVERS, SI_ORDER_ANY);					\
+MODULE_DEPEND(nvmf_transport_##name, nvmf_transport, 1, 1, 1)
 
 #endif /* !__NVMF_TRANSPORT_INTERNAL_H__ */
