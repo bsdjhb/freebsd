@@ -28,6 +28,11 @@
 #ifndef __NVMF_H__
 #define	__NVMF_H__
 
+#include <sys/ioccom.h>
+#ifndef _KERNEL
+#include <stdbool.h>
+#endif
+
 struct nvmf_connection_params {
 	uint32_t ioccsz;
 	bool sq_flow_control;	/* libnvmf-only */
@@ -50,11 +55,30 @@ struct nvmf_qpair_params {
 	uint16_t qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;	/* host only */
-
-#ifdef notsure
-	/* Value in response from CONNECT. */
-	uint16_t cntlid;	/* host only */
-#endif	
 };
+
+/*
+ * This assumes a 1:1 relationship between connections and queue pairs
+ * which is true for TCP.
+ *
+ * XXX: Need to confirm if that is true for RDMA.
+ */
+struct nvmf_handoff_qpair {
+	struct nvmf_connection_params cp;
+	struct nvmf_qpair_params qp;
+};
+
+struct nvmf_handoff_host {
+	u_int	trtype;
+	u_int	num_io_queues;
+	struct nvmf_handoff_qpair admin;
+	struct nvmf_handoff_qpair *io;
+};
+
+/* Operations on /dev/nvmf */
+#define	NVMF_HANDOFF_HOST	_IOW('n', 200, struct nvmf_handoff_host)
+
+/* nvmf-specific operations on /dev/nvmeX */
+#define	NVMF_DISCONNECT		_IO('n', 201)
 
 #endif /* !__NVMF_H__ */
