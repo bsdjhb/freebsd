@@ -132,15 +132,4 @@ int	nvmf_send_controller_data(struct nvmf_capsule *nc,
     struct memdesc *mem, size_t len, u_int offset,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
 
-int	nvmf_transport_module_handler(struct module *, int, void *);
-
-#define	NVMF_TRANSPORT(name, ops)					\
-static moduledata_t nvmf_transport_##name##_mod = {			\
-	"nvmf/" #name,							\
-	nvmf_transport_module_handler,					\
-	&(ops)								\
-};									\
-DECLARE_MODULE(nvmf_transport_##name, nvmf_transport_##name##_mod,	\
-    SI_SUB_DRIVERS, SI_ORDER_ANY)
-
 #endif /* !__NVMF_TRANSPORT_H__ */
