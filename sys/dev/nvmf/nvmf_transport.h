@@ -88,9 +88,9 @@ struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
     const void *cqe);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
-    struct memdesc *mem, size_t len, u_int offset,
+    struct memdesc *mem, size_t len, u_int offset, bool send,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
-int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
+int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
 const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
 const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 

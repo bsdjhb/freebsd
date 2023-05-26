@@ -52,7 +52,7 @@ struct nvmf_transport_ops {
 	/* Capsule operations. */
 	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
 	void (*free_capsule)(struct nvmf_capsule *nc);
-	int (*transmit_capsule)(struct nvmf_capsule *nc, bool send_data);
+	int (*transmit_capsule)(struct nvmf_capsule *nc);
 	int (*receive_capsule)(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
 	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);
 
@@ -113,6 +113,7 @@ struct nvmf_capsule {
 	bool	nc_sqhd_valid;
 
 	/* Data buffer. */
+	bool	nc_send_data;
 	u_int	nc_data_iovcnt;
 	size_t	nc_data_len;
 	struct iovec *nc_data_iov;

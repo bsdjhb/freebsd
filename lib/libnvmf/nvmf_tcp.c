@@ -1407,7 +1407,7 @@ tcp_free_capsule(struct nvmf_capsule *nc)
 }
 
 static int
-tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
+tcp_transmit_command(struct nvmf_capsule *nc)
 {
 	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
@@ -1438,7 +1438,7 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 		sgl->address = 0;
 		sgl->unkeyed.length = htole32(nc->nc_data_len);
 		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
-		if (send_data && nc->nc_data_len <= qp->max_icd) {
+		if (nc->nc_send_data && nc->nc_data_len <= qp->max_icd) {
 			/* Use in-capsule data. */
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
 			use_icd = true;
@@ -1528,7 +1528,7 @@ tcp_transmit_command(struct nvmf_capsule *nc, bool send_data)
 	if (nc->nc_data_len != 0 && !use_icd)
 		tc->cb = tcp_alloc_command_buffer(qp, nc->nc_data_iov,
 		    nc->nc_data_iovcnt, 0, nc->nc_data_len, cmd.ccsqe.cid, 0,
-		    !send_data);
+		    !nc->nc_send_data);
 
 	return (0);
 }
@@ -1561,10 +1561,10 @@ tcp_transmit_response(struct nvmf_capsule *nc)
 }
 
 static int
-tcp_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
+tcp_transmit_capsule(struct nvmf_capsule *nc)
 {
 	if (nc->nc_qe_len == sizeof(struct nvme_command))
-		return (tcp_transmit_command(nc, send_data));
+		return (tcp_transmit_command(nc));
 	else
 		return (tcp_transmit_response(nc));
 }

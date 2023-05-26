@@ -147,7 +147,7 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 }
 
 int
-nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len)
+nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len, bool send)
 {
 	struct iovec *new_iov;
 
@@ -157,6 +157,8 @@ nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len)
 		return (EFBIG);
 	if (nc->nc_data_len + len < nc->nc_data_len)
 		return (EFBIG);
+	if (nc->nc_data_len != 0 && nc->nc_send_data != send)
+		return (EINVAL);
 
 	new_iov = realloc(nc->nc_data_iov, (nc->nc_data_iovcnt + 1) *
 	    sizeof(*new_iov));
@@ -167,6 +169,7 @@ nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len)
 	nc->nc_data_iov = new_iov;
 	nc->nc_data_iovcnt++;
 	nc->nc_data_len += len;
+	nc->nc_send_data = send;
 	return (0);
 }
 
@@ -177,10 +180,9 @@ nvmf_free_capsule(struct nvmf_capsule *nc)
 }
 
 int
-nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
+nvmf_transmit_capsule(struct nvmf_capsule *nc)
 {
-	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc,
-	    send_data));
+	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
 }
 
 int

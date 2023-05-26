@@ -112,11 +112,11 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	strlcpy(data.subnqn, subnqn, sizeof(data.subnqn));
 	strlcpy(data.hostnqn, hostnqn, sizeof(data.hostnqn));
 
-	error = nvmf_capsule_append_data(ncap, &data, sizeof(data));
+	error = nvmf_capsule_append_data(ncap, &data, sizeof(data), true);
 	if (error != 0)
 		goto error;
 
-	error = nvmf_transmit_capsule(ncap, true);
+	error = nvmf_transmit_capsule(ncap);
 	if (error != 0) {
 		printf("NVMF: Failed to transmit CONNECT capsule: %d\n",
 		    error);
@@ -191,7 +191,7 @@ nvmf_cntlid(struct nvmf_qpair *qp)
 }
 
 int
-nvmf_host_transmit_command(struct nvmf_capsule *ncap, bool send_data)
+nvmf_host_transmit_command(struct nvmf_capsule *ncap)
 {
 	struct nvmf_qpair *qp = ncap->nc_qpair;
 	uint16_t new_sqtail;
@@ -209,7 +209,7 @@ nvmf_host_transmit_command(struct nvmf_capsule *ncap, bool send_data)
 	if (qp->nq_cid == 0xFFFF)
 		qp->nq_cid = 0;
 
-	error = nvmf_transmit_capsule(ncap, send_data);
+	error = nvmf_transmit_capsule(ncap);
 	if (error != 0)
 		return (error);
 
@@ -349,7 +349,7 @@ nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -416,7 +416,7 @@ nvmf_write_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -500,13 +500,13 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, cdata, sizeof(*cdata));
+	error = nvmf_capsule_append_data(ncap, cdata, sizeof(*cdata), false);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -550,13 +550,13 @@ nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, nsdata, sizeof(*nsdata));
+	error = nvmf_capsule_append_data(ncap, nsdata, sizeof(*nsdata), false);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -602,13 +602,13 @@ nvmf_get_discovery_log_page(struct nvmf_qpair *qp, uint64_t offset, void *buf,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, buf, len);
+	error = nvmf_capsule_append_data(ncap, buf, len, false);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
@@ -725,7 +725,7 @@ nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap, false);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
