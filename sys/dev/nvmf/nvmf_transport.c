@@ -52,7 +52,8 @@ struct nvmf_transport {
 static SLIST_HEAD(, nvmf_transport) nvmf_transports[NVMF_TRTYPE_TCP + 1];
 static struct sx nvmf_transports_lock;
 
-static MALLOC_DEFINE(M_NVMF, "nvmf", "NVMe over Fabrics");
+static MALLOC_DEFINE(M_NVMF_TRANSPORT, "nvmf_xport",
+    "NVMe over Fabrics transport");
 
 SYSCTL_NODE(_kern, OID_AUTO, nvmf, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "NVMe over Fabrics");
@@ -271,7 +272,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			return (EINVAL);
 		}
 
-		nt = malloc(sizeof(*nt), M_NVMF, M_WAITOK | M_ZERO);
+		nt = malloc(sizeof(*nt), M_NVMF_TRANSPORT, M_WAITOK | M_ZERO);
 		nt->nt_ops = arg;
 
 		sx_xlock(&nvmf_transports_lock);
@@ -346,7 +347,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 		sx_xunlock(&nvmf_transports_lock);
 		if (error != 0)
 			return (error);
-		free(nt, M_NVMF);
+		free(nt, M_NVMF_TRANSPORT);
 		return (0);
 
 	default:
