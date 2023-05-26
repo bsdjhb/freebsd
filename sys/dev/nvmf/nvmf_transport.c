@@ -199,7 +199,7 @@ nvmf_transmit_capsule(struct nvmf_capsule *nc)
 	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
 }
 
-const void *
+void *
 nvmf_capsule_sqe(struct nvmf_capsule *nc)
 {
 	KASSERT(nc->nc_qe_len == sizeof(struct nvme_command),
@@ -207,7 +207,7 @@ nvmf_capsule_sqe(struct nvmf_capsule *nc)
 	return (&nc->nc_sqe);
 }
 
-const void *
+void *
 nvmf_capsule_cqe(struct nvmf_capsule *nc)
 {
 	KASSERT(nc->nc_qe_len == sizeof(struct nvme_completion),
