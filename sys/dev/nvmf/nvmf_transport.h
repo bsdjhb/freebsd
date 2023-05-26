@@ -91,8 +91,8 @@ int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
     struct memdesc *mem, size_t len, u_int offset, bool send,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
-const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
-const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
+void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
+void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 
 /* Controller-specific APIs. */
 
