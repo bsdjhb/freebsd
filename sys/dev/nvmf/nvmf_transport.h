@@ -83,9 +83,9 @@ void	nvmf_free_qpair(struct nvmf_qpair *qp);
  * to indicate capsule transmission has completed.
  */
 struct nvmf_capsule *nvmf_allocate_command(struct nvmf_qpair *qp,
-    const void *sqe);
+    const void *sqe, int how);
 struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
-    const void *cqe);
+    const void *cqe, int how);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
     struct memdesc *mem, size_t len, u_int offset, bool send,

@@ -575,7 +575,7 @@ nvmf_tcp_save_command_capsule(struct nvmf_tcp_qpair *qp,
 
 	cmd = (void *)pdu->hdr;
 
-	nc = nvmf_allocate_command(&qp->qp, &cmd->ccsqe);
+	nc = nvmf_allocate_command(&qp->qp, &cmd->ccsqe, M_WAITOK);
 
 	tc = TCAP(nc);
 	tc->rx_pdu = *pdu;
@@ -594,7 +594,7 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 
 	rsp = (void *)pdu->hdr;
 
-	nc = nvmf_allocate_response(&qp->qp, &rsp->rccqe);
+	nc = nvmf_allocate_response(&qp->qp, &rsp->rccqe, M_WAITOK);
 
 	nc->nc_sqhd_valid = true;
 	tc = TCAP(nc);
@@ -905,7 +905,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		memset(&cqe, 0, sizeof(cqe));
 		cqe.cid = cb->cid;
 
-		nc = nvmf_allocate_response(&qp->qp, &cqe);
+		nc = nvmf_allocate_response(&qp->qp, &cqe, M_WAITOK);
 		nc->nc_sqhd_valid = false;
 
 		nvmf_capsule_received(&qp->qp, nc);
@@ -2158,11 +2158,13 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 }
 
 static struct nvmf_capsule *
-tcp_allocate_capsule(struct nvmf_qpair *qp)
+tcp_allocate_capsule(struct nvmf_qpair *qp, int how)
 {
 	struct nvmf_tcp_capsule *nc;
 
-	nc = malloc(sizeof(*nc), M_NVMF_TCP, M_WAITOK | M_ZERO);
+	nc = malloc(sizeof(*nc), M_NVMF_TCP, how | M_ZERO);
+	if (nc == NULL)
+		return (NULL);
 	return (&nc->nc);
 }
 

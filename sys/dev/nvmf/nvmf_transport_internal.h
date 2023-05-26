@@ -50,7 +50,8 @@ struct nvmf_transport_ops {
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
 	/* Capsule operations. */
-	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
+	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp,
+	    int how);
 	void (*free_capsule)(struct nvmf_capsule *nc);
 	int (*transmit_capsule)(struct nvmf_capsule *nc);
 	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);

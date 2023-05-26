@@ -137,11 +137,13 @@ nvmf_free_qpair(struct nvmf_qpair *qp)
 }
 
 struct nvmf_capsule *
-nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe)
+nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe, int how)
 {
 	struct nvmf_capsule *nc;
 
-	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
+	KASSERT(how == M_WAITOK || how == M_NOWAIT,
+	    ("%s: invalid how", __func__));
+	nc = qp->nq_connection->nc_ops->allocate_capsule(qp, how);
 	if (nc == NULL)
 		return (NULL);
 
@@ -156,11 +158,13 @@ nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe)
 }
 
 struct nvmf_capsule *
-nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
+nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe, int how)
 {
 	struct nvmf_capsule *nc;
 
-	nc = qp->nq_connection->nc_ops->allocate_capsule(qp);
+	KASSERT(how == M_WAITOK || how == M_NOWAIT,
+	    ("%s: invalid how", __func__));
+	nc = qp->nq_connection->nc_ops->allocate_capsule(qp, how);
 	if (nc == NULL)
 		return (NULL);
 
