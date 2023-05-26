@@ -171,11 +171,13 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 
 int
 nvmf_capsule_append_data(struct nvmf_capsule *nc, struct memdesc *mem,
-    size_t len, u_int offset, nvmf_io_complete_t *complete_cb, void *cb_arg)
+    size_t len, u_int offset, bool send, nvmf_io_complete_t *complete_cb,
+    void *cb_arg)
 {
 	if (nc->nc_data.io_len != 0)
 		return (EBUSY);
 
+	nc->nc_send_data = send;
 	nc->nc_data.io_mem = *mem;
 	nc->nc_data.io_len = len;
 	nc->nc_data.io_offset = offset;
@@ -191,10 +193,9 @@ nvmf_free_capsule(struct nvmf_capsule *nc)
 }
 
 int
-nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
+nvmf_transmit_capsule(struct nvmf_capsule *nc)
 {
-	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc,
-	    send_data));
+	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
 }
 
 const void *

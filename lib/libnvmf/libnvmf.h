@@ -85,8 +85,8 @@ struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
     const void *cqe);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
-    const void *buf, size_t len);
-int	nvmf_transmit_capsule(struct nvmf_capsule *nc, bool send_data);
+    const void *buf, size_t len, bool send);
+int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
 int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
 const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
 const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
@@ -135,7 +135,7 @@ uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
  * Send a command to the controller.  This can fail with EBUSY if the
  * submission queue is full.
  */
-int	nvmf_host_transmit_command(struct nvmf_capsule *ncap, bool send_data);
+int	nvmf_host_transmit_command(struct nvmf_capsule *ncap);
 
 /*
  * Wait for a response to a command.  If there are no outstanding

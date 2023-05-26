@@ -283,13 +283,14 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 	if (ncap == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, buffer, length);
+	error = nvmf_capsule_append_data(ncap, buffer, length,
+	    command == WRITE);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap, command == WRITE);
+	error = nvmf_host_transmit_command(ncap);
 	if (error != 0) {
 		nvmf_free_capsule(ncap);
 		return (error);

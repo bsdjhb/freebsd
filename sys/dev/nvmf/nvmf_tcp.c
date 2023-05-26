@@ -120,7 +120,6 @@ struct nvmf_tcp_capsule {
 #if 0
 	struct nvmf_tcp_command_buffer *cb;
 #endif
-	bool send_data;
 
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
 };
@@ -1768,12 +1767,12 @@ tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 		cb = tcp_alloc_command_buffer(qp, &nc->nc_data, 0,
 		    nc->nc_data.io_len, nc->nc_sqe.cid);
 
-		if (tc->send_data && nc->nc_data.io_len <= qp->max_icd) {
+		if (nc->nc_send_data && nc->nc_data.io_len <= qp->max_icd) {
 			use_icd = true;
 			m = nvmf_tcp_command_buffer_mbuf(cb, 0,
 			    nc->nc_data.io_len, NULL, false);
 			tcp_release_command_buffer(cb);
-		} else if (tc->send_data) {
+		} else if (nc->nc_send_data) {
 			mtx_lock(&qp->tx_buffers.lock);
 			tcp_add_command_buffer(&qp->tx_buffers, cb);
 			mtx_unlock(&qp->tx_buffers.lock);
@@ -2177,14 +2176,13 @@ tcp_free_capsule(struct nvmf_capsule *nc)
 }
 
 static int
-tcp_transmit_capsule(struct nvmf_capsule *nc, bool send_data)
+tcp_transmit_capsule(struct nvmf_capsule *nc)
 {
 	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
 	struct nvmf_tcp_capsule *tcap = TCAP(nc);
 	struct socket *so = ntc->so;
 
 	SOCKBUF_LOCK(&so->so_snd);
-	tcap->send_data = send_data;
 	STAILQ_INSERT_TAIL(&ntc->tx_capsules, tcap, link);
 	if (sowriteable(so))
 		cv_signal(&ntc->tx_cv);
