@@ -191,6 +191,7 @@ nvmf_attach(device_t dev)
 		goto out;
 	}
 
+	return (0);
 out:
 	for (i = 0; i < sc->num_io_queues; i++) {
 		if (sc->io[i] != NULL)
