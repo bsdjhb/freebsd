@@ -172,7 +172,8 @@ nvmf_attach(device_t dev)
 		sc->io[i] = nvmf_init_qp(sc, ivars->hh->trtype,
 		    &ivars->io_params[i]);
 		if (sc->io[i] == NULL) {
-			device_printf(dev, "Failed to setup I/O queue %u\n", i);
+			device_printf(dev, "Failed to setup I/O queue %u\n",
+			    i + 1);
 			error = ENXIO;
 			goto out;
 		}
