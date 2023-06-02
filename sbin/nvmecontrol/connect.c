@@ -552,10 +552,11 @@ connect_fn(const struct cmd *f, int argc, char *argv[])
 	address = opt.address;
 	port = strrchr(address, ':');
 	if (port != NULL) {
-		if (port == address)
+		if (port == address || port[1] == '\0')
 			errx(EX_USAGE, "Invalid address");
 		tofree = strndup(address, port - address);
 		address = tofree;
+		port++;		/* Skip over ':'. */
 	}
 
 	if (opt.discover)
