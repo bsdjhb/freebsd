@@ -161,6 +161,7 @@ nvmf_attach(device_t dev)
 	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
 	if (sc->admin == NULL) {
 		device_printf(dev, "Failed to setup admin queue\n");
+		error = ENXIO;
 		goto out;
 	}
 
@@ -172,6 +173,7 @@ nvmf_attach(device_t dev)
 		    &ivars->io_params[i]);
 		if (sc->io[i] == NULL) {
 			device_printf(dev, "Failed to setup I/O queue %u\n", i);
+			error = ENXIO;
 			goto out;
 		}
 	}
