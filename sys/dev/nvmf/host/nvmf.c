@@ -230,10 +230,18 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
     struct thread *td)
 {
 	struct nvmf_softc *sc = cdev->si_drv1;
+	struct nvme_get_nsid *gnsid;
 	device_t dev;
 	int error;
 
 	switch (cmd) {
+	case NVME_GET_NSID:
+		gnsid = (struct nvme_get_nsid *)arg;
+		strncpy(gnsid->cdev, device_get_nameunit(sc->dev),
+		    sizeof(gnsid->cdev));
+		gnsid->cdev[sizeof(gnsid->cdev) - 1] = '\0';
+		gnsid->nsid = 0;
+		return (0);
 	case NVMF_DISCONNECT:
 		dev = sc->dev;
 		bus_topo_lock();
