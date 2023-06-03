@@ -172,7 +172,8 @@ nvmf_capsule_received(struct nvmf_qpair *nq, struct nvmf_capsule *nc)
 static void __inline
 nvmf_complete_io_request(struct nvmf_io_request *io, int error)
 {
-	io->io_complete(io->io_complete_arg, error);
+	if (io->io_complete != NULL)
+		io->io_complete(io->io_complete_arg, error);
 }
 
 int	nvmf_transport_module_handler(struct module *, int, void *);
