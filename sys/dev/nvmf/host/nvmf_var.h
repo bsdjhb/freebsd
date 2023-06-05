@@ -51,7 +51,7 @@ struct nvmf_softc {
 };
 
 struct nvmf_request {
-	struct nvme_command cmd;
+	struct nvmf_host_qpair *qp;
 	struct nvmf_capsule *nc;
 	nvmf_request_complete_t *cb;
 	void	*cb_arg;
@@ -79,10 +79,9 @@ struct nvmf_host_qpair *nvmf_init_qp(struct nvmf_softc *sc,
     enum nvmf_trtype trtype, struct nvmf_handoff_qpair *handoff);
 void	nvmf_destroy_qp(struct nvmf_host_qpair *qp);
 
-struct nvmf_request *nvmf_allocate_request(nvmf_request_complete_t *cb,
-    void *cb_arg, int how);
-void	nvmf_submit_request(struct nvmf_host_qpair *qp,
-    struct nvmf_request *req, int how);
+struct nvmf_request *nvmf_allocate_request(struct nvmf_host_qpair *qp,
+    void *sqe, nvmf_request_complete_t *cb, void *cb_arg, int how);
+void	nvmf_submit_request(struct nvmf_request *req);
 void	nvmf_free_request(struct nvmf_request *req);
 
 #endif /* !__NVMF_VAR_H__ */

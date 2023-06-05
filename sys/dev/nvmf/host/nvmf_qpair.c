@@ -60,7 +60,8 @@ struct nvmf_host_qpair {
 };
 
 struct nvmf_request *
-nvmf_allocate_request(nvmf_request_complete_t *cb, void *cb_arg, int how)
+nvmf_allocate_request(struct nvmf_host_qpair *qp, void *sqe,
+    nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
 	struct nvmf_request *req;
 
@@ -68,10 +69,18 @@ nvmf_allocate_request(nvmf_request_complete_t *cb, void *cb_arg, int how)
 	    ("%s: invalid how", __func__));
 
 	req = malloc(sizeof(*req), M_NVMF, how | M_ZERO);
-	if (req != NULL) {
-		req->cb = cb;
-		req->cb_arg = cb_arg;
+	if (req == NULL)
+		return (NULL);
+
+	req->qp = qp;
+	req->cb = cb;
+	req->cb_arg = cb_arg;
+	req->nc = nvmf_allocate_command(qp->qp, sqe, how);
+	if (req->nc == NULL) {
+		free(req, M_NVMF);
+		return (NULL);
 	}
+
 	return (req);
 }
 
@@ -235,15 +244,12 @@ nvmf_destroy_qp(struct nvmf_host_qpair *qp)
 }
 
 void
-nvmf_submit_request(struct nvmf_host_qpair *qp, struct nvmf_request *req,
-    int how)
+nvmf_submit_request(struct nvmf_request *req)
 {
+	struct nvmf_host_qpair *qp;
 	struct nvmf_host_command *cmd;
 
-	req->nc = nvmf_allocate_command(qp->qp, &req->cmd, how);
-	if (req->nc == NULL)
-		panic("TODO: Need to handle failed command capsule alloc");
-
+	qp = req->qp;
 	mtx_lock(&qp->lock);
 	cmd = TAILQ_FIRST(&qp->free_commands);
 	if (cmd == NULL) {

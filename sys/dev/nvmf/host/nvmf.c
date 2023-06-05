@@ -31,6 +31,7 @@
 #include <sys/lock.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
+#include <sys/memdesc.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <dev/nvme/nvme.h>
@@ -45,7 +46,23 @@ MALLOC_DEFINE(M_NVMF, "nvmf", "NVMe over Fabrics host");
 struct nvmf_completion_status {
 	struct nvme_completion cqe;
 	bool	done;
+	bool	io_done;
+	int	io_error;
 };
+
+static void
+nvmf_status_init(struct nvmf_completion_status *status)
+{
+	status->done = false;
+	status->io_done = true;
+	status->io_error = 0;
+}
+
+static void
+nvmf_status_wait_io(struct nvmf_completion_status *status)
+{
+	status->io_done = false;
+}
 
 static void
 nvmf_complete(void *arg, struct nvmf_capsule *nc)
@@ -63,13 +80,27 @@ nvmf_complete(void *arg, struct nvmf_capsule *nc)
 }
 
 static void
+nvmf_io_complete(void *arg, int error)
+{
+	struct nvmf_completion_status *status = arg;
+	struct mtx *mtx;
+
+	status->io_error = error;
+	mtx = mtx_pool_find(mtxpool_sleep, status);
+	mtx_lock(mtx);
+	status->io_done = true;
+	mtx_unlock(mtx);
+	wakeup(status);
+}
+
+static void
 nvmf_wait_for_reply(struct nvmf_completion_status *status)
 {
 	struct mtx *mtx;
 
 	mtx = mtx_pool_find(mtxpool_sleep, status);
 	mtx_lock(mtx);
-	while (!status->done)
+	while (!status->done && !status->io_done)
 		mtx_sleep(status, mtx, 0, "nvmfcmd", 0);
 	mtx_unlock(mtx);
 }
@@ -81,7 +112,7 @@ nvmf_read_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	const struct nvmf_fabric_prop_get_rsp *rsp;
 	struct nvmf_completion_status status;
 
-	status.done = false;
+	nvmf_status_init(&status);
 	nvmf_cmd_get_property(sc, offset, size, nvmf_complete, &status,
 	    M_WAITOK);
 	nvmf_wait_for_reply(&status);
@@ -106,7 +137,7 @@ nvmf_write_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 {
 	struct nvmf_completion_status status;
 
-	status.done = false;
+	nvmf_status_init(&status);
 	nvmf_cmd_set_property(sc, offset, size, value, nvmf_complete, &status,
 	    M_WAITOK);
 	nvmf_wait_for_reply(&status);
@@ -227,15 +258,89 @@ nvmf_detach(device_t dev)
 }
 
 static int
+nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt)
+{
+	struct nvmf_completion_status status;
+	struct nvme_command cmd;
+	struct memdesc mem;
+	struct nvmf_request *req;
+	void *buf;
+	int error;
+
+	/* XXX: Need to query MDTS and set a real max size here. */
+	if (pt->len > 1024 * 1024)
+		return (EINVAL);
+
+	buf = NULL;
+	if (pt->len != 0) {
+		/*
+		 * XXX: Depending on the size we may want to pin the
+		 * user pages and use a memdesc with vm_page_t's
+		 * instead.
+		 */
+		buf = malloc(pt->len, M_NVMF, M_WAITOK);
+		if (pt->is_read == 0) {
+			error = copyin(pt->buf, buf, pt->len);
+			if (error != 0) {
+				free(buf, M_NVMF);
+				return (error);
+			}
+		} else {
+			/* Ensure no kernel data is leaked to userland. */
+			memset(buf, 0, pt->len);
+		}
+	}
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opc = pt->cmd.opc;
+	cmd.fuse = pt->cmd.fuse;
+	cmd.nsid = pt->cmd.nsid;
+	cmd.cdw10 = pt->cmd.cdw10;
+	cmd.cdw11 = pt->cmd.cdw11;
+	cmd.cdw12 = pt->cmd.cdw12;
+	cmd.cdw13 = pt->cmd.cdw13;
+	cmd.cdw14 = pt->cmd.cdw14;
+	cmd.cdw15 = pt->cmd.cdw15;
+
+	nvmf_status_init(&status);
+	req = nvmf_allocate_request(sc->admin, &cmd, nvmf_complete, &status,
+	    M_WAITOK);
+
+	if (pt->len != 0) {
+		mem = memdesc_vaddr(buf, pt->len);
+		nvmf_capsule_append_data(req->nc, &mem, pt->len, 0,
+		    pt->is_read == 0, nvmf_io_complete, &status);
+		nvmf_status_wait_io(&status);
+	}
+
+	nvmf_submit_request(req);
+	nvmf_wait_for_reply(&status);
+
+	memset(&pt->cpl, 0, sizeof(pt->cpl));
+	pt->cpl.cdw0 = status.cqe.cdw0;
+	pt->cpl.status = status.cqe.status;
+
+	error = status.io_error;
+	if (error == 0 && pt->len != 0 && pt->is_read != 0)
+		error = copyout(buf, pt->buf, pt->len);
+	free(buf, M_NVMF);
+	return (error);
+}
+
+static int
 nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
     struct thread *td)
 {
 	struct nvmf_softc *sc = cdev->si_drv1;
 	struct nvme_get_nsid *gnsid;
+	struct nvme_pt_command *pt;
 	device_t dev;
 	int error;
 
 	switch (cmd) {
+	case NVME_PASSTHROUGH_CMD:
+		pt = (struct nvme_pt_command *)arg;
+		return (nvmf_passthrough_cmd(sc, pt));
 	case NVME_GET_NSID:
 		gnsid = (struct nvme_get_nsid *)arg;
 		strncpy(gnsid->cdev, device_get_nameunit(sc->dev),

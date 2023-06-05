@@ -36,54 +36,52 @@ void
 nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
     nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
-	struct nvmf_fabric_prop_get_cmd *cmd;
+	struct nvmf_fabric_prop_get_cmd cmd;
 	struct nvmf_request *req;
 
-	req = nvmf_allocate_request(cb, cb_arg, how);
-
-	cmd = (struct nvmf_fabric_prop_get_cmd *)&req->cmd;
-	cmd->opcode = NVME_OPC_FABRIC;
-	cmd->fctype = NVMF_FABRIC_COMMAND_PROPERTY_GET;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = NVME_OPC_FABRIC;
+	cmd.fctype = NVMF_FABRIC_COMMAND_PROPERTY_GET;
 	switch (size) {
 	case 4:
-		cmd->attrib.size = NVMF_PROP_SIZE_4;
+		cmd.attrib.size = NVMF_PROP_SIZE_4;
 		break;
 	case 8:
-		cmd->attrib.size = NVMF_PROP_SIZE_8;
+		cmd.attrib.size = NVMF_PROP_SIZE_8;
 		break;
 	default:
 		panic("Invalid property size");
 	}
-	cmd->ofst = htole32(offset);
+	cmd.ofst = htole32(offset);
 
-	nvmf_submit_request(sc->admin, req, how);
+	req = nvmf_allocate_request(sc->admin, &cmd, cb, cb_arg, how);
+	nvmf_submit_request(req);
 }
 
 void
 nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
     uint64_t value, nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
-	struct nvmf_fabric_prop_set_cmd *cmd;
+	struct nvmf_fabric_prop_set_cmd cmd;
 	struct nvmf_request *req;
 
-	req = nvmf_allocate_request(cb, cb_arg, how);
-
-	cmd = (struct nvmf_fabric_prop_set_cmd *)&req->cmd;
-	cmd->opcode = NVME_OPC_FABRIC;
-	cmd->fctype = NVMF_FABRIC_COMMAND_PROPERTY_SET;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = NVME_OPC_FABRIC;
+	cmd.fctype = NVMF_FABRIC_COMMAND_PROPERTY_SET;
 	switch (size) {
 	case 4:
-		cmd->attrib.size = NVMF_PROP_SIZE_4;
-		cmd->value.u32.low = htole32(value);
+		cmd.attrib.size = NVMF_PROP_SIZE_4;
+		cmd.value.u32.low = htole32(value);
 		break;
 	case 8:
-		cmd->attrib.size = NVMF_PROP_SIZE_8;
-		cmd->value.u64 = htole64(value);
+		cmd.attrib.size = NVMF_PROP_SIZE_8;
+		cmd.value.u64 = htole64(value);
 		break;
 	default:
 		panic("Invalid property size");
 	}
-	cmd->ofst = htole32(offset);
+	cmd.ofst = htole32(offset);
 
-	nvmf_submit_request(sc->admin, req, how);
+	req = nvmf_allocate_request(sc->admin, &cmd, cb, cb_arg, how);
+	nvmf_submit_request(req);
 }
