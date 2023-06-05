@@ -251,7 +251,6 @@ nvmf_tcp_write_pdu(struct nvmf_tcp_connection *ntc, struct mbuf *m)
 {
 	struct socket *so = ntc->so;
 
-	M_ASSERTPKTHDR(m);
 	SOCKBUF_LOCK(&so->so_snd);
 	mbufq_enqueue(&ntc->tx_pdus, m);
 	/* XXX: Do we need to handle sb_hiwat being wrong? */
@@ -541,6 +540,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		}
 	}
 
+	pdu->data_len = data_len;
 	return (0);
 }
 
@@ -895,8 +895,6 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	mbuf_copyto_io(pdu->m, pdu->hdr->pdo, data_len, &cb->io, data_offset);
 
-	tcp_release_command_buffer(cb);
-
 	if ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_SUCCESS) != 0) {
 		struct nvme_completion cqe;
 		struct nvmf_capsule *nc;
@@ -909,6 +907,8 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 		nvmf_capsule_received(&qp->qp, nc);
 	}
+
+	tcp_release_command_buffer(cb);
 
 	nvmf_tcp_free_pdu(pdu);
 	return (0);
@@ -1706,7 +1706,6 @@ nvmf_tcp_receive(void *arg)
 			if (needed < sizeof(ch) || ch.hlen > needed)
 				needed = sizeof(ch);
 
-			pdu.data_len = needed;
 			memset(&uio, 0, sizeof(uio));
 			uio.uio_resid = needed;
 		}
