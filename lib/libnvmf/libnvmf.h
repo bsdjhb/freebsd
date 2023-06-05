@@ -50,26 +50,73 @@
 #define	NVMF_KATO_DEFAULT	(120000)
 
 struct nvmf_capsule;
-struct nvmf_connection;
+struct nvmf_association;
 struct nvmf_qpair;
+
+/*
+ * Parameters shared by all queue-pairs of an association.  Note that
+ * this contains the requested values used to initiate transport
+ * negotiation.
+ */
+struct nvmf_association_params {
+	bool sq_flow_control;		/* SQ flow control required. */
+	union {
+		struct {
+			uint8_t pda;	/* Tx-side PDA. */
+			bool header_digests;
+			bool data_digests;
+			uint32_t maxr2t;	/* Host only */
+			uint32_t maxh2cdata;	/* Controller only */
+		} tcp;
+	};
+};
+
+/* Parameters specific to a single queue pair of an association. */
+struct nvmf_qpair_params {
+	bool admin;			/* Host only */
+	union {
+		struct {
+			int fd;
+		} tcp;
+	};
+};
 
 /* Transport-independent APIs. */
 
-/* params contains requested values for this side of the negotiation. */
-struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
-    bool controller, const struct nvmf_connection_params *params);
-void	nvmf_free_connection(struct nvmf_connection *nc);
+/*
+ * A host should allocate a new association for each association with
+ * a controller.  After the admin queue has been allocated and the
+ * controller's data has been fetched, it should be passed to
+ * nvmf_update_association to update internal transport-specific
+ * parameters before allocating I/O queues.
+ *
+ * A controller uses a single association to manage all incoming
+ * queues since it is not known until after parsing the CONNECT
+ * command which transport queues are admin vs I/O and which
+ * controller they are created against.
+ */
+struct nvmf_association *nvmf_allocate_association(enum nvmf_trtype trtype,
+    bool controller, const struct nvmf_association_params *params);
+void	nvmf_update_assocation(struct nvmf_association *na,
+    const struct nvme_controller_data *cdata);
+void	nvmf_free_association(struct nvmf_association *na);
+
+/* The most recent association-wide error message. */
+const char *nvmf_association_error(const struct nvmf_association *na);
 
 /*
  * A queue pair represents either an Admin or I/O
- * submission/completion queue pair.  TCP requires a separate
- * connection for each queue pair.
+ * submission/completion queue pair.
  *
- * Each open qpair holds a reference on its associated connection.
- * Once queue pairs are allocated, callers can safely free the
- * associated connections to ease bookkeeping.
+ * Each open qpair holds a reference on its association.  Once queue
+ * pairs are allocated, callers can safely free the association to
+ * ease bookkeeping.
+ *
+ * If nvmf_allocate_qpair fails, a detailed error message can be obtained
+ * from nvmf_association_error.
  */
-struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin);
+struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params);
 void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
 /*
@@ -123,10 +170,14 @@ int	nvmf_send_controller_data(struct nvmf_capsule *nc,
 
 /* Host-specific APIs. */
 
-/* Connect to an admin or I/O queue. */
-struct nvmf_qpair *nvmf_connect(struct nvmf_connection *nc, uint16_t qid,
-    u_int queue_size, const uint8_t hostid[16], uint16_t cntlid,
-    const char *subnqn, const char *hostnqn, uint32_t kato);
+/*
+ * Connect to an admin or I/O queue.  If this fails, a detailed error
+ * message can be obtained from nvmf_association_error.
+ */
+struct nvmf_qpair *nvmf_connect(struct nvmf_association *nc,
+    const struct nvmf_qpair_params *params, uint16_t qid, u_int queue_size,
+    const uint8_t hostid[16], uint16_t cntlid, const char *subnqn,
+    const char *hostnqn, uint32_t kato);
 
 /* Return the CNTLID for a queue returned from CONNECT. */
 uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
@@ -193,10 +244,10 @@ int	nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested,
     u_int *actual);
 
 /*
- * Handoff active host connection to the kernel.  This frees the
- * connections and qpairs (even on error).
+ * Handoff active host association to the kernel.  This frees the
+ * qpairs (even on error).
  */
 int	nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
-    struct nvmf_qpair **io_queues);
+    struct nvmf_qpair **io_queues, const struct nvme_controller_data *cdata);
 
 #endif /* !__LIBNVMF_H__ */

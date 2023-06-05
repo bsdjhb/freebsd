@@ -56,7 +56,8 @@ nvmf_init_fabrics_sqe(void *sqe, uint8_t fctype)
 }
 
 struct nvmf_qpair *
-nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
+nvmf_connect(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params, uint16_t qid, u_int queue_size,
     const uint8_t hostid[16], uint16_t cntlid, const char *subnqn,
     const char *hostnqn, uint32_t kato)
 {
@@ -71,24 +72,37 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	qp = NULL;
 	ncap = NULL;
 	rcap = NULL;
-	if (nc->nc_controller)
+	if (na->na_controller) {
+		na_error(na, "Cannot connect on a controller");
 		goto error;
+	}
+
+	if (params->admin != (qid == 0)) {
+		na_error(na, "Admin queue must use Queue ID 0");
+		goto error;
+	}
 
 	if (qid == 0) {
 		if (queue_size < NVME_MIN_ADMIN_ENTRIES ||
-		    queue_size > NVME_MAX_ADMIN_ENTRIES)
+		    queue_size > NVME_MAX_ADMIN_ENTRIES) {
+			na_error(na, "Invalid queue size %u", queue_size);
 			goto error;
+		}
 	} else {
 		if (queue_size < NVME_MIN_IO_ENTRIES ||
-		    queue_size > NVME_MAX_IO_ENTRIES)
+		    queue_size > NVME_MAX_IO_ENTRIES) {
+			na_error(na, "Invalid queue size %u", queue_size);
 			goto error;
+		}
 
 		/* KATO is only for Admin queues. */
-		if (kato != 0)
+		if (kato != 0) {
+			na_error(na, "Cannot set KATO on I/O queues");
 			goto error;
+		}
 	}
 
-	qp = nvmf_allocate_qpair(nc, qid == 0);
+	qp = nvmf_allocate_qpair(na, params);
 	if (qp == NULL)
 		goto error;
 
@@ -98,13 +112,16 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 
 	/* N.B. sqsize is 0's based. */
 	cmd.sqsize = htole16(queue_size - 1);
-	if (!nc->nc_sq_flow_control)
+	if (!na->na_params.sq_flow_control)
 		cmd.cattr |= NVMF_CONNECT_ATTR_DISABLE_SQ_FC;
 	cmd.kato = htole32(kato);
 
 	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	if (ncap == NULL) {
+		na_error(na, "Failed to allocate command capsule: %s",
+		    strerror(errno));
 		goto error;
+	}
 
 	memset(&data, 0, sizeof(data));
 	memcpy(data.hostid, hostid, sizeof(data.hostid));
@@ -113,48 +130,53 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	strlcpy(data.hostnqn, hostnqn, sizeof(data.hostnqn));
 
 	error = nvmf_capsule_append_data(ncap, &data, sizeof(data), true);
-	if (error != 0)
+	if (error != 0) {
+		na_error(na, "Failed to append data to CONNECT capsule: %s",
+		    strerror(error));
 		goto error;
+	}
 
 	error = nvmf_transmit_capsule(ncap);
 	if (error != 0) {
-		printf("NVMF: Failed to transmit CONNECT capsule: %d\n",
-		    error);
+		na_error(na, "Failed to transmit CONNECT capsule: %s",
+		    strerror(errno));
 		goto error;
 	}
 
 	error = nvmf_receive_capsule(qp, &rcap);
 	if (error != 0) {
-		printf("NVMF: Failed to receive CONNECT response: %d\n",
-		    error);
+		na_error(na, "Failed to receive CONNECT response: %s",
+		    strerror(error));
 		goto error;
 	}
 
 	rsp = (const struct nvmf_fabric_connect_rsp *)&rcap->nc_cqe;
 	status = le16toh(rcap->nc_cqe.status);
 	if (status != 0) {
-		printf("NVMF: CONNECT failed, status %#x\n", status);
 		if (NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM)
-			printf("NVMF: IATTR: %#x IPO: %#x\n",
+			na_error(na,
+			    "CONNECT invalid parameter IATTR: %#x IPO: %#x",
 			    rsp->status_code_specific.invalid.iattr,
 			    rsp->status_code_specific.invalid.ipo);
+		else
+			na_error(na, "CONNECT failed, status %#x", status);
 		goto error;
 	}
 
 	if (rcap->nc_cqe.cid != cmd.cid) {
-		printf("NVMF: Mismatched CID in CONNECT response\n");
+		na_error(na, "Mismatched CID in CONNECT response");
 		goto error;
 	}
 
 	if (!rcap->nc_sqhd_valid) {
-		printf("NVMF: CONNECT response without valid SQHD\n");
+		na_error(na, "CONNECT response without valid SQHD");
 		goto error;
 	}
 
 	sqhd = le16toh(rsp->sqhd);
 	if (sqhd == 0xffff) {
-		if (nc->nc_sq_flow_control) {
-			printf("NVMF: Controller disabled SQ flow control\n");
+		if (na->na_params.sq_flow_control) {
+			na_error(na, "Controller disabled SQ flow control");
 			goto error;
 		}
 		qp->nq_flow_control = false;
@@ -165,7 +187,7 @@ nvmf_connect(struct nvmf_connection *nc, uint16_t qid, u_int queue_size,
 	}
 
 	if (rsp->status_code_specific.success.authreq) {
-		printf("NVMF: CONNECT response requests authentication\n");
+		na_error(na, "CONNECT response requests authentication\n");
 		goto error;
 	}
 
@@ -760,7 +782,7 @@ is_queue_pair_idle(struct nvmf_qpair *qp)
 
 int
 nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
-    struct nvmf_qpair **io_queues)
+    struct nvmf_qpair **io_queues, const struct nvme_controller_data *cdata)
 {
 	struct nvmf_handoff_host hh;
 	u_int i;
@@ -788,9 +810,8 @@ nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
 	}
 
 	/* First, the admin queue. */
-	hh.trtype = admin_qp->nq_connection->nc_trtype;
-	error = nvmf_kernel_handoff_params(admin_qp, &hh.admin.cp,
-	    &hh.admin.qp);
+	hh.trtype = admin_qp->nq_association->na_trtype;
+	error = nvmf_kernel_handoff_params(admin_qp, &hh.admin);
 	if (error)
 		goto out;
 
@@ -798,12 +819,12 @@ nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
 	hh.num_io_queues = num_queues;
 	hh.io = calloc(num_queues, sizeof(*hh.io));
 	for (i = 0; i < num_queues; i++) {
-		error = nvmf_kernel_handoff_params(io_queues[i], &hh.io[i].cp,
-		    &hh.io[i].qp);
+		error = nvmf_kernel_handoff_params(io_queues[i], &hh.io[i]);
 		if (error)
 			goto out;
 	}
 
+	hh.cdata = cdata;
 	if (ioctl(fd, NVMF_HANDOFF_HOST, &hh) == -1)
 		error = errno;
 out:
