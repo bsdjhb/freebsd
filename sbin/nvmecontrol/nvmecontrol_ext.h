@@ -27,4 +27,4 @@
 
 #include <stdbool.h>
 
-void nvme_print_controller(struct nvme_controller_data *cdata, bool fabrics);
+void nvme_print_controller(struct nvme_controller_data *cdata);
