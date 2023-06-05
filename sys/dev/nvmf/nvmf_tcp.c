@@ -117,9 +117,6 @@ struct nvmf_tcp_capsule {
 	struct nvmf_capsule nc;
 
 	struct nvmf_tcp_rxpdu rx_pdu;
-#if 0
-	struct nvmf_tcp_command_buffer *cb;
-#endif
 
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
 };
