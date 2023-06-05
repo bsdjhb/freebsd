@@ -33,14 +33,17 @@
 #include <stdbool.h>
 #endif
 
-struct nvmf_connection_params {
-	uint32_t ioccsz;
-	bool sq_flow_control;	/* libnvmf-only */
+struct nvmf_handoff_qpair_params {
+	bool admin;
+	bool sq_flow_control;
+	uint16_t qsize;
+	uint16_t sqhd;
+	uint16_t sqtail;	/* host only */
 	union {
 		struct {
 			int	fd;
-			uint8_t	cpda;
-			uint8_t	hpda;
+			uint8_t	rxpda;
+			uint8_t txpda;
 			bool	header_digests;
 			bool	data_digests;
 			uint32_t maxr2t;
@@ -49,30 +52,12 @@ struct nvmf_connection_params {
 	};
 };
 
-struct nvmf_qpair_params {
-	bool admin;
-	bool sq_flow_control;
-	uint16_t qsize;
-	uint16_t sqhd;
-	uint16_t sqtail;	/* host only */
-};
-
-/*
- * This assumes a 1:1 relationship between connections and queue pairs
- * which is true for TCP.
- *
- * XXX: Need to confirm if that is true for RDMA.
- */
-struct nvmf_handoff_qpair {
-	struct nvmf_connection_params cp;
-	struct nvmf_qpair_params qp;
-};
-
 struct nvmf_handoff_host {
 	u_int	trtype;
 	u_int	num_io_queues;
-	struct nvmf_handoff_qpair admin;
-	struct nvmf_handoff_qpair *io;
+	struct nvmf_handoff_qpair_params admin;
+	struct nvmf_handoff_qpair_params *io;
+	const struct nvme_controller_data *cdata;
 };
 
 /* Operations on /dev/nvmf */

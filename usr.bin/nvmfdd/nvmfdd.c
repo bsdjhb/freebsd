@@ -58,8 +58,17 @@ usage(void)
 }
 
 static void
-tcp_configure(struct nvmf_connection_params *params, const char *address,
-    const char *port)
+tcp_association_params(struct nvmf_association_params *params)
+{
+	params->tcp.pda = 0;
+	params->tcp.header_digests = header_digests;
+	params->tcp.data_digests = data_digests;
+	params->tcp.maxr2t = 1;
+}
+
+static void
+tcp_qpair_params(struct nvmf_qpair_params *params, bool admin,
+    const char *address, const char *port)
 {
 	struct addrinfo hints, *ai, *list;
 	int error, s;
@@ -81,35 +90,17 @@ tcp_configure(struct nvmf_connection_params *params, const char *address,
 			continue;
 		}
 
+		params->admin = admin;
 		params->tcp.fd = s;
-		params->tcp.hpda = 0;
-		params->tcp.header_digests = header_digests;
-		params->tcp.data_digests = data_digests;
-		params->tcp.maxr2t = 1;
 		freeaddrinfo(list);
 		return;
 	}
 	err(1, "Failed to connect to discovery controller");
 }
 
-static struct nvmf_connection *
-create_connection(enum nvmf_trtype trtype,
-    struct nvmf_connection_params *params, const char *address,
-    const char *port)
-{
-	switch (trtype) {
-	case NVMF_TRTYPE_TCP:
-		tcp_configure(params, address, port);
-		break;
-	default:
-		__builtin_unreachable();
-	}
-
-	return (nvmf_allocate_connection(trtype, false, params));
-}
-
 static struct nvmf_qpair *
-connect_admin_queue(struct nvmf_connection *nc, const uint8_t hostid[16],
+connect_admin_queue(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params, const uint8_t hostid[16],
     uint16_t cntlid, const char *hostnqn, const char *subnqn)
 {
 	struct nvme_controller_data cdata;
@@ -118,7 +109,8 @@ connect_admin_queue(struct nvmf_connection *nc, const uint8_t hostid[16],
 	u_int mps, mpsmin, mpsmax;
 	int error, timo;
 
-	qp = nvmf_connect(nc, 0, 32, hostid, cntlid, subnqn, hostnqn, 0);
+	qp = nvmf_connect(na, params, 0, 32, hostid, cntlid, subnqn, hostnqn,
+	    0);
 	if (qp == NULL)
 		return (NULL);
 
@@ -182,6 +174,8 @@ connect_admin_queue(struct nvmf_connection *nc, const uint8_t hostid[16],
 	error = nvmf_host_identify_controller(qp, &cdata);
 	if (error != 0)
 		errc(1, error, "Failed to fetch controller data");
+
+	nvmf_update_assocation(na, &cdata);
 
 	info.mqes = NVME_CAP_LO_MQES(cap);
 	info.nn = cdata.nn;
@@ -377,8 +371,9 @@ main(int ac, char **av)
 	const char *transport;
 	char *address, *port;
 	enum rw command;
-	struct nvmf_connection_params params;
-	struct nvmf_connection *nc;
+	struct nvmf_association_params aparams;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
 	struct nvmf_qpair *admin, *io;
 	char hostnqn[NVMF_NQN_MAX_LEN];
 	uint8_t hostid[16];
@@ -452,10 +447,11 @@ main(int ac, char **av)
 	*port = '\0';
 	port++;
 
-	params.ioccsz = 0;
-	params.sq_flow_control = !flow_control_disable;
+	memset(&aparams, 0, sizeof(aparams));
+	aparams.sq_flow_control = !flow_control_disable;
 	if (strcasecmp(transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
+		tcp_association_params(&aparams);
 	} else
 		errx(1, "Invalid transport %s", transport);
 
@@ -466,23 +462,25 @@ main(int ac, char **av)
 	if (error != 0)
 		errc(1, error, "Failed to generate host NQN");
 
-	nc = create_connection(trtype, &params, address, port);
-	if (nc == NULL)
-		err(1, "Failed to connect to controller (admin)");
+	na = nvmf_allocate_association(trtype, false, &aparams);
+	if (na == NULL)
+		err(1, "Failed to create association");
 
-	admin = connect_admin_queue(nc, hostid, cntlid, hostnqn,
+	memset(&qparams, 0, sizeof(qparams));
+	tcp_qpair_params(&qparams, true, address, port);
+
+	admin = connect_admin_queue(na, &qparams, hostid, cntlid, hostnqn,
 	    av[2]);
 	if (admin == NULL)
-		err(1, "Failed to create admin queue");
-	nvmf_free_connection(nc);
+		errx(1, "Failed to create admin queue: %s",
+		    nvmf_association_error(na));
 
 	error = validate_namespace(admin, nsid, &block_size);
 	if (error != 0) {
 		shutdown_controller(admin);
+		nvmf_free_association(na);
 		return (1);
 	}
-
-	params.ioccsz = info.ioccsz;
 
 	error = nvmf_host_request_queues(admin, 1, &queues);
 	if (error != 0) {
@@ -490,22 +488,19 @@ main(int ac, char **av)
 		errc(1, error, "Failed to request I/O queues");
 	}
 
-	nc = create_connection(trtype, &params, address, port);
-	if (nc == NULL) {
-		warn("Failed to connect to controller (I/O)");
-		shutdown_controller(admin);
-		return (1);
-	}
+	memset(&qparams, 0, sizeof(qparams));
+	tcp_qpair_params(&qparams, false, address, port);
 
-	io = nvmf_connect(nc, 1, info.mqes + 1, hostid,
+	io = nvmf_connect(na, &qparams, 1, info.mqes + 1, hostid,
 	    nvmf_cntlid(admin), av[2], hostnqn, 0);
 	if (io == NULL) {
-		warn("Failed to create I/O queue");
-		nvmf_free_connection(nc);
+		warn("Failed to create I/O queue: %s",
+		    nvmf_association_error(na));
 		shutdown_controller(admin);
+		nvmf_free_association(na);
 		return (1);
 	}
-	nvmf_free_connection(nc);
+	nvmf_free_association(na);
 
 	error = nvmf_io(io, nsid, block_size, command, offset, length);
 

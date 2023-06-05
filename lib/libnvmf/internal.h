@@ -31,23 +31,21 @@
 #include <sys/queue.h>
 
 struct nvmf_transport_ops {
-	/* Connection management. */
-	struct nvmf_connection *(*allocate_connection)(bool controller,
-	    const struct nvmf_connection_params *params);
-	int (*connect)(struct nvmf_connection *nc,
-	    const struct nvmf_connection_params *params);
-	int (*accept)(struct nvmf_connection *nc,
-	    const struct nvmf_connection_params *params);
-	void (*free_connection)(struct nvmf_connection *nc);
+	/* Association management. */
+	struct nvmf_association *(*allocate_association)(bool controller,
+	    const struct nvmf_association_params *params);
+	void (*update_association)(struct nvmf_association *na,
+	    const struct nvme_controller_data *cdata);
+	void (*free_association)(struct nvmf_association *na);
 
 	/* Queue pair management. */
-	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_connection *nt,
-	    bool admin);
+	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_association *na,
+	    const struct nvmf_qpair_params *params);
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
 	/* Create params for kernel handoff. */
 	int (*kernel_handoff_params)(struct nvmf_qpair *qp,
-	    struct nvmf_connection_params *cparams);
+	    struct nvmf_handoff_qpair_params *qparams);
 
 	/* Capsule operations. */
 	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
@@ -63,18 +61,21 @@ struct nvmf_transport_ops {
 	    u_int iovcnt);
 };
 
-struct nvmf_connection {
-	struct nvmf_transport_ops *nc_ops;
-	enum nvmf_trtype nc_trtype;
-	bool nc_controller;
-	bool nc_sq_flow_control;
+struct nvmf_association {
+	struct nvmf_transport_ops *na_ops;
+	enum nvmf_trtype na_trtype;
+	bool na_controller;
 
-	/* Each qpair holds a reference on a connection. */
-	u_int nc_refs;
+	struct nvmf_association_params na_params;
+
+	/* Each qpair holds a reference on an association. */
+	u_int na_refs;
+
+	char *na_last_error;
 };
 
 struct nvmf_qpair {
-	struct nvmf_connection *nq_connection;
+	struct nvmf_association *nq_association;
 	bool nq_admin;
 
 	uint16_t nq_cid;
@@ -123,7 +124,9 @@ struct nvmf_capsule {
 
 extern struct nvmf_transport_ops tcp_ops;
 
+void	na_error(struct nvmf_association *na, const char *fmt, ...);
+
 int	nvmf_kernel_handoff_params(struct nvmf_qpair *qp,
-    struct nvmf_connection_params *cparams, struct nvmf_qpair_params *qparams);
+    struct nvmf_handoff_qpair_params *qparams);
 
 #endif /* !__LIBNVMF_INTERNAL_H__ */

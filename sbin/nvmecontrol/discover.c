@@ -52,7 +52,16 @@ static struct options {
 };
 
 static void
-tcp_configure(struct nvmf_connection_params *params)
+tcp_association_params(struct nvmf_association_params *params)
+{
+	params->tcp.pda = 0;
+	params->tcp.header_digests = false;
+	params->tcp.data_digests = false;
+	params->tcp.maxr2t = 1;
+}
+
+static void
+tcp_qpair_params(struct nvmf_qpair_params *params)
 {
 	struct addrinfo hints, *ai, *list;
 	const char *port;
@@ -80,11 +89,8 @@ tcp_configure(struct nvmf_connection_params *params)
 			continue;
 		}
 
+		params->admin = true;
 		params->tcp.fd = s;
-		params->tcp.hpda = 0;
-		params->tcp.header_digests = false;
-		params->tcp.data_digests = false;
-		params->tcp.maxr2t = 1;
 		freeaddrinfo(list);
 		return;
 	}
@@ -324,8 +330,9 @@ static void
 discover(const struct cmd *f, int argc, char *argv[])
 {
 	enum nvmf_trtype trtype;
-	struct nvmf_connection_params params;
-	struct nvmf_connection *nc;
+	struct nvmf_association_params aparams;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
 	struct nvmf_qpair *qp;
 	char nqn[NVMF_NQN_MAX_LEN];
 	uint8_t hostid[16];
@@ -335,11 +342,12 @@ discover(const struct cmd *f, int argc, char *argv[])
 	if (arg_parse(argc, argv, f))
 		return;
 
-	params.ioccsz = 0;
-	params.sq_flow_control = true;
+	memset(&aparams, 0, sizeof(aparams));
+	aparams.sq_flow_control = true;
 	if (strcasecmp(opt.transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
-		tcp_configure(&params);
+		tcp_association_params(&aparams);
+		tcp_qpair_params(&qparams);
 	} else
 		errx(EX_USAGE, "Unsupported or invalid transport");
 
@@ -350,14 +358,15 @@ discover(const struct cmd *f, int argc, char *argv[])
 	if (error != 0)
 		errc(EX_IOERR, error, "Failed to generate host NQN");
 
-	nc = nvmf_allocate_connection(trtype, false, &params);
-	if (nc == NULL)
+	na = nvmf_allocate_association(trtype, false, &aparams);
+	if (na == NULL)
 		err(EX_IOERR, "Failed to allocate connection");
-	qp = nvmf_connect(nc, 0, NVME_MIN_ADMIN_ENTRIES, hostid,
+	qp = nvmf_connect(na, &qparams, 0, NVME_MIN_ADMIN_ENTRIES, hostid,
 	    NVMF_CNTLID_DYNAMIC, NVMF_DISCOVERY_NQN, nqn, 0);
 	if (qp == NULL)
-		err(EX_IOERR, "Failed to connect to controller");
-	nvmf_free_connection(nc);
+		errx(EX_IOERR, "Failed to connect to controller: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
 
 	/* Fetch Controller Capabilities Property */
 	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
