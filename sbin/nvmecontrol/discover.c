@@ -100,7 +100,7 @@ identify_controller(struct nvmf_qpair *qp)
 	error = nvmf_host_identify_controller(qp, &cdata);
 	if (error != 0)
 		errc(EX_IOERR, error, "Failed to fetch controller data");
-	nvme_print_controller(&cdata, true);
+	nvme_print_controller(&cdata);
 }
 
 static const char *

@@ -45,7 +45,7 @@ __FBSDID("$FreeBSD$");
 #include "nvmecontrol_ext.h"
 
 void
-nvme_print_controller(struct nvme_controller_data *cdata, bool fabrics)
+nvme_print_controller(struct nvme_controller_data *cdata)
 {
 	uint8_t str[128];
 	char cbuf[UINT128_DIG + 1];
@@ -283,7 +283,7 @@ nvme_print_controller(struct nvme_controller_data *cdata, bool fabrics)
 	if (cdata->ver >= 0x010201)
 		printf("\nNVM Subsystem Name:          %.256s\n", cdata->subnqn);
 
-	if (fabrics) {
+	if (cdata->ioccsz != 0) {
 		printf("\n");
 		printf("Fabrics Attributes\n");
 		printf("==================\n");
