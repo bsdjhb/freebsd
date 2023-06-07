@@ -32,7 +32,7 @@
 #include <dev/nvmf/nvmf_proto.h>
 #include <dev/nvmf/host/nvmf_var.h>
 
-void
+bool
 nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
     nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
@@ -55,10 +55,12 @@ nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	cmd.ofst = htole32(offset);
 
 	req = nvmf_allocate_request(sc->admin, &cmd, cb, cb_arg, how);
-	nvmf_submit_request(req);
+	if (req != NULL)
+		nvmf_submit_request(req);
+	return (req != NULL);
 }
 
-void
+bool
 nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
     uint64_t value, nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
@@ -83,5 +85,23 @@ nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	cmd.ofst = htole32(offset);
 
 	req = nvmf_allocate_request(sc->admin, &cmd, cb, cb_arg, how);
-	nvmf_submit_request(req);
+	if (req != NULL)
+		nvmf_submit_request(req);
+	return (req != NULL);
+}
+
+bool
+nvmf_cmd_keep_alive(struct nvmf_softc *sc, nvmf_request_complete_t *cb,
+    void *cb_arg, int how)
+{
+	struct nvme_command cmd;
+	struct nvmf_request *req;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opc = NVME_OPC_KEEP_ALIVE;
+
+	req = nvmf_allocate_request(sc->admin, &cmd, cb, cb_arg, how);
+	if (req != NULL)
+		nvmf_submit_request(req);
+	return (req != NULL);
 }

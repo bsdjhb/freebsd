@@ -38,6 +38,7 @@ typedef void nvmf_request_complete_t(void *, struct nvmf_capsule *);
 struct nvmf_ivars {
 	struct nvmf_handoff_host *hh;
 	struct nvmf_handoff_qpair_params *io_params;
+	struct nvme_controller_data *cdata;
 };
 
 struct nvmf_softc {
@@ -48,6 +49,29 @@ struct nvmf_softc {
 	u_int	num_io_queues;
 
 	struct cdev *cdev;
+
+	/*
+	 * Keep Alive support depends on two timers.  The 'tx' timer
+	 * is responsible for sending KeepAlive commands and runs at
+	 * half the timeout interval.  The 'rx' timer is responsible
+	 * for detecting an actual timeout.
+	 *
+	 * For efficient support of TKAS, the host does not reschedule
+	 * these timers every time new commands are scheduled.
+	 * Instead, the host sets the *_traffic flags when commands
+	 * are sent and received.  The timeout handlers check and
+	 * clear these flags.  This does mean it can take up to twice
+	 * the timeout time to detect an AWOL controller.
+	 */
+	bool	ka_traffic;			/* Using TKAS? */
+
+	volatile int ka_active_tx_traffic;
+	struct callout ka_tx_timer;
+	sbintime_t ka_tx_sbt;
+
+	volatile int ka_active_rx_traffic;
+	struct callout ka_rx_timer;
+	sbintime_t ka_rx_sbt;
 };
 
 struct nvmf_request {
@@ -64,11 +88,13 @@ MALLOC_DECLARE(M_NVMF);
 #endif
 
 /* nvmf_cmd.c */
-void	nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset,
+bool	nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset,
     uint8_t size, nvmf_request_complete_t *cb, void *cb_arg, int how);
-void	nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset,
+bool	nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset,
     uint8_t size, uint64_t value, nvmf_request_complete_t *cb, void *cb_arg,
     int how);
+bool	nvmf_cmd_keep_alive(struct nvmf_softc *sc, nvmf_request_complete_t *cb,
+    void *cb_arg, int how);
 
 /* nvmf_ctldev.c */
 int	nvmf_ctl_load(void);

@@ -193,6 +193,7 @@ nvmf_connect(struct nvmf_association *na,
 
 	qp->nq_qsize = queue_size;
 	qp->nq_cntlid = le16toh(rsp->status_code_specific.success.cntlid);
+	qp->nq_kato = kato;
 	/* XXX: Save qid in qp? */
 	return (qp);
 
@@ -811,6 +812,7 @@ nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
 
 	/* First, the admin queue. */
 	hh.trtype = admin_qp->nq_association->na_trtype;
+	hh.kato = admin_qp->nq_kato;
 	error = nvmf_kernel_handoff_params(admin_qp, &hh.admin);
 	if (error)
 		goto out;

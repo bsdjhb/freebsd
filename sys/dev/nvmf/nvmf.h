@@ -56,6 +56,7 @@ struct nvmf_handoff_qpair_params {
 struct nvmf_handoff_host {
 	u_int	trtype;
 	u_int	num_io_queues;
+	u_int	kato;
 	struct nvmf_handoff_qpair_params admin;
 	struct nvmf_handoff_qpair_params *io;
 	const struct nvme_controller_data *cdata;

@@ -100,7 +100,7 @@ nvmf_wait_for_reply(struct nvmf_completion_status *status)
 
 	mtx = mtx_pool_find(mtxpool_sleep, status);
 	mtx_lock(mtx);
-	while (!status->done && !status->io_done)
+	while (!status->done || !status->io_done)
 		mtx_sleep(status, mtx, 0, "nvmfcmd", 0);
 	mtx_unlock(mtx);
 }
@@ -170,6 +170,57 @@ nvmf_shutdown_controller(struct nvmf_softc *sc)
 		    "Failed to set CC to trigger shutdown\n");
 }
 
+static void
+nvmf_check_keep_alive(void *arg)
+{
+	struct nvmf_softc *sc = arg;
+	int traffic;
+
+	traffic = atomic_readandclear_int(&sc->ka_active_rx_traffic);
+	if (traffic == 0)
+		device_printf(sc->dev, "TODO: KeepAlive timeout\n");
+
+	callout_schedule_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0, C_HARDCLOCK);
+}
+
+static void
+nvmf_keep_alive_complete(void *arg, struct nvmf_capsule *nc)
+{
+	struct nvmf_softc *sc = arg;
+	const struct nvme_completion *cqe;
+
+	atomic_store_int(&sc->ka_active_rx_traffic, 1);
+	cqe = nvmf_capsule_cqe(nc);
+	if (cqe->status != 0) {
+		device_printf(sc->dev,
+		    "KeepAlive response reported status %#x\n",
+		    le16toh(cqe->status));
+	}
+	nvmf_free_capsule(nc);
+}
+
+static void
+nvmf_send_keep_alive(void *arg)
+{
+	struct nvmf_softc *sc = arg;
+	int traffic;
+
+	/*
+	 * Don't bother sending a KeepAlive command if TKAS is active
+	 * and another command has been sent during the interval.
+	 */
+	traffic = atomic_load_int(&sc->ka_active_tx_traffic);
+	if (traffic == 0 && !nvmf_cmd_keep_alive(sc, nvmf_keep_alive_complete,
+	    sc, M_NOWAIT))
+		device_printf(sc->dev,
+		    "Failed to allocate KeepAlive command\n");
+
+	/* Clear ka_active_tx_traffic after sending the keep alive command. */
+	atomic_store_int(&sc->ka_active_tx_traffic, 0);
+
+	callout_schedule_sbt(&sc->ka_tx_timer, sc->ka_tx_sbt, 0, C_HARDCLOCK);
+}
+
 static int
 nvmf_probe(device_t dev)
 {
@@ -187,6 +238,8 @@ nvmf_attach(device_t dev)
 	int error;
 
 	sc->dev = dev;
+	callout_init(&sc->ka_rx_timer, 1);
+	callout_init(&sc->ka_tx_timer, 1);
 
 	/* Setup the admin queue. */
 	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
@@ -210,6 +263,17 @@ nvmf_attach(device_t dev)
 		}
 	}
 
+	if (ivars->hh->kato != 0) {
+		sc->ka_traffic = NVMEV(NVME_CTRLR_DATA_CTRATT_TBKAS,
+		    ivars->cdata->ctratt) != 0;
+		sc->ka_rx_sbt = mstosbt(ivars->hh->kato);
+		sc->ka_tx_sbt = sc->ka_rx_sbt / 2;
+		callout_reset_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0,
+		    nvmf_check_keep_alive, sc, C_HARDCLOCK);
+		callout_reset_sbt(&sc->ka_tx_timer, sc->ka_tx_sbt, 0,
+		    nvmf_send_keep_alive, sc, C_HARDCLOCK);
+	}
+
 	make_dev_args_init(&mda);
 	mda.mda_devsw = &nvmf_cdevsw;
 	mda.mda_uid = UID_ROOT;
@@ -224,6 +288,8 @@ nvmf_attach(device_t dev)
 
 	return (0);
 out:
+	callout_drain(&sc->ka_tx_timer);
+	callout_drain(&sc->ka_rx_timer);
 	for (i = 0; i < sc->num_io_queues; i++) {
 		if (sc->io[i] != NULL)
 			nvmf_destroy_qp(sc->io[i]);
@@ -247,6 +313,9 @@ nvmf_detach(device_t dev)
 	 * NVMF_DISCONNECT in nvmf_ioctl.
 	 */
 	destroy_dev_sched(sc->cdev);
+
+	callout_drain(&sc->ka_tx_timer);
+	callout_drain(&sc->ka_rx_timer);
 
 	for (i = 0; i < sc->num_io_queues; i++) {
 		nvmf_destroy_qp(sc->io[i]);

@@ -95,6 +95,7 @@ nvmf_free_request(struct nvmf_request *req)
 static void
 nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 {
+	struct nvmf_softc *sc = qp->sc;
 	struct nvme_command *sqe;
 	struct nvmf_capsule *nc;
 	int error;
@@ -112,6 +113,9 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 	if (error != 0) {
 		panic("TODO: Disconnect when a capsule fails to transmit");
 	}
+
+	if (sc->ka_traffic)
+		atomic_store_int(&sc->ka_active_tx_traffic, 1);
 }
 
 static void
@@ -126,12 +130,16 @@ static void
 nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 {
 	struct nvmf_host_qpair *qp = arg;
+	struct nvmf_softc *sc = qp->sc;
 	struct nvmf_host_command *cmd;
 	struct nvmf_request *req;
 	const struct nvme_completion *cqe;
 	uint16_t cid;
 
 	cqe = nvmf_capsule_cqe(nc);
+
+	if (sc->ka_traffic)
+		atomic_store_int(&sc->ka_active_rx_traffic, 1);
 
 	/*
 	 * NB: Don't bother byte-swapping the cid as transmit doesn't
