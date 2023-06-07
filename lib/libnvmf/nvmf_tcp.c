@@ -1332,6 +1332,7 @@ tcp_accept(struct nvmf_tcp_qpair *qp, struct nvmf_association *na)
 	qp->data_digests = ic_resp.dgst.bits.ddgst_enable != 0;
 	qp->maxr2t = le32toh(ic_req.maxr2t);
 	qp->maxh2cdata = params->tcp.maxh2cdata;
+	qp->max_icd = 0;	/* XXX */
 	return (0);
 }
 
@@ -1398,6 +1399,7 @@ tcp_kernel_handoff_params(struct nvmf_qpair *nq,
 	qparams->tcp.data_digests = qp->data_digests;
 	qparams->tcp.maxr2t = qp->maxr2t;
 	qparams->tcp.maxh2cdata = qp->maxh2cdata;
+	qparams->tcp.max_icd = qp->max_icd;
 
 	return (0);
 }

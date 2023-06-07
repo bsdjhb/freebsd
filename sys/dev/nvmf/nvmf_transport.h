@@ -43,8 +43,8 @@ struct nvmf_qpair;
 
 SYSCTL_DECL(_kern_nvmf);
 
-/* Callback to invoke when an error occurs for a connection. */
-typedef void nvmf_connection_error_t(void *);
+/* Callback to invoke when an error occurs on a qpair. */
+typedef void nvmf_qpair_error_t(void *);
 
 /* Callback to invoke when a capsule is received. */
 typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);
@@ -56,23 +56,19 @@ typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);
  */
 typedef void nvmf_io_complete_t(void *, int);
 
-/* params contains negotiated values passed in from userland. */
-struct nvmf_connection *nvmf_allocate_connection(enum nvmf_trtype trtype,
-    bool controller, const struct nvmf_connection_params *params,
-    nvmf_connection_error_t *error_cb, void *cb_arg);
-void	nvmf_free_connection(struct nvmf_connection *nc);
-
 /*
  * A queue pair represents either an Admin or I/O
- * submission/completion queue pair.  TCP requires a separate
- * connection for each queue pair.
+ * submission/completion queue pair.  The params contains negotiated
+ * values passed in from userland.
  *
- * Each open qpair holds a reference on its associated connection.
- * Once queue pairs are allocated, callers can safely free the
- * associated connections to ease bookkeeping.
+ * Unlike libnvmf in userland, the kernel transport interface does not
+ * have any notion of an association.  Instead, qpairs are
+ * independent.
  */
-struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_connection *nc,
-    bool admin, nvmf_capsule_receive_t *receive_cb, void *cb_arg);
+struct nvmf_qpair *nvmf_allocate_qpair(enum nvmf_trtype trtype,
+    bool controller, const struct nvmf_handoff_qpair_params *params,
+    nvmf_qpair_error_t *error_cb, void *error_cb_arg,
+    nvmf_capsule_receive_t *receive_cb, void *receive_cb_arg);
 void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
 /*

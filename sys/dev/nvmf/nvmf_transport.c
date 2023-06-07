@@ -44,7 +44,7 @@
 struct nvmf_transport {
 	struct nvmf_transport_ops *nt_ops;
 
-	volatile u_int nt_active_connections;
+	volatile u_int nt_active_qpairs;
 	SLIST_ENTRY(nvmf_transport) nt_link;
 };
 
@@ -64,76 +64,50 @@ nvmf_supported_trtype(enum nvmf_trtype trtype)
 	return (trtype < nitems(nvmf_transports));
 }
 
-struct nvmf_connection *
-nvmf_allocate_connection(enum nvmf_trtype trtype, bool controller,
-    const struct nvmf_connection_params *params,
-    nvmf_connection_error_t *error_cb, void *cb_arg)
+struct nvmf_qpair *
+nvmf_allocate_qpair(enum nvmf_trtype trtype, bool controller,
+    const struct nvmf_handoff_qpair_params *params,
+    nvmf_qpair_error_t *error_cb, void *error_cb_arg,
+    nvmf_capsule_receive_t *receive_cb, void *receive_cb_arg)
 {
-	struct nvmf_connection *nc;
 	struct nvmf_transport *nt;
+	struct nvmf_qpair *qp;
 
 	if (!nvmf_supported_trtype(trtype))
 		return (NULL);
 
 	sx_slock(&nvmf_transports_lock);
 	SLIST_FOREACH(nt, &nvmf_transports[trtype], nt_link) {
-		nc = nt->nt_ops->allocate_connection(controller, params);
-		if (nc != NULL)
+		qp = nt->nt_ops->allocate_qpair(controller, params);
+		if (qp != NULL) {
+			refcount_acquire(&nt->nt_active_qpairs);
 			break;
-	}
-	if (nc != NULL) {
-		refcount_acquire(&nt->nt_active_connections);
-		nc->nc_transport = nt;
-		nc->nc_ops = nt->nt_ops;
-		nc->nc_controller = controller;
-		refcount_init(&nc->nc_refs, 1);
-		nc->nc_error = error_cb;
-		nc->nc_error_arg = cb_arg;
+		}
 	}
 	sx_sunlock(&nvmf_transports_lock);
-	return (nc);
-}
-
-void
-nvmf_free_connection(struct nvmf_connection *nc)
-{
-	struct nvmf_transport *nt;
-
-	if (!refcount_release(&nc->nc_refs))
-		return;
-
-	nt = nc->nc_transport;
-	nt->nt_ops->free_connection(nc);
-	if (refcount_release(&nt->nt_active_connections))
-		wakeup(nt);
-}
-
-struct nvmf_qpair *
-nvmf_allocate_qpair(struct nvmf_connection *nc, bool admin,
-    nvmf_capsule_receive_t *receive_cb, void *cb_arg)
-{
-	struct nvmf_qpair *qp;
-
-	qp = nc->nc_ops->allocate_qpair(nc, admin);
 	if (qp == NULL)
 		return (NULL);
 
-	refcount_acquire(&nc->nc_refs);
-	qp->nq_connection = nc;
+	qp->nq_transport = nt;
+	qp->nq_ops = nt->nt_ops;
+	qp->nq_controller = controller;
+	qp->nq_error = error_cb;
+	qp->nq_error_arg = error_cb_arg;
 	qp->nq_receive = receive_cb;
-	qp->nq_receive_arg = cb_arg;
-	qp->nq_admin = admin;
+	qp->nq_receive_arg = receive_cb_arg;
+	qp->nq_admin = params->admin;
 	return (qp);
 }
 
 void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
-	struct nvmf_connection *nc;
+	struct nvmf_transport *nt;
 
-	nc = qp->nq_connection;
-	nc->nc_ops->free_qpair(qp);
-	nvmf_free_connection(nc);
+	nt = qp->nq_transport;
+	qp->nq_ops->free_qpair(qp);
+	if (refcount_release(&nt->nt_active_qpairs))
+		wakeup(nt);
 }
 
 struct nvmf_capsule *
@@ -143,7 +117,7 @@ nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe, int how)
 
 	KASSERT(how == M_WAITOK || how == M_NOWAIT,
 	    ("%s: invalid how", __func__));
-	nc = qp->nq_connection->nc_ops->allocate_capsule(qp, how);
+	nc = qp->nq_ops->allocate_capsule(qp, how);
 	if (nc == NULL)
 		return (NULL);
 
@@ -164,7 +138,7 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe, int how)
 
 	KASSERT(how == M_WAITOK || how == M_NOWAIT,
 	    ("%s: invalid how", __func__));
-	nc = qp->nq_connection->nc_ops->allocate_capsule(qp, how);
+	nc = qp->nq_ops->allocate_capsule(qp, how);
 	if (nc == NULL)
 		return (NULL);
 
@@ -194,13 +168,13 @@ nvmf_capsule_append_data(struct nvmf_capsule *nc, struct memdesc *mem,
 void
 nvmf_free_capsule(struct nvmf_capsule *nc)
 {
-	nc->nc_qpair->nq_connection->nc_ops->free_capsule(nc);
+	nc->nc_qpair->nq_ops->free_capsule(nc);
 }
 
 int
 nvmf_transmit_capsule(struct nvmf_capsule *nc)
 {
-	return (nc->nc_qpair->nq_connection->nc_ops->transmit_capsule(nc));
+	return (nc->nc_qpair->nq_ops->transmit_capsule(nc));
 }
 
 void *
@@ -228,7 +202,7 @@ nvmf_validate_command_capsule(struct nvmf_capsule *nc)
 	if (NVMEV(NVME_CMD_PSDT, nc->nc_sqe.fuse) != NVME_PSDT_SGL)
 		return (NVME_SC_INVALID_FIELD);
 
-	return (nc->nc_qpair->nq_connection->nc_ops->validate_command_capsule(nc));
+	return (nc->nc_qpair->nq_ops->validate_command_capsule(nc));
 }
 
 int
@@ -243,8 +217,8 @@ nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	io.io_offset = offset;
 	io.io_complete = complete_cb;
 	io.io_complete_arg = cb_arg;
-	return (nc->nc_qpair->nq_connection->nc_ops->receive_controller_data(nc,
-	    data_offset, &io));
+	return (nc->nc_qpair->nq_ops->receive_controller_data(nc, data_offset,
+	    &io));
 }
 
 int
@@ -258,8 +232,7 @@ nvmf_send_controller_data(struct nvmf_capsule *nc, struct memdesc *mem,
 	io.io_offset = offset;
 	io.io_complete = complete_cb;
 	io.io_complete_arg = cb_arg;
-	return (nc->nc_qpair->nq_connection->nc_ops->send_controller_data(nc,
-	    &io));
+	return (nc->nc_qpair->nq_ops->send_controller_data(nc, &io));
 }
 
 int
@@ -313,7 +286,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			sx_sunlock(&nvmf_transports_lock);
 			return (0);
 		}
-		if (nt->nt_active_connections != 0) {
+		if (nt->nt_active_qpairs != 0) {
 			sx_sunlock(&nvmf_transports_lock);
 			return (EBUSY);
 		}
@@ -332,7 +305,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			prev = nt;
 		}
 		if (nt == NULL) {
-			KASSERT(nt->nt_active_connections == 0,
+			KASSERT(nt->nt_active_qpairs == 0,
 			    ("unregistered transport has connections"));
 			sx_xunlock(&nvmf_transports_lock);
 			return (0);
@@ -345,7 +318,7 @@ nvmf_transport_module_handler(struct module *mod, int what, void *arg)
 			SLIST_REMOVE_AFTER(prev, nt_link);
 
 		error = 0;
-		while (nt->nt_active_connections != 0 && error == 0)
+		while (nt->nt_active_qpairs != 0 && error == 0)
 			error = sx_sleep(nt, &nvmf_transports_lock, PCATCH,
 			    "nftunld", 0);
 		sx_xunlock(&nvmf_transports_lock);

@@ -37,7 +37,7 @@ typedef void nvmf_request_complete_t(void *, struct nvmf_capsule *);
 
 struct nvmf_ivars {
 	struct nvmf_handoff_host *hh;
-	struct nvmf_handoff_qpair *io_params;
+	struct nvmf_handoff_qpair_params *io_params;
 };
 
 struct nvmf_softc {
@@ -76,7 +76,7 @@ void	nvmf_ctl_unload(void);
 
 /* nvmf_qpair.c */
 struct nvmf_host_qpair *nvmf_init_qp(struct nvmf_softc *sc,
-    enum nvmf_trtype trtype, struct nvmf_handoff_qpair *handoff);
+    enum nvmf_trtype trtype, struct nvmf_handoff_qpair_params *handoff);
 void	nvmf_destroy_qp(struct nvmf_host_qpair *qp);
 
 struct nvmf_request *nvmf_allocate_request(struct nvmf_host_qpair *qp,
