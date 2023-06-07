@@ -79,10 +79,10 @@ struct nvmf_tcp_command_buffer_list {
 	struct mtx lock;
 };
 
-struct nvmf_tcp_connection {
-	struct nvmf_connection nc;
+struct nvmf_tcp_qpair {
+	struct nvmf_qpair qp;
+
 	struct socket *so;
-	struct nvmf_tcp_qpair *qp;
 
 	uint8_t	txpda;
 	uint8_t rxpda;
@@ -90,8 +90,9 @@ struct nvmf_tcp_connection {
 	bool data_digests;
 	uint32_t maxr2t;
 	uint32_t maxh2cdata;
-	uint32_t ioccsz;	/* Host only */
 	uint32_t maxc2hdata;
+	uint32_t max_icd;	/* Host only */
+	uint16_t next_ttag;	/* Controller only */
 
 	/* Receive state. */
 	struct thread *rx_thread;
@@ -104,6 +105,9 @@ struct nvmf_tcp_connection {
 	bool	tx_shutdown;
 	struct mbufq tx_pdus;
 	STAILQ_HEAD(, nvmf_tcp_capsule) tx_capsules;
+
+	struct nvmf_tcp_command_buffer_list tx_buffers;
+	struct nvmf_tcp_command_buffer_list rx_buffers;
 };
 
 struct nvmf_tcp_rxpdu {
@@ -121,22 +125,11 @@ struct nvmf_tcp_capsule {
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
 };
 
-struct nvmf_tcp_qpair {
-	struct nvmf_qpair qp;
-
-	uint32_t max_icd;	/* Host only */
-	uint16_t next_ttag;	/* Controller only */
-
-	struct nvmf_tcp_command_buffer_list tx_buffers;
-	struct nvmf_tcp_command_buffer_list rx_buffers;
-};
-
-#define	TCONN(nc)	((struct nvmf_tcp_connection *)(nc))
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
 #define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
 
 static void	tcp_free_capsule(struct nvmf_capsule *nc);
-static void	tcp_free_connection(struct nvmf_connection *nc);
+static void	tcp_free_qpair(struct nvmf_qpair *nq);
 
 SYSCTL_NODE(_kern_nvmf, OID_AUTO, tcp, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "TCP transport");
@@ -244,21 +237,21 @@ tcp_remove_command_buffer(struct nvmf_tcp_command_buffer_list *list,
 }
 
 static void
-nvmf_tcp_write_pdu(struct nvmf_tcp_connection *ntc, struct mbuf *m)
+nvmf_tcp_write_pdu(struct nvmf_tcp_qpair *qp, struct mbuf *m)
 {
-	struct socket *so = ntc->so;
+	struct socket *so = qp->so;
 
 	SOCKBUF_LOCK(&so->so_snd);
-	mbufq_enqueue(&ntc->tx_pdus, m);
+	mbufq_enqueue(&qp->tx_pdus, m);
 	/* XXX: Do we need to handle sb_hiwat being wrong? */
 	if (sowriteable(so))
-		cv_signal(&ntc->tx_cv);
+		cv_signal(&qp->tx_cv);
 	SOCKBUF_UNLOCK(&so->so_snd);
 }
 
 static void
-nvmf_tcp_report_error(struct nvmf_tcp_connection *ntc, uint16_t fes,
-    uint32_t fei, struct mbuf *rx_pdu, u_int hlen)
+nvmf_tcp_report_error(struct nvmf_tcp_qpair *qp, uint16_t fes, uint32_t fei,
+    struct mbuf *rx_pdu, u_int hlen)
 {
 	struct nvme_tcp_term_req_hdr *hdr;
 	struct mbuf *m;
@@ -272,7 +265,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *ntc, uint16_t fes,
 	m->m_len = sizeof(*hdr) + hlen;
 	hdr = mtod(m, void *);
 	memset(hdr, 0, sizeof(*hdr));
-	hdr->common.pdu_type = ntc->nc.nc_controller ?
+	hdr->common.pdu_type = qp->qp.nq_controller ?
 	    NVME_TCP_PDU_TYPE_C2H_TERM_REQ : NVME_TCP_PDU_TYPE_H2C_TERM_REQ;
 	hdr->common.hlen = sizeof(*hdr);
 	hdr->common.plen = sizeof(*hdr) + hlen;
@@ -281,12 +274,11 @@ nvmf_tcp_report_error(struct nvmf_tcp_connection *ntc, uint16_t fes,
 	if (hlen != 0)
 		m_copydata(rx_pdu, 0, hlen, (caddr_t)(hdr + 1));
 
-	nvmf_tcp_write_pdu(ntc, m);
+	nvmf_tcp_write_pdu(qp, m);
 }
 
 static int
-nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
-    struct nvmf_tcp_rxpdu *pdu)
+nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
 	const struct nvme_tcp_common_pdu_hdr *ch;
 	struct mbuf *m = pdu->m;
@@ -310,9 +302,9 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	/* Validate pdu_type. */
 
 	/* Controllers only receive PDUs with a PDU direction of 0. */
-	if (ntc->nc.nc_controller != (ch->pdu_type & 0x01) == 0) {
+	if (qp->qp.nq_controller != (ch->pdu_type & 0x01) == 0) {
 		printf("NVMe/TCP: Invalid PDU type %u\n", ch->pdu_type);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, m, hlen);
 		return (EBADMSG);
 	}
@@ -322,7 +314,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	case NVME_TCP_PDU_TYPE_IC_RESP:
 		/* Shouldn't get these in the kernel. */
 		printf("NVMe/TCP: Received Initialize Connection PDU\n");
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, m, hlen);
 		return (EBADMSG);
 	case NVME_TCP_PDU_TYPE_H2C_TERM_REQ:
@@ -346,7 +338,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		break;
 	default:
 		printf("NVMe/TCP: Invalid PDU type %u\n", ch->pdu_type);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, m, hlen);
 		return (EBADMSG);
 	}
@@ -376,7 +368,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	}
 	if ((ch->flags & ~valid_flags) != 0) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, m, hlen);
 		return (EBADMSG);
 	}
@@ -387,7 +379,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	    NVME_TCP_C2H_DATA_FLAGS_SUCCESS)) ==
 	    NVME_TCP_C2H_DATA_FLAGS_SUCCESS) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, m, hlen);
 		return (EBADMSG);
 	}
@@ -419,7 +411,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	}
 	if (ch->hlen != expected_hlen) {
 		printf("NVMe/TCP: Invalid PDU header length %u\n", ch->hlen);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 2, m, hlen);
 		return (EBADMSG);
 	}
@@ -439,7 +431,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		if (ch->pdo != 0) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
 			    ch->pdo);
-			nvmf_tcp_report_error(ntc,
+			nvmf_tcp_report_error(qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 3, m,
 			    hlen);
 			return (EBADMSG);
@@ -453,10 +445,10 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 			break;
 
 		if (ch->pdo < full_hlen || ch->pdo > plen ||
-		    ch->pdo % ntc->rxpda != 0) {
+		    ch->pdo % qp->rxpda != 0) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
 			    ch->pdo);
-			nvmf_tcp_report_error(ntc,
+			nvmf_tcp_report_error(qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 3, m,
 			    hlen);
 			return (EBADMSG);
@@ -467,7 +459,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 	/* Validate plen. */
 	if (plen < ch->hlen) {
 		printf("NVMe/TCP: Invalid PDU length %u\n", plen);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, m, hlen);
 		return (EBADMSG);
 	}
@@ -492,7 +484,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		    data_len <= sizeof(rx_digest)) {
 			printf("NVMe/TCP: PDU %u too short for digest\n",
 			    ch->pdu_type);
-			nvmf_tcp_report_error(ntc,
+			nvmf_tcp_report_error(qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, m,
 			    hlen);
 			return (EBADMSG);
@@ -503,7 +495,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		if (data_len != 0) {
 			printf("NVMe/TCP: PDU %u with data length %u\n",
 			    ch->pdu_type, data_len);
-			nvmf_tcp_report_error(ntc,
+			nvmf_tcp_report_error(qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, m,
 			    hlen);
 			return (EBADMSG);
@@ -517,7 +509,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_connection *ntc,
 		m_copydata(m, ch->hlen, sizeof(rx_digest), (caddr_t)&rx_digest);
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Header digest mismatch\n");
-			nvmf_tcp_report_error(ntc,
+			nvmf_tcp_report_error(qp,
 			    NVME_TCP_TERM_REQ_FES_HDGST_ERROR, rx_digest, m,
 			    full_hlen);
 			return (EBADMSG);
@@ -607,7 +599,7 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
  * header.
  */
 static struct mbuf *
-nvmf_tcp_construct_pdu(struct nvmf_tcp_connection *ntc, void *hdr, size_t hlen,
+nvmf_tcp_construct_pdu(struct nvmf_tcp_qpair *qp, void *hdr, size_t hlen,
     struct mbuf *data, uint32_t data_len)
 {
 	struct nvme_tcp_common_pdu_hdr *ch;
@@ -615,14 +607,14 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_connection *ntc, void *hdr, size_t hlen,
 	uint32_t digest, pad, pdo, plen, mlen;
 
 	plen = hlen;
-	if (ntc->header_digests)
+	if (qp->header_digests)
 		plen += sizeof(digest);
 	if (data_len != 0) {
 		KASSERT(m_length(data, NULL) == data_len, ("length mismatch"));
-		pdo = roundup2(plen, ntc->txpda);
+		pdo = roundup2(plen, qp->txpda);
 		pad = pdo - plen;
 		plen = pdo + data_len;
-		if (ntc->data_digests)
+		if (qp->data_digests)
 			plen += sizeof(digest);
 		mlen = pdo;
 	} else {
@@ -637,15 +629,15 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_connection *ntc, void *hdr, size_t hlen,
 	ch = mtod(top, void *);
 	memcpy(ch, hdr, hlen);
 	ch->hlen = hlen;
-	if (ntc->header_digests)
+	if (qp->header_digests)
 		ch->flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	if (ntc->data_digests && data_len != 0)
+	if (qp->data_digests && data_len != 0)
 		ch->flags |= NVME_TCP_CH_FLAGS_DDGSTF;
 	ch->pdo = pdo;
 	ch->plen = htole32(plen);
 
 	/* HDGST */
-	if (ntc->header_digests) {
+	if (qp->header_digests) {
 		digest = compute_digest(ch, hlen);
 		memcpy((char *)ch + hlen, &digest, sizeof(digest));
 	}
@@ -660,7 +652,7 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_connection *ntc, void *hdr, size_t hlen,
 		top->m_next = data;
 
 		/* DDGST */
-		if (ntc->data_digests) {
+		if (qp->data_digests) {
 			digest = mbuf_crc32c(data, 0, data_len);
 
 			/* XXX: Can't use m_append as it uses M_NOWAIT. */
@@ -710,14 +702,13 @@ mbuf_copyto_io(struct mbuf *m, u_int skip, u_int len,
 static int
 nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(qp->qp.nq_connection);
 	struct nvme_tcp_h2c_data_hdr *h2c;
 	struct nvmf_tcp_command_buffer *cb;
 	uint32_t data_len, data_offset;
 
 	h2c = (void *)pdu->hdr;
-	if (le32toh(h2c->datal) > ntc->maxh2cdata) {
-		nvmf_tcp_report_error(ntc,
+	if (le32toh(h2c->datal) > qp->maxh2cdata) {
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_LIMIT_EXCEEDED, 0,
 		    pdu->m, pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -728,7 +719,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	cb = tcp_find_command_buffer(&qp->rx_buffers, h2c->cccid, h2c->ttag);
 	if (cb == NULL) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_h2c_data_hdr, ttag), pdu->m,
 		    pdu->hdr->hlen);
@@ -748,7 +739,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_len = le32toh(h2c->datal);
 	if (data_len != pdu->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_h2c_data_hdr, datal), pdu->m,
 		    pdu->hdr->hlen);
@@ -760,7 +751,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	if (data_offset < cb->data_offset ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -769,7 +760,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	if (data_offset != cb->data_offset + cb->data_xfered) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -779,7 +770,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	if ((cb->data_xfered + data_len == cb->data_len) !=
 	    ((pdu->hdr->flags & NVME_TCP_H2C_DATA_FLAGS_LAST_PDU) != 0)) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -809,7 +800,6 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 static int
 nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(qp->qp.nq_connection);
 	struct nvme_tcp_c2h_data_hdr *c2h;
 	struct nvmf_tcp_command_buffer *cb;
 	uint32_t data_len, data_offset;
@@ -824,7 +814,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		 * XXX: Could be PDU sequence error if cccid is for a
 		 * command that doesn't use a command buffer.
 		 */
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_c2h_data_hdr, cccid), pdu->m,
 		    pdu->hdr->hlen);
@@ -844,7 +834,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_len = le32toh(c2h->datal);
 	if (data_len != pdu->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_c2h_data_hdr, datal), pdu->m,
 		    pdu->hdr->hlen);
@@ -856,7 +846,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	if (data_offset < cb->data_offset ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
 		    pdu->m, pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -865,7 +855,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	if (data_offset != cb->data_offset + cb->data_xfered) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -875,7 +865,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	if ((cb->data_xfered + data_len == cb->data_len) !=
 	    ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_LAST_PDU) != 0)) {
 		mtx_unlock(&qp->rx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -1484,7 +1474,7 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 
 /* NB: cid and ttag and little-endian already. */
 static void
-tcp_send_h2c_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
+tcp_send_h2c_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, struct mbuf *m, size_t len, bool last_pdu)
 {
 	struct nvme_tcp_h2c_data_hdr h2c;
@@ -1499,14 +1489,13 @@ tcp_send_h2c_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
 	h2c.datao = htole32(data_offset);
 	h2c.datal = htole32(len);
 
-	top = nvmf_tcp_construct_pdu(ntc, &h2c, sizeof(h2c), m, len);
-	nvmf_tcp_write_pdu(ntc, top);
+	top = nvmf_tcp_construct_pdu(qp, &h2c, sizeof(h2c), m, len);
+	nvmf_tcp_write_pdu(qp, top);
 }
 
 static int
 nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(qp->qp.nq_connection);
 	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_tcp_r2t_hdr *r2t;
 	uint32_t data_len, data_offset;
@@ -1517,7 +1506,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	cb = tcp_find_command_buffer(&qp->tx_buffers, r2t->cccid, 0);
 	if (cb == NULL) {
 		mtx_unlock(&qp->tx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_r2t_hdr, cccid), pdu->m,
 		    pdu->hdr->hlen);
@@ -1528,7 +1517,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_offset = le32toh(r2t->r2to);
 	if (data_offset != cb->data_xfered) {
 		mtx_unlock(&qp->tx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->m,
 		    pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -1542,7 +1531,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_len = le32toh(r2t->r2tl);
 	if (data_offset + data_len > cb->data_len) {
 		mtx_unlock(&qp->tx_buffers.lock);
-		nvmf_tcp_report_error(ntc,
+		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
 		    pdu->m, pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -1565,11 +1554,11 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		uint32_t sent, todo;
 
 		todo = data_len;
-		if (todo > ntc->maxh2cdata)
-			todo = ntc->maxh2cdata;
+		if (todo > qp->maxh2cdata)
+			todo = qp->maxh2cdata;
 		m = nvmf_tcp_command_buffer_mbuf(cb, data_offset, todo, &sent,
 		    todo < data_len);
-		tcp_send_h2c_pdu(ntc, r2t->cccid, r2t->ttag, data_offset, m,
+		tcp_send_h2c_pdu(qp, r2t->cccid, r2t->ttag, data_offset, m,
 		    sent, sent == data_len);
 
 		data_offset += sent;
@@ -1610,7 +1599,7 @@ pullup_pdu_hdr(struct mbuf *m, int len)
 }
 
 static int
-nvmf_tcp_dispatch_pdu(struct nvmf_tcp_connection *ntc,
+nvmf_tcp_dispatch_pdu(struct nvmf_tcp_qpair *qp,
     const struct nvme_tcp_common_pdu_hdr *ch, struct nvmf_tcp_rxpdu *pdu)
 {
 	/* Ensure the PDU header is contiguous. */
@@ -1625,23 +1614,23 @@ nvmf_tcp_dispatch_pdu(struct nvmf_tcp_connection *ntc,
 	case NVME_TCP_PDU_TYPE_C2H_TERM_REQ:
 		return (nvmf_tcp_handle_term_req(pdu));
 	case NVME_TCP_PDU_TYPE_CAPSULE_CMD:
-		return (nvmf_tcp_save_command_capsule(ntc->qp, pdu));
+		return (nvmf_tcp_save_command_capsule(qp, pdu));
 	case NVME_TCP_PDU_TYPE_CAPSULE_RESP:
-		return (nvmf_tcp_save_response_capsule(ntc->qp, pdu));
+		return (nvmf_tcp_save_response_capsule(qp, pdu));
 	case NVME_TCP_PDU_TYPE_H2C_DATA:
-		return (nvmf_tcp_handle_h2c_data(ntc->qp, pdu));
+		return (nvmf_tcp_handle_h2c_data(qp, pdu));
 	case NVME_TCP_PDU_TYPE_C2H_DATA:
-		return (nvmf_tcp_handle_c2h_data(ntc->qp, pdu));
+		return (nvmf_tcp_handle_c2h_data(qp, pdu));
 	case NVME_TCP_PDU_TYPE_R2T:
-		return (nvmf_tcp_handle_r2t(ntc->qp, pdu));
+		return (nvmf_tcp_handle_r2t(qp, pdu));
 	}
 }
 
 static void
 nvmf_tcp_receive(void *arg)
 {
-	struct nvmf_tcp_connection *ntc = arg;
-	struct socket *so = ntc->so;
+	struct nvmf_tcp_qpair *qp = arg;
+	struct socket *so = qp->so;
 	struct nvmf_tcp_rxpdu pdu;
 	struct nvme_tcp_common_pdu_hdr ch;
 	struct uio uio;
@@ -1654,21 +1643,21 @@ nvmf_tcp_receive(void *arg)
 	m = tail = NULL;
 	have_header = false;
 	SOCKBUF_LOCK(&so->so_rcv);
-	while (!ntc->rx_shutdown) {
+	while (!qp->rx_shutdown) {
 		/* Wait until there is enough data for the next step. */
 		if (so->so_error != 0) {
 			SOCKBUF_UNLOCK(&so->so_rcv);
 		error:
 			m_freem(m);
-			nvmf_connection_error(&ntc->nc);
+			nvmf_qpair_error(&qp->qp);
 			SOCKBUF_LOCK(&so->so_rcv);
-			while (!ntc->rx_shutdown)
-				cv_wait(&ntc->rx_cv, SOCKBUF_MTX(&so->so_rcv));
+			while (!qp->rx_shutdown)
+				cv_wait(&qp->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			break;
 		}
 		avail = sbavail(&so->so_rcv);
 		if (avail == 0 || (!have_header && avail < sizeof(ch))) {
-			cv_wait(&ntc->rx_cv, SOCKBUF_MTX(&so->so_rcv));
+			cv_wait(&qp->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			continue;
 		}
 		SOCKBUF_UNLOCK(&so->so_rcv);
@@ -1732,11 +1721,11 @@ nvmf_tcp_receive(void *arg)
 		pdu.m = m;
 		m = NULL;
 		pdu.hdr = &ch;
-		error = nvmf_tcp_validate_pdu(ntc, &pdu);
+		error = nvmf_tcp_validate_pdu(qp, &pdu);
 		if (error != 0)
 			m_freem(pdu.m);
 		else
-			error = nvmf_tcp_dispatch_pdu(ntc, &ch, &pdu);
+			error = nvmf_tcp_dispatch_pdu(qp, &ch, &pdu);
 		if (error != 0) {
 			/*
 			 * If we received a termination request, close
@@ -1751,7 +1740,7 @@ nvmf_tcp_receive(void *arg)
 			 */
 			SOCKBUF_LOCK(&so->so_rcv);
 			if (soreadable(so)) {
-				error = cv_timedwait(&ntc->rx_cv,
+				error = cv_timedwait(&qp->rx_cv,
 				    SOCKBUF_MTX(&so->so_rcv), 30 * hz);
 				if (error == ETIMEDOUT)
 					printf("NVMe/TCP: Timed out after sending terminate request\n");
@@ -1768,10 +1757,9 @@ nvmf_tcp_receive(void *arg)
 }
 
 static struct mbuf *
-tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
+tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 {
 	struct nvmf_capsule *nc = &tc->nc;
-	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_tcp_cmd cmd;
 	struct mbuf *top, *m;
@@ -1823,13 +1811,13 @@ tcp_command_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 		}
 	}
 
-	top = nvmf_tcp_construct_pdu(ntc, &cmd, sizeof(cmd), m, m != NULL ?
+	top = nvmf_tcp_construct_pdu(qp, &cmd, sizeof(cmd), m, m != NULL ?
 	    nc->nc_data.io_len : 0);
 	return (top);
 }
 
 static struct mbuf *
-tcp_response_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
+tcp_response_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 {
 	struct nvmf_capsule *nc = &tc->nc;
 	struct nvme_tcp_rsp rsp;
@@ -1838,61 +1826,61 @@ tcp_response_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
 	rsp.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_RESP;
 	rsp.rccqe = nc->nc_cqe;
 
-	return (nvmf_tcp_construct_pdu(ntc, &rsp, sizeof(rsp), NULL, 0));
+	return (nvmf_tcp_construct_pdu(qp, &rsp, sizeof(rsp), NULL, 0));
 }
 
 static struct mbuf *
-capsule_to_pdu(struct nvmf_tcp_connection *ntc, struct nvmf_tcp_capsule *tc)
+capsule_to_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 {
 	if (tc->nc.nc_qe_len == sizeof(struct nvme_command))
-		return (tcp_command_pdu(ntc, tc));
+		return (tcp_command_pdu(qp, tc));
 	else
-		return (tcp_response_pdu(ntc, tc));
+		return (tcp_response_pdu(qp, tc));
 }
 
 static void
 nvmf_tcp_send(void *arg)
 {
-	struct nvmf_tcp_connection *ntc = arg;
+	struct nvmf_tcp_qpair *qp = arg;
 	struct nvmf_tcp_capsule *tc;
-	struct socket *so = ntc->so;
+	struct socket *so = qp->so;
 	struct mbuf *m, *n, *p;
 	u_int avail, tosend;
 	int error;
 
 	m = NULL;
 	SOCKBUF_LOCK(&so->so_snd);
-	while (!ntc->tx_shutdown) {
+	while (!qp->tx_shutdown) {
 		if (so->so_error != 0) {
 			SOCKBUF_UNLOCK(&so->so_snd);
 		error:
 			m_freem(m);
-			nvmf_connection_error(&ntc->nc);
+			nvmf_qpair_error(&qp->qp);
 			SOCKBUF_LOCK(&so->so_snd);
-			while (!ntc->tx_shutdown)
-				cv_wait(&ntc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			while (!qp->tx_shutdown)
+				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 			break;
 		}
 
 		if (m == NULL) {
 			/* Next PDU to send. */
-			m = mbufq_dequeue(&ntc->tx_pdus);
+			m = mbufq_dequeue(&qp->tx_pdus);
 		}
 		if (m == NULL) {
-			if (STAILQ_EMPTY(&ntc->tx_capsules)) {
-				cv_wait(&ntc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			if (STAILQ_EMPTY(&qp->tx_capsules)) {
+				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 				continue;
 			}
 
 			/* Convert a capsule into a PDU. */
-			tc = STAILQ_FIRST(&ntc->tx_capsules);
-			STAILQ_REMOVE_HEAD(&ntc->tx_capsules, link);
+			tc = STAILQ_FIRST(&qp->tx_capsules);
+			STAILQ_REMOVE_HEAD(&qp->tx_capsules, link);
 			SOCKBUF_UNLOCK(&so->so_snd);
 
-			n = capsule_to_pdu(ntc, tc);
+			n = capsule_to_pdu(qp, tc);
 
 			SOCKBUF_LOCK(&so->so_snd);
-			mbufq_enqueue(&ntc->tx_pdus, n);
+			mbufq_enqueue(&qp->tx_pdus, n);
 			continue;
 		}
 
@@ -1903,7 +1891,7 @@ nvmf_tcp_send(void *arg)
 		 */
 		avail = sbavail(&so->so_snd);
 		if (avail < m->m_len && sbused(&so->so_snd) != 0) {
-			cv_wait(&ntc->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 			continue;
 		}
 		SOCKBUF_UNLOCK(&so->so_snd);
@@ -1937,28 +1925,28 @@ nvmf_tcp_send(void *arg)
 static int
 nvmf_soupcall_receive(struct socket *so, void *arg, int waitflag)
 {
-	struct nvmf_tcp_connection *ntc = arg;
+	struct nvmf_tcp_qpair *qp = arg;
 
 	if (soreadable(so))
-		cv_signal(&ntc->rx_cv);
+		cv_signal(&qp->rx_cv);
 	return (SU_OK);
 }
 
 static int
 nvmf_soupcall_send(struct socket *so, void *arg, int waitflag)
 {
-	struct nvmf_tcp_connection *ntc = arg;
+	struct nvmf_tcp_qpair *qp = arg;
 
 	if (sowriteable(so))
-		cv_signal(&ntc->tx_cv);
+		cv_signal(&qp->tx_cv);
 	return (SU_OK);
 }
 
-static struct nvmf_connection *
-tcp_allocate_connection(bool controller,
-    const struct nvmf_connection_params *params)
+static struct nvmf_qpair *
+tcp_allocate_qpair(bool controller __unused,
+    const struct nvmf_handoff_qpair_params *params)
 {
-	struct nvmf_tcp_connection *ntc;
+	struct nvmf_tcp_qpair *qp;
 	struct socket *so;
 	struct file *fp;
 	cap_rights_t rights;
@@ -1984,123 +1972,48 @@ tcp_allocate_connection(bool controller,
 	fp->f_data = NULL;
 	fdrop(fp, curthread);
 
-	ntc = malloc(sizeof(*ntc), M_NVMF_TCP, M_WAITOK | M_ZERO);
-	ntc->so = so;
-	ntc->ioccsz = params->ioccsz;
-	if (controller) {
-		ntc->txpda = params->tcp.hpda;
-		ntc->rxpda = params->tcp.cpda;
-	} else {
-		ntc->txpda = params->tcp.cpda;
-		ntc->rxpda = params->tcp.hpda;
-	}
-	ntc->header_digests = params->tcp.header_digests;
-	ntc->data_digests = params->tcp.data_digests;
-	ntc->maxr2t = params->tcp.maxr2t;
-	ntc->maxh2cdata = params->tcp.maxh2cdata;
-	ntc->maxc2hdata = max_c2hdata;
-	cv_init(&ntc->rx_cv, "-");
-	cv_init(&ntc->tx_cv, "-");
-	mbufq_init(&ntc->tx_pdus, 0);
-	STAILQ_INIT(&ntc->tx_capsules);
-
-	/* Register socket upcalls. */
-	SOCKBUF_LOCK(&so->so_snd);
-	soupcall_set(so, SO_SND, nvmf_soupcall_send, ntc);
-	SOCKBUF_UNLOCK(&so->so_snd);
-	SOCKBUF_LOCK(&so->so_rcv);
-	soupcall_set(so, SO_RCV, nvmf_soupcall_receive, ntc);
-	SOCKBUF_UNLOCK(&so->so_rcv);
-
-	/* Spin up kthreads. */
-	error = kthread_add(nvmf_tcp_receive, ntc, NULL, &ntc->rx_thread, 0, 0,
-	    "nvmef tcp rx");
-	if (error != 0) {
-		tcp_free_connection(&ntc->nc);
-		return (NULL);
-	}
-	error = kthread_add(nvmf_tcp_send, ntc, NULL, &ntc->tx_thread, 0, 0,
-	    "nvmef tcp tx");
-	if (error != 0) {
-		tcp_free_connection(&ntc->nc);
-		return (NULL);
-	}
-
-	return (&ntc->nc);
-}
-
-static void
-tcp_free_connection(struct nvmf_connection *nc)
-{
-	struct nvmf_tcp_connection *ntc = TCONN(nc);
-	struct nvmf_tcp_capsule *tcap, *ncap;
-	struct socket *so = ntc->so;
-
-	/* Shut down kthreads. */
-	SOCKBUF_LOCK(&so->so_rcv);
-	ntc->rx_shutdown = true;
-	if (ntc->rx_thread != NULL) {
-		cv_signal(&ntc->rx_cv);
-		mtx_sleep(ntc->rx_thread, SOCKBUF_MTX(&so->so_rcv), 0,
-		    "nvtcprx", 0);
-	}
-	SOCKBUF_UNLOCK(&so->so_rcv);
-
-	SOCKBUF_LOCK(&so->so_snd);
-	ntc->tx_shutdown = true;
-	if (ntc->tx_thread != NULL) {
-		cv_signal(&ntc->tx_cv);
-		mtx_sleep(ntc->tx_thread, SOCKBUF_MTX(&so->so_snd), 0,
-		    "nvtcptx", 0);
-	}
-	SOCKBUF_UNLOCK(&so->so_snd);
-
-	SOCKBUF_LOCK(&so->so_snd);
-	soupcall_clear(so, SO_SND);
-	SOCKBUF_UNLOCK(&so->so_snd);
-	SOCKBUF_LOCK(&so->so_rcv);
-	soupcall_clear(so, SO_RCV);
-	SOCKBUF_UNLOCK(&so->so_rcv);
-
-	STAILQ_FOREACH_SAFE(tcap, &ntc->tx_capsules, link, ncap) {
-		tcp_free_capsule(&tcap->nc);
-	}
-	mbufq_drain(&ntc->tx_pdus);
-
-	soclose(so);
-
-	cv_destroy(&ntc->rx_cv);
-	free(ntc, M_NVMF_TCP);
-}
-
-static struct nvmf_qpair *
-tcp_allocate_qpair(struct nvmf_connection *nc, bool admin)
-{
-	struct nvmf_tcp_connection *ntc = TCONN(nc);
-	struct nvmf_tcp_qpair *qp;
-	uint32_t max_icd;
-
-	if (ntc->qp != NULL)
-		return (NULL);
-
-	if (admin) {
-		/* 7.4.3 */
-		max_icd = 8192;
-	} else {
-		if (ntc->ioccsz < 4)
-			return (NULL);
-		max_icd = (ntc->ioccsz - 4) * 16;
-	}
-
 	qp = malloc(sizeof(*qp), M_NVMF_TCP, M_WAITOK | M_ZERO);
-	if (!nc->nc_controller)
-		qp->max_icd = max_icd;
+	qp->so = so;
+	qp->txpda = params->tcp.txpda;
+	qp->rxpda = params->tcp.rxpda;
+	qp->header_digests = params->tcp.header_digests;
+	qp->data_digests = params->tcp.data_digests;
+	qp->maxr2t = params->tcp.maxr2t;
+	qp->maxh2cdata = params->tcp.maxh2cdata;
+	qp->maxc2hdata = max_c2hdata;
+	qp->max_icd = params->tcp.max_icd;
 
 	LIST_INIT(&qp->rx_buffers.head);
 	LIST_INIT(&qp->tx_buffers.head);
 	mtx_init(&qp->rx_buffers.lock, "nvmf/tcp rx buffers", NULL, MTX_DEF);
 	mtx_init(&qp->tx_buffers.lock, "nvmf/tcp tx buffers", NULL, MTX_DEF);
-	ntc->qp = qp;
+
+	cv_init(&qp->rx_cv, "-");
+	cv_init(&qp->tx_cv, "-");
+	mbufq_init(&qp->tx_pdus, 0);
+	STAILQ_INIT(&qp->tx_capsules);
+
+	/* Register socket upcalls. */
+	SOCKBUF_LOCK(&so->so_rcv);
+	soupcall_set(so, SO_RCV, nvmf_soupcall_receive, qp);
+	SOCKBUF_UNLOCK(&so->so_rcv);
+	SOCKBUF_LOCK(&so->so_snd);
+	soupcall_set(so, SO_SND, nvmf_soupcall_send, qp);
+	SOCKBUF_UNLOCK(&so->so_snd);
+
+	/* Spin up kthreads. */
+	error = kthread_add(nvmf_tcp_receive, qp, NULL, &qp->rx_thread, 0, 0,
+	    "nvmef tcp rx");
+	if (error != 0) {
+		tcp_free_qpair(&qp->qp);
+		return (NULL);
+	}
+	error = kthread_add(nvmf_tcp_send, qp, NULL, &qp->tx_thread, 0, 0,
+	    "nvmef tcp tx");
+	if (error != 0) {
+		tcp_free_qpair(&qp->qp);
+		return (NULL);
+	}
 
 	return (&qp->qp);
 }
@@ -2110,8 +2023,37 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nq);
 	struct nvmf_tcp_command_buffer *ncb, *cb;
+	struct nvmf_tcp_capsule *ntc, *tc;
+	struct socket *so = qp->so;
 
-	KASSERT(TCONN(nq->nq_connection)->qp == qp, ("qp mismatch"));
+	/* Shut down kthreads and clear upcalls */
+	SOCKBUF_LOCK(&so->so_snd);
+	qp->tx_shutdown = true;
+	if (qp->tx_thread != NULL) {
+		cv_signal(&qp->tx_cv);
+		mtx_sleep(qp->tx_thread, SOCKBUF_MTX(&so->so_snd), 0,
+		    "nvtcptx", 0);
+	}
+	soupcall_clear(so, SO_SND);
+	SOCKBUF_UNLOCK(&so->so_snd);
+
+	SOCKBUF_LOCK(&so->so_rcv);
+	qp->rx_shutdown = true;
+	if (qp->rx_thread != NULL) {
+		cv_signal(&qp->rx_cv);
+		mtx_sleep(qp->rx_thread, SOCKBUF_MTX(&so->so_rcv), 0,
+		    "nvtcprx", 0);
+	}
+	soupcall_clear(so, SO_RCV);
+	SOCKBUF_UNLOCK(&so->so_rcv);
+
+	STAILQ_FOREACH_SAFE(tc, &qp->tx_capsules, link, ntc) {
+		tcp_free_capsule(&tc->nc);
+	}
+	mbufq_drain(&qp->tx_pdus);
+
+	cv_destroy(&qp->tx_cv);
+	cv_destroy(&qp->rx_cv);
 
 	mtx_lock(&qp->rx_buffers.lock);
 	LIST_FOREACH_SAFE(cb, &qp->rx_buffers.head, link, ncb) {
@@ -2120,7 +2062,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 		tcp_release_command_buffer(cb);
 		mtx_lock(&qp->rx_buffers.lock);
 	}
-	mtx_unlock(&qp->rx_buffers.lock);
+	mtx_destroy(&qp->rx_buffers.lock);
 
 	mtx_lock(&qp->tx_buffers.lock);
 	LIST_FOREACH_SAFE(cb, &qp->tx_buffers.head, link, ncb) {
@@ -2129,7 +2071,9 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 		tcp_release_command_buffer(cb);
 		mtx_lock(&qp->tx_buffers.lock);
 	}
-	mtx_unlock(&qp->tx_buffers.lock);
+	mtx_destroy(&qp->tx_buffers.lock);
+
+	soclose(so);
 
 	free(qp, M_NVMF_TCP);
 }
@@ -2157,14 +2101,14 @@ tcp_free_capsule(struct nvmf_capsule *nc)
 static int
 tcp_transmit_capsule(struct nvmf_capsule *nc)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
-	struct nvmf_tcp_capsule *tcap = TCAP(nc);
-	struct socket *so = ntc->so;
+	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
+	struct nvmf_tcp_capsule *tc = TCAP(nc);
+	struct socket *so = qp->so;
 
 	SOCKBUF_LOCK(&so->so_snd);
-	STAILQ_INSERT_TAIL(&ntc->tx_capsules, tcap, link);
+	STAILQ_INSERT_TAIL(&qp->tx_capsules, tc, link);
 	if (sowriteable(so))
-		cv_signal(&ntc->tx_cv);
+		cv_signal(&qp->tx_cv);
 	SOCKBUF_UNLOCK(&so->so_snd);
 	return (0);
 }
@@ -2211,7 +2155,7 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 
 /* NB: cid and ttag are both little-endian already. */
 static void
-tcp_send_r2t(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
+tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, uint32_t data_len)
 {
 	struct nvme_tcp_r2t_hdr r2t;
@@ -2224,15 +2168,14 @@ tcp_send_r2t(struct nvmf_tcp_connection *ntc, uint16_t cid, uint16_t ttag,
 	r2t.r2to = htole32(data_offset);
 	r2t.r2tl = htole32(data_len);
 
-	m = nvmf_tcp_construct_pdu(ntc, &r2t, sizeof(r2t), NULL, 0);
-	nvmf_tcp_write_pdu(ntc, m);
+	m = nvmf_tcp_construct_pdu(qp, &r2t, sizeof(r2t), NULL, 0);
+	nvmf_tcp_write_pdu(qp, m);
 }
 
 static void
 tcp_receive_r2t_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct nvmf_io_request *io)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
 	uint16_t ttag;
@@ -2255,16 +2198,18 @@ tcp_receive_r2t_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	mtx_unlock(&qp->rx_buffers.lock);
 
 	/*
-	 * XXX: Should be checking ntc->maxr2t here and queueing the
+	 * XXX: Should be checking qp->maxr2t here and queueing the
 	 * r2t if there are too many in flight.
 	 */
-	tcp_send_r2t(ntc, nc->nc_sqe.cid, ttag, data_offset, io->io_len);
+	tcp_send_r2t(qp, nc->nc_sqe.cid, ttag, data_offset, io->io_len);
 }
 
 static void
-tcp_receive_icd_data(struct nvmf_tcp_capsule *tc, uint32_t data_offset,
+tcp_receive_icd_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct nvmf_io_request *io)
 {
+	struct nvmf_tcp_capsule *tc = TCAP(nc);
+
 	mbuf_copyto_io(tc->rx_pdu.m, tc->rx_pdu.hdr->pdo + data_offset,
 	    io->io_len, io, 0);
 	nvmf_complete_io_request(io, 0);
@@ -2274,13 +2219,11 @@ static int
 tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct nvmf_io_request *io)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
-	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvme_sgl_descriptor *sgl;
 	size_t data_len;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
-	    !ntc->nc.nc_controller)
+	    !nc->nc_qpair->nq_controller)
 		return (EINVAL);
 
 	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
@@ -2289,7 +2232,7 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 		return (EFBIG);
 
 	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
-		tcp_receive_icd_data(tc, data_offset, io);
+		tcp_receive_icd_data(nc, data_offset, io);
 	else
 		tcp_receive_r2t_data(nc, data_offset, io);
 	return (0);
@@ -2297,8 +2240,8 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 
 /* NB: cid is little-endian already. */
 static void
-tcp_send_c2h_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid,
-    uint32_t data_offset, struct mbuf *m, size_t len, bool last_pdu)
+tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint32_t data_offset,
+    struct mbuf *m, size_t len, bool last_pdu)
 {
 	struct nvme_tcp_c2h_data_hdr c2h;
 	struct mbuf *top;
@@ -2311,20 +2254,20 @@ tcp_send_c2h_pdu(struct nvmf_tcp_connection *ntc, uint16_t cid,
 	c2h.datao = htole32(data_offset);
 	c2h.datal = htole32(len);
 
-	top = nvmf_tcp_construct_pdu(ntc, &c2h, sizeof(c2h), m, len);
-	nvmf_tcp_write_pdu(ntc, top);
+	top = nvmf_tcp_construct_pdu(qp, &c2h, sizeof(c2h), m, len);
+	nvmf_tcp_write_pdu(qp, top);
 }
 
 static int
 tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 {
-	struct nvmf_tcp_connection *ntc = TCONN(nc->nc_qpair->nq_connection);
+	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_sgl_descriptor *sgl;
 	uint32_t data_len, data_offset;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
-	    !ntc->nc.nc_controller)
+	    !qp->qp.nq_controller)
 		return (EINVAL);
 
 	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
@@ -2336,8 +2279,7 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 		return (EINVAL);
 
 	/* Allocate a command buffer for the mbufs to hold a reference on. */
-	cb = tcp_alloc_command_buffer(TQP(nc->nc_qpair), io, 0, io->io_len,
-	    nc->nc_sqe.cid);
+	cb = tcp_alloc_command_buffer(qp, io, 0, io->io_len, nc->nc_sqe.cid);
 
 	/* Queue one more C2H_DATA PDUs containing the data from io. */
 	data_offset = 0;
@@ -2346,11 +2288,11 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 		uint32_t sent, todo;
 
 		todo = data_len;
-		if (todo > ntc->maxc2hdata)
-			todo = ntc->maxc2hdata;
+		if (todo > qp->maxc2hdata)
+			todo = qp->maxc2hdata;
 		m = nvmf_tcp_command_buffer_mbuf(cb, data_offset, todo, &sent,
 		    todo < data_len);
-		tcp_send_c2h_pdu(ntc, nc->nc_sqe.cid, data_offset, m, sent,
+		tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset, m, sent,
 		    sent == data_len);
 
 		data_offset += sent;
@@ -2362,8 +2304,6 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 }
 
 struct nvmf_transport_ops tcp_ops = {
-	.allocate_connection = tcp_allocate_connection,
-	.free_connection = tcp_free_connection,
 	.allocate_qpair = tcp_allocate_qpair,
 	.free_qpair = tcp_free_qpair,
 	.allocate_capsule = tcp_allocate_capsule,

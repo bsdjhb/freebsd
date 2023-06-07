@@ -39,14 +39,9 @@ struct module;
 struct nvmf_io_request;
 
 struct nvmf_transport_ops {
-	/* Connection management. */
-	struct nvmf_connection *(*allocate_connection)(bool controller,
-	    const struct nvmf_connection_params *params);
-	void (*free_connection)(struct nvmf_connection *nc);
-
 	/* Queue pair management. */
-	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_connection *nt,
-	    bool admin);
+	struct nvmf_qpair *(*allocate_qpair)(bool controller,
+	    const struct nvmf_handoff_qpair_params *params);
 	void (*free_qpair)(struct nvmf_qpair *qp);
 
 	/* Capsule operations. */
@@ -66,31 +61,19 @@ struct nvmf_transport_ops {
 	int priority;
 };
 
-struct nvmf_connection {
-	struct nvmf_transport *nc_transport;
-	struct nvmf_transport_ops *nc_ops;
-	bool nc_controller;
-	bool nc_sq_flow_control;
-
-	/* Each qpair holds a reference on a connection. */
-	u_int nc_refs;
-
-	/* Callback to invoke for an error. */
-	nvmf_connection_error_t *nc_error;
-	void *nc_error_arg;
-
-#ifdef notsure
-	bool nc_disconnecting;
-#endif
-};
-
 /* Either an Admin or I/O Submission/Completion Queue pair. */
 struct nvmf_qpair {
-	struct nvmf_connection *nq_connection;
+	struct nvmf_transport *nq_transport;
+	struct nvmf_transport_ops *nq_ops;
+	bool nq_controller;
 
 	/* Callback to invoke for a received capsule. */
 	nvmf_capsule_receive_t *nq_receive;
 	void *nq_receive_arg;
+
+	/* Callback to invoke for an error. */
+	nvmf_qpair_error_t *nq_error;
+	void *nq_error_arg;
 
 	bool nq_admin;
 
@@ -158,9 +141,9 @@ struct nvmf_capsule {
 };
 
 static void __inline
-nvmf_connection_error(struct nvmf_connection *nc)
+nvmf_qpair_error(struct nvmf_qpair *nq)
 {
-	nc->nc_error(nc->nc_error_arg);
+	nq->nq_error(nq->nq_error_arg);
 }
 
 static void __inline

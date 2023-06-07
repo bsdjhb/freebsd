@@ -45,7 +45,7 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 	u_int i;
 	int error;
 
-	if (!hh->admin.qp.admin)
+	if (!hh->admin.admin)
 		return (EINVAL);
 
 	len = hh->num_io_queues * sizeof(*ivars.io_params);
@@ -55,7 +55,7 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 		goto out;
 
 	for (i = 0; i < hh->num_io_queues; i++) {
-		if (ivars.io_params[i].qp.admin) {
+		if (ivars.io_params[i].admin) {
 			error = EINVAL;
 			goto out;
 		}

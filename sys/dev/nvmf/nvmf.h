@@ -48,6 +48,7 @@ struct nvmf_handoff_qpair_params {
 			bool	data_digests;
 			uint32_t maxr2t;
 			uint32_t maxh2cdata;
+			uint32_t max_icd;
 		} tcp;
 	};
 };

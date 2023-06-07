@@ -115,11 +115,11 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 }
 
 static void
-nvmf_connection_error(void *arg)
+nvmf_qpair_error(void *arg)
 {
-	struct nvmf_softc *sc = arg;
+	struct nvmf_host_qpair *qp = arg;
 
-	panic("TODO: Connection error on %s", device_get_nameunit(sc->dev));
+	panic("TODO: qpair error on %s", device_get_nameunit(qp->sc->dev));
 }
 
 static void
@@ -171,24 +171,18 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 
 struct nvmf_host_qpair *
 nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
-    struct nvmf_handoff_qpair *handoff)
+    struct nvmf_handoff_qpair_params *handoff)
 {
 	struct nvmf_host_command *cmd, *ncmd;
 	struct nvmf_host_qpair *qp;
-	struct nvmf_connection *nc;
 	u_int i, num_commands;
-
-	nc = nvmf_allocate_connection(trtype, false, &handoff->cp,
-	    nvmf_connection_error, sc);
-	if (nc == NULL)
-		return (NULL);
 
 	qp = malloc(sizeof(*qp), M_NVMF, M_WAITOK | M_ZERO);
 	qp->sc = sc;
-	qp->sq_flow_control = handoff->qp.sq_flow_control;
-	qp->qsize = handoff->qp.qsize;
-	qp->sqhd = handoff->qp.sqhd;
-	qp->sqtail = handoff->qp.sqtail;
+	qp->sq_flow_control = handoff->sq_flow_control;
+	qp->qsize = handoff->qsize;
+	qp->sqhd = handoff->sqhd;
+	qp->sqtail = handoff->sqtail;
 	mtx_init(&qp->lock, "nvmf qp", NULL, MTX_DEF);
 
 	num_commands = qp->qsize - 1;
@@ -202,9 +196,8 @@ nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
 	}
 	STAILQ_INIT(&qp->pending_requests);
 
-	qp->qp = nvmf_allocate_qpair(nc, handoff->qp.admin,
-	    nvmf_receive_capsule, qp);
-	nvmf_free_connection(nc);
+	qp->qp = nvmf_allocate_qpair(trtype, false, handoff, nvmf_qpair_error,
+	    qp, nvmf_receive_capsule, qp);
 	if (qp->qp == NULL) {
 		TAILQ_FOREACH_SAFE(cmd, &qp->free_commands, link, ncmd) {
 			TAILQ_REMOVE(&qp->free_commands, cmd, link);
