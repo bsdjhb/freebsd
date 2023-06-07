@@ -45,8 +45,15 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 	u_int i;
 	int error;
 
+	memset(&ivars, 0, sizeof(ivars));
+
 	if (!hh->admin.admin)
 		return (EINVAL);
+
+	ivars.cdata = malloc(sizeof(*ivars.cdata), M_NVMF, M_WAITOK);
+	error = copyin(hh->cdata, ivars.cdata, sizeof(*ivars.cdata));
+	if (error != 0)
+		goto out;
 
 	len = hh->num_io_queues * sizeof(*ivars.io_params);
 	ivars.io_params = malloc(len, M_NVMF, M_WAITOK);
@@ -80,6 +87,7 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 
 out:
 	free(ivars.io_params, M_NVMF);
+	free(ivars.cdata, M_NVMF);
 	return (error);
 }
 

@@ -94,6 +94,8 @@ struct nvmf_qpair {
 	/* Value in response from CONNECT. */
 	uint16_t nq_cntlid;	/* host only */
 
+	uint32_t nq_kato;	/* host only, valid on admin queue only */
+
 	TAILQ_HEAD(, nvmf_capsule) nq_rx_capsules;
 };
 
