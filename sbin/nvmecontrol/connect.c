@@ -45,6 +45,7 @@
  * - I/O queue entries
  * - Include MPS in handoff?
  * - MaxR2T
+ * - KATO
  */
 
 static struct options {
@@ -144,7 +145,7 @@ connect_nvm_adminq(struct nvmf_association *na,
 	int error, timo;
 
 	qp = nvmf_connect(na, params, 0, 32 /* XXX */, hostid, cntlid, subnqn,
-	    nqn, 0);
+	    nqn, NVMF_KATO_DEFAULT);
 	if (qp == NULL) {
 		warnx("Failed to connect to NVM controller %s: %s", subnqn,
 		    nvmf_association_error(na));
