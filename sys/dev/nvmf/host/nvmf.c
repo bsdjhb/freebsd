@@ -312,11 +312,7 @@ nvmf_detach(device_t dev)
 	struct nvmf_softc *sc = device_get_softc(dev);
 	u_int i;
 
-	/*
-	 * Use deferred destruction to avoid deadlock with
-	 * NVMF_DISCONNECT in nvmf_ioctl.
-	 */
-	destroy_dev_sched(sc->cdev);
+	destroy_dev(sc->cdev);
 
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
@@ -407,8 +403,6 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 	struct nvmf_softc *sc = cdev->si_drv1;
 	struct nvme_get_nsid *gnsid;
 	struct nvme_pt_command *pt;
-	device_t dev;
-	int error;
 
 	switch (cmd) {
 	case NVME_PASSTHROUGH_CMD:
@@ -421,14 +415,6 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 		gnsid->cdev[sizeof(gnsid->cdev) - 1] = '\0';
 		gnsid->nsid = 0;
 		return (0);
-	case NVMF_DISCONNECT:
-		dev = sc->dev;
-		bus_topo_lock();
-		error = device_detach(dev);
-		if (error == 0)
-			device_delete_child(root_bus, dev);
-		bus_topo_unlock();
-		return (error);
 	default:
 		return (ENOTTY);
 	}

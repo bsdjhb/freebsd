@@ -29,7 +29,7 @@
 #include <stdlib.h>
 #include <sysexits.h>
 #include <unistd.h>
-#include <dev/nvmf/nvmf.h>
+#include <devctl.h>
 
 #include "nvmecontrol.h"
 
@@ -49,20 +49,17 @@ disconnect(const struct cmd *f, int argc, char *argv[])
 {
 	int	fd;
 	char	*path;
-	uint32_t nsid;
 
 	if (arg_parse(argc, argv, f))
 		return;
 	open_dev(opt.dev, &fd, 1, 1);
-	get_nsid(fd, &path, &nsid);
-	if (nsid != 0) {
-		close(fd);
-		open_dev(path, &fd, 1, 1);
-	}
-	free(path);
+	get_nsid(fd, &path, NULL);
+	close(fd);
 
-	if (ioctl(fd, NVMF_DISCONNECT) < 0)
-		err(EX_IOERR, "disconnect request to %s failed", opt.dev);
+	if (devctl_detach(path, false) == -1)
+		err(EX_IOERR, "detach of %s failed", path);
+	if (devctl_delete(path, true) == -1)
+		err(EX_IOERR, "delete of %s failed", path);
 
 	exit(0);
 }
