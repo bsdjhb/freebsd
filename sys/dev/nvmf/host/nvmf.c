@@ -224,7 +224,11 @@ nvmf_send_keep_alive(void *arg)
 static int
 nvmf_probe(device_t dev)
 {
-	device_set_desc(dev, "Fabrics");
+	struct nvmf_ivars *ivars = device_get_ivars(dev);
+	char desc[260];
+
+	snprintf(desc, sizeof(desc), "Fabrics: %.256s", ivars->cdata->subnqn);
+	device_set_desc_copy(dev, desc);
 	return (BUS_PROBE_DEFAULT);
 }
 
