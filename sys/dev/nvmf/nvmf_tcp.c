@@ -195,7 +195,7 @@ tcp_hold_command_buffer(struct nvmf_tcp_command_buffer *cb)
 static void
 tcp_free_command_buffer(struct nvmf_tcp_command_buffer *cb)
 {
-	nvmf_complete_io_request(&cb->io, cb->error);
+	nvmf_complete_io_request(&cb->io, cb->data_xfered, cb->error);
 	free(cb, M_NVMF_TCP);
 }
 
@@ -2213,7 +2213,7 @@ tcp_receive_icd_data(struct nvmf_capsule *nc, uint32_t data_offset,
 
 	mbuf_copyto_io(tc->rx_pdu.m, tc->rx_pdu.hdr->pdo + data_offset,
 	    io->io_len, io, 0);
-	nvmf_complete_io_request(io, 0);
+	nvmf_complete_io_request(io, io->io_len, 0);
 }
 
 static int
