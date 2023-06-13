@@ -47,7 +47,7 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 
 	memset(&ivars, 0, sizeof(ivars));
 
-	if (!hh->admin.admin)
+	if (!hh->admin.admin || hh->num_io_queues < 1)
 		return (EINVAL);
 
 	ivars.cdata = malloc(sizeof(*ivars.cdata), M_NVMF, M_WAITOK);
