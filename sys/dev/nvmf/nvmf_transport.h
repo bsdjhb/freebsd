@@ -40,6 +40,7 @@ struct memdesc;
 struct nvmf_capsule;
 struct nvmf_connection;
 struct nvmf_qpair;
+struct nvmf_handoff_qpair_params;
 
 SYSCTL_DECL(_kern_nvmf);
 
