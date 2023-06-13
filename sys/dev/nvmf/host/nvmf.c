@@ -227,6 +227,9 @@ nvmf_probe(device_t dev)
 	struct nvmf_ivars *ivars = device_get_ivars(dev);
 	char desc[260];
 
+	if (ivars == NULL)
+		return (ENXIO);
+
 	snprintf(desc, sizeof(desc), "Fabrics: %.256s", ivars->cdata->subnqn);
 	device_set_desc_copy(dev, desc);
 	return (BUS_PROBE_DEFAULT);
@@ -240,6 +243,9 @@ nvmf_attach(device_t dev)
 	struct nvmf_ivars *ivars = device_get_ivars(dev);
 	u_int i;
 	int error;
+
+	if (ivars == NULL)
+		return (ENXIO);
 
 	sc->dev = dev;
 	callout_init(&sc->ka_rx_timer, 1);
