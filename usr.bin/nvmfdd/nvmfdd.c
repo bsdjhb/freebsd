@@ -228,25 +228,27 @@ validate_namespace(struct nvmf_qpair *qp, u_int nsid, u_int *block_size)
 		return (error);
 	}
 
+	nvme_namespace_data_swapbytes(&nsdata);
+
 	if (NVMEV(NVME_NS_DATA_DPS_PIT, nsdata.dps) != 0) {
-		warn("End-to-end data protection is not supported");
+		warnx("End-to-end data protection is not supported");
 		return (EINVAL);
 	}
 
 	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, nsdata.flbas);
 	if (lbaf > nsdata.nlbaf) {
-		warn("Invalid LBA format index");
+		warnx("Invalid LBA format index");
 		return (EINVAL);
 	}
 
 	if (NVMEV(NVME_NS_DATA_LBAF_MS, nsdata.lbaf[lbaf]) != 0) {
-		warn("Namespaces with metadata are not supported");
+		warnx("Namespaces with metadata are not supported");
 		return (EINVAL);
 	}
 
 	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, nsdata.lbaf[lbaf]);
 	if (lbads == 0) {
-		warn("Invalid LBA format index");
+		warnx("Invalid LBA format index");
 		return (EINVAL);
 	}
 
