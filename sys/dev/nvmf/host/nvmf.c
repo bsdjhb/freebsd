@@ -80,7 +80,7 @@ nvmf_complete(void *arg, struct nvmf_capsule *nc)
 }
 
 static void
-nvmf_io_complete(void *arg, int error)
+nvmf_io_complete(void *arg, size_t xfered, int error)
 {
 	struct nvmf_completion_status *status = arg;
 	struct mtx *mtx;

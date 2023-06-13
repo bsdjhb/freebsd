@@ -50,11 +50,12 @@ typedef void nvmf_qpair_error_t(void *);
 typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);
 
 /*
- * Callback to invoke when an I/O request has completed.  The last
- * parameter is an error value which is non-zero if the request did
- * not complete successfully.
+ * Callback to invoke when an I/O request has completed.  The second
+ * parameter is the amount of data transferred.  The last parameter is
+ * an error value which is non-zero if the request did not complete
+ * successfully.  A request with an error may complete partially.
  */
-typedef void nvmf_io_complete_t(void *, int);
+typedef void nvmf_io_complete_t(void *, size_t, int);
 
 /*
  * A queue pair represents either an Admin or I/O
