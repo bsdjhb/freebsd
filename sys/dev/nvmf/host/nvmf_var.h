@@ -28,10 +28,14 @@
 #ifndef __NVMF_VAR_H__
 #define	__NVMF_VAR_H__
 
+#include <sys/_callout.h>
 #include <sys/queue.h>
+#include <dev/nvme/nvme.h>
+#include <dev/nvmf/nvmf_transport.h>
 
 struct nvmf_capsule;
 struct nvmf_host_qpair;
+struct nvmf_namespace;
 
 typedef void nvmf_request_complete_t(void *, struct nvmf_capsule *);
 
@@ -48,6 +52,9 @@ struct nvmf_softc {
 	struct nvmf_host_qpair **io;
 	u_int	num_io_queues;
 
+	struct nvmf_namespace **ns;
+
+	struct nvme_controller_data *cdata;
 	uint64_t cap;
 	u_long max_xfer_size;
 
@@ -86,9 +93,20 @@ struct nvmf_request {
 	STAILQ_ENTRY(nvmf_request) link;
 };
 
+static __inline struct nvmf_host_qpair *
+nvmf_select_io_queue(struct nvmf_softc *sc)
+{
+	/* TODO: Support multiple queues? */
+	return (sc->io[0]);
+}
+
 #ifdef MALLOC_DECLARE
 MALLOC_DECLARE(M_NVMF);
 #endif
+
+/* nvmf.c */
+int	nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
+    bool admin);
 
 /* nvmf_cmd.c */
 bool	nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset,
@@ -98,10 +116,18 @@ bool	nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset,
     int how);
 bool	nvmf_cmd_keep_alive(struct nvmf_softc *sc, nvmf_request_complete_t *cb,
     void *cb_arg, int how);
+bool	nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
+    struct nvme_namespace_data *nsdata, nvmf_request_complete_t *req_cb,
+    void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how);
 
 /* nvmf_ctldev.c */
 int	nvmf_ctl_load(void);
 void	nvmf_ctl_unload(void);
+
+/* nvmf_ns.c */
+struct nvmf_namespace *nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
+    struct nvme_namespace_data *data);
+void	nvmf_destroy_ns(struct nvmf_namespace *ns);
 
 /* nvmf_qpair.c */
 struct nvmf_host_qpair *nvmf_init_qp(struct nvmf_softc *sc,
