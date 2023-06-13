@@ -48,6 +48,9 @@ struct nvmf_softc {
 	struct nvmf_host_qpair **io;
 	u_int	num_io_queues;
 
+	uint64_t cap;
+	u_long max_xfer_size;
+
 	struct cdev *cdev;
 
 	/*
