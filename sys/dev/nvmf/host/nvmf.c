@@ -284,6 +284,21 @@ nvmf_attach(device_t dev)
 		    nvmf_send_keep_alive, sc, C_HARDCLOCK);
 	}
 
+	error = nvmf_read_property(sc, NVMF_PROP_CAP, 8, &sc->cap);
+	if (error != 0) {
+		device_printf(sc->dev, "Failed to fetch CAP\n");
+		error = ENXIO;
+		goto out;
+	}
+
+	/* Honor MDTS if it is set. */
+	sc->max_xfer_size = maxphys;
+	if (sc->cdata->mdts != 0) {
+		sc->max_xfer_size = ulmin(sc->max_xfer_size,
+		    1 << (sc->cdata->mdts + NVME_MPS_SHIFT +
+		    NVME_CAP_HI_MPSMIN(sc->cap >> 32)));
+	}
+
 	make_dev_args_init(&mda);
 	mda.mda_devsw = &nvmf_cdevsw;
 	mda.mda_uid = UID_ROOT;
@@ -342,8 +357,7 @@ nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt)
 	void *buf;
 	int error;
 
-	/* XXX: Need to query MDTS and set a real max size here. */
-	if (pt->len > 1024 * 1024)
+	if (pt->len > sc->max_xfer_size)
 		return (EINVAL);
 
 	buf = NULL;
@@ -420,6 +434,9 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 		    sizeof(gnsid->cdev));
 		gnsid->cdev[sizeof(gnsid->cdev) - 1] = '\0';
 		gnsid->nsid = 0;
+		return (0);
+	case NVME_GET_MAX_XFER_SIZE:
+		*(uint64_t *)arg = sc->max_xfer_size;
 		return (0);
 	default:
 		return (ENOTTY);
