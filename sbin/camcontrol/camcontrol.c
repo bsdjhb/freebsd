@@ -61,6 +61,7 @@
 #include <camlib.h>
 #include "camcontrol.h"
 #ifdef WITH_NVME
+#include <dev/nvmf/nvmf_proto.h>
 #include "nvmecontrol_ext.h"
 #endif
 
@@ -5275,6 +5276,28 @@ tagcontrol_bailout:
 	return (retval);
 }
 
+#ifdef WITH_NVME
+static const char *
+nvmf_transport_type(uint8_t trtype)
+{
+	static char buf[8];
+
+	switch (trtype) {
+	case NVMF_TRTYPE_RDMA:
+		return ("RDMA");
+	case NVMF_TRTYPE_FC:
+		return ("Fibre Channel");
+	case NVMF_TRTYPE_TCP:
+		return ("TCP");
+	case NVMF_TRTYPE_INTRA_HOST:
+		return ("Intra-host");
+	default:
+		snprintf(buf, sizeof(buf), "0x%02x\n", trtype);
+		return (buf);
+	}
+}
+#endif
+
 static void
 cts_print(struct cam_device *device, struct ccb_trans_settings *cts)
 {
@@ -5412,19 +5435,33 @@ cts_print(struct cam_device *device, struct ccb_trans_settings *cts)
 	}
 #ifdef WITH_NVME
 	if (cts->protocol == PROTO_NVME) {
-		struct ccb_trans_settings_nvme *nvmex =
+		struct ccb_trans_settings_nvme *nvme =
+		    &cts->proto_specific.nvme;
+
+		if (nvme->valid & CTS_NVME_VALID_SPEC) {
+			fprintf(stdout, "%sNVMe Spec: %d.%d\n", pathstr,
+			    NVME_MAJOR(nvme->spec),
+			    NVME_MINOR(nvme->spec));
+		}
+	}
+	if (cts->transport == XPORT_NVME) {
+		struct ccb_trans_settings_nvme *nvme =
 		    &cts->xport_specific.nvme;
 
-		if (nvmex->valid & CTS_NVME_VALID_SPEC) {
-			fprintf(stdout, "%sNVMe Spec: %d.%d\n", pathstr,
-			    NVME_MAJOR(nvmex->spec),
-			    NVME_MINOR(nvmex->spec));
-		}
-		if (nvmex->valid & CTS_NVME_VALID_LINK) {
+		if (nvme->valid & CTS_NVME_VALID_LINK) {
 			fprintf(stdout, "%sPCIe lanes: %d (%d max)\n", pathstr,
-			    nvmex->lanes, nvmex->max_lanes);
+			    nvme->lanes, nvme->max_lanes);
 			fprintf(stdout, "%sPCIe Generation: %d (%d max)\n", pathstr,
-			    nvmex->speed, nvmex->max_speed);
+			    nvme->speed, nvme->max_speed);
+		}
+	}
+	if (cts->transport == XPORT_NVMF) {
+		struct ccb_trans_settings_nvmf *nvmf =
+		    &cts->xport_specific.nvmf;
+
+		if (nvmf->valid & CTS_NVMF_VALID_TRTYPE) {
+			fprintf(stdout, "%sTransport: %s\n", pathstr,
+			    nvmf_transport_type(nvmf->trtype));
 		}
 	}
 #endif
