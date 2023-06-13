@@ -802,7 +802,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
 	struct nvme_tcp_c2h_data_hdr *c2h;
 	struct nvmf_tcp_command_buffer *cb;
-	uint32_t data_len, data_offset;
+	uint32_t cid, data_len, data_offset;
 
 	c2h = (void *)pdu->hdr;
 
@@ -882,20 +882,21 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	mbuf_copyto_io(pdu->m, pdu->hdr->pdo, data_len, &cb->io, data_offset);
 
+	cid = cb->cid;
+	tcp_release_command_buffer(cb);
+
 	if ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_SUCCESS) != 0) {
 		struct nvme_completion cqe;
 		struct nvmf_capsule *nc;
 
 		memset(&cqe, 0, sizeof(cqe));
-		cqe.cid = cb->cid;
+		cqe.cid = cid;
 
 		nc = nvmf_allocate_response(&qp->qp, &cqe, M_WAITOK);
 		nc->nc_sqhd_valid = false;
 
 		nvmf_capsule_received(&qp->qp, nc);
 	}
-
-	tcp_release_command_buffer(cb);
 
 	nvmf_tcp_free_pdu(pdu);
 	return (0);
