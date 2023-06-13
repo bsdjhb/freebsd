@@ -1,0 +1,361 @@
+/*-
+ * Copyright (c) 2023 Chelsio Communications, Inc.
+ * All rights reserved.
+ * Written by: John Baldwin <jhb@FreeBSD.org>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <sys/param.h>
+#include <sys/bio.h>
+#include <sys/bus.h>
+#include <sys/conf.h>
+#include <sys/disk.h>
+#include <sys/fcntl.h>
+#include <sys/malloc.h>
+#include <sys/memdesc.h>
+#include <sys/sbuf.h>
+#include <machine/stdarg.h>
+#include <dev/nvme/nvme.h>
+#include <dev/nvmf/host/nvmf_var.h>
+
+struct nvmf_namespace {
+	struct nvmf_softc *sc;
+	struct nvme_namespace_data *data;
+	uint32_t id;
+	u_int	flags;
+	uint32_t lba_size;
+
+	struct cdev *cdev;
+};
+
+static void
+ns_printf(struct nvmf_namespace *ns, const char *fmt, ...)
+{
+	char buf[128];
+	struct sbuf sb;
+	va_list ap;
+
+	sbuf_new(&sb, buf, sizeof(buf), SBUF_FIXEDLEN);
+	sbuf_set_drain(&sb, sbuf_printf_drain, NULL);
+
+	sbuf_printf(&sb, "%sns%u: ", device_get_nameunit(ns->sc->dev),
+	    ns->id);
+
+	va_start(ap, fmt);
+	sbuf_vprintf(&sb, fmt, ap);
+	va_end(ap);
+
+	sbuf_finish(&sb);
+	sbuf_delete(&sb);
+}
+
+static void
+nvmf_ns_io_complete(void *arg, size_t xfered, int error)
+{
+	struct bio *bio = arg;
+
+	KASSERT(xfered <= bio->bio_bcount,
+	    ("%s: xfered > bio_bcount", __func__));
+	bio->bio_error = error;
+	bio->bio_resid = bio->bio_bcount - xfered;
+	if (error != 0)
+		bio->bio_flags |= BIO_ERROR;
+}
+
+static void
+nvmf_ns_delete_complete(void *arg, size_t xfered, int error)
+{
+	struct bio *bio = arg;
+
+	if (error != 0) {
+		bio->bio_error = error;
+		bio->bio_flags |= BIO_ERROR;
+		bio->bio_resid = bio->bio_bcount;
+	} else
+		bio->bio_resid = 0;
+	
+	free(bio->bio_driver2, M_NVMF);
+	bio->bio_driver2 = NULL;
+}
+
+static void
+nvmf_ns_bio_complete(void *arg, struct nvmf_capsule *nc)
+{
+	const struct nvme_completion *cqe;
+	struct bio *bio = arg;
+
+	cqe = nvmf_capsule_cqe(nc);
+
+	if (cqe->status != 0) {
+		KASSERT(bio->bio_error == 0 || bio->bio_error == EJUSTRETURN,
+		    ("%s: both CQE and I/O errors", __func__));
+		bio->bio_error = EIO;
+		bio->bio_flags |= BIO_ERROR;
+		bio->bio_resid = bio->bio_bcount;
+	} else {
+		KASSERT(bio->bio_error != EJUSTRETURN,
+		    ("%s: I/O completion has not posted", __func__));
+	}	
+
+	biodone(bio);
+	nvmf_free_capsule(nc);
+}
+
+static int
+nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
+{
+	struct nvme_command cmd;
+	struct nvmf_request *req;
+	struct nvme_dsm_range *dsm_range;
+	struct memdesc mem;
+	uint64_t lba, lba_count;
+
+	dsm_range = NULL;
+	memset(&cmd, 0, sizeof(cmd));
+	switch (bio->bio_cmd) {
+	case BIO_READ:
+		lba = bio->bio_offset / ns->lba_size;
+		lba_count = bio->bio_bcount / ns->lba_size;
+		nvme_ns_read_cmd(&cmd, ns->id, lba, lba_count);
+		break;
+	case BIO_WRITE:
+		lba = bio->bio_offset / ns->lba_size;
+		lba_count = bio->bio_bcount / ns->lba_size;
+		nvme_ns_write_cmd(&cmd, ns->id, lba, lba_count);
+		break;
+	case BIO_FLUSH:
+		nvme_ns_flush_cmd(&cmd, ns->id);
+		break;
+	case BIO_DELETE:
+		dsm_range = malloc(sizeof(*dsm_range), M_NVMF, M_NOWAIT |
+		    M_ZERO);
+		if (dsm_range == NULL)
+			return (ENOMEM);
+		lba = bio->bio_offset / ns->lba_size;
+		lba_count = bio->bio_bcount / ns->lba_size;
+		dsm_range->starting_lba = htole64(lba);
+		dsm_range->length = htole32(lba_count);
+		bio->bio_driver2 = dsm_range;
+
+		cmd.opc = NVME_OPC_DATASET_MANAGEMENT;
+		cmd.nsid = htole32(ns->id);
+		cmd.cdw10 = htole32(0);		/* 1 range */
+		cmd.cdw11 = htole32(NVME_DSM_ATTR_DEALLOCATE);
+		break;
+	default:
+		return (EOPNOTSUPP);
+	}
+
+	req = nvmf_allocate_request(nvmf_select_io_queue(ns->sc), &cmd,
+	    nvmf_ns_bio_complete, bio, M_NOWAIT);
+	if (req == NULL) {
+		free(dsm_range, M_NVMF);
+		return (ENOMEM);
+	}
+
+	switch (bio->bio_cmd) {
+	case BIO_READ:
+	case BIO_WRITE:
+#ifdef INVARIANTS
+		bio->bio_error = EJUSTRETURN;
+#endif
+		mem = memdesc_bio(bio);
+		nvmf_capsule_append_data(req->nc, &mem, bio->bio_bcount, 0,
+		    bio->bio_cmd == BIO_WRITE, nvmf_ns_io_complete, bio);
+		break;
+	case BIO_DELETE:
+#ifdef INVARIANTS
+		bio->bio_error = EJUSTRETURN;
+#endif
+		mem = memdesc_vaddr(dsm_range, sizeof(*dsm_range));
+		nvmf_capsule_append_data(req->nc, &mem, sizeof(*dsm_range), 0,
+		    true, nvmf_ns_delete_complete, bio);
+		break;
+	default:
+		KASSERT(bio->bio_resid == 0,
+		    ("%s: input bio_resid != 0", __func__));
+		break;
+	}
+
+	nvmf_submit_request(req);
+	return (0);
+}
+
+static uint64_t
+nvmf_ns_get_size(struct nvmf_namespace *ns)
+{
+	return (ns->data->nsze * ns->lba_size);
+}
+
+static int
+nvmf_ns_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag,
+    struct thread *td)
+{
+	struct nvmf_namespace *ns = dev->si_drv1;
+	struct nvme_get_nsid *gnsid;
+	struct nvme_pt_command *pt;
+
+	switch (cmd) {
+	case NVME_PASSTHROUGH_CMD:
+		pt = (struct nvme_pt_command *)arg;
+		pt->cmd.nsid = htole32(ns->id);
+		return (nvmf_passthrough_cmd(ns->sc, pt, false));
+	case NVME_GET_NSID:
+		gnsid = (struct nvme_get_nsid *)arg;
+		strncpy(gnsid->cdev, device_get_nameunit(ns->sc->dev),
+		    sizeof(gnsid->cdev));
+		gnsid->cdev[sizeof(gnsid->cdev) - 1] = '\0';
+		gnsid->nsid = ns->id;
+		return (0);
+	case DIOCGMEDIASIZE:
+		*(off_t *)arg = (off_t)nvmf_ns_get_size(ns);
+		return (0);
+	case DIOCGSECTORSIZE:
+		*(u_int *)arg = ns->lba_size;
+		return (0);
+	default:
+		return (ENOTTY);
+	}
+}
+
+static int
+nvmf_ns_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
+{
+	int error;
+
+	error = 0;
+	if ((oflags & FWRITE) != 0)
+		error = securelevel_gt(td->td_ucred, 0);
+	return (error);
+}
+
+static void
+nvmf_ns_strategy(struct bio *bio)
+{
+	struct nvmf_namespace *ns;
+	int error;
+
+	ns = bio->bio_dev->si_drv1;
+
+	error = nvmf_ns_submit_bio(ns, bio);
+	if (error != 0) {
+		bio->bio_error = error;
+		bio->bio_flags |= BIO_ERROR;
+		bio->bio_resid = bio->bio_bcount;
+		biodone(bio);
+	}
+}
+
+static struct cdevsw nvmf_ns_cdevsw = {
+	.d_version = D_VERSION,
+	.d_flags = D_DISK,
+	.d_open = nvmf_ns_open,
+	.d_read = physread,
+	.d_write = physwrite,
+	.d_strategy = nvmf_ns_strategy,
+	.d_ioctl = nvmf_ns_ioctl
+};
+
+struct nvmf_namespace *
+nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
+    struct nvme_namespace_data *data)
+{
+	struct make_dev_args mda;
+	struct nvmf_namespace *ns;
+	int error;
+	uint8_t lbads, lbaf;
+
+	ns = malloc(sizeof(*ns), M_NVMF, M_WAITOK | M_ZERO);
+	ns->sc = sc;
+	ns->id = id;
+	ns->data = data;
+
+	/*
+	 * As in nvme_ns_construct, a size of zero indicates an
+	 * invalid namespace.
+	 */
+	if (data->nsze == 0)
+		goto fail;
+
+	if (NVMEV(NVME_NS_DATA_DPS_PIT, data->dps) != 0) {
+		ns_printf(ns, "End-to-end data protection not supported\n");
+		goto fail;
+	}
+
+	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, data->flbas);
+	if (lbaf > data->nlbaf) {
+		ns_printf(ns, "Invalid LBA format index\n");
+		goto fail;
+	}
+
+	if (NVMEV(NVME_NS_DATA_LBAF_MS, data->lbaf[lbaf]) != 0) {
+		ns_printf(ns, "Namespaces with metadata are not supported\n");
+		goto fail;
+	}
+
+	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, data->lbaf[lbaf]);
+	if (lbads == 0) {
+		ns_printf(ns, "Invalid LBA format index\n");
+		goto fail;
+	}
+
+	ns->lba_size = 1 << lbads;
+
+	if (nvme_ctrlr_has_dataset_mgmt(sc->cdata))
+		ns->flags |= NVME_NS_DEALLOCATE_SUPPORTED;
+
+	if (NVMEV(NVME_CTRLR_DATA_VWC_PRESENT, sc->cdata->vwc) != 0)
+		ns->flags |= NVME_NS_FLUSH_SUPPORTED;
+
+	/*
+	 * XXX: Does any of the boundary splitting for NOIOB make any
+	 * sense for Fabrics?
+	 */
+
+	make_dev_args_init(&mda);
+	mda.mda_devsw = &nvmf_ns_cdevsw;
+	mda.mda_uid = UID_ROOT;
+	mda.mda_gid = GID_WHEEL;
+	mda.mda_mode = 0600;
+	mda.mda_si_drv1 = ns;
+	error = make_dev_s(&mda, &ns->cdev, "%sns%u",
+	    device_get_nameunit(sc->dev), id);
+	if (error != 0)
+		goto fail;
+
+	ns->cdev->si_flags |= SI_UNMAPPED;
+
+	return (ns);
+fail:
+	free(ns, M_NVMF);
+	return (NULL);
+}
+
+void
+nvmf_destroy_ns(struct nvmf_namespace *ns)
+{
+	destroy_dev(ns->cdev);
+
+	free(ns->data, M_NVMF);
+	free(ns, M_NVMF);
+}

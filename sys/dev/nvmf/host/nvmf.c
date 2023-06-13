@@ -235,6 +235,39 @@ nvmf_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
+static void
+nvmf_add_namespaces(struct nvmf_softc *sc)
+{
+	struct nvmf_completion_status status;
+	struct nvme_namespace_data *data;
+	u_int i;
+
+	sc->ns = malloc(sc->cdata->nn * sizeof(*sc->ns), M_NVMF,
+	    M_WAITOK | M_ZERO);
+	for (i = 0; i < sc->cdata->nn; i++) {
+		data = malloc(sizeof(*data), M_NVMF, M_WAITOK);
+
+		nvmf_status_init(&status);
+		nvmf_status_wait_io(&status);
+		nvmf_cmd_identify_namespace(sc, i, data, nvmf_complete,
+		    &status, nvmf_io_complete, &status, M_WAITOK);
+		nvmf_wait_for_reply(&status);
+
+		if (status.cqe.status != 0) {
+			device_printf(sc->dev,
+			    "IDENTIFY namespace %u failed, status %#x\n", i,
+			    le16toh(status.cqe.status));
+			free(data, M_NVMF);
+			continue;
+		}
+
+		nvme_namespace_data_swapbytes(data);
+		sc->ns[i] = nvmf_init_ns(sc, i, data);
+		if (sc->ns[i] == NULL)
+			free(data, M_NVMF);
+	}
+}
+
 static int
 nvmf_attach(device_t dev)
 {
@@ -250,6 +283,11 @@ nvmf_attach(device_t dev)
 	sc->dev = dev;
 	callout_init(&sc->ka_rx_timer, 1);
 	callout_init(&sc->ka_tx_timer, 1);
+
+	/* Claim the cdata pointer from ivars. */
+	sc->cdata = ivars->cdata;
+	ivars->cdata = NULL;
+	nvme_controller_data_swapbytes(sc->cdata);
 
 	/* Setup the admin queue. */
 	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
@@ -275,7 +313,7 @@ nvmf_attach(device_t dev)
 
 	if (ivars->hh->kato != 0) {
 		sc->ka_traffic = NVMEV(NVME_CTRLR_DATA_CTRATT_TBKAS,
-		    ivars->cdata->ctratt) != 0;
+		    sc->cdata->ctratt) != 0;
 		sc->ka_rx_sbt = mstosbt(ivars->hh->kato);
 		sc->ka_tx_sbt = sc->ka_rx_sbt / 2;
 		callout_reset_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0,
@@ -299,6 +337,8 @@ nvmf_attach(device_t dev)
 		    NVME_CAP_HI_MPSMIN(sc->cap >> 32)));
 	}
 
+	nvmf_add_namespaces(sc);
+
 	make_dev_args_init(&mda);
 	mda.mda_devsw = &nvmf_cdevsw;
 	mda.mda_uid = UID_ROOT;
@@ -313,8 +353,15 @@ nvmf_attach(device_t dev)
 
 	return (0);
 out:
+	for (i = 0; i < sc->cdata->nn; i++) {
+		if (sc->ns[i] != NULL)
+			nvmf_destroy_ns(sc->ns[i]);
+	}
+	free(sc->ns, M_NVMF);
+
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
+
 	for (i = 0; i < sc->num_io_queues; i++) {
 		if (sc->io[i] != NULL)
 			nvmf_destroy_qp(sc->io[i]);
@@ -324,6 +371,7 @@ out:
 		nvmf_shutdown_controller(sc);
 		nvmf_destroy_qp(sc->admin);
 	}
+	free(sc->cdata, M_NVMF);
 	return (error);
 }
 
@@ -335,6 +383,12 @@ nvmf_detach(device_t dev)
 
 	destroy_dev(sc->cdev);
 
+	for (i = 0; i < sc->cdata->nn; i++) {
+		if (sc->ns[i] != NULL)
+			nvmf_destroy_ns(sc->ns[i]);
+	}
+	free(sc->ns, M_NVMF);
+
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
 
@@ -344,15 +398,18 @@ nvmf_detach(device_t dev)
 	free(sc->io, M_NVMF);
 	nvmf_shutdown_controller(sc);
 	nvmf_destroy_qp(sc->admin);
+	free(sc->cdata, M_NVMF);
 	return (0);
 }
 
-static int
-nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt)
+int
+nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
+    bool admin)
 {
 	struct nvmf_completion_status status;
 	struct nvme_command cmd;
 	struct memdesc mem;
+	struct nvmf_host_qpair *qp;
 	struct nvmf_request *req;
 	void *buf;
 	int error;
@@ -391,9 +448,12 @@ nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt)
 	cmd.cdw14 = pt->cmd.cdw14;
 	cmd.cdw15 = pt->cmd.cdw15;
 
+	if (admin)
+		qp = sc->admin;
+	else
+		qp = nvmf_select_io_queue(sc);
 	nvmf_status_init(&status);
-	req = nvmf_allocate_request(sc->admin, &cmd, nvmf_complete, &status,
-	    M_WAITOK);
+	req = nvmf_allocate_request(qp, &cmd, nvmf_complete, &status, M_WAITOK);
 
 	if (pt->len != 0) {
 		mem = memdesc_vaddr(buf, pt->len);
@@ -427,7 +487,7 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 	switch (cmd) {
 	case NVME_PASSTHROUGH_CMD:
 		pt = (struct nvme_pt_command *)arg;
-		return (nvmf_passthrough_cmd(sc, pt));
+		return (nvmf_passthrough_cmd(sc, pt, true));
 	case NVME_GET_NSID:
 		gnsid = (struct nvme_get_nsid *)arg;
 		strncpy(gnsid->cdev, device_get_nameunit(sc->dev),
