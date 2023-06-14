@@ -1778,6 +1778,7 @@ tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 			use_icd = true;
 			m = nvmf_tcp_command_buffer_mbuf(cb, 0,
 			    nc->nc_data.io_len, NULL, false);
+			cb->data_xfered = nc->nc_data.io_len;
 			tcp_release_command_buffer(cb);
 		} else if (nc->nc_send_data) {
 			mtx_lock(&qp->tx_buffers.lock);
