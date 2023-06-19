@@ -261,10 +261,20 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 			continue;
 		}
 
+		/*
+		 * As in nvme_ns_construct, a size of zero indicates an
+		 * invalid namespace.
+		 */
 		nvme_namespace_data_swapbytes(data);
-		sc->ns[i] = nvmf_init_ns(sc, i, data);
-		if (sc->ns[i] == NULL)
+		if (data->nsze == 0) {
 			free(data, M_NVMF);
+			continue;
+		}
+
+		sc->ns[i] = nvmf_init_ns(sc, i, data);
+		free(data, M_NVMF);
+
+		nvmf_sim_add_ns(sc, i);
 	}
 }
 
@@ -274,6 +284,7 @@ nvmf_attach(device_t dev)
 	struct make_dev_args mda;
 	struct nvmf_softc *sc = device_get_softc(dev);
 	struct nvmf_ivars *ivars = device_get_ivars(dev);
+	uint64_t val;
 	u_int i;
 	int error;
 
@@ -281,6 +292,7 @@ nvmf_attach(device_t dev)
 		return (ENXIO);
 
 	sc->dev = dev;
+	sc->trtype = ivars->hh->trtype;
 	callout_init(&sc->ka_rx_timer, 1);
 	callout_init(&sc->ka_tx_timer, 1);
 
@@ -290,7 +302,7 @@ nvmf_attach(device_t dev)
 	nvme_controller_data_swapbytes(sc->cdata);
 
 	/* Setup the admin queue. */
-	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
+	sc->admin = nvmf_init_qp(sc, sc->trtype, &ivars->hh->admin);
 	if (sc->admin == NULL) {
 		device_printf(dev, "Failed to setup admin queue\n");
 		error = ENXIO;
@@ -301,8 +313,7 @@ nvmf_attach(device_t dev)
 	    M_WAITOK | M_ZERO);
 	sc->num_io_queues = ivars->hh->num_io_queues;
 	for (i = 0; i < sc->num_io_queues; i++) {
-		sc->io[i] = nvmf_init_qp(sc, ivars->hh->trtype,
-		    &ivars->io_params[i]);
+		sc->io[i] = nvmf_init_qp(sc, sc->trtype, &ivars->io_params[i]);
 		if (sc->io[i] == NULL) {
 			device_printf(dev, "Failed to setup I/O queue %u\n",
 			    i + 1);
@@ -310,6 +321,9 @@ nvmf_attach(device_t dev)
 			goto out;
 		}
 	}
+
+	/* TODO: Multiqueue support. */
+	sc->max_pending_io = ivars->io_params[0].qsize /* * sc->num_io_queues */;
 
 	if (ivars->hh->kato != 0) {
 		sc->ka_traffic = NVMEV(NVME_CTRLR_DATA_CTRATT_TBKAS,
@@ -329,6 +343,14 @@ nvmf_attach(device_t dev)
 		goto out;
 	}
 
+	error = nvmf_read_property(sc, NVMF_PROP_VS, 4, &val);
+	if (error != 0) {
+		device_printf(sc->dev, "Failed to fetch VS\n");
+		error = ENXIO;
+		goto out;
+	}
+	sc->vs = val;
+
 	/* Honor MDTS if it is set. */
 	sc->max_xfer_size = maxphys;
 	if (sc->cdata->mdts != 0) {
@@ -336,6 +358,10 @@ nvmf_attach(device_t dev)
 		    1 << (sc->cdata->mdts + NVME_MPS_SHIFT +
 		    NVME_CAP_HI_MPSMIN(sc->cap >> 32)));
 	}
+
+	error = nvmf_init_sim(sc);
+	if (error != 0)
+		goto out;
 
 	nvmf_add_namespaces(sc);
 
@@ -347,17 +373,19 @@ nvmf_attach(device_t dev)
 	mda.mda_si_drv1 = sc;
 	error = make_dev_s(&mda, &sc->cdev, "%s", device_get_nameunit(dev));
 	if (error != 0) {
-		sc->dev = NULL;
+		nvmf_destroy_sim(sc);
 		goto out;
 	}
 
 	return (0);
 out:
-	for (i = 0; i < sc->cdata->nn; i++) {
-		if (sc->ns[i] != NULL)
-			nvmf_destroy_ns(sc->ns[i]);
+	if (sc->ns != NULL) {
+		for (i = 0; i < sc->cdata->nn; i++) {
+			if (sc->ns[i] != NULL)
+				nvmf_destroy_ns(sc->ns[i]);
+		}
+		free(sc->ns, M_NVMF);
 	}
-	free(sc->ns, M_NVMF);
 
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
@@ -383,6 +411,7 @@ nvmf_detach(device_t dev)
 
 	destroy_dev(sc->cdev);
 
+	nvmf_destroy_sim(sc);
 	for (i = 0; i < sc->cdata->nn; i++) {
 		if (sc->ns[i] != NULL)
 			nvmf_destroy_ns(sc->ns[i]);

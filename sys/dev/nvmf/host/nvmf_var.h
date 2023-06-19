@@ -51,11 +51,17 @@ struct nvmf_softc {
 	struct nvmf_host_qpair *admin;
 	struct nvmf_host_qpair **io;
 	u_int	num_io_queues;
+	enum nvmf_trtype trtype;
+
+	struct cam_sim *sim;
+	struct cam_path *path;
 
 	struct nvmf_namespace **ns;
 
 	struct nvme_controller_data *cdata;
 	uint64_t cap;
+	uint32_t vs;
+	u_int max_pending_io;
 	u_long max_xfer_size;
 
 	struct cdev *cdev;
@@ -133,10 +139,14 @@ void	nvmf_destroy_ns(struct nvmf_namespace *ns);
 struct nvmf_host_qpair *nvmf_init_qp(struct nvmf_softc *sc,
     enum nvmf_trtype trtype, struct nvmf_handoff_qpair_params *handoff);
 void	nvmf_destroy_qp(struct nvmf_host_qpair *qp);
-
 struct nvmf_request *nvmf_allocate_request(struct nvmf_host_qpair *qp,
     void *sqe, nvmf_request_complete_t *cb, void *cb_arg, int how);
 void	nvmf_submit_request(struct nvmf_request *req);
 void	nvmf_free_request(struct nvmf_request *req);
+
+/* nvmf_sim.c */
+int	nvmf_init_sim(struct nvmf_softc *sc);
+void	nvmf_destroy_sim(struct nvmf_softc *sc);
+void	nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id);
 
 #endif /* !__NVMF_VAR_H__ */
