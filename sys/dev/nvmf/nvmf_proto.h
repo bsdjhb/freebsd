@@ -38,6 +38,11 @@
 
 #include <sys/types.h>
 #include <sys/cdefs.h>
+#ifdef _KERNEL
+#include <sys/stddef.h>
+#else
+#include <stddef.h>
+#endif
 
 /**
  * \file
