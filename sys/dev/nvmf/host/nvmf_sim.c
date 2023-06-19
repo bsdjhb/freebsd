@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/malloc.h>
 #include <sys/memdesc.h>
+#include <sys/refcount.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
@@ -37,25 +38,58 @@
 
 #include <dev/nvmf/host/nvmf_var.h>
 
+/*
+ * TODO: Keep a queue of pending ccb's (using sim_links) so they can
+ * be cancelled if an association drops.
+ */
+
+/*
+ * The I/O completion may trigger after the received CQE if the I/O
+ * used a zero-copy mbuf that isn't harvested until after the NIC
+ * driver processes TX completions.  Use spriv_field0 to as a refcount.
+ *
+ * Store any I/O error returned in spriv_field1.
+ */
+static __inline u_int *
+ccb_refs(union ccb *ccb)
+{
+	return ((u_int *)&ccb->ccb_h.spriv_field0);
+}
+
+#define	spriv_ioerror	spriv_field1
+
+static void
+nvmf_ccb_done(union ccb *ccb)
+{
+	if (!refcount_release(ccb_refs(ccb)))
+		return;
+
+	if (ccb->ccb_h.spriv_ioerror != 0 || ccb->nvmeio.cpl.status != 0) {
+		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		xpt_done(ccb);
+	} else {
+		ccb->ccb_h.status = CAM_REQ_CMP;
+		xpt_done_direct(ccb);
+	}
+}
+
 static void
 nvmf_ccb_io_complete(void *arg, size_t xfered, int error)
 {
 	union ccb *ccb = arg;
 
-	KASSERT(ccb->ccb_h.status & CAM_SIM_QUEUED,
-	    ("%s: CCB is not inflight", __func__));
-
 	/*
-	 * TODO: Partial status requires extending nvmeio to support
-	 * resid and updating nda to handle partial reads, either by
-	 * returning partial success (or an error) to the caller, or
-	 * retrying all or part of the request.
+	 * TODO: Reporting partial completions requires extending
+	 * nvmeio to support resid and updating nda to handle partial
+	 * reads, either by returning partial success (or an error) to
+	 * the caller, or retrying all or part of the request.
 	 */
-	if (error != 0)
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR | CAM_SIM_QUEUED;
-	else
+	ccb->ccb_h.spriv_ioerror = error;
+	if (error == 0)
 		KASSERT(xfered == ccb->nvmeio.dxfer_len,
 		    ("%s: partial CCB completion", __func__));
+
+	nvmf_ccb_done(ccb);
 }
 
 static void
@@ -66,17 +100,7 @@ nvmf_ccb_complete(void *arg, struct nvmf_capsule *nc)
 
 	cqe = nvmf_capsule_cqe(nc);
 	ccb->nvmeio.cpl = *cqe;
-	ccb->ccb_h.status &= ~CAM_SIM_QUEUED;
-	if (cqe->status != 0) {
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
-		xpt_done(ccb);
-	} else if (ccb->ccb_h.status != CAM_REQ_INPROG) {
-		/* I/O error. */
-		xpt_done(ccb);
-	} else {
-		ccb->ccb_h.status = CAM_REQ_CMP;
-		xpt_done_direct(ccb);
-	}
+	nvmf_ccb_done(ccb);
 	nvmf_free_capsule(nc);
 }
 
@@ -101,12 +125,16 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	}
 
 	if (nvmeio->dxfer_len != 0) {
+		refcount_init(ccb_refs(ccb), 2);
 		mem = memdesc_ccb(ccb);
 		nvmf_capsule_append_data(req->nc, &mem, nvmeio->dxfer_len, 0,
 		    (ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_OUT,
 		    nvmf_ccb_io_complete, ccb);
-	}
+	} else
+		refcount_init(ccb_refs(ccb), 1);
 
+	KASSERT(ccb->ccb_h.spriv_ioerror == 0,
+	    ("%s incoming CCB has non-zero spriv", __func__));
 	KASSERT(ccb->ccb_h.status == CAM_REQ_INPROG,
 	    ("%s: incoming CCB is not in-progress", __func__));
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
@@ -263,8 +291,6 @@ nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id)
 		xpt_free_ccb(ccb);
 		return;
 	}
-	xpt_print_path(ccb->ccb_h.path);
-	printf("rescanning namespace %u\n", id);
 	xpt_rescan(ccb);
 }
 
