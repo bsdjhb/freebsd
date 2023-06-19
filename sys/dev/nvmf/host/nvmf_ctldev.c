@@ -66,6 +66,12 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 			error = EINVAL;
 			goto out;
 		}
+
+		/* Require all I/O queues to be the same size. */
+		if (ivars.io_params[i].qsize != ivars.io_params[0].qsize) {
+			error = EINVAL;
+			goto out;
+		}
 	}
 
 	ivars.hh = hh;

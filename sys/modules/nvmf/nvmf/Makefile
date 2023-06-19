@@ -6,6 +6,7 @@ SRCS=	nvmf.c \
 	nvmf_cmd.c \
 	nvmf_ctldev.c \
 	nvmf_ns.c \
-	nvmf_qpair.c
+	nvmf_qpair.c \
+	nvmf_sim.c
 
 .include <bsd.kmod.mk>

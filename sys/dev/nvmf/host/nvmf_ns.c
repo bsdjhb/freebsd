@@ -40,7 +40,7 @@
 
 struct nvmf_namespace {
 	struct nvmf_softc *sc;
-	struct nvme_namespace_data *data;
+	uint64_t size;
 	uint32_t id;
 	u_int	flags;
 	uint32_t lba_size;
@@ -201,12 +201,6 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 	return (0);
 }
 
-static uint64_t
-nvmf_ns_get_size(struct nvmf_namespace *ns)
-{
-	return (ns->data->nsze * ns->lba_size);
-}
-
 static int
 nvmf_ns_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag,
     struct thread *td)
@@ -228,7 +222,7 @@ nvmf_ns_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag,
 		gnsid->nsid = ns->id;
 		return (0);
 	case DIOCGMEDIASIZE:
-		*(off_t *)arg = (off_t)nvmf_ns_get_size(ns);
+		*(off_t *)arg = ns->size;
 		return (0);
 	case DIOCGSECTORSIZE:
 		*(u_int *)arg = ns->lba_size;
@@ -288,14 +282,6 @@ nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 	ns = malloc(sizeof(*ns), M_NVMF, M_WAITOK | M_ZERO);
 	ns->sc = sc;
 	ns->id = id;
-	ns->data = data;
-
-	/*
-	 * As in nvme_ns_construct, a size of zero indicates an
-	 * invalid namespace.
-	 */
-	if (data->nsze == 0)
-		goto fail;
 
 	if (NVMEV(NVME_NS_DATA_DPS_PIT, data->dps) != 0) {
 		ns_printf(ns, "End-to-end data protection not supported\n");
@@ -320,6 +306,7 @@ nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 	}
 
 	ns->lba_size = 1 << lbads;
+	ns->size = data->nsze * ns->lba_size;
 
 	if (nvme_ctrlr_has_dataset_mgmt(sc->cdata))
 		ns->flags |= NVME_NS_DEALLOCATE_SUPPORTED;
@@ -356,6 +343,5 @@ nvmf_destroy_ns(struct nvmf_namespace *ns)
 {
 	destroy_dev(ns->cdev);
 
-	free(ns->data, M_NVMF);
 	free(ns, M_NVMF);
 }
