@@ -33,11 +33,16 @@
 #include <sys/fcntl.h>
 #include <sys/malloc.h>
 #include <sys/memdesc.h>
+#include <sys/refcount.h>
 #include <sys/sbuf.h>
 #include <machine/stdarg.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/host/nvmf_var.h>
 
+/*
+ * TODO: Keep a queue of pending bio's (using bio_queue?) so they can
+ * be cancelled if an association drops.
+ */
 struct nvmf_namespace {
 	struct nvmf_softc *sc;
 	uint64_t size;
@@ -69,6 +74,37 @@ ns_printf(struct nvmf_namespace *ns, const char *fmt, ...)
 	sbuf_delete(&sb);
 }
 
+/*
+ * The I/O completion may trigger after the received CQE if the I/O
+ * used a zero-copy mbuf that isn't harvested until after the NIC
+ * driver processes TX completions.  Abuse bio_driver1 as a refcount.
+ * Store I/O errors in bio_driver2.
+ */
+static __inline u_int *
+bio_refs(struct bio *bio)
+{
+	return ((u_int *)&bio->bio_driver1);
+}
+
+static void
+nvmf_ns_biodone(struct bio *bio)
+{
+	int error;
+
+	if (!refcount_release(bio_refs(bio)))
+		return;
+
+	/*
+	 * I/O errors take precedence over generic EIO from CQE errors.
+	 */
+	error = (intptr_t)bio->bio_driver2;
+	if (error != 0)
+		bio->bio_error = error;
+	if (bio->bio_error != 0)
+		bio->bio_flags |= BIO_ERROR;
+	biodone(bio);
+}
+
 static void
 nvmf_ns_io_complete(void *arg, size_t xfered, int error)
 {
@@ -76,10 +112,11 @@ nvmf_ns_io_complete(void *arg, size_t xfered, int error)
 
 	KASSERT(xfered <= bio->bio_bcount,
 	    ("%s: xfered > bio_bcount", __func__));
-	bio->bio_error = error;
+
+	bio->bio_driver2 = (void *)(intptr_t)error;
 	bio->bio_resid = bio->bio_bcount - xfered;
-	if (error != 0)
-		bio->bio_flags |= BIO_ERROR;
+
+	nvmf_ns_biodone(bio);
 }
 
 static void
@@ -87,15 +124,15 @@ nvmf_ns_delete_complete(void *arg, size_t xfered, int error)
 {
 	struct bio *bio = arg;
 
-	if (error != 0) {
-		bio->bio_error = error;
-		bio->bio_flags |= BIO_ERROR;
+	if (error != 0)
 		bio->bio_resid = bio->bio_bcount;
-	} else
+	else
 		bio->bio_resid = 0;
 	
 	free(bio->bio_driver2, M_NVMF);
-	bio->bio_driver2 = NULL;
+	bio->bio_driver2 = (void *)(intptr_t)error;
+
+	nvmf_ns_biodone(bio);
 }
 
 static void
@@ -106,18 +143,10 @@ nvmf_ns_bio_complete(void *arg, struct nvmf_capsule *nc)
 
 	cqe = nvmf_capsule_cqe(nc);
 
-	if (cqe->status != 0) {
-		KASSERT(bio->bio_error == 0 || bio->bio_error == EJUSTRETURN,
-		    ("%s: both CQE and I/O errors", __func__));
+	if (cqe->status != 0)
 		bio->bio_error = EIO;
-		bio->bio_flags |= BIO_ERROR;
-		bio->bio_resid = bio->bio_bcount;
-	} else {
-		KASSERT(bio->bio_error != EJUSTRETURN,
-		    ("%s: I/O completion has not posted", __func__));
-	}	
 
-	biodone(bio);
+	nvmf_ns_biodone(bio);
 	nvmf_free_capsule(nc);
 }
 
@@ -176,22 +205,19 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 	switch (bio->bio_cmd) {
 	case BIO_READ:
 	case BIO_WRITE:
-#ifdef INVARIANTS
-		bio->bio_error = EJUSTRETURN;
-#endif
+		refcount_init(bio_refs(bio), 2);
 		mem = memdesc_bio(bio);
 		nvmf_capsule_append_data(req->nc, &mem, bio->bio_bcount, 0,
 		    bio->bio_cmd == BIO_WRITE, nvmf_ns_io_complete, bio);
 		break;
 	case BIO_DELETE:
-#ifdef INVARIANTS
-		bio->bio_error = EJUSTRETURN;
-#endif
+		refcount_init(bio_refs(bio), 2);
 		mem = memdesc_vaddr(dsm_range, sizeof(*dsm_range));
 		nvmf_capsule_append_data(req->nc, &mem, sizeof(*dsm_range), 0,
 		    true, nvmf_ns_delete_complete, bio);
 		break;
 	default:
+		refcount_init(bio_refs(bio), 1);
 		KASSERT(bio->bio_resid == 0,
 		    ("%s: input bio_resid != 0", __func__));
 		break;
