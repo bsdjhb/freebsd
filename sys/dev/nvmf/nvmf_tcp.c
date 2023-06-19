@@ -237,6 +237,22 @@ tcp_remove_command_buffer(struct nvmf_tcp_command_buffer_list *list,
 }
 
 static void
+tcp_purge_command_buffer(struct nvmf_tcp_command_buffer_list *list,
+    uint16_t cid, uint16_t ttag)
+{
+	struct nvmf_tcp_command_buffer *cb;
+
+	mtx_lock(&list->lock);
+	cb = tcp_find_command_buffer(list, cid, ttag);
+	if (cb != NULL) {
+		tcp_remove_command_buffer(list, cb);
+		mtx_unlock(&list->lock);
+		tcp_release_command_buffer(cb);
+	} else
+		mtx_unlock(&list->lock);
+}
+
+static void
 nvmf_tcp_write_pdu(struct nvmf_tcp_qpair *qp, struct mbuf *m)
 {
 	struct socket *so = qp->so;
@@ -588,6 +604,13 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 	nc->nc_sqhd_valid = true;
 	tc = TCAP(nc);
 	tc->rx_pdu = *pdu;
+
+	/*
+	 * Once the CQE has been received, no further transfers to the
+	 * command buffer for the associated CID can occur.
+	 */
+	tcp_purge_command_buffer(&qp->rx_buffers, rsp->rccqe.cid, 0);
+	tcp_purge_command_buffer(&qp->tx_buffers, rsp->rccqe.cid, 0);
 
 	nvmf_capsule_received(&qp->qp, nc);
 	return (0);
