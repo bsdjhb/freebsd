@@ -1870,7 +1870,7 @@ nvmf_tcp_send(void *arg)
 	struct nvmf_tcp_capsule *tc;
 	struct socket *so = qp->so;
 	struct mbuf *m, *n, *p;
-	u_int avail, tosend;
+	u_long space, tosend;
 	int error;
 
 	m = NULL;
@@ -1912,29 +1912,41 @@ nvmf_tcp_send(void *arg)
 		/*
 		 * Wait until there is enough room to send some data.
 		 * If the socket buffer is empty, always send at least
-		 * one mbuf even if the mbuf is larger than avail.
+		 * something.
 		 */
-		avail = sbavail(&so->so_snd);
-		if (avail < m->m_len && sbused(&so->so_snd) != 0) {
+		space = sbspace(&so->so_snd);
+		if (space < m->m_len && sbused(&so->so_snd) != 0) {
 			cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 			continue;
 		}
 		SOCKBUF_UNLOCK(&so->so_snd);
 
-		/* See how much data can be sent. */
-		tosend = m->m_len;
-		n = m->m_next;
-		p = m;
-		while (n != NULL && tosend + n->m_len <= avail) {
-			tosend += n->m_len;
-			p = n;
-			n = n->m_next;
-		}
-		KASSERT(p->m_next == n, ("%s: p not before n", __func__));
-		p->m_next = NULL;
+		/*
+		 * If 'm' is too big, then the socket buffer must be
+		 * empty.  Split 'm' to make at least some forward
+		 * progress.
+		 *
+		 * Otherwise, chain up as many pending mbufs from 'm'
+		 * that will fit.
+		 */
+		if (m->m_len > space) {
+			n = m_split(m, space, M_WAITOK);
+		} else {
+			tosend = m->m_len;
+			n = m->m_next;
+			p = m;
+			while (n != NULL && tosend + n->m_len <= space) {
+				tosend += n->m_len;
+				p = n;
+				n = n->m_next;
+			}
+			KASSERT(p->m_next == n, ("%s: p not before n",
+			    __func__));
+			p->m_next = NULL;
 
-		KASSERT(m_length(m, NULL) == tosend,
-		    ("%s: length mismatch", __func__));
+			KASSERT(m_length(m, NULL) == tosend,
+			    ("%s: length mismatch", __func__));
+		}
 		error = sosend(so, NULL, NULL, m, NULL, MSG_DONTWAIT, NULL);
 		if (error != 0) {
 			m_freem(n);
