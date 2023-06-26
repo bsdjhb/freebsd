@@ -217,6 +217,58 @@ nvmf_send_keep_alive(void *arg)
 	callout_schedule_sbt(&sc->ka_tx_timer, sc->ka_tx_sbt, 0, C_HARDCLOCK);
 }
 
+int
+nvmf_init_ivars(struct nvmf_ivars *ivars, struct nvmf_handoff_host *hh)
+{
+	size_t len;
+	u_int i;
+	int error;
+
+	memset(ivars, 0, sizeof(*ivars));
+
+	if (!hh->admin.admin || hh->num_io_queues < 1)
+		return (EINVAL);
+
+	ivars->cdata = malloc(sizeof(*ivars->cdata), M_NVMF, M_WAITOK);
+	error = copyin(hh->cdata, ivars->cdata, sizeof(*ivars->cdata));
+	if (error != 0)
+		goto out;
+	nvme_controller_data_swapbytes(ivars->cdata);
+
+	len = hh->num_io_queues * sizeof(*ivars->io_params);
+	ivars->io_params = malloc(len, M_NVMF, M_WAITOK);
+	error = copyin(hh->io, ivars->io_params, len);
+	if (error != 0)
+		goto out;
+	for (i = 0; i < hh->num_io_queues; i++) {
+		if (ivars->io_params[i].admin) {
+			error = EINVAL;
+			goto out;
+		}
+
+		/* Require all I/O queues to be the same size. */
+		if (ivars->io_params[i].qsize != ivars->io_params[0].qsize) {
+			error = EINVAL;
+			goto out;
+		}
+	}
+
+	ivars->hh = hh;
+	return (0);
+
+out:
+	free(ivars->io_params, M_NVMF);
+	free(ivars->cdata, M_NVMF);
+	return (error);
+}
+
+void
+nvmf_free_ivars(struct nvmf_ivars *ivars)
+{
+	free(ivars->io_params, M_NVMF);
+	free(ivars->cdata, M_NVMF);
+}
+
 static int
 nvmf_probe(device_t dev)
 {
@@ -229,6 +281,45 @@ nvmf_probe(device_t dev)
 	snprintf(desc, sizeof(desc), "Fabrics: %.256s", ivars->cdata->subnqn);
 	device_set_desc_copy(dev, desc);
 	return (BUS_PROBE_DEFAULT);
+}
+
+static int
+nvmf_establish_connection(struct nvmf_softc *sc, struct nvmf_ivars *ivars)
+{
+	/* Setup the admin queue. */
+	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
+	if (sc->admin == NULL) {
+		device_printf(sc->dev, "Failed to setup admin queue\n");
+		return (ENXIO);
+	}
+
+	/* Setup I/O queues. */
+	sc->io = malloc(ivars->hh->num_io_queues * sizeof(*sc->io), M_NVMF,
+	    M_WAITOK | M_ZERO);
+	sc->num_io_queues = ivars->hh->num_io_queues;
+	for (u_int i = 0; i < sc->num_io_queues; i++) {
+		sc->io[i] = nvmf_init_qp(sc, ivars->hh->trtype,
+		    &ivars->io_params[i]);
+		if (sc->io[i] == NULL) {
+			device_printf(sc->dev, "Failed to setup I/O queue %u\n",
+			    i + 1);
+			return (ENXIO);
+		}
+	}
+
+	/* Start KeepAlive timers. */
+	if (ivars->hh->kato != 0) {
+		sc->ka_traffic = NVMEV(NVME_CTRLR_DATA_CTRATT_TBKAS,
+		    sc->cdata->ctratt) != 0;
+		sc->ka_rx_sbt = mstosbt(ivars->hh->kato);
+		sc->ka_tx_sbt = sc->ka_rx_sbt / 2;
+		callout_reset_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0,
+		    nvmf_check_keep_alive, sc, C_HARDCLOCK);
+		callout_reset_sbt(&sc->ka_tx_timer, sc->ka_tx_sbt, 0,
+		    nvmf_send_keep_alive, sc, C_HARDCLOCK);
+	}
+
+	return (0);
 }
 
 static void
@@ -295,42 +386,13 @@ nvmf_attach(device_t dev)
 	/* Claim the cdata pointer from ivars. */
 	sc->cdata = ivars->cdata;
 	ivars->cdata = NULL;
-	nvme_controller_data_swapbytes(sc->cdata);
-
-	/* Setup the admin queue. */
-	sc->admin = nvmf_init_qp(sc, sc->trtype, &ivars->hh->admin);
-	if (sc->admin == NULL) {
-		device_printf(dev, "Failed to setup admin queue\n");
-		error = ENXIO;
-		goto out;
-	}
-
-	sc->io = malloc(ivars->hh->num_io_queues * sizeof(*sc->io), M_NVMF,
-	    M_WAITOK | M_ZERO);
-	sc->num_io_queues = ivars->hh->num_io_queues;
-	for (i = 0; i < sc->num_io_queues; i++) {
-		sc->io[i] = nvmf_init_qp(sc, sc->trtype, &ivars->io_params[i]);
-		if (sc->io[i] == NULL) {
-			device_printf(dev, "Failed to setup I/O queue %u\n",
-			    i + 1);
-			error = ENXIO;
-			goto out;
-		}
-	}
 
 	/* TODO: Multiqueue support. */
 	sc->max_pending_io = ivars->io_params[0].qsize /* * sc->num_io_queues */;
 
-	if (ivars->hh->kato != 0) {
-		sc->ka_traffic = NVMEV(NVME_CTRLR_DATA_CTRATT_TBKAS,
-		    sc->cdata->ctratt) != 0;
-		sc->ka_rx_sbt = mstosbt(ivars->hh->kato);
-		sc->ka_tx_sbt = sc->ka_rx_sbt / 2;
-		callout_reset_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0,
-		    nvmf_check_keep_alive, sc, C_HARDCLOCK);
-		callout_reset_sbt(&sc->ka_tx_timer, sc->ka_tx_sbt, 0,
-		    nvmf_send_keep_alive, sc, C_HARDCLOCK);
-	}
+	error = nvmf_establish_connection(sc, ivars);
+	if (error != 0)
+		goto out;
 
 	error = nvmf_read_property(sc, NVMF_PROP_CAP, 8, &sc->cap);
 	if (error != 0) {

@@ -41,40 +41,11 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 {
 	struct nvmf_ivars ivars;
 	device_t dev;
-	size_t len;
-	u_int i;
 	int error;
 
-	memset(&ivars, 0, sizeof(ivars));
-
-	if (!hh->admin.admin || hh->num_io_queues < 1)
-		return (EINVAL);
-
-	ivars.cdata = malloc(sizeof(*ivars.cdata), M_NVMF, M_WAITOK);
-	error = copyin(hh->cdata, ivars.cdata, sizeof(*ivars.cdata));
+	error = nvmf_init_ivars(&ivars, hh);
 	if (error != 0)
-		goto out;
-
-	len = hh->num_io_queues * sizeof(*ivars.io_params);
-	ivars.io_params = malloc(len, M_NVMF, M_WAITOK);
-	error = copyin(hh->io, ivars.io_params, len);
-	if (error != 0)
-		goto out;
-
-	for (i = 0; i < hh->num_io_queues; i++) {
-		if (ivars.io_params[i].admin) {
-			error = EINVAL;
-			goto out;
-		}
-
-		/* Require all I/O queues to be the same size. */
-		if (ivars.io_params[i].qsize != ivars.io_params[0].qsize) {
-			error = EINVAL;
-			goto out;
-		}
-	}
-
-	ivars.hh = hh;
+		return (error);
 
 	bus_topo_lock();
 	dev = device_add_child(root_bus, "nvme", -1);
@@ -92,8 +63,7 @@ nvmf_handoff_host(struct nvmf_handoff_host *hh)
 	bus_topo_unlock();
 
 out:
-	free(ivars.io_params, M_NVMF);
-	free(ivars.cdata, M_NVMF);
+	nvmf_free_ivars(&ivars);
 	return (error);
 }
 

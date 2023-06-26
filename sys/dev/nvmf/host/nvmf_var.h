@@ -111,6 +111,8 @@ MALLOC_DECLARE(M_NVMF);
 #endif
 
 /* nvmf.c */
+int	nvmf_init_ivars(struct nvmf_ivars *ivars, struct nvmf_handoff_host *hh);
+void	nvmf_free_ivars(struct nvmf_ivars *ivars);
 int	nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
     bool admin);
 
