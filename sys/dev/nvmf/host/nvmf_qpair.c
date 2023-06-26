@@ -172,8 +172,8 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 		nvmf_dispatch_command(qp, cmd);
 	}
 
-	/* Callback is responsible for freeing the response capsule. */
-	req->cb(req->cb_arg, nc);
+	req->cb(req->cb_arg, cqe);
+	nvmf_free_capsule(nc);
 	nvmf_free_request(req);
 }
 

@@ -37,7 +37,7 @@ struct nvmf_capsule;
 struct nvmf_host_qpair;
 struct nvmf_namespace;
 
-typedef void nvmf_request_complete_t(void *, struct nvmf_capsule *);
+typedef void nvmf_request_complete_t(void *, const struct nvme_completion *);
 
 struct nvmf_ivars {
 	struct nvmf_handoff_host *hh;
