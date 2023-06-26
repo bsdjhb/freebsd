@@ -62,12 +62,7 @@ struct nvmf_handoff_host {
 	const struct nvme_controller_data *cdata;
 };
 
-struct nvmf_disconnect_host {
-	char	cdev[SPECNAMELEN + 1];
-};
-
 /* Operations on /dev/nvmf */
 #define	NVMF_HANDOFF_HOST	_IOW('n', 200, struct nvmf_handoff_host)
-#define	NVMF_DISCONNECT		_IOW('n', 201, struct nvmf_disconnect_host)
 
 #endif /* !__NVMF_H__ */
