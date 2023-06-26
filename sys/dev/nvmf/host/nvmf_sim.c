@@ -93,15 +93,12 @@ nvmf_ccb_io_complete(void *arg, size_t xfered, int error)
 }
 
 static void
-nvmf_ccb_complete(void *arg, struct nvmf_capsule *nc)
+nvmf_ccb_complete(void *arg, const struct nvme_completion *cqe)
 {
 	union ccb *ccb = arg;
-	struct nvme_completion *cqe;
 
-	cqe = nvmf_capsule_cqe(nc);
 	ccb->nvmeio.cpl = *cqe;
 	nvmf_ccb_done(ccb);
-	nvmf_free_capsule(nc);
 }
 
 static void

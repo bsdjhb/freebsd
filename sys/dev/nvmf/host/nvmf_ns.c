@@ -136,18 +136,14 @@ nvmf_ns_delete_complete(void *arg, size_t xfered, int error)
 }
 
 static void
-nvmf_ns_bio_complete(void *arg, struct nvmf_capsule *nc)
+nvmf_ns_bio_complete(void *arg, const struct nvme_completion *cqe)
 {
-	const struct nvme_completion *cqe;
 	struct bio *bio = arg;
-
-	cqe = nvmf_capsule_cqe(nc);
 
 	if (cqe->status != 0)
 		bio->bio_error = EIO;
 
 	nvmf_ns_biodone(bio);
-	nvmf_free_capsule(nc);
 }
 
 static int

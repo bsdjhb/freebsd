@@ -65,18 +65,17 @@ nvmf_status_wait_io(struct nvmf_completion_status *status)
 }
 
 static void
-nvmf_complete(void *arg, struct nvmf_capsule *nc)
+nvmf_complete(void *arg, const struct nvme_completion *cqe)
 {
 	struct nvmf_completion_status *status = arg;
 	struct mtx *mtx;
 
-	memcpy(&status->cqe, nvmf_capsule_cqe(nc), sizeof(status->cqe));
+	status->cqe = *cqe;
 	mtx = mtx_pool_find(mtxpool_sleep, status);
 	mtx_lock(mtx);
 	status->done = true;
 	mtx_unlock(mtx);
 	wakeup(status);
-	nvmf_free_capsule(nc);
 }
 
 static void
@@ -184,19 +183,16 @@ nvmf_check_keep_alive(void *arg)
 }
 
 static void
-nvmf_keep_alive_complete(void *arg, struct nvmf_capsule *nc)
+nvmf_keep_alive_complete(void *arg, const struct nvme_completion *cqe)
 {
 	struct nvmf_softc *sc = arg;
-	const struct nvme_completion *cqe;
 
 	atomic_store_int(&sc->ka_active_rx_traffic, 1);
-	cqe = nvmf_capsule_cqe(nc);
 	if (cqe->status != 0) {
 		device_printf(sc->dev,
 		    "KeepAlive response reported status %#x\n",
 		    le16toh(cqe->status));
 	}
-	nvmf_free_capsule(nc);
 }
 
 static void
