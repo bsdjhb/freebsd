@@ -76,29 +76,6 @@ struct nvmf_qpair {
 	void *nq_error_arg;
 
 	bool nq_admin;
-
-#ifdef host_only
-	/* Move these fields to a host-only structure for a queue pair */
-	uint16_t nq_cid;
-
-	/*
-	 * Queue sizes.  This assumes the same size for both the
-	 * completion and submission queues within a pair.
-	 */
-	uint16_t nq_qsize;
-
-	/* Flow control management for submission queues. */
-	bool nq_flow_control;
-	uint16_t nq_sqhd;
-	uint16_t nq_sqtail;	/* host only */
-
-#ifdef notsure
-	/* Value in response from CONNECT. */
-	uint16_t nq_cntlid;	/* host only */
-#endif
-#endif
-
-	/* XXX: TAILQ_ENTRY probably?  refcount? */
 };
 
 struct nvmf_io_request {
@@ -136,8 +113,6 @@ struct nvmf_capsule {
 
 	bool	nc_send_data;
 	struct nvmf_io_request nc_data;
-
-	/* XXX: TAILQ_ENTRY probably?  refcount? */
 };
 
 static void __inline
