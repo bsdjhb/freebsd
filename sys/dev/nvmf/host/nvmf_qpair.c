@@ -84,11 +84,22 @@ nvmf_allocate_request(struct nvmf_host_qpair *qp, void *sqe,
 	return (req);
 }
 
+static void
+nvmf_abort_request(struct nvmf_request *req, uint16_t cid)
+{
+	struct nvme_completion cqe;
+
+	memset(&cqe, 0, sizeof(cqe));
+	cqe.cid = cid;
+	cqe.status = htole16(NVME_SCT_PATH_RELATED << NVME_STATUS_SCT_SHIFT |
+	    NVME_SC_COMMAND_ABORTED_BY_HOST << NVME_STATUS_SC_SHIFT);
+	req->cb(req->cb_arg, &cqe);
+}
+
 void
 nvmf_free_request(struct nvmf_request *req)
 {
-	if (req->nc != NULL)
-		nvmf_free_capsule(req->nc);
+	nvmf_free_capsule(req->nc);
 	free(req, M_NVMF);
 }
 
@@ -224,17 +235,35 @@ void
 nvmf_destroy_qp(struct nvmf_host_qpair *qp)
 {
 	struct nvmf_host_command *cmd, *ncmd;
-
-#ifdef INVARIANTS
-	KASSERT(STAILQ_EMPTY(&qp->pending_requests),
-	    ("%s: pending requests", __func__));
-	for (u_int i = 0; i < qp->qsize - 1; i++) {
-		KASSERT(qp->active_commands[i] == NULL,
-		    ("%s: command %u busy", __func__, i));
-	}
-#endif
+	struct nvmf_request *req;
 
 	nvmf_free_qpair(qp->qp);
+
+	/*
+	 * Abort outstanding requests.  Active requests will have
+	 * their I/O completions invoked by the transport layer via
+	 * nvmf_free_qpair.  Pending requests must have their I/O
+	 * completion invoked via nvmf_abort_capsule_data.
+	 */
+	for (u_int i = 0; i < qp->qsize - 1; i++) {
+		cmd = qp->active_commands[i];
+		if (cmd != NULL) {
+			printf("%s: aborted active command %p (CID %u)\n",
+			    __func__, cmd->req, cmd->cid);
+			nvmf_abort_request(cmd->req, cmd->cid);
+			nvmf_free_request(cmd->req);
+			free(cmd, M_NVMF);
+		}
+	}
+	while (!STAILQ_EMPTY(&qp->pending_requests)) {
+		req = STAILQ_FIRST(&qp->pending_requests);
+		STAILQ_REMOVE_HEAD(&qp->pending_requests, link);
+		printf("%s: aborted pending command %p\n", __func__, req);
+		nvmf_abort_capsule_data(req->nc, ECONNABORTED);
+		nvmf_abort_request(req, 0);
+		nvmf_free_request(req);
+	}
+
 	TAILQ_FOREACH_SAFE(cmd, &qp->free_commands, link, ncmd) {
 		TAILQ_REMOVE(&qp->free_commands, cmd, link);
 		free(cmd, M_NVMF);
