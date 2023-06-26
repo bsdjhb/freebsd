@@ -2096,6 +2096,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	LIST_FOREACH_SAFE(cb, &qp->rx_buffers.head, link, ncb) {
 		tcp_remove_command_buffer(&qp->rx_buffers, cb);
 		mtx_unlock(&qp->rx_buffers.lock);
+		cb->error = ECONNABORTED;
 		tcp_release_command_buffer(cb);
 		mtx_lock(&qp->rx_buffers.lock);
 	}
@@ -2105,6 +2106,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	LIST_FOREACH_SAFE(cb, &qp->tx_buffers.head, link, ncb) {
 		tcp_remove_command_buffer(&qp->tx_buffers, cb);
 		mtx_unlock(&qp->tx_buffers.lock);
+		cb->error = ECONNABORTED;
 		tcp_release_command_buffer(cb);
 		mtx_lock(&qp->tx_buffers.lock);
 	}
