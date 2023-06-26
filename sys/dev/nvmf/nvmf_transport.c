@@ -177,6 +177,13 @@ nvmf_transmit_capsule(struct nvmf_capsule *nc)
 	return (nc->nc_qpair->nq_ops->transmit_capsule(nc));
 }
 
+void
+nvmf_abort_capsule_data(struct nvmf_capsule *nc, int error)
+{
+	if (nc->nc_data.io_len != 0)
+		nvmf_complete_io_request(&nc->nc_data, 0, error);
+}
+
 void *
 nvmf_capsule_sqe(struct nvmf_capsule *nc)
 {
