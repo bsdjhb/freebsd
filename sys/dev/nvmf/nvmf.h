@@ -65,4 +65,7 @@ struct nvmf_handoff_host {
 /* Operations on /dev/nvmf */
 #define	NVMF_HANDOFF_HOST	_IOW('n', 200, struct nvmf_handoff_host)
 
+/* Operations on /dev/nvmeX */
+#define	NVMF_RECONNECT_HOST	_IOW('n', 201, struct nvmf_handoff_host)
+
 #endif /* !__NVMF_H__ */

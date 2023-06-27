@@ -34,6 +34,8 @@
 #include <sys/memdesc.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
+#include <sys/sx.h>
+#include <sys/taskqueue.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_transport.h>
@@ -49,6 +51,8 @@ struct nvmf_completion_status {
 	bool	io_done;
 	int	io_error;
 };
+
+static void	nvmf_disconnect_task(void *arg, int pending);
 
 static void
 nvmf_status_init(struct nvmf_completion_status *status)
@@ -176,8 +180,12 @@ nvmf_check_keep_alive(void *arg)
 	int traffic;
 
 	traffic = atomic_readandclear_int(&sc->ka_active_rx_traffic);
-	if (traffic == 0)
-		device_printf(sc->dev, "TODO: KeepAlive timeout\n");
+	if (traffic == 0) {
+		device_printf(sc->dev,
+		    "disconnecting due to KeepAlive timeout\n");
+		nvmf_disconnect(sc);
+		return;
+	}
 
 	callout_schedule_sbt(&sc->ka_rx_timer, sc->ka_rx_sbt, 0, C_HARDCLOCK);
 }
@@ -382,6 +390,8 @@ nvmf_attach(device_t dev)
 	sc->trtype = ivars->hh->trtype;
 	callout_init(&sc->ka_rx_timer, 1);
 	callout_init(&sc->ka_tx_timer, 1);
+	sx_init(&sc->connection_lock, "nvmf connection");
+	TASK_INIT(&sc->disconnect_task, 0, nvmf_disconnect_task, sc);
 
 	/* Claim the cdata pointer from ivars. */
 	sc->cdata = ivars->cdata;
@@ -457,7 +467,110 @@ out:
 		nvmf_shutdown_controller(sc);
 		nvmf_destroy_qp(sc->admin);
 	}
+
+	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
+	sx_destroy(&sc->connection_lock);
 	free(sc->cdata, M_NVMF);
+	return (error);
+}
+
+void
+nvmf_disconnect(struct nvmf_softc *sc)
+{
+	taskqueue_enqueue(taskqueue_thread, &sc->disconnect_task);
+}
+
+static void
+nvmf_disconnect_task(void *arg, int pending __unused)
+{
+	struct nvmf_softc *sc = arg;
+	u_int i;
+
+	sx_xlock(&sc->connection_lock);
+	if (sc->admin == NULL || sc->detaching) {
+		sx_xunlock(&sc->connection_lock);
+		return;
+	}
+
+	callout_drain(&sc->ka_tx_timer);
+	callout_drain(&sc->ka_rx_timer);
+	sc->ka_traffic = false;
+
+	/* Quiesce namespace consumers. */
+	nvmf_disconnect_sim(sc);
+	for (i = 0; i < sc->cdata->nn; i++) {
+		if (sc->ns[i] != NULL)
+			nvmf_disconnect_ns(sc->ns[i]);
+	}
+
+	/* Shutdown the existing qpairs. */
+	for (i = 0; i < sc->num_io_queues; i++) {
+		nvmf_destroy_qp(sc->io[i]);
+	}
+	free(sc->io, M_NVMF);
+	sc->io = NULL;
+	sc->num_io_queues = 0;
+	nvmf_destroy_qp(sc->admin);
+	sc->admin = NULL;
+
+	sx_xunlock(&sc->connection_lock);
+}
+
+static int
+nvmf_reconnect_host(struct nvmf_softc *sc, struct nvmf_handoff_host *hh)
+{
+	struct nvmf_ivars ivars;
+	u_int i;
+	int error;
+
+	/* XXX: Should we permit changing the transport type? */
+	if (sc->trtype != hh->trtype) {
+		device_printf(sc->dev,
+		    "transport type mismatch on reconnect\n");
+		return (EINVAL);
+	}
+
+	error = nvmf_init_ivars(&ivars, hh);
+	if (error != 0)
+		return (error);
+
+	sx_xlock(&sc->connection_lock);
+	if (sc->admin != NULL || sc->detaching) {
+		error = EBUSY;
+		goto out;
+	}
+
+	/*
+	 * Ensure this is for the same controller.  Possibly this
+	 * should only be checking a subset of fields?
+	 *
+	 * XXX: Should we be checking CAP and VS properties?
+	 */
+	if (memcmp(sc->cdata, ivars.cdata, sizeof(*ivars.cdata)) != 0) {
+		device_printf(sc->dev,
+		    "controller data mismatch on reconnect\n");
+		error = EINVAL;
+		goto out;
+	}
+
+	/*
+	 * XXX: Require same number and size of I/O queues so that
+	 * max_pending_io is still correct?
+	 */
+
+	error = nvmf_establish_connection(sc, &ivars);
+	if (error != 0)
+		goto out;
+
+	/* Restart namespace consumers. */
+	for (i = 0; i < sc->cdata->nn; i++) {
+		if (sc->ns[i] != NULL)
+			nvmf_reconnect_ns(sc->ns[i]);
+	}
+	nvmf_reconnect_sim(sc);
+out:
+	sx_xunlock(&sc->connection_lock);
+	nvmf_free_ivars(&ivars);
 	return (error);
 }
 
@@ -468,6 +581,10 @@ nvmf_detach(device_t dev)
 	u_int i;
 
 	destroy_dev(sc->cdev);
+
+	sx_xlock(&sc->connection_lock);
+	sc->detaching = true;
+	sx_xunlock(&sc->connection_lock);
 
 	nvmf_destroy_sim(sc);
 	for (i = 0; i < sc->cdata->nn; i++) {
@@ -483,8 +600,13 @@ nvmf_detach(device_t dev)
 		nvmf_destroy_qp(sc->io[i]);
 	}
 	free(sc->io, M_NVMF);
-	nvmf_shutdown_controller(sc);
-	nvmf_destroy_qp(sc->admin);
+	if (sc->admin != NULL) {
+		nvmf_shutdown_controller(sc);
+		nvmf_destroy_qp(sc->admin);
+	}
+
+	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
+	sx_destroy(&sc->connection_lock);
 	free(sc->cdata, M_NVMF);
 	return (0);
 }
@@ -570,6 +692,7 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 	struct nvmf_softc *sc = cdev->si_drv1;
 	struct nvme_get_nsid *gnsid;
 	struct nvme_pt_command *pt;
+	struct nvmf_handoff_host *hh;
 
 	switch (cmd) {
 	case NVME_PASSTHROUGH_CMD:
@@ -585,6 +708,9 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 	case NVME_GET_MAX_XFER_SIZE:
 		*(uint64_t *)arg = sc->max_xfer_size;
 		return (0);
+	case NVMF_RECONNECT_HOST:
+		hh = (struct nvmf_handoff_host *)arg;
+		return (nvmf_reconnect_host(sc, hh));
 	default:
 		return (ENOTTY);
 	}

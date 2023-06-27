@@ -29,6 +29,9 @@
 #define	__NVMF_VAR_H__
 
 #include <sys/_callout.h>
+#include <sys/_lock.h>
+#include <sys/_sx.h>
+#include <sys/_task.h>
 #include <sys/queue.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf_transport.h>
@@ -88,6 +91,10 @@ struct nvmf_softc {
 	volatile int ka_active_rx_traffic;
 	struct callout ka_rx_timer;
 	sbintime_t ka_rx_sbt;
+
+	struct sx connection_lock;
+	struct task disconnect_task;
+	bool detaching;
 };
 
 struct nvmf_request {
@@ -106,6 +113,16 @@ nvmf_select_io_queue(struct nvmf_softc *sc)
 	return (sc->io[0]);
 }
 
+static __inline bool
+nvmf_cqe_aborted(const struct nvme_completion *cqe)
+{
+	uint16_t status;
+
+	status = le16toh(cqe->status);
+	return (NVME_STATUS_GET_SCT(status) == NVME_SCT_PATH_RELATED &&
+	    NVME_STATUS_GET_SC(status) == NVME_SC_COMMAND_ABORTED_BY_HOST);
+}
+
 #ifdef MALLOC_DECLARE
 MALLOC_DECLARE(M_NVMF);
 #endif
@@ -113,6 +130,7 @@ MALLOC_DECLARE(M_NVMF);
 /* nvmf.c */
 int	nvmf_init_ivars(struct nvmf_ivars *ivars, struct nvmf_handoff_host *hh);
 void	nvmf_free_ivars(struct nvmf_ivars *ivars);
+void	nvmf_disconnect(struct nvmf_softc *sc);
 int	nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
     bool admin);
 
@@ -135,6 +153,8 @@ void	nvmf_ctl_unload(void);
 /* nvmf_ns.c */
 struct nvmf_namespace *nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
     struct nvme_namespace_data *data);
+void	nvmf_disconnect_ns(struct nvmf_namespace *ns);
+void	nvmf_reconnect_ns(struct nvmf_namespace *ns);
 void	nvmf_destroy_ns(struct nvmf_namespace *ns);
 
 /* nvmf_qpair.c */
@@ -148,6 +168,8 @@ void	nvmf_free_request(struct nvmf_request *req);
 
 /* nvmf_sim.c */
 int	nvmf_init_sim(struct nvmf_softc *sc);
+void	nvmf_disconnect_sim(struct nvmf_softc *sc);
+void	nvmf_reconnect_sim(struct nvmf_softc *sc);
 void	nvmf_destroy_sim(struct nvmf_softc *sc);
 void	nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id);
 
