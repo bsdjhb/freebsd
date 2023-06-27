@@ -122,7 +122,10 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 
 	error = nvmf_transmit_capsule(nc);
 	if (error != 0) {
-		panic("TODO: Disconnect when a capsule fails to transmit");
+		device_printf(sc->dev,
+		    "failed to transmit capsule: %d, disconnecting\n", error);
+		nvmf_disconnect(sc);
+		return;
 	}
 
 	if (sc->ka_traffic)
@@ -133,8 +136,10 @@ static void
 nvmf_qpair_error(void *arg)
 {
 	struct nvmf_host_qpair *qp = arg;
+	struct nvmf_softc *sc = qp->sc;
 
-	panic("TODO: qpair error on %s", device_get_nameunit(qp->sc->dev));
+	device_printf(sc->dev, "qpair error, disconnecting\n");
+	nvmf_disconnect(sc);
 }
 
 static void
@@ -159,14 +164,23 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	cid = cqe->cid;
 
 	if (cid > qp->qsize - 1) {
-		panic("TODO: Send error and drop connection for invalid CID");
+		device_printf(sc->dev,
+		    "received invalid CID %u, disconnecting\n", cid);
+		nvmf_disconnect(sc);
+		nvmf_free_capsule(nc);
+		return;
 	}
 
 	mtx_lock(&qp->lock);
 	cmd = qp->active_commands[cid];
 	if (cmd == NULL) {
 		mtx_unlock(&qp->lock);
-		panic("TODO: Send error and drop connection for inactive CID");
+		device_printf(sc->dev,
+		    "received completion for inactive CID %u, disconnecting\n",
+		    cid);
+		nvmf_disconnect(sc);
+		nvmf_free_capsule(nc);
+		return;
 	}
 
 	KASSERT(cmd->cid == cid, ("%s: CID mismatch", __func__));
