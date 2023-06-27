@@ -39,11 +39,6 @@
 #include <dev/nvmf/host/nvmf_var.h>
 
 /*
- * TODO: Keep a queue of pending ccb's (using sim_links) so they can
- * be cancelled if an association drops.
- */
-
-/*
  * The I/O completion may trigger after the received CQE if the I/O
  * used a zero-copy mbuf that isn't harvested until after the NIC
  * driver processes TX completions.  Use spriv_field0 to as a refcount.
@@ -64,7 +59,11 @@ nvmf_ccb_done(union ccb *ccb)
 	if (!refcount_release(ccb_refs(ccb)))
 		return;
 
-	if (ccb->ccb_h.spriv_ioerror != 0 || ccb->nvmeio.cpl.status != 0) {
+	if (nvmf_cqe_aborted(&ccb->nvmeio.cpl)) {
+		ccb->ccb_h.status = CAM_REQUEUE_REQ;
+		xpt_done(ccb);
+	} else if (ccb->ccb_h.spriv_ioerror != 0 ||
+	    ccb->nvmeio.cpl.status != 0) {
 		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
 		xpt_done(ccb);
 	} else {
@@ -292,9 +291,25 @@ nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id)
 }
 
 void
+nvmf_disconnect_sim(struct nvmf_softc *sc)
+{
+	sc->sim_disconnected = true;
+	xpt_freeze_simq(sc->sim, 1);
+}
+
+void
+nvmf_reconnect_sim(struct nvmf_softc *sc)
+{
+	sc->sim_disconnected = false;
+	xpt_release_simq(sc->sim, 1);
+}
+
+void
 nvmf_destroy_sim(struct nvmf_softc *sc)
 {
 	xpt_async(AC_LOST_DEVICE, sc->path, NULL);
+	if (sc->sim_disconnected)
+		xpt_release_simq(sc->sim, 1);
 	xpt_free_path(sc->path);
 	xpt_bus_deregister(cam_sim_path(sc->sim));
 	cam_sim_free(sc->sim, TRUE);
