@@ -39,19 +39,22 @@
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/host/nvmf_var.h>
 
-/*
- * TODO: Keep a queue of pending bio's (using bio_queue?) so they can
- * be cancelled if an association drops.
- */
 struct nvmf_namespace {
 	struct nvmf_softc *sc;
 	uint64_t size;
 	uint32_t id;
 	u_int	flags;
 	uint32_t lba_size;
+	bool disconnected;
+
+	TAILQ_HEAD(, bio) pending_bios;
+	struct mtx lock;
+	volatile u_int active_bios;
 
 	struct cdev *cdev;
 };
+
+static void	nvmf_ns_strategy(struct bio *bio);
 
 static void
 ns_printf(struct nvmf_namespace *ns, const char *fmt, ...)
@@ -89,20 +92,41 @@ bio_refs(struct bio *bio)
 static void
 nvmf_ns_biodone(struct bio *bio)
 {
+	struct nvmf_namespace *ns;
 	int error;
 
 	if (!refcount_release(bio_refs(bio)))
 		return;
 
-	/*
-	 * I/O errors take precedence over generic EIO from CQE errors.
-	 */
-	error = (intptr_t)bio->bio_driver2;
-	if (error != 0)
-		bio->bio_error = error;
-	if (bio->bio_error != 0)
-		bio->bio_flags |= BIO_ERROR;
-	biodone(bio);
+	ns = bio->bio_dev->si_drv1;
+
+	/* If a request is aborted, resubmit or queue it for resubmission. */
+	if (bio->bio_error == ECONNABORTED) {
+		bio->bio_error = 0;
+		bio->bio_driver2 = 0;
+		mtx_lock(&ns->lock);
+		if (ns->disconnected) {
+			TAILQ_INSERT_TAIL(&ns->pending_bios, bio, bio_queue);
+			mtx_unlock(&ns->lock);
+		} else {
+			mtx_unlock(&ns->lock);
+			nvmf_ns_strategy(bio);
+		}
+	} else {
+		/*
+		 * I/O errors take precedence over generic EIO from
+		 * CQE errors.
+		 */
+		error = (intptr_t)bio->bio_driver2;
+		if (error != 0)
+			bio->bio_error = error;
+		if (bio->bio_error != 0)
+			bio->bio_flags |= BIO_ERROR;
+		biodone(bio);
+	}
+
+	if (refcount_release(&ns->active_bios))
+		wakeup(ns);
 }
 
 static void
@@ -128,7 +152,7 @@ nvmf_ns_delete_complete(void *arg, size_t xfered, int error)
 		bio->bio_resid = bio->bio_bcount;
 	else
 		bio->bio_resid = 0;
-	
+
 	free(bio->bio_driver2, M_NVMF);
 	bio->bio_driver2 = (void *)(intptr_t)error;
 
@@ -140,7 +164,9 @@ nvmf_ns_bio_complete(void *arg, const struct nvme_completion *cqe)
 {
 	struct bio *bio = arg;
 
-	if (cqe->status != 0)
+	if (nvmf_cqe_aborted(cqe))
+		bio->bio_error = ECONNABORTED;
+	else if (cqe->status != 0)
 		bio->bio_error = EIO;
 
 	nvmf_ns_biodone(bio);
@@ -180,7 +206,6 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 		lba_count = bio->bio_bcount / ns->lba_size;
 		dsm_range->starting_lba = htole64(lba);
 		dsm_range->length = htole32(lba_count);
-		bio->bio_driver2 = dsm_range;
 
 		cmd.opc = NVME_OPC_DATASET_MANAGEMENT;
 		cmd.nsid = htole32(ns->id);
@@ -191,9 +216,18 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 		return (EOPNOTSUPP);
 	}
 
+	mtx_lock(&ns->lock);
+	if (ns->disconnected) {
+		TAILQ_INSERT_TAIL(&ns->pending_bios, bio, bio_queue);
+		mtx_unlock(&ns->lock);
+		free(dsm_range, M_NVMF);
+		return (0);
+	}
+
 	req = nvmf_allocate_request(nvmf_select_io_queue(ns->sc), &cmd,
 	    nvmf_ns_bio_complete, bio, M_NOWAIT);
 	if (req == NULL) {
+		mtx_unlock(&ns->lock);
 		free(dsm_range, M_NVMF);
 		return (ENOMEM);
 	}
@@ -211,6 +245,7 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 		mem = memdesc_vaddr(dsm_range, sizeof(*dsm_range));
 		nvmf_capsule_append_data(req->nc, &mem, sizeof(*dsm_range), 0,
 		    true, nvmf_ns_delete_complete, bio);
+		bio->bio_driver2 = dsm_range;
 		break;
 	default:
 		refcount_init(bio_refs(bio), 1);
@@ -219,7 +254,9 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 		break;
 	}
 
+	refcount_acquire(&ns->active_bios);
 	nvmf_submit_request(req);
+	mtx_unlock(&ns->lock);
 	return (0);
 }
 
@@ -265,7 +302,7 @@ nvmf_ns_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	return (error);
 }
 
-static void
+void
 nvmf_ns_strategy(struct bio *bio)
 {
 	struct nvmf_namespace *ns;
@@ -304,6 +341,10 @@ nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 	ns = malloc(sizeof(*ns), M_NVMF, M_WAITOK | M_ZERO);
 	ns->sc = sc;
 	ns->id = id;
+	mtx_init(&ns->lock, "nvmf ns", NULL, MTX_DEF);
+
+	/* One dummy bio avoids dropping to 0 until destroy. */
+	refcount_init(&ns->active_bios, 1);
 
 	if (NVMEV(NVME_NS_DATA_DPS_PIT, data->dps) != 0) {
 		ns_printf(ns, "End-to-end data protection not supported\n");
@@ -356,14 +397,70 @@ nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 
 	return (ns);
 fail:
+	mtx_destroy(&ns->lock);
 	free(ns, M_NVMF);
 	return (NULL);
 }
 
 void
+nvmf_disconnect_ns(struct nvmf_namespace *ns)
+{
+	mtx_lock(&ns->lock);
+	ns->disconnected = true;
+	mtx_unlock(&ns->lock);
+}
+
+void
+nvmf_reconnect_ns(struct nvmf_namespace *ns)
+{
+	TAILQ_HEAD(, bio) bios;
+	struct bio *bio;
+
+	TAILQ_INIT(&bios);
+	mtx_lock(&ns->lock);
+	ns->disconnected = false;
+	TAILQ_CONCAT(&bios, &ns->pending_bios, bio_queue);
+	mtx_unlock(&ns->lock);
+
+	while (!TAILQ_EMPTY(&bios)) {
+		bio = TAILQ_FIRST(&bios);
+		TAILQ_REMOVE(&bios, bio, bio_queue);
+		nvmf_ns_strategy(bio);
+	}
+}
+
+void
 nvmf_destroy_ns(struct nvmf_namespace *ns)
 {
+	TAILQ_HEAD(, bio) bios;
+	struct bio *bio;
+
 	destroy_dev(ns->cdev);
 
+	/*
+	 * Wait for active I/O requests to drain.  The release drops
+	 * the reference on the "dummy bio" when the namespace is
+	 * created.
+	 */
+	mtx_lock(&ns->lock);
+	if (!refcount_release(&ns->active_bios)) {
+		while (ns->active_bios != 0)
+			mtx_sleep(ns, &ns->lock, 0, "nvmfrmns", 0);
+	}
+
+	/* Abort any pending I/O requests. */
+	TAILQ_CONCAT(&bios, &ns->pending_bios, bio_queue);
+	mtx_unlock(&ns->lock);
+
+	while (!TAILQ_EMPTY(&bios)) {
+		bio = TAILQ_FIRST(&bios);
+		TAILQ_REMOVE(&bios, bio, bio_queue);
+		bio->bio_error = ECONNABORTED;
+		bio->bio_flags |= BIO_ERROR;
+		bio->bio_resid = bio->bio_bcount;
+		biodone(bio);
+	}
+
+	mtx_destroy(&ns->lock);
 	free(ns, M_NVMF);
 }
