@@ -58,6 +58,7 @@ struct nvmf_softc {
 
 	struct cam_sim *sim;
 	struct cam_path *path;
+	bool sim_disconnected;
 
 	struct nvmf_namespace **ns;
 
