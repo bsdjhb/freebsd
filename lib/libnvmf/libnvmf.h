@@ -250,4 +250,12 @@ int	nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested,
 int	nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
     struct nvmf_qpair **io_queues, const struct nvme_controller_data *cdata);
 
+/*
+ * Handoff active host association to an existing host in the kernel.
+ * This frees the qpairs (even on error).
+ */
+int	nvmf_reconnect_host(int fd, struct nvmf_qpair *admin_qp,
+    u_int num_queues, struct nvmf_qpair **io_queues,
+    const struct nvme_controller_data *cdata);
+
 #endif /* !__LIBNVMF_H__ */
