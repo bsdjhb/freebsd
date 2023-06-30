@@ -40,6 +40,7 @@
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <sys/protosw.h>
+#include <sys/refcount.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
@@ -84,6 +85,7 @@ struct nvmf_tcp_qpair {
 
 	struct socket *so;
 
+	volatile u_int refs;	/* Every allocated capsule holds a reference */
 	uint8_t	txpda;
 	uint8_t rxpda;
 	bool header_digests;
@@ -2011,6 +2013,7 @@ tcp_allocate_qpair(bool controller __unused,
 
 	qp = malloc(sizeof(*qp), M_NVMF_TCP, M_WAITOK | M_ZERO);
 	qp->so = so;
+	refcount_init(&qp->refs, 1);
 	qp->txpda = params->tcp.txpda;
 	qp->rxpda = params->tcp.rxpda;
 	qp->header_digests = params->tcp.header_digests;
@@ -2053,6 +2056,13 @@ tcp_allocate_qpair(bool controller __unused,
 	}
 
 	return (&qp->qp);
+}
+
+static void
+tcp_release_qpair(struct nvmf_tcp_qpair *qp)
+{
+	if (refcount_release(&qp->refs))
+		free(qp, M_NVMF_TCP);
 }
 
 static void
@@ -2114,27 +2124,31 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 
 	soclose(so);
 
-	free(qp, M_NVMF_TCP);
+	tcp_release_qpair(qp);
 }
 
 static struct nvmf_capsule *
-tcp_allocate_capsule(struct nvmf_qpair *qp, int how)
+tcp_allocate_capsule(struct nvmf_qpair *nq, int how)
 {
+	struct nvmf_tcp_qpair *qp = TQP(nq);
 	struct nvmf_tcp_capsule *nc;
 
 	nc = malloc(sizeof(*nc), M_NVMF_TCP, how | M_ZERO);
 	if (nc == NULL)
 		return (NULL);
+	refcount_acquire(&qp->refs);
 	return (&nc->nc);
 }
 
 static void
 tcp_free_capsule(struct nvmf_capsule *nc)
 {
+	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 
 	nvmf_tcp_free_pdu(&tc->rx_pdu);
 	free(nc, M_NVMF_TCP);
+	tcp_release_qpair(qp);
 }
 
 static int
