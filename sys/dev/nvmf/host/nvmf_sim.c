@@ -129,8 +129,11 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	} else
 		refcount_init(ccb_refs(ccb), 1);
 
-	KASSERT(ccb->ccb_h.spriv_ioerror == 0,
-	    ("%s incoming CCB has non-zero spriv", __func__));
+	/*
+	 * Clear spriv_ioerror as it can hold an earlier error if this
+	 * CCB was aborted and has been retried.
+	 */
+	ccb->ccb_h.spriv_ioerror = 0;
 	KASSERT(ccb->ccb_h.status == CAM_REQ_INPROG,
 	    ("%s: incoming CCB is not in-progress", __func__));
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
