@@ -1951,6 +1951,7 @@ nvmf_tcp_send(void *arg)
 		}
 		error = sosend(so, NULL, NULL, m, NULL, MSG_DONTWAIT, NULL);
 		if (error != 0) {
+			m = NULL;
 			m_freem(n);
 			goto error;
 		}
