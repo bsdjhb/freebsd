@@ -449,6 +449,7 @@ nvmf_destroy_ns(struct nvmf_namespace *ns)
 	}
 
 	/* Abort any pending I/O requests. */
+	TAILQ_INIT(&bios);
 	TAILQ_CONCAT(&bios, &ns->pending_bios, bio_queue);
 	mtx_unlock(&ns->lock);
 
