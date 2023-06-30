@@ -101,7 +101,8 @@ nvmf_abort_request(struct nvmf_request *req, uint16_t cid)
 void
 nvmf_free_request(struct nvmf_request *req)
 {
-	nvmf_free_capsule(req->nc);
+	if (req->nc != NULL)
+		nvmf_free_capsule(req->nc);
 	free(req, M_NVMF);
 }
 
@@ -258,15 +259,19 @@ nvmf_destroy_qp(struct nvmf_host_qpair *qp)
 
 	/*
 	 * Abort outstanding requests.  Active requests will have
-	 * their I/O completions invoked by the transport layer via
-	 * nvmf_free_qpair.  Pending requests must have their I/O
-	 * completion invoked via nvmf_abort_capsule_data.
+	 * their I/O completions invoked and associated capsules freed
+	 * by the transport layer via nvmf_free_qpair.  Pending
+	 * requests must have their I/O completion invoked via
+	 * nvmf_abort_capsule_data.
 	 */
 	for (u_int i = 0; i < qp->qsize - 1; i++) {
 		cmd = qp->active_commands[i];
 		if (cmd != NULL) {
 			printf("%s: aborted active command %p (CID %u)\n",
 			    __func__, cmd->req, cmd->cid);
+
+			/* This was freed by nvmf_free_qpair. */
+			cmd->req->nc = NULL;
 			nvmf_abort_request(cmd->req, cmd->cid);
 			nvmf_free_request(cmd->req);
 			free(cmd, M_NVMF);
