@@ -545,14 +545,16 @@ nvmf_reconnect_host(struct nvmf_softc *sc, struct nvmf_handoff_host *hh)
 	}
 
 	/*
-	 * Ensure this is for the same controller.  Possibly this
-	 * should only be checking a subset of fields?
-	 *
-	 * XXX: Should we be checking CAP and VS properties?
+	 * Ensure this is for the same controller.  Note that the
+	 * controller ID can vary across associations if the remote
+	 * system is using the dynamic controller model.  This merely
+	 * ensures the new association is connected to the same NVMe
+	 * subsystem.
 	 */
-	if (memcmp(sc->cdata, ivars.cdata, sizeof(*ivars.cdata)) != 0) {
+	if (memcmp(sc->cdata->subnqn, ivars.cdata->subnqn,
+	    sizeof(ivars.cdata->subnqn)) != 0) {
 		device_printf(sc->dev,
-		    "controller data mismatch on reconnect\n");
+		    "controller subsystem NQN mismatch on reconnect\n");
 		error = EINVAL;
 		goto out;
 	}
@@ -565,6 +567,10 @@ nvmf_reconnect_host(struct nvmf_softc *sc, struct nvmf_handoff_host *hh)
 	error = nvmf_establish_connection(sc, &ivars);
 	if (error != 0)
 		goto out;
+
+	device_printf(sc->dev,
+	    "established new association with %u I/O queues\n",
+	    sc->num_io_queues);
 
 	/* Restart namespace consumers. */
 	for (i = 0; i < sc->cdata->nn; i++) {
@@ -748,8 +754,6 @@ static device_method_t nvmf_methods[] = {
 	DEVMETHOD(device_attach,    nvmf_attach),
 	DEVMETHOD(device_detach,    nvmf_detach),
 #if 0
-	DEVMETHOD(device_suspend,   nvmf_suspend),
-	DEVMETHOD(device_resume,    nvmf_resume),
 	DEVMETHOD(device_shutdown,  nvmf_shutdown),
 #endif
 	DEVMETHOD_END
