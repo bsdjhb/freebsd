@@ -294,8 +294,11 @@ nvmf_probe(device_t dev)
 static int
 nvmf_establish_connection(struct nvmf_softc *sc, struct nvmf_ivars *ivars)
 {
+	char name[16];
+
 	/* Setup the admin queue. */
-	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin);
+	sc->admin = nvmf_init_qp(sc, ivars->hh->trtype, &ivars->hh->admin,
+	    "admin queue");
 	if (sc->admin == NULL) {
 		device_printf(sc->dev, "Failed to setup admin queue\n");
 		return (ENXIO);
@@ -306,8 +309,9 @@ nvmf_establish_connection(struct nvmf_softc *sc, struct nvmf_ivars *ivars)
 	    M_WAITOK | M_ZERO);
 	sc->num_io_queues = ivars->hh->num_io_queues;
 	for (u_int i = 0; i < sc->num_io_queues; i++) {
+		snprintf(name, sizeof(name), "I/O queue %u", i);
 		sc->io[i] = nvmf_init_qp(sc, ivars->hh->trtype,
-		    &ivars->io_params[i]);
+		    &ivars->io_params[i], name);
 		if (sc->io[i] == NULL) {
 			device_printf(sc->dev, "Failed to setup I/O queue %u\n",
 			    i + 1);

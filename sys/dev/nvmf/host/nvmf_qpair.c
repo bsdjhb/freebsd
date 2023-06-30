@@ -55,8 +55,10 @@ struct nvmf_host_qpair {
 	TAILQ_HEAD(, nvmf_host_command) free_commands;
 	STAILQ_HEAD(, nvmf_request) pending_requests;
 
-	/* Index by cid. */
+	/* Indexed by cid. */
 	struct nvmf_host_command **active_commands;
+
+	char name[16];
 };
 
 struct nvmf_request *
@@ -133,12 +135,12 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 }
 
 static void
-nvmf_qpair_error(void *arg)
+nvmf_qp_error(void *arg)
 {
 	struct nvmf_host_qpair *qp = arg;
 	struct nvmf_softc *sc = qp->sc;
 
-	device_printf(sc->dev, "qpair error, disconnecting\n");
+	device_printf(sc->dev, "error on %s, disconnecting\n", qp->name);
 	nvmf_disconnect(sc);
 }
 
@@ -204,7 +206,7 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 
 struct nvmf_host_qpair *
 nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
-    struct nvmf_handoff_qpair_params *handoff)
+    struct nvmf_handoff_qpair_params *handoff, const char *name)
 {
 	struct nvmf_host_command *cmd, *ncmd;
 	struct nvmf_host_qpair *qp;
@@ -216,6 +218,7 @@ nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
 	qp->qsize = handoff->qsize;
 	qp->sqhd = handoff->sqhd;
 	qp->sqtail = handoff->sqtail;
+	strlcpy(qp->name, name, sizeof(qp->name));
 	mtx_init(&qp->lock, "nvmf qp", NULL, MTX_DEF);
 
 	num_commands = qp->qsize - 1;
@@ -229,7 +232,7 @@ nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
 	}
 	STAILQ_INIT(&qp->pending_requests);
 
-	qp->qp = nvmf_allocate_qpair(trtype, false, handoff, nvmf_qpair_error,
+	qp->qp = nvmf_allocate_qpair(trtype, false, handoff, nvmf_qp_error,
 	    qp, nvmf_receive_capsule, qp);
 	if (qp->qp == NULL) {
 		TAILQ_FOREACH_SAFE(cmd, &qp->free_commands, link, ncmd) {
