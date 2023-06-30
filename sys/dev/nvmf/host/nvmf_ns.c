@@ -341,6 +341,7 @@ nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 	ns = malloc(sizeof(*ns), M_NVMF, M_WAITOK | M_ZERO);
 	ns->sc = sc;
 	ns->id = id;
+	TAILQ_INIT(&ns->pending_bios);
 	mtx_init(&ns->lock, "nvmf ns", NULL, MTX_DEF);
 
 	/* One dummy bio avoids dropping to 0 until destroy. */
@@ -416,9 +417,9 @@ nvmf_reconnect_ns(struct nvmf_namespace *ns)
 	TAILQ_HEAD(, bio) bios;
 	struct bio *bio;
 
-	TAILQ_INIT(&bios);
 	mtx_lock(&ns->lock);
 	ns->disconnected = false;
+	TAILQ_INIT(&bios);
 	TAILQ_CONCAT(&bios, &ns->pending_bios, bio_queue);
 	mtx_unlock(&ns->lock);
 
