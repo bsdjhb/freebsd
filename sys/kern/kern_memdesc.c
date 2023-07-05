@@ -31,8 +31,6 @@
 #include <sys/memdesc.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
-#include <cam/cam.h>
-#include <cam/cam_ccb.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <vm/vm_param.h>
@@ -159,84 +157,6 @@ bio_copyback(struct bio *bio, int off, int size, const void *src)
 	memcpy(bio->bio_data + off, src, size);
 }
 
-static void
-ccb_copyback(union ccb *ccb, int off, int size, const void *src)
-{
-	struct ccb_hdr *ccb_h;
-	void *data_ptr;
-	uint32_t dxfer_len;
-	uint16_t sglist_cnt;
-
-	ccb_h = &ccb->ccb_h;
-	switch (ccb_h->func_code) {
-	case XPT_SCSI_IO: {
-		struct ccb_scsiio *csio;
-
-		csio = &ccb->csio;
-		data_ptr = csio->data_ptr;
-		dxfer_len = csio->dxfer_len;
-		sglist_cnt = csio->sglist_cnt;
-		break;
-	}
-	case XPT_CONT_TARGET_IO: {
-		struct ccb_scsiio *ctio;
-
-		ctio = &ccb->ctio;
-		data_ptr = ctio->data_ptr;
-		dxfer_len = ctio->dxfer_len;
-		sglist_cnt = ctio->sglist_cnt;
-		break;
-	}
-	case XPT_ATA_IO: {
-		struct ccb_ataio *ataio;
-
-		ataio = &ccb->ataio;
-		data_ptr = ataio->data_ptr;
-		dxfer_len = ataio->dxfer_len;
-		sglist_cnt = 0;
-		break;
-	}
-	case XPT_NVME_IO:
-	case XPT_NVME_ADMIN: {
-		struct ccb_nvmeio *nvmeio;
-
-		nvmeio = &ccb->nvmeio;
-		data_ptr = nvmeio->data_ptr;
-		dxfer_len = nvmeio->dxfer_len;
-		sglist_cnt = nvmeio->sglist_cnt;
-		break;
-	}
-	default:
-		panic("%s: Unsupported func code %d", __func__,
-		    ccb_h->func_code);
-	}
-
-	KASSERT(off + size <= dxfer_len, ("copy out of bounds"));
-
-	switch ((ccb_h->flags & CAM_DATA_MASK)) {
-	case CAM_DATA_VADDR:
-		memcpy((char *)data_ptr + off, src, size);
-		break;
-	case CAM_DATA_PADDR:
-		phys_copyback((vm_paddr_t)(uintptr_t)data_ptr, off, size, src);
-		break;
-	case CAM_DATA_SG:
-		vlist_copyback((bus_dma_segment_t *)data_ptr, sglist_cnt, off,
-		    size, src);
-		break;
-	case CAM_DATA_SG_PADDR:
-		plist_copyback((bus_dma_segment_t *)data_ptr, sglist_cnt, off,
-		    size, src);
-		break;
-	case CAM_DATA_BIO:
-		bio_copyback((struct bio *)data_ptr, off, size, src);
-		break;
-	default:
-		panic("%s: flags 0x%X unimplemented", __func__,
-		    ccb_h->flags);
-	}
-}
-
 void
 memdesc_copyback(struct memdesc *mem, int off, int size, const void *src)
 {
@@ -263,9 +183,6 @@ memdesc_copyback(struct memdesc *mem, int off, int size, const void *src)
 		break;
 	case MEMDESC_MBUF:
 		m_copyback(mem->u.md_mbuf, off, size, src);
-		break;
-	case MEMDESC_CCB:
-		ccb_copyback(mem->u.md_ccb, off, size, src);
 		break;
 	default:
 		__assert_unreachable();
@@ -393,84 +310,6 @@ bio_copydata(struct bio *bio, int off, int size, void *dst)
 	memcpy(dst, bio->bio_data + off, size);
 }
 
-static void
-ccb_copydata(union ccb *ccb, int off, int size, void *dst)
-{
-	struct ccb_hdr *ccb_h;
-	void *data_ptr;
-	uint32_t dxfer_len;
-	uint16_t sglist_cnt;
-
-	ccb_h = &ccb->ccb_h;
-	switch (ccb_h->func_code) {
-	case XPT_SCSI_IO: {
-		struct ccb_scsiio *csio;
-
-		csio = &ccb->csio;
-		data_ptr = csio->data_ptr;
-		dxfer_len = csio->dxfer_len;
-		sglist_cnt = csio->sglist_cnt;
-		break;
-	}
-	case XPT_CONT_TARGET_IO: {
-		struct ccb_scsiio *ctio;
-
-		ctio = &ccb->ctio;
-		data_ptr = ctio->data_ptr;
-		dxfer_len = ctio->dxfer_len;
-		sglist_cnt = ctio->sglist_cnt;
-		break;
-	}
-	case XPT_ATA_IO: {
-		struct ccb_ataio *ataio;
-
-		ataio = &ccb->ataio;
-		data_ptr = ataio->data_ptr;
-		dxfer_len = ataio->dxfer_len;
-		sglist_cnt = 0;
-		break;
-	}
-	case XPT_NVME_IO:
-	case XPT_NVME_ADMIN: {
-		struct ccb_nvmeio *nvmeio;
-
-		nvmeio = &ccb->nvmeio;
-		data_ptr = nvmeio->data_ptr;
-		dxfer_len = nvmeio->dxfer_len;
-		sglist_cnt = nvmeio->sglist_cnt;
-		break;
-	}
-	default:
-		panic("%s: Unsupported func code %d", __func__,
-		    ccb_h->func_code);
-	}
-
-	KASSERT(off + size <= dxfer_len, ("copy out of bounds"));
-
-	switch ((ccb_h->flags & CAM_DATA_MASK)) {
-	case CAM_DATA_VADDR:
-		memcpy(dst, (const char *)data_ptr + off, size);
-		break;
-	case CAM_DATA_PADDR:
-		phys_copydata((vm_paddr_t)(uintptr_t)data_ptr, off, size, dst);
-		break;
-	case CAM_DATA_SG:
-		vlist_copydata((bus_dma_segment_t *)data_ptr, sglist_cnt, off,
-		    size, dst);
-		break;
-	case CAM_DATA_SG_PADDR:
-		plist_copydata((bus_dma_segment_t *)data_ptr, sglist_cnt, off,
-		    size, dst);
-		break;
-	case CAM_DATA_BIO:
-		bio_copydata((struct bio *)data_ptr, off, size, dst);
-		break;
-	default:
-		panic("%s: flags 0x%X unimplemented", __func__,
-		    ccb_h->flags);
-	}
-}
-
 void
 memdesc_copydata(struct memdesc *mem, int off, int size, void *dst)
 {
@@ -497,9 +336,6 @@ memdesc_copydata(struct memdesc *mem, int off, int size, void *dst)
 		break;
 	case MEMDESC_MBUF:
 		m_copydata(mem->u.md_mbuf, off, size, dst);
-		break;
-	case MEMDESC_CCB:
-		ccb_copydata(mem->u.md_ccb, off, size, dst);
 		break;
 	default:
 		__assert_unreachable();
