@@ -2096,6 +2096,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	SOCKBUF_UNLOCK(&so->so_rcv);
 
 	STAILQ_FOREACH_SAFE(tc, &qp->tx_capsules, link, ntc) {
+		nvmf_abort_capsule_data(&tc->nc, ECONNABORTED);
 		tcp_free_capsule(&tc->nc);
 	}
 	mbufq_drain(&qp->tx_pdus);
