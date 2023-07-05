@@ -1,6 +1,7 @@
 /*-
- * Copyright (c) 2022 Chelsio Communications, Inc.
- * All rights reserved.
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2022-2023 Chelsio Communications, Inc.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
  * Redistribution and use in source and binary forms, with or without
