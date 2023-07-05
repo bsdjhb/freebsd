@@ -49,7 +49,6 @@ struct memdesc {
 		struct bio		*md_bio;
 		struct uio		*md_uio;
 		struct mbuf		*md_mbuf;
-		union ccb		*md_ccb;
 	} u;
 	size_t		md_opaque;	/* type specific data. */
 	uint32_t	md_type;	/* Type of memory. */
@@ -62,7 +61,6 @@ struct memdesc {
 #define	MEMDESC_BIO	5	/* Pointer to a bio (block io). */
 #define	MEMDESC_UIO	6	/* Pointer to a uio (any io). */
 #define	MEMDESC_MBUF	7	/* Pointer to a mbuf (network io). */
-#define	MEMDESC_CCB	8	/* Cam control block. (scsi/ata io). */
 
 static inline struct memdesc
 memdesc_vaddr(void *vaddr, size_t len)
@@ -145,16 +143,7 @@ memdesc_mbuf(struct mbuf *mbuf)
 	return (mem);
 }
 
-static inline struct memdesc
-memdesc_ccb(union ccb *ccb)
-{
-	struct memdesc mem;
-
-	mem.u.md_ccb = ccb;
-	mem.md_type = MEMDESC_CCB;
-
-	return (mem);
-}
+struct memdesc	memdesc_ccb(union ccb *ccb);
 
 /*
  * Similar to m_copyback/data, *_copyback copy data from the 'src'
