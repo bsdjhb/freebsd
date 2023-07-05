@@ -45,8 +45,6 @@
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
-#include <cam/cam.h>
-#include <cam/cam_ccb.h>
 #include <machine/bus.h>
 #include <netinet/in.h>
 #include <vm/vm.h>
@@ -1356,84 +1354,6 @@ nvmf_tcp_mbuf_subset(struct nvmf_tcp_command_buffer *cb,
 	return (m);
 }
 
-static struct mbuf *
-nvmf_tcp_mbuf_ccb(struct nvmf_tcp_command_buffer *cb, union ccb *ccb,
-    size_t offset, uint32_t data_len, uint32_t *actual_len, bool can_truncate)
-{
-	struct ccb_hdr *ccb_h;
-	void *data_ptr;
-	uint32_t dxfer_len;
-	uint16_t sglist_cnt;
-
-	ccb_h = &ccb->ccb_h;
-	switch (ccb_h->func_code) {
-	case XPT_SCSI_IO: {
-		struct ccb_scsiio *csio;
-
-		csio = &ccb->csio;
-		data_ptr = csio->data_ptr;
-		dxfer_len = csio->dxfer_len;
-		sglist_cnt = csio->sglist_cnt;
-		break;
-	}
-	case XPT_CONT_TARGET_IO: {
-		struct ccb_scsiio *ctio;
-
-		ctio = &ccb->ctio;
-		data_ptr = ctio->data_ptr;
-		dxfer_len = ctio->dxfer_len;
-		sglist_cnt = ctio->sglist_cnt;
-		break;
-	}
-	case XPT_ATA_IO: {
-		struct ccb_ataio *ataio;
-
-		ataio = &ccb->ataio;
-		data_ptr = ataio->data_ptr;
-		dxfer_len = ataio->dxfer_len;
-		sglist_cnt = 0;
-		break;
-	}
-	case XPT_NVME_IO:
-	case XPT_NVME_ADMIN: {
-		struct ccb_nvmeio *nvmeio;
-
-		nvmeio = &ccb->nvmeio;
-		data_ptr = nvmeio->data_ptr;
-		dxfer_len = nvmeio->dxfer_len;
-		sglist_cnt = nvmeio->sglist_cnt;
-		break;
-	}
-	default:
-		panic("%s: Unsupported func code %d", __func__,
-		    ccb_h->func_code);
-	}
-
-	KASSERT(offset + data_len <= dxfer_len, ("out of bounds"));
-
-	switch ((ccb_h->flags & CAM_DATA_MASK)) {
-	case CAM_DATA_VADDR:
-		return (nvmf_tcp_mbuf_vaddr(cb, (char *)data_ptr + offset,
-		    data_len, actual_len));
-	case CAM_DATA_PADDR:
-		return (nvmf_tcp_mbuf_paddr(cb,
-		    (vm_paddr_t)(uintptr_t)data_ptr + offset, data_len,
-		    actual_len, can_truncate));
-	case CAM_DATA_SG:
-		return (nvmf_tcp_mbuf_vlist(cb, (bus_dma_segment_t *)data_ptr,
-		    sglist_cnt, offset, data_len, actual_len));
-	case CAM_DATA_SG_PADDR:
-		return (nvmf_tcp_mbuf_plist(cb, (bus_dma_segment_t *)data_ptr,
-		    sglist_cnt, offset, data_len, actual_len, can_truncate));
-	case CAM_DATA_BIO:
-		return (nvmf_tcp_mbuf_bio(cb, (struct bio *)data_ptr, offset,
-		    data_len, actual_len, can_truncate));
-	default:
-		panic("%s: flags 0x%X unimplemented", __func__,
-		    ccb_h->flags);
-	}
-}
-
 /*
  * Return an mbuf chain for a range of data belonging to a command
  * buffer.
@@ -1480,10 +1400,6 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 		panic("uio not supported");
 	case MEMDESC_MBUF:
 		m = nvmf_tcp_mbuf_subset(cb, mem->u.md_mbuf, cb->io.io_offset +
-		    data_offset, data_len, &len, can_truncate);
-		break;
-	case MEMDESC_CCB:
-		m = nvmf_tcp_mbuf_ccb(cb, mem->u.md_ccb, cb->io.io_offset +
 		    data_offset, data_len, &len, can_truncate);
 		break;
 	default:
