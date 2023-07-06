@@ -43,12 +43,10 @@
 static struct options {
 	const char	*transport;
 	const char	*address;
-	const char	*port;
 	bool		verbose;
 } opt = {
 	.transport = "tcp",
 	.address = NULL,
-	.port = NULL,
 	.verbose = false,
 };
 
@@ -65,18 +63,30 @@ static void
 tcp_qpair_params(struct nvmf_qpair_params *params)
 {
 	struct addrinfo hints, *ai, *list;
-	const char *port;
+	const char *address, *port;
+	char *tofree;
 	int error, s;
 
+	tofree = NULL;
+	address = opt.address;
+	port = strrchr(address, ':');
+	if (port != NULL) {
+		if (port == address || port[1] == '\0')
+			errx(EX_USAGE, "Invalid address");
+		tofree = strndup(address, port - address);
+		address = tofree;
+		port++;		/* Skip over ':'. */
+	}
+
 	/* 7.4.9.3 Default port for discovery */
-	port = "8009";
-	if (opt.port != NULL)
-		port = opt.port;
+	if (port == NULL)
+		port = "8009";
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_protocol = IPPROTO_TCP;
-	error = getaddrinfo(opt.address, port, &hints, &list);
+	error = getaddrinfo(address, port, &hints, &list);
+	free(tofree);
 	if (error != 0)
 		errx(EX_NOHOST, "%s", gai_strerror(error));
 
@@ -423,8 +433,6 @@ static const struct opts discover_opts[] = {
 #define OPT(l, s, t, opt, addr, desc) { l, s, t, &opt.addr, desc }
 	OPT("transport", 't', arg_string, opt, transport,
 	    "Transport type"),
-	OPT("port", 'p', arg_string, opt, port,
-	    "Port"),
 	OPT("verbose", 'v', arg_none, opt, verbose,
 	    "Display the discovery controller's controller data"),
 	{ NULL, 0, arg_none, NULL, NULL }
