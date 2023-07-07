@@ -109,6 +109,13 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	struct nvmf_request *req;
 	struct nvmf_host_qpair *qp;
 
+	mtx_lock(&sc->sim_mtx);
+	if (sc->sim_disconnected) {
+		mtx_unlock(&sc->sim_mtx);
+		nvmeio->ccb_h.status = CAM_REQUEUE_REQ;
+		xpt_done(ccb);
+		return;
+	}
 	if (nvmeio->ccb_h.func_code == XPT_NVME_IO)
 		qp = nvmf_select_io_queue(sc);
 	else
@@ -116,6 +123,7 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	req = nvmf_allocate_request(qp, &nvmeio->cmd, nvmf_ccb_complete,
 	    ccb, M_NOWAIT);
 	if (req == NULL) {
+		mtx_unlock(&sc->sim_mtx);
 		nvmeio->ccb_h.status = CAM_RESRC_UNAVAIL;
 		xpt_done(ccb);
 		return;
@@ -139,6 +147,7 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	    ("%s: incoming CCB is not in-progress", __func__));
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
 	nvmf_submit_request(req);
+	mtx_unlock(&sc->sim_mtx);
 }
 
 static void
@@ -246,16 +255,19 @@ nvmf_init_sim(struct nvmf_softc *sc)
 		return (ENOMEM);
 	}
 
+	mtx_init(&sc->sim_mtx, "nvmf sim", NULL, MTX_DEF);
 	sc->sim = cam_sim_alloc(nvmf_sim_action, NULL, "nvme", sc,
 	    device_get_unit(sc->dev), NULL, max_trans, max_trans, devq);
 	if (sc->sim == NULL) {
 		device_printf(sc->dev, "Failed to allocate CAM sim\n");
 		cam_simq_free(devq);
+		mtx_destroy(&sc->sim_mtx);
 		return (ENXIO);
 	}
 	if (xpt_bus_register(sc->sim, sc->dev, 0) != CAM_SUCCESS) {
 		device_printf(sc->dev, "Failed to create CAM bus\n");
 		cam_sim_free(sc->sim, TRUE);
+		mtx_destroy(&sc->sim_mtx);
 		return (ENXIO);
 	}
 	if (xpt_create_path(&sc->path, NULL, cam_sim_path(sc->sim),
@@ -263,6 +275,7 @@ nvmf_init_sim(struct nvmf_softc *sc)
 		device_printf(sc->dev, "Failed to create CAM path\n");
 		xpt_bus_deregister(cam_sim_path(sc->sim));
 		cam_sim_free(sc->sim, TRUE);
+		mtx_destroy(&sc->sim_mtx);
 		return (ENXIO);
 	}
 	return (0);	    
@@ -297,14 +310,18 @@ nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id)
 void
 nvmf_disconnect_sim(struct nvmf_softc *sc)
 {
+	mtx_lock(&sc->sim_mtx);
 	sc->sim_disconnected = true;
 	xpt_freeze_simq(sc->sim, 1);
+	mtx_unlock(&sc->sim_mtx);
 }
 
 void
 nvmf_reconnect_sim(struct nvmf_softc *sc)
 {
+	mtx_lock(&sc->sim_mtx);
 	sc->sim_disconnected = false;
+	mtx_unlock(&sc->sim_mtx);
 	xpt_release_simq(sc->sim, 1);
 }
 
@@ -317,4 +334,5 @@ nvmf_destroy_sim(struct nvmf_softc *sc)
 	xpt_free_path(sc->path);
 	xpt_bus_deregister(cam_sim_path(sc->sim));
 	cam_sim_free(sc->sim, TRUE);
+	mtx_destroy(&sc->sim_mtx);
 }

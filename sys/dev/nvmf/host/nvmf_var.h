@@ -31,6 +31,7 @@
 
 #include <sys/_callout.h>
 #include <sys/_lock.h>
+#include <sys/_mutex.h>
 #include <sys/_sx.h>
 #include <sys/_task.h>
 #include <sys/queue.h>
@@ -59,6 +60,7 @@ struct nvmf_softc {
 
 	struct cam_sim *sim;
 	struct cam_path *path;
+	struct mtx sim_mtx;
 	bool sim_disconnected;
 
 	struct nvmf_namespace **ns;
