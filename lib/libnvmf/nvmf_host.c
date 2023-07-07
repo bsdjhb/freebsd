@@ -767,7 +767,7 @@ nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
 		return (EIO);
 	}
 
-	*actual = le32toh(rcap->nc_cqe.cdw0) & 0xffff;
+	*actual = (le32toh(rcap->nc_cqe.cdw0) & 0xffff) + 1;
 	nvmf_free_capsule(rcap);
 	return (0);
 }
