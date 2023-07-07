@@ -27,17 +27,15 @@
  */
 
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <err.h>
 #include <libnvmf.h>
-#include <netdb.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
 
 #include "comnd.h"
+#include "fabrics.h"
 
 /*
  * TODO:
@@ -67,9 +65,6 @@ static struct options {
 	.header_digests = false,
 };
 
-static char nqn[NVMF_NQN_MAX_LEN];
-static uint8_t hostid[16];
-
 static void
 tcp_association_params(struct nvmf_association_params *params)
 {
@@ -80,199 +75,14 @@ tcp_association_params(struct nvmf_association_params *params)
 	params->tcp.maxr2t = 1;
 }
 
-static bool
-tcp_qpair_params(struct nvmf_qpair_params *params, bool admin, int adrfam,
-    const char *address, const char *port)
-{
-	struct addrinfo hints, *ai, *list;
-	int error, s;
-
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = adrfam;
-	hints.ai_protocol = IPPROTO_TCP;
-	error = getaddrinfo(address, port, &hints, &list);
-	if (error != 0) {
-		warnx("%s", gai_strerror(error));
-		return (false);
-	}
-
-	for (ai = list; ai != NULL; ai = ai->ai_next) {
-		s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-		if (s == -1)
-			continue;
-
-		if (connect(s, ai->ai_addr, ai->ai_addrlen) != 0) {
-			close(s);
-			continue;
-		}
-
-		params->admin = admin;
-		params->tcp.fd = s;
-		freeaddrinfo(list);
-		return (true);
-	}
-	warn("Failed to connect to controller at %s:%s", address, port);
-	return (false);
-}
-
-static const char *
-nvmf_transport_type(uint8_t trtype)
-{
-	static char buf[8];
-
-	switch (trtype) {
-	case NVMF_TRTYPE_RDMA:
-		return ("RDMA");
-	case NVMF_TRTYPE_FC:
-		return ("Fibre Channel");
-	case NVMF_TRTYPE_TCP:
-		return ("TCP");
-	case NVMF_TRTYPE_INTRA_HOST:
-		return ("Intra-host");
-	default:
-		snprintf(buf, sizeof(buf), "0x%02x\n", trtype);
-		return (buf);
-	}
-}
-
-static int
-connect_nvm_adminq(struct nvmf_association *na,
-    const struct nvmf_qpair_params *params, struct nvmf_qpair **qpp,
-    uint16_t cntlid, const char *subnqn, uint16_t *mqes)
-{
-	struct nvmf_qpair *qp;
-	uint64_t cap, cc, csts;
-	u_int mps, mpsmin, mpsmax;
-	int error, timo;
-
-	qp = nvmf_connect(na, params, 0, 32 /* XXX */, hostid, cntlid, subnqn,
-	    nqn, NVMF_KATO_DEFAULT);
-	if (qp == NULL) {
-		warnx("Failed to connect to NVM controller %s: %s", subnqn,
-		    nvmf_association_error(na));
-		return (EX_IOERR);
-	}
-
-	/* Fetch Controller Capabilities Property */
-	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
-	if (error != 0) {
-		warnc(error, "Failed to fetch CAP");
-		nvmf_free_qpair(qp);
-		return (EX_IOERR);
-	}
-
-	/* Require the NVM command set. */
-	if (NVME_CAP_HI_CSS_NVM(cap >> 32) == 0) {
-		warnx("Controller %s does not support the NVM command set",
-		    subnqn);
-		nvmf_free_qpair(qp);
-		return (EX_UNAVAILABLE);
-	}
-
-	*mqes = NVME_CAP_LO_MQES(cap);
-
-	/* Prefer native host page size if it fits. */
-	mpsmin = NVMEV(NVME_CAP_HI_REG_MPSMIN, cap >> 32);
-	mpsmax = NVMEV(NVME_CAP_HI_REG_MPSMAX, cap >> 32);
-	mps = ffs(getpagesize()) - 1;
-	if (mps < mpsmin + 12)
-		mps = mpsmin;
-	else if (mps > mpsmax + 12)
-		mps = mpsmax;
-	else
-		mps -= 12;
-
-	/* Configure controller. */
-	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
-	if (error != 0) {
-		warnc(error, "Failed to fetch CC");
-		nvmf_free_qpair(qp);
-		return (EX_IOERR);
-	}
-
-	/* Clear known fields preserving any reserved fields. */
-	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
-	    NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
-	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
-
-	cc |= 4 << NVME_CC_REG_IOCQES_SHIFT;	/* CQE entry size == 16 */
-	cc |= 6 << NVME_CC_REG_IOSQES_SHIFT;	/* SEQ entry size == 64 */
-	cc |= 0 << NVME_CC_REG_AMS_SHIFT;	/* AMS 0 (Round-robin) */
-	cc |= mps << NVME_CC_REG_MPS_SHIFT;
-	cc |= 0 << NVME_CC_REG_CSS_SHIFT;	/* NVM command set */
-	cc |= (1 << NVME_CC_REG_EN_SHIFT);	/* EN = 1 */
-
-	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
-	if (error != 0) {
-		warnc(error, "Failed to set CC");
-		nvmf_free_qpair(qp);
-		return (EX_IOERR);
-	}
-
-	/* Wait for CSTS.RDY in Controller Status */
-	timo = NVME_CAP_LO_TO(cap);
-	for (;;) {
-		error = nvmf_read_property(qp, NVMF_PROP_CSTS, 4, &csts);
-		if (error != 0) {
-			warnc(error, "Failed to fetch CSTS");
-			nvmf_free_qpair(qp);
-			return (EX_IOERR);
-		}
-
-		if (NVMEV(NVME_CSTS_REG_RDY, csts) != 0)
-			break;
-
-		if (timo == 0) {
-			warnx("Controller failed to become ready");
-			nvmf_free_qpair(qp);
-			return (EX_IOERR);
-		}
-		timo--;
-		usleep(500 * 1000);
-	}
-
-	*qpp = qp;
-	return (0);
-}
-
-static bool
-shutdown_controller(struct nvmf_qpair *qp)
-{
-	uint64_t cc;
-	int error;
-
-	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
-	if (error != 0) {
-		warnc(error, "Failed to fetch CC");
-		nvmf_free_qpair(qp);
-		return (false);
-	}
-
-	cc |= NVME_SHN_NORMAL << NVME_CC_REG_SHN_SHIFT;
-
-	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
-	if (error != 0) {
-		warnc(error, "Failed to set CC to trigger shutdown");
-		nvmf_free_qpair(qp);
-		return (false);
-	}
-
-	nvmf_free_qpair(qp);
-	return (true);
-}
-
 static int
 connect_nvm_controller(enum nvmf_trtype trtype, int adrfam, const char *address,
     const char *port, uint16_t cntlid, const char *subnqn)
 {
 	struct nvme_controller_data cdata;
 	struct nvmf_association_params aparams;
-	struct nvmf_qpair_params qparams;
-	struct nvmf_association *na;
 	struct nvmf_qpair *admin, *io[1];
-	u_int queues;
 	int error;
-	uint16_t mqes;
 
 	memset(&aparams, 0, sizeof(aparams));
 	aparams.sq_flow_control = opt.flow_control;
@@ -285,63 +95,17 @@ connect_nvm_controller(enum nvmf_trtype trtype, int adrfam, const char *address,
 		return (EX_UNAVAILABLE);
 	}
 
-	/* Association. */
-	na = nvmf_allocate_association(trtype, false, &aparams);
-	if (na == NULL) {
-		warn("Failed to create association for %s", subnqn);
-		return (EX_IOERR);
-	}
-
-	/* Admin queue. */
-	if (!tcp_qpair_params(&qparams, true, adrfam, address, port)) {
-		nvmf_free_association(na);
-		return (EX_IOERR);
-	}
-	error = connect_nvm_adminq(na, &qparams, &admin, cntlid, subnqn, &mqes);
-	if (error != 0) {
-		nvmf_free_association(na);
+	error = connect_nvm_queues(&aparams, trtype, adrfam, address, port,
+	    cntlid, subnqn, &admin, io, nitems(io), &cdata);
+	if (error != 0)
 		return (error);
-	}
-
-	/* Fetch controller data. */
-	error = nvmf_host_identify_controller(admin, &cdata);
-	if (error != 0) {
-		shutdown_controller(admin);
-		nvmf_free_association(na);
-		warnc(error, "Failed to fetch controller data for %s", subnqn);
-		return (EX_IOERR);
-	}
-
-	nvmf_update_assocation(na, &cdata);
-
-	error = nvmf_host_request_queues(admin, 1, &queues);
-	if (error != 0) {
-		shutdown_controller(admin);
-		nvmf_free_association(na);
-		warnc(error, "Failed to request I/O queues");
-		return (EX_IOERR);
-	}
-
-	/* I/O queue. */
-	if (!tcp_qpair_params(&qparams, false, adrfam, address, port)) {
-		nvmf_free_association(na);
-		return (EX_IOERR);
-	}
-	io[0] = nvmf_connect(na, &qparams, 1, mqes + 1, hostid,
-	    nvmf_cntlid(admin), subnqn, nqn, 0);
-	if (io[0] == NULL) {
-		warnx("Failed to create I/O queue: %s",
-		    nvmf_association_error(na));
-		shutdown_controller(admin);
-		nvmf_free_association(na);
-		return (EX_IOERR);
-	}
-	nvmf_free_association(na);
 
 	error = nvmf_handoff_host(admin, 1, io, &cdata);
-	if (error != 0)
+	if (error != 0) {
 		warnc(error, "Failed to handoff queues to kernel");
-	return (error);
+		return (EX_IOERR);
+	}
+	return (0);
 }
 
 static void
@@ -407,76 +171,9 @@ static void
 discover_controllers(enum nvmf_trtype trtype, const char *address,
     const char *port)
 {
-	struct nvmf_association_params aparams;
-	struct nvmf_qpair_params qparams;
-	struct nvmf_association *na;
 	struct nvmf_qpair *qp;
-	uint64_t cap, cc, csts;
-	int error, timo;
 
-	memset(&aparams, 0, sizeof(aparams));
-	aparams.sq_flow_control = opt.flow_control;
-	switch (trtype) {
-	case NVMF_TRTYPE_TCP:
-		/* 7.4.9.3 Default port for discovery */
-		if (port == NULL)
-			port = "8009";
-
-		tcp_association_params(&aparams);
-		break;
-	default:
-		__builtin_unreachable();
-	}
-
-	na = nvmf_allocate_association(trtype, false, &aparams);
-	if (na == NULL)
-		err(EX_IOERR, "Failed to create discovery association");
-	if (!tcp_qpair_params(&qparams, true, AF_UNSPEC, address, port))
-		exit(1);
-	qp = nvmf_connect(na, &qparams, 0, NVME_MIN_ADMIN_ENTRIES, hostid,
-	    NVMF_CNTLID_DYNAMIC, NVMF_DISCOVERY_NQN, nqn, 0);
-	if (qp == NULL)
-		errx(EX_IOERR, "Failed to connect to discovery controller: %s",
-		    nvmf_association_error(na));
-	nvmf_free_association(na);
-
-	/* Fetch Controller Capabilities Property */
-	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
-	if (error != 0)
-		errc(EX_IOERR, error, "Failed to fetch CAP");
-
-	/* Set Controller Configuration Property (CC.EN=1) */
-	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
-	if (error != 0)
-		errc(EX_IOERR, error, "Failed to fetch CC");
-
-	/* Clear known fields preserving any reserved fields. */
-	cc &= ~(NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
-	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
-
-	/* Leave AMS, MPS, and CSS as 0. */
-
-	cc |= (1 << NVME_CC_REG_EN_SHIFT);
-
-	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
-	if (error != 0)
-		errc(EX_IOERR, error, "Failed to set CC");
-
-	/* Wait for CSTS.RDY in Controller Status */
-	timo = NVME_CAP_LO_TO(cap);
-	for (;;) {
-		error = nvmf_read_property(qp, NVMF_PROP_CSTS, 4, &csts);
-		if (error != 0)
-			errc(EX_IOERR, error, "Failed to fetch CSTS");
-
-		if (NVMEV(NVME_CSTS_REG_RDY, csts) != 0)
-			break;
-
-		if (timo == 0)
-			errx(EX_IOERR, "Controller failed to become ready");
-		timo--;
-		usleep(500 * 1000);
-	}
+	qp = connect_discovery_adminq(trtype, address, port);
 
 	connect_discovery_log_page(qp);
 
@@ -493,16 +190,7 @@ connect_static(enum nvmf_trtype trtype, const char *address, const char *port,
 	if (port == NULL)
 		errx(EX_USAGE, "Explicit port required");
 
-	if (strcasecmp(opt.cntlid, "dynamic") == 0)
-		cntlid = NVMF_CNTLID_DYNAMIC;
-	else if (strcasecmp(opt.cntlid, "static") == 0)
-		cntlid = NVMF_CNTLID_STATIC_ANY;
-	else {
-		cntlid = strtoul(opt.cntlid, NULL, 0);
-		/* XXX: Right value? */
-		if (cntlid > 0xfff0)
-			errx(EX_USAGE, "Invalid controller ID");
-	}
+	cntlid = nvmf_parse_cntlid(opt.cntlid);
 
 	error = connect_nvm_controller(trtype, AF_UNSPEC, address, port, cntlid,
 	    subnqn);
@@ -516,7 +204,6 @@ connect_fn(const struct cmd *f, int argc, char *argv[])
 	enum nvmf_trtype trtype;
 	const char *address, *port, *subnqn;
 	char *tofree;
-	int error;
 
 	if (arg_parse(argc, argv, f))
 		return;
@@ -526,24 +213,7 @@ connect_fn(const struct cmd *f, int argc, char *argv[])
 	} else
 		errx(EX_USAGE, "Unsupported or invalid transport");
 
-	error = nvmf_hostid_from_hostuuid(hostid);
-	if (error != 0)
-		errc(EX_IOERR, error, "Failed to generate hostid");
-	error = nvmf_nqn_from_hostuuid(nqn);
-	if (error != 0)
-		errc(EX_IOERR, error, "Failed to generate host NQN");
-
-	tofree = NULL;
-	address = opt.address;
-	port = strrchr(address, ':');
-	if (port != NULL) {
-		if (port == address || port[1] == '\0')
-			errx(EX_USAGE, "Invalid address");
-		tofree = strndup(address, port - address);
-		address = tofree;
-		port++;		/* Skip over ':'. */
-	}
-
+	nvmf_parse_address(opt.address, &address, &port, &tofree);
 	if (opt.discover)
 		discover_controllers(trtype, address, port);
 	else {
