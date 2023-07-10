@@ -1403,6 +1403,11 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 		m = nvmf_tcp_mbuf_subset(cb, mem->u.md_mbuf, cb->io.io_offset +
 		    data_offset, data_len, &len, can_truncate);
 		break;
+	case MEMDESC_VMPAGES:
+		m = nvmf_tcp_mbuf_vmpages(cb, mem->u.md_ma, mem->md_offset +
+		    cb->io.io_offset + data_offset, data_len, &len,
+		    can_truncate);
+		break;
 	default:
 		__assert_unreachable();
 	}
