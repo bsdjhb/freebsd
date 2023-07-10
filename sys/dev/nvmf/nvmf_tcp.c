@@ -29,7 +29,6 @@
 #include <sys/param.h>
 #include <sys/capsicum.h>
 #include <sys/condvar.h>
-#include <sys/bio.h>
 #include <sys/file.h>
 #include <sys/gsb_crc32.h>
 #include <sys/kernel.h>
@@ -1278,28 +1277,6 @@ nvmf_tcp_mbuf_vmpages(struct nvmf_tcp_command_buffer *cb, vm_page_t *ma,
 	return (m);
 }
 
-static struct mbuf *
-nvmf_tcp_mbuf_bio(struct nvmf_tcp_command_buffer *cb, struct bio *bio,
-    size_t offset, uint32_t data_len, uint32_t *actual_len, bool can_truncate)
-{
-	KASSERT(offset + data_len <= bio->bio_bcount, ("out of bounds"));
-
-	if ((bio->bio_flags & BIO_VLIST) != 0) {
-		return (nvmf_tcp_mbuf_vlist(cb,
-		    (bus_dma_segment_t *)bio->bio_data, bio->bio_ma_n, offset,
-		    data_len, actual_len));
-	}
-
-	if ((bio->bio_flags & BIO_UNMAPPED) != 0) {
-		return (nvmf_tcp_mbuf_vmpages(cb, bio->bio_ma,
-		    bio->bio_ma_offset + offset, data_len, actual_len,
-		    can_truncate));
-	}
-
-	return (nvmf_tcp_mbuf_vaddr(cb, bio->bio_data + offset, data_len,
-	    actual_len));
-}
-
 /* Somewhat similar to m_copym but avoids a partial mbuf at the end. */
 static struct mbuf *
 nvmf_tcp_mbuf_subset(struct nvmf_tcp_command_buffer *cb,
@@ -1392,10 +1369,6 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 		m = nvmf_tcp_mbuf_plist(cb, mem->u.md_list, mem->md_nseg,
 		    cb->io.io_offset + data_offset, data_len, &len,
 		    can_truncate);
-		break;
-	case MEMDESC_BIO:
-		m = nvmf_tcp_mbuf_bio(cb, mem->u.md_bio, cb->io.io_offset +
-		    data_offset, data_len, &len, can_truncate);
 		break;
 	case MEMDESC_UIO:
 		panic("uio not supported");
