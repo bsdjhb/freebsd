@@ -1385,11 +1385,11 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 		    can_truncate);
 		break;
 	case MEMDESC_VLIST:
-		m = nvmf_tcp_mbuf_vlist(cb, mem->u.md_list, mem->md_opaque,
+		m = nvmf_tcp_mbuf_vlist(cb, mem->u.md_list, mem->md_nseg,
 		    cb->io.io_offset + data_offset, data_len, &len);
 		break;
 	case MEMDESC_PLIST:
-		m = nvmf_tcp_mbuf_plist(cb, mem->u.md_list, mem->md_opaque,
+		m = nvmf_tcp_mbuf_plist(cb, mem->u.md_list, mem->md_nseg,
 		    cb->io.io_offset + data_offset, data_len, &len,
 		    can_truncate);
 		break;
