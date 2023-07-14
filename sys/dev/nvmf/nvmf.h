@@ -34,6 +34,10 @@
 #include <stdbool.h>
 #endif
 
+/* XXX: Should be in nvmf_proto.h */
+#define	NVMF_CNTLID_DYNAMIC	0xFFFF
+#define	NVMF_CNTLID_STATIC_ANY	0xFFFE
+
 struct nvmf_handoff_qpair_params {
 	bool admin;
 	bool sq_flow_control;
@@ -63,10 +67,16 @@ struct nvmf_handoff_host {
 	const struct nvme_controller_data *cdata;
 };
 
+struct nvmf_reconnect_params {
+	uint16_t cntlid;
+	char subnqn[256];
+};
+
 /* Operations on /dev/nvmf */
 #define	NVMF_HANDOFF_HOST	_IOW('n', 200, struct nvmf_handoff_host)
 
 /* Operations on /dev/nvmeX */
-#define	NVMF_RECONNECT_HOST	_IOW('n', 201, struct nvmf_handoff_host)
+#define	NVMF_RECONNECT_PARAMS	_IOR('n', 201, struct nvmf_reconnect_params)
+#define	NVMF_RECONNECT_HOST	_IOW('n', 202, struct nvmf_handoff_host)
 
 #endif /* !__NVMF_H__ */

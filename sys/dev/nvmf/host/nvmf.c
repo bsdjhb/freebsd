@@ -703,6 +703,7 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 	struct nvmf_softc *sc = cdev->si_drv1;
 	struct nvme_get_nsid *gnsid;
 	struct nvme_pt_command *pt;
+	struct nvmf_reconnect_params *rp;
 	struct nvmf_handoff_host *hh;
 
 	switch (cmd) {
@@ -718,6 +719,14 @@ nvmf_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 		return (0);
 	case NVME_GET_MAX_XFER_SIZE:
 		*(uint64_t *)arg = sc->max_xfer_size;
+		return (0);
+	case NVMF_RECONNECT_PARAMS:
+		rp = (struct nvmf_reconnect_params *)arg;
+		if ((sc->cdata->fcatt & 1) == 0)
+			rp->cntlid = NVMF_CNTLID_DYNAMIC;
+		else
+			rp->cntlid = sc->cdata->ctrlr_id;
+		memcpy(rp->subnqn, sc->cdata->subnqn, sizeof(rp->subnqn));
 		return (0);
 	case NVMF_RECONNECT_HOST:
 		hh = (struct nvmf_handoff_host *)arg;

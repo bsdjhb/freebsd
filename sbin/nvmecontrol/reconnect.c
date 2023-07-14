@@ -51,8 +51,6 @@ static struct options {
 	const char	*dev;
 	const char	*transport;
 	const char	*address;
-	const char	*subnqn;
-	const char	*cntlid;
 	bool		data_digests;
 	bool		flow_control;
 	bool		header_digests;
@@ -60,8 +58,6 @@ static struct options {
 	.dev = NULL,
 	.transport = "tcp",
 	.address = NULL,
-	.subnqn = NULL,
-	.cntlid = "dynamic",
 	.data_digests = false,
 	.flow_control = false,
 	.header_digests = false,
@@ -79,12 +75,19 @@ tcp_association_params(struct nvmf_association_params *params)
 
 static int
 reconnect_nvm_controller(int fd, enum nvmf_trtype trtype, int adrfam,
-    const char *address, const char *port, uint16_t cntlid, const char *subnqn)
+    const char *address, const char *port)
 {
 	struct nvme_controller_data cdata;
 	struct nvmf_association_params aparams;
+	struct nvmf_reconnect_params rparams;
 	struct nvmf_qpair *admin, *io[1];
 	int error;
+
+	error = nvmf_reconnect_params(fd, &rparams);
+	if (error != 0) {
+		warnc(error, "Failed to fetch reconnect parameters");
+		return (EX_IOERR);
+	}
 
 	memset(&aparams, 0, sizeof(aparams));
 	aparams.sq_flow_control = opt.flow_control;
@@ -98,7 +101,7 @@ reconnect_nvm_controller(int fd, enum nvmf_trtype trtype, int adrfam,
 	}
 
 	error = connect_nvm_queues(&aparams, trtype, adrfam, address, port,
-	    cntlid, subnqn, &admin, io, nitems(io), &cdata);
+	    rparams.cntlid, rparams.subnqn, &admin, io, nitems(io), &cdata);
 	if (error != 0)
 		return (error);
 
@@ -112,18 +115,14 @@ reconnect_nvm_controller(int fd, enum nvmf_trtype trtype, int adrfam,
 
 static void
 reconnect_static(int fd, enum nvmf_trtype trtype, const char *address,
-    const char *port, const char *subnqn)
+    const char *port)
 {
-	u_long cntlid;
 	int error;
 
 	if (port == NULL)
 		errx(EX_USAGE, "Explicit port required");
 
-	cntlid = nvmf_parse_cntlid(opt.cntlid);
-
-	error = reconnect_nvm_controller(fd, trtype, AF_UNSPEC, address, port,
-	    cntlid, subnqn);
+	error = reconnect_nvm_controller(fd, trtype, AF_UNSPEC, address, port);
 	if (error != 0)
 		exit(error);
 }
@@ -147,7 +146,7 @@ reconnect_fn(const struct cmd *f, int argc, char *argv[])
 	nvmf_parse_address(opt.address, &address, &port, &tofree);
 
 	open_dev(opt.dev, &fd, 1, 1);
-	reconnect_static(fd, trtype, address, port, opt.subnqn);
+	reconnect_static(fd, trtype, address, port);
 
 	close(fd);
 	free(tofree);
@@ -157,8 +156,6 @@ static const struct opts reconnect_opts[] = {
 #define OPT(l, s, t, opt, addr, desc) { l, s, t, &opt.addr, desc }
 	OPT("transport", 't', arg_string, opt, transport,
 	    "Transport type"),
-	OPT("cntlid", 'c', arg_string, opt, cntlid,
-	    "Controller ID"),
 	OPT("header_digests", 'H', arg_none, opt, header_digests,
 	    "Enable TCP PDU header digests"),
 	OPT("data_digests", 'D', arg_none, opt, data_digests,
@@ -172,7 +169,6 @@ static const struct opts reconnect_opts[] = {
 static const struct args reconnect_args[] = {
 	{ arg_string, &opt.dev, "controller-id" },
 	{ arg_string, &opt.address, "address" },
-	{ arg_string, &opt.subnqn, "subnqn" },
 	{ arg_none, NULL, NULL },
 };
 

@@ -43,10 +43,6 @@
 #define NVME_MIN_IO_ENTRIES	(2)
 #define NVME_MAX_IO_ENTRIES	(65536)
 
-/* XXX: Should be in nvmf_proto.h */
-#define	NVMF_CNTLID_DYNAMIC	0xFFFF
-#define	NVMF_CNTLID_STATIC_ANY	0xFFFE
-
 /* 5.21.1.15 in NVMe */
 #define	NVMF_KATO_DEFAULT	(120000)
 
@@ -250,6 +246,12 @@ int	nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested,
  */
 int	nvmf_handoff_host(struct nvmf_qpair *admin_qp, u_int num_queues,
     struct nvmf_qpair **io_queues, const struct nvme_controller_data *cdata);
+
+/*
+ * Fetch reconnect parameters from an existing kernel host to use for
+ * establishing a new association.
+ */
+int	nvmf_reconnect_params(int fd, struct nvmf_reconnect_params *rparams);
 
 /*
  * Handoff active host association to an existing host in the kernel.

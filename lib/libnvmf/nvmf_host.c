@@ -857,6 +857,14 @@ out:
 }
 
 int
+nvmf_reconnect_params(int fd, struct nvmf_reconnect_params *rparams)
+{
+	if (ioctl(fd, NVMF_RECONNECT_PARAMS, rparams) == -1)
+		return (errno);
+	return (0);
+}
+
+int
 nvmf_reconnect_host(int fd, struct nvmf_qpair *admin_qp, u_int num_queues,
     struct nvmf_qpair **io_queues, const struct nvme_controller_data *cdata)
 {
