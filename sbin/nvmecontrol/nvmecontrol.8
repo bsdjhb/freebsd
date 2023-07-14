@@ -205,6 +205,26 @@
 .Ic io-passthru
 .Op args
 .Aq Ar namespace-id
+.Nm
+.Ic discover
+.Op Fl t Ar transport
+.Op Fl v
+.Nm
+.Ic connect
+.Op Fl DFHd
+.Op Fl c Ar cntl-id
+.Op Fl t Ar transport
+.Aq Ar address
+.Op Ar SubNQN
+.Nm
+.Ic disconnect
+.Aq Ar device-id | Ar namespace-id
+.Nm
+.Ic reconnect
+.Op Fl DFH
+.Op Fl t Ar transport
+.Aq Ar device-id
+.Aq Ar address
 .Sh DESCRIPTION
 NVM Express (NVMe) is a storage protocol standard, for SSDs and other
 high-speed storage devices over PCI Express.
@@ -597,6 +617,94 @@ Commands either read data or write it, but not both.
 Commands needing metadata are not supported by the
 .Xr nvme 4
 drive.
+.Ss discover
+List the remote controllers advertised by a remote Discovery Controller:
+.Bl -tag -width 6n
+.It Fl t Ar transport
+The transport to use.
+The default is
+.Ar tcp .
+.It Fl v
+Display the
+.Dv IDENTIFY_CONTROLLER
+data for the Discovery Controller.
+.El
+.Ss connect
+Establish an association with one or more remote controllers.
+.Pp
+If
+.Fl d
+is specified, then the Discovery Controller at
+.Ar address
+is queried and an association is established for each advertised controller.
+The
+.Fl t
+flag determines the transport used with the initial association with
+the Discovery Controller and defaults to
+.Ar tcp .
+Associations with I/O controllers use the transport from the
+corresponding log page entry.
+.Pp
+If
+.Fl d
+is not specified,
+a single association is established with the I/O Controller at
+.Ar address .
+The address must include a port,
+and a
+.Ar SubNQN
+identifying the remote NVM subsystem's NVMe qualified name must be
+specified.
+The
+.Fl c
+flag can request a remote controller ID via one of the following:
+.Bl -tag
+.It dynamic
+Request a dynamic controller ID for controllers using the dynamic
+controller model.
+This is the default.
+.It static
+Request a dynamic controller ID for controllers using the static
+controller model.
+.It Ar number
+Request a specific controller ID for controllers using the static
+controller model.
+.El
+.Pp
+For each association with an I/O controller, an admin queue pair and a
+single I/O queue pair are connected and handed off to the kernel to
+create a new controller device.
+The following flags control properties of each I/O association:
+.Bl -tag
+.It Fl D
+Enable TCP PDU data digests.
+.It Fl F
+Request submission queue flow control.
+By default submission queue flow control is disabled unless the remote
+controller requires it.
+.It Fl H
+Enable TCP PDU header digests.
+.El
+.Ss disconnect
+Delete the controller device associated with a remote I/O controller
+including any active association and open queues.
+.Ss reconnect
+Reestablish an association for the remote I/O controller associated with
+.Ar device-id
+at
+.Ar address .
+The address must include a port.
+The following flags control properties of the association:
+.Bl -tag
+.It Fl D
+Enable TCP PDU data digests.
+.It Fl F
+Request submission queue flow control.
+By default submission queue flow control is disabled unless the remote
+controller requires it.
+.It Fl H
+Enable TCP PDU header digests.
+.El
 .Sh DEVICE NAMES
 Where
 .Aq Ar namespace-id
@@ -626,6 +734,37 @@ A
 of
 .Dq 0
 means query the drive itself.
+.Sh FABRICS TRANSPORTS
+The following NVM Express over Fabrics transports are supported for
+accessing remote controllers:
+.Bl -tag
+.It tcp
+TCP transport
+.El
+.Sh NETWORK ADDRESSES
+Network addresses for remote controllers can use one of the following formats:
+.Bl -bullet
+.It
+.Bq Ar IPv6 address
+.Ns : Ns Ar port
+.It
+.Ar IPv4 address
+.Ns : Ns Ar port
+.It
+.Ar hostname Ns : Ns Ar port
+.It
+.Bq Ar IPv6 address
+.It
+.Ar IPv6 address
+.It
+.Ar IPv4 address
+.It
+.Ar hostname
+.El
+.Pp
+If a
+.Ar port
+is not provided, a default value is used if possible.
 .Sh EXAMPLES
 .Dl nvmecontrol devlist
 .Pp
