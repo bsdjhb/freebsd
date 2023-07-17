@@ -7,9 +7,9 @@ PACKAGE=	nvmf
 INCS=		libnvmf.h
 
 SRCS=		gsb_crc32.c \
-		nvmf.c \
 		nvmf_host.c \
-		nvmf_tcp.c
+		nvmf_tcp.c \
+		nvmf_transport.c
 
 .include <bsd.lib.mk>
 
