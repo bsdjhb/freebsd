@@ -66,13 +66,13 @@ nvmf_connect(struct nvmf_association *na,
 	struct nvmf_fabric_connect_data data;
 	const struct nvmf_fabric_connect_rsp *rsp;
 	struct nvmf_qpair *qp;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	int error;
 	uint16_t sqhd, status;
 
 	qp = NULL;
-	ncap = NULL;
-	rcap = NULL;
+	cc = NULL;
+	rc = NULL;
 	if (na->na_controller) {
 		na_error(na, "Cannot connect on a controller");
 		goto error;
@@ -117,8 +117,8 @@ nvmf_connect(struct nvmf_association *na,
 		cmd.cattr |= NVMF_CONNECT_ATTR_DISABLE_SQ_FC;
 	cmd.kato = htole32(kato);
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL) {
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL) {
 		na_error(na, "Failed to allocate command capsule: %s",
 		    strerror(errno));
 		goto error;
@@ -130,29 +130,29 @@ nvmf_connect(struct nvmf_association *na,
 	strlcpy(data.subnqn, subnqn, sizeof(data.subnqn));
 	strlcpy(data.hostnqn, hostnqn, sizeof(data.hostnqn));
 
-	error = nvmf_capsule_append_data(ncap, &data, sizeof(data), true);
+	error = nvmf_capsule_append_data(cc, &data, sizeof(data), true);
 	if (error != 0) {
 		na_error(na, "Failed to append data to CONNECT capsule: %s",
 		    strerror(error));
 		goto error;
 	}
 
-	error = nvmf_transmit_capsule(ncap);
+	error = nvmf_transmit_capsule(cc);
 	if (error != 0) {
 		na_error(na, "Failed to transmit CONNECT capsule: %s",
 		    strerror(errno));
 		goto error;
 	}
 
-	error = nvmf_receive_capsule(qp, &rcap);
+	error = nvmf_receive_capsule(qp, &rc);
 	if (error != 0) {
 		na_error(na, "Failed to receive CONNECT response: %s",
 		    strerror(error));
 		goto error;
 	}
 
-	rsp = (const struct nvmf_fabric_connect_rsp *)&rcap->nc_cqe;
-	status = le16toh(rcap->nc_cqe.status);
+	rsp = (const struct nvmf_fabric_connect_rsp *)&rc->nc_cqe;
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		if (NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM)
 			na_error(na,
@@ -164,12 +164,12 @@ nvmf_connect(struct nvmf_association *na,
 		goto error;
 	}
 
-	if (rcap->nc_cqe.cid != cmd.cid) {
+	if (rc->nc_cqe.cid != cmd.cid) {
 		na_error(na, "Mismatched CID in CONNECT response");
 		goto error;
 	}
 
-	if (!rcap->nc_sqhd_valid) {
+	if (!rc->nc_sqhd_valid) {
 		na_error(na, "CONNECT response without valid SQHD");
 		goto error;
 	}
@@ -199,10 +199,10 @@ nvmf_connect(struct nvmf_association *na,
 	return (qp);
 
 error:
-	if (rcap != NULL)
-		nvmf_free_capsule(rcap);
-	if (ncap != NULL)
-		nvmf_free_capsule(ncap);
+	if (rc != NULL)
+		nvmf_free_capsule(rc);
+	if (cc != NULL)
+		nvmf_free_capsule(cc);
 	if (qp != NULL)
 		nvmf_free_qpair(qp);
 	return (NULL);
@@ -215,9 +215,9 @@ nvmf_cntlid(struct nvmf_qpair *qp)
 }
 
 int
-nvmf_host_transmit_command(struct nvmf_capsule *ncap)
+nvmf_host_transmit_command(struct nvmf_capsule *nc)
 {
-	struct nvmf_qpair *qp = ncap->nc_qpair;
+	struct nvmf_qpair *qp = nc->nc_qpair;
 	uint16_t new_sqtail;
 	int error;
 
@@ -226,14 +226,14 @@ nvmf_host_transmit_command(struct nvmf_capsule *ncap)
 	if (new_sqtail == qp->nq_sqhd)
 		return (EBUSY);
 
-	ncap->nc_sqe.cid = htole16(qp->nq_cid);
+	nc->nc_sqe.cid = htole16(qp->nq_cid);
 
 	/* 4.2 Skip CID of 0xFFFF. */
 	qp->nq_cid++;
 	if (qp->nq_cid == 0xFFFF)
 		qp->nq_cid = 0;
 
-	error = nvmf_transmit_capsule(ncap);
+	error = nvmf_transmit_capsule(nc);
 	if (error != 0)
 		return (error);
 
@@ -243,22 +243,22 @@ nvmf_host_transmit_command(struct nvmf_capsule *ncap)
 
 /* Receive a single capsule and update SQ FC accounting. */
 static int
-nvmf_host_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **rcapp)
+nvmf_host_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **ncp)
 {
-	struct nvmf_capsule *rcap;
+	struct nvmf_capsule *nc;
 	int error;
 
 	/* If the SQ is empty, there is no response to wait for. */
 	if (qp->nq_sqhd == qp->nq_sqtail)
 		return (EWOULDBLOCK);
 
-	error = nvmf_receive_capsule(qp, &rcap);
+	error = nvmf_receive_capsule(qp, &nc);
 	if (error != 0)
 		return (error);
 
 	if (qp->nq_flow_control) {
-		if (rcap->nc_sqhd_valid)
-			qp->nq_sqhd = le16toh(rcap->nc_cqe.sqhd);
+		if (nc->nc_sqhd_valid)
+			qp->nq_sqhd = le16toh(nc->nc_cqe.sqhd);
 	} else {
 		/*
 		 * If SQ FC is disabled, just advance the head for
@@ -267,55 +267,55 @@ nvmf_host_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **rcapp)
 		 */
 		qp->nq_sqhd = (qp->nq_sqhd + 1) % qp->nq_qsize;
 	}
-	*rcapp = rcap;
+	*ncp = nc;
 	return (0);
 }
 
 int
-nvmf_host_receive_response(struct nvmf_qpair *qp, struct nvmf_capsule **rcapp)
+nvmf_host_receive_response(struct nvmf_qpair *qp, struct nvmf_capsule **ncp)
 {
-	struct nvmf_capsule *rcap;
+	struct nvmf_capsule *nc;
 
 	/* Return the oldest previously received response. */
 	if (!TAILQ_EMPTY(&qp->nq_rx_capsules)) {
-		rcap = TAILQ_FIRST(&qp->nq_rx_capsules);
-		TAILQ_REMOVE(&qp->nq_rx_capsules, rcap, nc_link);
-		*rcapp = rcap;
+		nc = TAILQ_FIRST(&qp->nq_rx_capsules);
+		TAILQ_REMOVE(&qp->nq_rx_capsules, nc, nc_link);
+		*ncp = nc;
 		return (0);
 	}
 
-	return (nvmf_host_receive_capsule(qp, rcapp));
+	return (nvmf_host_receive_capsule(qp, ncp));
 }
 
 int
-nvmf_host_wait_for_response(struct nvmf_capsule *ncap,
-    struct nvmf_capsule **rcapp)
+nvmf_host_wait_for_response(struct nvmf_capsule *cc,
+    struct nvmf_capsule **rcp)
 {
-	struct nvmf_qpair *qp = ncap->nc_qpair;
-	struct nvmf_capsule *rcap;
+	struct nvmf_qpair *qp = cc->nc_qpair;
+	struct nvmf_capsule *rc;
 	int error;
 
 	/* Check if a response was already received. */
-	TAILQ_FOREACH(rcap, &qp->nq_rx_capsules, nc_link) {
-		if (rcap->nc_cqe.cid == ncap->nc_sqe.cid) {
-			TAILQ_REMOVE(&qp->nq_rx_capsules, rcap, nc_link);
-			*rcapp = rcap;
+	TAILQ_FOREACH(rc, &qp->nq_rx_capsules, nc_link) {
+		if (rc->nc_cqe.cid == cc->nc_sqe.cid) {
+			TAILQ_REMOVE(&qp->nq_rx_capsules, rc, nc_link);
+			*rcp = rc;
 			return (0);
 		}
 	}
 
 	/* Wait for a response. */
 	for (;;) {
-		error = nvmf_host_receive_capsule(qp, &rcap);
+		error = nvmf_host_receive_capsule(qp, &rc);
 		if (error != 0)
 			return (error);
 
-		if (rcap->nc_cqe.cid != ncap->nc_sqe.cid) {
-			TAILQ_INSERT_TAIL(&qp->nq_rx_capsules, rcap, nc_link);
+		if (rc->nc_cqe.cid != cc->nc_sqe.cid) {
+			TAILQ_INSERT_TAIL(&qp->nq_rx_capsules, rc, nc_link);
 			continue;
 		}
 
-		*rcapp = rcap;
+		*rcp = rc;
 		return (0);
 	}
 }
@@ -361,7 +361,7 @@ int
 nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
     uint64_t *value)
 {
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	const struct nvmf_fabric_prop_get_rsp *rsp;
 	uint16_t status;
 	int error;
@@ -369,26 +369,26 @@ nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 	if (!qp->nq_admin)
 		return (EINVAL);
 
-	ncap = nvmf_get_property(qp, offset, size);
-	if (ncap == NULL)
+	cc = nvmf_get_property(qp, offset, size);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	rsp = (const struct nvmf_fabric_prop_get_rsp *)&rcap->nc_cqe;
-	status = le16toh(rcap->nc_cqe.status);
+	rsp = (const struct nvmf_fabric_prop_get_rsp *)&rc->nc_cqe;
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		printf("NVMF: PROPERTY_GET failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
@@ -396,7 +396,7 @@ nvmf_read_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
 		*value = le64toh(rsp->value.u64);
 	else
 		*value = le32toh(rsp->value.u32.low);
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
@@ -429,36 +429,36 @@ int
 nvmf_write_property(struct nvmf_qpair *qp, uint32_t offset, uint8_t size,
     uint64_t value)
 {
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	uint16_t status;
 	int error;
 
 	if (!qp->nq_admin)
 		return (EINVAL);
 
-	ncap = nvmf_set_property(qp, offset, size, value);
-	if (ncap == NULL)
+	cc = nvmf_set_property(qp, offset, size, value);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	status = le16toh(rcap->nc_cqe.status);
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		printf("NVMF: PROPERTY_SET failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
@@ -508,7 +508,7 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
     struct nvme_controller_data *cdata)
 {
 	struct nvme_command cmd;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	int error;
 	uint16_t status;
 
@@ -520,35 +520,35 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 	/* 5.15.1 Use CNS of 0x01 for controller data. */
 	cmd.cdw10 = htole32(1);
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, cdata, sizeof(*cdata), false);
+	error = nvmf_capsule_append_data(cc, cdata, sizeof(*cdata), false);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	status = le16toh(rcap->nc_cqe.status);
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		printf("NVMF: IDENTIFY failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
@@ -557,7 +557,7 @@ nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
     struct nvme_namespace_data *nsdata)
 {
 	struct nvme_command cmd;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	int error;
 	uint16_t status;
 
@@ -570,35 +570,35 @@ nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
 	cmd.cdw10 = htole32(0);
 	cmd.nsid = htole32(nsid);
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, nsdata, sizeof(*nsdata), false);
+	error = nvmf_capsule_append_data(cc, nsdata, sizeof(*nsdata), false);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	status = le16toh(rcap->nc_cqe.status);
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		printf("NVMF: IDENTIFY failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
@@ -607,7 +607,7 @@ nvmf_get_discovery_log_page(struct nvmf_qpair *qp, uint64_t offset, void *buf,
     size_t len)
 {
 	struct nvme_command cmd;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	size_t numd;
 	int error;
 	uint16_t status;
@@ -622,40 +622,40 @@ nvmf_get_discovery_log_page(struct nvmf_qpair *qp, uint64_t offset, void *buf,
 	cmd.cdw12 = htole32(offset);
 	cmd.cdw13 = htole32(offset >> 32);
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, buf, len, false);
+	error = nvmf_capsule_append_data(cc, buf, len, false);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	status = le16toh(rcap->nc_cqe.status);
+	status = le16toh(rc->nc_cqe.status);
 	if (NVMEV(NVME_STATUS_SC, status) ==
 	    NVMF_FABRIC_SC_LOG_RESTART_DISCOVERY) {
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EAGAIN);
 	}
 	if (status != 0) {
 		printf("NVMF: GET_LOG_PAGE failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
@@ -729,7 +729,7 @@ int
 nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
 {
 	struct nvme_command cmd;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	int error;
 	uint16_t status;
 
@@ -745,30 +745,30 @@ nvmf_host_request_queues(struct nvmf_qpair *qp, u_int requested, u_int *actual)
 	/* Same number of completion and submission queues. */
 	cmd.cdw11 = htole32((requested << 16) | requested);
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	status = le16toh(rcap->nc_cqe.status);
+	status = le16toh(rc->nc_cqe.status);
 	if (status != 0) {
 		printf("NVMF: SET_FEATURES failed, status %#x\n", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	*actual = (le32toh(rcap->nc_cqe.cdw0) & 0xffff) + 1;
-	nvmf_free_capsule(rcap);
+	*actual = (le32toh(rc->nc_cqe.cdw0) & 0xffff) + 1;
+	nvmf_free_capsule(rc);
 	return (0);
 }
 

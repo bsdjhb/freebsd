@@ -207,9 +207,9 @@ nvmf_transmit_capsule(struct nvmf_capsule *nc)
 }
 
 int
-nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc)
+nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **ncp)
 {
-	return (qp->nq_association->na_ops->receive_capsule(qp, nc));
+	return (qp->nq_association->na_ops->receive_capsule(qp, ncp));
 }
 
 const void *

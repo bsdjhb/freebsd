@@ -52,7 +52,8 @@ struct nvmf_transport_ops {
 	struct nvmf_capsule *(*allocate_capsule)(struct nvmf_qpair *qp);
 	void (*free_capsule)(struct nvmf_capsule *nc);
 	int (*transmit_capsule)(struct nvmf_capsule *nc);
-	int (*receive_capsule)(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
+	int (*receive_capsule)(struct nvmf_qpair *qp,
+	    struct nvmf_capsule **ncp);
 	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);
 
 	/* Transferring controller data. */

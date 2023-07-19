@@ -1588,7 +1588,7 @@ tcp_transmit_capsule(struct nvmf_capsule *nc)
 }
 
 static int
-tcp_receive_capsule(struct nvmf_qpair *nq, struct nvmf_capsule **nc)
+tcp_receive_capsule(struct nvmf_qpair *nq, struct nvmf_capsule **ncp)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nq);
 	struct nvmf_tcp_capsule *tc;
@@ -1601,7 +1601,7 @@ tcp_receive_capsule(struct nvmf_qpair *nq, struct nvmf_capsule **nc)
 	}
 	tc = TAILQ_FIRST(&qp->rx_capsules);
 	TAILQ_REMOVE(&qp->rx_capsules, tc, link);
-	*nc = &tc->nc;
+	*ncp = &tc->nc;
 	return (0);
 }
 

@@ -131,7 +131,7 @@ void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
     const void *buf, size_t len, bool send);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
-int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **nc);
+int	nvmf_receive_capsule(struct nvmf_qpair *qp, struct nvmf_capsule **ncp);
 const void *nvmf_capsule_sqe(struct nvmf_capsule *nc);
 const void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 
@@ -171,7 +171,7 @@ int	nvmf_send_controller_data(struct nvmf_capsule *nc,
  * Connect to an admin or I/O queue.  If this fails, a detailed error
  * message can be obtained from nvmf_association_error.
  */
-struct nvmf_qpair *nvmf_connect(struct nvmf_association *nc,
+struct nvmf_qpair *nvmf_connect(struct nvmf_association *na,
     const struct nvmf_qpair_params *params, uint16_t qid, u_int queue_size,
     const uint8_t hostid[16], uint16_t cntlid, const char *subnqn,
     const char *hostnqn, uint32_t kato);
@@ -183,21 +183,21 @@ uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
  * Send a command to the controller.  This can fail with EBUSY if the
  * submission queue is full.
  */
-int	nvmf_host_transmit_command(struct nvmf_capsule *ncap);
+int	nvmf_host_transmit_command(struct nvmf_capsule *nc);
 
 /*
  * Wait for a response to a command.  If there are no outstanding
  * commands in the SQ, fails with EWOULDBLOCK.
  */
 int	nvmf_host_receive_response(struct nvmf_qpair *qp,
-    struct nvmf_capsule **rcapp);
+    struct nvmf_capsule **rcp);
 
 /*
  * Wait for a response to a specific command.  The command must have been
  * succesfully sent previously.
  */
-int	nvmf_host_wait_for_response(struct nvmf_capsule *ncap,
-    struct nvmf_capsule **rcap);
+int	nvmf_host_wait_for_response(struct nvmf_capsule *cc,
+    struct nvmf_capsule **rcp);
 
 /* Build a KeepAlive command. */
 struct nvmf_capsule *nvmf_keepalive(struct nvmf_qpair *qp);
