@@ -171,11 +171,7 @@ nvmf_parse_cntlid(const char *cntlid)
 	else {
 		value = strtoul(cntlid, NULL, 0);
 
-		/*
-		 * XXX: 5.3 in NVMe-over-Fabrics 1.1 gives this as an
-		 * upper bound in the Discovery Log Entry.
-		 */
-		if (value > 0xffef)
+		if (value > NVMF_CNTLID_STATIC_MAX)
 			errx(EX_USAGE, "Invalid controller ID");
 
 		return (value);
