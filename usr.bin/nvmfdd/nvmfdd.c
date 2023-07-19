@@ -96,7 +96,7 @@ tcp_qpair_params(struct nvmf_qpair_params *params, bool admin,
 		freeaddrinfo(list);
 		return;
 	}
-	err(1, "Failed to connect to discovery controller");
+	err(1, "Failed to connect to controller");
 }
 
 static struct nvmf_qpair *

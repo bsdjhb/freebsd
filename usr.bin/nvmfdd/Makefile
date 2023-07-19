@@ -7,4 +7,3 @@ MAN=
 LIBADD+= nvmf
 
 .include <bsd.prog.mk>
-
