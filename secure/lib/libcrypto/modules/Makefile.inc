@@ -9,6 +9,9 @@ CFLAGS+=	-I${LCRYPTO_SRC}/include
 CFLAGS+=	-I${LCRYPTO_SRC}/providers/common/include
 CFLAGS+=	-I${LCRYPTO_SRC}/providers/implementations/include
 
+# OpenSSL assembly sources do not include .note.GNU-stack annotations
+LDFLAGS.bfd+=	-Wl,-znoexecstack
+
 # common
 SRCS+=	provider_err.c provider_ctx.c
 SRCS+=	provider_util.c
