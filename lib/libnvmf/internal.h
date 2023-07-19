@@ -57,6 +57,7 @@ struct nvmf_transport_ops {
 	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);
 
 	/* Transferring controller data. */
+	size_t (*capsule_data_len)(struct nvmf_capsule *nc);
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
 	    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
 	int (*send_controller_data)(struct nvmf_capsule *nc, struct iovec *iov,
@@ -80,7 +81,7 @@ struct nvmf_qpair {
 	struct nvmf_association *nq_association;
 	bool nq_admin;
 
-	uint16_t nq_cid;
+	uint16_t nq_cid;	/* host only */
 
 	/*
 	 * Queue sizes.  This assumes the same size for both the
@@ -96,7 +97,7 @@ struct nvmf_qpair {
 	/* Value in response from CONNECT. */
 	uint16_t nq_cntlid;	/* host only */
 
-	uint32_t nq_kato;	/* host only, valid on admin queue only */
+	uint32_t nq_kato;	/* valid on admin queue only */
 
 	TAILQ_HEAD(, nvmf_capsule) nq_rx_capsules;
 };

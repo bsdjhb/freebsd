@@ -237,6 +237,12 @@ nvmf_validate_command_capsule(struct nvmf_capsule *nc)
 	return (nc->nc_qpair->nq_association->na_ops->validate_command_capsule(nc));
 }
 
+size_t
+nvmf_capsule_data_len(struct nvmf_capsule *nc)
+{
+	return (nc->nc_qpair->nq_association->na_ops->capsule_data_len(nc));
+}
+
 int
 nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)

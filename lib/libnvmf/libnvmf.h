@@ -57,6 +57,9 @@ struct nvmf_qpair;
  */
 struct nvmf_association_params {
 	bool sq_flow_control;		/* SQ flow control required. */
+	bool dynamic_controller_model;	/* Controller only */
+	uint16_t max_admin_qsize;	/* Controller only */
+	uint16_t max_io_qsize;		/* Controller only, 0 for discovery */
 	union {
 		struct {
 			uint8_t pda;	/* Tx-side PDA. */
@@ -146,6 +149,12 @@ const void *nvmf_capsule_cqe(const struct nvmf_capsule *nc);
 uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
 
 /*
+ * A controller calls this function to query the amount of data
+ * associated with a command capsule.
+ */
+size_t	nvmf_capsule_data_len(struct nvmf_capsule *cc);
+
+/*
  * A controller calls this function to receive data associated with a
  * command capsule (e.g. the data for a WRITE command).  This can
  * either return in-capsule data or fetch data from the host
@@ -164,6 +173,65 @@ int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
  */
 int	nvmf_send_controller_data(struct nvmf_capsule *nc,
     struct iovec *iov, u_int iovcnt);
+
+/*
+ * Construct a CQE for a reply to a command capsule in 'nc' with the
+ * completion status 'status'.  This is useful when additional CQE
+ * info is required beyond the completion status.
+ */
+void	nvmf_init_cqe(void *cqe, const struct nvmf_capsule *nc,
+    uint16_t status);
+
+/*
+ * Construct a response capsule to a command capsule with a specific
+ * status.
+ */
+struct nvmf_capsule *nvmf_response(const struct nvmf_capsule *nc,
+    uint8_t sc_type, uint8_t sc_status);
+
+/*
+ * Wait for a single command capsule and return it in *ncp.  This can
+ * fail if an invalid capsule is received or an I/O error occurs.
+ */
+int	nvmf_controller_receive_capsule(struct nvmf_qpair *qp,
+    struct nvmf_capsule **ncp);
+
+/* Send a response capsule from a controller. */
+int	nvmf_controller_transmit_response(struct nvmf_capsule *nc);
+
+/* Construct and send an error response capsule. */
+int	nvmf_send_error(const struct nvmf_capsule *cc, uint8_t sc_type,
+    uint8_t sc_status);
+
+/*
+ * Construct and send an error response capsule using a generic status
+ * code.
+ */
+int	nvmf_send_generic_error(const struct nvmf_capsule *nc,
+    uint8_t sc_status);
+
+/*
+ * Allocate a new queue pair and wait for the CONNECT command capsule.
+ * If this fails, a detailed error message can be obtained from
+ * nvmf_association_error.  On success, the command capsule is saved
+ * in '*ccp' and the connect data is saved in 'data'.  The caller
+ * must send an explicit response and free the the command capsule.
+ */
+struct nvmf_qpair *nvmf_accept(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params, struct nvmf_capsule **ccp,
+    struct nvmf_fabric_connect_data *data);
+
+/*
+ * Construct and send a response capsule with the Fabrics CONNECT
+ * invalid parameters error status.  If data is true the offset is
+ * relative to the CONNECT data structure, otherwise the offset is
+ * relative to the SQE.
+ */
+void	nvmf_connect_invalid_parameters(const struct nvmf_capsule *cc,
+    bool data, uint16_t offset);
+
+/* Construct and send a response capsule for a successful CONNECT. */
+int	nvmf_finish_accept(const struct nvmf_capsule *cc, uint16_t cntlid);
 
 /* Host-specific APIs. */
 
