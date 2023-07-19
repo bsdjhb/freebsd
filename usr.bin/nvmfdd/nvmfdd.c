@@ -264,7 +264,7 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 {
 	struct nvme_command cmd;
 	const struct nvme_completion *cqe;
-	struct nvmf_capsule *ncap, *rcap;
+	struct nvmf_capsule *cc, *rc;
 	int error;
 	uint16_t status;
 
@@ -276,38 +276,38 @@ nvmf_io_command(struct nvmf_qpair *qp, u_int nsid, enum rw command,
 	cmd.cdw12 = htole32(nlb - 1);
 	/* Sequential Request in cdw13? */
 
-	ncap = nvmf_allocate_command(qp, &cmd);
-	if (ncap == NULL)
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
 		return (errno);
 
-	error = nvmf_capsule_append_data(ncap, buffer, length,
+	error = nvmf_capsule_append_data(cc, buffer, length,
 	    command == WRITE);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_transmit_command(ncap);
+	error = nvmf_host_transmit_command(cc);
 	if (error != 0) {
-		nvmf_free_capsule(ncap);
+		nvmf_free_capsule(cc);
 		return (error);
 	}
 
-	error = nvmf_host_wait_for_response(ncap, &rcap);
-	nvmf_free_capsule(ncap);
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
 	if (error != 0)
 		return (error);
 
-	cqe = nvmf_capsule_cqe(rcap);
+	cqe = nvmf_capsule_cqe(rc);
 	status = le16toh(cqe->status);
 	if (status != 0) {
 		printf("NVMF: %s failed, status %#x\n", command == WRITE ?
 		    "WRITE" : "READ", status);
-		nvmf_free_capsule(rcap);
+		nvmf_free_capsule(rc);
 		return (EIO);
 	}
 
-	nvmf_free_capsule(rcap);
+	nvmf_free_capsule(rc);
 	return (0);
 }
 
