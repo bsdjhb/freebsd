@@ -119,6 +119,7 @@ init_discovery(int s, const char *subnqn)
 	aparams.tcp.header_digests = header_digests;
 	aparams.tcp.data_digests = data_digests;
 	aparams.tcp.maxr2t = 1;
+	aparams.tcp.maxh2cdata = 256 * 1024;
 	discovery_na = nvmf_allocate_association(NVMF_TRTYPE_TCP, true,
 	    &aparams);
 	if (discovery_na == NULL)
