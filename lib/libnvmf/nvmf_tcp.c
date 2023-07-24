@@ -321,6 +321,10 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	default:
 		__unreachable();
 		break;
+	case NVME_TCP_PDU_TYPE_H2C_TERM_REQ:
+	case NVME_TCP_PDU_TYPE_C2H_TERM_REQ:
+		valid_flags = 0;
+		break;
 	case NVME_TCP_PDU_TYPE_CAPSULE_CMD:
 		valid_flags = NVME_TCP_CH_FLAGS_HDGSTF |
 		    NVME_TCP_CH_FLAGS_DDGSTF;
