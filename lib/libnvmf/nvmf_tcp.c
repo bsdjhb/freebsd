@@ -1458,13 +1458,14 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 		memset(sgl, 0, sizeof(*sgl));
 		sgl->address = 0;
 		sgl->unkeyed.length = htole32(nc->nc_data_len);
-		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
 		if (nc->nc_send_data && nc->nc_data_len <= qp->max_icd) {
 			/* Use in-capsule data. */
+			sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
 			use_icd = true;
 		} else {
 			/* Use a command buffer. */
+			sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
 		}
 	}

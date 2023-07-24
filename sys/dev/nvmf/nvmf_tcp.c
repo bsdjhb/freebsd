@@ -1727,13 +1727,14 @@ tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 		memset(sgl, 0, sizeof(*sgl));
 		sgl->address = 0;
 		sgl->unkeyed.length = htole32(nc->nc_data.io_len);
-		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
 		if (use_icd) {
 			/* Use in-capsule data. */
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
+			sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
 		} else {
 			/* Use a command buffer. */
 			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
+			sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
 		}
 	}
 
