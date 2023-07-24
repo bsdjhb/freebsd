@@ -129,6 +129,7 @@ struct nvmf_capsule {
 
 extern struct nvmf_transport_ops tcp_ops;
 
+void	na_clear_error(struct nvmf_association *na);
 void	na_error(struct nvmf_association *na, const char *fmt, ...);
 
 int	nvmf_kernel_handoff_params(struct nvmf_qpair *qp,

@@ -195,6 +195,7 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	cc = NULL;
 	rc = NULL;
 	*ccp = NULL;
+	na_clear_error(na);
 	if (!na->na_controller) {
 		na_error(na, "Cannot accept on a host");
 		goto error;

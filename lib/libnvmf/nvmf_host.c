@@ -73,6 +73,7 @@ nvmf_connect(struct nvmf_association *na,
 	qp = NULL;
 	cc = NULL;
 	rc = NULL;
+	na_clear_error(na);
 	if (na->na_controller) {
 		na_error(na, "Cannot connect on a controller");
 		goto error;

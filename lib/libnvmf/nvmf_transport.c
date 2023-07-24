@@ -89,15 +89,23 @@ nvmf_association_error(const struct nvmf_association *na)
 }
 
 void
+na_clear_error(struct nvmf_association *na)
+{
+	free(na->na_last_error);
+	na->na_last_error = NULL;
+}
+
+void
 na_error(struct nvmf_association *na, const char *fmt, ...)
 {
 	va_list ap;
 	char *str;
 
+	if (na->na_last_error != NULL)
+		return;
 	va_start(ap, fmt);
 	vasprintf(&str, fmt, ap);
 	va_end(ap);
-	free(na->na_last_error);
 	na->na_last_error = str;
 }
 
@@ -107,6 +115,7 @@ nvmf_allocate_qpair(struct nvmf_association *na,
 {
 	struct nvmf_qpair *qp;
 
+	na_clear_error(na);
 	qp = na->na_ops->allocate_qpair(na, params);
 	if (qp == NULL)
 		return (NULL);
