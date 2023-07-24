@@ -1434,6 +1434,7 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvme_tcp_cmd cmd;
+	struct nvme_sgl_descriptor *sgl;
 	struct iovec *iov, *iov2;
 	uint32_t data_digest, header_digest, pad, plen;
 	u_int iovcnt;
@@ -1449,25 +1450,25 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	plen = sizeof(cmd);
 	iovcnt = 1;
 
-	/* Populate SGL in SQE. */
 	use_icd = false;
-	if (nc->nc_data_len != 0) {
-		struct nvme_sgl_descriptor *sgl;
+	if (nc->nc_data_len != 0 && nc->nc_send_data &&
+	    nc->nc_data_len <= qp->max_icd)
+		use_icd = true;
 
-		sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
-		memset(sgl, 0, sizeof(*sgl));
-		sgl->address = 0;
-		sgl->unkeyed.length = htole32(nc->nc_data_len);
-		if (nc->nc_send_data && nc->nc_data_len <= qp->max_icd) {
-			/* Use in-capsule data. */
-			sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
-			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
-			use_icd = true;
-		} else {
-			/* Use a command buffer. */
-			sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
-			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
-		}
+	/* Populate SGL in SQE. */
+	sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
+	memset(sgl, 0, sizeof(*sgl));
+	sgl->address = 0;
+	sgl->unkeyed.length = htole32(nc->nc_data_len);
+	if (use_icd) {
+		/* Use in-capsule data. */
+		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
+		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
+		use_icd = (nc->nc_data_len != 0);
+	} else {
+		/* Use a command buffer. */
+		sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
+		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
 	}
 
 	if (qp->header_digests) {

@@ -1686,6 +1686,7 @@ tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 {
 	struct nvmf_capsule *nc = &tc->nc;
 	struct nvmf_tcp_command_buffer *cb;
+	struct nvme_sgl_descriptor *sgl;
 	struct nvme_tcp_cmd cmd;
 	struct mbuf *top, *m;
 	bool use_icd;
@@ -1720,22 +1721,18 @@ tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 	cmd.ccsqe = nc->nc_sqe;
 
 	/* Populate SGL in SQE. */
-	if (nc->nc_data.io_len != 0) {
-		struct nvme_sgl_descriptor *sgl;
-
-		sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
-		memset(sgl, 0, sizeof(*sgl));
-		sgl->address = 0;
-		sgl->unkeyed.length = htole32(nc->nc_data.io_len);
-		if (use_icd) {
-			/* Use in-capsule data. */
-			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
-			sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
-		} else {
-			/* Use a command buffer. */
-			sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
-			sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
-		}
+	sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
+	memset(sgl, 0, sizeof(*sgl));
+	sgl->address = 0;
+	sgl->unkeyed.length = htole32(nc->nc_data.io_len);
+	if (use_icd) {
+		/* Use in-capsule data. */
+		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
+		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
+	} else {
+		/* Use a command buffer. */
+		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
+		sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
 	}
 
 	top = nvmf_tcp_construct_pdu(qp, &cmd, sizeof(cmd), m, m != NULL ?
