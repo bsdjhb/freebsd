@@ -59,7 +59,7 @@ init_ramdisk(const char *config, struct backing_device *dev)
 
 	dev->type = RAMDISK;
 	dev->sector_size = 512;
-	if (expand_number(config + strlen(RAMDISK_PREFIX), &num))
+	if (expand_number(config, &num))
 		errx(1, "Invalid ramdisk specification: %s", config);
 	if ((num % dev->sector_size) != 0)
 		errx(1, "Invalid ramdisk size %ju", (uintmax_t)num);
