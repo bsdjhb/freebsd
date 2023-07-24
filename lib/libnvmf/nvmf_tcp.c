@@ -1323,7 +1323,7 @@ tcp_accept(struct nvmf_tcp_qpair *qp, struct nvmf_association *na)
 		ic_resp.dgst.bits.ddgst_enable = 1;
 	ic_resp.maxh2cdata = htole32(params->tcp.maxh2cdata);
 
-	error = nvmf_tcp_write_pdu(qp, &ic_req, sizeof(ic_req));
+	error = nvmf_tcp_write_pdu(qp, &ic_resp, sizeof(ic_resp));
 	if (error != 0) {
 		na_error(na, "Failed to write IC response: %s",
 		    strerror(error));
