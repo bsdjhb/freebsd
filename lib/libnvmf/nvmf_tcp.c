@@ -214,8 +214,8 @@ nvmf_tcp_write_pdu_iov(struct nvmf_tcp_qpair *qp, struct iovec *iov,
 }
 
 static void
-nvmf_tcp_report_error(struct nvmf_tcp_qpair *qp, uint16_t fes,
-    uint32_t fei, const void *rx_pdu, size_t pdu_len, u_int hlen)
+nvmf_tcp_report_error(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
+    uint16_t fes, uint32_t fei, const void *rx_pdu, size_t pdu_len, u_int hlen)
 {
 	struct nvme_tcp_term_req_hdr hdr;
 	struct iovec iov[2];
@@ -228,7 +228,7 @@ nvmf_tcp_report_error(struct nvmf_tcp_qpair *qp, uint16_t fes,
 	}
 
 	memset(&hdr, 0, sizeof(hdr));
-	hdr.common.pdu_type = qp->qp.nq_association->na_controller ?
+	hdr.common.pdu_type = na->na_controller ?
 	    NVME_TCP_PDU_TYPE_C2H_TERM_REQ : NVME_TCP_PDU_TYPE_H2C_TERM_REQ;
 	hdr.common.hlen = sizeof(hdr);
 	hdr.common.plen = sizeof(hdr) + hlen;
@@ -272,7 +272,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	if (qp->qp.nq_association->na_controller !=
 	    (ch->pdu_type & 0x01) == 0) {
 		printf("NVMe/TCP: Invalid PDU type %u\n", ch->pdu_type);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -283,7 +283,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	case NVME_TCP_PDU_TYPE_IC_RESP:
 		/* Shouldn't get these for an established connection. */
 		printf("NVMe/TCP: Received Initialize Connection PDU\n");
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -310,7 +310,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		break;
 	default:
 		printf("NVMe/TCP: Invalid PDU type %u\n", ch->pdu_type);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -341,7 +341,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	}
 	if ((ch->flags & ~valid_flags) != 0) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -357,7 +357,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	    (ch->flags & (NVME_TCP_CH_FLAGS_HDGSTF |
 	    NVME_TCP_CH_FLAGS_DDGSTF))) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -369,7 +369,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	    NVME_TCP_C2H_DATA_FLAGS_SUCCESS)) ==
 	    NVME_TCP_C2H_DATA_FLAGS_SUCCESS) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -402,7 +402,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	}
 	if (ch->hlen != expected_hlen) {
 		printf("NVMe/TCP: Invalid PDU header length %u\n", ch->hlen);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 2, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -423,7 +423,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		if (ch->pdo != 0) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
 			    ch->pdo);
-			nvmf_tcp_report_error(qp,
+			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 3, ch,
 			    pdu_len, hlen);
 			return (EBADMSG);
@@ -440,7 +440,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		    ch->pdo % qp->rxpda != 0) {
 			printf("NVMe/TCP: Invalid PDU data offset %u\n",
 			    ch->pdo);
-			nvmf_tcp_report_error(qp,
+			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 3, ch,
 			    pdu_len, hlen);
 			return (EBADMSG);
@@ -451,7 +451,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	/* Validate plen. */
 	if (plen < ch->hlen) {
 		printf("NVMe/TCP: Invalid PDU length %u\n", plen);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, ch, pdu_len,
 		    hlen);
 		return (EBADMSG);
@@ -477,7 +477,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		    data_len <= sizeof(rx_digest)) {
 			printf("NVMe/TCP: PDU %u too short for digest\n",
 			    ch->pdu_type);
-			nvmf_tcp_report_error(qp,
+			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, ch,
 			    pdu_len, hlen);
 			return (EBADMSG);
@@ -488,7 +488,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		if (data_len != 0) {
 			printf("NVMe/TCP: PDU %u with data length %u\n",
 			    ch->pdu_type, data_len);
-			nvmf_tcp_report_error(qp,
+			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, ch,
 			    pdu_len, hlen);
 			return (EBADMSG);
@@ -503,7 +503,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
 			printf("NVMe/TCP: Header digest mismatch\n");
-			nvmf_tcp_report_error(qp,
+			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    NVME_TCP_TERM_REQ_FES_HDGST_ERROR, rx_digest, ch,
 			    pdu_len, hlen);
 			return (EBADMSG);
@@ -662,7 +662,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	h2c = (void *)pdu->hdr;
 	if (le32toh(h2c->datal) > qp->maxh2cdata) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_LIMIT_EXCEEDED, 0,
 		    pdu->hdr, le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -671,7 +671,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	cb = tcp_find_command_buffer(qp, h2c->cccid, h2c->ttag, true);
 	if (cb == NULL) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_h2c_data_hdr, ttag), pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
@@ -681,7 +681,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	data_len = le32toh(h2c->datal);
 	if (data_len != pdu->data_len) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_h2c_data_hdr, datal), pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
@@ -692,7 +692,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_offset = le32toh(h2c->datao);
 	if (data_offset < cb->data_offset ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
 		    pdu->hdr, le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -700,7 +700,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	}
 
 	if (data_offset != cb->data_offset + cb->data_xfered) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -709,7 +709,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	if ((cb->data_xfered + data_len == cb->data_len) !=
 	    ((pdu->hdr->flags & NVME_TCP_H2C_DATA_FLAGS_LAST_PDU) != 0)) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -757,7 +757,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		 * XXX: Could be PDU sequence error if cccid is for a
 		 * command that doesn't use a command buffer.
 		 */
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_c2h_data_hdr, cccid), pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
@@ -767,7 +767,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	data_len = le32toh(c2h->datal);
 	if (data_len != pdu->data_len) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_c2h_data_hdr, datal), pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
@@ -778,7 +778,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	data_offset = le32toh(c2h->datao);
 	if (data_offset < cb->data_offset ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
 		    pdu->hdr, le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -786,7 +786,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	}
 
 	if (data_offset != cb->data_offset + cb->data_xfered) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -795,7 +795,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	if ((cb->data_xfered + data_len == cb->data_len) !=
 	    ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_LAST_PDU) != 0)) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -950,7 +950,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	cb = tcp_find_command_buffer(qp, r2t->cccid, 0, false);
 	if (cb == NULL) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
 		    offsetof(struct nvme_tcp_r2t_hdr, cccid), pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
@@ -960,7 +960,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	data_offset = le32toh(r2t->r2to);
 	if (data_offset != cb->data_xfered) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_PDU_SEQUENCE_ERROR, 0, pdu->hdr,
 		    le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -973,7 +973,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	 */
 	data_len = le32toh(r2t->r2tl);
 	if (data_offset + data_len > cb->data_len) {
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(qp->qp.nq_association, qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
 		    pdu->hdr, le32toh(pdu->hdr->plen), pdu->hdr->hlen);
 		nvmf_tcp_free_pdu(pdu);
@@ -1070,7 +1070,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	/* Controllers only receive PDUs with a PDU direction of 0. */
 	if (na->na_controller != (ch->pdu_type & 0x01) == 0) {
 		na_error(na, "NVMe/TCP: Invalid PDU type %u", ch->pdu_type);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1082,7 +1082,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 		break;
 	default:
 		na_error(na, "NVMe/TCP: Invalid PDU type %u", ch->pdu_type);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 0, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1092,7 +1092,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	if (ch->flags != 0) {
 		na_error(na, "NVMe/TCP: Invalid PDU header flags %#x",
 		    ch->flags);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1102,7 +1102,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	if (ch->hlen != 128) {
 		na_error(na, "NVMe/TCP: Invalid PDU header length %u",
 		    ch->hlen);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 2, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1111,7 +1111,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	/* Validate pdo. */
 	if (ch->pdo != 0) {
 		na_error(na, "NVMe/TCP: Invalid PDU data offset %u", ch->pdo);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 3, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1120,7 +1120,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	/* Validate plen. */
 	if (plen != 128) {
 		na_error(na, "NVMe/TCP: Invalid PDU length %u", plen);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 4, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1131,7 +1131,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	if (le16toh(pdu->pfv) != 0) {
 		na_error(na, "NVMe/TCP: Unsupported PDU version %u",
 		    le16toh(pdu->pfv));
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_DATA_UNSUPPORTED_PARAMETER,
 		    8, ch, pdu_len, hlen);
 		return (false);
@@ -1139,7 +1139,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 
 	if (pdu->hpda > NVME_TCP_CPDA_MAX) {
 		na_error(na, "NVMe/TCP: Unsupported PDA %u", pdu->hpda);
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 10, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1147,7 +1147,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 
 	if (pdu->dgst.bits.reserved != 0) {
 		na_error(na, "NVMe/TCP: Invalid digest settings");
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 11, ch, pdu_len,
 		    hlen);
 		return (false);
@@ -1164,8 +1164,8 @@ nvmf_tcp_read_ic_req(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 
 	error = nvmf_tcp_read_buffer(qp->s, pdu, sizeof(*pdu));
 	if (error != 0) {
-		na_error(qp->qp.nq_association,
-		    "NVMe/TCP: Failed to read IC request: %s", strerror(error));
+		na_error(na, "NVMe/TCP: Failed to read IC request: %s",
+		    strerror(error));
 		return (false);
 	}
 
@@ -1180,8 +1180,7 @@ nvmf_tcp_read_ic_resp(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 
 	error = nvmf_tcp_read_buffer(qp->s, pdu, sizeof(*pdu));
 	if (error != 0) {
-		na_error(qp->qp.nq_association,
-		    "NVMe/TCP: Failed to read IC response: %s",
+		na_error(na, "NVMe/TCP: Failed to read IC response: %s",
 		    strerror(error));
 		return (false);
 	}
@@ -1262,7 +1261,7 @@ tcp_connect(struct nvmf_tcp_qpair *qp, struct nvmf_association *na, bool admin)
 	    (!params->tcp.data_digests &&
 	    ic_resp.dgst.bits.ddgst_enable != 0)) {
 		na_error(na, "Controller enabled unrequested digests");
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_DATA_UNSUPPORTED_PARAMETER,
 		    11, &ic_resp, sizeof(ic_resp), sizeof(ic_resp));
 		return (false);
@@ -1276,7 +1275,7 @@ tcp_connect(struct nvmf_tcp_qpair *qp, struct nvmf_association *na, bool admin)
 	if (le32toh(ic_resp.maxh2cdata) < 4096) {
 		na_error(na, "Invalid MAXH2CDATA %u",
 		    le32toh(ic_resp.maxh2cdata));
-		nvmf_tcp_report_error(qp,
+		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 12, &ic_resp,
 		    sizeof(ic_resp), sizeof(ic_resp));
 		return (false);
