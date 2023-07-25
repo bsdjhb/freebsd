@@ -2074,7 +2074,35 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 	KASSERT(tc->rx_pdu.hdr != NULL, ("capsule wasn't received"));
 
 	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	if (sgl->unkeyed.type != NVME_SGL_TYPE_DATA_BLOCK) {
+	switch (sgl->unkeyed.type) {
+	case NVME_SGL_TYPE_DATA_BLOCK:
+		switch (sgl->unkeyed.subtype) {
+		case NVME_SGL_SUBTYPE_OFFSET:
+			if (tc->rx_pdu.data_len !=
+			    le32toh(sgl->unkeyed.length)) {
+				printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
+				return (NVME_SC_DATA_SGL_LENGTH_INVALID);
+			}
+			break;
+		default:
+			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
+			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+		}
+		break;
+	case NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK:
+		switch (sgl->unkeyed.subtype) {
+		case NVME_SGL_SUBTYPE_TRANSPORT:
+			if (tc->rx_pdu.data_len != 0) {
+				printf("NVMe/TCP: Command Buffer SGL with ICD\n");
+				return (NVME_SC_INVALID_FIELD);
+			}
+			break;
+		default:
+			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
+			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+		}
+		break;
+	default:
 		printf("NVMe/TCP: Invalid SGL type in Command Capsule\n");
 		return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
 	}
@@ -2082,24 +2110,6 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 	if (sgl->address != 0) {
 		printf("NVMe/TCP: Invalid SGL offset in Command Capsule\n");
 		return (NVME_SC_SGL_OFFSET_INVALID);
-	}
-
-	switch (sgl->unkeyed.subtype) {
-	case NVME_SGL_SUBTYPE_OFFSET:
-		if (tc->rx_pdu.data_len != le32toh(sgl->unkeyed.length)) {
-			printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
-			return (NVME_SC_DATA_SGL_LENGTH_INVALID);
-		}
-		break;
-	case NVME_SGL_SUBTYPE_TRANSPORT:
-		if (tc->rx_pdu.data_len != 0) {
-			printf("NVMe/TCP: Command Buffer SGL with ICD\n");
-			return (NVME_SC_INVALID_FIELD);
-		}
-		break;
-	default:
-		printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
-		return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
 	}
 
 	return (NVME_SC_SUCCESS);
