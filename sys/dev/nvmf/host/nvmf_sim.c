@@ -63,9 +63,11 @@ nvmf_ccb_done(union ccb *ccb)
 	if (nvmf_cqe_aborted(&ccb->nvmeio.cpl)) {
 		ccb->ccb_h.status = CAM_REQUEUE_REQ;
 		xpt_done(ccb);
-	} else if (ccb->ccb_h.spriv_ioerror != 0 ||
-	    ccb->nvmeio.cpl.status != 0) {
+	} else if (ccb->ccb_h.spriv_ioerror != 0) {
 		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		xpt_done(ccb);
+	} else if (ccb->nvmeio.cpl.status != 0) {
+		ccb->ccb_h.status = CAM_NVME_STATUS_ERROR;
 		xpt_done(ccb);
 	} else {
 		ccb->ccb_h.status = CAM_REQ_CMP;
