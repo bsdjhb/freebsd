@@ -345,12 +345,12 @@ connect_nvm_adminq(struct nvmf_association *na,
 	mpsmin = NVMEV(NVME_CAP_HI_REG_MPSMIN, cap >> 32);
 	mpsmax = NVMEV(NVME_CAP_HI_REG_MPSMAX, cap >> 32);
 	mps = ffs(getpagesize()) - 1;
-	if (mps < mpsmin + 12)
+	if (mps < mpsmin + NVME_MPS_SHIFT)
 		mps = mpsmin;
-	else if (mps > mpsmax + 12)
+	else if (mps > mpsmax + NVME_MPS_SHIFT)
 		mps = mpsmax;
 	else
-		mps -= 12;
+		mps -= NVME_MPS_SHIFT;
 
 	/* Configure controller. */
 	error = nvmf_read_property(qp, NVMF_PROP_CC, 4, &cc);
