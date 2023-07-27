@@ -94,8 +94,8 @@ struct nvmf_qpair {
 	uint16_t nq_sqhd;
 	uint16_t nq_sqtail;	/* host only */
 
-	/* Value in response from CONNECT. */
-	uint16_t nq_cntlid;	/* host only */
+	/* Value in response to/from CONNECT. */
+	uint16_t nq_cntlid;
 
 	uint32_t nq_kato;	/* valid on admin queue only */
 

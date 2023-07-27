@@ -26,8 +26,10 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/utsname.h>
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "libnvmf.h"
 #include "internal.h"
@@ -397,5 +399,154 @@ nvmf_finish_accept(const struct nvmf_capsule *cc, uint16_t cntlid)
 		return (ENOMEM);
 	error = nvmf_transmit_capsule(rc);
 	nvmf_free_capsule(rc);
+	if (error == 0)
+		qp->nq_cntlid = cntlid;
 	return (error);
+}
+
+uint64_t
+nvmf_controller_cap(struct nvmf_qpair *qp)
+{
+	const struct nvmf_association *na = qp->nq_association;
+	uint32_t caphi, caplo;
+	u_int mps;
+
+	caphi = 0 << NVME_CAP_HI_REG_CMBS_SHIFT |
+	    0 << NVME_CAP_HI_REG_PMRS_SHIFT;
+	if (na->na_params.max_io_qsize != 0) {
+		mps = ffs(getpagesize()) - 1;
+		if (mps < NVME_MPS_SHIFT)
+			mps = 0;
+		else
+			mps -= NVME_MPS_SHIFT;
+		caphi |= mps << NVME_CAP_HI_REG_MPSMAX_SHIFT |
+		    mps << NVME_CAP_HI_REG_MPSMIN_SHIFT;
+	}
+	caphi |= 0 << NVME_CAP_HI_REG_BPS_SHIFT |
+	    NVME_CAP_HI_REG_CSS_NVM_MASK << NVME_CAP_HI_REG_CSS_SHIFT |
+	    0 << NVME_CAP_HI_REG_NSSRS_SHIFT |
+	    0 << NVME_CAP_HI_REG_DSTRD_SHIFT;
+
+	caplo = NVMET_CC_EN_TIMEOUT << NVME_CAP_LO_REG_TO_SHIFT |
+	    0 << NVME_CAP_LO_REG_AMS_SHIFT |
+	    1 << NVME_CAP_LO_REG_CQR_SHIFT;
+
+	if (na->na_params.max_io_qsize != 0)
+		caplo |= (na->na_params.max_io_qsize - 1) <<
+		    NVME_CAP_LO_REG_MQES_SHIFT;
+
+	return ((uint64_t)caphi << 32 | caplo);
+}
+
+void
+nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
+    struct nvme_controller_data *cdata)
+{
+	const struct nvmf_association *na = qp->nq_association;
+	struct utsname utsname;
+
+	memset(cdata, 0, sizeof(*cdata));
+
+	/*
+	 * 5.2 Figure 37 states model name and serial are reserved,
+	 * but Linux includes them.  Don't bother with serial, but
+	 * do set model name.
+	 */
+	uname(&utsname);
+	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
+	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+
+	cdata->ctrlr_id = qp->nq_cntlid;
+	cdata->ver = NVME_REV(1, 4);
+	cdata->cntrltype = 2;
+
+	cdata->lpa = 1 << NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT;
+	cdata->elpe = 0;
+
+	cdata->maxcmd = na->na_params.max_admin_qsize;
+
+	/* Transport-specific? */
+	cdata->sgls = 1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
+	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
+	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT;
+
+	strlcpy(cdata->subnqn, NVMF_DISCOVERY_NQN, sizeof(cdata->subnqn));
+}
+
+void
+nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
+    const char *subnqn, int nn, uint32_t ioccsz,
+    struct nvme_controller_data *cdata)
+{
+	const struct nvmf_association *na = qp->nq_association;
+	struct utsname utsname;
+
+	uname(&utsname);
+
+	strlcpy(cdata->sn, serial, sizeof(cdata->sn));
+	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
+	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+
+	/* FreeBSD OUI */
+	cdata->ieee[0] = 0x58;
+	cdata->ieee[1] = 0x9c;
+	cdata->ieee[2] = 0xfc;
+
+	cdata->ctrlr_id = qp->nq_cntlid;
+	cdata->ver = NVME_REV(1, 4);
+	cdata->ctratt = 1 << NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID_SHIFT |
+	    1 << NVME_CTRLR_DATA_CTRATT_TBKAS_SHIFT;
+	cdata->cntrltype = 1;
+	cdata->acl = 4;
+	cdata->aerl = 4;
+
+	/* 1 read-only firmware slot */
+	cdata->frmw = 1 << NVME_CTRLR_DATA_FRMW_SLOT1_RO_SHIFT |
+	    1 << NVME_CTRLR_DATA_FRMW_NUM_SLOTS_SHIFT;
+
+	cdata->lpa = 1 << NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT;
+
+	/* Single power state */
+	cdata->npss = 0;
+
+	/*
+	 * 1.2+ require a non-zero value for these even though it makes
+	 * no sense for Fabrics.
+	 */
+	cdata->wctemp = 0x0157;
+	cdata->cctemp = cdata->wctemp;
+
+	/* 1 second granularity for KeepAlive */
+	cdata->kas = 10;
+
+	cdata->sqes = 6 << NVME_CTRLR_DATA_SQES_MAX_SHIFT |
+	    6 << NVME_CTRLR_DATA_SQES_MIN_SHIFT;
+	cdata->cqes = 4 << NVME_CTRLR_DATA_CQES_MAX_SHIFT |
+	    4 << NVME_CTRLR_DATA_CQES_MIN_SHIFT;
+
+	cdata->maxcmd = na->na_params.max_io_qsize;
+	cdata->nn = nn;
+
+	/* XXX: ONCS_DSM for TRIM */
+
+	cdata->vwc = NVME_CTRLR_DATA_VWC_ALL_NO <<
+	    NVME_CTRLR_DATA_VWC_ALL_SHIFT;
+
+	/* Transport-specific? */
+	cdata->sgls = 1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
+	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
+	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT;
+
+	strlcpy(cdata->subnqn, subnqn, sizeof(cdata->subnqn));
+
+	cdata->ioccsz = ioccsz / 16;
+	cdata->iorcsz = sizeof(struct nvme_completion) / 16;
+
+	/* Transport-specific? */
+	cdata->icdoff = 0;
+
+	cdata->fcatt = 0;
+
+	/* Transport-specific? */
+	cdata->msdbd = 1;
 }

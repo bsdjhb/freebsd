@@ -43,6 +43,10 @@
 #define NVME_MIN_IO_ENTRIES	(2)
 #define NVME_MAX_IO_ENTRIES	(65536)
 
+/* Values match the Linux target */
+#define	NVMET_MAX_IO_ENTRIES	(1024)
+#define	NVMET_CC_EN_TIMEOUT	(15)	/* In 500ms units */
+
 /* 5.21.1.15 in NVMe */
 #define	NVMF_KATO_DEFAULT	(120000)
 
@@ -232,6 +236,24 @@ void	nvmf_connect_invalid_parameters(const struct nvmf_capsule *cc,
 
 /* Construct and send a response capsule for a successful CONNECT. */
 int	nvmf_finish_accept(const struct nvmf_capsule *cc, uint16_t cntlid);
+
+/* Compute the initial state of CAP for a controller. */
+uint64_t nvmf_controller_cap(struct nvmf_qpair *qp);
+
+/*
+ * Populate an Identify Controller data structure for a Discovery
+ * controller.
+ */
+void	nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
+    struct nvme_controller_data *cdata);
+
+/*
+ * Populate an Identify Controller data structure for an I/O
+ * controller.
+ */
+void	nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
+    const char *subnqn, int nn, uint32_t ioccsz,
+    struct nvme_controller_data *cdata);
 
 /* Host-specific APIs. */
 
