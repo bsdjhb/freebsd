@@ -40,6 +40,7 @@
 #include "internal.h"
 
 struct discovery_thread_arg {
+	struct controller *c;
 	struct nvmf_qpair *qp;
 	int s;
 };
@@ -128,36 +129,27 @@ init_discovery(int s, const char *subnqn)
 	pthread_mutex_init(&discovery_mutex, NULL);
 }
 
+static bool
+discovery_command(const struct nvmf_capsule *nc __unused,
+    const struct nvme_command *cmd __unused,
+    void *arg __unused)
+{
+	return (false);
+}
+
 static void *
 discovery_thread(void *arg)
 {
 	struct discovery_thread_arg *dta = arg;
-	struct nvmf_qpair *qp = dta->qp;
-	const struct nvme_command *cmd;
-	struct nvmf_capsule *nc;
-	int error;
 
 	pthread_detach(pthread_self());
 
-	for (;;) {
-		error = nvmf_controller_receive_capsule(qp, &nc);
-		if (error != 0) {
-			warnc(error, "Failed to read command capsule");
-			break;
-		}
+	controller_handle_admin_commands(dta->c, discovery_command, NULL);
 
-		cmd = nvmf_capsule_sqe(nc);
-		switch (cmd->opc) {
-		default:
-			warn("Discovery: unsupported opcode %#x", cmd->opc);
-			nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
-			break;
-		}
-		nvmf_free_capsule(nc);
-	}
+	free_controller(dta->c);
 
 	pthread_mutex_lock(&discovery_mutex);
-	nvmf_free_qpair(qp);
+	nvmf_free_qpair(dta->qp);
 	pthread_mutex_unlock(&discovery_mutex);
 
 	close(dta->s);
@@ -169,6 +161,7 @@ void
 handle_discovery_socket(int s)
 {
 	struct nvmf_fabric_connect_data data;
+	struct nvme_controller_data cdata;
 	struct nvmf_qpair_params qparams;
 	struct discovery_thread_arg *dta;
 	struct nvmf_capsule *nc;
@@ -205,12 +198,17 @@ handle_discovery_socket(int s)
 		goto error;
 	}
 
+	nvmf_init_discovery_controller_data(qp, &cdata);
+
 	dta = malloc(sizeof(*dta));
 	dta->qp = qp;
 	dta->s = s;
+	dta->c = init_controller(qp, &cdata);
+
 	error = pthread_create(&thr, NULL, discovery_thread, dta);
 	if (error != 0) {
 		warnc(error, "Failed to create discovery thread");
+		free_controller(dta->c);
 		free(dta);
 		goto error;
 	}

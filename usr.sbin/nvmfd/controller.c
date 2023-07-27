@@ -26,39 +26,69 @@
  * SUCH DAMAGE.
  */
 
-#ifndef __INTERNAL_H__
-#define	__INTERNAL_H__
+#include <err.h>
+#include <libnvmf.h>
+#include <stdlib.h>
 
-#include <stdbool.h>
+#include "internal.h"
 
-struct controller;
-struct nvme_command;
-struct nvme_controller_data;
-struct nvmf_capsule;
-struct nvmf_qpair;
+struct controller {
+	struct nvmf_qpair *qp;
 
-typedef bool handle_command(const struct nvmf_capsule *,
-    const struct nvme_command *, void *);
+	uint64_t cap;
+	uint32_t vs;
+	uint32_t cc;
+	uint32_t csts;
 
-extern bool data_digests;
-extern bool header_digests;
-extern bool flow_control_disable;
+	struct nvme_controller_data cdata;
+};
 
-/* controller.c */
-void	controller_handle_admin_commands(struct controller *c,
-    handle_command *cb, void *cb_arg);
-struct controller *init_controller(struct nvmf_qpair *qp,
-    const struct nvme_controller_data *cdata);
-void	free_controller(struct controller *c);
+void
+controller_handle_admin_commands(struct controller *c, handle_command *cb,
+    void *cb_arg)
+{
+	struct nvmf_qpair *qp = c->qp;
+	const struct nvme_command *cmd;
+	struct nvmf_capsule *nc;
+	int error;
 
-/* discovery.c */
-void	init_discovery(int s, const char *subnqn);
-void	handle_discovery_socket(int s);
+	for (;;) {
+		error = nvmf_controller_receive_capsule(qp, &nc);
+		if (error != 0) {
+			warnc(error, "Failed to read command capsule");
+			break;
+		}
 
-/* io.c */
-void	handle_io_socket(int s);
+		cmd = nvmf_capsule_sqe(nc);
+		switch (cmd->opc) {
+		default:
+			if (cb(nc, cmd, cb_arg))
+				break;
+			warnx("Unsupported opcode %#x", cmd->opc);
+			nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
+			break;
+		}
+		nvmf_free_capsule(nc);
+	}
+}
 
-/* devices.c */
-void	register_devices(int ac, char **av);
+struct controller *
+init_controller(struct nvmf_qpair *qp,
+    const struct nvme_controller_data *cdata)
+{
+	struct controller *c;
 
-#endif /* !__INTERNAL_H__ */
+	c = calloc(1, sizeof(*c));
+	c->qp = qp;
+	c->cap = nvmf_controller_cap(c->qp);
+	c->vs = cdata->ver;
+	c->cdata = *cdata;
+
+	return (c);
+}
+
+void
+free_controller(struct controller *c)
+{
+	free(c);
+}
