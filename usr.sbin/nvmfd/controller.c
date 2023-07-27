@@ -160,6 +160,36 @@ handle_fabrics_command(struct controller *c,
 	}
 }
 
+static void
+handle_identify_command(const struct controller *c,
+    const struct nvmf_capsule *nc, const struct nvme_command *cmd)
+{
+	struct iovec iov[1];
+	int error;
+	uint8_t cns;
+
+	cns = le32toh(cmd->cdw10) & 0xFF;
+	switch (cns) {
+	case 1:
+		break;
+	default:
+		goto error;
+	}
+
+	if (nvmf_capsule_data_len(nc) != sizeof(c->cdata))
+		goto error;
+	iov[0].iov_base = __DECONST(void *, &c->cdata);
+	iov[0].iov_len = sizeof(c->cdata);
+	error = nvmf_send_controller_data(nc, iov, nitems(iov));
+	if (error != 0)
+		nvmf_send_generic_error(nc, NVME_SC_DATA_TRANSFER_ERROR);
+	else
+		nvmf_send_success(nc);
+	return;
+error:
+	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
+}
+
 void
 controller_handle_admin_commands(struct controller *c, handle_command *cb,
     void *cb_arg)
@@ -177,14 +207,20 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 		}
 
 		cmd = nvmf_capsule_sqe(nc);
+		if (cb(nc, cmd, cb_arg)) {
+			nvmf_free_capsule(nc);
+			continue;
+		}
+
 		switch (cmd->opc) {
 		case NVME_OPC_FABRIC:
 			handle_fabrics_command(c, nc,
 			    (const struct nvmf_fabric_cmd *)cmd);
 			break;
+		case NVME_OPC_IDENTIFY:
+			handle_identify_command(c, nc, cmd);
+			break;
 		default:
-			if (cb(nc, cmd, cb_arg))
-				break;
 			warnx("Unsupported opcode %#x", cmd->opc);
 			nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
 			break;
