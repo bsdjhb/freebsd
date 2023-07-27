@@ -40,8 +40,125 @@ struct controller {
 	uint32_t cc;
 	uint32_t csts;
 
+	bool shutdown;
+
 	struct nvme_controller_data cdata;
 };
+
+static bool
+update_cc(struct controller *c, uint32_t new_cc)
+{
+	uint32_t changes;
+
+	if (!nvmf_validate_cc(c->qp, c->cap, c->cc, new_cc))
+		return (false);
+
+	changes = c->cc ^ new_cc;
+	c->cc = new_cc;
+
+	/* Handle shutdown requests. */
+	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
+	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
+		c->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
+		c->csts |= 2 << NVME_CSTS_REG_SHST_SHIFT;
+		c->shutdown = true;
+	}
+
+	if (NVMEV(NVME_CC_REG_EN, changes) != 0) {
+		if (NVMEV(NVME_CC_REG_EN, new_cc) == 0) {
+			/* Controller reset. */
+			c->csts = 0;
+			c->shutdown = true;
+		} else
+			c->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
+	}
+	return (true);
+}
+
+static void
+handle_property_get(const struct controller *c, const struct nvmf_capsule *nc,
+    const struct nvmf_fabric_prop_get_cmd *pget)
+{
+	struct nvmf_fabric_prop_get_rsp rsp;
+
+	nvmf_init_cqe(&rsp, nc, 0);
+
+	switch (le32toh(pget->ofst)) {
+	case NVMF_PROP_CAP:
+		if (pget->attrib.size != NVMF_PROP_SIZE_8)
+			goto error;
+		rsp.value.u64 = htole64(c->cap);
+		break;
+	case NVMF_PROP_VS:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = htole32(c->vs);
+		break;
+	case NVMF_PROP_CC:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = htole32(c->cc);
+		break;
+	case NVMF_PROP_CSTS:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = htole32(c->csts);
+		break;
+	default:
+		goto error;
+	}
+
+	nvmf_send_response(nc, &rsp);
+	return;
+error:
+	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
+}
+
+static void
+handle_property_set(struct controller *c, const struct nvmf_capsule *nc,
+    const struct nvmf_fabric_prop_set_cmd *pset)
+{
+	switch (le32toh(pset->ofst)) {
+	case NVMF_PROP_CC:
+		if (pset->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		if (!update_cc(c, le32toh(pset->value.u32.low)))
+			goto error;
+		break;
+	default:
+		goto error;
+	}
+
+	nvmf_send_success(nc);
+	return;
+error:
+	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
+}
+
+static void
+handle_fabrics_command(struct controller *c,
+    const struct nvmf_capsule *nc, const struct nvmf_fabric_cmd *fc)
+{
+	switch (fc->fctype) {
+	case NVMF_FABRIC_COMMAND_PROPERTY_GET:
+		handle_property_get(c, nc,
+		    (const struct nvmf_fabric_prop_get_cmd *)fc);
+		break;
+	case NVMF_FABRIC_COMMAND_PROPERTY_SET:
+		handle_property_set(c, nc,
+		    (const struct nvmf_fabric_prop_set_cmd *)fc);
+		break;
+	case NVMF_FABRIC_COMMAND_DISCONNECT:
+		warnx("Disconnect command on admin queue");
+		nvmf_send_error(nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVMF_FABRIC_SC_INVALID_QUEUE_TYPE);
+		break;
+	default:
+		warnx("Unsupported fabrics command %#x", fc->fctype);
+		nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
+		break;
+	}
+}
 
 void
 controller_handle_admin_commands(struct controller *c, handle_command *cb,
@@ -52,7 +169,7 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 	struct nvmf_capsule *nc;
 	int error;
 
-	for (;;) {
+	while (!c->shutdown) {
 		error = nvmf_controller_receive_capsule(qp, &nc);
 		if (error != 0) {
 			warnc(error, "Failed to read command capsule");
@@ -61,6 +178,10 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 
 		cmd = nvmf_capsule_sqe(nc);
 		switch (cmd->opc) {
+		case NVME_OPC_FABRIC:
+			handle_fabrics_command(c, nc,
+			    (const struct nvmf_fabric_cmd *)cmd);
+			break;
 		default:
 			if (cb(nc, cmd, cb_arg))
 				break;
