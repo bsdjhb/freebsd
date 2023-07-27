@@ -117,6 +117,7 @@ enum nvmf_fabric_cmd_types {
 	NVMF_FABRIC_COMMAND_PROPERTY_GET			= 0x04,
 	NVMF_FABRIC_COMMAND_AUTHENTICATION_SEND			= 0x05,
 	NVMF_FABRIC_COMMAND_AUTHENTICATION_RECV			= 0x06,
+	NVMF_FABRIC_COMMAND_DISCONNECT				= 0x08,
 	NVMF_FABRIC_COMMAND_START_VENDOR_SPECIFIC		= 0xC0,
 };
 
@@ -126,6 +127,7 @@ enum nvmf_fabric_cmd_status_code {
 	NVMF_FABRIC_SC_INVALID_PARAM			= 0x82,
 	NVMF_FABRIC_SC_RESTART_DISCOVERY		= 0x83,
 	NVMF_FABRIC_SC_INVALID_HOST			= 0x84,
+	NVMF_FABRIC_SC_INVALID_QUEUE_TYPE		= 0x85,
 	NVMF_FABRIC_SC_LOG_RESTART_DISCOVERY		= 0x90,
 	NVMF_FABRIC_SC_AUTH_REQUIRED			= 0x91,
 };
@@ -229,6 +231,14 @@ enum nvmf_treq_secure_channel {
 
 	/** Not required */
 	NVMF_TREQ_SECURE_CHANNEL_NOT_REQUIRED		= 0x2,
+};
+
+struct nvmf_fabric_cmd {
+	uint8_t		opcode;
+	uint8_t		reserved1;
+	uint16_t	cid;
+	uint8_t		fctype;
+	uint8_t		reserved2[59];
 };
 
 struct nvmf_fabric_auth_recv_cmd {
