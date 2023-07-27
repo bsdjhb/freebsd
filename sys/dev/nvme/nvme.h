@@ -385,6 +385,9 @@ enum nvme_psdt {
 /* per namespace smart/health log page */
 #define NVME_CTRLR_DATA_LPA_NS_SMART_SHIFT		(0)
 #define NVME_CTRLR_DATA_LPA_NS_SMART_MASK		(0x1)
+/* extended data for Get Log Page command */
+#define NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT		(2)
+#define NVME_CTRLR_DATA_LPA_EXT_DATA_MASK		(0x1)
 
 /** AVSCC - admin vendor specific command configuration */
 /* admin vendor specific commands use spec format */
@@ -468,6 +471,25 @@ enum nvme_psdt {
 #define NVME_CTRLR_DATA_VWC_ALL_UNKNOWN			(0)
 #define NVME_CTRLR_DATA_VWC_ALL_NO			(2)
 #define NVME_CTRLR_DATA_VWC_ALL_YES			(3)
+
+/** SGL Support */
+/* NVM command set SGL support */
+#define	NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT	(0)
+#define	NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_MASK	(0x3)
+#define	NVME_CTRLR_DATA_SGLS_KEYED_DATA_BLOCK_SHIFT	(2)
+#define	NVME_CTRLR_DATA_SGLS_KEYED_DATA_BLOCK_MASK	(0x1)
+#define	NVME_CTRLR_DATA_SGLS_BIT_BUCKET_SHIFT		(16)
+#define	NVME_CTRLR_DATA_SGLS_BIT_BUCKET_MASK		(0x1)
+#define	NVME_CTRLR_DATA_SGLS_CONTIG_MPTR_SHIFT		(17)
+#define	NVME_CTRLR_DATA_SGLS_CONTIG_MPTR_MASK		(0x1)
+#define	NVME_CTRLR_DATA_SGLS_OVERSIZED_SHIFT		(18)
+#define	NVME_CTRLR_DATA_SGLS_OVERSIZED_MASK		(0x1)
+#define	NVME_CTRLR_DATA_SGLS_MPTR_SGL_SHIFT		(19)
+#define	NVME_CTRLR_DATA_SGLS_MPTR_SGL_MASK		(0x1)
+#define	NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT	(20)
+#define	NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_MASK	(0x1)
+#define	NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT	(21)
+#define	NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_MASK	(0x1)
 
 /** namespace features */
 /* thin provisioning */
