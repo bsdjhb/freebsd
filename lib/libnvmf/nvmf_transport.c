@@ -236,7 +236,7 @@ nvmf_capsule_cqe(const struct nvmf_capsule *nc)
 }
 
 uint8_t
-nvmf_validate_command_capsule(struct nvmf_capsule *nc)
+nvmf_validate_command_capsule(const struct nvmf_capsule *nc)
 {
 	assert(nc->nc_qe_len == sizeof(struct nvme_command));
 
@@ -247,21 +247,21 @@ nvmf_validate_command_capsule(struct nvmf_capsule *nc)
 }
 
 size_t
-nvmf_capsule_data_len(struct nvmf_capsule *nc)
+nvmf_capsule_data_len(const struct nvmf_capsule *nc)
 {
 	return (nc->nc_qpair->nq_association->na_ops->capsule_data_len(nc));
 }
 
 int
-nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
-    struct iovec *iov, u_int iovcnt)
+nvmf_receive_controller_data(const struct nvmf_capsule *nc,
+    uint32_t data_offset, struct iovec *iov, u_int iovcnt)
 {
 	return (nc->nc_qpair->nq_association->na_ops->receive_controller_data(nc,
 	    data_offset, iov, iovcnt));
 }
 
 int
-nvmf_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
+nvmf_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
     u_int iovcnt)
 {
 	return (nc->nc_qpair->nq_association->na_ops->send_controller_data(nc,

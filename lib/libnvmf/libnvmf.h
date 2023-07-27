@@ -150,13 +150,13 @@ const void *nvmf_capsule_cqe(const struct nvmf_capsule *nc);
  * capsule.  The callback returns a generic command status value:
  * NVME_SC_SUCCESS if no error is found.
  */
-uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
+uint8_t	nvmf_validate_command_capsule(const struct nvmf_capsule *nc);
 
 /*
  * A controller calls this function to query the amount of data
  * associated with a command capsule.
  */
-size_t	nvmf_capsule_data_len(struct nvmf_capsule *cc);
+size_t	nvmf_capsule_data_len(const struct nvmf_capsule *cc);
 
 /*
  * A controller calls this function to receive data associated with a
@@ -166,7 +166,7 @@ size_t	nvmf_capsule_data_len(struct nvmf_capsule *cc);
  * should be passed in 'nc'.  The received data is stored in the
  * passed in I/O vector.
  */
-int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
+int	nvmf_receive_controller_data(const struct nvmf_capsule *nc,
     uint32_t data_offset, struct iovec *iov, u_int iovcnt);
 
 /*
@@ -175,7 +175,7 @@ int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
  *
  * TODO: Support for SUCCESS flag for final TCP C2H_DATA PDU?
  */
-int	nvmf_send_controller_data(struct nvmf_capsule *nc,
+int	nvmf_send_controller_data(const struct nvmf_capsule *nc,
     struct iovec *iov, u_int iovcnt);
 
 /*

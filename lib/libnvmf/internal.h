@@ -54,14 +54,14 @@ struct nvmf_transport_ops {
 	int (*transmit_capsule)(struct nvmf_capsule *nc);
 	int (*receive_capsule)(struct nvmf_qpair *qp,
 	    struct nvmf_capsule **ncp);
-	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);
+	uint8_t (*validate_command_capsule)(const struct nvmf_capsule *nc);
 
 	/* Transferring controller data. */
-	size_t (*capsule_data_len)(struct nvmf_capsule *nc);
-	int (*receive_controller_data)(struct nvmf_capsule *nc,
+	size_t (*capsule_data_len)(const struct nvmf_capsule *nc);
+	int (*receive_controller_data)(const struct nvmf_capsule *nc,
 	    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
-	int (*send_controller_data)(struct nvmf_capsule *nc, struct iovec *iov,
-	    u_int iovcnt);
+	int (*send_controller_data)(const struct nvmf_capsule *nc,
+	    struct iovec *iov, u_int iovcnt);
 };
 
 struct nvmf_association {

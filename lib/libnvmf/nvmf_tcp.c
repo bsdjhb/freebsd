@@ -99,6 +99,7 @@ struct nvmf_tcp_qpair {
 
 #define	TASSOC(nc)	((struct nvmf_tcp_association *)(na))
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
+#define	CTCAP(nc)	((const struct nvmf_tcp_capsule *)(nc))
 #define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
 
 static const char zero_padding[NVME_TCP_PDU_PDO_MAX_OFFSET];
@@ -1611,14 +1612,14 @@ tcp_receive_capsule(struct nvmf_qpair *nq, struct nvmf_capsule **ncp)
 }
 
 static uint8_t
-tcp_validate_command_capsule(struct nvmf_capsule *nc)
+tcp_validate_command_capsule(const struct nvmf_capsule *nc)
 {
-	struct nvmf_tcp_capsule *tc = TCAP(nc);
-	struct nvme_sgl_descriptor *sgl;
+	const struct nvmf_tcp_capsule *tc = CTCAP(nc);
+	const struct nvme_sgl_descriptor *sgl;
 
 	assert(tc->rx_pdu.hdr != NULL);
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
+	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
 	switch (sgl->unkeyed.type) {
 	case NVME_SGL_TYPE_DATA_BLOCK:
 		switch (sgl->unkeyed.subtype) {
@@ -1661,12 +1662,12 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 }
 
 static size_t
-tcp_capsule_data_len(struct nvmf_capsule *nc)
+tcp_capsule_data_len(const struct nvmf_capsule *nc)
 {
-	struct nvme_sgl_descriptor *sgl;
+	const struct nvme_sgl_descriptor *sgl;
 
 	assert(nc->nc_qe_len == sizeof(struct nvme_command));
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
+	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
 	return (le32toh(sgl->unkeyed.length));
 }
 
@@ -1702,7 +1703,7 @@ tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
 }
 
 static int
-tcp_receive_r2t_data(struct nvmf_capsule *nc, uint32_t data_offset,
+tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
     uint32_t data_len, struct iovec *iov, u_int iovcnt)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
@@ -1734,10 +1735,10 @@ tcp_receive_r2t_data(struct nvmf_capsule *nc, uint32_t data_offset,
 }
 
 static int
-tcp_receive_icd_data(struct nvmf_capsule *nc, uint32_t data_offset,
+tcp_receive_icd_data(const struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)
 {
-	struct nvmf_tcp_capsule *tc = TCAP(nc);
+	const struct nvmf_tcp_capsule *tc = CTCAP(nc);
 	const char *icd;
 	u_int i;
 
@@ -1750,11 +1751,11 @@ tcp_receive_icd_data(struct nvmf_capsule *nc, uint32_t data_offset,
 }
 
 static int
-tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
+tcp_receive_controller_data(const struct nvmf_capsule *nc, uint32_t data_offset,
     struct iovec *iov, u_int iovcnt)
 {
 	struct nvmf_association *na = nc->nc_qpair->nq_association;
-	struct nvme_sgl_descriptor *sgl;
+	const struct nvme_sgl_descriptor *sgl;
 	size_t data_len, iov_len;
 	u_int i;
 
@@ -1765,7 +1766,7 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	for (i = 0; i < iovcnt; i++)
 		iov_len += iov[i].iov_len;
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
+	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
 	data_len = le32toh(sgl->unkeyed.length);
 	if (data_offset + iov_len > data_len)
 		return (EFBIG);
@@ -1844,12 +1845,12 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
 }
 
 static int
-tcp_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
+tcp_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
     u_int iovcnt)
 {
 	struct nvmf_association *na = nc->nc_qpair->nq_association;
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
-	struct nvme_sgl_descriptor *sgl;
+	const struct nvme_sgl_descriptor *sgl;
 	size_t iov_len;
 	uint32_t data_len, data_offset;
 	u_int i;
@@ -1862,7 +1863,7 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct iovec *iov,
 	for (i = 0; i < iovcnt; i++)
 		iov_len += iov[i].iov_len;
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
+	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
 	data_len = le32toh(sgl->unkeyed.length);
 	if (iov_len != data_len)
 		return (EFBIG);
