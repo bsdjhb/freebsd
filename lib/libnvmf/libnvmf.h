@@ -187,11 +187,10 @@ void	nvmf_init_cqe(void *cqe, const struct nvmf_capsule *nc,
     uint16_t status);
 
 /*
- * Construct a response capsule to a command capsule with a specific
- * status.
+ * Construct and send a response capsule to a command capsule with
+ * the supplied CQE.
  */
-struct nvmf_capsule *nvmf_response(const struct nvmf_capsule *nc,
-    uint8_t sc_type, uint8_t sc_status);
+int	nvmf_send_response(const struct nvmf_capsule *nc, const void *cqe);
 
 /*
  * Wait for a single command capsule and return it in *ncp.  This can
@@ -213,6 +212,9 @@ int	nvmf_send_error(const struct nvmf_capsule *cc, uint8_t sc_type,
  */
 int	nvmf_send_generic_error(const struct nvmf_capsule *nc,
     uint8_t sc_status);
+
+/* Construct and send a simple success response capsule. */
+int	nvmf_send_success(const struct nvmf_capsule *nc);
 
 /*
  * Allocate a new queue pair and wait for the CONNECT command capsule.
@@ -254,6 +256,13 @@ void	nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
 void	nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
     const char *subnqn, int nn, uint32_t ioccsz,
     struct nvme_controller_data *cdata);
+
+/*
+ * Validate if a new value for CC is legal given the existing values of
+ * CAP and CC.
+ */
+bool	nvmf_validate_cc(struct nvmf_qpair *qp, uint64_t cap, uint32_t old_cc,
+    uint32_t new_cc);
 
 /* Host-specific APIs. */
 

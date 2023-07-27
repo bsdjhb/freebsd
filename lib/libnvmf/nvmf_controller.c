@@ -45,8 +45,9 @@ nvmf_init_cqe(void *cqe, const struct nvmf_capsule *nc, uint16_t status)
 	cpl->status = htole16(status);
 }
 
-struct nvmf_capsule *
-nvmf_response(const struct nvmf_capsule *nc, uint8_t sc_type, uint8_t sc_status)
+static struct nvmf_capsule *
+nvmf_simple_response(const struct nvmf_capsule *nc, uint8_t sc_type,
+    uint8_t sc_status)
 {
 	struct nvme_completion cpl;
 	uint16_t status;
@@ -95,7 +96,21 @@ nvmf_controller_transmit_response(struct nvmf_capsule *nc)
 
 	return (nvmf_transmit_capsule(nc));
 }
-	
+
+int
+nvmf_send_response(const struct nvmf_capsule *cc, const void *cqe)
+{
+	struct nvmf_capsule *rc;
+	int error;
+
+	rc = nvmf_allocate_response(cc->nc_qpair, cqe);
+	if (rc == NULL)
+		return (ENOMEM);
+	error = nvmf_controller_transmit_response(rc);
+	nvmf_free_capsule(rc);
+	return (error);
+}
+
 int
 nvmf_send_error(const struct nvmf_capsule *cc, uint8_t sc_type,
     uint8_t sc_status)
@@ -103,7 +118,7 @@ nvmf_send_error(const struct nvmf_capsule *cc, uint8_t sc_type,
 	struct nvmf_capsule *rc;
 	int error;
 
-	rc = nvmf_response(cc, sc_type, sc_status);
+	rc = nvmf_simple_response(cc, sc_type, sc_status);
 	error = nvmf_controller_transmit_response(rc);
 	nvmf_free_capsule(rc);
 	return (error);
@@ -113,6 +128,12 @@ int
 nvmf_send_generic_error(const struct nvmf_capsule *nc, uint8_t sc_status)
 {
 	return (nvmf_send_error(nc, NVME_SCT_GENERIC, sc_status));
+}
+
+int
+nvmf_send_success(const struct nvmf_capsule *nc)
+{
+	return (nvmf_send_generic_error(nc, NVME_SC_SUCCESS));
 }
 
 void
@@ -218,7 +239,7 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	if (sc_status != 0) {
 		na_error(na, "CONNECT command failed to validate: %u",
 		    sc_status);
-		rc = nvmf_response(cc, NVME_SCT_GENERIC, sc_status);
+		rc = nvmf_simple_response(cc, NVME_SCT_GENERIC, sc_status);
 		goto error;
 	}
 
@@ -227,15 +248,15 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	    cmd->fctype != NVMF_FABRIC_COMMAND_CONNECT) {
 		na_error(na, "Invalid opcode in CONNECT (%u,%u)", cmd->opcode,
 		    cmd->fctype);
-		rc = nvmf_response(cc, NVME_SCT_GENERIC,
+		rc = nvmf_simple_response(cc, NVME_SCT_GENERIC,
 		    NVME_SC_INVALID_OPCODE);
 		goto error;
 	}
 
 	if (cmd->recfmt != htole16(0)) {
-		na_error(na, "Unsupported record format %u",
+		na_error(na, "Unsupported CONNECT record format %u",
 		    le16toh(cmd->recfmt));
-		rc = nvmf_response(cc, NVME_SCT_COMMAND_SPECIFIC,
+		rc = nvmf_simple_response(cc, NVME_SCT_COMMAND_SPECIFIC,
 		    NVMF_FABRIC_SC_INCOMPATIBLE_FORMAT);
 		goto error;
 	}
@@ -298,7 +319,7 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	if (error != 0) {
 		na_error(na, "Failed to read data for CONNECT: %s",
 		    strerror(error));
-		rc = nvmf_response(cc, NVME_SCT_GENERIC,
+		rc = nvmf_simple_response(cc, NVME_SCT_GENERIC,
 		    NVME_SC_DATA_TRANSFER_ERROR);
 		goto error;
 	}
@@ -436,6 +457,56 @@ nvmf_controller_cap(struct nvmf_qpair *qp)
 		    NVME_CAP_LO_REG_MQES_SHIFT;
 
 	return ((uint64_t)caphi << 32 | caplo);
+}
+
+bool
+nvmf_validate_cc(struct nvmf_qpair *qp, uint64_t cap, uint32_t old_cc,
+    uint32_t new_cc)
+{
+	const struct nvmf_association *na = qp->nq_association;
+	uint32_t caphi, changes, field;
+
+	changes = old_cc ^ new_cc;
+	field = NVMEV(NVME_CC_REG_IOCQES, new_cc);
+	if (field != 0) {
+		if (na->na_params.max_io_qsize == 0)
+			return (false);
+		if (field != 4)
+			return (false);
+	}
+	field = NVMEV(NVME_CC_REG_IOSQES, new_cc);
+	if (field != 0) {
+		if (na->na_params.max_io_qsize == 0)
+			return (false);
+		if (field != 6)
+			return (false);
+	}
+	field = NVMEV(NVME_CC_REG_SHN, new_cc);
+	if (field == 3)
+		return (false);
+
+	field = NVMEV(NVME_CC_REG_AMS, new_cc);
+	if (field != 0)
+		return (false);
+
+	caphi = cap >> 32;
+	field = NVMEV(NVME_CC_REG_MPS, new_cc);
+	if (field < NVMEV(NVME_CAP_HI_REG_MPSMAX, caphi) ||
+	    field > NVMEV(NVME_CAP_HI_REG_MPSMIN, caphi))
+		return (false);
+
+	field = NVMEV(NVME_CC_REG_CSS, new_cc);
+	if (field != 0 && field != 0x7)
+		return (false);
+
+	/* AMS, MPS, and CSS can only be changed while CC.EN is 0. */
+	if (NVMEV(NVME_CC_REG_EN, old_cc) != 0 &&
+	    (NVMEV(NVME_CC_REG_AMS, changes) != 0 ||
+	    NVMEV(NVME_CC_REG_MPS, changes) != 0 ||
+	    NVMEV(NVME_CC_REG_CSS, changes) != 0))
+		return (false);
+
+	return (true);
 }
 
 void
