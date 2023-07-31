@@ -52,8 +52,9 @@ struct controller *init_controller(struct nvmf_qpair *qp,
 void	free_controller(struct controller *c);
 
 /* discovery.c */
-void	init_discovery(int s, const char *subnqn);
+void	init_discovery(void);
 void	handle_discovery_socket(int s);
+void	discovery_add_io_controller(int s, const char *subnqn);
 
 /* io.c */
 void	handle_io_socket(int s);

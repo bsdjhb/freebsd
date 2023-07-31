@@ -29,6 +29,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <assert.h>
 #include <err.h>
 #include <libnvmf.h>
 #include <pthread.h>
@@ -39,28 +40,41 @@
 
 #include "internal.h"
 
+struct io_controller_data {
+	struct nvme_discovery_log_entry entry;
+	bool wildcard;
+};
+
+struct discovery_controller {
+	struct nvme_discovery_log *discovery_log;
+	size_t discovery_log_len;
+	int s;
+};
+	
 struct discovery_thread_arg {
 	struct controller *c;
 	struct nvmf_qpair *qp;
 	int s;
 };
 
-static struct nvme_discovery_log *discovery_log;
+static struct io_controller_data *io_controllers;
 static struct nvmf_association *discovery_na;
 static pthread_mutex_t discovery_mutex;
-static size_t discovery_log_len;
+static u_int num_io_controllers;
 
-static void
+static bool
 init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
-	const char *subnqn)
+    const char *subnqn)
 {
 	struct sockaddr_storage ss;
 	socklen_t len;
+	bool wildcard;
 
 	len = sizeof(ss);
 	if (getsockname(s, (struct sockaddr *)&ss, &len) == -1)
 		err(1, "getsockname");
 
+	memset(entry, 0, sizeof(*entry));
 	entry->trtype = NVMF_TRTYPE_TCP;
 	switch (ss.ss_family) {
 	case AF_INET:
@@ -74,6 +88,7 @@ init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
 		if (inet_ntop(AF_INET, &sin->sin_addr, entry->traddr,
 		    sizeof(entry->traddr)) == NULL)
 			err(1, "inet_ntop");
+		wildcard = (sin->sin_addr.s_addr == htonl(INADDR_ANY));
 		break;
 	}
 	case AF_INET6:
@@ -87,6 +102,8 @@ init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
 		if (inet_ntop(AF_INET6, &sin6->sin6_addr, entry->traddr,
 		    sizeof(entry->traddr)) == NULL)
 			err(1, "inet_ntop");
+		wildcard = (memcmp(&sin6->sin6_addr, &in6addr_any,
+		    sizeof(in6addr_any)) == 0);
 		break;
 	}
 	default:
@@ -99,20 +116,13 @@ init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
 	entry->cntlid = htole16(NVMF_CNTLID_DYNAMIC);
 	entry->aqsz = NVME_MAX_ADMIN_ENTRIES;
 	strlcpy(entry->subnqn, subnqn, sizeof(entry->subnqn));
+	return (wildcard);
 }
 
 void
-init_discovery(int s, const char *subnqn)
+init_discovery(void)
 {
 	struct nvmf_association_params aparams;
-
-	discovery_log_len = sizeof(*discovery_log) +
-	    sizeof(struct nvme_discovery_log_entry);
-	discovery_log = calloc(discovery_log_len, 1);
-
-	init_discovery_log_entry(&discovery_log->entries[0], s, subnqn);
-	discovery_log->numrec = 1;
-	discovery_log->recfmt = 0;
 
 	memset(&aparams, 0, sizeof(aparams));
 	aparams.sq_flow_control = false;
@@ -131,9 +141,99 @@ init_discovery(int s, const char *subnqn)
 	pthread_mutex_init(&discovery_mutex, NULL);
 }
 
+void
+discovery_add_io_controller(int s, const char *subnqn)
+{
+	struct io_controller_data *icd;
+
+	io_controllers = reallocf(io_controllers, (num_io_controllers + 1) *
+	    sizeof(*io_controllers));
+
+	icd = &io_controllers[num_io_controllers];
+	num_io_controllers++;
+
+	icd->wildcard = init_discovery_log_entry(&icd->entry, s, subnqn);
+}
+
+static void
+build_discovery_log_page(struct discovery_controller *dc)
+{
+	struct sockaddr_storage ss;
+	socklen_t len;
+	char traddr[256];
+	u_int i, nentries;
+	uint8_t adrfam;
+
+	if (dc->discovery_log != NULL)
+		return;
+
+	len = sizeof(ss);
+	if (getsockname(dc->s, (struct sockaddr *)&ss, &len) == -1) {
+		warn("build_discovery_log_page: getsockname");
+		return;
+	}
+
+	memset(traddr, 0, sizeof(traddr));
+	switch (ss.ss_family) {
+	case AF_INET:
+	{
+		struct sockaddr_in *sin;
+
+		sin = (struct sockaddr_in *)&ss;
+		adrfam = NVMF_ADRFAM_IPV4;
+		if (inet_ntop(AF_INET, &sin->sin_addr, traddr,
+		    sizeof(traddr)) == NULL) {
+			warn("build_discovery_log_page: inet_ntop");
+			return;
+		}
+		break;
+	}
+	case AF_INET6:
+	{
+		struct sockaddr_in6 *sin6;
+
+		sin6 = (struct sockaddr_in6 *)&ss;
+		adrfam = NVMF_ADRFAM_IPV6;
+		if (inet_ntop(AF_INET6, &sin6->sin6_addr, traddr,
+		    sizeof(traddr)) == NULL) {
+			warn("build_discovery_log_page: inet_ntop");
+			return;
+		}
+		break;
+	}
+	default:
+		assert(false);
+	}
+
+	nentries = 0;
+	for (i = 0; i < num_io_controllers; i++) {
+		if (io_controllers[i].wildcard &&
+		    io_controllers[i].entry.adrfam != adrfam)
+			continue;
+		nentries++;
+	}
+	    
+	dc->discovery_log_len = sizeof(*dc->discovery_log) +
+	    nentries * sizeof(struct nvme_discovery_log_entry);
+	dc->discovery_log = calloc(dc->discovery_log_len, 1);
+	dc->discovery_log->numrec = nentries;
+	dc->discovery_log->recfmt = 0;
+	nentries = 0;
+	for (i = 0; i < num_io_controllers; i++) {
+		if (io_controllers[i].wildcard &&
+		    io_controllers[i].entry.adrfam != adrfam)
+			continue;
+
+		dc->discovery_log->entries[nentries] = io_controllers[i].entry;
+		if (io_controllers[i].wildcard)
+			memcpy(dc->discovery_log->entries[nentries].traddr,
+			    traddr, sizeof(traddr));
+	}
+}
+
 static void
 handle_get_log_page_command(const struct nvmf_capsule *nc,
-    const struct nvme_command *cmd)
+    const struct nvme_command *cmd, struct discovery_controller *dc)
 {
 	struct iovec iov[1];
 	uint64_t offset;
@@ -149,15 +249,17 @@ handle_get_log_page_command(const struct nvmf_capsule *nc,
 		goto error;
 	}
 
+	build_discovery_log_page(dc);
+
 	offset = nvmf_get_log_page_offset(cmd);
-	if (offset >= discovery_log_len)
+	if (offset >= dc->discovery_log_len)
 		goto error;
 
 	length = nvmf_get_log_page_length(cmd);
-	if (length > discovery_log_len - offset)
-		length = discovery_log_len - offset;
+	if (length > dc->discovery_log_len - offset)
+		length = dc->discovery_log_len - offset;
 
-	iov[0].iov_base = (char *)discovery_log + offset;
+	iov[0].iov_base = (char *)dc->discovery_log + offset;
 	iov[0].iov_len = length;
 	error = nvmf_send_controller_data(nc, iov, nitems(iov));
 	if (error != 0)
@@ -171,11 +273,13 @@ error:
 
 static bool
 discovery_command(const struct nvmf_capsule *nc, const struct nvme_command *cmd,
-    void *arg __unused)
+    void *arg)
 {
+	struct discovery_controller *dc = arg;
+
 	switch (cmd->opc) {
 	case NVME_OPC_GET_LOG_PAGE:
-		handle_get_log_page_command(nc, cmd);
+		handle_get_log_page_command(nc, cmd, dc);
 		return (true);
 	default:
 		return (false);
@@ -186,11 +290,16 @@ static void *
 discovery_thread(void *arg)
 {
 	struct discovery_thread_arg *dta = arg;
+	struct discovery_controller dc;
 
 	pthread_detach(pthread_self());
 
-	controller_handle_admin_commands(dta->c, discovery_command, NULL);
+	memset(&dc, 0, sizeof(dc));
+	dc.s = dta->s;
 
+	controller_handle_admin_commands(dta->c, discovery_command, &dc);
+
+	free(dc.discovery_log);
 	free_controller(dta->c);
 
 	pthread_mutex_lock(&discovery_mutex);

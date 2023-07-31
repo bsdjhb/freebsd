@@ -45,6 +45,8 @@ bool data_digests = false;
 bool header_digests = false;
 bool flow_control_disable = false;
 
+static const char *subnqn;
+
 static void
 usage(void)
 {
@@ -70,10 +72,11 @@ register_listen_socket(int kqfd, int s, void *udata)
 		err(1, "kevent: failed to add listen socket");
 }
 
-static int
-create_passive_socket(const char *port)
+static void
+create_passive_sockets(int kqfd, const char *port, bool discovery)
 {
 	struct addrinfo hints, *ai, *list;
+	bool created;
 	int error, s;
 
 	memset(&hints, 0, sizeof(hints));
@@ -83,6 +86,7 @@ create_passive_socket(const char *port)
 	error = getaddrinfo(NULL, port, &hints, &list);
 	if (error != 0)
 		errx(1, "%s", gai_strerror(error));
+	created = false;
 
 	for (ai = list; ai != NULL; ai = ai->ai_next) {
 		s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
@@ -94,30 +98,18 @@ create_passive_socket(const char *port)
 			continue;
 		}
 
-		freeaddrinfo(list);
-		return (s);
+		if (discovery) {
+			register_listen_socket(kqfd, s, (void *)1);
+		} else {
+			register_listen_socket(kqfd, s, (void *)2);
+			discovery_add_io_controller(s, subnqn);
+		}
+		created = true;
 	}
-	err(1, "Failed to create any listen sockets");
-}
 
-static int
-create_ephemeral_socket(void)
-{
-	struct sockaddr_in sin;
-	int s;
-
-	s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (s == -1)
-		err(1, "socket");
-
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_len = sizeof(sin);
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) != 0)
-		err(1, "bind");
-
-	return (s);
+	freeaddrinfo(list);
+	if (!created)
+		err(1, "Failed to create any listen sockets");
 }
 
 static void
@@ -157,14 +149,14 @@ handle_connections(int kqfd)
 int
 main(int ac, char **av)
 {
-	const char *dport, *ioport, *subnqn, *transport;
-	int ch, error, kqfd, s;
-	char nqn[NVMF_NQN_MAX_LEN];
+	const char *dport, *ioport, *transport;
+	int ch, error, kqfd;
+	static char nqn[NVMF_NQN_MAX_LEN];
 
 	/* 7.4.9.3 Default port for discovery */
 	dport = "8009";
 
-	ioport = NULL;
+	ioport = "0";
 	subnqn = NULL;
 	transport = "tcp";
 	while ((ch = getopt(ac, av, "DFHn:P:p:t:")) != -1) {
@@ -214,18 +206,14 @@ main(int ac, char **av)
 
 	register_devices(ac, av);
 
+	init_discovery();
+
 	kqfd = kqueue();
 	if (kqfd == -1)
 		err(1, "kqueue");
 
-	register_listen_socket(kqfd, create_passive_socket(dport), (void *)1);
-	if (ioport != NULL)
-		s = create_passive_socket(ioport);
-	else
-		s = create_ephemeral_socket();
-	register_listen_socket(kqfd, s, (void *)2);
-
-	init_discovery(s, subnqn);
+	create_passive_sockets(kqfd, dport, true);
+	create_passive_sockets(kqfd, ioport, false);
 
 	handle_connections(kqfd);
 	return (0);
