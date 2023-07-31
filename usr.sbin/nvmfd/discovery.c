@@ -48,6 +48,7 @@ struct discovery_thread_arg {
 static struct nvme_discovery_log *discovery_log;
 static struct nvmf_association *discovery_na;
 static pthread_mutex_t discovery_mutex;
+static size_t discovery_log_len;
 
 static void
 init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
@@ -105,8 +106,9 @@ init_discovery(int s, const char *subnqn)
 {
 	struct nvmf_association_params aparams;
 
-	discovery_log = calloc(sizeof(*discovery_log) +
-	    sizeof(struct nvme_discovery_log_entry), 1);
+	discovery_log_len = sizeof(*discovery_log) +
+	    sizeof(struct nvme_discovery_log_entry);
+	discovery_log = calloc(discovery_log_len, 1);
 
 	init_discovery_log_entry(&discovery_log->entries[0], s, subnqn);
 	discovery_log->numrec = 1;
@@ -129,12 +131,55 @@ init_discovery(int s, const char *subnqn)
 	pthread_mutex_init(&discovery_mutex, NULL);
 }
 
+static void
+handle_get_log_page_command(const struct nvmf_capsule *nc,
+    const struct nvme_command *cmd)
+{
+	struct iovec iov[1];
+	uint64_t offset;
+	uint32_t length;
+	int error;
+
+	switch (nvmf_get_log_page_id(cmd)) {
+	case NVME_LOG_DISCOVERY:
+		break;
+	default:
+		warnx("Unsupported log page %u for discovery controller",
+		    nvmf_get_log_page_id(cmd));
+		goto error;
+	}
+
+	offset = nvmf_get_log_page_offset(cmd);
+	if (offset >= discovery_log_len)
+		goto error;
+
+	length = nvmf_get_log_page_length(cmd);
+	if (length > discovery_log_len - offset)
+		length = discovery_log_len - offset;
+
+	iov[0].iov_base = (char *)discovery_log + offset;
+	iov[0].iov_len = length;
+	error = nvmf_send_controller_data(nc, iov, nitems(iov));
+	if (error != 0)
+		nvmf_send_generic_error(nc, NVME_SC_DATA_TRANSFER_ERROR);
+	else
+		nvmf_send_success(nc);
+	return;
+error:
+	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
+}
+
 static bool
-discovery_command(const struct nvmf_capsule *nc __unused,
-    const struct nvme_command *cmd __unused,
+discovery_command(const struct nvmf_capsule *nc, const struct nvme_command *cmd,
     void *arg __unused)
 {
-	return (false);
+	switch (cmd->opc) {
+	case NVME_OPC_GET_LOG_PAGE:
+		handle_get_log_page_command(nc, cmd);
+		return (true);
+	default:
+		return (false);
+	}
 }
 
 static void *
