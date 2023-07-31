@@ -515,6 +515,7 @@ nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
 {
 	const struct nvmf_association *na = qp->nq_association;
 	struct utsname utsname;
+	char *cp;
 
 	memset(cdata, 0, sizeof(*cdata));
 
@@ -526,6 +527,9 @@ nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
 	uname(&utsname);
 	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
 	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+	cp = memchr(cdata->fr, '-', sizeof(cdata->fr));
+	if (cp != NULL)
+		memset(cp, 0, sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
 	cdata->ctrlr_id = qp->nq_cntlid;
 	cdata->ver = NVME_REV(1, 4);
@@ -551,12 +555,16 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 {
 	const struct nvmf_association *na = qp->nq_association;
 	struct utsname utsname;
+	char *cp;
 
 	uname(&utsname);
 
 	strlcpy(cdata->sn, serial, sizeof(cdata->sn));
 	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
 	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+	cp = memchr(cdata->fr, '-', sizeof(cdata->fr));
+	if (cp != NULL)
+		memset(cp, 0, sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
 	/* FreeBSD OUI */
 	cdata->ieee[0] = 0x58;
