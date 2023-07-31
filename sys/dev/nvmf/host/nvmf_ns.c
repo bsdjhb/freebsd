@@ -32,8 +32,11 @@
 #include <sys/conf.h>
 #include <sys/disk.h>
 #include <sys/fcntl.h>
+#include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/memdesc.h>
+#include <sys/mutex.h>
+#include <sys/proc.h>
 #include <sys/refcount.h>
 #include <sys/sbuf.h>
 #include <machine/stdarg.h>
