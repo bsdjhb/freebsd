@@ -27,6 +27,7 @@
  */
 
 #include <sys/utsname.h>
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -628,4 +629,28 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 
 	/* Transport-specific? */
 	cdata->msdbd = 1;
+}
+
+uint8_t
+nvmf_get_log_page_id(const struct nvme_command *cmd)
+{
+	assert(cmd->opc == NVME_OPC_GET_LOG_PAGE);
+	return (le32toh(cmd->cdw10) & 0xff);
+}
+
+uint64_t
+nvmf_get_log_page_length(const struct nvme_command *cmd)
+{
+	uint32_t numd;
+
+	assert(cmd->opc == NVME_OPC_GET_LOG_PAGE);
+	numd = le32toh(cmd->cdw10) >> 16 | (le32toh(cmd->cdw11) & 0xffff) << 16;
+	return ((numd + 1) * 4);
+}
+
+uint64_t
+nvmf_get_log_page_offset(const struct nvme_command *cmd)
+{
+	assert(cmd->opc == NVME_OPC_GET_LOG_PAGE);
+	return (le32toh(cmd->cdw12) | (uint64_t)le32toh(cmd->cdw13) << 32);
 }

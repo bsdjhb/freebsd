@@ -264,6 +264,15 @@ void	nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 bool	nvmf_validate_cc(struct nvmf_qpair *qp, uint64_t cap, uint32_t old_cc,
     uint32_t new_cc);
 
+/* Return the log page id (LID) of a GET_LOG_PAGE command. */
+uint8_t	nvmf_get_log_page_id(const struct nvme_command *cmd);
+
+/* Return the requested data length of a GET_LOG_PAGE command. */
+uint64_t nvmf_get_log_page_length(const struct nvme_command *cmd);
+
+/* Return the requested data offset of a GET_LOG_PAGE command. */
+uint64_t nvmf_get_log_page_offset(const struct nvme_command *cmd);
+
 /* Host-specific APIs. */
 
 /*
