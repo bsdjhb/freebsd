@@ -1879,7 +1879,7 @@ tcp_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
 	data_offset = 0;
 	for (i = 0; i < iovcnt; i++) {
 		error = tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset,
-		    iov[i].iov_base, iov[i].iov_len, i == iovcnt);
+		    iov[i].iov_base, iov[i].iov_len, i + 1 == iovcnt);
 		if (error != 0)
 			return (error);
 	}
