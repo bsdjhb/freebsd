@@ -27,6 +27,7 @@
  */
 
 #include <err.h>
+#include <errno.h>
 #include <libnvmf.h>
 #include <stdlib.h>
 
@@ -202,7 +203,8 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 	while (!c->shutdown) {
 		error = nvmf_controller_receive_capsule(qp, &nc);
 		if (error != 0) {
-			warnc(error, "Failed to read command capsule");
+			if (error != ECONNRESET)
+				warnc(error, "Failed to read command capsule");
 			break;
 		}
 
