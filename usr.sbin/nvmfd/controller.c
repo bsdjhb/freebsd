@@ -61,7 +61,7 @@ update_cc(struct controller *c, uint32_t new_cc)
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
 	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
 		c->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
-		c->csts |= 2 << NVME_CSTS_REG_SHST_SHIFT;
+		c->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
 		c->shutdown = true;
 	}
 
