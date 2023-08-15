@@ -42,7 +42,7 @@ nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	struct nvmf_request *req;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = NVME_OPC_FABRIC;
+	cmd.opcode = NVME_OPC_FABRICS_COMMANDS;
 	cmd.fctype = NVMF_FABRIC_COMMAND_PROPERTY_GET;
 	switch (size) {
 	case 4:
@@ -70,7 +70,7 @@ nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	struct nvmf_request *req;
 
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = NVME_OPC_FABRIC;
+	cmd.opcode = NVME_OPC_FABRICS_COMMANDS;
 	cmd.fctype = NVMF_FABRIC_COMMAND_PROPERTY_SET;
 	switch (size) {
 	case 4:

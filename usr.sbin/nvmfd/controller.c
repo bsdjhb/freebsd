@@ -215,7 +215,7 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 		}
 
 		switch (cmd->opc) {
-		case NVME_OPC_FABRIC:
+		case NVME_OPC_FABRICS_COMMANDS:
 			handle_fabrics_command(c, nc,
 			    (const struct nvmf_fabric_cmd *)cmd);
 			break;

@@ -245,7 +245,7 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	}
 
 	cmd = nvmf_capsule_sqe(cc);
-	if (cmd->opcode != NVME_OPC_FABRIC ||
+	if (cmd->opcode != NVME_OPC_FABRICS_COMMANDS ||
 	    cmd->fctype != NVMF_FABRIC_COMMAND_CONNECT) {
 		na_error(na, "Invalid opcode in CONNECT (%u,%u)", cmd->opcode,
 		    cmd->fctype);

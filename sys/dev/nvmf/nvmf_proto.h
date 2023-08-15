@@ -109,8 +109,6 @@ struct nvmf_capsule_cmd {
 _Static_assert(sizeof(struct nvmf_capsule_cmd) == 64, "Incorrect size");
 
 /* Fabric Command Set */
-#define NVME_OPC_FABRIC	0x7f
-
 enum nvmf_fabric_cmd_types {
 	NVMF_FABRIC_COMMAND_PROPERTY_SET			= 0x00,
 	NVMF_FABRIC_COMMAND_CONNECT				= 0x01,

@@ -52,7 +52,7 @@ nvmf_init_fabrics_sqe(void *sqe, uint8_t fctype)
 {
 	struct nvmf_capsule_cmd *cmd = sqe;
 
-	nvmf_init_sqe(sqe, NVME_OPC_FABRIC);
+	nvmf_init_sqe(sqe, NVME_OPC_FABRICS_COMMANDS);
 	cmd->fctype = fctype;
 }
 
