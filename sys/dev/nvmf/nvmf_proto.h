@@ -354,11 +354,6 @@ _Static_assert(sizeof(struct nvmf_fabric_prop_set_cmd) == 64, "Incorrect size");
 #define NVMF_NQN_UUID_PRE	"nqn.2014-08.org.nvmexpress:uuid:"
 #define NVMF_DISCOVERY_NQN	"nqn.2014-08.org.nvmexpress.discovery"
 
-#if 0
-/* Needed? */
-#define DOMAIN_LABEL_MAX_LEN	63 /* RFC 1034 max domain label length */
-#endif
-
 #define NVMF_TRSTRING_MAX_LEN	32
 #define NVMF_TRADDR_MAX_LEN	256
 #define NVMF_TRSVCID_MAX_LEN	32
