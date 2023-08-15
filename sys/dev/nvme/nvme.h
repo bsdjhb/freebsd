@@ -733,6 +733,38 @@ struct nvme_registers {
 
 _Static_assert(sizeof(struct nvme_registers) == 0x1008, "bad size for nvme_registers");
 
+#define NVME_SGL_SUBTYPE_SHIFT				(0)
+#define NVME_SGL_SUBTYPE_MASK				(0xF)
+#define NVME_SGL_TYPE_SHIFT				(4)
+#define NVME_SGL_TYPE_MASK				(0xF)
+
+#define	NVME_SGL_TYPE(type, subtype)		\
+	((subtype) << NVME_SGL_SUBTYPE_SHIFT | (type) << NVME_SGL_TYPE_SHIFT)
+
+enum nvme_sgl_type {
+	NVME_SGL_TYPE_DATA_BLOCK		= 0x0,
+	NVME_SGL_TYPE_BIT_BUCKET		= 0x1,
+	NVME_SGL_TYPE_SEGMENT			= 0x2,
+	NVME_SGL_TYPE_LAST_SEGMENT		= 0x3,
+	NVME_SGL_TYPE_KEYED_DATA_BLOCK		= 0x4,
+	NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK	= 0x5,
+};
+
+enum nvme_sgl_subtype {
+	NVME_SGL_SUBTYPE_ADDRESS		= 0x0,
+	NVME_SGL_SUBTYPE_OFFSET			= 0x1,
+	NVME_SGL_SUBTYPE_TRANSPORT		= 0xa,
+};
+
+struct nvme_sgl_descriptor {
+	uint64_t address;
+	uint32_t length;
+	uint8_t reserved[3];
+	uint8_t type;
+};
+
+_Static_assert(sizeof(struct nvme_sgl_descriptor) == 16, "bad size for nvme_sgl_descriptor");
+
 struct nvme_command {
 	/* dword 0 */
 	uint8_t opc;		/* opcode */
@@ -749,11 +781,14 @@ struct nvme_command {
 	/* dword 4-5 */
 	uint64_t mptr;		/* metadata pointer */
 
-	/* dword 6-7 */
-	uint64_t prp1;		/* prp entry 1 */
-
-	/* dword 8-9 */
-	uint64_t prp2;		/* prp entry 2 */
+	/* dword 6-9 */
+	union {
+		struct {
+			uint64_t prp1;	/* prp entry 1 */
+			uint64_t prp2;	/* prp entry 2 */
+		};
+		struct nvme_sgl_descriptor sgl;
+	};
 
 	/* dword 10-15 */
 	uint32_t cdw10;		/* command-specific */

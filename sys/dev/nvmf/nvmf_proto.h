@@ -51,52 +51,7 @@
 
 #pragma pack(push, 1)
 
-/* Pulled from include/spdk/nvme_spec.h from Intel's SPDK. */
-
 #define	NVME_NQN_FIELD_SIZE		256
-
-enum nvme_sgl_descriptor_type {
-	NVME_SGL_TYPE_DATA_BLOCK		= 0x0,
-	NVME_SGL_TYPE_BIT_BUCKET		= 0x1,
-	NVME_SGL_TYPE_SEGMENT			= 0x2,
-	NVME_SGL_TYPE_LAST_SEGMENT		= 0x3,
-	NVME_SGL_TYPE_KEYED_DATA_BLOCK		= 0x4,
-	NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK	= 0x5,
-	/* 0x6 - 0xE reserved */
-	NVME_SGL_TYPE_VENDOR_SPECIFIC		= 0xF
-};
-
-enum nvme_sgl_descriptor_subtype {
-	NVME_SGL_SUBTYPE_ADDRESS		= 0x0,
-	NVME_SGL_SUBTYPE_OFFSET			= 0x1,
-	NVME_SGL_SUBTYPE_TRANSPORT		= 0xa,
-};
-
-struct nvme_sgl_descriptor {
-	uint64_t address;
-	union {
-		struct {
-			uint8_t reserved[7];
-			uint8_t subtype	: 4;
-			uint8_t type	: 4;
-		} generic;
-
-		struct {
-			uint32_t length;
-			uint8_t reserved[3];
-			uint8_t subtype	: 4;
-			uint8_t type	: 4;
-		} unkeyed;
-
-		struct {
-			uint64_t length		: 24;
-			uint64_t key		: 32;
-			uint64_t subtype	: 4;
-			uint64_t type		: 4;
-		} keyed;
-	};
-} __packed;
-_Static_assert(sizeof(struct nvme_sgl_descriptor) == 16, "Incorrect size");
 
 struct nvmf_capsule_cmd {
 	uint8_t		opcode;

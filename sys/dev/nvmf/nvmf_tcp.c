@@ -125,6 +125,13 @@ struct nvmf_tcp_capsule {
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
 };
 
+#define	NVME_SGL_TYPE_ICD						\
+	NVME_SGL_TYPE(NVME_SGL_TYPE_DATA_BLOCK, NVME_SGL_SUBTYPE_OFFSET)
+
+#define	NVME_SGL_TYPE_COMMAND_BUFFER					\
+	NVME_SGL_TYPE(NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK,		\
+	    NVME_SGL_SUBTYPE_TRANSPORT)
+
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
 #define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
 
@@ -1721,18 +1728,16 @@ tcp_command_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_capsule *tc)
 	cmd.ccsqe = nc->nc_sqe;
 
 	/* Populate SGL in SQE. */
-	sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
+	sgl = &cmd.ccsqe.sgl;
 	memset(sgl, 0, sizeof(*sgl));
 	sgl->address = 0;
-	sgl->unkeyed.length = htole32(nc->nc_data.io_len);
+	sgl->length = htole32(nc->nc_data.io_len);
 	if (use_icd) {
 		/* Use in-capsule data. */
-		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
-		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
+		sgl->type = NVME_SGL_TYPE_ICD;
 	} else {
 		/* Use a command buffer. */
-		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
-		sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
+		sgl->type = NVME_SGL_TYPE_COMMAND_BUFFER;
 	}
 
 	top = nvmf_tcp_construct_pdu(qp, &cmd, sizeof(cmd), m, m != NULL ?
@@ -2073,33 +2078,18 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 
 	KASSERT(tc->rx_pdu.hdr != NULL, ("capsule wasn't received"));
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	switch (sgl->unkeyed.type) {
-	case NVME_SGL_TYPE_DATA_BLOCK:
-		switch (sgl->unkeyed.subtype) {
-		case NVME_SGL_SUBTYPE_OFFSET:
-			if (tc->rx_pdu.data_len !=
-			    le32toh(sgl->unkeyed.length)) {
-				printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
-				return (NVME_SC_DATA_SGL_LENGTH_INVALID);
-			}
-			break;
-		default:
-			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
-			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+	sgl = &nc->nc_sqe.sgl;
+	switch (sgl->type) {
+	case NVME_SGL_TYPE_ICD:
+		if (tc->rx_pdu.data_len != le32toh(sgl->length)) {
+			printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
+			return (NVME_SC_DATA_SGL_LENGTH_INVALID);
 		}
 		break;
-	case NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK:
-		switch (sgl->unkeyed.subtype) {
-		case NVME_SGL_SUBTYPE_TRANSPORT:
-			if (tc->rx_pdu.data_len != 0) {
-				printf("NVMe/TCP: Command Buffer SGL with ICD\n");
-				return (NVME_SC_INVALID_FIELD);
-			}
-			break;
-		default:
-			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
-			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+	case NVME_SGL_TYPE_COMMAND_BUFFER:
+		if (tc->rx_pdu.data_len != 0) {
+			printf("NVMe/TCP: Command Buffer SGL with ICD\n");
+			return (NVME_SC_INVALID_FIELD);
 		}
 		break;
 	default:
@@ -2188,12 +2178,12 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	    !nc->nc_qpair->nq_controller)
 		return (EINVAL);
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	data_len = le32toh(sgl->unkeyed.length);
+	sgl = &nc->nc_sqe.sgl;
+	data_len = le32toh(sgl->length);
 	if (data_offset + io->io_len > data_len)
 		return (EFBIG);
 
-	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
+	if (sgl->type == NVME_SGL_TYPE_ICD)
 		tcp_receive_icd_data(nc, data_offset, io);
 	else
 		tcp_receive_r2t_data(nc, data_offset, io);
@@ -2232,12 +2222,12 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 	    !qp->qp.nq_controller)
 		return (EINVAL);
 
-	sgl = (struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	data_len = le32toh(sgl->unkeyed.length);
+	sgl = &nc->nc_sqe.sgl;
+	data_len = le32toh(sgl->length);
 	if (io->io_len != data_len)
 		return (EFBIG);
 
-	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
+	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER)
 		return (EINVAL);
 
 	/* Allocate a command buffer for the mbufs to hold a reference on. */

@@ -97,6 +97,13 @@ struct nvmf_tcp_qpair {
 	TAILQ_HEAD(, nvmf_tcp_capsule) rx_capsules;
 };
 
+#define	NVME_SGL_TYPE_ICD						\
+	NVME_SGL_TYPE(NVME_SGL_TYPE_DATA_BLOCK, NVME_SGL_SUBTYPE_OFFSET)
+
+#define	NVME_SGL_TYPE_COMMAND_BUFFER					\
+	NVME_SGL_TYPE(NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK,		\
+	    NVME_SGL_SUBTYPE_TRANSPORT)
+
 #define	TASSOC(nc)	((struct nvmf_tcp_association *)(na))
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
 #define	CTCAP(nc)	((const struct nvmf_tcp_capsule *)(nc))
@@ -1457,19 +1464,17 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 		use_icd = true;
 
 	/* Populate SGL in SQE. */
-	sgl = (struct nvme_sgl_descriptor *)&cmd.ccsqe.prp1;
+	sgl = &cmd.ccsqe.sgl;
 	memset(sgl, 0, sizeof(*sgl));
 	sgl->address = 0;
-	sgl->unkeyed.length = htole32(nc->nc_data_len);
+	sgl->length = htole32(nc->nc_data_len);
 	if (use_icd) {
 		/* Use in-capsule data. */
-		sgl->unkeyed.type = NVME_SGL_TYPE_DATA_BLOCK;
-		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_OFFSET;
+		sgl->type = NVME_SGL_TYPE_ICD;
 		use_icd = (nc->nc_data_len != 0);
 	} else {
 		/* Use a command buffer. */
-		sgl->unkeyed.type = NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK;
-		sgl->unkeyed.subtype = NVME_SGL_SUBTYPE_TRANSPORT;
+		sgl->type = NVME_SGL_TYPE_COMMAND_BUFFER;
 	}
 
 	if (qp->header_digests) {
@@ -1619,33 +1624,18 @@ tcp_validate_command_capsule(const struct nvmf_capsule *nc)
 
 	assert(tc->rx_pdu.hdr != NULL);
 
-	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	switch (sgl->unkeyed.type) {
-	case NVME_SGL_TYPE_DATA_BLOCK:
-		switch (sgl->unkeyed.subtype) {
-		case NVME_SGL_SUBTYPE_OFFSET:
-			if (tc->rx_pdu.data_len !=
-			    le32toh(sgl->unkeyed.length)) {
-				printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
-				return (NVME_SC_DATA_SGL_LENGTH_INVALID);
-			}
-			break;
-		default:
-			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
-			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+	sgl = &nc->nc_sqe.sgl;
+	switch (sgl->type) {
+	case NVME_SGL_TYPE_ICD:
+		if (tc->rx_pdu.data_len != le32toh(sgl->length)) {
+			printf("NVMe/TCP: Command Capsule with mismatched ICD length\n");
+			return (NVME_SC_DATA_SGL_LENGTH_INVALID);
 		}
 		break;
-	case NVME_SGL_TYPE_TRANSPORT_DATA_BLOCK:
-		switch (sgl->unkeyed.subtype) {
-		case NVME_SGL_SUBTYPE_TRANSPORT:
-			if (tc->rx_pdu.data_len != 0) {
-				printf("NVMe/TCP: Command Buffer SGL with ICD\n");
-				return (NVME_SC_INVALID_FIELD);
-			}
-			break;
-		default:
-			printf("NVMe/TCP: Invalid SGL subtype in Command Capsule\n");
-			return (NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID);
+	case NVME_SGL_TYPE_COMMAND_BUFFER:
+		if (tc->rx_pdu.data_len != 0) {
+			printf("NVMe/TCP: Command Buffer SGL with ICD\n");
+			return (NVME_SC_INVALID_FIELD);
 		}
 		break;
 	default:
@@ -1664,11 +1654,8 @@ tcp_validate_command_capsule(const struct nvmf_capsule *nc)
 static size_t
 tcp_capsule_data_len(const struct nvmf_capsule *nc)
 {
-	const struct nvme_sgl_descriptor *sgl;
-
 	assert(nc->nc_qe_len == sizeof(struct nvme_command));
-	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	return (le32toh(sgl->unkeyed.length));
+	return (le32toh(nc->nc_sqe.sgl.length));
 }
 
 /* NB: cid and ttag are both little-endian already. */
@@ -1766,12 +1753,12 @@ tcp_receive_controller_data(const struct nvmf_capsule *nc, uint32_t data_offset,
 	for (i = 0; i < iovcnt; i++)
 		iov_len += iov[i].iov_len;
 
-	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	data_len = le32toh(sgl->unkeyed.length);
+	sgl = &nc->nc_sqe.sgl;
+	data_len = le32toh(sgl->length);
 	if (data_offset + iov_len > data_len)
 		return (EFBIG);
 
-	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
+	if (sgl->type == NVME_SGL_TYPE_ICD)
 		return (tcp_receive_icd_data(nc, data_offset, iov, iovcnt));
 	else
 		return (tcp_receive_r2t_data(nc, data_offset, iov_len, iov,
@@ -1863,12 +1850,12 @@ tcp_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
 	for (i = 0; i < iovcnt; i++)
 		iov_len += iov[i].iov_len;
 
-	sgl = (const struct nvme_sgl_descriptor *)&nc->nc_sqe.prp1;
-	data_len = le32toh(sgl->unkeyed.length);
+	sgl = &nc->nc_sqe.sgl;
+	data_len = le32toh(sgl->length);
 	if (iov_len != data_len)
 		return (EFBIG);
 
-	if (sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET)
+	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER)
 		return (EINVAL);
 
 	/*
