@@ -149,8 +149,12 @@ handle_fabrics_command(struct controller *c,
 		handle_property_set(c, nc,
 		    (const struct nvmf_fabric_prop_set_cmd *)fc);
 		break;
+	case NVMF_FABRIC_COMMAND_CONNECT:
+		warnx("CONNECT command on connected queue");
+		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
+		break;
 	case NVMF_FABRIC_COMMAND_DISCONNECT:
-		warnx("Disconnect command on admin queue");
+		warnx("DISCONNECT command on admin queue");
 		nvmf_send_error(nc, NVME_SCT_COMMAND_SPECIFIC,
 		    NVMF_FABRIC_SC_INVALID_QUEUE_TYPE);
 		break;
