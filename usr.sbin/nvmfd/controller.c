@@ -178,6 +178,7 @@ handle_identify_command(const struct controller *c,
 	case 1:
 		break;
 	default:
+		warnx("Unsupported CNS %#x for IDENTIFY", cns);
 		goto error;
 	}
 
