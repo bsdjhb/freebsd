@@ -47,7 +47,7 @@ struct nvmf_host_qpair {
 	struct nvmf_qpair *qp;
 
 	bool	sq_flow_control;
-	uint16_t qsize;
+	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;
 

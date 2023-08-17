@@ -45,9 +45,9 @@
 #define	NVMF_CNTLID_STATIC_MAX	0xFFEF
 
 struct nvmf_handoff_qpair_params {
-	bool admin;
-	bool sq_flow_control;
-	uint16_t qsize;
+	bool	admin;
+	bool	sq_flow_control;
+	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;	/* host only */
 	union {
@@ -75,7 +75,7 @@ struct nvmf_handoff_host {
 
 struct nvmf_reconnect_params {
 	uint16_t cntlid;
-	char subnqn[256];
+	char	subnqn[256];
 };
 
 /* Operations on /dev/nvmf */

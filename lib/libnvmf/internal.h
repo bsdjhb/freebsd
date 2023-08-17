@@ -87,7 +87,7 @@ struct nvmf_qpair {
 	 * Queue sizes.  This assumes the same size for both the
 	 * completion and submission queues within a pair.
 	 */
-	uint16_t nq_qsize;
+	u_int	nq_qsize;
 
 	/* Flow control management for submission queues. */
 	bool nq_flow_control;
