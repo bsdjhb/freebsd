@@ -568,9 +568,9 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 		memset(cp, 0, sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
 	/* FreeBSD OUI */
-	cdata->ieee[0] = 0x58;
+	cdata->ieee[0] = 0xfc;
 	cdata->ieee[1] = 0x9c;
-	cdata->ieee[2] = 0xfc;
+	cdata->ieee[2] = 0x58;
 
 	cdata->ctrlr_id = qp->nq_cntlid;
 	cdata->ver = NVME_REV(1, 4);
