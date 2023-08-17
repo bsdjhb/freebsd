@@ -57,6 +57,7 @@ void	handle_discovery_socket(int s);
 void	discovery_add_io_controller(int s, const char *subnqn);
 
 /* io.c */
+void	init_io(const char *subnqn);
 void	handle_io_socket(int s);
 
 /* devices.c */

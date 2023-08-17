@@ -207,6 +207,7 @@ main(int ac, char **av)
 	register_devices(ac, av);
 
 	init_discovery();
+	init_io(subnqn);
 
 	kqfd = kqueue();
 	if (kqfd == -1)
