@@ -61,5 +61,7 @@ void	handle_io_socket(int s);
 
 /* devices.c */
 void	register_devices(int ac, char **av);
+u_int	device_count(void);
+bool	device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata);
 
 #endif /* !__INTERNAL_H__ */

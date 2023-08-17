@@ -27,8 +27,11 @@
  */
 
 #include <sys/disk.h>
+#include <sys/gsb_crc32.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <dev/nvme/nvme.h>
+#include <net/ieee_oui.h>
 #include <err.h>
 #include <fcntl.h>
 #include <libutil.h>
@@ -40,21 +43,35 @@
 #define	RAMDISK_PREFIX	"ramdisk:"
 
 struct backing_device {
-	enum { RAMDISK, FILE, CDEV } type;
+	enum { RAMDISK = 1, FILE, CDEV } type;
 	union {
 		int	fd;	/* FILE, CDEV */
 		void	*mem;	/* RAMDISK */
 	};
 	u_int	sector_size;
 	off_t	len;
+	uint64_t eui64;
 };
 
 static struct backing_device *devices;
 static u_int ndevices;
 
+static uint64_t
+generate_eui64(uint32_t low)
+{
+	return (OUI_FREEBSD_NVME_LOW << 16 | low);
+}
+
+static uint32_t
+crc32(const void *buf, size_t len)
+{
+	return (calculate_crc32c(0xffffffff, buf, len) ^ 0xffffffff);
+}
+
 static void
 init_ramdisk(const char *config, struct backing_device *dev)
 {
+	static uint32_t ramdisk_idx = 1;
 	uint64_t num;
 
 	dev->type = RAMDISK;
@@ -65,6 +82,7 @@ init_ramdisk(const char *config, struct backing_device *dev)
 		errx(1, "Invalid ramdisk size %ju", (uintmax_t)num);
 	dev->mem = calloc(num, 1);
 	dev->len = num;
+	dev->eui64 = generate_eui64('M' << 24 | ramdisk_idx++);
 }
 
 static void
@@ -77,6 +95,8 @@ init_filedevice(const char *config, int fd, struct stat *sb,
 	if ((sb->st_size % dev->sector_size) != 0)
 		errx(1, "File size is not a multiple of 512: %s", config);
 	dev->len = sb->st_size;
+	dev->eui64 = generate_eui64('F' << 24 |
+	    (crc32(config, strlen(config)) & 0xffffff));
 }
 
 static void
@@ -88,6 +108,8 @@ init_chardevice(const char *config, int fd, struct backing_device *dev)
 		err(1, "Failed to fetch sector size for %s", config);
 	if (ioctl(fd, DIOCGMEDIASIZE, &dev->len) != 0)
 		err(1, "Failed to fetch sector size for %s", config);
+	dev->eui64 = generate_eui64('C' << 24 |
+	    (crc32(config, strlen(config)) & 0xffffff));
 }
 
 static void
@@ -129,3 +151,38 @@ register_devices(int ac, char **av)
 		init_device(av[i], &devices[i]);
 }
 
+u_int
+device_count(void)
+{
+	return (ndevices);
+}
+
+static struct backing_device *
+lookup_device(u_int nsid)
+{
+	if (nsid == 0 || nsid > ndevices)
+		return (NULL);
+	return (&devices[nsid - 1]);
+}
+
+bool
+device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata)
+{
+	struct backing_device *dev;
+
+	dev = lookup_device(nsid);
+	if (dev == NULL)
+		return (false);
+
+	memset(nsdata, 0, sizeof(*nsdata));
+	nsdata->nsze = htole64(dev->len / dev->sector_size);
+	nsdata->ncap = nsdata->nsze;
+	nsdata->nuse = nsdata->ncap;
+	nsdata->nlbaf = 1 - 1;
+	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
+	nsdata->lbaf[0] = (ffs(dev->sector_size) - 1) <<
+	    NVME_NS_DATA_LBAF_LBADS_SHIFT;
+
+	be64enc(nsdata->eui64, dev->eui64);
+	return (true);
+}
