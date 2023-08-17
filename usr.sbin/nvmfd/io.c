@@ -28,6 +28,7 @@
 
 #include <sys/sysctl.h>
 #include <err.h>
+#include <errno.h>
 #include <libnvmf.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -44,6 +45,7 @@ struct io_controller {
 	int admin_socket;
 
 	u_int num_io_queues;
+	u_int active_io_queues;
 	struct nvmf_qpair **io_qpairs;
 	int *io_sockets;
 
@@ -54,10 +56,11 @@ struct io_controller {
 
 struct io_thread_data {
 	struct io_controller *ioc;
-	u_int16_t qid;
+	uint16_t qid;
 };
 
 static struct nvmf_association *io_na;
+static pthread_cond_t io_cond;
 static pthread_mutex_t io_na_mutex;
 static struct io_controller *io_controller;
 static const char *nqn;
@@ -94,6 +97,7 @@ init_io(const char *subnqn)
 
 	snprintf(serial, sizeof(serial), "HI:%lu", hostid);
 
+	pthread_cond_init(&io_cond, NULL);
 	pthread_mutex_init(&io_na_mutex, NULL);
 }
 
@@ -218,16 +222,116 @@ admin_qpair_thread(void *arg)
 
 	controller_handle_admin_commands(ioc->c, admin_command, ioc);
 
-	/* TODO: Need to shutdown any I/O threads still running. */
-	free_controller(ioc->c);
-
 	pthread_mutex_lock(&io_na_mutex);
+	for (u_int i = 0; i < ioc->num_io_queues; i++) {
+		if (ioc->io_qpairs[i] == NULL || ioc->io_sockets[i] == -1)
+			continue;
+		close(ioc->io_sockets[i]);
+		ioc->io_sockets[i] = -1;
+	}
+
+	/* Wait for I/O threads to notice. */
+	while (ioc->active_io_queues > 0)
+		pthread_cond_wait(&io_cond, &io_na_mutex);
+
 	nvmf_free_qpair(ioc->admin_qpair);
 	io_controller = NULL;
 	pthread_mutex_unlock(&io_na_mutex);
 
+	free_controller(ioc->c);
+
 	close(ioc->admin_socket);
 	free(ioc);
+	return (NULL);
+}
+
+static bool
+handle_io_fabrics_command(const struct nvmf_capsule *nc,
+    const struct nvmf_fabric_cmd *fc)
+{
+	switch (fc->fctype) {
+	case NVMF_FABRIC_COMMAND_CONNECT:
+		warnx("CONNECT command on connected queue");
+		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
+		break;
+	case NVMF_FABRIC_COMMAND_DISCONNECT:
+		nvmf_send_success(nc);
+		return (true);
+	default:
+		warnx("Unsupported fabrics command %#x", fc->fctype);
+		nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
+		break;
+	}
+
+	return (false);
+}
+
+static bool
+handle_io_commands(struct nvmf_qpair *qp)
+{
+	const struct nvme_command *cmd;
+	struct nvmf_capsule *nc;
+	int error;
+	bool disconnect;
+
+	disconnect = false;
+
+	while (!disconnect) {
+		error = nvmf_controller_receive_capsule(qp, &nc);
+		if (error != 0) {
+			if (error != ECONNRESET)
+				warnc(error, "Failed to read command capsule");
+			break;
+		}
+
+		cmd = nvmf_capsule_sqe(nc);
+
+		switch (cmd->opc) {
+		case NVME_OPC_FABRICS_COMMANDS:
+			disconnect = handle_io_fabrics_command(nc,
+			    (const struct nvmf_fabric_cmd *)cmd);
+			break;
+		default:
+			warnx("Unsupported opcode %#x", cmd->opc);
+			nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
+			break;
+		}
+		nvmf_free_capsule(nc);
+	}
+
+	return (disconnect);
+}
+
+static void *
+io_qpair_thread(void *arg)
+{
+	struct io_thread_data *itd = arg;
+	struct nvmf_qpair *qp;
+	bool disconnect;
+
+	pthread_detach(pthread_self());
+
+	pthread_mutex_lock(&io_na_mutex);
+	qp = itd->ioc->io_qpairs[itd->qid - 1];
+	pthread_mutex_unlock(&io_na_mutex);
+
+	disconnect = handle_io_commands(qp);
+
+	pthread_mutex_lock(&io_na_mutex);
+	if (disconnect)
+		itd->ioc->io_qpairs[itd->qid - 1] = NULL;
+	if (itd->ioc->io_sockets[itd->qid - 1] != -1) {
+		close(itd->ioc->io_sockets[itd->qid - 1]);
+		itd->ioc->io_sockets[itd->qid - 1] = -1;
+	}
+	itd->ioc->active_io_queues--;
+	if (itd->ioc->active_io_queues == 0)
+		pthread_cond_broadcast(&io_cond);
+
+	nvmf_free_qpair(qp);
+	pthread_mutex_unlock(&io_na_mutex);
+
+	free(itd);
 	return (NULL);
 }
 
@@ -280,9 +384,11 @@ handle_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 }
 
 static bool
-handle_io_qpair(int s __unused, struct nvmf_qpair *qp __unused, struct nvmf_capsule *nc,
+handle_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
     const struct nvmf_fabric_connect_data *data, uint16_t qid)
 {
+	struct io_thread_data *itd;
+	pthread_t thr;
 	int error;
 
 	if (io_controller == NULL) {
@@ -323,6 +429,11 @@ handle_io_qpair(int s __unused, struct nvmf_qpair *qp __unused, struct nvmf_caps
 		    offsetof(struct nvmf_fabric_connect_cmd, qid));
 		return (false);
 	}
+	if (io_controller->io_qpairs[qid - 1] != NULL) {
+		warnx("Attempt to re-create I/O qpair %u", qid);
+		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
+		return (false);
+	}
 
 	error = nvmf_finish_accept(nc, io_controller->cntlid);
 	if (error != 0) {
@@ -330,8 +441,21 @@ handle_io_qpair(int s __unused, struct nvmf_qpair *qp __unused, struct nvmf_caps
 		return (false);
 	}
 
-	warnx("TODO: Create I/O qpair %u", qid);
-	return (false);
+	itd = calloc(1, sizeof(*itd));
+	itd->ioc = io_controller;
+	itd->qid = qid;
+
+	error = pthread_create(&thr, NULL, io_qpair_thread, itd);
+	if (error != 0) {
+		warnc(error, "Failed to create I/O qpair thread");
+		free(itd);
+		return (false);
+	}
+
+	io_controller->active_io_queues++;
+	io_controller->io_qpairs[qid - 1] = qp;
+	io_controller->io_sockets[qid - 1] = s;
+	return (true);
 }
 
 void
