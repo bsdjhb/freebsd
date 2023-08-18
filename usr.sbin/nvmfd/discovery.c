@@ -235,10 +235,8 @@ static void
 handle_get_log_page_command(const struct nvmf_capsule *nc,
     const struct nvme_command *cmd, struct discovery_controller *dc)
 {
-	struct iovec iov[1];
 	uint64_t offset;
 	uint32_t length;
-	int error;
 
 	switch (nvmf_get_log_page_id(cmd)) {
 	case NVME_LOG_DISCOVERY:
@@ -259,13 +257,8 @@ handle_get_log_page_command(const struct nvmf_capsule *nc,
 	if (length > dc->discovery_log_len - offset)
 		length = dc->discovery_log_len - offset;
 
-	iov[0].iov_base = (char *)dc->discovery_log + offset;
-	iov[0].iov_len = length;
-	error = nvmf_send_controller_data(nc, iov, nitems(iov));
-	if (error != 0)
-		nvmf_send_generic_error(nc, NVME_SC_DATA_TRANSFER_ERROR);
-	else
-		nvmf_send_success(nc);
+	nvmf_send_controller_data(nc, (char *)dc->discovery_log + offset,
+	    length);
 	return;
 error:
 	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);

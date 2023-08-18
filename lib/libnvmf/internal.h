@@ -59,9 +59,9 @@ struct nvmf_transport_ops {
 	/* Transferring controller data. */
 	size_t (*capsule_data_len)(const struct nvmf_capsule *nc);
 	int (*receive_controller_data)(const struct nvmf_capsule *nc,
-	    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
+	    uint32_t data_offset, void *buf, size_t len);
 	int (*send_controller_data)(const struct nvmf_capsule *nc,
-	    struct iovec *iov, u_int iovcnt);
+	    const void *buf, size_t len);
 };
 
 struct nvmf_association {

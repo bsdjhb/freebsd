@@ -254,18 +254,18 @@ nvmf_capsule_data_len(const struct nvmf_capsule *nc)
 
 int
 nvmf_receive_controller_data(const struct nvmf_capsule *nc,
-    uint32_t data_offset, struct iovec *iov, u_int iovcnt)
+    uint32_t data_offset, void *buf, size_t len)
 {
 	return (nc->nc_qpair->nq_association->na_ops->receive_controller_data(nc,
-	    data_offset, iov, iovcnt));
+	    data_offset, buf, len));
 }
 
 int
-nvmf_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
-    u_int iovcnt)
+nvmf_send_controller_data(const struct nvmf_capsule *nc, const void *buf,
+    size_t len)
 {
 	return (nc->nc_qpair->nq_association->na_ops->send_controller_data(nc,
-	    iov, iovcnt));
+	    buf, len));
 }
 
 int

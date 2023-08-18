@@ -216,11 +216,9 @@ void
 device_read(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
 {
 	struct backing_device *dev;
-	struct iovec iov[1];
-	char *p;
+	char *p, *src;
 	off_t off;
 	size_t len;
-	int error;
 
 	dev = lookup_device(nsid);
 	if (dev == NULL) {
@@ -243,7 +241,7 @@ device_read(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
 
 	if (dev->type == RAMDISK) {
 		p = NULL;
-		iov[0].iov_base = (char *)dev->mem + off;
+		src = (char *)dev->mem + off;
 	} else {
 		p = malloc(len);
 		if (!read_buffer(dev->fd, p, len, off)) {
@@ -252,23 +250,11 @@ device_read(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
 			    NVME_SC_INTERNAL_DEVICE_ERROR);
 			return;
 		}
-		iov[0].iov_base = p;
+		src = p;
 	}
-	iov[0].iov_len = len;
 
-	error = nvmf_send_controller_data(nc, iov, nitems(iov));
+	nvmf_send_controller_data(nc, src, len);
 	free(p);
-	switch (error) {
-	case 0:
-		nvmf_send_success(nc);
-		break;
-	case EINVAL:
-		nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
-		break;
-	default:
-		nvmf_send_generic_error(nc, NVME_SC_TRANSIENT_TRANSPORT_ERROR);
-		break;
-	}
 }
 
 static bool
@@ -295,8 +281,7 @@ void
 device_write(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
 {
 	struct backing_device *dev;
-	struct iovec iov[1];
-	char *p;
+	char *p, *dst;
 	off_t off;
 	size_t len;
 	int error;
@@ -322,14 +307,13 @@ device_write(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
 
 	if (dev->type == RAMDISK) {
 		p = NULL;
-		iov[0].iov_base = (char *)dev->mem + off;
+		dst = (char *)dev->mem + off;
 	} else {
 		p = malloc(len);
-		iov[0].iov_base = p;
+		dst = p;
 	}
-	iov[0].iov_len = len;
 
-	error = nvmf_receive_controller_data(nc, 0, iov, nitems(iov));
+	error = nvmf_receive_controller_data(nc, 0, dst, len);
 	if (error != 0) {
 		nvmf_send_generic_error(nc, NVME_SC_TRANSIENT_TRANSPORT_ERROR);
 		free(p);

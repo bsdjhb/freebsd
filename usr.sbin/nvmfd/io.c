@@ -106,38 +106,22 @@ handle_io_identify_command(const struct nvmf_capsule *nc,
     const struct nvme_command *cmd)
 {
 	struct nvme_namespace_data nsdata;
-	struct iovec iov[1];
-	int error;
 	uint8_t cns;
 
 	cns = le32toh(cmd->cdw10) & 0xFF;
 	switch (cns) {
 	case 0:
-		if (nvmf_capsule_data_len(nc) != sizeof(nsdata))
-			goto error;
-
 		if (!device_namespace_data(le32toh(cmd->nsid), &nsdata)) {
 			nvmf_send_generic_error(nc,
 			    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
 			return (true);
 		}
 
-		iov[0].iov_base = &nsdata;
-		iov[0].iov_len = sizeof(nsdata);
-		break;
+		nvmf_send_controller_data(nc, &nsdata, sizeof(nsdata));
+		return (true);
 	default:
 		return (false);
 	}
-
-	error = nvmf_send_controller_data(nc, iov, nitems(iov));
-	if (error != 0)
-		nvmf_send_generic_error(nc, NVME_SC_DATA_TRANSFER_ERROR);
-	else
-		nvmf_send_success(nc);
-	return (true);
-error:
-	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
-	return (true);
 }
 
 static void

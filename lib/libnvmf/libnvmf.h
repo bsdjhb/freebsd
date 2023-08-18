@@ -163,20 +163,20 @@ size_t	nvmf_capsule_data_len(const struct nvmf_capsule *cc);
  * command capsule (e.g. the data for a WRITE command).  This can
  * either return in-capsule data or fetch data from the host
  * (e.g. using a R2T PDU over TCP).  The received command capsule
- * should be passed in 'nc'.  The received data is stored in the
- * passed in I/O vector.
+ * should be passed in 'nc'.  The received data is stored in '*buf'.
  */
 int	nvmf_receive_controller_data(const struct nvmf_capsule *nc,
-    uint32_t data_offset, struct iovec *iov, u_int iovcnt);
+    uint32_t data_offset, void *buf, size_t len);
 
 /*
  * A controller calls this function to send data in response to a
- * command prior to sending a response capsule.
- *
- * TODO: Support for SUCCESS flag for final TCP C2H_DATA PDU?
+ * command along with a response capsule.  If the data transfer
+ * succeeds, a success response is sent.  If the data transfer fails,
+ * an appropriate error status capsule is sent.  Regardless, a
+ * response capsule is always sent.
  */
 int	nvmf_send_controller_data(const struct nvmf_capsule *nc,
-    struct iovec *iov, u_int iovcnt);
+    const void *buf, size_t len);
 
 /*
  * Construct a CQE for a reply to a command capsule in 'nc' with the

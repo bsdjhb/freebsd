@@ -209,7 +209,6 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 	const struct nvmf_fabric_connect_cmd *cmd;
 	struct nvmf_qpair *qp;
 	struct nvmf_capsule *cc, *rc;
-	struct iovec iov[1];
 	u_int qsize;
 	int error;
 	uint16_t cntlid;
@@ -314,9 +313,7 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 		goto error;
 	}
 
-	iov[0].iov_base = data;
-	iov[0].iov_len = sizeof(*data);
-	error = nvmf_receive_controller_data(cc, 0, iov, nitems(iov));
+	error = nvmf_receive_controller_data(cc, 0, data, sizeof(*data));
 	if (error != 0) {
 		na_error(na, "Failed to read data for CONNECT: %s",
 		    strerror(error));

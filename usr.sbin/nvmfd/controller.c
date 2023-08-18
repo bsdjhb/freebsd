@@ -169,8 +169,6 @@ static void
 handle_identify_command(const struct controller *c,
     const struct nvmf_capsule *nc, const struct nvme_command *cmd)
 {
-	struct iovec iov[1];
-	int error;
 	uint8_t cns;
 
 	cns = le32toh(cmd->cdw10) & 0xFF;
@@ -182,15 +180,7 @@ handle_identify_command(const struct controller *c,
 		goto error;
 	}
 
-	if (nvmf_capsule_data_len(nc) != sizeof(c->cdata))
-		goto error;
-	iov[0].iov_base = __DECONST(void *, &c->cdata);
-	iov[0].iov_len = sizeof(c->cdata);
-	error = nvmf_send_controller_data(nc, iov, nitems(iov));
-	if (error != 0)
-		nvmf_send_generic_error(nc, NVME_SC_DATA_TRANSFER_ERROR);
-	else
-		nvmf_send_success(nc);
+	nvmf_send_controller_data(nc, &c->cdata, sizeof(c->cdata));
 	return;
 error:
 	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);

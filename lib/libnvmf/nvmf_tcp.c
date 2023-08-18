@@ -1691,12 +1691,16 @@ tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
 
 static int
 tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
-    uint32_t data_len, struct iovec *iov, u_int iovcnt)
+    uint32_t data_len, void *buf, size_t len)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
+	struct iovec iov[1];
 	int error;
 	uint16_t ttag;
+
+	iov[0].iov_base = buf;
+	iov[0].iov_len = len;
 
 	/*
 	 * Don't bother byte-swapping ttag as it is just a cookie
@@ -1708,7 +1712,7 @@ tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
 	if (error != 0)
 		return (error);
 
-	cb = tcp_alloc_command_buffer(qp, iov, iovcnt, data_offset, data_len,
+	cb = tcp_alloc_command_buffer(qp, iov, 1, data_offset, data_len,
 	    nc->nc_sqe.cid, ttag, true);
 
 	/* Parse received PDUs until the data transfer is complete. */
@@ -1723,52 +1727,43 @@ tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
 
 static int
 tcp_receive_icd_data(const struct nvmf_capsule *nc, uint32_t data_offset,
-    struct iovec *iov, u_int iovcnt)
+    void *buf, size_t len)
 {
 	const struct nvmf_tcp_capsule *tc = CTCAP(nc);
 	const char *icd;
-	u_int i;
 
 	icd = (const char *)tc->rx_pdu.hdr + tc->rx_pdu.hdr->pdo + data_offset;
-	for (i = 0; i < iovcnt; i++) {
-		memcpy(iov[i].iov_base, icd, iov[i].iov_len);
-		icd += iov[i].iov_len;
-	}
+	memcpy(buf, icd, len);
 	return (0);
 }
 
 static int
 tcp_receive_controller_data(const struct nvmf_capsule *nc, uint32_t data_offset,
-    struct iovec *iov, u_int iovcnt)
+    void *buf, size_t len)
 {
 	struct nvmf_association *na = nc->nc_qpair->nq_association;
 	const struct nvme_sgl_descriptor *sgl;
-	size_t data_len, iov_len;
-	u_int i;
+	size_t data_len;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) || !na->na_controller)
 		return (EINVAL);
 
-	iov_len = 0;
-	for (i = 0; i < iovcnt; i++)
-		iov_len += iov[i].iov_len;
-
 	sgl = &nc->nc_sqe.sgl;
 	data_len = le32toh(sgl->length);
-	if (data_offset + iov_len > data_len)
+	if (data_offset + len > data_len)
 		return (EFBIG);
 
 	if (sgl->type == NVME_SGL_TYPE_ICD)
-		return (tcp_receive_icd_data(nc, data_offset, iov, iovcnt));
+		return (tcp_receive_icd_data(nc, data_offset, buf, len));
 	else
-		return (tcp_receive_r2t_data(nc, data_offset, iov_len, iov,
-		    iovcnt));
+		return (tcp_receive_r2t_data(nc, data_offset, len, buf, len));
 }
 
 /* NB: cid is little-endian already. */
 static int
 tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
-    uint32_t data_offset, void *buf, size_t len, bool last_pdu)
+    uint32_t data_offset, const void *buf, size_t len, bool last_pdu,
+    bool success)
 {
 	struct {
 		struct nvme_tcp_c2h_data_hdr hdr;
@@ -1784,6 +1779,8 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
 	plen = sizeof(c2h.hdr);
 	if (last_pdu)
 		c2h.hdr.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
+	if (success)
+		c2h.hdr.common.flags |= NVME_TCP_C2H_DATA_FLAGS_SUCCESS;
 	if (qp->header_digests) {
 		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
 		plen += sizeof(c2h.digest);
@@ -1809,7 +1806,7 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
 
 	/* DATA */
 	plen += len;
-	iov[iovcnt].iov_base = buf;
+	iov[iovcnt].iov_base = __DECONST(void *, buf);
 	iov[iovcnt].iov_len = len;
 	iovcnt++;
 
@@ -1832,44 +1829,63 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
 }
 
 static int
-tcp_send_controller_data(const struct nvmf_capsule *nc, struct iovec *iov,
-    u_int iovcnt)
+tcp_send_controller_data(const struct nvmf_capsule *nc, const void *buf,
+    size_t len)
 {
 	struct nvmf_association *na = nc->nc_qpair->nq_association;
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	const struct nvme_sgl_descriptor *sgl;
-	size_t iov_len;
+	const char *src;
+	size_t todo;
 	uint32_t data_len, data_offset;
-	u_int i;
 	int error;
+	bool last_pdu, send_success_flag;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) || !na->na_controller)
 		return (EINVAL);
 
-	iov_len = 0;
-	for (i = 0; i < iovcnt; i++)
-		iov_len += iov[i].iov_len;
-
 	sgl = &nc->nc_sqe.sgl;
 	data_len = le32toh(sgl->length);
-	if (iov_len != data_len)
+	if (len != data_len) {
+		nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
 		return (EFBIG);
+	}
 
-	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER)
+	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER) {
+		nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
 		return (EINVAL);
+	}
+
+	/* Use the SUCCESS flag if SQ flow control is disabled. */
+	send_success_flag = !qp->qp.nq_flow_control;
 
 	/*
 	 * Write out one or more C2H_DATA PDUs containing the data.
-	 * To avoid copying and constructing more iovecs, send one
-	 * iovec entry at a time.
+	 * Each PDU is arbitrarily capped at 256k.
 	 */
 	data_offset = 0;
-	for (i = 0; i < iovcnt; i++) {
+	src = buf;
+	while (len > 0) {
+		if (len > 256 * 1024) {
+			todo = 256 * 1024;
+			last_pdu = false;
+		} else {
+			todo = len;
+			last_pdu = true;
+		}
 		error = tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset,
-		    iov[i].iov_base, iov[i].iov_len, i + 1 == iovcnt);
-		if (error != 0)
+		    src, todo, last_pdu, last_pdu && send_success_flag);
+		if (error != 0) {
+			nvmf_send_generic_error(nc,
+			    NVME_SC_TRANSIENT_TRANSPORT_ERROR);
 			return (error);
+		}
+		data_offset += todo;
+		src += todo;
+		len -= todo;
 	}
+	if (!send_success_flag)
+		nvmf_send_success(nc);
 	return (0);
 }
 
