@@ -281,6 +281,18 @@ struct nvmf_fabric_connect_rsp {
 };
 _Static_assert(sizeof(struct nvmf_fabric_connect_rsp) == 16, "Incorrect size");
 
+struct nvmf_fabric_disconnect_cmd {
+	uint8_t		opcode;
+	uint8_t		reserved1;
+	uint16_t	cid;
+	uint8_t		fctype;
+	uint8_t		reserved2[19];
+	struct nvme_sgl_descriptor sgl1;
+	uint16_t	recfmt; /* Disconnect Record Format */
+	uint8_t		reserved3[22];
+};
+_Static_assert(sizeof(struct nvmf_fabric_disconnect_cmd) == 64, "Incorrect size");
+
 #define NVMF_PROP_SIZE_4	0
 #define NVMF_PROP_SIZE_8	1
 
