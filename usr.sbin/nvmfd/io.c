@@ -255,8 +255,17 @@ handle_io_fabrics_command(const struct nvmf_capsule *nc,
 		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
 		break;
 	case NVMF_FABRIC_COMMAND_DISCONNECT:
+	{
+		const struct nvmf_fabric_disconnect_cmd *dis =
+		    (const struct nvmf_fabric_disconnect_cmd *)fc;
+		if (dis->recfmt != htole16(0)) {
+			nvmf_send_error(nc, NVME_SCT_COMMAND_SPECIFIC,
+			    NVMF_FABRIC_SC_INCOMPATIBLE_FORMAT);
+			break;
+		}
 		nvmf_send_success(nc);
 		return (true);
+	}
 	default:
 		warnx("Unsupported fabrics command %#x", fc->fctype);
 		nvmf_send_generic_error(nc, NVME_SC_INVALID_OPCODE);
