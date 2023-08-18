@@ -275,6 +275,32 @@ handle_io_fabrics_command(const struct nvmf_capsule *nc,
 	return (false);
 }
 
+static uint64_t
+cmd_lba(const struct nvme_command *cmd)
+{
+	return ((uint64_t)le32toh(cmd->cdw11) << 32 | le32toh(cmd->cdw10));
+}
+
+static u_int
+cmd_nlb(const struct nvme_command *cmd)
+{
+	return ((le32toh(cmd->cdw12) & 0xffff) + 1);
+}
+
+static void
+handle_read(const struct nvmf_capsule *nc,
+    const struct nvme_command *cmd)
+{
+	device_read(le32toh(cmd->nsid), cmd_lba(cmd), cmd_nlb(cmd), nc);
+}
+
+static void
+handle_write(const struct nvmf_capsule *nc,
+    const struct nvme_command *cmd)
+{
+	device_write(le32toh(cmd->nsid), cmd_lba(cmd), cmd_nlb(cmd), nc);
+}
+
 static bool
 handle_io_commands(struct nvmf_qpair *qp)
 {
@@ -296,6 +322,12 @@ handle_io_commands(struct nvmf_qpair *qp)
 		cmd = nvmf_capsule_sqe(nc);
 
 		switch (cmd->opc) {
+		case NVME_OPC_READ:
+			handle_read(nc, cmd);
+			break;
+		case NVME_OPC_WRITE:
+			handle_write(nc, cmd);
+			break;
 		case NVME_OPC_FABRICS_COMMANDS:
 			disconnect = handle_io_fabrics_command(nc,
 			    (const struct nvmf_fabric_cmd *)cmd);

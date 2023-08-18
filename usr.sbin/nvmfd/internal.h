@@ -64,5 +64,9 @@ void	handle_io_socket(int s);
 void	register_devices(int ac, char **av);
 u_int	device_count(void);
 bool	device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata);
+void	device_read(u_int nsid, uint64_t lba, u_int nlb,
+    const struct nvmf_capsule *nc);
+void	device_write(u_int nsid, uint64_t lba, u_int nlb,
+    const struct nvmf_capsule *nc);
 
 #endif /* !__INTERNAL_H__ */
