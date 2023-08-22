@@ -96,6 +96,7 @@ SUBDIR=	\
 	dc \
 	dcons \
 	dcons_crom \
+	ddp_test \
 	${_dpaa2} \
 	${_dpdk_lpm4} \
 	${_dpdk_lpm6} \
