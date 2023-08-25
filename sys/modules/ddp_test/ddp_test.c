@@ -19,13 +19,21 @@
 #include <sys/refcount.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
+#include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include "ddp_test.h"
 
 static struct cdev *ddp_test_cdev;
 static volatile u_int ddp_sockets;
+
+SYSCTL_NODE(_debug, OID_AUTO, ddp_test, CTLFLAG_RD, NULL, "ddp_test.ko");
+
+static int use_ddp;
+SYSCTL_INT(_debug_ddp_test, OID_AUTO, use_ddp, CTLFLAG_RW, &use_ddp, 0,
+    "Enable TCP_USE_DDP on sockets");
 
 static void
 sink_thread(void *arg)
@@ -114,7 +122,7 @@ add_thread(int fd, void (*func)(void *), const char *name)
 	struct file *fp;
 	struct socket *so;
 	cap_rights_t rights;
-	int error;
+	int error, optval;
 
 	error = fget(curthread, fd, cap_rights_init_one(&rights,
 	    CAP_SOCK_CLIENT), &fp);
@@ -138,6 +146,15 @@ add_thread(int fd, void (*func)(void *), const char *name)
 	fp->f_ops = &badfileops;
 	fp->f_data = NULL;
 	fdrop(fp, curthread);
+
+	if (use_ddp) {
+		optval = 1;
+		error = so_setsockopt(so, IPPROTO_TCP, TCP_USE_DDP, &optval,
+		    sizeof(optval));
+		if (error != 0)
+			printf("so_setsockopt(TCP_USE_DDP) failed: %d\n",
+			    error);
+	}
 
 	error = kthread_add(func, so, NULL, NULL, 0, 0, "%s", name);
 	if (error != 0) {
