@@ -687,6 +687,7 @@ struct sge_ofld_rxq {
 	uint64_t rx_iscsi_data_digest_errors;
 	u_long	rx_toe_tls_records;
 	u_long	rx_toe_tls_octets;
+	u_long	rx_toe_ddp_octets;
 } __aligned(CACHE_LINE_SIZE);
 
 static inline struct sge_ofld_rxq *

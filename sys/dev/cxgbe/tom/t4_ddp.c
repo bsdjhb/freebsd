@@ -81,6 +81,10 @@ static void aio_ddp_requeue_task(void *context, int pending);
 static void ddp_complete_all(struct toepcb *toep, int error);
 static void t4_aio_cancel_active(struct kaiocb *job);
 static void t4_aio_cancel_queued(struct kaiocb *job);
+static int t4_alloc_page_pods_for_rcvbuf(struct ppod_region *pr,
+    struct ddp_rcv_buffer *drb);
+static int t4_write_page_pods_for_rcvbuf(struct adapter *sc,
+    struct sge_wrq *wrq, int tid, struct ddp_rcv_buffer *drb);
 
 static TAILQ_HEAD(, pageset) ddp_orphan_pagesets;
 static struct mtx ddp_orphan_pagesets_lock;
@@ -89,15 +93,15 @@ static struct task ddp_orphan_task;
 #define MAX_DDP_BUFFER_SIZE		(M_TCB_RX_DDP_BUF0_LEN)
 
 /*
- * A page set holds information about a buffer used for DDP.  The page
- * set holds resources such as the VM pages backing the buffer (either
- * held or wired) and the page pods associated with the buffer.
- * Recently used page sets are cached to allow for efficient reuse of
- * buffers (avoiding the need to re-fault in pages, hold them, etc.).
- * Note that cached page sets keep the backing pages wired.  The
- * number of wired pages is capped by only allowing for two wired
- * pagesets per connection.  This is not a perfect cap, but is a
- * trade-off for performance.
+ * A page set holds information about a user buffer used for AIO DDP.
+ * The page set holds resources such as the VM pages backing the
+ * buffer (either held or wired) and the page pods associated with the
+ * buffer.  Recently used page sets are cached to allow for efficient
+ * reuse of buffers (avoiding the need to re-fault in pages, hold
+ * them, etc.).  Note that cached page sets keep the backing pages
+ * wired.  The number of wired pages is capped by only allowing for
+ * two wired pagesets per connection.  This is not a perfect cap, but
+ * is a trade-off for performance.
  *
  * If an application ping-pongs two buffers for a connection via
  * aio_read(2) then those buffers should remain wired and expensive VM
@@ -174,8 +178,57 @@ ddp_complete_one(struct kaiocb *job, int error)
 }
 
 static void
-free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
+free_ddp_rcv_buffer(struct ddp_rcv_buffer *drb)
 {
+	t4_free_page_pods(&drb->prsv);
+	free(drb->buf, M_CXGBE);
+	free(drb, M_CXGBE);
+}
+
+static struct ddp_rcv_buffer *
+alloc_ddp_rcv_buffer(struct toepcb *toep, size_t len, int how)
+{
+	struct tom_data *td = toep->td;
+	struct adapter *sc = td_adapter(td);
+	struct ddp_rcv_buffer *drb;
+	int error;
+
+	drb = malloc(sizeof(*drb), M_CXGBE, how | M_ZERO);
+	if (drb == NULL)
+		return (NULL);
+
+	drb->buf = malloc(len, M_CXGBE, how);
+	if (drb->buf == NULL) {
+		free(drb, M_CXGBE);
+		return (NULL);
+	}
+	drb->len = len;
+	drb->refs = 1;
+
+	error = t4_alloc_page_pods_for_rcvbuf(&td->pr, drb);
+	if (error != 0) {
+		free(drb->buf, M_CXGBE);
+		free(drb, M_CXGBE);
+		return (NULL);
+	}
+
+	error = t4_write_page_pods_for_rcvbuf(sc, toep->ctrlq, toep->tid, drb);
+	if (error != 0) {
+		free_ddp_rcv_buffer(drb);
+		return (NULL);
+	}
+
+	return (drb);
+}
+
+static void
+free_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db)
+{
+	if ((toep->ddp.flags & DDP_RCVBUF) != 0) {
+		if (db->drb != NULL)
+			free_ddp_rcv_buffer(db->drb);
+		return;
+	}
 
 	if (db->job) {
 		/*
@@ -189,15 +242,13 @@ free_ddp_buffer(struct tom_data *td, struct ddp_buffer *db)
 	}
 
 	if (db->ps)
-		free_pageset(td, db->ps);
+		free_pageset(toep->td, db->ps);
 }
 
 void
 ddp_init_toep(struct toepcb *toep)
 {
 
-	TAILQ_INIT(&toep->ddp.aiojobq);
-	TASK_INIT(&toep->ddp.requeue_task, 0, aio_ddp_requeue_task, toep);
 	toep->ddp.flags = DDP_OK;
 	toep->ddp.active_id = -1;
 	mtx_init(&toep->ddp.lock, "t4 ddp", NULL, MTX_DEF);
@@ -219,13 +270,15 @@ release_ddp_resources(struct toepcb *toep)
 	DDP_LOCK(toep);
 	toep->ddp.flags |= DDP_DEAD;
 	for (i = 0; i < nitems(toep->ddp.db); i++) {
-		free_ddp_buffer(toep->td, &toep->ddp.db[i]);
+		free_ddp_buffer(toep, &toep->ddp.db[i]);
 	}
-	while ((ps = TAILQ_FIRST(&toep->ddp.cached_pagesets)) != NULL) {
-		TAILQ_REMOVE(&toep->ddp.cached_pagesets, ps, link);
-		free_pageset(toep->td, ps);
+	if ((toep->ddp.flags & DDP_AIO) != 0) {
+		while ((ps = TAILQ_FIRST(&toep->ddp.cached_pagesets)) != NULL) {
+			TAILQ_REMOVE(&toep->ddp.cached_pagesets, ps, link);
+			free_pageset(toep->td, ps);
+		}
+		ddp_complete_all(toep, 0);
 	}
-	ddp_complete_all(toep, 0);
 	DDP_UNLOCK(toep);
 }
 
@@ -237,11 +290,16 @@ ddp_assert_empty(struct toepcb *toep)
 
 	MPASS(!(toep->ddp.flags & DDP_TASK_ACTIVE));
 	for (i = 0; i < nitems(toep->ddp.db); i++) {
-		MPASS(toep->ddp.db[i].job == NULL);
-		MPASS(toep->ddp.db[i].ps == NULL);
+		if ((toep->ddp.flags & DDP_AIO) != 0) {
+			MPASS(toep->ddp.db[i].job == NULL);
+			MPASS(toep->ddp.db[i].ps == NULL);
+		} else
+			MPASS(toep->ddp.db[i].drb == NULL);
 	}
-	MPASS(TAILQ_EMPTY(&toep->ddp.cached_pagesets));
-	MPASS(TAILQ_EMPTY(&toep->ddp.aiojobq));
+	if ((toep->ddp.flags & DDP_AIO) != 0) {
+		MPASS(TAILQ_EMPTY(&toep->ddp.cached_pagesets));
+		MPASS(TAILQ_EMPTY(&toep->ddp.aiojobq));
+	}
 }
 #endif
 
@@ -249,13 +307,18 @@ static void
 complete_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db,
     unsigned int db_idx)
 {
+	struct ddp_rcv_buffer *drb;
 	unsigned int db_flag;
 
 	toep->ddp.active_count--;
 	if (toep->ddp.active_id == db_idx) {
 		if (toep->ddp.active_count == 0) {
-			KASSERT(toep->ddp.db[db_idx ^ 1].job == NULL,
-			    ("%s: active_count mismatch", __func__));
+			if ((toep->ddp.flags & DDP_AIO) != 0)
+				KASSERT(toep->ddp.db[db_idx ^ 1].job == NULL,
+				    ("%s: active_count mismatch", __func__));
+			else
+				KASSERT(toep->ddp.db[db_idx ^ 1].drb == NULL,
+				    ("%s: active_count mismatch", __func__));
 			toep->ddp.active_id = -1;
 		} else
 			toep->ddp.active_id ^= 1;
@@ -269,16 +332,65 @@ complete_ddp_buffer(struct toepcb *toep, struct ddp_buffer *db,
 		    ("%s: active count mismatch", __func__));
 	}
 
-	db->cancel_pending = 0;
-	db->job = NULL;
-	recycle_pageset(toep, db->ps);
-	db->ps = NULL;
+	if ((toep->ddp.flags & DDP_AIO) != 0) {
+		db->cancel_pending = 0;
+		db->job = NULL;
+		recycle_pageset(toep, db->ps);
+		db->ps = NULL;
+	} else {
+		drb = db->drb;
+		t4_free_page_pods(&drb->prsv);
+		if (atomic_fetchadd_int(&drb->refs, -1) == 1) {
+			free(drb->buf, M_CXGBE);
+			free(drb, M_CXGBE);
+		}
+		db->drb = NULL;
+		db->placed = 0;
+	}
 
 	db_flag = db_idx == 1 ? DDP_BUF1_ACTIVE : DDP_BUF0_ACTIVE;
 	KASSERT(toep->ddp.flags & db_flag,
 	    ("%s: DDP buffer not active. toep %p, ddp_flags 0x%x",
 	    __func__, toep, toep->ddp.flags));
 	toep->ddp.flags &= ~db_flag;
+}
+
+/* Called when m_free drops refcount to 0. */
+static void
+ddp_rcv_mbuf_done(struct mbuf *m)
+{
+	struct ddp_rcv_buffer *drb = m->m_ext.ext_arg1;
+
+	free(drb->buf, M_CXGBE);
+	free(drb, M_CXGBE);
+}
+
+static void
+queue_ddp_rcvbuf_mbuf(struct toepcb *toep, u_int db_idx, u_int len)
+{
+	struct inpcb *inp = toep->inp;
+	struct sockbuf *sb;
+	struct ddp_buffer *db;
+	struct ddp_rcv_buffer *drb;
+	struct mbuf *m;
+
+	m = m_get(M_NOWAIT, MT_DATA);
+	if (m == NULL) {
+		printf("%s: failed to allocate mbuf", __func__);
+		return;
+	}
+
+	db = &toep->ddp.db[db_idx];
+	drb = db->drb;
+	m_extaddref(m, (char *)drb->buf + db->placed, len, &drb->refs,
+	    ddp_rcv_mbuf_done, drb, NULL);
+	m->m_len = len;
+
+	sb = &inp->inp_socket->so_rcv;
+	SOCKBUF_LOCK_ASSERT(sb);
+	sbappendstream_locked(sb, m, 0);
+
+	db->placed += len;
 }
 
 /* XXX: handle_ddp_data code duplication */
@@ -295,10 +407,12 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 #ifdef INVARIANTS
 	unsigned int db_flag;
 #endif
+	bool ddp_rcvbuf;
 
 	INP_WLOCK_ASSERT(inp);
 	DDP_ASSERT_LOCKED(toep);
 
+	ddp_rcvbuf = (toep->ddp.flags & DDP_RCVBUF) != 0;
 	tp->rcv_nxt += n;
 #ifndef USE_DDP_RX_FLOW_CONTROL
 	KASSERT(tp->rcv_wnd >= n, ("%s: negative window size", __func__));
@@ -314,6 +428,16 @@ insert_ddp_data(struct toepcb *toep, uint32_t n)
 #endif
 		MPASS((toep->ddp.flags & db_flag) != 0);
 		db = &toep->ddp.db[db_idx];
+		if (ddp_rcvbuf) {
+			placed = n;
+			if (placed > db->drb->len - db->placed)
+				placed = db->drb->len - db->placed;
+			if (placed != 0)
+				queue_ddp_rcvbuf_mbuf(toep, db_idx, placed);
+			complete_ddp_buffer(toep, db, db_idx);
+			n -= placed;
+			continue;
+		}
 		job = db->job;
 		copied = job->aio_received;
 		placed = n;
@@ -413,12 +537,13 @@ mk_rx_data_ack_ulp(struct ulp_txpkt *ulpmc, struct toepcb *toep)
 
 static struct wrqe *
 mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
-    struct pageset *ps, int offset, uint64_t ddp_flags, uint64_t ddp_flags_mask)
+    struct ppod_reservation *prsv, int offset, uint32_t len,
+    uint64_t ddp_flags, uint64_t ddp_flags_mask)
 {
 	struct wrqe *wr;
 	struct work_request_hdr *wrh;
 	struct ulp_txpkt *ulpmc;
-	int len;
+	int wrlen;
 
 	KASSERT(db_idx == 0 || db_idx == 1,
 	    ("%s: bad DDP buffer index %d", __func__, db_idx));
@@ -431,21 +556,21 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 	 * The ULPTX master commands that follow must all end at 16B boundaries
 	 * too so we round up the size to 16.
 	 */
-	len = sizeof(*wrh) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16) +
+	wrlen = sizeof(*wrh) + 3 * roundup2(LEN__SET_TCB_FIELD_ULP, 16) +
 	    roundup2(LEN__RX_DATA_ACK_ULP, 16);
 
-	wr = alloc_wrqe(len, toep->ctrlq);
+	wr = alloc_wrqe(wrlen, toep->ctrlq);
 	if (wr == NULL)
 		return (NULL);
 	wrh = wrtod(wr);
-	INIT_ULPTX_WRH(wrh, len, 1, 0);	/* atomic */
+	INIT_ULPTX_WRH(wrh, wrlen, 1, 0);	/* atomic */
 	ulpmc = (struct ulp_txpkt *)(wrh + 1);
 
 	/* Write the buffer's tag */
 	ulpmc = mk_set_tcb_field_ulp(ulpmc, toep,
 	    W_TCB_RX_DDP_BUF0_TAG + db_idx,
 	    V_TCB_RX_DDP_BUF0_TAG(M_TCB_RX_DDP_BUF0_TAG),
-	    V_TCB_RX_DDP_BUF0_TAG(ps->prsv.prsv_tag));
+	    V_TCB_RX_DDP_BUF0_TAG(prsv->prsv_tag));
 
 	/* Update the current offset in the DDP buffer and its total length */
 	if (db_idx == 0)
@@ -454,14 +579,14 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 		    V_TCB_RX_DDP_BUF0_OFFSET(M_TCB_RX_DDP_BUF0_OFFSET) |
 		    V_TCB_RX_DDP_BUF0_LEN(M_TCB_RX_DDP_BUF0_LEN),
 		    V_TCB_RX_DDP_BUF0_OFFSET(offset) |
-		    V_TCB_RX_DDP_BUF0_LEN(ps->len));
+		    V_TCB_RX_DDP_BUF0_LEN(len));
 	else
 		ulpmc = mk_set_tcb_field_ulp(ulpmc, toep,
 		    W_TCB_RX_DDP_BUF1_OFFSET,
 		    V_TCB_RX_DDP_BUF1_OFFSET(M_TCB_RX_DDP_BUF1_OFFSET) |
 		    V_TCB_RX_DDP_BUF1_LEN((u64)M_TCB_RX_DDP_BUF1_LEN << 32),
 		    V_TCB_RX_DDP_BUF1_OFFSET(offset) |
-		    V_TCB_RX_DDP_BUF1_LEN((u64)ps->len << 32));
+		    V_TCB_RX_DDP_BUF1_LEN((u64)len << 32));
 
 	/* Update DDP flags */
 	ulpmc = mk_set_tcb_field_ulp(ulpmc, toep, W_TCB_RX_DDP_FLAGS,
@@ -474,7 +599,8 @@ mk_update_tcb_for_ddp(struct adapter *sc, struct toepcb *toep, int db_idx,
 }
 
 static int
-handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
+handle_ddp_data_aio(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt,
+    int len)
 {
 	uint32_t report = be32toh(ddp_report);
 	unsigned int db_idx;
@@ -539,6 +665,7 @@ handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
 	CTR5(KTR_CXGBE, "%s: tid %u, DDP[%d] placed %d bytes (%#x)", __func__,
 	    toep->tid, db_idx, len, report);
 #endif
+	toep->ofld_rxq->rx_toe_ddp_octets += len;
 
 	/* receive buffer autosize */
 	MPASS(toep->vnet == so->so_vnet);
@@ -595,6 +722,234 @@ out:
 	return (0);
 }
 
+/* For DDP_RCVBUF, size each DDP buffer to the socket's receive buffer. */
+static size_t
+ddp_rcvbuf_len(struct sockbuf *sb)
+{
+	size_t buflen;
+
+	buflen = sb->sb_hiwat;
+	if (buflen < 64 * 1024)
+		buflen = 64 * 1024;
+	else if (buflen > trunc_page(MAX_DDP_BUFFER_SIZE))
+		buflen = trunc_page(MAX_DDP_BUFFER_SIZE);
+	else
+		buflen = trunc_page(buflen);
+	return (buflen);
+}
+
+static bool
+queue_ddp_rcvbuf(struct toepcb *toep, struct ddp_rcv_buffer *drb)
+{
+	struct adapter *sc = td_adapter(toep->td);
+	struct ddp_buffer *db;
+	struct wrqe *wr;
+	uint64_t ddp_flags, ddp_flags_mask;
+	int buf_flag, db_idx;
+
+	DDP_ASSERT_LOCKED(toep);
+
+	KASSERT((toep->ddp.flags & DDP_DEAD) == 0, ("%s: DDP_DEAD", __func__));
+	KASSERT(toep->ddp.active_count < nitems(toep->ddp.db),
+	    ("%s: no empty DDP buffer slot", __func__));
+
+	/* Determine which DDP buffer to use. */
+	if (toep->ddp.db[0].drb == NULL) {
+		db_idx = 0;
+	} else {
+		MPASS(toep->ddp.db[1].drb == NULL);
+		db_idx = 1;
+	}
+
+	/*
+	 * Permit PSH to trigger a partial completion without
+	 * invalidating the rest of the buffer, but disable the PUSH
+	 * timer.
+	 */
+	ddp_flags = 0;
+	ddp_flags_mask = 0;
+	if (db_idx == 0) {
+		ddp_flags |= V_TF_DDP_PSH_NO_INVALIDATE0(1) |
+		    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PSHF_ENABLE_0(1) |
+		    V_TF_DDP_BUF0_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE0(1) |
+		    V_TF_DDP_PUSH_DISABLE_0(1) | V_TF_DDP_PSHF_ENABLE_0(1) |
+		    V_TF_DDP_BUF0_FLUSH(1) | V_TF_DDP_BUF0_VALID(1);
+		buf_flag = DDP_BUF0_ACTIVE;
+	} else {
+		ddp_flags |= V_TF_DDP_PSH_NO_INVALIDATE1(1) |
+		    V_TF_DDP_PUSH_DISABLE_1(1) | V_TF_DDP_PSHF_ENABLE_1(1) |
+		    V_TF_DDP_BUF1_VALID(1);
+		ddp_flags_mask |= V_TF_DDP_PSH_NO_INVALIDATE1(1) |
+		    V_TF_DDP_PUSH_DISABLE_1(1) | V_TF_DDP_PSHF_ENABLE_1(1) |
+		    V_TF_DDP_BUF1_FLUSH(1) | V_TF_DDP_BUF1_VALID(1);
+		buf_flag = DDP_BUF1_ACTIVE;
+	}
+	MPASS((toep->ddp.flags & buf_flag) == 0);
+	if ((toep->ddp.flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0) {
+		MPASS(db_idx == 0);
+		MPASS(toep->ddp.active_id == -1);
+		MPASS(toep->ddp.active_count == 0);
+		ddp_flags_mask |= V_TF_DDP_ACTIVE_BUF(1);
+	}
+
+	/*
+	 * The TID for this connection should still be valid.  If
+	 * DDP_DEAD is set, SBS_CANTRCVMORE should be set, so we
+	 * shouldn't be this far anyway.
+	 */
+	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, &drb->prsv, 0, drb->len,
+	    ddp_flags, ddp_flags_mask);
+	if (wr == NULL) {
+		free_ddp_rcv_buffer(drb);
+		printf("%s: mk_update_tcb_for_ddp failed\n", __func__);
+		return (false);
+	}
+
+#ifdef VERBOSE_TRACES
+	CTR(KTR_CXGBE,
+	    "%s: tid %u, scheduling DDP[%d] (flags %#lx/%#lx)", __func__,
+	    toep->tid, db_idx, ddp_flags, ddp_flags_mask);
+#endif
+	/* Give the chip the go-ahead. */
+	t4_wrq_tx(sc, wr);
+	db = &toep->ddp.db[db_idx];
+	db->drb = drb;
+	toep->ddp.flags |= buf_flag;
+	toep->ddp.active_count++;
+	if (toep->ddp.active_count == 1) {
+		MPASS(toep->ddp.active_id == -1);
+		toep->ddp.active_id = db_idx;
+		CTR2(KTR_CXGBE, "%s: ddp_active_id = %d", __func__,
+		    toep->ddp.active_id);
+	}
+	return (true);
+}
+
+static int
+handle_ddp_data_rcvbuf(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt,
+    int len)
+{
+	uint32_t report = be32toh(ddp_report);
+	struct inpcb *inp = toep->inp;
+	struct tcpcb *tp;
+	struct socket *so;
+	struct sockbuf *sb;
+	struct ddp_buffer *db;
+	struct ddp_rcv_buffer *drb;
+	unsigned int db_idx;
+	bool invalidated;
+
+	db_idx = report & F_DDP_BUF_IDX ? 1 : 0;
+	db = &toep->ddp.db[db_idx];
+
+	invalidated = (report & F_DDP_INV) != 0;
+
+	INP_WLOCK(inp);
+	so = inp_inpcbtosocket(inp);
+	sb = &so->so_rcv;
+	DDP_LOCK(toep);
+
+	KASSERT(toep->ddp.active_id == db_idx,
+	    ("completed DDP buffer (%d) != active_id (%d) for tid %d", db_idx,
+	    toep->ddp.active_id, toep->tid));
+
+	if (__predict_false(inp->inp_flags & INP_DROPPED)) {
+		/*
+		 * This can happen due to an administrative tcpdrop(8).
+		 * Just ignore the received data.
+		 */
+		CTR5(KTR_CXGBE, "%s: tid %u, seq 0x%x, len %d, inp_flags 0x%x",
+		    __func__, toep->tid, be32toh(rcv_nxt), len, inp->inp_flags);
+		if (invalidated)
+			complete_ddp_buffer(toep, db, db_idx);
+		goto out;
+	}
+
+	tp = intotcpcb(inp);
+
+	/*
+	 * For RX_DDP_COMPLETE, len will be zero and rcv_nxt is the
+	 * sequence number of the next byte to receive.  The length of
+	 * the data received for this message must be computed by
+	 * comparing the new and old values of rcv_nxt.
+	 *
+	 * For RX_DATA_DDP, len might be non-zero, but it is only the
+	 * length of the most recent DMA.  It does not include the
+	 * total length of the data received since the previous update
+	 * for this DDP buffer.  rcv_nxt is the sequence number of the
+	 * first received byte from the most recent DMA.
+	 */
+	len += be32toh(rcv_nxt) - tp->rcv_nxt;
+	KASSERT(len > 0, ("%s: empty completion", __func__));
+	tp->rcv_nxt += len;
+	tp->t_rcvtime = ticks;
+#ifndef USE_DDP_RX_FLOW_CONTROL
+	KASSERT(tp->rcv_wnd >= len, ("%s: negative window size", __func__));
+	tp->rcv_wnd -= len;
+#endif
+#ifdef VERBOSE_TRACES
+	CTR5(KTR_CXGBE, "%s: tid %u, DDP[%d] placed %d bytes (%#x)", __func__,
+	    toep->tid, db_idx, len, report);
+#endif
+	toep->ofld_rxq->rx_toe_ddp_octets += len;
+
+	/* receive buffer autosize */
+	MPASS(toep->vnet == so->so_vnet);
+	CURVNET_SET(toep->vnet);
+	SOCKBUF_LOCK(sb);
+	if (sb->sb_flags & SB_AUTOSIZE &&
+	    V_tcp_do_autorcvbuf &&
+	    sb->sb_hiwat < V_tcp_autorcvbuf_max &&
+	    len > (sbspace(sb) / 8 * 7)) {
+		struct adapter *sc = td_adapter(toep->td);
+		unsigned int hiwat = sb->sb_hiwat;
+		unsigned int newsize = min(hiwat + sc->tt.autorcvbuf_inc,
+		    V_tcp_autorcvbuf_max);
+
+		if (!sbreserve_locked(so, SO_RCV, newsize, NULL))
+			sb->sb_flags &= ~SB_AUTOSIZE;
+	}
+
+	queue_ddp_rcvbuf_mbuf(toep, db_idx, len);
+	t4_rcvd_locked(&toep->td->tod, tp);
+	sorwakeup_locked(so);
+	SOCKBUF_UNLOCK_ASSERT(sb);
+	CURVNET_RESTORE();
+
+	if (invalidated)
+		complete_ddp_buffer(toep, db, db_idx);
+	else
+		KASSERT(db->placed < db->drb->len,
+		    ("%s: full DDP buffer not invalidated", __func__));
+
+	if (toep->ddp.active_count != nitems(toep->ddp.db)) {
+		drb = alloc_ddp_rcv_buffer(toep, ddp_rcvbuf_len(sb), M_NOWAIT);
+		if (drb == NULL)
+			ddp_queue_toep(toep);
+		else {
+			if (!queue_ddp_rcvbuf(toep, drb)) {
+				free_ddp_rcv_buffer(drb);
+				ddp_queue_toep(toep);
+			}
+		}
+	}
+out:
+	DDP_UNLOCK(toep);
+	INP_WUNLOCK(inp);
+
+	return (0);
+}
+
+static int
+handle_ddp_data(struct toepcb *toep, __be32 ddp_report, __be32 rcv_nxt, int len)
+{
+	if ((toep->ddp.flags & DDP_RCVBUF) != 0)
+		return (handle_ddp_data_rcvbuf(toep, ddp_report, rcv_nxt, len));
+	else
+		return (handle_ddp_data_aio(toep, ddp_report, rcv_nxt, len));
+}
+
 void
 handle_ddp_indicate(struct toepcb *toep)
 {
@@ -602,17 +957,21 @@ handle_ddp_indicate(struct toepcb *toep)
 	DDP_ASSERT_LOCKED(toep);
 	MPASS(toep->ddp.active_count == 0);
 	MPASS((toep->ddp.flags & (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)) == 0);
-	if (toep->ddp.waiting_count == 0) {
-		/*
-		 * The pending requests that triggered the request for an
-		 * an indicate were cancelled.  Those cancels should have
-		 * already disabled DDP.  Just ignore this as the data is
-		 * going into the socket buffer anyway.
-		 */
-		return;
-	}
-	CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
-	    toep->tid, toep->ddp.waiting_count);
+	if ((toep->ddp.flags & DDP_AIO) != 0) {
+		if (toep->ddp.waiting_count == 0) {
+			/*
+			 * The pending requests that triggered the
+			 * request for an an indicate were cancelled.
+			 * Those cancels should have already disabled
+			 * DDP.  Just ignore this as the data is going
+			 * into the socket buffer anyway.
+			 */
+			return;
+		}
+		CTR3(KTR_CXGBE, "%s: tid %d indicated (%d waiting)", __func__,
+		    toep->tid, toep->ddp.waiting_count);
+	} else
+		CTR(KTR_CXGBE, "%s: tid %d indicated", __func__, toep->tid);
 	ddp_queue_toep(toep);
 }
 
@@ -642,6 +1001,8 @@ do_ddp_tcb_rpl(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		/*
 		 * XXX: This duplicates a lot of code with handle_ddp_data().
 		 */
+		KASSERT((toep->ddp.flags & DDP_AIO) != 0,
+		    ("%s: DDP_RCVBUF", __func__));
 		db_idx = G_COOKIE(cpl->cookie) - CPL_COOKIE_DDP0;
 		MPASS(db_idx < nitems(toep->ddp.db));
 		INP_WLOCK(inp);
@@ -703,14 +1064,18 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 	unsigned int db_flag;
 #endif
 	int len, placed;
+	bool ddp_rcvbuf;
 
 	INP_WLOCK_ASSERT(toep->inp);
 	DDP_ASSERT_LOCKED(toep);
+
+	ddp_rcvbuf = (toep->ddp.flags & DDP_RCVBUF) != 0;
 
 	/* - 1 is to ignore the byte for FIN */
 	len = be32toh(rcv_nxt) - tp->rcv_nxt - 1;
 	tp->rcv_nxt += len;
 
+	CTR(KTR_CXGBE, "%s: placed %u bytes before FIN", __func__, len);
 	while (toep->ddp.active_count > 0) {
 		MPASS(toep->ddp.active_id != -1);
 		db_idx = toep->ddp.active_id;
@@ -719,6 +1084,16 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 #endif
 		MPASS((toep->ddp.flags & db_flag) != 0);
 		db = &toep->ddp.db[db_idx];
+		if (ddp_rcvbuf) {
+			placed = len;
+			if (placed > db->drb->len - db->placed)
+				placed = db->drb->len - db->placed;
+			if (placed != 0)
+				queue_ddp_rcvbuf_mbuf(toep, db_idx, placed);
+			complete_ddp_buffer(toep, db, db_idx);
+			len -= placed;
+			continue;
+		}
 		job = db->job;
 		copied = job->aio_received;
 		placed = len;
@@ -743,7 +1118,8 @@ handle_ddp_close(struct toepcb *toep, struct tcpcb *tp, __be32 rcv_nxt)
 	}
 
 	MPASS(len == 0);
-	ddp_complete_all(toep, 0);
+	if ((toep->ddp.flags & DDP_AIO) != 0)
+		ddp_complete_all(toep, 0);
 }
 
 #define DDP_ERR (F_DDP_PPOD_MISMATCH | F_DDP_LLIMIT_ERR | F_DDP_ULIMIT_ERR |\
@@ -805,6 +1181,7 @@ do_rx_ddp_complete(struct sge_iq *iq, const struct rss_header *rss,
 static void
 enable_ddp(struct adapter *sc, struct toepcb *toep)
 {
+	uint64_t ddp_flags;
 
 	KASSERT((toep->ddp.flags & (DDP_ON | DDP_OK | DDP_SC_REQ)) == DDP_OK,
 	    ("%s: toep %p has bad ddp_flags 0x%x",
@@ -813,13 +1190,16 @@ enable_ddp(struct adapter *sc, struct toepcb *toep)
 	CTR3(KTR_CXGBE, "%s: tid %u (time %u)",
 	    __func__, toep->tid, time_uptime);
 
+	ddp_flags = 0;
+	if ((toep->ddp.flags & DDP_AIO) != 0)
+		ddp_flags |= V_TF_DDP_BUF0_INDICATE(1) |
+		    V_TF_DDP_BUF1_INDICATE(1);
 	DDP_ASSERT_LOCKED(toep);
 	toep->ddp.flags |= DDP_SC_REQ;
 	t4_set_tcb_field(sc, toep->ctrlq, toep, W_TCB_RX_DDP_FLAGS,
 	    V_TF_DDP_OFF(1) | V_TF_DDP_INDICATE_OUT(1) |
 	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1) |
-	    V_TF_DDP_BUF0_VALID(1) | V_TF_DDP_BUF1_VALID(1),
-	    V_TF_DDP_BUF0_INDICATE(1) | V_TF_DDP_BUF1_INDICATE(1), 0, 0);
+	    V_TF_DDP_BUF0_VALID(1) | V_TF_DDP_BUF1_VALID(1), ddp_flags, 0, 0);
 	t4_set_tcb_field(sc, toep->ctrlq, toep, W_TCB_T_FLAGS,
 	    V_TF_RCV_COALESCE_ENABLE(1), 0, 0, 0);
 }
@@ -1016,6 +1396,19 @@ have_pgsz:
 	return (0);
 }
 
+static int
+t4_alloc_page_pods_for_rcvbuf(struct ppod_region *pr,
+    struct ddp_rcv_buffer *drb)
+{
+	struct ppod_reservation *prsv = &drb->prsv;
+
+	KASSERT(prsv->prsv_nppods == 0,
+	    ("%s: page pods already allocated", __func__));
+
+	return (t4_alloc_page_pods_for_buf(pr, (vm_offset_t)drb->buf, drb->len,
+	    prsv));
+}
+
 int
 t4_alloc_page_pods_for_sgl(struct ppod_region *pr, struct ctl_sg_entry *sgl,
     int entries, struct ppod_reservation *prsv)
@@ -1136,7 +1529,6 @@ t4_write_page_pods_for_ps(struct adapter *sc, struct sge_wrq *wrq, int tid,
 	ddp_pgsz = 1 << pr->pr_page_shift[G_PPOD_PGSZ(prsv->prsv_tag)];
 	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
 	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
-
 		/* How many page pods are we writing in this cycle */
 		n = min(prsv->prsv_nppods - i, NUM_ULP_TX_SC_IMM_PPODS);
 		chunk = PPOD_SZ(n);
@@ -1185,6 +1577,96 @@ t4_write_page_pods_for_ps(struct adapter *sc, struct sge_wrq *wrq, int tid,
 		t4_wrq_tx(sc, wr);
 	}
 	ps->flags |= PS_PPODS_WRITTEN;
+
+	return (0);
+}
+
+static int
+t4_write_page_pods_for_rcvbuf(struct adapter *sc, struct sge_wrq *wrq, int tid,
+    struct ddp_rcv_buffer *drb)
+{
+	struct wrqe *wr;
+	struct ulp_mem_io *ulpmc;
+	struct ulptx_idata *ulpsc;
+	struct pagepod *ppod;
+	int i, j, k, n, chunk, len, ddp_pgsz;
+	u_int ppod_addr, offset;
+	uint32_t cmd;
+	struct ppod_reservation *prsv = &drb->prsv;
+	struct ppod_region *pr = prsv->prsv_pr;
+	uintptr_t end_pva, pva;
+	vm_paddr_t pa;
+
+	MPASS(prsv->prsv_nppods > 0);
+
+	cmd = htobe32(V_ULPTX_CMD(ULP_TX_MEM_WRITE));
+	if (is_t4(sc))
+		cmd |= htobe32(F_ULP_MEMIO_ORDER);
+	else
+		cmd |= htobe32(F_T5_ULP_MEMIO_IMM);
+	ddp_pgsz = 1 << pr->pr_page_shift[G_PPOD_PGSZ(prsv->prsv_tag)];
+	offset = (uintptr_t)drb->buf & PAGE_MASK;
+	ppod_addr = pr->pr_start + (prsv->prsv_tag & pr->pr_tag_mask);
+	pva = trunc_page((uintptr_t)drb->buf);
+	end_pva = trunc_page((uintptr_t)drb->buf + drb->len - 1);
+	for (i = 0; i < prsv->prsv_nppods; ppod_addr += chunk) {
+		/* How many page pods are we writing in this cycle */
+		n = min(prsv->prsv_nppods - i, NUM_ULP_TX_SC_IMM_PPODS);
+		MPASS(n > 0);
+		chunk = PPOD_SZ(n);
+		len = roundup2(sizeof(*ulpmc) + sizeof(*ulpsc) + chunk, 16);
+
+		wr = alloc_wrqe(len, wrq);
+		if (wr == NULL)
+			return (ENOMEM);	/* ok to just bail out */
+		ulpmc = wrtod(wr);
+
+		INIT_ULPTX_WR(ulpmc, len, 0, 0);
+		ulpmc->cmd = cmd;
+		ulpmc->dlen = htobe32(V_ULP_MEMIO_DATA_LEN(chunk / 32));
+		ulpmc->len16 = htobe32(howmany(len - sizeof(ulpmc->wr), 16));
+		ulpmc->lock_addr = htobe32(V_ULP_MEMIO_ADDR(ppod_addr >> 5));
+
+		ulpsc = (struct ulptx_idata *)(ulpmc + 1);
+		ulpsc->cmd_more = htobe32(V_ULPTX_CMD(ULP_TX_SC_IMM));
+		ulpsc->len = htobe32(chunk);
+
+		ppod = (struct pagepod *)(ulpsc + 1);
+		for (j = 0; j < n; i++, j++, ppod++) {
+			ppod->vld_tid_pgsz_tag_color = htobe64(F_PPOD_VALID |
+			    V_PPOD_TID(tid) | prsv->prsv_tag);
+			ppod->len_offset = htobe64(V_PPOD_LEN(drb->len) |
+			    V_PPOD_OFST(offset));
+			ppod->rsvd = 0;
+
+			for (k = 0; k < nitems(ppod->addr); k++) {
+				if (pva > end_pva)
+					ppod->addr[k] = 0;
+				else {
+					pa = pmap_kextract(pva);
+					ppod->addr[k] = htobe64(pa);
+					pva += ddp_pgsz;
+				}
+#if 0
+				CTR5(KTR_CXGBE,
+				    "%s: tid %d ppod[%d]->addr[%d] = %p",
+				    __func__, tid, i, k,
+				    be64toh(ppod->addr[k]));
+#endif
+			}
+
+			/*
+			 * Walk back 1 segment so that the first address in the
+			 * next pod is the same as the last one in the current
+			 * pod.
+			 */
+			pva -= ddp_pgsz;
+		}
+
+		t4_wrq_tx(sc, wr);
+	}
+
+	MPASS(pva <= end_pva);
 
 	return (0);
 }
@@ -1674,6 +2156,7 @@ ddp_complete_all(struct toepcb *toep, int error)
 	struct kaiocb *job;
 
 	DDP_ASSERT_LOCKED(toep);
+	KASSERT((toep->ddp.flags & DDP_AIO) != 0, ("%s: DDP_RCVBUF", __func__));
 	while (!TAILQ_EMPTY(&toep->ddp.aiojobq)) {
 		job = TAILQ_FIRST(&toep->ddp.aiojobq);
 		TAILQ_REMOVE(&toep->ddp.aiojobq, job, list);
@@ -2056,8 +2539,8 @@ sbcopy:
 	 * which will keep it open and keep the TCP PCB attached until
 	 * after the job is completed.
 	 */
-	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, ps, job->aio_received,
-	    ddp_flags, ddp_flags_mask);
+	wr = mk_update_tcb_for_ddp(sc, toep, db_idx, &ps->prsv, ps->len,
+	    job->aio_received, ddp_flags, ddp_flags_mask);
 	if (wr == NULL) {
 		recycle_pageset(toep, ps);
 		aio_ddp_requeue_one(toep, job);
@@ -2206,6 +2689,15 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 	DDP_LOCK(toep);
 
 	/*
+	 * If DDP is being used for all normal receive, don't use it
+	 * for AIO.
+	 */
+	if ((toep->ddp.flags & DDP_RCVBUF) != 0) {
+		DDP_UNLOCK(toep);
+		return (EOPNOTSUPP);
+	}
+
+	/*
 	 * XXX: Think about possibly returning errors for ENOTCONN,
 	 * etc.  Perhaps the caller would only queue the request
 	 * if it failed with EOPNOTSUPP?
@@ -2218,7 +2710,14 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 		panic("new job was cancelled");
 	TAILQ_INSERT_TAIL(&toep->ddp.aiojobq, job, list);
 	toep->ddp.waiting_count++;
-	toep->ddp.flags |= DDP_OK;
+
+	if ((toep->ddp.flags & DDP_AIO) == 0) {
+		toep->ddp.flags |= DDP_AIO;
+		TAILQ_INIT(&toep->ddp.cached_pagesets);
+		TAILQ_INIT(&toep->ddp.aiojobq);
+		TASK_INIT(&toep->ddp.requeue_task, 0, aio_ddp_requeue_task,
+		    toep);
+	}
 
 	/*
 	 * Try to handle this request synchronously.  If this has
@@ -2226,6 +2725,118 @@ t4_aio_queue_ddp(struct socket *so, struct kaiocb *job)
 	 * and let the task handle it instead.
 	 */
 	aio_ddp_requeue(toep);
+	DDP_UNLOCK(toep);
+	return (0);
+}
+
+static void
+ddp_rcvbuf_requeue(struct toepcb *toep)
+{
+	struct socket *so;
+	struct sockbuf *sb;
+	struct inpcb *inp;
+	struct ddp_rcv_buffer *drb;
+
+	DDP_ASSERT_LOCKED(toep);
+restart:
+	if ((toep->ddp.flags & DDP_DEAD) != 0) {
+		MPASS(toep->ddp.active_count == 0);
+		return;
+	}
+
+	/* If both buffers are active, nothing to do. */
+	if (toep->ddp.active_count == nitems(toep->ddp.db)) {
+		return;
+	}
+
+	inp = toep->inp;
+	so = inp->inp_socket;
+	sb = &so->so_rcv;
+
+	DDP_UNLOCK(toep);
+
+	drb = alloc_ddp_rcv_buffer(toep, ddp_rcvbuf_len(sb), M_WAITOK);
+	if (drb == NULL) {
+		printf("%s: failed to allocate buffer\n", __func__);
+		DDP_LOCK(toep);
+		return;
+	}
+
+	DDP_LOCK(toep);
+	if ((toep->ddp.flags & DDP_DEAD) != 0 ||
+	    toep->ddp.active_count == nitems(toep->ddp.db)) {
+		free_ddp_rcv_buffer(drb);
+		return;
+	}
+
+	/* We will never get anything unless we are or were connected. */
+	SOCKBUF_LOCK(sb);
+	if (!(so->so_state & (SS_ISCONNECTED|SS_ISDISCONNECTED))) {
+		SOCKBUF_UNLOCK(sb);
+		free_ddp_rcv_buffer(drb);
+		return;
+	}
+
+	/* Abort if socket has reported problems or is closed. */
+	if (so->so_error != 0 || (sb->sb_state & SBS_CANTRCVMORE) != 0) {
+		SOCKBUF_UNLOCK(sb);
+		free_ddp_rcv_buffer(drb);
+		return;
+	}
+	SOCKBUF_UNLOCK(sb);
+
+	if (!queue_ddp_rcvbuf(toep, drb)) {
+		/*
+		 * XXX: Need a way to kick a retry here.
+		 *
+		 * XXX: We know the fixed size needed and could
+		 * preallocate the work request using a blocking
+		 * request at the start of the task to avoid having to
+		 * handle this edge case.
+		 */
+		return;
+	}
+	goto restart;	
+}
+
+static void
+ddp_rcvbuf_requeue_task(void *context, int pending)
+{
+	struct toepcb *toep = context;
+
+	DDP_LOCK(toep);
+	ddp_rcvbuf_requeue(toep);
+	toep->ddp.flags &= ~DDP_TASK_ACTIVE;
+	DDP_UNLOCK(toep);
+
+	free_toepcb(toep);
+}
+
+int
+t4_enable_ddp_rcv(struct toepcb *toep)
+{
+	struct adapter *sc = td_adapter(toep->td);
+
+	DDP_LOCK(toep);
+
+	/*
+	 * If DDP is being used for AIO already, don't use it for
+	 * normal receive.
+	 */
+	if ((toep->ddp.flags & DDP_AIO) != 0) {
+		DDP_UNLOCK(toep);
+		return (EOPNOTSUPP);
+	}
+
+	if ((toep->ddp.flags & DDP_RCVBUF) != 0) {
+		DDP_UNLOCK(toep);
+		return (EBUSY);
+	}
+
+	toep->ddp.flags |= DDP_RCVBUF;
+	enable_ddp(sc, toep);
+	TASK_INIT(&toep->ddp.requeue_task, 0, ddp_rcvbuf_requeue_task, toep);
+	ddp_queue_toep(toep);
 	DDP_UNLOCK(toep);
 	return (0);
 }

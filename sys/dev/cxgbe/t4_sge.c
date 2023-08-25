@@ -4152,6 +4152,9 @@ add_ofld_rxq_sysctls(struct sysctl_ctx_list *ctx, struct sysctl_oid *oid,
 	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO,
 	    "rx_toe_tls_octets", CTLFLAG_RD, &ofld_rxq->rx_toe_tls_octets,
 	    "# of payload octets in received TOE TLS records");
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO,
+	    "rx_toe_ddp_octets", CTLFLAG_RD, &ofld_rxq->rx_toe_ddp_octets,
+	    "# of payload octets received via TCP DDP");
 
 	oid = SYSCTL_ADD_NODE(ctx, children, OID_AUTO, "iscsi",
 	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "TOE iSCSI statistics");
