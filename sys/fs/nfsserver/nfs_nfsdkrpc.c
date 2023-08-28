@@ -550,6 +550,12 @@ nfsrvd_addsock(struct file *fp)
 			    NULL);
 		if (so->so_type == SOCK_STREAM)
 			svc_loss_reg(xprt, nfssvc_loss);
+		if (so->so_type == SOCK_STREAM) {
+			int optval;
+
+			(void)so_setsockopt(so, IPPROTO_TCP, TCP_USE_DDP,
+			    &optval, sizeof(optval));
+		}
 		SVC_RELEASE(xprt);
 	} else
 		error = EPERM;
