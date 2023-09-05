@@ -1324,7 +1324,7 @@ init_conn_params(struct vi_info *vi , struct offload_settings *s,
 
 	/* ULP mode. */
 	if (s->ddp > 0 ||
-	    (s->ddp < 0 && sc->tt.ddp && (so_options_get(so) & SO_NO_DDP) == 0))
+	    (s->ddp < 0 && sc->tt.ddp /*&& (so_options_get(so) & SO_NO_DDP) == 0*/))
 		cp->ulp_mode = ULP_MODE_TCPDDP;
 	else
 		cp->ulp_mode = ULP_MODE_NONE;
