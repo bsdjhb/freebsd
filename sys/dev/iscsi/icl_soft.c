@@ -1458,6 +1458,9 @@ icl_conn_start(struct icl_conn *ic)
 		return (error);
 	}
 
+	(void)so_setsockopt(ic->ic_socket, IPPROTO_TCP, TCP_USE_DDP, &one,
+	    sizeof(one));
+
 	/*
 	 * Register socket upcall, to get notified about incoming PDUs
 	 * and free space to send outgoing ones.
