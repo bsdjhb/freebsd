@@ -109,11 +109,10 @@ uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
  * command capsule (e.g. the data for a WRITE command).  This can
  * either return in-capsule data or fetch data from the host
  * (e.g. using a R2T PDU over TCP).  The received command capsule
- * should be passed in 'nc'.  The received data is stored in the
- * passed in memory descriptor.  If this function returns success,
- * then the callback will be invoked once the operation has completed.
- * Note that the callback might be invoked before this function
- * returns.
+ * should be passed in 'nc'.  The received data is stored in 'mem'.
+ * If this function returns success, then the callback will be invoked
+ * once the operation has completed.  Note that the callback might be
+ * invoked before this function returns.
  */
 int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
     uint32_t data_offset, struct memdesc *mem, size_t len, u_int offset,
@@ -121,15 +120,19 @@ int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
 
 /*
  * A controller calls this function to send data in response to a
- * command prior to sending a response capsule.  If this function
- * returns success, then the callback will be invoked once the
- * operation has completed.  Note that the callback might be invoked
- * before this function returns.
- *
- * TODO: Support for SUCCESS flag for final TCP C2H_DATA PDU?
+ * command prior to sending a response capsule.  The function returns
+ * a generic status completion code to be sent in the following CQE.
+ * If the transfer succeeded and the transport supports implicit
+ * success responses (e.g. the SUCCESS flag for TCP), a status of
+ * NVMF_SUCCESS_SENT is returned and the caller should not send a
+ * separate response capsule.  The callback will be invoked once the
+ * data transfer has completed.  Note that the callback might be
+ * invoked before this function returns.
  */
-int	nvmf_send_controller_data(struct nvmf_capsule *nc,
+u_int nvmf_send_controller_data(struct nvmf_capsule *nc,
     struct memdesc *mem, size_t len, u_int offset,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
+
+#define	NVMF_SUCCESS_SENT	0x100
 
 #endif /* !__NVMF_TRANSPORT_H__ */

@@ -229,7 +229,7 @@ nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	    &io));
 }
 
-int
+u_int
 nvmf_send_controller_data(struct nvmf_capsule *nc, struct memdesc *mem,
     size_t len, u_int offset, nvmf_io_complete_t *complete_cb, void *cb_arg)
 {

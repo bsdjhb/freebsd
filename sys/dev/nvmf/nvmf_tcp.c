@@ -93,6 +93,7 @@ struct nvmf_tcp_qpair {
 	uint32_t maxc2hdata;
 	uint32_t max_icd;	/* Host only */
 	uint16_t next_ttag;	/* Controller only */
+	bool send_success;	/* Controller only */
 
 	/* Receive state. */
 	struct thread *rx_thread;
@@ -1926,6 +1927,9 @@ tcp_allocate_qpair(bool controller __unused,
 	qp->maxc2hdata = max_c2hdata;
 	qp->max_icd = params->tcp.max_icd;
 
+	/* Use the SUCCESS flag if SQ flow control is disabled. */
+	qp->send_success = !params->sq_flow_control;
+
 	LIST_INIT(&qp->rx_buffers.head);
 	LIST_INIT(&qp->tx_buffers.head);
 	mtx_init(&qp->rx_buffers.lock, "nvmf/tcp rx buffers", NULL, MTX_DEF);
@@ -2193,7 +2197,7 @@ tcp_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 /* NB: cid is little-endian already. */
 static void
 tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint32_t data_offset,
-    struct mbuf *m, size_t len, bool last_pdu)
+    struct mbuf *m, size_t len, bool last_pdu, bool success)
 {
 	struct nvme_tcp_c2h_data_hdr c2h;
 	struct mbuf *top;
@@ -2202,6 +2206,8 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint32_t data_offset,
 	c2h.common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
 	if (last_pdu)
 		c2h.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
+	if (success)
+		c2h.common.flags |= NVME_TCP_C2H_DATA_FLAGS_SUCCESS;
 	c2h.cccid = cid;
 	c2h.datao = htole32(data_offset);
 	c2h.datal = htole32(len);
@@ -2210,25 +2216,32 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint32_t data_offset,
 	nvmf_tcp_write_pdu(qp, top);
 }
 
-static int
+static u_int
 tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_sgl_descriptor *sgl;
 	uint32_t data_len, data_offset;
+	bool last_pdu;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
-	    !qp->qp.nq_controller)
-		return (EINVAL);
+	    !qp->qp.nq_controller) {
+		nvmf_complete_io_request(io, 0, EINVAL);
+		return (NVME_SC_INVALID_FIELD);
+	}
 
 	sgl = &nc->nc_sqe.sgl;
 	data_len = le32toh(sgl->length);
-	if (io->io_len != data_len)
-		return (EFBIG);
+	if (io->io_len != data_len) {
+		nvmf_complete_io_request(io, 0, EFBIG);
+		return (NVME_SC_INVALID_FIELD);
+	}
 
-	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER)
-		return (EINVAL);
+	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER) {
+		nvmf_complete_io_request(io, 0, EINVAL);
+		return (NVME_SC_INVALID_FIELD);
+	}
 
 	/* Allocate a command buffer for the mbufs to hold a reference on. */
 	cb = tcp_alloc_command_buffer(qp, io, 0, io->io_len, nc->nc_sqe.cid);
@@ -2244,15 +2257,19 @@ tcp_send_controller_data(struct nvmf_capsule *nc, struct nvmf_io_request *io)
 			todo = qp->maxc2hdata;
 		m = nvmf_tcp_command_buffer_mbuf(cb, data_offset, todo, &sent,
 		    todo < data_len);
+		last_pdu = (sent == data_len);
 		tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset, m, sent,
-		    sent == data_len);
+		    last_pdu, last_pdu && qp->send_success);
 
 		data_offset += sent;
 		data_len -= sent;
 	}
 
 	tcp_release_command_buffer(cb);
-	return (0);
+	if (qp->send_success)
+		return (NVMF_SUCCESS_SENT);
+	else
+		return (NVME_SC_SUCCESS);
 }
 
 struct nvmf_transport_ops tcp_ops = {
