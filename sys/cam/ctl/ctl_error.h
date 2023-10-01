@@ -96,4 +96,21 @@ void ctl_set_hw_write_protected(struct ctl_scsiio *ctsio);
 void ctl_set_space_alloc_fail(struct ctl_scsiio *ctsio);
 void ctl_set_success(struct ctl_scsiio *ctsio);
 
+void ctl_nvme_set_error(struct ctl_nvmeio *ctnio, uint8_t sc_type,
+			uint8_t sc_status);
+void ctl_nvme_set_generic_error(struct ctl_nvmeio *ctnio, uint8_t sc_status);
+void ctl_nvme_set_invalid_field(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_invalid_opcode(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_invalid_namespace(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_command_aborted(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_failed_fused_command(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_missing_fused_command(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_lba_out_of_range(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_namespace_not_ready(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_space_alloc_fail(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_success(struct ctl_nvmeio *ctnio);
+
+void ctl_io_set_space_alloc_fail(union ctl_io *io);
+void ctl_io_set_success(union ctl_io *io);
+
 #endif	/* _CTL_ERROR_H_ */

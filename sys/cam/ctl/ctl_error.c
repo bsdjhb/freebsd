@@ -990,3 +990,115 @@ ctl_set_success(struct ctl_scsiio *ctsio)
 	ctsio->sense_len = 0;
 	ctsio->io_hdr.status = CTL_SUCCESS;
 }
+
+void
+ctl_nvme_set_error(struct ctl_nvmeio *ctnio, uint8_t sc_type,
+    uint8_t sc_status)
+{
+	uint16_t status;
+
+	memset(&ctnio->cpl, 0, sizeof(ctnio->cpl));
+	status = sc_type << NVME_STATUS_SCT_SHIFT |
+	    sc_status << NVME_STATUS_SC_SHIFT;
+	ctnio->cpl.status = htole16(status);
+	ctnio->io_hdr.status = CTL_NVME_ERROR;
+}
+
+void
+ctl_nvme_set_generic_error(struct ctl_nvmeio *ctnio, uint8_t sc_status)
+{
+	ctl_nvme_set_error(ctnio, NVME_SCT_GENERIC, sc_status);
+}
+
+void
+ctl_nvme_set_invalid_field(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_INVALID_FIELD);
+}
+
+void
+ctl_nvme_set_invalid_opcode(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_INVALID_OPCODE);
+}
+
+void
+ctl_nvme_set_invalid_namespace(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
+}
+
+void
+ctl_nvme_set_command_aborted(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_COMMAND_ABORTED_BY_HOST);
+}
+
+void
+ctl_nvme_set_failed_fused_command(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_ABORTED_FAILED_FUSED);
+}
+
+void
+ctl_nvme_set_missing_fused_command(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_ABORTED_MISSING_FUSED);
+}
+
+void
+ctl_nvme_set_lba_out_of_range(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_LBA_OUT_OF_RANGE);
+}
+
+void
+ctl_nvme_set_namespace_not_ready(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_NAMESPACE_NOT_READY);
+}
+
+void
+ctl_nvme_set_space_alloc_fail(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_error(ctnio, NVME_SCT_MEDIA_ERROR,
+	    NVME_SC_DEALLOCATED_OR_UNWRITTEN);
+}
+
+void
+ctl_nvme_set_success(struct ctl_nvmeio *ctnio)
+{
+	memset(&ctnio->cpl, 0, sizeof(ctnio->cpl));
+	ctnio->io_hdr.status = CTL_SUCCESS;
+}
+
+void
+ctl_io_set_space_alloc_fail(union ctl_io *io)
+{
+	switch (io->io_hdr.io_type) {
+	case CTL_IO_SCSI:
+		ctl_set_space_alloc_fail(&io->scsiio);
+		break;
+	case CTL_IO_NVME:
+		ctl_nvme_set_space_alloc_fail(&io->nvmeio);
+		break;
+	default:
+		__assert_unreachable();
+	}
+}
+
+void
+ctl_io_set_success(union ctl_io *io)
+{
+	switch (io->io_hdr.io_type) {
+	case CTL_IO_SCSI:
+		ctl_set_success(&io->scsiio);
+		break;
+	case CTL_IO_NVME:
+	case CTL_IO_NVME_ADMIN:
+		ctl_nvme_set_success(&io->nvmeio);
+		break;
+	default:
+		__assert_unreachable();
+	}
+}
