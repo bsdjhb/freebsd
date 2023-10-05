@@ -61,4 +61,13 @@ struct ptrace_xstate_info {
 	uint32_t	xsave_len;
 };
 
+/* Structure for entries in NT_X86_CPUID. */
+struct ptrace_cpuid {
+	uint32_t	leaf;
+	uint32_t	count;
+	uint32_t	eax;
+	uint32_t	ebx;
+	uint32_t	edx;
+};
+
 #endif
