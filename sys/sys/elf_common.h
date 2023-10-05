@@ -844,6 +844,7 @@ typedef struct {
 #define	NT_PPC_VSX	0x102	/* PowerPC VSX registers */
 #define	NT_X86_SEGBASES	0x200	/* x86 FS/GS base addresses. */
 #define	NT_X86_XSTATE	0x202	/* x86 XSAVE extended state. */
+#define	NT_X86_CPUID	0x205	/* x86 CPUID leaves. */
 #define	NT_ARM_VFP	0x400	/* ARM VFP registers */
 #define	NT_ARM_TLS	0x401	/* ARM TLS register */
 #define	NT_ARM_SVE	0x405	/* ARM SVE registers */
