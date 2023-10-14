@@ -53,6 +53,7 @@ struct nvmf_transport_ops {
 	uint8_t (*validate_command_capsule)(struct nvmf_capsule *nc);
 
 	/* Transferring controller data. */
+	size_t (*capsule_data_len)(const struct nvmf_capsule *nc);
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
 	    uint32_t data_offset, struct nvmf_io_request *io);
 	u_int (*send_controller_data)(struct nvmf_capsule *nc,

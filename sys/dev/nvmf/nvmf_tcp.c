@@ -2109,6 +2109,13 @@ tcp_validate_command_capsule(struct nvmf_capsule *nc)
 	return (NVME_SC_SUCCESS);
 }
 
+static size_t
+tcp_capsule_data_len(const struct nvmf_capsule *nc)
+{
+	MPASS(nc->nc_qe_len == sizeof(struct nvme_command));
+	return (le32toh(nc->nc_sqe.sgl.length));
+}
+
 /* NB: cid and ttag are both little-endian already. */
 static void
 tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
@@ -2279,6 +2286,7 @@ struct nvmf_transport_ops tcp_ops = {
 	.free_capsule = tcp_free_capsule,
 	.transmit_capsule = tcp_transmit_capsule,
 	.validate_command_capsule = tcp_validate_command_capsule,
+	.capsule_data_len = tcp_capsule_data_len,
 	.receive_controller_data = tcp_receive_controller_data,
 	.send_controller_data = tcp_send_controller_data,
 	.trtype = NVMF_TRTYPE_TCP,

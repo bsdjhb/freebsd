@@ -105,6 +105,12 @@ void *nvmf_capsule_cqe(struct nvmf_capsule *nc);
 uint8_t	nvmf_validate_command_capsule(struct nvmf_capsule *nc);
 
 /*
+ * A controller calls this function to query the amount of data
+ * associated with a command capsule.
+ */
+size_t	nvmf_capsule_data_len(const struct nvmf_capsule *cc);
+
+/*
  * A controller calls this function to receive data associated with a
  * command capsule (e.g. the data for a WRITE command).  This can
  * either return in-capsule data or fetch data from the host
