@@ -4963,6 +4963,39 @@ ctl_lun_capacity_changed(struct ctl_be_lun *be_lun)
 	}
 }
 
+void
+ctl_lun_nsdata_ids(struct ctl_be_lun *be_lun,
+    struct nvme_namespace_data *nsdata)
+{
+	struct ctl_lun *lun = (struct ctl_lun *)be_lun->ctl_lun;
+	struct scsi_vpd_id_descriptor *idd;
+
+	if (lun->lun_devid == NULL)
+		return;
+
+	idd = scsi_get_devid_desc((struct scsi_vpd_id_descriptor *)
+	    lun->lun_devid->data, lun->lun_devid->len, scsi_devid_is_lun_naa);
+	if (idd != NULL) {
+		if (idd->length == 16) {
+			memcpy(nsdata->nguid, idd->identifier, 16);
+			return;
+		}
+		if (idd->length == 8) {
+			memcpy(nsdata->eui64, idd->identifier, 8);
+			return;
+		}
+	}
+
+	idd = scsi_get_devid_desc((struct scsi_vpd_id_descriptor *)
+	    lun->lun_devid->data, lun->lun_devid->len, scsi_devid_is_lun_eui64);
+	if (idd != NULL) {
+		if (idd->length == 8) {
+			memcpy(nsdata->eui64, idd->identifier, 8);
+			return;
+		}
+	}
+}
+
 /*
  * Backend "memory move is complete" callback for requests that never
  * make it down to say RAIDCore's configuration code.

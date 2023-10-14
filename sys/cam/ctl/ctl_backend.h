@@ -242,6 +242,12 @@ int ctl_lun_secondary(struct ctl_be_lun *be_lun);
  */
 void ctl_lun_capacity_changed(struct ctl_be_lun *be_lun);
 
+/*
+ * Populate unique ID fields in NVMe namespace data for a LUN.
+ */
+void ctl_lun_nsdata_ids(struct ctl_be_lun *be_lun,
+    struct nvme_namespace_data *nsdata);
+
 #endif /* _KERNEL */
 #endif /* _CTL_BACKEND_H_ */
 
