@@ -65,6 +65,13 @@
 /* Many items are expressed in terms of power of two times MPS */
 #define NVME_MPS_SHIFT			12
 
+/* Limits on queue sizes */
+#define NVME_MIN_ADMIN_ENTRIES		2
+#define NVME_MAX_ADMIN_ENTRIES		4096
+
+#define NVME_MIN_IO_ENTRIES		2
+#define NVME_MAX_IO_ENTRIES		65536
+
 /* Register field definitions */
 #define NVME_CAP_LO_REG_MQES_SHIFT			(0)
 #define NVME_CAP_LO_REG_MQES_MASK			(0xFFFF)
