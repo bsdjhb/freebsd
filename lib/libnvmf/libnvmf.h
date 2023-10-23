@@ -36,19 +36,9 @@
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_proto.h>
 
-/* XXX: Should be in nvme.h */
-#define NVME_MIN_ADMIN_ENTRIES	(2)
-#define NVME_MAX_ADMIN_ENTRIES	(4096)
-
-#define NVME_MIN_IO_ENTRIES	(2)
-#define NVME_MAX_IO_ENTRIES	(65536)
-
 /* Values match the Linux target */
 #define	NVMET_MAX_IO_ENTRIES	(1024)
 #define	NVMET_CC_EN_TIMEOUT	(15)	/* In 500ms units */
-
-/* 5.21.1.15 in NVMe */
-#define	NVMF_KATO_DEFAULT	(120000)
 
 struct nvmf_capsule;
 struct nvmf_association;

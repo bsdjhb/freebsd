@@ -43,6 +43,7 @@
 #else
 #include <stddef.h>
 #endif
+#include <dev/nvme/nvme.h>
 
 /**
  * \file
@@ -252,6 +253,9 @@ struct nvmf_fabric_connect_cmd {
 	uint8_t		reserved4[12];
 };
 _Static_assert(sizeof(struct nvmf_fabric_connect_cmd) == 64, "Incorrect size");
+
+/* 5.21.1.15 in NVMe 1.4b */
+#define	NVMF_KATO_DEFAULT			(120000)
 
 #define NVMF_CONNECT_ATTR_PRIORITY_CLASS	(0x3)
 #define NVMF_CONNECT_ATTR_DISABLE_SQ_FC		(1u << 2)
