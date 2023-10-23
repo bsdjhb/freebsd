@@ -1997,6 +1997,9 @@ __elfN(register_regset_note)(struct thread *td, struct note_info_list *list,
 	struct note_info *ninfo;
 	size_t size, notesize;
 
+	if (regset->process_note && td != target_td)
+		return (0);
+
 	size = 0;
 	if (!regset->get(regset, target_td, NULL, &size) || size == 0)
 		return (0);

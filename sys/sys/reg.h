@@ -50,6 +50,7 @@ typedef bool (regset_set)(struct regset *, struct thread *, void *, size_t);
 
 struct regset {
 	int		note;
+	bool		process_note;	/* Only dump for first thread. */
 	size_t		size;
 	regset_get	*get;
 	regset_set	*set;
