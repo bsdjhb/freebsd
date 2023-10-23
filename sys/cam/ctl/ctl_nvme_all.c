@@ -9,6 +9,10 @@
 
 #include <sys/types.h>
 #include <sys/sbuf.h>
+#ifndef _KERNEL
+#include <sys/time.h>
+#include <stdio.h>
+#endif
 
 #include <dev/nvme/nvme.h>
 
