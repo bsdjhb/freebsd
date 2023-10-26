@@ -507,6 +507,18 @@ nvmf_validate_cc(struct nvmf_qpair *qp, uint64_t cap, uint32_t old_cc,
 	return (true);
 }
 
+/*
+ * Copy an ASCII string in the destination buffer but pad the end of
+ * the buffer with spaces and no terminating nul.
+ */
+static void
+strpad(char *dst, const char *src, size_t len)
+{
+	while (len > 0 && *src != '\0')
+		*dst++ = *src++;
+	memset(dst, ' ', len);
+}
+
 void
 nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
     struct nvme_controller_data *cdata)
@@ -523,25 +535,26 @@ nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
 	 * do set model name.
 	 */
 	uname(&utsname);
-	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
-	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+	strpad(cdata->mn, utsname.sysname, sizeof(cdata->mn));
+	strpad(cdata->fr, utsname.release, sizeof(cdata->fr));
 	cp = memchr(cdata->fr, '-', sizeof(cdata->fr));
 	if (cp != NULL)
-		memset(cp, 0, sizeof(cdata->fr) - (cp - (char *)cdata->fr));
+		memset(cp, ' ', sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
-	cdata->ctrlr_id = qp->nq_cntlid;
-	cdata->ver = NVME_REV(1, 4);
+	cdata->ctrlr_id = htole16(qp->nq_cntlid);
+	cdata->ver = htole32(NVME_REV(1, 4));
 	cdata->cntrltype = 2;
 
 	cdata->lpa = 1 << NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT;
 	cdata->elpe = 0;
 
-	cdata->maxcmd = na->na_params.max_admin_qsize;
+	cdata->maxcmd = htole16(na->na_params.max_admin_qsize);
 
 	/* Transport-specific? */
-	cdata->sgls = 1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
+	cdata->sgls = htole32(
+	    1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
 	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT;
+	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT);
 
 	strlcpy(cdata->subnqn, NVMF_DISCOVERY_NQN, sizeof(cdata->subnqn));
 }
@@ -557,22 +570,23 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 
 	uname(&utsname);
 
-	strlcpy(cdata->sn, serial, sizeof(cdata->sn));
-	strlcpy(cdata->mn, utsname.sysname, sizeof(cdata->mn));
-	strlcpy(cdata->fr, utsname.release, sizeof(cdata->fr));
+	strpad(cdata->sn, serial, sizeof(cdata->sn));
+	strpad(cdata->mn, utsname.sysname, sizeof(cdata->mn));
+	strpad(cdata->fr, utsname.release, sizeof(cdata->fr));
 	cp = memchr(cdata->fr, '-', sizeof(cdata->fr));
 	if (cp != NULL)
-		memset(cp, 0, sizeof(cdata->fr) - (cp - (char *)cdata->fr));
+		memset(cp, ' ', sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
 	/* FreeBSD OUI */
 	cdata->ieee[0] = 0xfc;
 	cdata->ieee[1] = 0x9c;
 	cdata->ieee[2] = 0x58;
 
-	cdata->ctrlr_id = qp->nq_cntlid;
-	cdata->ver = NVME_REV(1, 4);
-	cdata->ctratt = 1 << NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID_SHIFT |
-	    1 << NVME_CTRLR_DATA_CTRATT_TBKAS_SHIFT;
+	cdata->ctrlr_id = htole16(qp->nq_cntlid);
+	cdata->ver = htole32(NVME_REV(1, 4));
+	cdata->ctratt = htole32(
+	    1 << NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID_SHIFT |
+	    1 << NVME_CTRLR_DATA_CTRATT_TBKAS_SHIFT);
 	cdata->cntrltype = 1;
 	cdata->acl = 4;
 	cdata->aerl = 4;
@@ -590,19 +604,19 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 	 * 1.2+ require a non-zero value for these even though it makes
 	 * no sense for Fabrics.
 	 */
-	cdata->wctemp = 0x0157;
+	cdata->wctemp = htole16(0x0157);
 	cdata->cctemp = cdata->wctemp;
 
 	/* 1 second granularity for KeepAlive */
-	cdata->kas = 10;
+	cdata->kas = htole16(10);
 
 	cdata->sqes = 6 << NVME_CTRLR_DATA_SQES_MAX_SHIFT |
 	    6 << NVME_CTRLR_DATA_SQES_MIN_SHIFT;
 	cdata->cqes = 4 << NVME_CTRLR_DATA_CQES_MAX_SHIFT |
 	    4 << NVME_CTRLR_DATA_CQES_MIN_SHIFT;
 
-	cdata->maxcmd = na->na_params.max_io_qsize;
-	cdata->nn = nn;
+	cdata->maxcmd = htole16(na->na_params.max_io_qsize);
+	cdata->nn = htole32(nn);
 
 	/* XXX: ONCS_DSM for TRIM */
 
@@ -610,14 +624,15 @@ nvmf_init_io_controller_data(struct nvmf_qpair *qp, const char *serial,
 	    NVME_CTRLR_DATA_VWC_ALL_SHIFT;
 
 	/* Transport-specific? */
-	cdata->sgls = 1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
+	cdata->sgls = htole32(
+	    1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
 	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT;
+	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT);
 
 	strlcpy(cdata->subnqn, subnqn, sizeof(cdata->subnqn));
 
-	cdata->ioccsz = ioccsz / 16;
-	cdata->iorcsz = sizeof(struct nvme_completion) / 16;
+	cdata->ioccsz = htole32(ioccsz / 16);
+	cdata->iorcsz = htole32(sizeof(struct nvme_completion) / 16);
 
 	/* Transport-specific? */
 	cdata->icdoff = 0;
