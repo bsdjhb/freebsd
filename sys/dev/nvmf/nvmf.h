@@ -44,6 +44,19 @@
  */
 #define	NVMF_CNTLID_STATIC_MAX	0xFFEF
 
+/*
+ * Default settings in Fabrics controllers.  These match values used by the
+ * Linux target.
+ */
+#define	NVMF_MAX_IO_ENTRIES	(1024)
+#define	NVMF_CC_EN_TIMEOUT	(15)	/* In 500ms units */
+
+/* Allows for a 16k data buffer + SQE */
+#define	NVMF_IOCCSZ		(sizeof(struct nvme_command) + 16 * 1024)
+#define	NVMF_IORCSZ		(sizeof(struct nvme_completion))
+
+#define	NVMF_NN			(1024)
+
 struct nvmf_handoff_qpair_params {
 	bool	admin;
 	bool	sq_flow_control;

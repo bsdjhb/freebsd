@@ -36,10 +36,6 @@
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_proto.h>
 
-/* Values match the Linux target */
-#define	NVMET_MAX_IO_ENTRIES	(1024)
-#define	NVMET_CC_EN_TIMEOUT	(15)	/* In 500ms units */
-
 struct nvmf_capsule;
 struct nvmf_association;
 struct nvmf_qpair;

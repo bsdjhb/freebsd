@@ -77,7 +77,7 @@ init_io(const char *subnqn)
 	aparams.sq_flow_control = !flow_control_disable;
 	aparams.dynamic_controller_model = true;
 	aparams.max_admin_qsize = NVME_MAX_ADMIN_ENTRIES;
-	aparams.max_io_qsize = NVME_MAX_IO_ENTRIES;
+	aparams.max_io_qsize = NVMF_MAX_IO_ENTRIES;
 	aparams.tcp.pda = 0;
 	aparams.tcp.header_digests = header_digests;
 	aparams.tcp.data_digests = data_digests;
@@ -390,10 +390,8 @@ handle_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	memcpy(ioc->hostid, data->hostid, sizeof(ioc->hostid));
 	memcpy(ioc->hostnqn, data->hostnqn, sizeof(ioc->hostnqn));
 
-	/* IOCCSZ allows for a 16k data buffer + SQE. */
-	ioccsz = 16 * 1024 + sizeof(struct nvme_command);
-	nvmf_init_io_controller_data(qp, serial, nqn, device_count(), ioccsz,
-	    &cdata);
+	nvmf_init_io_controller_data(qp, serial, nqn, device_count(),
+	    NVMF_IOCCSZ, &cdata);
 	ioc->c = init_controller(qp, &cdata);
 
 	error = pthread_create(&thr, NULL, admin_qpair_thread, ioc);

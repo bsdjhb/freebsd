@@ -446,7 +446,7 @@ nvmf_controller_cap(struct nvmf_qpair *qp)
 	    0 << NVME_CAP_HI_REG_NSSRS_SHIFT |
 	    0 << NVME_CAP_HI_REG_DSTRD_SHIFT;
 
-	caplo = NVMET_CC_EN_TIMEOUT << NVME_CAP_LO_REG_TO_SHIFT |
+	caplo = NVMF_CC_EN_TIMEOUT << NVME_CAP_LO_REG_TO_SHIFT |
 	    0 << NVME_CAP_LO_REG_AMS_SHIFT |
 	    1 << NVME_CAP_LO_REG_CQR_SHIFT;
 
