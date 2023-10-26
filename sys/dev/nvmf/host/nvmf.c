@@ -776,4 +776,4 @@ static driver_t nvme_nvmf_driver = {
 };
 
 DRIVER_MODULE(nvme, root, nvme_nvmf_driver, nvmf_modevent, NULL);
-MODULE_DEPEND(nvme, nvmf_transport, 1, 1, 1);
+MODULE_DEPEND(nvmf, nvmf_transport, 1, 1, 1);
