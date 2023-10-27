@@ -43,6 +43,7 @@ typedef bool handle_command(const struct nvmf_capsule *,
 extern bool data_digests;
 extern bool header_digests;
 extern bool flow_control_disable;
+extern bool kernel_io;
 
 /* controller.c */
 void	controller_handle_admin_commands(struct controller *c,
@@ -68,5 +69,12 @@ void	device_read(u_int nsid, uint64_t lba, u_int nlb,
     const struct nvmf_capsule *nc);
 void	device_write(u_int nsid, uint64_t lba, u_int nlb,
     const struct nvmf_capsule *nc);
+
+/* ctl.c */
+void	init_ctl_port(const char *subnqn,
+    const struct nvmf_association_params *params);
+void	ctl_handoff_qpair(struct nvmf_qpair *qp,
+    const struct nvmf_fabric_connect_cmd *cmd,
+    const struct nvmf_fabric_connect_data *data);
 
 #endif /* !__INTERNAL_H__ */

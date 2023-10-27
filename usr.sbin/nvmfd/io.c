@@ -99,6 +99,9 @@ init_io(const char *subnqn)
 
 	pthread_cond_init(&io_cond, NULL);
 	pthread_mutex_init(&io_na_mutex, NULL);
+
+	if (kernel_io)
+		init_ctl_port(subnqn, &aparams);
 }
 
 static bool
@@ -367,7 +370,6 @@ handle_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	struct nvme_controller_data cdata;
 	struct io_controller *ioc;
 	pthread_t thr;
-	uint32_t ioccsz;
 	int error;
 
 	/* Can only have one active I/O controller at a time. */
@@ -501,6 +503,12 @@ handle_io_socket(int s)
 		warnx("Failed to create I/O qpair: %s",
 		    nvmf_association_error(io_na));
 		pthread_mutex_unlock(&io_na_mutex);
+		goto error;
+	}
+
+	if (kernel_io) {
+		pthread_mutex_unlock(&io_na_mutex);
+		ctl_handoff_qpair(qp, nvmf_capsule_sqe(nc), &data);
 		goto error;
 	}
 

@@ -44,13 +44,14 @@
 bool data_digests = false;
 bool header_digests = false;
 bool flow_control_disable = false;
+bool kernel_io = false;
 
 static const char *subnqn;
 
 static void
 usage(void)
 {
-	fprintf(stderr, "nvmfd [-DFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
+	fprintf(stderr, "nvmfd [-DFHK] [-P port] [-p port] [-t transport] [-n subnqn]\n"
 	    "\tdevice [device [...]]\n"
 	    "\n"
 	    "Devices use one of the following syntaxes:\n"
