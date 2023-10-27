@@ -666,3 +666,11 @@ nvmf_get_log_page_offset(const struct nvme_command *cmd)
 	assert(cmd->opc == NVME_OPC_GET_LOG_PAGE);
 	return (le32toh(cmd->cdw12) | (uint64_t)le32toh(cmd->cdw13) << 32);
 }
+
+int
+nvmf_handoff_controller_qpair(struct nvmf_qpair *qp,
+    struct nvmf_handoff_controller_qpair *h)
+{
+	h->trtype = qp->nq_association->na_trtype;
+	return (nvmf_kernel_handoff_params(qp, &h->params));
+}

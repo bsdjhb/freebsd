@@ -259,6 +259,10 @@ uint64_t nvmf_get_log_page_length(const struct nvme_command *cmd);
 /* Return the requested data offset of a GET_LOG_PAGE command. */
 uint64_t nvmf_get_log_page_offset(const struct nvme_command *cmd);
 
+/* Prepare to handoff a controller qpair. */
+int	nvmf_handoff_controller_qpair(struct nvmf_qpair *qp,
+    struct nvmf_handoff_controller_qpair *h);
+
 /* Host-specific APIs. */
 
 /*

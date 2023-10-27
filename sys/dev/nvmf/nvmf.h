@@ -91,6 +91,13 @@ struct nvmf_reconnect_params {
 	char	subnqn[256];
 };
 
+struct nvmf_handoff_controller_qpair {
+	u_int	trtype;
+	struct nvmf_handoff_qpair_params params;
+	const struct nvmf_fabric_connect_cmd *cmd;
+	const struct nvmf_fabric_connect_data *data;
+};
+
 /* Operations on /dev/nvmf */
 #define	NVMF_HANDOFF_HOST	_IOW('n', 200, struct nvmf_handoff_host)
 
