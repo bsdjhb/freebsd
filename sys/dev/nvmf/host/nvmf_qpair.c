@@ -59,7 +59,7 @@ struct nvmf_host_qpair {
 	/* Indexed by cid. */
 	struct nvmf_host_command **active_commands;
 
-	char name[16];
+	char	name[16];
 };
 
 struct nvmf_request *
