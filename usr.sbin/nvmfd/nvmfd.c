@@ -51,7 +51,8 @@ static const char *subnqn;
 static void
 usage(void)
 {
-	fprintf(stderr, "nvmfd [-DFHK] [-P port] [-p port] [-t transport] [-n subnqn]\n"
+	fprintf(stderr, "nvmfd -K [-DFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
+	    "nvmfd [-DFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
 	    "\tdevice [device [...]]\n"
 	    "\n"
 	    "Devices use one of the following syntaxes:\n"
@@ -191,8 +192,13 @@ main(int ac, char **av)
 	av += optind;
 	ac -= optind;
 
-	if (ac < 1)
-		usage();
+	if (kernel_io) {
+		if (ac > 0)
+			usage();
+	} else {
+		if (ac < 1)
+			usage();
+	}
 
 	if (strcasecmp(transport, "tcp") == 0) {
 	} else
@@ -205,7 +211,8 @@ main(int ac, char **av)
 		subnqn = nqn;
 	}
 
-	register_devices(ac, av);
+	if (!kernel_io)
+		register_devices(ac, av);
 
 	init_discovery();
 	init_io(subnqn);
