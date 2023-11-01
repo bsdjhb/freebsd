@@ -73,7 +73,7 @@ nvmf_controller_receive_capsule(struct nvmf_qpair *qp,
 		return (error);
 
 	sc_status = nvmf_validate_command_capsule(nc);
-	if (sc_status != 0) {
+	if (sc_status != NVME_SC_SUCCESS) {
 		nvmf_send_generic_error(nc, sc_status);
 		nvmf_free_capsule(nc);
 		return (EPROTO);
