@@ -29,6 +29,78 @@
 #ifndef __NVMFT_VAR_H__
 #define	__NVMFT_VAR_H__
 
+#include <sys/refcount.h>
+
+#include <dev/nvmf/nvmf_proto.h>
+
+#include <cam/ctl/ctl.h>
+#include <cam/ctl/ctl_io.h>
+#include <cam/ctl/ctl_frontend.h>
+
+struct nvmf_capsule;
+struct nvmft_controller;
+struct nvmft_qpair;
+
+struct nvmft_port {
+	TAILQ_ENTRY(nvmft_port) link;
+	u_int	refs;
+	struct ctl_port port;
+	struct nvme_controller_data cdata;
+	uint64_t cap;
+	uint32_t max_io_qsize;
+
+	struct sx lock;
+
+	struct unrhdr *ids;
+	TAILQ_HEAD(, nvmft_controller) controllers;
+
+	int	*luns;
+	u_int	num_luns;
+};
+
+struct nvmft_controller {
+	struct nvmft_qpair *admin;
+	struct nvmft_qpair **io_qpairs;
+	u_int	num_io_queues;
+	uint16_t cntlid;
+
+	struct nvmft_port *np;
+
+	struct nvme_controller_data cdata;
+
+	uint8_t	hostid[16];
+	uint8_t	hostnqn[NVME_NQN_FIELD_SIZE];
+
+	TAILQ_ENTRY(nvmft_controller) link;
+	u_int	refs;
+
+	/* TODO: KeepAlive support. */	
+};
+
+MALLOC_DECLARE(M_NVMFT);
+
+/* ctl_frontend_nvmf.c */
+void	nvmft_port_free(struct nvmft_port *np);
+
+/* nvmft_controller.c */
+int	nvmft_handoff_admin_queue(struct nvmft_port *np,
+    const struct nvmf_handoff_controller_qpair *handoff,
+    const struct nvmf_fabric_connect_cmd *cmd,
+    const struct nvmf_fabric_connect_data *data);
+int	nvmft_handoff_io_queue(struct nvmft_port *np,
+    const struct nvmf_handoff_controller_qpair *handoff,
+    const struct nvmf_fabric_connect_cmd *cmd,
+    const struct nvmf_fabric_connect_data *data);
+
+/* nvmft_subr.c */
+
+/*
+ * Construct a CQE for a reply to a command capsule in 'nc' with the
+ * completion status 'status'.  This is useful when additional CQE
+ * info is required beyond the completion status.
+ */
+void	nvmf_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status);
+
 /* Validate a NVMe Qualified Name. */
 bool	nvmf_nqn_valid(const char *nqn);
 
@@ -53,5 +125,44 @@ void	nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
  */
 bool	nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
     uint32_t new_cc);
+
+/* nvmft_qpair.c */
+struct nvmft_qpair *nvmft_init_qp(enum nvmf_trtype trtype,
+    const struct nvmf_handoff_qpair_params *handoff, const char *name);
+void	nvmft_destroy_qp(struct nvmft_qpair *qp);
+int	nvmft_transmit_response(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc);
+int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe, int how);
+int	nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
+    uint8_t sc_type, uint8_t sc_status, int how);
+int	nvmft_send_generic_error(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc, uint8_t sc_status, int how);
+int	nvmft_send_success(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc, int how);
+void	nvmft_connect_error(struct nvmft_qpair *qp,
+    const struct nvmf_fabric_connect_cmd *cmd, uint8_t sc_type,
+    uint8_t sc_status);
+void	nvmft_connect_invalid_parameters(struct nvmft_qpair *qp,
+    const struct nvmf_fabric_connect_cmd *cmd, bool data, uint16_t offset);
+int	nvmft_finish_accept(struct nvmft_qpair *qp,
+    const struct nvmf_fabric_connect_cmd *cmd, struct nvmft_controller *ctrlr);
+
+static __inline void
+nvmft_port_ref(struct nvmft_port *np)
+{
+	refcount_acquire(&np->refs);
+}
+
+static __inline void
+nvmft_port_rele(struct nvmft_port *np)
+{
+	if (refcount_release(&np->refs))
+		nvmft_port_free(np);
+}
+
+void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
+void	nvmft_handle_io_command(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
 
 #endif	/* !__NVMFT_VAR_H__ */

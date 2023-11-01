@@ -29,8 +29,19 @@
 #include <sys/types.h>
 #include <sys/libkern.h>
 
-#include <dev/nvmf/nvmf_proto.h>
+#include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
+
+void
+nvmf_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status)
+{
+	struct nvme_completion *cpl = cqe;
+	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
+
+	memset(cpl, 0, sizeof(*cpl));
+	cpl->cid = cmd->cid;
+	cpl->status = htole16(status);
+}
 
 bool
 nvmf_nqn_valid(const char *nqn)
@@ -234,7 +245,12 @@ nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	cdata->maxcmd = htole16(max_io_qsize);
 	cdata->nn = htole32(nn);
 
-	/* XXX: ONCS_DSM for TRIM */
+	cdata->oncs = htole16(1 << NVME_CTRLR_DATA_ONCS_VERIFY_SHIFT |
+	    1 << NVME_CTRLR_DATA_ONCS_WRZERO_SHIFT |
+	    1 << NVME_CTRLR_DATA_ONCS_DSM_SHIFT |
+	    1 << NVME_CTRLR_DATA_ONCS_COMPARE_SHIFT);
+	
+	cdata->fuses = 1 << NVME_CTRLR_DATA_FUSES_CNW_SHIFT;
 
 	cdata->vwc = NVME_CTRLR_DATA_VWC_ALL_NO <<
 	    NVME_CTRLR_DATA_VWC_ALL_SHIFT;
