@@ -132,13 +132,13 @@ struct nvmft_qpair *nvmft_init_qp(enum nvmf_trtype trtype,
 void	nvmft_destroy_qp(struct nvmft_qpair *qp);
 int	nvmft_transmit_response(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc);
-int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe, int how);
+int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);
 int	nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
-    uint8_t sc_type, uint8_t sc_status, int how);
+    uint8_t sc_type, uint8_t sc_status);
 int	nvmft_send_generic_error(struct nvmft_qpair *qp,
-    struct nvmf_capsule *nc, uint8_t sc_status, int how);
+    struct nvmf_capsule *nc, uint8_t sc_status);
 int	nvmft_send_success(struct nvmft_qpair *qp,
-    struct nvmf_capsule *nc, int how);
+    struct nvmf_capsule *nc);
 void	nvmft_connect_error(struct nvmft_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd, uint8_t sc_type,
     uint8_t sc_status);

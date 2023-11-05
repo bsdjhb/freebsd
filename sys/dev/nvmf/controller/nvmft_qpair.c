@@ -76,7 +76,7 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 
 	sc_status = nvmf_validate_command_capsule(nc);
 	if (sc_status != NVME_SC_SUCCESS) {
-		nvmft_send_generic_error(qp, nc, sc_status, M_WAITOK);
+		nvmft_send_generic_error(qp, nc, sc_status);
 		nvmf_free_capsule(nc);
 		return;
 	}
@@ -140,14 +140,12 @@ nvmft_transmit_response(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 }
 
 int
-nvmft_send_response(struct nvmft_qpair *qp, const void *cqe, int how)
+nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 {
 	struct nvmf_capsule *rc;
 	int error;
 
-	rc = nvmf_allocate_response(qp->qp, cqe, how);
-	if (rc == NULL)
-		return (ENOMEM);
+	rc = nvmf_allocate_response(qp->qp, cqe, M_WAITOK);
 	error = nvmft_transmit_response(qp, rc);
 	nvmf_free_capsule(rc);
 	return (error);
@@ -155,7 +153,7 @@ nvmft_send_response(struct nvmft_qpair *qp, const void *cqe, int how)
 
 int
 nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
-    uint8_t sc_type, uint8_t sc_status, int how)
+    uint8_t sc_type, uint8_t sc_status)
 {
 	struct nvme_completion cpl;
 	uint16_t status;
@@ -163,21 +161,20 @@ nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 	status = sc_type << NVME_STATUS_SCT_SHIFT |
 	    sc_status << NVME_STATUS_SC_SHIFT;
 	nvmf_init_cqe(&cpl, nc, status);
-	return (nvmft_send_response(qp, &cpl, how));
+	return (nvmft_send_response(qp, &cpl));
 }
 
 int
 nvmft_send_generic_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
-    uint8_t sc_status, int how)
+    uint8_t sc_status)
 {
-	return (nvmft_send_error(qp, nc, NVME_SCT_GENERIC, sc_status, how));
+	return (nvmft_send_error(qp, nc, NVME_SCT_GENERIC, sc_status));
 }
 
 int
-nvmft_send_success(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
-    int how)
+nvmft_send_success(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 {
-	return (nvmft_send_generic_error(qp, nc, NVME_SC_SUCCESS, how));
+	return (nvmft_send_generic_error(qp, nc, NVME_SC_SUCCESS));
 }
 
 static void
