@@ -63,8 +63,11 @@ struct nvmft_controller {
 	struct nvmft_qpair **io_qpairs;
 	u_int	num_io_queues;
 	uint16_t cntlid;
+	uint32_t cc;
+	uint32_t csts;
 
 	struct nvmft_port *np;
+	struct sx lock;
 
 	struct nvme_controller_data cdata;
 
@@ -83,6 +86,8 @@ MALLOC_DECLARE(M_NVMFT);
 void	nvmft_port_free(struct nvmft_port *np);
 
 /* nvmft_controller.c */
+void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
+    struct nvmf_capsule *nc);
 int	nvmft_handoff_admin_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
     const struct nvmf_fabric_connect_cmd *cmd,
@@ -160,8 +165,6 @@ nvmft_port_rele(struct nvmft_port *np)
 		nvmft_port_free(np);
 }
 
-void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
-    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
 void	nvmft_handle_io_command(struct nvmft_controller *ctrlr,
     struct nvmft_qpair *qp, struct nvmf_capsule *nc);
 

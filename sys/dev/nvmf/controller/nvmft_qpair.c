@@ -82,7 +82,7 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	}
 
 	if (qp->admin)
-		nvmft_handle_admin_command(ctrlr, qp, nc);
+		nvmft_handle_admin_command(ctrlr, nc);
 	else
 		nvmft_handle_io_command(ctrlr, qp, nc);
 }
