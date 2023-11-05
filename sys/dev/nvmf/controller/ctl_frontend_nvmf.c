@@ -89,6 +89,12 @@ nvmft_lun_enable(void *arg, int lun_id)
 	u_int *old_luns, *new_luns;
 	u_int i;
 
+	if (lun_id >= le32toh(np->cdata.nn)) {
+		printf("NVMFT: %s lun %d larger than maximum nsid %u\n",
+		    np->cdata.subnqn, lun_id, le32toh(np->cdata.nn));
+		return (EOPNOTSUPP);
+	}
+
 	sx_xlock(&np->lock);
 	new_luns = mallocarray(np->num_luns + 1, sizeof(*new_luns), M_NVMFT,
 	    M_WAITOK);
@@ -132,6 +138,9 @@ nvmft_lun_disable(void *arg, int lun_id)
 {
 	struct nvmft_port *np = arg;
 	u_int i;
+
+	if (lun_id >= le32toh(np->cdata.nn))
+		return (0);
 
 	sx_xlock(&np->lock);
 	for (i = 0; i < np->num_luns; i++) {
