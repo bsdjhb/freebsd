@@ -161,7 +161,7 @@ main(int ac, char **av)
 	ioport = "0";
 	subnqn = NULL;
 	transport = "tcp";
-	while ((ch = getopt(ac, av, "DFHn:P:p:t:")) != -1) {
+	while ((ch = getopt(ac, av, "DFHKn:P:p:t:")) != -1) {
 		switch (ch) {
 		case 'D':
 			data_digests = true;
@@ -171,6 +171,9 @@ main(int ac, char **av)
 			break;
 		case 'H':
 			header_digests = true;
+			break;
+		case 'K':
+			kernel_io = true;
 			break;
 		case 'n':
 			subnqn = optarg;
