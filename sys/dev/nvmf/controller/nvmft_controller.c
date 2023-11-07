@@ -507,3 +507,19 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 	}
 	nvmf_free_capsule(nc);
 }
+
+void
+nvmft_handle_io_command(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc)
+{
+	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
+
+	switch (cmd->opc) {
+	default:
+		nvmft_printf(ctrlr, "Unsupported I/O opcode %#x\n", cmd->opc);
+		nvmft_send_generic_error(qp, nc,
+		    NVME_SC_INVALID_OPCODE);
+		break;
+	}
+	nvmf_free_capsule(nc);
+}

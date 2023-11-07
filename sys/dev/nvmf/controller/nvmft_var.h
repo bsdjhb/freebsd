@@ -88,6 +88,8 @@ void	nvmft_port_free(struct nvmft_port *np);
 /* nvmft_controller.c */
 void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc);
+void	nvmft_handle_io_command(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
 int	nvmft_handoff_admin_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
     const struct nvmf_fabric_connect_cmd *cmd,
@@ -164,8 +166,5 @@ nvmft_port_rele(struct nvmft_port *np)
 	if (refcount_release(&np->refs))
 		nvmft_port_free(np);
 }
-
-void	nvmft_handle_io_command(struct nvmft_controller *ctrlr,
-    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
 
 #endif	/* !__NVMFT_VAR_H__ */
