@@ -30,12 +30,14 @@
 #include <sys/dnv.h>
 #include <sys/jail.h>
 #include <sys/kernel.h>
+#include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/proc.h>
 #include <sys/queue.h>
 #include <sys/refcount.h>
+#include <sys/sbuf.h>
 #include <sys/sx.h>
 
 #include <dev/nvmf/nvmf.h>
@@ -224,6 +226,19 @@ nvmft_port_find(const char *subnqn)
 	sx_assert(&nvmft_ports_lock, SA_LOCKED);
 	TAILQ_FOREACH(np, &nvmft_ports, link) {
 		if (strcmp(np->cdata.subnqn, subnqn) == 0)
+			break;
+	}
+	return (np);
+}
+
+static struct nvmft_port *
+nvmft_port_find_by_id(int port_id)
+{
+	struct nvmft_port *np;
+
+	sx_assert(&nvmft_ports_lock, SA_LOCKED);
+	TAILQ_FOREACH(np, &nvmft_ports, link) {
+		if (np->port.targ_port == port_id)
 			break;
 	}
 	return (np);
@@ -423,25 +438,57 @@ nvmft_port_remove(struct ctl_req *req)
 {
 	struct nvmft_port *np;
 	const char *subnqn;
+	u_long port_id;
 
-	/* Required parameters. */
+	/*
+	 * ctladm port -r just provides the port_id, so permit looking
+	 * up a port either by "subnqn" or "port_id".
+	 */
+	port_id = ULONG_MAX;
 	subnqn = dnvlist_get_string(req->args_nvl, "subnqn", NULL);
 	if (subnqn == NULL) {
-		req->status = CTL_LUN_ERROR;
-		snprintf(req->error_str, sizeof(req->error_str),
-		    "Missing required argument");
-		return;
+		if (!nvlist_exists_string(req->args_nvl, "port_id")) {
+			req->status = CTL_LUN_ERROR;
+			snprintf(req->error_str, sizeof(req->error_str),
+			    "Missing required argument");
+			return;
+		}
+		if (!dnvlist_get_strnum(req->args_nvl, "port_id", ULONG_MAX,
+		    &port_id)) {
+			req->status = CTL_LUN_ERROR;
+			snprintf(req->error_str, sizeof(req->error_str),
+			    "Invalid CTL port ID");
+			return;
+		}
+	} else {
+		if (nvlist_exists_string(req->args_nvl, "port_id")) {
+			req->status = CTL_LUN_ERROR;
+			snprintf(req->error_str, sizeof(req->error_str),
+			    "Ambiguous port removal request");
+			return;
+		}
 	}
 
 	sx_xlock(&nvmft_ports_lock);
 
-	np = nvmft_port_find(subnqn);
-	if (np == NULL) {
-		req->status = CTL_LUN_ERROR;
-		snprintf(req->error_str, sizeof(req->error_str),
-		    "SubNQN \"%s\" does not exist", subnqn);
-		sx_xunlock(&nvmft_ports_lock);
-		return;
+	if (subnqn != NULL) {
+		np = nvmft_port_find(subnqn);
+		if (np == NULL) {
+			req->status = CTL_LUN_ERROR;
+			snprintf(req->error_str, sizeof(req->error_str),
+			    "SubNQN \"%s\" does not exist", subnqn);
+			sx_xunlock(&nvmft_ports_lock);
+			return;
+		}
+	} else {
+		np = nvmft_port_find_by_id(port_id);
+		if (np == NULL) {
+			req->status = CTL_LUN_ERROR;
+			snprintf(req->error_str, sizeof(req->error_str),
+			    "CTL port %lu is not a NVMF port", port_id);
+			sx_xunlock(&nvmft_ports_lock);
+			return;
+		}
 	}
 
 	TAILQ_REMOVE(&nvmft_ports, np, link);
