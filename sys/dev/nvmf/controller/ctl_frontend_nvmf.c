@@ -402,9 +402,6 @@ nvmft_port_create(struct ctl_req *req)
 	port->virtual_port = 0;
 	port->port_online = nvmft_online;
 	port->port_offline = nvmft_offline;
-#ifdef notyet
-	port->port_info = nvmft_info;
-#endif
 	port->onoff_arg = np;
 	port->lun_enable = nvmft_lun_enable;
 	port->lun_disable = nvmft_lun_disable;
