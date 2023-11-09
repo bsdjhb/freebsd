@@ -148,6 +148,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 	ctrlr = nvmft_controller_alloc(np, cntlid, data);
 	nvmft_printf(ctrlr, "associated with %.*s\n",
 	    (int)sizeof(data->hostnqn), data->hostnqn);
+	ctrlr->admin = qp;
 
 	/* TODO: Start KeepAlive timer. */
 
