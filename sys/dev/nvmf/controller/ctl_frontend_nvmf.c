@@ -201,6 +201,12 @@ nvmft_port_free(struct nvmft_port *np)
 {
 	KASSERT(TAILQ_EMPTY(&np->controllers),
 	    ("%s(%p): active controllers", __func__, np));
+
+	if (np->port.targ_port != -1) {
+		if (ctl_port_deregister(&np->port) != 0)
+			printf("%s: ctl_port_deregister() failed\n", __func__);
+	}
+
 	free(np->luns, M_NVMFT);
 	clean_unrhdr(np->ids);
 	delete_unrhdr(np->ids);
