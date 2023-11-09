@@ -121,6 +121,8 @@ struct nvmf_tcp_rxpdu {
 struct nvmf_tcp_capsule {
 	struct nvmf_capsule nc;
 
+	volatile u_int refs;
+
 	struct nvmf_tcp_rxpdu rx_pdu;
 
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
@@ -136,7 +138,7 @@ struct nvmf_tcp_capsule {
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
 #define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
 
-static void	tcp_free_capsule(struct nvmf_capsule *nc);
+static void	tcp_release_capsule(struct nvmf_tcp_capsule *tc);
 static void	tcp_free_qpair(struct nvmf_qpair *nq);
 
 SYSCTL_NODE(_kern_nvmf, OID_AUTO, tcp, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
@@ -1808,6 +1810,7 @@ nvmf_tcp_send(void *arg)
 			SOCKBUF_UNLOCK(&so->so_snd);
 
 			n = capsule_to_pdu(qp, tc);
+			tcp_release_capsule(tc);
 
 			SOCKBUF_LOCK(&so->so_snd);
 			mbufq_enqueue(&qp->tx_pdus, n);
@@ -2003,7 +2006,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 
 	STAILQ_FOREACH_SAFE(tc, &qp->tx_capsules, link, ntc) {
 		nvmf_abort_capsule_data(&tc->nc, ECONNABORTED);
-		tcp_free_capsule(&tc->nc);
+		tcp_release_capsule(tc);
 	}
 	mbufq_drain(&qp->tx_pdus);
 
@@ -2039,24 +2042,35 @@ static struct nvmf_capsule *
 tcp_allocate_capsule(struct nvmf_qpair *nq, int how)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nq);
-	struct nvmf_tcp_capsule *nc;
+	struct nvmf_tcp_capsule *tc;
 
-	nc = malloc(sizeof(*nc), M_NVMF_TCP, how | M_ZERO);
-	if (nc == NULL)
+	tc = malloc(sizeof(*tc), M_NVMF_TCP, how | M_ZERO);
+	if (tc == NULL)
 		return (NULL);
+	refcount_init(&tc->refs, 1);
 	refcount_acquire(&qp->refs);
-	return (&nc->nc);
+	return (&tc->nc);
+}
+
+static void
+tcp_release_capsule(struct nvmf_tcp_capsule *tc)
+{
+	struct nvmf_tcp_qpair *qp = TQP(tc->nc.nc_qpair);
+
+	if (!refcount_release(&tc->refs))
+		return;
+
+	nvmf_tcp_free_pdu(&tc->rx_pdu);
+	free(tc, M_NVMF_TCP);
+	tcp_release_qpair(qp);
 }
 
 static void
 tcp_free_capsule(struct nvmf_capsule *nc)
 {
-	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 
-	nvmf_tcp_free_pdu(&tc->rx_pdu);
-	free(nc, M_NVMF_TCP);
-	tcp_release_qpair(qp);
+	tcp_release_capsule(tc);
 }
 
 static int
@@ -2066,6 +2080,7 @@ tcp_transmit_capsule(struct nvmf_capsule *nc)
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct socket *so = qp->so;
 
+	refcount_acquire(&tc->refs);
 	SOCKBUF_LOCK(&so->so_snd);
 	STAILQ_INSERT_TAIL(&qp->tx_capsules, tc, link);
 	if (sowriteable(so))
