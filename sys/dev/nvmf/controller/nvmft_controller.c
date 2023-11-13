@@ -124,7 +124,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 	if (cmd->qid != htole16(0))
 		return (EINVAL);
 
-	qp = nvmft_init_qp(handoff->trtype, &handoff->params, "admin queue");
+	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, "admin queue");
 
 	sx_xlock(&np->lock);
 	cntlid = alloc_unr(np->ids);
@@ -134,7 +134,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 		    (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_error(qp, cmd, NVME_SCT_COMMAND_SPECIFIC,
 		    NVMF_FABRIC_SC_INVALID_HOST);
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (ENOMEM);
 	}
 
@@ -175,7 +175,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	cntlid = le16toh(data->cntlid);
 
 	snprintf(name, sizeof(name), "I/O queue %u", qid);
-	qp = nvmft_init_qp(handoff->trtype, &handoff->params, name);
+	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, name);
 
 	sx_slock(&np->lock);
 	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
@@ -189,7 +189,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, cntlid));
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (ENOENT);
 	}
 
@@ -199,7 +199,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostid));
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 		
 	}
@@ -209,7 +209,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostnqn));
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 		
 	}
@@ -222,7 +222,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_error(qp, cmd, NVME_SCT_GENERIC,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
 	if (cmd->qid > ctrlr->num_io_queues) {
@@ -232,7 +232,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, false,
 		    offsetof(struct nvmf_fabric_connect_cmd, qid));
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
 	if (ctrlr->io_qpairs[qid - 1] != NULL) {
@@ -242,7 +242,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_error(qp, cmd, NVME_SCT_GENERIC,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
-		nvmft_destroy_qp(qp);
+		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
 

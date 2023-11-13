@@ -134,9 +134,9 @@ bool	nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
     uint32_t new_cc);
 
 /* nvmft_qpair.c */
-struct nvmft_qpair *nvmft_init_qp(enum nvmf_trtype trtype,
+struct nvmft_qpair *nvmft_qpair_init(enum nvmf_trtype trtype,
     const struct nvmf_handoff_qpair_params *handoff, const char *name);
-void	nvmft_destroy_qp(struct nvmft_qpair *qp);
+void	nvmft_qpair_destroy(struct nvmft_qpair *qp);
 int	nvmft_transmit_response(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc);
 int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);

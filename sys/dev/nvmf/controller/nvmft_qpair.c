@@ -88,7 +88,7 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 }
 
 struct nvmft_qpair *
-nvmft_init_qp(enum nvmf_trtype trtype,
+nvmft_qpair_init(enum nvmf_trtype trtype,
     const struct nvmf_handoff_qpair_params *handoff, const char *name)
 {
 	struct nvmft_qpair *qp;
@@ -114,7 +114,7 @@ nvmft_init_qp(enum nvmf_trtype trtype,
 }
 
 void
-nvmft_destroy_qp(struct nvmft_qpair *qp)
+nvmft_qpair_destroy(struct nvmft_qpair *qp)
 {
 	/* TODO: Abort any outstanding requests? */
 	nvmf_free_qpair(qp->qp);
