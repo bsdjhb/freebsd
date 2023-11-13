@@ -485,6 +485,16 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 {
 	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
 
+	/* Only permit Fabrics commands while a controller is disabled. */
+	if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) == 0 &&
+	    cmd->opc != NVME_OPC_FABRICS_COMMANDS) {
+		nvmft_printf(ctrlr,
+		    "Unsupported admin opcode %#x whiled disabled\n", cmd->opc);
+		nvmft_send_generic_error(ctrlr->admin, nc,
+		    NVME_SC_COMMAND_SEQUENCE_ERROR);
+		goto out;
+	}
+
 	switch (cmd->opc) {
 	case NVME_OPC_FABRICS_COMMANDS:
 		handle_admin_fabrics_command(ctrlr, nc,
@@ -506,6 +516,7 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		    NVME_SC_INVALID_OPCODE);
 		break;
 	}
+out:
 	nvmf_free_capsule(nc);
 }
 
