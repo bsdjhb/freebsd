@@ -57,7 +57,7 @@ struct nvmf_transport_ops {
 	int (*receive_controller_data)(struct nvmf_capsule *nc,
 	    uint32_t data_offset, struct nvmf_io_request *io);
 	u_int (*send_controller_data)(struct nvmf_capsule *nc,
-	    struct nvmf_io_request *io);
+	    uint32_t data_offset, struct nvmf_io_request *io);
 
 	enum nvmf_trtype trtype;
 	int priority;
