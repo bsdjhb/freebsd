@@ -184,8 +184,10 @@ nvmf_controller_serial(char *buf, size_t len, u_long hostid)
 static void
 strpad(char *dst, const char *src, size_t len)
 {
-	while (len > 0 && *src != '\0')
+	while (len > 0 && *src != '\0') {
 		*dst++ = *src++;
+		len--;
+	}
 	memset(dst, ' ', len);
 }
 

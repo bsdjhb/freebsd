@@ -514,8 +514,10 @@ nvmf_validate_cc(struct nvmf_qpair *qp, uint64_t cap, uint32_t old_cc,
 static void
 strpad(char *dst, const char *src, size_t len)
 {
-	while (len > 0 && *src != '\0')
+	while (len > 0 && *src != '\0') {
 		*dst++ = *src++;
+		len--;
+	}
 	memset(dst, ' ', len);
 }
 
