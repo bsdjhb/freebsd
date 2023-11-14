@@ -99,8 +99,9 @@ void ctl_set_success(struct ctl_scsiio *ctsio);
 void ctl_nvme_set_error(struct ctl_nvmeio *ctnio, uint8_t sc_type,
 			uint8_t sc_status);
 void ctl_nvme_set_generic_error(struct ctl_nvmeio *ctnio, uint8_t sc_status);
-void ctl_nvme_set_invalid_field(struct ctl_nvmeio *ctnio);
 void ctl_nvme_set_invalid_opcode(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_invalid_field(struct ctl_nvmeio *ctnio);
+void ctl_nvme_set_data_transfer_error(struct ctl_nvmeio *ctnio);
 void ctl_nvme_set_invalid_namespace(struct ctl_nvmeio *ctnio);
 void ctl_nvme_set_command_aborted(struct ctl_nvmeio *ctnio);
 void ctl_nvme_set_failed_fused_command(struct ctl_nvmeio *ctnio);

@@ -1023,6 +1023,12 @@ ctl_nvme_set_invalid_opcode(struct ctl_nvmeio *ctnio)
 }
 
 void
+ctl_nvme_set_data_transfer_error(struct ctl_nvmeio *ctnio)
+{
+	ctl_nvme_set_generic_error(ctnio, NVME_SC_DATA_TRANSFER_ERROR);
+}
+
+void
 ctl_nvme_set_invalid_namespace(struct ctl_nvmeio *ctnio)
 {
 	ctl_nvme_set_generic_error(ctnio, NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
