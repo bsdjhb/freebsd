@@ -10722,32 +10722,17 @@ ctl_nvme_identify(struct ctl_nvmeio *ctnio)
 	 */
 	len = 4096;
 
-	/*
-	 * If we've got a kernel request that hasn't been malloced yet,
-	 * malloc it and tell the caller the data buffer is here.
-	 */
-	if ((ctnio->io_hdr.flags & CTL_FLAG_ALLOCATED) == 0) {
-		ctnio->kern_data_ptr = malloc(len, M_CTL, M_WAITOK);
-		ctnio->kern_data_len = len;
-		ctnio->kern_total_len = len;
-		ctnio->kern_rel_offset = 0;
-		ctnio->kern_sg_entries = 0;
-		ctnio->io_hdr.flags |= CTL_FLAG_ALLOCATED;
-		ctnio->be_move_done = ctl_config_move_done;
-		ctl_datamove((union ctl_io *)ctnio);
+	ctnio->kern_data_ptr = malloc(len, M_CTL, M_WAITOK);
+	ctnio->kern_data_len = len;
+	ctnio->kern_total_len = len;
+	ctnio->kern_rel_offset = 0;
+	ctnio->kern_sg_entries = 0;
 
-		return (CTL_RETVAL_COMPLETE);
-	}
-
-	/*
-	 * Require a flat buffer of the correct size.
-	 */
-	if (ctnio->kern_sg_entries > 0 ||
-	    ctnio->kern_total_len - ctnio->kern_data_resid != len)
-		return (CTL_RETVAL_ERROR);
+	ctl_nvme_set_success(ctnio);
+	ctnio->io_hdr.flags |= CTL_FLAG_ALLOCATED;
+	ctnio->be_move_done = ctl_config_move_done;
 
 	retval = lun->backend->config_read((union ctl_io *)ctnio);
-
 	return (retval);
 }
 
