@@ -650,6 +650,7 @@ ramdisk_namespace_data(union ctl_io *io)
 	    NVME_NS_DATA_LBAF_LBADS_SHIFT;
 
 	ctl_lun_nsdata_ids(cbe_lun, nsdata);
+	ctl_config_read_done(io);
 	return (CTL_RETVAL_COMPLETE);
 }
 
