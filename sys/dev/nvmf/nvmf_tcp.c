@@ -54,6 +54,7 @@
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/nvmf_transport_internal.h>
 
+struct nvmf_tcp_capsule;
 struct nvmf_tcp_qpair;
 
 struct nvmf_tcp_command_buffer {
