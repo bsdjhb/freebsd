@@ -13248,9 +13248,6 @@ ctl_datamove_done_process(union ctl_io *io)
 	struct bintime cur_bt;
 #endif
 
-	KASSERT(io->io_hdr.io_type == CTL_IO_SCSI,
-	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
-
 #ifdef CTL_TIME_IO
 	getbinuptime(&cur_bt);
 	bintime_sub(&cur_bt, &io->io_hdr.dma_start_bt);
@@ -13261,13 +13258,36 @@ ctl_datamove_done_process(union ctl_io *io)
 	if ((io->io_hdr.port_status != 0) &&
 	    ((io->io_hdr.status & CTL_STATUS_MASK) == CTL_STATUS_NONE ||
 	     (io->io_hdr.status & CTL_STATUS_MASK) == CTL_SUCCESS)) {
-		ctl_set_internal_failure(&io->scsiio, /*sks_valid*/ 1,
-		    /*retry_count*/ io->io_hdr.port_status);
-	} else if (io->scsiio.kern_data_resid != 0 &&
+		switch (io->io_hdr.io_type) {
+		case CTL_IO_SCSI:
+			ctl_set_internal_failure(&io->scsiio, /*sks_valid*/ 1,
+			    /*retry_count*/ io->io_hdr.port_status);
+			break;
+		case CTL_IO_NVME:
+		case CTL_IO_NVME_ADMIN:
+			if (io->io_hdr.flags & CTL_FLAG_ABORT)
+				ctl_nvme_set_command_aborted(&io->nvmeio);
+			else
+				ctl_nvme_set_data_transfer_error(&io->nvmeio);
+			break;
+		default:
+			__assert_unreachable();
+		}
+	} else if (ctl_kern_data_resid(io) != 0 &&
 	    (io->io_hdr.flags & CTL_FLAG_DATA_MASK) == CTL_FLAG_DATA_OUT &&
 	    ((io->io_hdr.status & CTL_STATUS_MASK) == CTL_STATUS_NONE ||
 	     (io->io_hdr.status & CTL_STATUS_MASK) == CTL_SUCCESS)) {
-		ctl_set_invalid_field_ciu(&io->scsiio);
+		switch (io->io_hdr.io_type) {
+		case CTL_IO_SCSI:
+			ctl_set_invalid_field_ciu(&io->scsiio);
+			break;
+		case CTL_IO_NVME:
+		case CTL_IO_NVME_ADMIN:
+			ctl_nvme_set_data_transfer_error(&io->nvmeio);
+			break;
+		default:
+			__assert_unreachable();
+		}
 	} else if (ctl_debug & CTL_DEBUG_CDB_DATA)
 		ctl_data_print(io);
 }
