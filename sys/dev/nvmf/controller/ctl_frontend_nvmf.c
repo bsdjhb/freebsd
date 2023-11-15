@@ -33,6 +33,7 @@
 #include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/memdesc.h>
 #include <sys/module.h>
 #include <sys/proc.h>
 #include <sys/queue.h>
@@ -40,13 +41,24 @@
 #include <sys/sbuf.h>
 #include <sys/sx.h>
 
+#include <machine/bus.h>
+#include <machine/bus_dma.h>
+
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
 #include <cam/ctl/ctl.h>
+#include <cam/ctl/ctl_error.h>
 #include <cam/ctl/ctl_io.h>
 #include <cam/ctl/ctl_frontend.h>
+
+/*
+ * Store pointers to the capsule and qpair in the two pointer members
+ * of CTL_PRIV_FRONTEND.
+ */
+#define	NVMFT_NC(io)	((io)->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptrs[0])
+#define	NVMFT_QP(io)	((io)->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptrs[1])
 
 static int	nvmft_init(void);
 static int	nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data,
@@ -169,25 +181,159 @@ found:
 	return (0);
 }
 
+void
+nvmft_dispatch_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
+    bool admin)
+{
+	struct nvmft_controller *ctrlr = nvmft_qpair_ctrlr(qp);
+	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
+	struct nvmft_port *np = ctrlr->np;
+	union ctl_io *io;
+	int error;
+
+	if (cmd->nsid == htole32(0)) {
+		nvmft_send_generic_error(qp, nc,
+		    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
+		nvmf_free_capsule(nc);
+		return;
+	}
+
+	io = ctl_alloc_io(np->port.ctl_pool_ref);
+	ctl_zero_io(io);
+	NVMFT_NC(io) = nc;
+	NVMFT_QP(io) = qp;
+	io->io_hdr.io_type = admin ? CTL_IO_NVME_ADMIN : CTL_IO_NVME;
+	io->io_hdr.nexus.initid = ctrlr->cntlid;
+	io->io_hdr.nexus.targ_port = np->port.targ_port;
+	io->io_hdr.nexus.targ_lun = le32toh(cmd->nsid) - 1;
+	io->nvmeio.cmd = *cmd;
+	error = ctl_run(io);
+	if (error != 0) {
+		nvmft_printf(ctrlr, "ctl_run failed for command on %s: %d\n",
+		    nvmft_qpair_name(qp), error);
+		nvmft_send_generic_error(qp, nc,
+		    NVME_SC_INTERNAL_DEVICE_ERROR);
+		ctl_free_io(io);
+		nvmf_free_capsule(nc);
+
+		/* TODO: Drop connection. */
+		return;
+	}
+}
+
+static void
+nvmft_datamove_cb(void *arg, size_t xfered, int error)
+{
+	union ctl_io *io = arg;
+
+	if (error != 0) {
+		ctl_nvme_set_data_transfer_error(&io->nvmeio);
+	} else {
+		MPASS(xfered == io->nvmeio.kern_data_len);
+		io->nvmeio.kern_data_resid -= xfered;
+	}
+	if (io->nvmeio.kern_sg_entries) {
+		free(io->nvmeio.ext_data_ptr, M_NVMFT);
+		io->nvmeio.ext_data_ptr = NULL;
+	} else
+		MPASS(io->nvmeio.ext_data_ptr == NULL);
+	ctl_datamove_done(io, false);
+}
+
 static void
 nvmft_datamove(union ctl_io *io)
 {
-	/*
-	 * TODO: Get nvmf_capsule pointer from CTL_PRIV_FRONTEND and
-	 * use it to send/receive controller data.
-	 */
-	printf("%s(%p)\n", __func__, io);
+	struct nvmft_controller *ctrlr;
+	struct nvmf_capsule *nc;
+	struct nvmft_qpair *qp;
+	struct memdesc mem;
+	u_int status;
+	int error;
+
+	/* Some CTL commands preemptively set a success status. */
+	MPASS(io->io_hdr.status == CTL_STATUS_NONE ||
+	    io->io_hdr.status == CTL_SUCCESS);
+	MPASS(!io->nvmeio.success_sent);
+
+	nc = NVMFT_NC(io);
+	qp = NVMFT_QP(io);
+	ctrlr = nvmft_qpair_ctrlr(qp);
+
+	MPASS(io->nvmeio.ext_data_ptr == NULL);
+	if (io->nvmeio.kern_sg_entries > 0) {
+		struct ctl_sg_entry *sgl;
+		struct bus_dma_segment *vlist;
+
+		vlist = mallocarray(io->nvmeio.kern_sg_entries, sizeof(*vlist),
+		    M_NVMFT, M_WAITOK);
+		io->nvmeio.ext_data_ptr = (void *)vlist;
+		sgl = (struct ctl_sg_entry *)io->nvmeio.kern_data_ptr;
+		for (u_int i = 0; i < io->nvmeio.kern_sg_entries; i++) {
+			vlist[i].ds_addr = (uintptr_t)sgl[i].addr;
+			vlist[i].ds_len = sgl[i].len;
+		}
+		mem = memdesc_vlist(vlist, io->nvmeio.kern_sg_entries);
+	} else
+		mem = memdesc_vaddr(io->nvmeio.kern_data_ptr,
+		    io->nvmeio.kern_data_len);
+
+	if ((io->io_hdr.flags & CTL_FLAG_DATA_MASK) == CTL_FLAG_DATA_IN) {
+		status = nvmf_send_controller_data(nc,
+		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
+		    0, nvmft_datamove_cb, io);
+		switch (status) {
+		case NVMF_SUCCESS_SENT:
+			io->nvmeio.success_sent = true;
+			/* FALLTHROUGH */
+		case NVMF_MORE:
+		case NVME_SC_SUCCESS:
+			return;
+		default:
+			ctl_nvme_set_generic_error(&io->nvmeio, status);
+			break;
+		}
+	} else {
+		error = nvmf_receive_controller_data(nc,
+		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
+		    0, nvmft_datamove_cb, io);
+		if (error == 0)
+			return;
+		nvmft_printf(ctrlr, "Failed to request capsule data: %d\n",
+			    error);
+		ctl_nvme_set_data_transfer_error(&io->nvmeio);
+	}
+
+	if (io->nvmeio.kern_sg_entries) {
+		free(io->nvmeio.ext_data_ptr, M_NVMFT);
+		io->nvmeio.ext_data_ptr = NULL;
+	} else
+		MPASS(io->nvmeio.ext_data_ptr == NULL);
+	ctl_datamove_done(io, true);
 }
 
 static void
 nvmft_done(union ctl_io *io)
 {
-	/*
-	 * TODO: Get nvmf_capsule pointer and qp from CTL_PRIV_FRONTEND and
-	 * send response (either success or CQE from nvmeio.cpl).
-	 */
-	printf("%s(%p)\n", __func__, io);
+	const struct nvme_command *cmd;
+	struct nvmft_qpair *qp;
+	struct nvmf_capsule *nc;
+
+	KASSERT(io->io_hdr.status == CTL_SUCCESS ||
+	    io->io_hdr.status == CTL_NVME_ERROR,
+	    ("%s: bad status %u", __func__, io->io_hdr.status));
+
+	nc = NVMFT_NC(io);
+	qp = NVMFT_QP(io);
+	cmd = nvmf_capsule_sqe(nc);
+
+	if (io->nvmeio.success_sent) {
+		MPASS(io->io_hdr.status == CTL_SUCCESS);
+	} else {
+		io->nvmeio.cpl.cid = cmd->cid;
+		nvmft_send_response(qp, &io->nvmeio.cpl);
+	}
 	ctl_free_io(io);
+	nvmf_free_capsule(nc);
 }
 
 static int
@@ -385,7 +531,8 @@ nvmft_port_create(struct ctl_req *req)
 	np->max_io_qsize = max_io_qsize;
 	np->cap = nvmf_controller_cap(max_io_qsize, enable_timeout / 500);
 	sx_init(&np->lock, "nvmft port");
-	np->ids = new_unrhdr(0, NVMF_CNTLID_STATIC_MAX, UNR_NO_MTX);
+	np->ids = new_unrhdr(0, MIN(CTL_MAX_INIT_PER_PORT - 1,
+	    NVMF_CNTLID_STATIC_MAX), UNR_NO_MTX);
 	TAILQ_INIT(&np->controllers);
 
 	/* The controller ID is set later for individual controllers. */
@@ -424,7 +571,7 @@ nvmft_port_create(struct ctl_req *req)
 
 	TAILQ_INSERT_TAIL(&nvmft_ports, np, link);
 	sx_xunlock(&nvmft_ports_lock);
-	
+
 	req->status = CTL_LUN_OK;
 	req->result_nvl = nvlist_create(0);
 	nvlist_add_number(req->result_nvl, "port_id", port->targ_port);
@@ -531,7 +678,7 @@ nvmft_handoff(struct ctl_nvmf *cn)
 		    "Invalid SubNQN");
 		goto out;
 	}
-		
+
 	sx_slock(&nvmft_ports_lock);
 	np = nvmft_port_find(data->subnqn);
 	if (np == NULL) {

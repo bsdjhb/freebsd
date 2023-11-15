@@ -49,7 +49,7 @@ struct nvmft_qpair {
 };
 
 static void
-nvmft_qp_error(void *arg)
+nvmft_qpair_error(void *arg)
 {
 	struct nvmft_qpair *qp = arg;
 
@@ -84,7 +84,7 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	if (qp->admin)
 		nvmft_handle_admin_command(ctrlr, nc);
 	else
-		nvmft_handle_io_command(ctrlr, qp, nc);
+		nvmft_handle_io_command(qp, nc);
 }
 
 struct nvmft_qpair *
@@ -102,7 +102,7 @@ nvmft_qpair_init(enum nvmf_trtype trtype,
 	strlcpy(qp->name, name, sizeof(qp->name));
 	mtx_init(&qp->lock, "nvmft qp", NULL, MTX_DEF);
 
-	qp->qp = nvmf_allocate_qpair(trtype, true, handoff, nvmft_qp_error,
+	qp->qp = nvmf_allocate_qpair(trtype, true, handoff, nvmft_qpair_error,
 	    qp, nvmft_receive_capsule, qp);
 	if (qp->qp == NULL) {
 		mtx_destroy(&qp->lock);
@@ -120,6 +120,18 @@ nvmft_qpair_destroy(struct nvmft_qpair *qp)
 	nvmf_free_qpair(qp->qp);
 	mtx_destroy(&qp->lock);
 	free(qp, M_NVMFT);
+}
+
+struct nvmft_controller *
+nvmft_qpair_ctrlr(struct nvmft_qpair *qp)
+{
+	return (qp->ctrlr);
+}
+
+const char *
+nvmft_qpair_name(struct nvmft_qpair *qp)
+{
+	return (qp->name);
 }
 
 int

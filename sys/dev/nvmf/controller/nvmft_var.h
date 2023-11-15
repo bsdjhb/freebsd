@@ -84,12 +84,14 @@ MALLOC_DECLARE(M_NVMFT);
 
 /* ctl_frontend_nvmf.c */
 void	nvmft_port_free(struct nvmft_port *np);
+void	nvmft_dispatch_command(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc, bool admin);
 
 /* nvmft_controller.c */
 void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc);
-void	nvmft_handle_io_command(struct nvmft_controller *ctrlr,
-    struct nvmft_qpair *qp, struct nvmf_capsule *nc);
+void	nvmft_handle_io_command(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc);
 int	nvmft_handoff_admin_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
     const struct nvmf_fabric_connect_cmd *cmd,
@@ -98,6 +100,8 @@ int	nvmft_handoff_io_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
     const struct nvmf_fabric_connect_cmd *cmd,
     const struct nvmf_fabric_connect_data *data);
+int	nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)
+    __printflike(2, 3);
 
 /* nvmft_subr.c */
 
@@ -137,6 +141,8 @@ bool	nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
 struct nvmft_qpair *nvmft_qpair_init(enum nvmf_trtype trtype,
     const struct nvmf_handoff_qpair_params *handoff, const char *name);
 void	nvmft_qpair_destroy(struct nvmft_qpair *qp);
+struct nvmft_controller *nvmft_qpair_ctrlr(struct nvmft_qpair *qp);
+const char *nvmft_qpair_name(struct nvmft_qpair *qp);
 int	nvmft_transmit_response(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc);
 int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);

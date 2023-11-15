@@ -36,7 +36,7 @@
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
-static int __printflike(2, 3)
+int
 nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)	
 {
 	char buf[128];
@@ -521,9 +521,9 @@ out:
 }
 
 void
-nvmft_handle_io_command(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
-    struct nvmf_capsule *nc)
+nvmft_handle_io_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 {
+	struct nvmft_controller *ctrlr = nvmft_qpair_ctrlr(qp);
 	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
 
 	switch (cmd->opc) {

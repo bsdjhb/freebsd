@@ -445,6 +445,7 @@ struct ctl_nvmeio {
 
 	struct nvme_command cmd;	/* SQE */
 	struct nvme_completion cpl;	/* CQE */
+	bool success_sent;		/* datamove already sent CQE */
 	ctl_be_move_done_t be_move_done;	/* called by fe */
 	ctl_io_cont io_cont;		/* to continue processing */
 	ctl_ref	    kern_data_ref;	/* Method to reference/release data */
