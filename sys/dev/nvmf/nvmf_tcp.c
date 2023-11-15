@@ -70,11 +70,14 @@ struct nvmf_tcp_command_buffer {
 	uint16_t cid;
 	uint16_t ttag;
 
-	LIST_ENTRY(nvmf_tcp_command_buffer) link;
+	TAILQ_ENTRY(nvmf_tcp_command_buffer) link;
+
+	/* Controller only */
+	struct nvmf_tcp_capsule *tc;
 };
 
 struct nvmf_tcp_command_buffer_list {
-	LIST_HEAD(, nvmf_tcp_command_buffer) head;
+	TAILQ_HEAD(, nvmf_tcp_command_buffer) head;
 	struct mtx lock;
 };
 
@@ -93,6 +96,8 @@ struct nvmf_tcp_qpair {
 	uint32_t maxc2hdata;
 	uint32_t max_icd;	/* Host only */
 	uint16_t next_ttag;	/* Controller only */
+	u_int num_ttags;	/* Controller only */
+	u_int active_ttags;	/* Controller only */
 	bool send_success;	/* Controller only */
 
 	/* Receive state. */
@@ -109,6 +114,17 @@ struct nvmf_tcp_qpair {
 
 	struct nvmf_tcp_command_buffer_list tx_buffers;
 	struct nvmf_tcp_command_buffer_list rx_buffers;
+
+	/*
+	 * For the controller, an RX command buffer can be in one of
+	 * two locations, all protected by the rx_buffers.lock.  If a
+	 * receive request is waiting for either an R2T slot for its
+	 * command (due to exceeding MAXR2T), or a transfer tag it is
+	 * placed on the rx_buffers list.  When a request is allocated
+	 * an active transfer tag, it moves to the open_ttags[] array
+	 * (indexed by the tag) until it completes.
+	 */
+	struct nvmf_tcp_command_buffer **open_ttags;	/* Controller only */
 };
 
 struct nvmf_tcp_rxpdu {
@@ -125,8 +141,10 @@ struct nvmf_tcp_capsule {
 
 	struct nvmf_tcp_rxpdu rx_pdu;
 
+	uint32_t active_r2ts;		/* Controller only */
 #ifdef INVARIANTS
 	uint32_t tx_data_offset;	/* Controller only */
+	u_int pending_r2ts;		/* Controller only */
 #endif
 
 	STAILQ_ENTRY(nvmf_tcp_capsule) link;
@@ -196,6 +214,7 @@ tcp_alloc_command_buffer(struct nvmf_tcp_qpair *qp,
 	cb->error = 0;
 	cb->cid = cid;
 	cb->ttag = 0;
+	cb->tc = NULL;
 
 	return (cb);
 }
@@ -210,6 +229,8 @@ static void
 tcp_free_command_buffer(struct nvmf_tcp_command_buffer *cb)
 {
 	nvmf_complete_io_request(&cb->io, cb->data_xfered, cb->error);
+	if (cb->tc != NULL)
+		tcp_release_capsule(cb->tc);
 	free(cb, M_NVMF_TCP);
 }
 
@@ -225,7 +246,7 @@ tcp_add_command_buffer(struct nvmf_tcp_command_buffer_list *list,
     struct nvmf_tcp_command_buffer *cb)
 {
 	mtx_assert(&list->lock, MA_OWNED);
-	LIST_INSERT_HEAD(&list->head, cb, link);
+	TAILQ_INSERT_HEAD(&list->head, cb, link);
 }
 
 static struct nvmf_tcp_command_buffer *
@@ -235,7 +256,7 @@ tcp_find_command_buffer(struct nvmf_tcp_command_buffer_list *list,
 	struct nvmf_tcp_command_buffer *cb;
 
 	mtx_assert(&list->lock, MA_OWNED);
-	LIST_FOREACH(cb, &list->head, link) {
+	TAILQ_FOREACH(cb, &list->head, link) {
 		if (cb->cid == cid && cb->ttag == ttag)
 			return (cb);
 	}
@@ -247,7 +268,7 @@ tcp_remove_command_buffer(struct nvmf_tcp_command_buffer_list *list,
     struct nvmf_tcp_command_buffer *cb)
 {
 	mtx_assert(&list->lock, MA_OWNED);
-	LIST_REMOVE(cb, link);
+	TAILQ_REMOVE(&list->head, cb, link);
 }
 
 static void
@@ -710,6 +731,112 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_qpair *qp, void *hdr, size_t hlen,
 	return (top);
 }
 
+/* Find the next command buffer eligible to schedule for R2T. */
+static struct nvmf_tcp_command_buffer *
+nvmf_tcp_next_r2t(struct nvmf_tcp_qpair *qp)
+{
+	struct nvmf_tcp_command_buffer *cb;
+
+	mtx_assert(&qp->rx_buffers.lock, MA_OWNED);
+	MPASS(qp->active_ttags < qp->num_ttags);
+
+	TAILQ_FOREACH(cb, &qp->rx_buffers.head, link) {
+		/* NB: maxr2t is 0's based. */
+		if (cb->tc->active_r2ts > qp->maxr2t)
+			continue;
+#ifdef INVARIANTS
+		cb->tc->pending_r2ts--;
+#endif
+		TAILQ_REMOVE(&qp->rx_buffers.head, cb, link);
+		return (cb);
+	}
+	return (NULL);
+}
+
+/* Allocate the next free transfer tag and assign it to cb. */
+static void
+nvmf_tcp_allocate_ttag(struct nvmf_tcp_qpair *qp,
+    struct nvmf_tcp_command_buffer *cb)
+{
+	uint16_t ttag;
+
+	mtx_assert(&qp->rx_buffers.lock, MA_OWNED);
+
+	ttag = qp->next_ttag;
+	for (;;) {
+		if (qp->open_ttags[ttag] == NULL)
+			break;
+		if (ttag == qp->num_ttags - 1)
+			ttag = 0;
+		else
+			ttag++;
+		MPASS(ttag != qp->next_ttag);
+	}
+	if (ttag == qp->num_ttags - 1)
+		qp->next_ttag = 0;
+	else
+		qp->next_ttag = ttag + 1;
+
+	cb->tc->active_r2ts++;
+	qp->active_ttags++;
+	qp->open_ttags[ttag] = cb;
+
+	/*
+	 * Don't bother byte-swapping ttag as it is just a cookie
+	 * value returned by the other end as-is.
+	 */
+	cb->ttag = ttag;
+}
+
+/* NB: cid and ttag are both little-endian already. */
+static void
+tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
+    uint32_t data_offset, uint32_t data_len)
+{
+	struct nvme_tcp_r2t_hdr r2t;
+	struct mbuf *m;
+
+	memset(&r2t, 0, sizeof(r2t));
+	r2t.common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
+	r2t.cccid = cid;
+	r2t.ttag = ttag;
+	r2t.r2to = htole32(data_offset);
+	r2t.r2tl = htole32(data_len);
+
+	m = nvmf_tcp_construct_pdu(qp, &r2t, sizeof(r2t), NULL, 0);
+	nvmf_tcp_write_pdu(qp, m);
+}
+
+/*
+ * Release a transfer tag and schedule another R2T.
+ *
+ * NB: This drops the rx_buffers.lock mutex.
+ */
+static void
+nvmf_tcp_send_next_r2t(struct nvmf_tcp_qpair *qp,
+    struct nvmf_tcp_command_buffer *cb)
+{
+	struct nvmf_tcp_command_buffer *ncb;
+
+	mtx_assert(&qp->rx_buffers.lock, MA_OWNED);
+	MPASS(qp->open_ttags[cb->ttag] == cb);
+
+	/* Release this transfer tag. */
+	qp->open_ttags[cb->ttag] = NULL;
+	qp->active_ttags--;
+	cb->tc->active_r2ts--;
+
+	/* Schedule another R2T. */
+	ncb = nvmf_tcp_next_r2t(qp);
+	if (ncb != NULL) {
+		nvmf_tcp_allocate_ttag(qp, ncb);
+		mtx_unlock(&qp->rx_buffers.lock);
+		tcp_send_r2t(qp, ncb->cid, ncb->ttag, ncb->data_offset,
+		    ncb->data_len);
+	} else
+		mtx_unlock(&qp->rx_buffers.lock);
+}
+
 /*
  * Copy len bytes starting at offset skip from an mbuf chain into an
  * I/O buffer at destination offset io_offset.
@@ -746,6 +873,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	struct nvme_tcp_h2c_data_hdr *h2c;
 	struct nvmf_tcp_command_buffer *cb;
 	uint32_t data_len, data_offset;
+	uint16_t ttag;
 
 	h2c = (void *)pdu->hdr;
 	if (le32toh(h2c->datal) > qp->maxh2cdata) {
@@ -756,8 +884,22 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		return (EBADMSG);
 	}
 
+	/*
+	 * NB: Don't bother byte-swapping ttag as we don't byte-swap
+	 * it when sending.
+	 */
+	ttag = h2c->ttag;
+	if (ttag >= qp->num_ttags) {
+		nvmf_tcp_report_error(qp,
+		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD,
+		    offsetof(struct nvme_tcp_h2c_data_hdr, ttag), pdu->m,
+		    pdu->hdr->hlen);
+		nvmf_tcp_free_pdu(pdu);
+		return (EBADMSG);
+	}
+
 	mtx_lock(&qp->rx_buffers.lock);
-	cb = tcp_find_command_buffer(&qp->rx_buffers, h2c->cccid, h2c->ttag);
+	cb = qp->open_ttags[ttag];
 	if (cb == NULL) {
 		mtx_unlock(&qp->rx_buffers.lock);
 		nvmf_tcp_report_error(qp,
@@ -767,13 +909,14 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		nvmf_tcp_free_pdu(pdu);
 		return (EBADMSG);
 	}
+	MPASS(cb->ttag == ttag);
 
 	/* For a data digest mismatch, fail the I/O request. */
 	if (pdu->data_digest_mismatch) {
+		nvmf_tcp_send_next_r2t(qp, cb);
 		cb->error = EINTEGRITY;
-		tcp_remove_command_buffer(&qp->rx_buffers, cb);
-		mtx_unlock(&qp->rx_buffers.lock);
 		tcp_release_command_buffer(cb);
+		nvmf_tcp_free_pdu(pdu);
 		return (0);
 	}
 
@@ -821,15 +964,11 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	cb->data_xfered += data_len;
 	data_offset -= cb->data_offset;
 	if (cb->data_xfered == cb->data_len) {
-		tcp_remove_command_buffer(&qp->rx_buffers, cb);
-
-		/*
-		 * XXX: Should decrement count of active R2T's and mark
-		 * ttag for this R2T unused.
-		 */
-	} else
+		nvmf_tcp_send_next_r2t(qp, cb);
+	} else {
 		tcp_hold_command_buffer(cb);
-	mtx_unlock(&qp->rx_buffers.lock);
+		mtx_unlock(&qp->rx_buffers.lock);
+	}
 
 	mbuf_copyto_io(pdu->m, pdu->hdr->pdo, data_len, &cb->io, data_offset);
 
@@ -1893,7 +2032,7 @@ nvmf_soupcall_send(struct socket *so, void *arg, int waitflag)
 }
 
 static struct nvmf_qpair *
-tcp_allocate_qpair(bool controller __unused,
+tcp_allocate_qpair(bool controller,
     const struct nvmf_handoff_qpair_params *params)
 {
 	struct nvmf_tcp_qpair *qp;
@@ -1934,11 +2073,19 @@ tcp_allocate_qpair(bool controller __unused,
 	qp->maxc2hdata = max_c2hdata;
 	qp->max_icd = params->tcp.max_icd;
 
-	/* Use the SUCCESS flag if SQ flow control is disabled. */
-	qp->send_success = !params->sq_flow_control;
+	if (controller) {
+		/* Use the SUCCESS flag if SQ flow control is disabled. */
+		qp->send_success = !params->sq_flow_control;
 
-	LIST_INIT(&qp->rx_buffers.head);
-	LIST_INIT(&qp->tx_buffers.head);
+		/* NB: maxr2t is 0's based. */
+		qp->num_ttags = MIN((u_int)UINT16_MAX + 1,
+		    (uint64_t)params->qsize * (uint64_t)qp->maxr2t + 1);
+		qp->open_ttags = mallocarray(qp->num_ttags,
+		    sizeof(*qp->open_ttags), M_NVMF_TCP, M_WAITOK | M_ZERO);
+	}
+
+	TAILQ_INIT(&qp->rx_buffers.head);
+	TAILQ_INIT(&qp->tx_buffers.head);
 	mtx_init(&qp->rx_buffers.lock, "nvmf/tcp rx buffers", NULL, MTX_DEF);
 	mtx_init(&qp->tx_buffers.lock, "nvmf/tcp tx buffers", NULL, MTX_DEF);
 
@@ -2017,8 +2164,19 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	cv_destroy(&qp->tx_cv);
 	cv_destroy(&qp->rx_cv);
 
+	if (qp->open_ttags != NULL) {
+		for (u_int i = 0; i < qp->num_ttags; i++) {
+			cb = qp->open_ttags[i];
+			if (cb != NULL) {
+				cb->error = ECONNABORTED;
+				tcp_release_command_buffer(cb);
+			}
+		}
+		free(qp->open_ttags, M_NVMF_TCP);
+	}
+
 	mtx_lock(&qp->rx_buffers.lock);
-	LIST_FOREACH_SAFE(cb, &qp->rx_buffers.head, link, ncb) {
+	TAILQ_FOREACH_SAFE(cb, &qp->rx_buffers.head, link, ncb) {
 		tcp_remove_command_buffer(&qp->rx_buffers, cb);
 		mtx_unlock(&qp->rx_buffers.lock);
 		cb->error = ECONNABORTED;
@@ -2028,7 +2186,7 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	mtx_destroy(&qp->rx_buffers.lock);
 
 	mtx_lock(&qp->tx_buffers.lock);
-	LIST_FOREACH_SAFE(cb, &qp->tx_buffers.head, link, ncb) {
+	TAILQ_FOREACH_SAFE(cb, &qp->tx_buffers.head, link, ncb) {
 		tcp_remove_command_buffer(&qp->tx_buffers, cb);
 		mtx_unlock(&qp->tx_buffers.lock);
 		cb->error = ECONNABORTED;
@@ -2063,6 +2221,9 @@ tcp_release_capsule(struct nvmf_tcp_capsule *tc)
 
 	if (!refcount_release(&tc->refs))
 		return;
+
+	MPASS(tc->active_r2ts == 0);
+	MPASS(tc->pending_r2ts == 0);
 
 	nvmf_tcp_free_pdu(&tc->rx_pdu);
 	free(tc, M_NVMF_TCP);
@@ -2135,55 +2296,40 @@ tcp_capsule_data_len(const struct nvmf_capsule *nc)
 	return (le32toh(nc->nc_sqe.sgl.length));
 }
 
-/* NB: cid and ttag are both little-endian already. */
-static void
-tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
-    uint32_t data_offset, uint32_t data_len)
-{
-	struct nvme_tcp_r2t_hdr r2t;
-	struct mbuf *m;
-
-	memset(&r2t, 0, sizeof(r2t));
-	r2t.common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
-	r2t.cccid = cid;
-	r2t.ttag = ttag;
-	r2t.r2to = htole32(data_offset);
-	r2t.r2tl = htole32(data_len);
-
-	m = nvmf_tcp_construct_pdu(qp, &r2t, sizeof(r2t), NULL, 0);
-	nvmf_tcp_write_pdu(qp, m);
-}
-
 static void
 tcp_receive_r2t_data(struct nvmf_capsule *nc, uint32_t data_offset,
     struct nvmf_io_request *io)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
+	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvmf_tcp_command_buffer *cb;
-	uint16_t ttag;
 
 	cb = tcp_alloc_command_buffer(qp, io, data_offset, io->io_len,
 	    nc->nc_sqe.cid);
 
+	cb->tc = tc;
+	refcount_acquire(&tc->refs);
+
 	/*
-	 * Don't bother byte-swapping ttag as it is just a cookie
-	 * value returned by the other end as-is.
+	 * If this command has too many active R2Ts or there are no
+	 * available transfer tags, queue the request for later.
 	 *
-	 * XXX: This should probably be searching the current list of
-	 * buffers to allocate a ttag.
+	 * NB: maxr2t is 0's based.
 	 */
 	mtx_lock(&qp->rx_buffers.lock);
-	ttag = qp->next_ttag++;
-	cb->ttag = ttag;
+	if (tc->active_r2ts > qp->maxr2t || qp->active_ttags == qp->num_ttags) {
+#ifdef INVARIANTS
+		tc->pending_r2ts++;
+#endif
+		TAILQ_INSERT_TAIL(&qp->rx_buffers.head, cb, link);
+		mtx_unlock(&qp->rx_buffers.lock);
+		return;
+	}
 
-	tcp_add_command_buffer(&qp->rx_buffers, cb);
+	nvmf_tcp_allocate_ttag(qp, cb);
 	mtx_unlock(&qp->rx_buffers.lock);
 
-	/*
-	 * XXX: Should be checking qp->maxr2t here and queueing the
-	 * r2t if there are too many in flight.
-	 */
-	tcp_send_r2t(qp, nc->nc_sqe.cid, ttag, data_offset, io->io_len);
+	tcp_send_r2t(qp, nc->nc_sqe.cid, cb->ttag, data_offset, io->io_len);
 }
 
 static void
