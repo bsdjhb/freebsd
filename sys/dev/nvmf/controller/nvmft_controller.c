@@ -381,6 +381,7 @@ handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
 		    NVME_SC_INVALID_OPCODE);
 		break;
 	}
+	nvmf_free_capsule(nc);
 }
 
 static void
@@ -404,21 +405,22 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 	case 1:
 		nvmft_controller_ref(ctrlr);
 		mem = memdesc_vaddr(&ctrlr->cdata, sizeof(ctrlr->cdata));
-		status = nvmf_send_controller_data(nc, &mem, 0,
-		    sizeof(ctrlr->cdata), identify_cdata_complete, ctrlr);
+		status = nvmf_send_controller_data(nc, 0, &mem,
+		    sizeof(ctrlr->cdata), 0, identify_cdata_complete, ctrlr);
+		MPASS(status != NVMF_MORE);
 		break;
 	case 0:
-		/* TODO: Will need to construct ctl_io and sent it down to the LUN. */
+		nvmft_dispatch_command(ctrlr->admin, nc, true);
+		return;
 	default:
 		nvmft_printf(ctrlr, "Unsupported CNS %#x for IDENTIFY\n", cns);
-		goto error;
+		status = NVME_SC_INVALID_FIELD;
+		break;
 	}
 
 	if (status != NVMF_SUCCESS_SENT)
 		nvmft_send_generic_error(ctrlr->admin, nc, status);
-	return;
-error:
-	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
+	nvmf_free_capsule(nc);
 }
 
 static void
@@ -439,6 +441,7 @@ handle_set_features(struct nvmft_controller *ctrlr,
 			sx_xunlock(&ctrlr->lock);
 			nvmft_send_generic_error(ctrlr->admin, nc,
 			    NVME_SC_COMMAND_SEQUENCE_ERROR);
+			nvmf_free_capsule(nc);
 			return;
 		}
 
@@ -467,6 +470,7 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		nvmf_init_cqe(&cqe, nc, 0);
 		cqe.cdw0 = cmd->cdw11;
 		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
 		return;
 	}
 	default:
@@ -477,6 +481,7 @@ handle_set_features(struct nvmft_controller *ctrlr,
 
 error:
 	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
+	nvmf_free_capsule(nc);
 }
 
 void
@@ -492,7 +497,8 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		    "Unsupported admin opcode %#x whiled disabled\n", cmd->opc);
 		nvmft_send_generic_error(ctrlr->admin, nc,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
-		goto out;
+		nvmf_free_capsule(nc);
+		return;
 	}
 
 	switch (cmd->opc) {
@@ -509,15 +515,15 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 	case NVME_OPC_KEEP_ALIVE:
 		/* TODO: Keep Alive timer reset */
 		nvmft_send_success(ctrlr->admin, nc);
+		nvmf_free_capsule(nc);
 		break;
 	default:
 		nvmft_printf(ctrlr, "Unsupported admin opcode %#x\n", cmd->opc);
 		nvmft_send_generic_error(ctrlr->admin, nc,
 		    NVME_SC_INVALID_OPCODE);
+		nvmf_free_capsule(nc);
 		break;
 	}
-out:
-	nvmf_free_capsule(nc);
 }
 
 void
