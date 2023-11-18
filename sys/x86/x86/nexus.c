@@ -101,12 +101,9 @@ static bus_activate_resource_t	nexus_activate_resource;
 static bus_adjust_resource_t	nexus_adjust_resource;
 static bus_alloc_resource_t	nexus_alloc_resource;
 static bus_deactivate_resource_t nexus_deactivate_resource;
-static bus_delete_resource_t	nexus_delete_resource;
-static bus_get_resource_t	nexus_get_resource;
 static bus_get_resource_list_t	nexus_get_reslist;
 static bus_map_resource_t	nexus_map_resource;
 static bus_release_resource_t	nexus_release_resource;
-static bus_set_resource_t	nexus_set_resource;
 static bus_unmap_resource_t	nexus_unmap_resource;
 
 #ifdef SMP
@@ -145,12 +142,12 @@ static device_method_t nexus_methods[] = {
 	DEVMETHOD(bus_adjust_resource,	nexus_adjust_resource),
 	DEVMETHOD(bus_alloc_resource,	nexus_alloc_resource),
 	DEVMETHOD(bus_deactivate_resource, nexus_deactivate_resource),
-	DEVMETHOD(bus_get_resource,	nexus_get_resource),
+	DEVMETHOD(bus_get_resource,	bus_generic_rl_get_resource),
 	DEVMETHOD(bus_get_resource_list, nexus_get_reslist),
-	DEVMETHOD(bus_delete_resource,	nexus_delete_resource),
+	DEVMETHOD(bus_delete_resource,	bus_generic_rl_delete_resource),
 	DEVMETHOD(bus_map_resource,	nexus_map_resource),
 	DEVMETHOD(bus_release_resource,	nexus_release_resource),
-	DEVMETHOD(bus_set_resource,	nexus_set_resource),
+	DEVMETHOD(bus_set_resource,	bus_generic_rl_set_resource),
 	DEVMETHOD(bus_unmap_resource,	nexus_unmap_resource),
 #ifdef SMP
 	DEVMETHOD(bus_bind_intr,	nexus_bind_intr),
