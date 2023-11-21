@@ -43,6 +43,7 @@ struct nvmft_qpair {
 	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;
+	volatile u_int qp_refs;		/* Internal references on 'qp'. */
 
 	struct mtx lock;
 
@@ -115,6 +116,7 @@ nvmft_qpair_init(enum nvmf_trtype trtype,
 		return (NULL);
 	}
 
+	refcount_init(&qp->qp_refs, 1);
 	return (qp);
 }
 
@@ -127,7 +129,7 @@ nvmft_qpair_shutdown(struct nvmft_qpair *qp)
 	nq = qp->qp;
 	qp->qp = NULL;
 	mtx_unlock(&qp->lock);
-	if (nq != NULL)
+	if (refcount_release(&qp->qp_refs))
 		nvmf_free_qpair(nq);
 }
 
@@ -157,32 +159,37 @@ nvmft_qpair_name(struct nvmft_qpair *qp)
 	return (qp->name);
 }
 
-static int
-nvmft_transmit_response(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
-{
-	struct nvme_completion *cpl = nvmf_capsule_cqe(nc);
-
-	/* Set SQHD. */
-	if (qp->sq_flow_control) {
-		mtx_lock(&qp->lock);
-		qp->sqhd = (qp->sqhd + 1) % qp->qsize;
-		cpl->sqhd = htole16(qp->sqhd);
-		mtx_unlock(&qp->lock);
-	} else
-		cpl->sqhd = 0;
-
-	return (nvmf_transmit_capsule(nc));
-}
-
 int
 nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 {
+	struct nvme_completion cpl;
+	struct nvmf_qpair *nq;
 	struct nvmf_capsule *rc;
 	int error;
 
-	rc = nvmf_allocate_response(qp->qp, cqe, M_WAITOK);
-	error = nvmft_transmit_response(qp, rc);
+	memcpy(&cpl, cqe, sizeof(cpl));
+	mtx_lock(&qp->lock);
+	nq = qp->qp;
+	if (nq == NULL) {
+		mtx_unlock(&qp->lock);
+		return (ENOTCONN);
+	}
+	refcount_acquire(&qp->qp_refs);
+
+	/* Set SQHD. */
+	if (qp->sq_flow_control) {
+		qp->sqhd = (qp->sqhd + 1) % qp->qsize;
+		cpl.sqhd = htole16(qp->sqhd);
+	} else
+		cpl.sqhd = 0;
+	mtx_unlock(&qp->lock);
+
+	rc = nvmf_allocate_response(nq, &cpl, M_WAITOK);
+	error = nvmf_transmit_capsule(rc);
 	nvmf_free_capsule(rc);
+
+	if (refcount_release(&qp->qp_refs))
+		nvmf_free_qpair(nq);
 	return (error);
 }
 
@@ -225,12 +232,25 @@ static int
 nvmft_send_connect_response(struct nvmft_qpair *qp,
     const struct nvmf_fabric_connect_rsp *rsp)
 {
-	struct nvmf_capsule *nc;
+	struct nvmf_capsule *rc;
+	struct nvmf_qpair *nq;
 	int error;
 
-	nc = nvmf_allocate_response(qp->qp, rsp, M_WAITOK);
-	error = nvmf_transmit_capsule(nc);
-	nvmf_free_capsule(nc);
+	mtx_lock(&qp->lock);
+	nq = qp->qp;
+	if (nq == NULL) {
+		mtx_unlock(&qp->lock);
+		return (ENOTCONN);
+	}
+	refcount_acquire(&qp->qp_refs);
+	mtx_unlock(&qp->lock);
+
+	rc = nvmf_allocate_response(qp->qp, rsp, M_WAITOK);
+	error = nvmf_transmit_capsule(rc);
+	nvmf_free_capsule(rc);
+
+	if (refcount_release(&qp->qp_refs))
+		nvmf_free_qpair(nq);
 	return (error);
 }
 

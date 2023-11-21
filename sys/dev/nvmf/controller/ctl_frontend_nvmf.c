@@ -366,11 +366,8 @@ nvmft_done(union ctl_io *io)
 	if (io->nvmeio.success_sent) {
 		MPASS(io->io_hdr.status == CTL_SUCCESS);
 	} else {
-		/* Don't send responses if the controller is shutting down. */
-		if (!ctrlr->shutdown) {
-			io->nvmeio.cpl.cid = cmd->cid;
-			nvmft_send_response(qp, &io->nvmeio.cpl);
-		}
+		io->nvmeio.cpl.cid = cmd->cid;
+		nvmft_send_response(qp, &io->nvmeio.cpl);
 	}
 	ctl_free_io(io);
 	nvmf_free_capsule(nc);
