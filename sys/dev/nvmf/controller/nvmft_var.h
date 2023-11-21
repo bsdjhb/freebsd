@@ -30,6 +30,7 @@
 #define	__NVMFT_VAR_H__
 
 #include <sys/refcount.h>
+#include <sys/taskqueue.h>
 
 #include <dev/nvmf/nvmf_proto.h>
 
@@ -58,16 +59,25 @@ struct nvmft_port {
 	u_int	num_luns;
 };
 
+struct nvmft_io_qpair {
+	struct nvmft_qpair *qp;
+
+	bool shutdown;
+
+	/* Need to track open CIDs to detect conflicts. */
+};
+
 struct nvmft_controller {
 	struct nvmft_qpair *admin;
-	struct nvmft_qpair **io_qpairs;
+	struct nvmft_io_qpair *io_qpairs;
 	u_int	num_io_queues;
+	bool	shutdown;
 	uint16_t cntlid;
 	uint32_t cc;
 	uint32_t csts;
 
 	struct nvmft_port *np;
-	struct sx lock;
+	struct mtx lock;
 
 	struct nvme_controller_data cdata;
 
@@ -77,7 +87,16 @@ struct nvmft_controller {
 	TAILQ_ENTRY(nvmft_controller) link;
 	u_int	refs;
 
-	/* TODO: KeepAlive support. */	
+	/*
+	 * Each queue can have at most UINT16_MAX commands, so the total
+	 * across all queues will fit in a uint32_t.
+	 */
+	uint32_t pending_commands;
+
+	/* TODO: KeepAlive support. */
+
+	struct task shutdown_task;
+	struct timeout_task terminate_task;
 };
 
 MALLOC_DECLARE(M_NVMFT);
@@ -86,11 +105,13 @@ MALLOC_DECLARE(M_NVMFT);
 void	nvmft_port_free(struct nvmft_port *np);
 void	nvmft_dispatch_command(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc, bool admin);
+void	nvmft_terminate_commands(struct nvmft_controller *ctrlr);
 
 /* nvmft_controller.c */
+void	nvmft_controller_error(struct nvmft_controller *ctrlr);
 void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc);
-void	nvmft_handle_io_command(struct nvmft_qpair *qp,
+void	nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
     struct nvmf_capsule *nc);
 int	nvmft_handoff_admin_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
@@ -139,12 +160,13 @@ bool	nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
 
 /* nvmft_qpair.c */
 struct nvmft_qpair *nvmft_qpair_init(enum nvmf_trtype trtype,
-    const struct nvmf_handoff_qpair_params *handoff, const char *name);
+    const struct nvmf_handoff_qpair_params *handoff, uint16_t qid,
+    const char *name);
+void	nvmft_qpair_shutdown(struct nvmft_qpair *qp);
 void	nvmft_qpair_destroy(struct nvmft_qpair *qp);
 struct nvmft_controller *nvmft_qpair_ctrlr(struct nvmft_qpair *qp);
+uint16_t nvmft_qpair_id(struct nvmft_qpair *qp);
 const char *nvmft_qpair_name(struct nvmft_qpair *qp);
-int	nvmft_transmit_response(struct nvmft_qpair *qp,
-    struct nvmf_capsule *nc);
 int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);
 int	nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
     uint8_t sc_type, uint8_t sc_status);

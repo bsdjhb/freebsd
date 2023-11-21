@@ -60,6 +60,7 @@
 #define	NVMFT_NC(io)	((io)->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptrs[0])
 #define	NVMFT_QP(io)	((io)->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptrs[1])
 
+static void	nvmft_done(union ctl_io *io);
 static int	nvmft_init(void);
 static int	nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data,
     int flag, struct thread *td);
@@ -198,6 +199,7 @@ nvmft_dispatch_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 		return;
 	}
 
+	atomic_add_32(&ctrlr->pending_commands, 1);
 	io = ctl_alloc_io(np->port.ctl_pool_ref);
 	ctl_zero_io(io);
 	NVMFT_NC(io) = nc;
@@ -211,13 +213,38 @@ nvmft_dispatch_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 	if (error != 0) {
 		nvmft_printf(ctrlr, "ctl_run failed for command on %s: %d\n",
 		    nvmft_qpair_name(qp), error);
-		nvmft_send_generic_error(qp, nc,
+		ctl_nvme_set_generic_error(&io->nvmeio,
 		    NVME_SC_INTERNAL_DEVICE_ERROR);
-		ctl_free_io(io);
-		nvmf_free_capsule(nc);
+		nvmft_done(io);
 
-		/* TODO: Drop connection. */
-		return;
+		nvmft_controller_error(ctrlr);
+	}
+}
+
+void
+nvmft_terminate_commands(struct nvmft_controller *ctrlr)
+{
+	struct nvmft_port *np = ctrlr->np;
+	union ctl_io *io;
+	int error;
+
+	atomic_add_32(&ctrlr->pending_commands, 1);
+	io = ctl_alloc_io(np->port.ctl_pool_ref);
+	ctl_zero_io(io);
+	NVMFT_QP(io) = ctrlr->admin;
+	io->io_hdr.io_type = CTL_IO_TASK;
+	io->io_hdr.nexus.initid = ctrlr->cntlid;
+	io->io_hdr.nexus.targ_port = np->port.targ_port;
+	io->io_hdr.nexus.targ_lun = 0;
+	io->taskio.tag_type = CTL_TAG_SIMPLE; /* XXX: unused? */
+	io->taskio.task_action = CTL_TASK_I_T_NEXUS_RESET;
+	error = ctl_run(io);
+	if (error != CTL_RETVAL_COMPLETE) {
+		nvmft_printf(ctrlr, "failed to terminate tasks: %d\n", error);
+#ifdef INVARIANTS
+		io->io_hdr.status = CTL_SUCCESS;
+#endif
+		nvmft_done(io);
 	}
 }
 
@@ -299,7 +326,7 @@ nvmft_datamove(union ctl_io *io)
 		if (error == 0)
 			return;
 		nvmft_printf(ctrlr, "Failed to request capsule data: %d\n",
-			    error);
+		    error);
 		ctl_nvme_set_data_transfer_error(&io->nvmeio);
 	}
 
@@ -314,6 +341,7 @@ nvmft_datamove(union ctl_io *io)
 static void
 nvmft_done(union ctl_io *io)
 {
+	struct nvmft_controller *ctrlr;
 	const struct nvme_command *cmd;
 	struct nvmft_qpair *qp;
 	struct nvmf_capsule *nc;
@@ -324,16 +352,29 @@ nvmft_done(union ctl_io *io)
 
 	nc = NVMFT_NC(io);
 	qp = NVMFT_QP(io);
+	ctrlr = nvmft_qpair_ctrlr(qp);
+
+	if (nc == NULL) {
+		/* Completion of nvmft_terminate_commands. */
+		ctl_free_io(io);
+		atomic_subtract_32(&ctrlr->pending_commands, 1);
+		return;
+	}
+
 	cmd = nvmf_capsule_sqe(nc);
 
 	if (io->nvmeio.success_sent) {
 		MPASS(io->io_hdr.status == CTL_SUCCESS);
 	} else {
-		io->nvmeio.cpl.cid = cmd->cid;
-		nvmft_send_response(qp, &io->nvmeio.cpl);
+		/* Don't send responses if the controller is shutting down. */
+		if (!ctrlr->shutdown) {
+			io->nvmeio.cpl.cid = cmd->cid;
+			nvmft_send_response(qp, &io->nvmeio.cpl);
+		}
 	}
 	ctl_free_io(io);
 	nvmf_free_capsule(nc);
+	atomic_subtract_32(&ctrlr->pending_commands, 1);
 }
 
 static int

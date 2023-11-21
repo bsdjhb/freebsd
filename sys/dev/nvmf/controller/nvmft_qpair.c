@@ -39,6 +39,7 @@ struct nvmft_qpair {
 
 	bool	admin;
 	bool	sq_flow_control;
+	uint16_t qid;
 	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;
@@ -52,8 +53,10 @@ static void
 nvmft_qpair_error(void *arg)
 {
 	struct nvmft_qpair *qp = arg;
+	struct nvmft_controller *ctrlr = qp->ctrlr;
 
-	printf("NVMFT: TODO: error on %s\n", qp->name);
+	nvmft_printf(ctrlr, "error on %s\n", qp->name);
+	nvmft_controller_error(ctrlr);
 }
 
 static void
@@ -84,12 +87,13 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	if (qp->admin)
 		nvmft_handle_admin_command(ctrlr, nc);
 	else
-		nvmft_handle_io_command(qp, nc);
+		nvmft_handle_io_command(qp, qp->qid, nc);
 }
 
 struct nvmft_qpair *
 nvmft_qpair_init(enum nvmf_trtype trtype,
-    const struct nvmf_handoff_qpair_params *handoff, const char *name)
+    const struct nvmf_handoff_qpair_params *handoff, uint16_t qid,
+    const char *name)
 {
 	struct nvmft_qpair *qp;
 
@@ -97,6 +101,7 @@ nvmft_qpair_init(enum nvmf_trtype trtype,
 	qp->admin = handoff->admin;
 	qp->sq_flow_control = handoff->sq_flow_control;
 	qp->qsize = handoff->qsize;
+	qp->qid = qid;
 	qp->sqhd = handoff->sqhd;
 	qp->sqtail = handoff->sqtail;
 	strlcpy(qp->name, name, sizeof(qp->name));
@@ -114,10 +119,22 @@ nvmft_qpair_init(enum nvmf_trtype trtype,
 }
 
 void
+nvmft_qpair_shutdown(struct nvmft_qpair *qp)
+{
+	struct nvmf_qpair *nq;
+
+	mtx_lock(&qp->lock);
+	nq = qp->qp;
+	qp->qp = NULL;
+	mtx_unlock(&qp->lock);
+	if (nq != NULL)
+		nvmf_free_qpair(nq);
+}
+
+void
 nvmft_qpair_destroy(struct nvmft_qpair *qp)
 {
-	/* TODO: Abort any outstanding requests? */
-	nvmf_free_qpair(qp->qp);
+	nvmft_qpair_shutdown(qp);
 	mtx_destroy(&qp->lock);
 	free(qp, M_NVMFT);
 }
@@ -128,13 +145,19 @@ nvmft_qpair_ctrlr(struct nvmft_qpair *qp)
 	return (qp->ctrlr);
 }
 
+uint16_t
+nvmft_qpair_id(struct nvmft_qpair *qp)
+{
+	return (qp->qid);
+}
+
 const char *
 nvmft_qpair_name(struct nvmft_qpair *qp)
 {
 	return (qp->name);
 }
 
-int
+static int
 nvmft_transmit_response(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 {
 	struct nvme_completion *cpl = nvmf_capsule_cqe(nc);

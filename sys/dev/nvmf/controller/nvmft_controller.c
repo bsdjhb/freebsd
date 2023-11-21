@@ -26,15 +26,21 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/memdesc.h>
+#include <sys/mutex.h>
 #include <sys/sbuf.h>
 #include <sys/sx.h>
+#include <sys/taskqueue.h>
 
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
+
+static void	nvmft_controller_shutdown(void *arg, int pending);
+static void	nvmft_controller_terminate(void *arg, int pending);
 
 int
 nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)	
@@ -70,8 +76,11 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	nvmft_port_ref(np);
 	TAILQ_INSERT_TAIL(&np->controllers, ctrlr, link);
 	ctrlr->np = np;
-	sx_init(&ctrlr->lock, "nvmft controller");
+	mtx_init(&ctrlr->lock, "nvmft controller", NULL, MTX_DEF);
 	refcount_init(&ctrlr->refs, 1);
+	TASK_INIT(&ctrlr->shutdown_task, 0, nvmft_controller_shutdown, ctrlr);
+	TIMEOUT_TASK_INIT(taskqueue_thread, &ctrlr->terminate_task, 0,
+	    nvmft_controller_terminate, ctrlr);
 
 	ctrlr->cdata = np->cdata;
 	ctrlr->cdata.ctrlr_id = htole16(cntlid);
@@ -90,18 +99,9 @@ nvmft_controller_ref(struct nvmft_controller *ctrlr)
 static void
 nvmft_controller_free(struct nvmft_controller *ctrlr)
 {
-	struct nvmft_port *np;
-
-	np = ctrlr->np;
-	/* TODO: Maybe take controller out of list once it is shutting down? */
-	sx_xlock(&np->lock);
-	TAILQ_REMOVE(&np->controllers, ctrlr, link);
-	free_unr(np->ids, ctrlr->cntlid);
-	sx_xunlock(&np->lock);
-	sx_destroy(&ctrlr->lock);
-	free(ctrlr->io_qpairs, M_NVMFT);
+	mtx_destroy(&ctrlr->lock);
+	MPASS(ctrlr->io_qpairs == NULL);
 	free(ctrlr, M_NVMFT);
-	nvmft_port_rele(np);
 }
 
 static void
@@ -124,7 +124,8 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 	if (cmd->qid != htole16(0))
 		return (EINVAL);
 
-	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, "admin queue");
+	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, 0,
+	    "admin queue");
 
 	sx_xlock(&np->lock);
 	cntlid = alloc_unr(np->ids);
@@ -175,7 +176,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	cntlid = le16toh(data->cntlid);
 
 	snprintf(name, sizeof(name), "I/O queue %u", qid);
-	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, name);
+	qp = nvmft_qpair_init(handoff->trtype, &handoff->params, qid, name);
 
 	sx_slock(&np->lock);
 	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
@@ -201,7 +202,6 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    offsetof(struct nvmf_fabric_connect_data, hostid));
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
-		
 	}
 	if (memcmp(ctrlr->hostnqn, data->hostnqn, sizeof(ctrlr->hostnqn)) != 0) {
 		sx_sunlock(&np->lock);
@@ -211,12 +211,21 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		    offsetof(struct nvmf_fabric_connect_data, hostnqn));
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
-		
 	}
 
-	sx_xlock(&ctrlr->lock);
+	mtx_lock(&ctrlr->lock);
+	if (ctrlr->shutdown) {
+		mtx_unlock(&ctrlr->lock);
+		sx_sunlock(&np->lock);
+		nvmft_printf(ctrlr, "attempt to create I/O queue %u on disabled controller from %.*s\n",
+		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
+		nvmft_connect_invalid_parameters(qp, cmd, true,
+		    offsetof(struct nvmf_fabric_connect_data, cntlid));
+		nvmft_qpair_destroy(qp);
+		return (EINVAL);
+	}
 	if (ctrlr->num_io_queues == 0) {
-		sx_xunlock(&ctrlr->lock);
+		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
 		nvmft_printf(ctrlr, "attempt to create I/O queue %u without enabled queues from %.*s\n",
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
@@ -226,7 +235,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		return (EINVAL);
 	}
 	if (cmd->qid > ctrlr->num_io_queues) {
-		sx_xunlock(&ctrlr->lock);
+		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
 		nvmft_printf(ctrlr, "attempt to create invalid I/O queue %u from %.*s\n",
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
@@ -235,8 +244,8 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
-	if (ctrlr->io_qpairs[qid - 1] != NULL) {
-		sx_xunlock(&ctrlr->lock);
+	if (ctrlr->io_qpairs[qid - 1].qp != NULL) {
+		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
 		nvmft_printf(ctrlr, "attempt to re-create I/O queue %u from %.*s\n",
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
@@ -246,12 +255,124 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		return (EINVAL);
 	}
 
-	ctrlr->io_qpairs[qid - 1] = qp;
-	sx_xunlock(&ctrlr->lock);
+	ctrlr->io_qpairs[qid - 1].qp = qp;
+	mtx_unlock(&ctrlr->lock);
 	nvmft_finish_accept(qp, cmd, ctrlr);
 	sx_sunlock(&np->lock);
 
 	return (0);
+}
+
+static void
+nvmft_controller_shutdown(void *arg, int pending)
+{
+	struct nvmft_controller *ctrlr = arg;
+
+	MPASS(pending == 1);
+
+	/*
+	 * Shutdown all I/O queues to terminate pending datamoves and
+	 * stop receiving new commands.
+	 */
+	mtx_lock(&ctrlr->lock);	
+	for (u_int i = 0; i < ctrlr->num_io_queues; i++) {
+		if (ctrlr->io_qpairs[i].qp != NULL) {
+			ctrlr->io_qpairs[i].shutdown = true;
+			mtx_unlock(&ctrlr->lock);
+			nvmft_qpair_shutdown(ctrlr->io_qpairs[i].qp);
+			mtx_lock(&ctrlr->lock);
+		}
+	}
+	mtx_unlock(&ctrlr->lock);
+
+	/* Terminate active CTL commands. */
+	nvmft_terminate_commands(ctrlr);
+
+	/* Wait for all pending CTL commands to complete. */
+	while (!atomic_cmpset_32(&ctrlr->pending_commands, 0, 0))
+		tsleep(&ctrlr->pending_commands, 0, "nvmftsh", hz / 100);
+
+	/* Delete all of the I/O queues. */
+	for (u_int i = 0; i < ctrlr->num_io_queues; i++) {
+		if (ctrlr->io_qpairs[i].qp != NULL)
+			nvmft_qpair_destroy(ctrlr->io_qpairs[i].qp);
+	}
+	free(ctrlr->io_qpairs, M_NVMFT);
+	ctrlr->io_qpairs = NULL;
+
+	mtx_lock(&ctrlr->lock);
+	ctrlr->num_io_queues = 0;
+
+	/* Mark shutdown complete. */
+	if (NVMEV(NVME_CSTS_REG_SHST, ctrlr->csts) == NVME_SHST_OCCURRING) {
+		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
+		ctrlr->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
+	}
+
+	ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_RDY);
+	ctrlr->shutdown = false;
+	mtx_unlock(&ctrlr->lock);
+
+	taskqueue_enqueue_timeout(taskqueue_thread, &ctrlr->terminate_task,
+	    hz * 60 * 2);
+}
+
+static void
+nvmft_controller_terminate(void *arg, int pending)
+{
+	struct nvmft_controller *ctrlr = arg;
+	struct nvmft_port *np;
+
+	/* If the controller has been re-enabled, nothing to do. */
+	mtx_lock(&ctrlr->lock);
+	if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) != 0) {
+		/* TODO: Restart KA timer */
+		mtx_unlock(&ctrlr->lock);
+		return;
+	}
+
+	/* Disable updates to CC while destroying admin qpair. */
+	ctrlr->shutdown = true;
+	mtx_unlock(&ctrlr->lock);
+
+	nvmft_qpair_destroy(ctrlr->admin);
+
+	/* Remove association (CNTLID). */
+	np = ctrlr->np;
+	sx_xlock(&np->lock);
+	TAILQ_REMOVE(&np->controllers, ctrlr, link);
+	free_unr(np->ids, ctrlr->cntlid);
+	sx_xunlock(&np->lock);
+
+	nvmft_printf(ctrlr, "association terminated\n");
+	nvmft_controller_rele(ctrlr);
+	nvmft_port_rele(np);
+}
+
+/*
+ * XXX: Probably want a separate notification from the transport layer
+ * when a queue is closed to avoid spurious TCP timeout errors once
+ * the other side has closed a queue pair during shutdown.  Also can
+ * tear down the association sooner in that case.
+ */
+void
+nvmft_controller_error(struct nvmft_controller *ctrlr)
+{
+	/* Ignore transport errors if we are already shutting down. */
+	mtx_lock(&ctrlr->lock);
+	if (ctrlr->shutdown) {
+		mtx_unlock(&ctrlr->lock);
+		return;
+	}
+
+	ctrlr->csts |= 1 << NVME_CSTS_REG_CFS_SHIFT;
+	ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
+	ctrlr->shutdown = true;
+
+	/* TODO: Stop KA timer. */
+	mtx_unlock(&ctrlr->lock);
+
+	taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
 }
 
 static bool
@@ -259,35 +380,55 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc)
 {
 	struct nvmft_port *np = ctrlr->np;
 	uint32_t changes;
-	bool shutdown;
+	bool need_shutdown;
 
-	if (!nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc))
+	mtx_lock(&ctrlr->lock);
+
+	/* Don't allow any changes while shutting down. */
+	if (ctrlr->shutdown) {
+		mtx_unlock(&ctrlr->lock);
 		return (false);
+	}
 
-	shutdown = false;
+	if (!nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
+		mtx_unlock(&ctrlr->lock);
+		return (false);
+	}
+
 	changes = ctrlr->cc ^ new_cc;
 	ctrlr->cc = new_cc;
+	need_shutdown = false;
 
 	/* Handle shutdown requests. */
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
 	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
 		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
-		ctrlr->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
-		shutdown = true;
+		ctrlr->csts |= NVME_SHST_OCCURRING << NVME_CSTS_REG_SHST_SHIFT;
+		ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
+		ctrlr->shutdown = true;
+		need_shutdown = true;
+		nvmft_printf(ctrlr, "shutdown requested\n");
 	}
 
 	if (NVMEV(NVME_CC_REG_EN, changes) != 0) {
 		if (NVMEV(NVME_CC_REG_EN, new_cc) == 0) {
 			/* Controller reset. */
-			ctrlr->csts = 0;
-			shutdown = true;
+			nvmft_printf(ctrlr, "reset requested\n");
+			ctrlr->shutdown = true;
+			need_shutdown = true;
 		} else
 			ctrlr->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
 	}
 
-	if (shutdown) {
-		/* TODO: Shutdown handling */
+	if (need_shutdown) {
+		/* TODO: Stop KA timer. */
 	}
+
+	mtx_unlock(&ctrlr->lock);
+
+	if (need_shutdown)
+		taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
+
 	return (true);
 }
 
@@ -435,37 +576,37 @@ handle_set_features(struct nvmft_controller *ctrlr,
 	case NVME_FEAT_NUMBER_OF_QUEUES:
 	{
 		uint32_t num_queues;
+		struct nvmft_io_qpair *io_qpairs;
 
-		sx_xlock(&ctrlr->lock);
+		num_queues = le32toh(cmd->cdw11) & 0xffff;
+
+		/* 5.12.1.7: 65535 is invalid. */
+		if (num_queues == 65535)
+			goto error;
+
+		/* Fabrics requires the same number of SQs and CQs. */
+		if (le32toh(cmd->cdw11) >> 16 != num_queues)
+			goto error;
+
+		/* Convert to 1's based */
+		num_queues++;
+
+		io_qpairs = mallocarray(num_queues, sizeof(*io_qpairs),
+		    M_NVMFT, M_WAITOK | M_ZERO);
+
+		mtx_lock(&ctrlr->lock);
 		if (ctrlr->num_io_queues != 0) {
-			sx_xunlock(&ctrlr->lock);
+			mtx_unlock(&ctrlr->lock);
+			free(io_qpairs, M_NVMFT);
 			nvmft_send_generic_error(ctrlr->admin, nc,
 			    NVME_SC_COMMAND_SEQUENCE_ERROR);
 			nvmf_free_capsule(nc);
 			return;
 		}
 
-		num_queues = le32toh(cmd->cdw11) & 0xffff;
-
-		/* 5.12.1.7: 65535 is invalid. */
-		if (num_queues == 65535) {
-			sx_xunlock(&ctrlr->lock);
-			goto error;
-		}
-
-		/* Fabrics requires the same number of SQs and CQs. */
-		if (le32toh(cmd->cdw11) >> 16 != num_queues) {
-			sx_xunlock(&ctrlr->lock);
-			goto error;
-		}
-
-		/* Convert to 1's based */
-		num_queues++;
-
 		ctrlr->num_io_queues = num_queues;
-		ctrlr->io_qpairs = mallocarray(num_queues,
-		    sizeof(*ctrlr->io_qpairs), M_NVMFT, M_WAITOK | M_ZERO);
-		sx_xunlock(&ctrlr->lock);
+		ctrlr->io_qpairs = io_qpairs;
+		mtx_unlock(&ctrlr->lock);
 
 		nvmf_init_cqe(&cqe, nc, 0);
 		cqe.cdw0 = cmd->cdw11;
@@ -527,7 +668,8 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 }
 
 void
-nvmft_handle_io_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
+nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
+    struct nvmf_capsule *nc)
 {
 	struct nvmft_controller *ctrlr = nvmft_qpair_ctrlr(qp);
 	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
