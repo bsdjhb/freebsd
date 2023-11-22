@@ -45,8 +45,13 @@ struct nvmf_handoff_qpair_params;
 
 SYSCTL_DECL(_kern_nvmf);
 
-/* Callback to invoke when an error occurs on a qpair. */
-typedef void nvmf_qpair_error_t(void *);
+/*
+ * Callback to invoke when an error occurs on a qpair.  The last
+ * parameter is an error value.  If the error value is zero, the qpair
+ * has been closed at the transport level rather than a transport
+ * error occuring.
+ */
+typedef void nvmf_qpair_error_t(void *, int);
 
 /* Callback to invoke when a capsule is received. */
 typedef void nvmf_capsule_receive_t(void *, struct nvmf_capsule *);

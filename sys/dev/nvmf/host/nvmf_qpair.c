@@ -137,7 +137,7 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 }
 
 static void
-nvmf_qp_error(void *arg)
+nvmf_qp_error(void *arg, int error __unused)
 {
 	struct nvmf_host_qpair *qp = arg;
 	struct nvmf_softc *sc = qp->sc;

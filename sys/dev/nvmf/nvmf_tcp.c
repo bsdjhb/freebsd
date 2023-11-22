@@ -1716,7 +1716,7 @@ nvmf_tcp_receive(void *arg)
 	struct iovec iov[1];
 	struct mbuf *m, *n, *tail;
 	u_int avail, needed;
-	int error, flags;
+	int error, flags, terror;
 	bool have_header;
 
 	m = tail = NULL;
@@ -1725,16 +1725,28 @@ nvmf_tcp_receive(void *arg)
 	while (!qp->rx_shutdown) {
 		/* Wait until there is enough data for the next step. */
 		if (so->so_error != 0 || so->so_rerror != 0) {
+			if (so->so_error != 0)
+				error = so->so_error;
+			else
+				error = so->so_rerror;
 			SOCKBUF_UNLOCK(&so->so_rcv);
 		error:
 			m_freem(m);
-			nvmf_qpair_error(&qp->qp);
+			nvmf_qpair_error(&qp->qp, error);
 			SOCKBUF_LOCK(&so->so_rcv);
 			while (!qp->rx_shutdown)
 				cv_wait(&qp->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			break;
 		}
 		avail = sbavail(&so->so_rcv);
+		if ((so->so_rcv.sb_state & SBS_CANTRCVMORE) != 0) {
+			if (!have_header && avail == 0)
+				error = 0;
+			else
+				error = ECONNRESET;
+			SOCKBUF_UNLOCK(&so->so_rcv);
+			goto error;
+		}
 		if (avail == 0 || (!have_header && avail < sizeof(ch))) {
 			cv_wait(&qp->rx_cv, SOCKBUF_MTX(&so->so_rcv));
 			continue;
@@ -1818,10 +1830,10 @@ nvmf_tcp_receive(void *arg)
 			 * be closed by the other end.
 			 */
 			SOCKBUF_LOCK(&so->so_rcv);
-			if (soreadable(so)) {
-				error = cv_timedwait(&qp->rx_cv,
+			if ((so->so_rcv.sb_state & SBS_CANTRCVMORE) == 0) {
+				terror = cv_timedwait(&qp->rx_cv,
 				    SOCKBUF_MTX(&so->so_rcv), 30 * hz);
-				if (error == ETIMEDOUT)
+				if (terror == ETIMEDOUT)
 					printf("NVMe/TCP: Timed out after sending terminate request\n");
 			}
 			SOCKBUF_UNLOCK(&so->so_rcv);
@@ -1928,10 +1940,11 @@ nvmf_tcp_send(void *arg)
 	SOCKBUF_LOCK(&so->so_snd);
 	while (!qp->tx_shutdown) {
 		if (so->so_error != 0) {
+			error = so->so_error;
 			SOCKBUF_UNLOCK(&so->so_snd);
 		error:
 			m_freem(m);
-			nvmf_qpair_error(&qp->qp);
+			nvmf_qpair_error(&qp->qp, error);
 			SOCKBUF_LOCK(&so->so_snd);
 			while (!qp->tx_shutdown)
 				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));

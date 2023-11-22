@@ -118,9 +118,9 @@ struct nvmf_capsule {
 };
 
 static void __inline
-nvmf_qpair_error(struct nvmf_qpair *nq)
+nvmf_qpair_error(struct nvmf_qpair *nq, int error)
 {
-	nq->nq_error(nq->nq_error_arg);
+	nq->nq_error(nq->nq_error_arg, error);
 }
 
 static void __inline

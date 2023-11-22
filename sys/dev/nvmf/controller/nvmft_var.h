@@ -72,6 +72,7 @@ struct nvmft_controller {
 	struct nvmft_io_qpair *io_qpairs;
 	u_int	num_io_queues;
 	bool	shutdown;
+	bool	admin_closed;
 	uint16_t cntlid;
 	uint32_t cc;
 	uint32_t csts;
@@ -108,7 +109,8 @@ void	nvmft_dispatch_command(struct nvmft_qpair *qp,
 void	nvmft_terminate_commands(struct nvmft_controller *ctrlr);
 
 /* nvmft_controller.c */
-void	nvmft_controller_error(struct nvmft_controller *ctrlr);
+void	nvmft_controller_error(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, int error);
 void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc);
 void	nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,

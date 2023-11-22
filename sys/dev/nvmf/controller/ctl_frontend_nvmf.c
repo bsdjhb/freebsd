@@ -217,7 +217,7 @@ nvmft_dispatch_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 		    NVME_SC_INTERNAL_DEVICE_ERROR);
 		nvmft_done(io);
 
-		nvmft_controller_error(ctrlr);
+		nvmft_controller_error(ctrlr, qp, ENXIO);
 	}
 }
 

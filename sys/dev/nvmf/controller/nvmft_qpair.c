@@ -51,13 +51,14 @@ struct nvmft_qpair {
 };
 
 static void
-nvmft_qpair_error(void *arg)
+nvmft_qpair_error(void *arg, int error)
 {
 	struct nvmft_qpair *qp = arg;
 	struct nvmft_controller *ctrlr = qp->ctrlr;
 
-	nvmft_printf(ctrlr, "error on %s\n", qp->name);
-	nvmft_controller_error(ctrlr);
+	if (error != 0)
+		nvmft_printf(ctrlr, "error on %s\n", qp->name);
+	nvmft_controller_error(ctrlr, qp, error);
 }
 
 static void
@@ -129,7 +130,7 @@ nvmft_qpair_shutdown(struct nvmft_qpair *qp)
 	nq = qp->qp;
 	qp->qp = NULL;
 	mtx_unlock(&qp->lock);
-	if (refcount_release(&qp->qp_refs))
+	if (nq != NULL && refcount_release(&qp->qp_refs))
 		nvmf_free_qpair(nq);
 }
 

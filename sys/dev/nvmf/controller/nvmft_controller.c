@@ -267,6 +267,7 @@ static void
 nvmft_controller_shutdown(void *arg, int pending)
 {
 	struct nvmft_controller *ctrlr = arg;
+	bool admin_closed;
 
 	MPASS(pending == 1);
 
@@ -311,10 +312,19 @@ nvmft_controller_shutdown(void *arg, int pending)
 
 	ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_RDY);
 	ctrlr->shutdown = false;
+	admin_closed = ctrlr->admin_closed;
 	mtx_unlock(&ctrlr->lock);
 
-	taskqueue_enqueue_timeout(taskqueue_thread, &ctrlr->terminate_task,
-	    hz * 60 * 2);
+	/*
+	 * If the admin queue was closed while shutting down,
+	 * terminate the association immediately, otherwise wait up to
+	 * 2 minutes (NVMe-over-Fabrics 1.1 4.6).
+	 */
+	if (admin_closed)
+		nvmft_controller_terminate(ctrlr, 0);
+	else
+		taskqueue_enqueue_timeout(taskqueue_thread,
+		    &ctrlr->terminate_task, hz * 60 * 2);
 }
 
 static void
@@ -349,17 +359,45 @@ nvmft_controller_terminate(void *arg, int pending)
 	nvmft_port_rele(np);
 }
 
-/*
- * XXX: Probably want a separate notification from the transport layer
- * when a queue is closed to avoid spurious TCP timeout errors once
- * the other side has closed a queue pair during shutdown.  Also can
- * tear down the association sooner in that case.
- */
 void
-nvmft_controller_error(struct nvmft_controller *ctrlr)
+nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
+    int error)
 {
-	/* Ignore transport errors if we are already shutting down. */
 	mtx_lock(&ctrlr->lock);
+
+	/*
+	 * If the admin queue pair is closed while idle or while
+	 * shutting down, terminate the association immediately.
+	 */
+	if (qp == ctrlr->admin && error == 0) {
+		if (ctrlr->shutdown) {
+			ctrlr->admin_closed = true;
+			mtx_unlock(&ctrlr->lock);
+			return;
+		}
+
+		if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) == 0) {
+			MPASS(ctrlr->num_io_queues == 0);
+			mtx_unlock(&ctrlr->lock);
+
+			/*
+			 * Ok to drop lock here since ctrlr->cc can't
+			 * change if the admin queue pair has closed.
+			 * This also means no new queues can be handed
+			 * off, etc.  Note that since there are no I/O
+			 * queues, only the admin queue needs to be
+			 * destroyed, so it is safe to skip
+			 * nvmft_controller_shutdown and just call
+			 * nvmft_controller_terminate.
+			 */
+			if (taskqueue_cancel_timeout(taskqueue_thread,
+			    &ctrlr->terminate_task, NULL) == 0)
+				nvmft_controller_terminate(ctrlr, 0);
+			return;
+		}
+	}
+
+	/* Ignore transport errors if we are already shutting down. */
 	if (ctrlr->shutdown) {
 		mtx_unlock(&ctrlr->lock);
 		return;
