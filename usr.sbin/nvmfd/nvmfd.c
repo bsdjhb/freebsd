@@ -26,7 +26,10 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/param.h>
 #include <sys/event.h>
+#include <sys/linker.h>
+#include <sys/module.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <assert.h>
@@ -198,6 +201,8 @@ main(int ac, char **av)
 	if (kernel_io) {
 		if (ac > 0)
 			usage();
+		if (modfind("nvmft") == -1 && kldload("nvmft") == -1)
+			warn("couldn't load nvmft");
 	} else {
 		if (ac < 1)
 			usage();
