@@ -77,8 +77,6 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 		return;
 	}
 
-	/* TODO: KeepAlive accounting */
-
 	sc_status = nvmf_validate_command_capsule(nc);
 	if (sc_status != NVME_SC_SUCCESS) {
 		nvmft_send_generic_error(qp, nc, sc_status);

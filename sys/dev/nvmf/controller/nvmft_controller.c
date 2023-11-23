@@ -27,6 +27,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/callout.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
@@ -43,7 +44,7 @@ static void	nvmft_controller_shutdown(void *arg, int pending);
 static void	nvmft_controller_terminate(void *arg, int pending);
 
 int
-nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)	
+nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)
 {
 	char buf[128];
 	struct sbuf sb;
@@ -77,6 +78,7 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	TAILQ_INSERT_TAIL(&np->controllers, ctrlr, link);
 	ctrlr->np = np;
 	mtx_init(&ctrlr->lock, "nvmft controller", NULL, MTX_DEF);
+	callout_init(&ctrlr->ka_timer, 1);
 	refcount_init(&ctrlr->refs, 1);
 	TASK_INIT(&ctrlr->shutdown_task, 0, nvmft_controller_shutdown, ctrlr);
 	TIMEOUT_TASK_INIT(taskqueue_thread, &ctrlr->terminate_task, 0,
@@ -111,6 +113,26 @@ nvmft_controller_rele(struct nvmft_controller *ctrlr)
 		nvmft_controller_free(ctrlr);
 }
 
+static void
+nvmft_keep_alive_timer(void *arg)
+{
+	struct nvmft_controller *ctrlr = arg;
+	int traffic;
+
+	if (ctrlr->shutdown)
+		return;
+
+	traffic = atomic_readandclear_int(&ctrlr->ka_active_traffic);
+	if (traffic == 0) {
+		nvmft_printf(ctrlr,
+		    "disconnecting due to KeepAlive timeout\n");
+		nvmft_controller_error(ctrlr, NULL, ETIMEDOUT);
+		return;
+	}
+
+	callout_schedule_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0, C_HARDCLOCK);
+}
+
 int
 nvmft_handoff_admin_queue(struct nvmft_port *np,
     const struct nvmf_handoff_controller_qpair *handoff,
@@ -119,6 +141,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 {
 	struct nvmft_controller *ctrlr;
 	struct nvmft_qpair *qp;
+	uint32_t kato;
 	int cntlid;
 
 	if (cmd->qid != htole16(0))
@@ -145,13 +168,26 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 		    ("%s: duplicate controllers with id %d", __func__, cntlid));
 	}
 #endif
-	
+
 	ctrlr = nvmft_controller_alloc(np, cntlid, data);
 	nvmft_printf(ctrlr, "associated with %.*s\n",
 	    (int)sizeof(data->hostnqn), data->hostnqn);
 	ctrlr->admin = qp;
 
-	/* TODO: Start KeepAlive timer. */
+	/*
+	 * The spec requires a non-zero KeepAlive timer, but allow a
+	 * zero KATO value to match Linux.
+	 */
+	kato = le32toh(cmd->kato);
+	if (kato != 0) {
+		/*
+		 * Round up to 1 second matching granularity
+		 * advertised in cdata.
+		 */
+		ctrlr->ka_sbt = mstosbt(roundup(kato, 1000));
+		callout_reset_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
+		    nvmft_keep_alive_timer, ctrlr, C_HARDCLOCK);
+	}
 
 	nvmft_finish_accept(qp, cmd, ctrlr);
 	sx_xunlock(&np->lock);
@@ -275,7 +311,7 @@ nvmft_controller_shutdown(void *arg, int pending)
 	 * Shutdown all I/O queues to terminate pending datamoves and
 	 * stop receiving new commands.
 	 */
-	mtx_lock(&ctrlr->lock);	
+	mtx_lock(&ctrlr->lock);
 	for (u_int i = 0; i < ctrlr->num_io_queues; i++) {
 		if (ctrlr->io_qpairs[i].qp != NULL) {
 			ctrlr->io_qpairs[i].shutdown = true;
@@ -336,8 +372,11 @@ nvmft_controller_terminate(void *arg, int pending)
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
 	if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) != 0) {
-		/* TODO: Restart KA timer */
 		mtx_unlock(&ctrlr->lock);
+
+		if (ctrlr->ka_sbt != 0)
+			callout_schedule_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
+			    C_HARDCLOCK);
 		return;
 	}
 
@@ -353,6 +392,8 @@ nvmft_controller_terminate(void *arg, int pending)
 	TAILQ_REMOVE(&np->controllers, ctrlr, link);
 	free_unr(np->ids, ctrlr->cntlid);
 	sx_xunlock(&np->lock);
+
+	callout_drain(&ctrlr->ka_timer);
 
 	nvmft_printf(ctrlr, "association terminated\n");
 	nvmft_controller_rele(ctrlr);
@@ -412,9 +453,9 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	ctrlr->csts |= 1 << NVME_CSTS_REG_CFS_SHIFT;
 	ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
-
-	/* TODO: Stop KA timer. */
 	mtx_unlock(&ctrlr->lock);
+
+	callout_stop(&ctrlr->ka_timer);
 
 	taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
 }
@@ -464,14 +505,12 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc)
 			ctrlr->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
 	}
 
-	if (need_shutdown) {
-		/* TODO: Stop KA timer. */
-	}
-
 	mtx_unlock(&ctrlr->lock);
 
-	if (need_shutdown)
+	if (need_shutdown) {
+		callout_stop(&ctrlr->ka_timer);
 		taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
+	}
 
 	return (true);
 }
@@ -686,6 +725,8 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		return;
 	}
 
+	atomic_store_int(&ctrlr->ka_active_traffic, 1);
+
 	switch (cmd->opc) {
 	case NVME_OPC_FABRICS_COMMANDS:
 		handle_admin_fabrics_command(ctrlr, nc,
@@ -698,7 +739,6 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		handle_set_features(ctrlr, nc, cmd);
 		break;
 	case NVME_OPC_KEEP_ALIVE:
-		/* TODO: Keep Alive timer reset */
 		nvmft_send_success(ctrlr->admin, nc);
 		nvmf_free_capsule(nc);
 		break;
@@ -717,6 +757,8 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 {
 	struct nvmft_controller *ctrlr = nvmft_qpair_ctrlr(qp);
 	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
+
+	atomic_store_int(&ctrlr->ka_active_traffic, 1);
 
 	switch (cmd->opc) {
 	default:

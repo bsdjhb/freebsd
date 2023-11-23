@@ -29,6 +29,7 @@
 #ifndef __NVMFT_VAR_H__
 #define	__NVMFT_VAR_H__
 
+#include <sys/_callout.h>
 #include <sys/refcount.h>
 #include <sys/taskqueue.h>
 
@@ -94,7 +95,9 @@ struct nvmft_controller {
 	 */
 	uint32_t pending_commands;
 
-	/* TODO: KeepAlive support. */
+	volatile int ka_active_traffic;
+	struct callout ka_timer;
+	sbintime_t ka_sbt;
 
 	struct task shutdown_task;
 	struct timeout_task terminate_task;
