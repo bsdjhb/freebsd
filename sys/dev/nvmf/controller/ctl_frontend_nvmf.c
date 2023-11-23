@@ -84,17 +84,29 @@ nvmft_online(void *arg)
 {
 	struct nvmft_port *np = arg;
 
-	/* Likely nothing to do here, probably remove this eventually. */
-	printf("%s(%p)\n", __func__, np);
+	sx_xlock(&np->lock);
+	np->online = true;
+	sx_xunlock(&np->lock);
 }
 
 static void
 nvmft_offline(void *arg)
 {
 	struct nvmft_port *np = arg;
+	struct nvmft_controller *ctrlr;
 
-	/* TODO: Shutdown existing controllers. */
-	printf("%s(%p)\n", __func__, np);
+	sx_xlock(&np->lock);
+	np->online = false;
+
+	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
+		nvmft_printf(ctrlr,
+		    "shutting down due to port going offline\n");
+		nvmft_controller_error(ctrlr, NULL, ENODEV);
+	}
+
+	while (!TAILQ_EMPTY(&np->controllers))
+		sx_sleep(np, &np->lock, 0, "nvmfoff", 0);
+	sx_xunlock(&np->lock);
 }
 
 static int
@@ -724,6 +736,14 @@ nvmft_handoff(struct ctl_nvmf *cn)
 		cn->status = CTL_NVMF_ERROR;
 		snprintf(cn->error_str, sizeof(cn->error_str),
 		    "Unknown SubNQN");
+		goto out;
+	}
+	if (!np->online) {
+		sx_sunlock(&nvmft_ports_lock);
+		cn->status = CTL_NVMF_ERROR;
+		snprintf(cn->error_str, sizeof(cn->error_str),
+		    "CTL port offline");
+		np = NULL;
 		goto out;
 	}
 	nvmft_port_ref(np);

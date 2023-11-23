@@ -368,6 +368,7 @@ nvmft_controller_terminate(void *arg, int pending)
 {
 	struct nvmft_controller *ctrlr = arg;
 	struct nvmft_port *np;
+	bool wakeup_np;
 
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
@@ -391,7 +392,10 @@ nvmft_controller_terminate(void *arg, int pending)
 	sx_xlock(&np->lock);
 	TAILQ_REMOVE(&np->controllers, ctrlr, link);
 	free_unr(np->ids, ctrlr->cntlid);
+	wakeup_np = (!np->online && TAILQ_EMPTY(&np->controllers));
 	sx_xunlock(&np->lock);
+	if (wakeup_np)
+		wakeup(np);
 
 	callout_drain(&ctrlr->ka_timer);
 

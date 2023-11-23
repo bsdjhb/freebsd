@@ -50,6 +50,7 @@ struct nvmft_port {
 	struct nvme_controller_data cdata;
 	uint64_t cap;
 	uint32_t max_io_qsize;
+	bool	online;
 
 	struct sx lock;
 
