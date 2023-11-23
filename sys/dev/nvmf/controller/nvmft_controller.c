@@ -387,12 +387,18 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 			 * off, etc.  Note that since there are no I/O
 			 * queues, only the admin queue needs to be
 			 * destroyed, so it is safe to skip
-			 * nvmft_controller_shutdown and just call
-			 * nvmft_controller_terminate.
+			 * nvmft_controller_shutdown and just schedule
+			 * nvmft_controller_terminate.  Note that we
+			 * cannot call nvmft_controller_terminate from
+			 * here directly as this is called from the
+			 * transport layer and freeing the admin qpair
+			 * might deadlock waiting for this thread to
+			 * exit.
 			 */
 			if (taskqueue_cancel_timeout(taskqueue_thread,
 			    &ctrlr->terminate_task, NULL) == 0)
-				nvmft_controller_terminate(ctrlr, 0);
+				taskqueue_enqueue_timeout(taskqueue_thread,
+				    &ctrlr->terminate_task, 0);
 			return;
 		}
 	}
