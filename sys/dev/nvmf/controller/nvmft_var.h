@@ -65,8 +65,6 @@ struct nvmft_io_qpair {
 	struct nvmft_qpair *qp;
 
 	bool shutdown;
-
-	/* Need to track open CIDs to detect conflicts. */
 };
 
 struct nvmft_controller {
@@ -173,6 +171,8 @@ void	nvmft_qpair_destroy(struct nvmft_qpair *qp);
 struct nvmft_controller *nvmft_qpair_ctrlr(struct nvmft_qpair *qp);
 uint16_t nvmft_qpair_id(struct nvmft_qpair *qp);
 const char *nvmft_qpair_name(struct nvmft_qpair *qp);
+void	nvmft_command_completed(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc);
 int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);
 int	nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
     uint8_t sc_type, uint8_t sc_status);

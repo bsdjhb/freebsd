@@ -27,15 +27,25 @@
  */
 
 #include <sys/types.h>
+#include <sys/_bitset.h>
+#include <sys/bitset.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
+/*
+ * A bitmask of command ID values.  This is used to detect duplicate
+ * commands with the same ID.
+ */
+#define	NUM_CIDS	(UINT16_MAX + 1)
+BITSET_DEFINE(cidset, NUM_CIDS);
+
 struct nvmft_qpair {
 	struct nvmft_controller *ctrlr;
 	struct nvmf_qpair *qp;
+	struct cidset *cids;
 
 	bool	admin;
 	bool	sq_flow_control;
@@ -49,6 +59,9 @@ struct nvmft_qpair {
 
 	char	name[16];
 };
+
+static int	_nvmft_send_generic_error(struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc, uint8_t sc_status);
 
 static void
 nvmft_qpair_error(void *arg, int error)
@@ -69,8 +82,8 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	const struct nvme_command *cmd;
 	uint8_t sc_status;
 
+	cmd = nvmf_capsule_sqe(nc);
 	if (ctrlr == NULL) {
-		cmd = nvmf_capsule_sqe(nc);
 		printf("NVMFT: %s received CID %u opcode %u on newborn queue\n",
 		    qp->name, le16toh(cmd->cid), cmd->opc);
 		nvmf_free_capsule(nc);
@@ -79,7 +92,14 @@ nvmft_receive_capsule(void *arg, struct nvmf_capsule *nc)
 
 	sc_status = nvmf_validate_command_capsule(nc);
 	if (sc_status != NVME_SC_SUCCESS) {
-		nvmft_send_generic_error(qp, nc, sc_status);
+		_nvmft_send_generic_error(qp, nc, sc_status);
+		nvmf_free_capsule(nc);
+		return;
+	}
+
+	/* Don't bother byte-swapping CID. */
+	if (BIT_TEST_SET_ATOMIC(NUM_CIDS, cmd->cid, qp->cids)) {
+		_nvmft_send_generic_error(qp, nc, NVME_SC_COMMAND_ID_CONFLICT);
 		nvmf_free_capsule(nc);
 		return;
 	}
@@ -106,11 +126,13 @@ nvmft_qpair_init(enum nvmf_trtype trtype,
 	qp->sqtail = handoff->sqtail;
 	strlcpy(qp->name, name, sizeof(qp->name));
 	mtx_init(&qp->lock, "nvmft qp", NULL, MTX_DEF);
+	qp->cids = BITSET_ALLOC(NUM_CIDS, M_NVMFT, M_WAITOK | M_ZERO);
 
 	qp->qp = nvmf_allocate_qpair(trtype, true, handoff, nvmft_qpair_error,
 	    qp, nvmft_receive_capsule, qp);
 	if (qp->qp == NULL) {
 		mtx_destroy(&qp->lock);
+		free(qp->cids, M_NVMFT);
 		free(qp, M_NVMFT);
 		return (NULL);
 	}
@@ -137,6 +159,7 @@ nvmft_qpair_destroy(struct nvmft_qpair *qp)
 {
 	nvmft_qpair_shutdown(qp);
 	mtx_destroy(&qp->lock);
+	free(qp->cids, M_NVMFT);
 	free(qp, M_NVMFT);
 }
 
@@ -158,8 +181,8 @@ nvmft_qpair_name(struct nvmft_qpair *qp)
 	return (qp->name);
 }
 
-int
-nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
+static int
+_nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 {
 	struct nvme_completion cpl;
 	struct nvmf_qpair *nq;
@@ -192,6 +215,31 @@ nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 	return (error);
 }
 
+void
+nvmft_command_completed(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
+{
+	const struct nvme_completion *cmd = nvmf_capsule_sqe(nc);
+
+	/* Don't bother byte-swapping CID. */
+	KASSERT(BIT_ISSET(NUM_CIDS, cmd->cid, qp->cids),
+	    ("%s: CID %u not busy", __func__, cmd->cid));
+
+	BIT_CLR_ATOMIC(NUM_CIDS, cmd->cid, qp->cids);
+}
+
+int
+nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
+{
+	const struct nvme_completion *cpl = cqe;
+
+	/* Don't bother byte-swapping CID. */
+	KASSERT(BIT_ISSET(NUM_CIDS, cpl->cid, qp->cids),
+	    ("%s: CID %u not busy", __func__, cpl->cid));
+
+	BIT_CLR_ATOMIC(NUM_CIDS, cpl->cid, qp->cids);
+	return (_nvmft_send_response(qp, cqe));
+}
+
 int
 nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
     uint8_t sc_type, uint8_t sc_status)
@@ -212,6 +260,23 @@ nvmft_send_generic_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 	return (nvmft_send_error(qp, nc, NVME_SCT_GENERIC, sc_status));
 }
 
+/*
+ * This version doesn't clear CID in qp->cids and is used for errors
+ * before the CID is validated.
+ */
+static int
+_nvmft_send_generic_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
+    uint8_t sc_status)
+{
+	struct nvme_completion cpl;
+	uint16_t status;
+
+	status = NVME_SCT_GENERIC << NVME_STATUS_SCT_SHIFT |
+	    sc_status << NVME_STATUS_SC_SHIFT;
+	nvmf_init_cqe(&cpl, nc, status);
+	return (_nvmft_send_response(qp, &cpl));
+}
+
 int
 nvmft_send_success(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 {
@@ -221,7 +286,7 @@ nvmft_send_success(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 static void
 nvmft_init_connect_rsp(struct nvmf_fabric_connect_rsp *rsp,
     const struct nvmf_fabric_connect_cmd *cmd, uint16_t status)
-{	
+{
 	memset(rsp, 0, sizeof(*rsp));
 	rsp->cid = cmd->cid;
 	rsp->status = htole16(status);

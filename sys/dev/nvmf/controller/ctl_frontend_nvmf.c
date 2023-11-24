@@ -377,6 +377,7 @@ nvmft_done(union ctl_io *io)
 
 	if (io->nvmeio.success_sent) {
 		MPASS(io->io_hdr.status == CTL_SUCCESS);
+		nvmft_command_completed(qp, nc);
 	} else {
 		io->nvmeio.cpl.cid = cmd->cid;
 		nvmft_send_response(qp, &io->nvmeio.cpl);
