@@ -344,7 +344,7 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 
 	sc->ns = malloc(sc->cdata->nn * sizeof(*sc->ns), M_NVMF,
 	    M_WAITOK | M_ZERO);
-	for (i = 0; i < sc->cdata->nn; i++) {
+	for (i = 1; i <= sc->cdata->nn; i++) {
 		data = malloc(sizeof(*data), M_NVMF, M_WAITOK);
 
 		nvmf_status_init(&status);
