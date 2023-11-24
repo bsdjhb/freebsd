@@ -766,11 +766,20 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 	atomic_store_int(&ctrlr->ka_active_traffic, 1);
 
 	switch (cmd->opc) {
+	case NVME_OPC_FLUSH:
+	case NVME_OPC_WRITE:
+	case NVME_OPC_READ:
+	case NVME_OPC_WRITE_UNCORRECTABLE:
+	case NVME_OPC_COMPARE:
+	case NVME_OPC_WRITE_ZEROES:
+	case NVME_OPC_DATASET_MANAGEMENT:
+		nvmft_dispatch_command(qp, nc, false);
+		break;
 	default:
 		nvmft_printf(ctrlr, "Unsupported I/O opcode %#x\n", cmd->opc);
 		nvmft_send_generic_error(qp, nc,
 		    NVME_SC_INVALID_OPCODE);
+		nvmf_free_capsule(nc);
 		break;
 	}
-	nvmf_free_capsule(nc);
 }
