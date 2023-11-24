@@ -303,7 +303,6 @@ static void
 nvmft_controller_shutdown(void *arg, int pending)
 {
 	struct nvmft_controller *ctrlr = arg;
-	bool admin_closed;
 
 	MPASS(pending == 1);
 
@@ -346,17 +345,19 @@ nvmft_controller_shutdown(void *arg, int pending)
 		ctrlr->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
 	}
 
-	ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_RDY);
-	ctrlr->shutdown = false;
-	admin_closed = ctrlr->admin_closed;
+	if (NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) == 0) {
+		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_RDY);
+		ctrlr->shutdown = false;
+	}
 	mtx_unlock(&ctrlr->lock);
 
 	/*
-	 * If the admin queue was closed while shutting down,
-	 * terminate the association immediately, otherwise wait up to
-	 * 2 minutes (NVMe-over-Fabrics 1.1 4.6).
+	 * If the admin queue was closed while shutting down or a
+	 * fatal controller error has occurred, terminate the
+	 * association immediately, otherwise wait up to 2 minutes
+	 * (NVMe-over-Fabrics 1.1 4.6).
 	 */
-	if (admin_closed)
+	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0)
 		nvmft_controller_terminate(ctrlr, 0);
 	else
 		taskqueue_enqueue_timeout(taskqueue_thread,
