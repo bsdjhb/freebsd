@@ -63,11 +63,13 @@ nvmf_ccb_done(union ccb *ccb)
 	if (nvmf_cqe_aborted(&ccb->nvmeio.cpl)) {
 		ccb->ccb_h.status = CAM_REQUEUE_REQ;
 		xpt_done(ccb);
-	} else if (ccb->ccb_h.spriv_ioerror != 0) {
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
-		xpt_done(ccb);
 	} else if (ccb->nvmeio.cpl.status != 0) {
 		ccb->ccb_h.status = CAM_NVME_STATUS_ERROR;
+		xpt_done(ccb);
+	} else if (ccb->ccb_h.spriv_ioerror != 0) {
+		KASSERT(ccb->ccb_h.spriv_ioerror != EJUSTRETURN,
+		    ("%s: zero sized transfer without CQE error", __func__));
+		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
 		xpt_done(ccb);
 	} else {
 		ccb->ccb_h.status = CAM_REQ_CMP;
@@ -87,9 +89,20 @@ nvmf_ccb_io_complete(void *arg, size_t xfered, int error)
 	 * the caller, or retrying all or part of the request.
 	 */
 	ccb->ccb_h.spriv_ioerror = error;
-	if (error == 0)
-		KASSERT(xfered == ccb->nvmeio.dxfer_len,
-		    ("%s: partial CCB completion", __func__));
+	if (error == 0) {
+		if (xfered == 0) {
+#ifdef INVARIANTS
+			/*
+			 * If the request fails with an error in the CQE
+			 * there will be no data transferred but also no
+			 * I/O error.
+			 */
+			ccb->ccb_h.spriv_ioerror = EJUSTRETURN;
+#endif
+		} else
+			KASSERT(xfered == ccb->nvmeio.dxfer_len,
+			    ("%s: partial CCB completion", __func__));
+	}
 
 	nvmf_ccb_done(ccb);
 }
