@@ -218,7 +218,7 @@ _nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 void
 nvmft_command_completed(struct nvmft_qpair *qp, struct nvmf_capsule *nc)
 {
-	const struct nvme_completion *cmd = nvmf_capsule_sqe(nc);
+	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
 
 	/* Don't bother byte-swapping CID. */
 	KASSERT(BIT_ISSET(NUM_CIDS, cmd->cid, qp->cids),
