@@ -10709,6 +10709,7 @@ ctl_nvme_identify(struct ctl_nvmeio *ctnio)
 	struct ctl_lun *lun = CTL_LUN(ctnio);
 	size_t len;
 	int retval;
+	uint8_t cns;
 
 	CTL_DEBUG_PRINT(("ctl_nvme_identify\n"));
 
@@ -10731,6 +10732,23 @@ ctl_nvme_identify(struct ctl_nvmeio *ctnio)
 	ctl_nvme_set_success(ctnio);
 	ctnio->io_hdr.flags |= CTL_FLAG_ALLOCATED;
 	ctnio->be_move_done = ctl_config_move_done;
+
+	/*
+	 * If we don't have a LUN, return an empty result for CNS == 0.
+	 */
+	if (lun == NULL) {
+		cns = le32toh(ctnio->cmd.cdw10) & 0xff;
+		switch (cns) {
+		case 0:
+			memset(ctnio->kern_data_ptr, 0, len);
+			ctl_datamove((union ctl_io *)ctnio);
+			break;
+		default:
+			ctl_nvme_set_invalid_field(ctnio);
+			break;
+		}
+		return (CTL_RETVAL_COMPLETE);
+	}
 
 	retval = lun->backend->config_read((union ctl_io *)ctnio);
 	return (retval);
@@ -11289,8 +11307,14 @@ ctl_nvmeio_precheck(struct ctl_nvmeio *ctnio)
 	ctnio->io_hdr.flags &= ~CTL_FLAG_DATA_MASK;
 	ctnio->io_hdr.flags |= entry->flags & CTL_FLAG_DATA_MASK;
 
-	/* All NVMe commands require a LUN. */
+	/* All NVMe commands other than IDENTIFY require a LUN. */
 	if (lun == NULL) {
+		if (entry->flags & CTL_CMD_FLAG_OK_ON_NO_LUN) {
+			ctnio->io_hdr.flags |= CTL_FLAG_IS_WAS_ON_RTR;
+			ctl_enqueue_rtr((union ctl_io *)ctnio);
+			return;
+		}
+
 		ctl_nvme_set_invalid_namespace(ctnio);
 		ctl_done((union ctl_io *)ctnio);
 		CTL_DEBUG_PRINT(("ctl_nvmeio_precheck: bailing out due to invalid LUN\n"));

@@ -15,7 +15,8 @@
 /* Administrative Command Set (CTL_IO_NVME_ADMIN). */
 const struct ctl_nvme_cmd_entry nvme_admin_cmd_table[256] =
 {
-	[NVME_OPC_IDENTIFY] = { ctl_nvme_identify, CTL_FLAG_DATA_IN },
+	[NVME_OPC_IDENTIFY] = { ctl_nvme_identify, CTL_FLAG_DATA_IN |
+				CTL_CMD_FLAG_OK_ON_NO_LUN },
 };
 
 /* NVM Command Set (CTL_IO_NVME). */
