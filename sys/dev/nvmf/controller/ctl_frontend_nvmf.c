@@ -271,6 +271,16 @@ nvmft_datamove_cb(void *arg, size_t xfered, int error)
 		MPASS(xfered == io->nvmeio.kern_data_len);
 		io->nvmeio.kern_data_resid -= xfered;
 	}
+
+	/*
+	 * Return without completing the request if called
+	 * synchronously.
+	 */
+	atomic_thread_fence_rel();
+	if (atomic_fetchadd_32(&io->nvmeio.ext_sg_entries, -1) > 1)
+		return;
+	atomic_thread_fence_acq();
+
 	if (io->nvmeio.kern_sg_entries) {
 		free(io->nvmeio.ext_data_ptr, M_NVMFT);
 		io->nvmeio.ext_data_ptr = NULL;
@@ -316,6 +326,14 @@ nvmft_datamove(union ctl_io *io)
 		mem = memdesc_vaddr(io->nvmeio.kern_data_ptr,
 		    io->nvmeio.kern_data_len);
 
+	/*
+	 * Abuse ext_sg_entries as a reference count in case the
+	 * callback runs synchronously.  This closes a race with
+	 * NVMF_SUCCESS_SENT writing to 'io' after it has been reused
+	 * for a different request, but also limits recursion.
+	 */
+	MPASS(io->nvmeio.ext_sg_entries == 0);
+	atomic_store_32(&io->nvmeio.ext_sg_entries, 2);
 	if ((io->io_hdr.flags & CTL_FLAG_DATA_MASK) == CTL_FLAG_DATA_IN) {
 		status = nvmf_send_controller_data(nc,
 		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
@@ -323,24 +341,41 @@ nvmft_datamove(union ctl_io *io)
 		switch (status) {
 		case NVMF_SUCCESS_SENT:
 			io->nvmeio.success_sent = true;
+			nvmft_command_completed(qp, nc);
 			/* FALLTHROUGH */
 		case NVMF_MORE:
 		case NVME_SC_SUCCESS:
-			return;
+			break;
 		default:
+			/* The callback doesn't run if an error occurs. */
+			atomic_subtract_32(&io->nvmeio.ext_sg_entries, 1);
+
 			ctl_nvme_set_generic_error(&io->nvmeio, status);
 			break;
 		}
 	} else {
+		atomic_store_32(&io->nvmeio.ext_sg_entries, 1);
 		error = nvmf_receive_controller_data(nc,
 		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
 		    0, nvmft_datamove_cb, io);
-		if (error == 0)
-			return;
-		nvmft_printf(ctrlr, "Failed to request capsule data: %d\n",
-		    error);
-		ctl_nvme_set_data_transfer_error(&io->nvmeio);
+		if (error != 0) {
+			/* The callback doesn't run if an error occurs. */
+			atomic_subtract_32(&io->nvmeio.ext_sg_entries, 1);
+
+			nvmft_printf(ctrlr,
+			    "Failed to request capsule data: %d\n", error);
+			ctl_nvme_set_data_transfer_error(&io->nvmeio);
+		}
 	}
+
+	/*
+	 * If the callback hasn't executed, leave the request alone.
+	 * If the callback has already run, complete the request.
+	 */
+	atomic_thread_fence_rel();
+	if (atomic_fetchadd_32(&io->nvmeio.ext_sg_entries, -1) > 1)
+		return;
+	atomic_thread_fence_acq();
 
 	if (io->nvmeio.kern_sg_entries) {
 		free(io->nvmeio.ext_data_ptr, M_NVMFT);
@@ -377,7 +412,6 @@ nvmft_done(union ctl_io *io)
 
 	if (io->nvmeio.success_sent) {
 		MPASS(io->io_hdr.status == CTL_SUCCESS);
-		nvmft_command_completed(qp, nc);
 	} else {
 		io->nvmeio.cpl.cid = cmd->cid;
 		nvmft_send_response(qp, &io->nvmeio.cpl);
