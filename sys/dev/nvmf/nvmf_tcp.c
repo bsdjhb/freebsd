@@ -1263,7 +1263,7 @@ nvmf_tcp_mbuf_vlist(struct nvmf_tcp_command_buffer *cb,
 
 	m = tail = NULL;
 	while (data_len > 0) {
-		KASSERT(sglist_cnt > 1, ("out of sglist entries"));
+		KASSERT(sglist_cnt >= 1, ("out of sglist entries"));
 
 		todo = data_len;
 		if (todo > vlist->ds_len - offset)
@@ -1309,7 +1309,7 @@ nvmf_tcp_mbuf_plist(struct nvmf_tcp_command_buffer *cb,
 	len = 0;
 	m = tail = nvmf_tcp_mext_pg(cb);
 	while (data_len > 0) {
-		KASSERT(sglist_cnt > 1, ("out of sglist entries"));
+		KASSERT(sglist_cnt >= 1, ("out of sglist entries"));
 
 		pa = plist->ds_addr + offset;
 		todo = data_len;
