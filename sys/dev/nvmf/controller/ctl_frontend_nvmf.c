@@ -354,7 +354,6 @@ nvmft_datamove(union ctl_io *io)
 			break;
 		}
 	} else {
-		atomic_store_32(&io->nvmeio.ext_sg_entries, 1);
 		error = nvmf_receive_controller_data(nc,
 		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
 		    0, nvmft_datamove_cb, io);
