@@ -14217,22 +14217,54 @@ ctl_done(union ctl_io *io)
 	 */
 #if 0
 	if (io->io_hdr.flags & CTL_FLAG_ALREADY_DONE) {
-		printf("%s: type %d msg %d cdb %x iptl: "
-		       "%u:%u:%u tag 0x%04x "
-		       "flag %#x status %x\n",
-			__func__,
-			io->io_hdr.io_type,
-			io->io_hdr.msg_type,
-			io->scsiio.cdb[0],
-			io->io_hdr.nexus.initid,
-			io->io_hdr.nexus.targ_port,
-			io->io_hdr.nexus.targ_lun,
-			(io->io_hdr.io_type ==
-			CTL_IO_TASK) ?
-			io->taskio.tag_num :
-			io->scsiio.tag_num,
-		        io->io_hdr.flags,
-			io->io_hdr.status);
+		switch (io->io_hdr.io_type) {
+		case CTL_IO_SCSI:
+		case CTL_IO_TASK:
+			printf("%s: type %d msg %d cdb %x iptl: "
+			    "%u:%u:%u tag 0x%04lx "
+			    "flag %#x status %x\n",
+			    __func__,
+			    io->io_hdr.io_type,
+			    io->io_hdr.msg_type,
+			    io->scsiio.cdb[0],
+			    io->io_hdr.nexus.initid,
+			    io->io_hdr.nexus.targ_port,
+			    io->io_hdr.nexus.targ_lun,
+			    (io->io_hdr.io_type == CTL_IO_TASK) ?
+			    io->taskio.tag_num :
+			    io->scsiio.tag_num,
+			    io->io_hdr.flags,
+			    io->io_hdr.status);
+			break;
+		case CTL_IO_NVME:
+		case CTL_IO_NVME_ADMIN:
+			printf("%s: type %d msg %d opc %x iptl: "
+			    "%u:%u:%u cid 0x%04x "
+			    "flag %#x status %x\n",
+			    __func__,
+			    io->io_hdr.io_type,
+			    io->io_hdr.msg_type,
+			    io->nvmeio.cmd.opc,
+			    io->io_hdr.nexus.initid,
+			    io->io_hdr.nexus.targ_port,
+			    io->io_hdr.nexus.targ_lun,
+			    io->nvmeio.cmd.cid,
+			    io->io_hdr.flags,
+			    io->io_hdr.status);
+			break;
+		default:
+			printf("%s: type %d msg %d iptl: "
+			    "%u:%u:%u flag %#x status %x\n",
+			    __func__,
+			    io->io_hdr.io_type,
+			    io->io_hdr.msg_type,
+			    io->io_hdr.nexus.initid,
+			    io->io_hdr.nexus.targ_port,
+			    io->io_hdr.nexus.targ_lun,
+			    io->io_hdr.flags,
+			    io->io_hdr.status);
+			break;
+		}
 	} else
 		io->io_hdr.flags |= CTL_FLAG_ALREADY_DONE;
 #endif
