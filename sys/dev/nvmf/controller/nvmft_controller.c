@@ -647,7 +647,9 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 		break;
 	}
 
-	if (status != NVMF_SUCCESS_SENT)
+	if (status == NVMF_SUCCESS_SENT)
+		nvmft_command_completed(ctrlr->admin, nc);
+	else
 		nvmft_send_generic_error(ctrlr->admin, nc, status);
 	nvmf_free_capsule(nc);
 }
