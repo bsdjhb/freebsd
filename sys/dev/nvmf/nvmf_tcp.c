@@ -45,10 +45,7 @@
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
-#include <machine/bus.h>
 #include <netinet/in.h>
-#include <vm/vm.h>
-#include <vm/vm_page.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_transport.h>
@@ -1093,11 +1090,12 @@ nvmf_tcp_mbuf_done(struct mbuf *m)
 }
 
 static struct mbuf *
-nvmf_tcp_mbuf(struct nvmf_tcp_command_buffer *cb, void *data, size_t len)
+nvmf_tcp_mbuf(void *arg, int how, void *data, size_t len)
 {
+	struct nvmf_tcp_command_buffer *cb = arg;
 	struct mbuf *m;
 
-	m = m_get(M_WAITOK, MT_DATA);
+	m = m_get(how, MT_DATA);
 	m->m_flags |= M_RDONLY;
 	m_extaddref(m, data, len, &cb->refs, nvmf_tcp_mbuf_done, cb, NULL);
 	m->m_len = len;
@@ -1114,379 +1112,14 @@ nvmf_tcp_free_mext_pg(struct mbuf *m)
 }
 
 static struct mbuf *
-nvmf_tcp_mext_pg(struct nvmf_tcp_command_buffer *cb)
+nvmf_tcp_mext_pg(void *arg, int how)
 {
+	struct nvmf_tcp_command_buffer *cb = arg;
 	struct mbuf *m;
 
-	m = mb_alloc_ext_pgs(M_WAITOK, nvmf_tcp_free_mext_pg);
+	m = mb_alloc_ext_pgs(how, nvmf_tcp_free_mext_pg);
 	m->m_ext.ext_arg1 = cb;
 	tcp_hold_command_buffer(cb);
-	return (m);
-}
-
-static struct mbuf *
-nvmf_tcp_mbuf_vaddr(struct nvmf_tcp_command_buffer *cb,
-    void *buf, uint32_t data_len, uint32_t *actual_len)
-{
-	*actual_len = data_len;
-	return (nvmf_tcp_mbuf(cb, buf, data_len));
-}
-
-static bool
-can_append_paddr(struct mbuf *m, vm_paddr_t pa)
-{
-	u_int last_len;
-
-	/* Can always append to an empty mbuf. */
-	if (m->m_epg_npgs == 0)
-		return (true);
-
-	/* Can't append to a full mbuf. */
-	if (m->m_epg_npgs == MBUF_PEXT_MAX_PGS)
-		return (false);
-
-	/* Can't append a non-page-aligned address to a non-empty mbuf. */
-	if ((pa & PAGE_MASK) != 0)
-		return (false);
-
-	/* Can't append if the last page is not a full page. */
-	last_len = m->m_epg_last_len;
-	if (m->m_epg_npgs == 1)
-		last_len += m->m_epg_1st_off;
-	return (last_len == PAGE_SIZE);
-}
-
-/*
- * Returns amount of data added to an M_EXTPG mbuf.
- */
-static size_t
-append_paddr_range(struct mbuf *m, vm_paddr_t pa, size_t len)
-{
-	size_t appended;
-
-	appended = 0;
-
-	/* Append the first page. */
-	if (m->m_epg_npgs == 0) {
-		m->m_epg_pa[0] = trunc_page(pa);
-		m->m_epg_npgs = 1;
-		m->m_epg_1st_off = pa & PAGE_MASK;
-		m->m_epg_last_len = PAGE_SIZE - m->m_epg_1st_off;
-		if (m->m_epg_last_len > len)
-			m->m_epg_last_len = len;
-		m->m_len = m->m_epg_last_len;
-		len -= m->m_epg_last_len;
-		pa += m->m_epg_last_len;
-		appended += m->m_epg_last_len;
-	}
-
-	/* Full pages. */
-	while (len >= PAGE_SIZE && m->m_epg_npgs < MBUF_PEXT_MAX_PGS) {
-		m->m_epg_pa[m->m_epg_npgs] = pa;
-		m->m_epg_npgs++;
-		m->m_epg_last_len = PAGE_SIZE;
-		m->m_len += PAGE_SIZE;
-		pa += PAGE_SIZE;
-		len -= PAGE_SIZE;
-		appended += PAGE_SIZE;
-	}
-
-	/* Final partial page. */
-	if (len > 0 && m->m_epg_npgs < MBUF_PEXT_MAX_PGS) {
-		KASSERT(len < PAGE_SIZE, ("final page is full page"));
-		m->m_epg_pa[m->m_epg_npgs] = pa;
-		m->m_epg_npgs++;
-		m->m_epg_last_len = len;
-		m->m_len += len;
-		appended += len;
-	}
-
-	return (appended);
-}
-
-static struct mbuf *
-nvmf_tcp_mbuf_paddr(struct nvmf_tcp_command_buffer *cb, vm_paddr_t pa,
-    uint32_t data_len, uint32_t *actual_len, bool can_truncate)
-{
-	struct mbuf *m, *tail;
-	uint32_t len;
-
-	if (can_truncate) {
-		vm_paddr_t end;
-
-		/*
-		 * Trim any partial page at the end, but not if it's
-		 * the only page.
-		 */
-		end = trunc_page(pa + data_len);
-		if (end > pa)
-			data_len = end - pa;
-	}
-	*actual_len = data_len;
-
-	m = tail = nvmf_tcp_mext_pg(cb);
-	while (data_len > 0) {
-		if (!can_append_paddr(tail, pa)) {
-			MBUF_EXT_PGS_ASSERT_SANITY(tail);
-			tail->m_next = nvmf_tcp_mext_pg(cb);
-			tail = tail->m_next;
-		}
-
-		len = append_paddr_range(tail, pa, data_len);
-		KASSERT(len > 0, ("did not append anything"));
-
-		pa += len;
-		data_len -= len;
-	}
-
-	MBUF_EXT_PGS_ASSERT_SANITY(tail);
-	return (m);
-}
-
-static struct mbuf *
-nvmf_tcp_mbuf_vlist(struct nvmf_tcp_command_buffer *cb,
-    struct bus_dma_segment *vlist, u_int sglist_cnt, size_t offset,
-    uint32_t data_len, uint32_t *actual_len)
-{
-	struct mbuf *m, *n, *tail;
-	uint32_t todo;
-
-	*actual_len = data_len;
-
-	while (vlist->ds_len <= offset) {
-		KASSERT(sglist_cnt > 1, ("out of sglist entries"));
-
-		offset -= vlist->ds_len;
-		vlist++;
-		sglist_cnt--;
-	}
-
-	m = tail = NULL;
-	while (data_len > 0) {
-		KASSERT(sglist_cnt >= 1, ("out of sglist entries"));
-
-		todo = data_len;
-		if (todo > vlist->ds_len - offset)
-			todo = vlist->ds_len - offset;
-
-		n = nvmf_tcp_mbuf(cb, (char *)(uintptr_t)vlist->ds_addr +
-		    offset, todo);
-
-		if (m == NULL) {
-			m = n;
-			tail = m;
-		} else {
-			tail->m_next = n;
-			tail = n;
-		}
-
-		offset = 0;
-		vlist++;
-		sglist_cnt--;
-		data_len -= todo;
-	}
-
-	return (m);
-}
-
-static struct mbuf *
-nvmf_tcp_mbuf_plist(struct nvmf_tcp_command_buffer *cb,
-    struct bus_dma_segment *plist, u_int sglist_cnt, size_t offset,
-    uint32_t data_len, uint32_t *actual_len, bool can_truncate)
-{
-	vm_paddr_t pa;
-	struct mbuf *m, *tail;
-	uint32_t done, len, todo;
-
-	while (plist->ds_len <= offset) {
-		KASSERT(sglist_cnt > 1, ("out of sglist entries"));
-
-		offset -= plist->ds_len;
-		plist++;
-		sglist_cnt--;
-	}
-
-	len = 0;
-	m = tail = nvmf_tcp_mext_pg(cb);
-	while (data_len > 0) {
-		KASSERT(sglist_cnt >= 1, ("out of sglist entries"));
-
-		pa = plist->ds_addr + offset;
-		todo = data_len;
-		if (todo > plist->ds_len - offset)
-			todo = plist->ds_len - offset;
-
-		/*
-		 * If truncation is enabled, avoid sending a final
-		 * partial page, but only if there is more data
-		 * available in the current segment.  Also, at least
-		 * some data must be sent, so only drop the final page
-		 * for this segment if the segment spans multiple
-		 * pages or some other data is already queued.
-		 */
-		else if (can_truncate) {
-			vm_paddr_t end;
-
-			end = trunc_page(pa + data_len);
-			if (end <= pa && len != 0) {
-				/*
-				 * This last segment is only a partial
-				 * page.
-				 */
-				data_len = 0;
-				break;
-			}
-			todo = end - pa;
-		}
-
-		offset = 0;
-		data_len -= todo;
-		len += todo;
-
-		while (todo > 0) {
-			if (!can_append_paddr(tail, pa)) {
-				MBUF_EXT_PGS_ASSERT_SANITY(tail);
-				tail->m_next = nvmf_tcp_mext_pg(cb);
-				tail = tail->m_next;
-			}
-
-			done = append_paddr_range(tail, pa, todo);
-			KASSERT(done > 0, ("did not append anything"));
-
-			pa += done;
-			todo -= done;
-		}
-	}
-
-	MBUF_EXT_PGS_ASSERT_SANITY(tail);
-	*actual_len = len;
-	return (m);
-}
-
-static struct mbuf *
-nvmf_tcp_mbuf_vmpages(struct nvmf_tcp_command_buffer *cb, vm_page_t *ma,
-    size_t offset, uint32_t data_len, uint32_t *actual_len, bool can_truncate)
-{
-	struct mbuf *m, *tail;
-
-	while (offset >= PAGE_SIZE) {
-		ma++;
-		offset -= PAGE_SIZE;
-	}
-
-	if (can_truncate) {
-		size_t end;
-
-		/*
-		 * Trim any partial page at the end, but not if it's
-		 * the only page.
-		 */
-		end = trunc_page(offset + data_len);
-		if (end > offset)
-			data_len = end - offset;
-	}
-	*actual_len = data_len;
-
-	m = tail = nvmf_tcp_mext_pg(cb);
-
-	/* First page. */
-	m->m_epg_pa[0] = VM_PAGE_TO_PHYS(*ma);
-	ma++;
-	m->m_epg_npgs = 1;
-	m->m_epg_1st_off = offset;
-	m->m_epg_last_len = PAGE_SIZE - offset;
-	if (m->m_epg_last_len > data_len)
-		m->m_epg_last_len = data_len;
-	m->m_len = m->m_epg_last_len;
-	data_len -= m->m_epg_last_len;
-
-	/* Full pages. */
-	while (data_len >= PAGE_SIZE) {
-		if (tail->m_epg_npgs == MBUF_PEXT_MAX_PGS) {
-			MBUF_EXT_PGS_ASSERT_SANITY(tail);
-			tail->m_next = nvmf_tcp_mext_pg(cb);
-			tail = tail->m_next;
-		}
-
-		tail->m_epg_pa[tail->m_epg_npgs] = VM_PAGE_TO_PHYS(*ma);
-		ma++;
-		tail->m_epg_npgs++;
-		tail->m_epg_last_len = PAGE_SIZE;
-		tail->m_len += PAGE_SIZE;
-		data_len -= PAGE_SIZE;
-	}
-
-	/* Last partial page. */
-	if (data_len > 0) {
-		if (tail->m_epg_npgs == MBUF_PEXT_MAX_PGS) {
-			MBUF_EXT_PGS_ASSERT_SANITY(tail);
-			tail->m_next = nvmf_tcp_mext_pg(cb);
-			tail = tail->m_next;
-		}
-
-		tail->m_epg_pa[tail->m_epg_npgs] = VM_PAGE_TO_PHYS(*ma);
-		ma++;
-		tail->m_epg_npgs++;
-		tail->m_epg_last_len = data_len;
-		tail->m_len += data_len;
-	}
-
-	MBUF_EXT_PGS_ASSERT_SANITY(tail);
-	return (m);
-}
-
-/* Somewhat similar to m_copym but avoids a partial mbuf at the end. */
-static struct mbuf *
-nvmf_tcp_mbuf_subset(struct nvmf_tcp_command_buffer *cb,
-    struct mbuf *m0, size_t offset, uint32_t data_len, uint32_t *actual_len,
-    bool can_truncate)
-{
-	struct mbuf *m, *tail;
-	uint32_t len;
-
-	while (offset >= m0->m_len) {
-		offset -= m0->m_len;
-		m0 = m0->m_next;
-	}
-
-	/* Always return at least one mbuf. */
-	len = m0->m_len - offset;
-	if (len > data_len)
-		len = data_len;
-
-	m = m_get(M_WAITOK, MT_DATA);
-	m->m_len = len;
-	if (m0->m_flags & (M_EXT|M_EXTPG)) {
-		m->m_data = m0->m_data + offset;
-		mb_dupcl(m, m0);
-	} else
-		memcpy(mtod(m, void *), mtod(m0, char *) + offset, m->m_len);
-
-	tail = m;
-	m0 = m0->m_next;
-	data_len -= len;
-	while (data_len > 0) {
-		/*
-		 * If truncation is enabled, don't send any partial
-		 * mbufs besides the first one.
-		 */
-		if (can_truncate && m0->m_len > data_len)
-			break;
-
-		tail->m_next = m_get(M_WAITOK, MT_DATA);
-		tail = tail->m_next;
-		tail->m_len = m0->m_len;
-		if (m0->m_flags & (M_EXT|M_EXTPG)) {
-			tail->m_data = m0->m_data;
-			mb_dupcl(tail, m0);
-		} else
-			memcpy(mtod(tail, void *), mtod(m0, char *),
-			    tail->m_len);
-
-		len += tail->m_len;
-		data_len -= tail->m_len;
-	}
-	*actual_len = len;
 	return (m);
 }
 
@@ -1505,47 +1138,12 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
     uint32_t data_offset, uint32_t data_len, uint32_t *actual_len,
     bool can_truncate)
 {
-	const struct memdesc *mem = &cb->io.io_mem;
 	struct mbuf *m;
-	uint32_t len;
+	size_t len;
 
-	switch (cb->io.io_mem.md_type) {
-	case MEMDESC_VADDR:
-		m = nvmf_tcp_mbuf_vaddr(cb, (char *)mem->u.md_vaddr +
-		    cb->io.io_offset + data_offset, data_len, &len);
-		break;
-	case MEMDESC_PADDR:
-		m = nvmf_tcp_mbuf_paddr(cb, mem->u.md_paddr +
-		    cb->io.io_offset + data_offset, data_len, &len,
-		    can_truncate);
-		break;
-	case MEMDESC_VLIST:
-		m = nvmf_tcp_mbuf_vlist(cb, mem->u.md_list, mem->md_nseg,
-		    cb->io.io_offset + data_offset, data_len, &len);
-		break;
-	case MEMDESC_PLIST:
-		m = nvmf_tcp_mbuf_plist(cb, mem->u.md_list, mem->md_nseg,
-		    cb->io.io_offset + data_offset, data_len, &len,
-		    can_truncate);
-		break;
-	case MEMDESC_UIO:
-		panic("uio not supported");
-	case MEMDESC_MBUF:
-		m = nvmf_tcp_mbuf_subset(cb, mem->u.md_mbuf, cb->io.io_offset +
-		    data_offset, data_len, &len, can_truncate);
-		break;
-	case MEMDESC_VMPAGES:
-		m = nvmf_tcp_mbuf_vmpages(cb, mem->u.md_ma, mem->md_offset +
-		    cb->io.io_offset + data_offset, data_len, &len,
-		    can_truncate);
-		break;
-	default:
-		__assert_unreachable();
-	}
-
-	if (!can_truncate)
-		KASSERT(len == data_len, ("short chain with no limit"));
-	KASSERT(m_length(m, NULL) == len, ("length mismatch"));
+	m = memdesc_alloc_ext_mbufs(&cb->io.io_mem, nvmf_tcp_mbuf,
+	    nvmf_tcp_mext_pg, cb, M_WAITOK, cb->io.io_offset + data_offset,
+	    data_len, &len, can_truncate);
 	if (actual_len != NULL)
 		*actual_len = len;
 	return (m);
