@@ -47,6 +47,7 @@ struct nvmf_host_qpair {
 	struct nvmf_qpair *qp;
 
 	bool	sq_flow_control;
+	bool	shutting_down;
 	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;
@@ -175,7 +176,17 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 		return;
 	}
 
+	/*
+	 * If the queue has been shutdown due to an error, silently
+	 * drop the response.
+	 */
 	mtx_lock(&qp->lock);
+	if (qp->qp == NULL) {
+		mtx_unlock(&qp->lock);
+		nvmf_free_capsule(nc);
+		return;
+	}
+
 	cmd = qp->active_commands[cid];
 	if (cmd == NULL) {
 		mtx_unlock(&qp->lock);
@@ -251,12 +262,25 @@ nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
 }
 
 void
-nvmf_destroy_qp(struct nvmf_host_qpair *qp)
+nvmf_shutdown_qp(struct nvmf_host_qpair *qp)
 {
-	struct nvmf_host_command *cmd, *ncmd;
+	struct nvmf_host_command *cmd;
 	struct nvmf_request *req;
+	struct nvmf_qpair *nq;
 
-	nvmf_free_qpair(qp->qp);
+	mtx_lock(&qp->lock);
+	nq = qp->qp;
+	qp->qp = NULL;
+
+	if (nq == NULL) {
+		while (qp->shutting_down)
+			mtx_sleep(qp, &qp->lock, 0, "nvmfqpsh", 0);
+		mtx_unlock(&qp->lock);
+		return;
+	}
+	mtx_unlock(&qp->lock);
+
+	nvmf_free_qpair(nq);
 
 	/*
 	 * Abort outstanding requests.  Active requests will have
@@ -287,6 +311,19 @@ nvmf_destroy_qp(struct nvmf_host_qpair *qp)
 		nvmf_free_request(req);
 	}
 
+	mtx_lock(&qp->lock);
+	qp->shutting_down = false;
+	mtx_unlock(&qp->lock);
+	wakeup(qp);
+}
+
+void
+nvmf_destroy_qp(struct nvmf_host_qpair *qp)
+{
+	struct nvmf_host_command *cmd, *ncmd;
+
+	nvmf_shutdown_qp(qp);
+
 	TAILQ_FOREACH_SAFE(cmd, &qp->free_commands, link, ncmd) {
 		TAILQ_REMOVE(&qp->free_commands, cmd, link);
 		free(cmd, M_NVMF);
@@ -304,6 +341,14 @@ nvmf_submit_request(struct nvmf_request *req)
 
 	qp = req->qp;
 	mtx_lock(&qp->lock);
+	if (qp->qp == NULL) {
+		mtx_unlock(&qp->lock);
+		printf("%s: aborted pending command %p\n", __func__, req);
+		nvmf_abort_capsule_data(req->nc, ECONNABORTED);
+		nvmf_abort_request(req, 0);
+		nvmf_free_request(req);
+		return;
+	}
 	cmd = TAILQ_FIRST(&qp->free_commands);
 	if (cmd == NULL) {
 		/*

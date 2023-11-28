@@ -335,7 +335,7 @@ nvmf_establish_connection(struct nvmf_softc *sc, struct nvmf_ivars *ivars)
 	return (0);
 }
 
-static void
+static bool
 nvmf_add_namespaces(struct nvmf_softc *sc)
 {
 	struct nvmf_completion_status status;
@@ -358,7 +358,15 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 			    "IDENTIFY namespace %u failed, status %#x\n", i,
 			    le16toh(status.cqe.status));
 			free(data, M_NVMF);
-			continue;
+			return (false);
+		}
+
+		if (status.io_error != 0) {
+			device_printf(sc->dev,
+			    "IDENTIFY namespace %u failed with I/O error %d\n",
+			    i, status.io_error);
+			free(data, M_NVMF);
+			return (false);
 		}
 
 		/*
@@ -376,6 +384,7 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 
 		nvmf_sim_add_ns(sc, i);
 	}
+	return (true);
 }
 
 static int
@@ -436,7 +445,10 @@ nvmf_attach(device_t dev)
 	if (error != 0)
 		goto out;
 
-	nvmf_add_namespaces(sc);
+	if (!nvmf_add_namespaces(sc)) {
+		nvmf_destroy_sim(sc);
+		goto out;
+	}
 
 	make_dev_args_init(&mda);
 	mda.mda_devsw = &nvmf_cdevsw;
@@ -492,7 +504,33 @@ nvmf_disconnect_task(void *arg, int pending __unused)
 	u_int i;
 
 	sx_xlock(&sc->connection_lock);
-	if (sc->admin == NULL || sc->detaching) {
+	if (sc->admin == NULL) {
+		/*
+		 * Ignore transport errors if there is no active
+		 * association.
+		 */
+		sx_xunlock(&sc->connection_lock);
+		return;
+	}
+
+	if (sc->detaching) {
+		if (sc->admin != NULL) {
+			/*
+			 * This unsticks the detach process if a
+			 * transport error occurs during detach.
+			 */
+			nvmf_shutdown_qp(sc->admin);
+		}
+		sx_xunlock(&sc->connection_lock);
+		return;
+	}
+
+	if (sc->cdev == NULL) {
+		/*
+		 * Transport error occurred during attach (nvmf_add_namespaces).
+		 * Shutdown the admin queue.
+		 */
+		nvmf_shutdown_qp(sc->admin);
 		sx_xunlock(&sc->connection_lock);
 		return;
 	}
@@ -611,12 +649,15 @@ nvmf_detach(device_t dev)
 		nvmf_destroy_qp(sc->io[i]);
 	}
 	free(sc->io, M_NVMF);
-	if (sc->admin != NULL) {
+
+	if (sc->admin != NULL)
 		nvmf_shutdown_controller(sc);
-		nvmf_destroy_qp(sc->admin);
-	}
 
 	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
+
+	if (sc->admin != NULL)
+		nvmf_destroy_qp(sc->admin);
+
 	sx_destroy(&sc->connection_lock);
 	free(sc->cdata, M_NVMF);
 	return (0);
