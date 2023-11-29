@@ -475,15 +475,16 @@ out:
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
 
+	if (sc->admin != NULL)
+		nvmf_shutdown_controller(sc);
+
 	for (i = 0; i < sc->num_io_queues; i++) {
 		if (sc->io[i] != NULL)
 			nvmf_destroy_qp(sc->io[i]);
 	}
 	free(sc->io, M_NVMF);
-	if (sc->admin != NULL) {
-		nvmf_shutdown_controller(sc);
+	if (sc->admin != NULL)
 		nvmf_destroy_qp(sc->admin);
-	}
 
 	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
 	sx_destroy(&sc->connection_lock);
@@ -645,13 +646,13 @@ nvmf_detach(device_t dev)
 	callout_drain(&sc->ka_tx_timer);
 	callout_drain(&sc->ka_rx_timer);
 
+	if (sc->admin != NULL)
+		nvmf_shutdown_controller(sc);
+
 	for (i = 0; i < sc->num_io_queues; i++) {
 		nvmf_destroy_qp(sc->io[i]);
 	}
 	free(sc->io, M_NVMF);
-
-	if (sc->admin != NULL)
-		nvmf_shutdown_controller(sc);
 
 	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
 
