@@ -409,13 +409,21 @@ void
 nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
     int error)
 {
-	mtx_lock(&ctrlr->lock);
-
 	/*
+	 * If a queue pair is closed, that isn't an error per se.
+	 * That just means additional commands cannot be received on
+	 * that queue pair.
+	 *
 	 * If the admin queue pair is closed while idle or while
 	 * shutting down, terminate the association immediately.
+	 *
+	 * If an I/O queue pair is closed, just ignore it.
 	 */
-	if (qp == ctrlr->admin && error == 0) {
+	if (error == 0) {
+		if (qp != ctrlr->admin)
+			return;
+
+		mtx_lock(&ctrlr->lock);
 		if (ctrlr->shutdown) {
 			ctrlr->admin_closed = true;
 			mtx_unlock(&ctrlr->lock);
@@ -450,6 +458,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	}
 
 	/* Ignore transport errors if we are already shutting down. */
+	mtx_lock(&ctrlr->lock);
 	if (ctrlr->shutdown) {
 		mtx_unlock(&ctrlr->lock);
 		return;
