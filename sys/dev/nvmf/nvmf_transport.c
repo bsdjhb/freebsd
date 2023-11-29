@@ -31,6 +31,7 @@
 #include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/mbuf.h>
 #include <sys/module.h>
 #include <sys/refcount.h>
 #include <sys/sysctl.h>
@@ -237,18 +238,11 @@ nvmf_receive_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 
 u_int
 nvmf_send_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
-    struct memdesc *mem, size_t len, u_int offset,
-    nvmf_io_complete_t *complete_cb, void *cb_arg)
+    struct mbuf *m, size_t len)
 {
-	struct nvmf_io_request io;
-
-	io.io_mem = *mem;
-	io.io_len = len;
-	io.io_offset = offset;
-	io.io_complete = complete_cb;
-	io.io_complete_arg = cb_arg;
-	return (nc->nc_qpair->nq_ops->send_controller_data(nc, data_offset,
-	    &io));
+	MPASS(m_length(m, NULL) == len);
+	return (nc->nc_qpair->nq_ops->send_controller_data(nc, data_offset, m,
+	    len));
 }
 
 int

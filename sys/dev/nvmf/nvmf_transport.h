@@ -37,6 +37,7 @@
 #include <sys/sysctl.h>
 #include <dev/nvmf/nvmf_proto.h>
 
+struct mbuf;
 struct memdesc;
 struct nvmf_capsule;
 struct nvmf_connection;
@@ -148,13 +149,11 @@ int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
  * - NVMF_MORE: The transfer has completed successfully, but the
  *   transfer did not complete the data buffer.
  *
- * If an error does not occur, the callback will be invoked once the
- * data transfer has completed.  Note that the callback might be
- * invoked before this function returns.
+ * The mbuf chain in 'm' is consumed by this function even if an error
+ * is returned.
  */
 u_int	nvmf_send_controller_data(struct nvmf_capsule *nc,
-    uint32_t data_offset, struct memdesc *mem, size_t len, u_int offset,
-    nvmf_io_complete_t *complete_cb, void *cb_arg);
+    uint32_t data_offset, struct mbuf *m, size_t len);
 
 #define	NVMF_SUCCESS_SENT	0x100
 #define	NVMF_MORE		0x101

@@ -2002,30 +2002,30 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint32_t data_offset,
 
 static u_int
 tcp_send_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
-    struct nvmf_io_request *io)
+    struct mbuf *m, size_t len)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
-	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_sgl_descriptor *sgl;
+	struct mbuf *n, *p;
 	uint32_t data_len;
 	bool last_pdu, last_xfer;
 
 	if (nc->nc_qe_len != sizeof(struct nvme_command) ||
 	    !qp->qp.nq_controller) {
-		nvmf_complete_io_request(io, 0, EINVAL);
+		m_freem(m);
 		return (NVME_SC_INVALID_FIELD);
 	}
 
 	sgl = &nc->nc_sqe.sgl;
 	data_len = le32toh(sgl->length);
-	if (data_offset + io->io_len > data_len) {
-		nvmf_complete_io_request(io, 0, EFBIG);
+	if (data_offset + len > data_len) {
+		m_freem(m);
 		return (NVME_SC_INVALID_FIELD);
 	}
-	last_xfer = (data_offset + io->io_len == data_len);
+	last_xfer = (data_offset + len == data_len);
 
 	if (sgl->type != NVME_SGL_TYPE_COMMAND_BUFFER) {
-		nvmf_complete_io_request(io, 0, EINVAL);
+		m_freem(m);
 		return (NVME_SC_INVALID_FIELD);
 	}
 
@@ -2033,33 +2033,37 @@ tcp_send_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 	    ("%s: starting data_offset %u doesn't match end of previous xfer %u",
 	    __func__, data_offset, TCAP(nc)->tx_data_offset));
 
-	/* Allocate a command buffer for the mbufs to hold a reference on. */
-	cb = tcp_alloc_command_buffer(qp, io, data_offset, io->io_len,
-	    nc->nc_sqe.cid);
+	/* Queue one more C2H_DATA PDUs containing the data from 'm'. */
+	while (m != NULL) {
+		uint32_t todo;
 
-	/* Queue one more C2H_DATA PDUs containing the data from io. */
-	while (data_len > 0) {
-		struct mbuf *m;
-		uint32_t sent, todo;
+		todo = m->m_len;
+		p = m;
+		n = p->m_next;
+		while (n != NULL) {
+			if (todo + n->m_len > qp->maxc2hdata) {
+				p->m_next = NULL;
+				break;
+			}
+			todo += n->m_len;
+			p = n;
+			n = p->m_next;
+		}
+		MPASS(m_length(m, NULL) == todo);
 
-		todo = data_len;
-		if (todo > qp->maxc2hdata)
-			todo = qp->maxc2hdata;
-		m = nvmf_tcp_command_buffer_mbuf(cb, data_offset, todo, &sent,
-		    todo < data_len);
-		last_pdu = (sent == data_len && last_xfer);
-		tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset, m, sent,
+		last_pdu = (n == NULL && last_xfer);
+		tcp_send_c2h_pdu(qp, nc->nc_sqe.cid, data_offset, m, todo,
 		    last_pdu, last_pdu && qp->send_success);
 
-		cb->data_xfered += sent;
-		data_offset += sent;
-		data_len -= sent;
+		data_offset += todo;
+		data_len -= todo;
+		m = n;
 	}
+	MPASS(data_len == 0);
 
 #ifdef INVARIANTS
 	TCAP(nc)->tx_data_offset = data_offset;
 #endif
-	tcp_release_command_buffer(cb);
 	if (!last_xfer)
 		return (NVMF_MORE);
 	else if (qp->send_success)
