@@ -157,12 +157,15 @@ nvmf_dispatch_command(struct nvmf_host_qpair *qp, struct nvmf_host_command *cmd)
 }
 
 static void
-nvmf_qp_error(void *arg, int error __unused)
+nvmf_qp_error(void *arg, int error)
 {
 	struct nvmf_host_qpair *qp = arg;
 	struct nvmf_softc *sc = qp->sc;
 
-	device_printf(sc->dev, "error on %s, disconnecting\n", qp->name);
+	/* Ignore simple close of queue pairs during shutdown. */
+	if (!(sc->detaching && error == 0))
+		device_printf(sc->dev, "error %d on %s, disconnecting\n", error,
+		    qp->name);
 	nvmf_disconnect(sc);
 }
 
