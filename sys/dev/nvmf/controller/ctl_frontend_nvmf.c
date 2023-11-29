@@ -33,6 +33,7 @@
 #include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/mbuf.h>
 #include <sys/memdesc.h>
 #include <sys/module.h>
 #include <sys/proc.h>
@@ -261,43 +262,144 @@ nvmft_terminate_commands(struct nvmft_controller *ctrlr)
 }
 
 static void
-nvmft_datamove_cb(void *arg, size_t xfered, int error)
+nvmft_datamove_out_cb(void *arg, size_t xfered, int error)
 {
-	union ctl_io *io = arg;
+	struct ctl_nvmeio *ctnio = arg;
 
 	if (error != 0) {
-		ctl_nvme_set_data_transfer_error(&io->nvmeio);
+		ctl_nvme_set_data_transfer_error(ctnio);
 	} else {
-		MPASS(xfered == io->nvmeio.kern_data_len);
-		io->nvmeio.kern_data_resid -= xfered;
+		MPASS(xfered == ctnio->kern_data_len);
+		ctnio->kern_data_resid -= xfered;
 	}
 
-	/*
-	 * Return without completing the request if called
-	 * synchronously.
-	 */
-	atomic_thread_fence_rel();
-	if (atomic_fetchadd_32(&io->nvmeio.ext_sg_entries, -1) > 1)
-		return;
-	atomic_thread_fence_acq();
-
-	if (io->nvmeio.kern_sg_entries) {
-		free(io->nvmeio.ext_data_ptr, M_NVMFT);
-		io->nvmeio.ext_data_ptr = NULL;
+	if (ctnio->kern_sg_entries) {
+		free(ctnio->ext_data_ptr, M_NVMFT);
+		ctnio->ext_data_ptr = NULL;
 	} else
-		MPASS(io->nvmeio.ext_data_ptr == NULL);
-	ctl_datamove_done(io, false);
+		MPASS(ctnio->ext_data_ptr == NULL);
+	ctl_datamove_done((union ctl_io *)ctnio, false);
+}
+
+static void
+nvmft_datamove_out(struct ctl_nvmeio *ctnio, struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc)
+{
+	struct memdesc mem;
+	int error;
+
+	MPASS(ctnio->ext_data_ptr == NULL);
+	if (ctnio->kern_sg_entries > 0) {
+		struct ctl_sg_entry *sgl;
+		struct bus_dma_segment *vlist;
+
+		vlist = mallocarray(ctnio->kern_sg_entries, sizeof(*vlist),
+		    M_NVMFT, M_WAITOK);
+		ctnio->ext_data_ptr = (void *)vlist;
+		sgl = (struct ctl_sg_entry *)ctnio->kern_data_ptr;
+		for (u_int i = 0; i < ctnio->kern_sg_entries; i++) {
+			vlist[i].ds_addr = (uintptr_t)sgl[i].addr;
+			vlist[i].ds_len = sgl[i].len;
+		}
+		mem = memdesc_vlist(vlist, ctnio->kern_sg_entries);
+	} else
+		mem = memdesc_vaddr(ctnio->kern_data_ptr, ctnio->kern_data_len);
+
+	error = nvmf_receive_controller_data(nc, ctnio->kern_rel_offset, &mem,
+	    ctnio->kern_data_len, 0, nvmft_datamove_out_cb, ctnio);
+	if (error == 0)
+		return;
+
+	nvmft_printf(nvmft_qpair_ctrlr(qp),
+	    "Failed to request capsule data: %d\n", error);
+	ctl_nvme_set_data_transfer_error(ctnio);
+
+	if (ctnio->kern_sg_entries) {
+		free(ctnio->ext_data_ptr, M_NVMFT);
+		ctnio->ext_data_ptr = NULL;
+	} else
+		MPASS(ctnio->ext_data_ptr == NULL);
+	ctl_datamove_done((union ctl_io *)ctnio, true);
+}
+
+static struct mbuf *
+nvmft_copy_data(struct ctl_nvmeio *ctnio)
+{
+	struct ctl_sg_entry *sgl;
+	struct mbuf *m0, *m;
+	uint32_t resid, off, todo;
+	int mlen;
+
+	MPASS(ctnio->kern_data_len != 0);
+
+	m0 = m_getm2(NULL, ctnio->kern_data_len, M_WAITOK, MT_DATA, 0);
+
+	if (ctnio->kern_sg_entries == 0) {
+		m_copyback(m0, 0, ctnio->kern_data_len, ctnio->kern_data_ptr);
+		return (m0);
+	}
+
+	resid = ctnio->kern_data_len;
+	sgl = (struct ctl_sg_entry *)ctnio->kern_data_ptr;
+	off = 0;
+	m = m0;
+	mlen = M_TRAILINGSPACE(m);
+	for (;;) {
+		todo = MIN(mlen, sgl->len - off);
+		memcpy(mtod(m, char *) + m->m_len, (char *)sgl->addr + off,
+		    todo);
+		m->m_len += todo;
+		resid -= todo;
+		if (resid == 0) {
+			MPASS(m->m_next == NULL);
+			break;
+		}
+
+		off += todo;
+		if (off == sgl->len) {
+			sgl++;
+			off = 0;
+		}
+		mlen -= todo;
+		if (mlen == 0) {
+			m = m->m_next;
+			mlen = M_TRAILINGSPACE(m);
+		}
+	}
+
+	return (m0);
+}
+
+static void
+nvmft_datamove_in(struct ctl_nvmeio *ctnio, struct nvmft_qpair *qp,
+    struct nvmf_capsule *nc)
+{
+	struct mbuf *m;
+	u_int status;
+
+	m = nvmft_copy_data(ctnio);
+	status = nvmf_send_controller_data(nc, ctnio->kern_rel_offset, m,
+	    ctnio->kern_data_len);
+	switch (status) {
+	case NVMF_SUCCESS_SENT:
+		ctnio->success_sent = true;
+		nvmft_command_completed(qp, nc);
+		/* FALLTHROUGH */
+	case NVMF_MORE:
+	case NVME_SC_SUCCESS:
+		break;
+	default:
+		ctl_nvme_set_generic_error(ctnio, status);
+		break;
+	}
+	ctl_datamove_done((union ctl_io *)ctnio, true);
 }
 
 static void
 nvmft_datamove(union ctl_io *io)
 {
-	struct nvmft_controller *ctrlr;
 	struct nvmf_capsule *nc;
 	struct nvmft_qpair *qp;
-	struct memdesc mem;
-	u_int status;
-	int error;
 
 	/* Some CTL commands preemptively set a success status. */
 	MPASS(io->io_hdr.status == CTL_STATUS_NONE ||
@@ -306,82 +408,11 @@ nvmft_datamove(union ctl_io *io)
 
 	nc = NVMFT_NC(io);
 	qp = NVMFT_QP(io);
-	ctrlr = nvmft_qpair_ctrlr(qp);
 
-	MPASS(io->nvmeio.ext_data_ptr == NULL);
-	if (io->nvmeio.kern_sg_entries > 0) {
-		struct ctl_sg_entry *sgl;
-		struct bus_dma_segment *vlist;
-
-		vlist = mallocarray(io->nvmeio.kern_sg_entries, sizeof(*vlist),
-		    M_NVMFT, M_WAITOK);
-		io->nvmeio.ext_data_ptr = (void *)vlist;
-		sgl = (struct ctl_sg_entry *)io->nvmeio.kern_data_ptr;
-		for (u_int i = 0; i < io->nvmeio.kern_sg_entries; i++) {
-			vlist[i].ds_addr = (uintptr_t)sgl[i].addr;
-			vlist[i].ds_len = sgl[i].len;
-		}
-		mem = memdesc_vlist(vlist, io->nvmeio.kern_sg_entries);
-	} else
-		mem = memdesc_vaddr(io->nvmeio.kern_data_ptr,
-		    io->nvmeio.kern_data_len);
-
-	/*
-	 * Abuse ext_sg_entries as a reference count in case the
-	 * callback runs synchronously.  This closes a race with
-	 * NVMF_SUCCESS_SENT writing to 'io' after it has been reused
-	 * for a different request, but also limits recursion.
-	 */
-	MPASS(io->nvmeio.ext_sg_entries == 0);
-	atomic_store_32(&io->nvmeio.ext_sg_entries, 2);
-	if ((io->io_hdr.flags & CTL_FLAG_DATA_MASK) == CTL_FLAG_DATA_IN) {
-		status = nvmf_send_controller_data(nc,
-		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
-		    0, nvmft_datamove_cb, io);
-		switch (status) {
-		case NVMF_SUCCESS_SENT:
-			io->nvmeio.success_sent = true;
-			nvmft_command_completed(qp, nc);
-			/* FALLTHROUGH */
-		case NVMF_MORE:
-		case NVME_SC_SUCCESS:
-			break;
-		default:
-			/* The callback doesn't run if an error occurs. */
-			atomic_subtract_32(&io->nvmeio.ext_sg_entries, 1);
-
-			ctl_nvme_set_generic_error(&io->nvmeio, status);
-			break;
-		}
-	} else {
-		error = nvmf_receive_controller_data(nc,
-		    io->nvmeio.kern_rel_offset, &mem, io->nvmeio.kern_data_len,
-		    0, nvmft_datamove_cb, io);
-		if (error != 0) {
-			/* The callback doesn't run if an error occurs. */
-			atomic_subtract_32(&io->nvmeio.ext_sg_entries, 1);
-
-			nvmft_printf(ctrlr,
-			    "Failed to request capsule data: %d\n", error);
-			ctl_nvme_set_data_transfer_error(&io->nvmeio);
-		}
-	}
-
-	/*
-	 * If the callback hasn't executed, leave the request alone.
-	 * If the callback has already run, complete the request.
-	 */
-	atomic_thread_fence_rel();
-	if (atomic_fetchadd_32(&io->nvmeio.ext_sg_entries, -1) > 1)
-		return;
-	atomic_thread_fence_acq();
-
-	if (io->nvmeio.kern_sg_entries) {
-		free(io->nvmeio.ext_data_ptr, M_NVMFT);
-		io->nvmeio.ext_data_ptr = NULL;
-	} else
-		MPASS(io->nvmeio.ext_data_ptr == NULL);
-	ctl_datamove_done(io, true);
+	if ((io->io_hdr.flags & CTL_FLAG_DATA_MASK) == CTL_FLAG_DATA_IN)
+		nvmft_datamove_in(&io->nvmeio, qp, nc);
+	else
+		nvmft_datamove_out(&io->nvmeio, qp, nc);
 }
 
 static void

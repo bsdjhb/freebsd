@@ -31,6 +31,7 @@
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/mbuf.h>
 #include <sys/memdesc.h>
 #include <sys/mutex.h>
 #include <sys/sbuf.h>
@@ -624,28 +625,32 @@ handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
 }
 
 static void
-identify_cdata_complete(void *arg, size_t len __unused, int error __unused)
-{
-	struct nvmft_controller *ctrlr = arg;
-
-	nvmft_controller_rele(ctrlr);
-}
-
-static void
 handle_identify_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc, const struct nvme_command *cmd)
 {
-	struct memdesc mem;
+	struct mbuf *m;
+	size_t data_len;
 	u_int status;
 	uint8_t cns;
 
 	cns = le32toh(cmd->cdw10) & 0xFF;
+	data_len = nvmf_capsule_data_len(nc);
+	if (data_len != sizeof(ctrlr->cdata)) {
+		nvmft_printf(ctrlr,
+		    "Invalid length %zu for IDENTIFY with CNS %#x\n", data_len,
+		    cns);
+		nvmft_send_generic_error(ctrlr->admin, nc,
+		    NVME_SC_INVALID_OPCODE);
+		nvmf_free_capsule(nc);
+		return;
+	}
+
 	switch (cns) {
 	case 1:
-		nvmft_controller_ref(ctrlr);
-		mem = memdesc_vaddr(&ctrlr->cdata, sizeof(ctrlr->cdata));
-		status = nvmf_send_controller_data(nc, 0, &mem,
-		    sizeof(ctrlr->cdata), 0, identify_cdata_complete, ctrlr);
+		m = m_getm2(NULL, sizeof(ctrlr->cdata), M_WAITOK, MT_DATA, 0);
+		m_copyback(m, 0, sizeof(ctrlr->cdata), (void *)&ctrlr->cdata);
+		status = nvmf_send_controller_data(nc, 0, m,
+		    sizeof(ctrlr->cdata));
 		MPASS(status != NVMF_MORE);
 		break;
 	case 0:
