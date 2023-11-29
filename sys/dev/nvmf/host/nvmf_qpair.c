@@ -48,6 +48,7 @@ struct nvmf_host_qpair {
 
 	bool	sq_flow_control;
 	bool	shutting_down;
+	u_int	allocating;
 	u_int	qsize;
 	uint16_t sqhd;
 	uint16_t sqtail;
@@ -68,6 +69,7 @@ nvmf_allocate_request(struct nvmf_host_qpair *qp, void *sqe,
     nvmf_request_complete_t *cb, void *cb_arg, int how)
 {
 	struct nvmf_request *req;
+	struct nvmf_qpair *nq;
 
 	KASSERT(how == M_WAITOK || how == M_NOWAIT,
 	    ("%s: invalid how", __func__));
@@ -76,14 +78,31 @@ nvmf_allocate_request(struct nvmf_host_qpair *qp, void *sqe,
 	if (req == NULL)
 		return (NULL);
 
-	req->qp = qp;
-	req->cb = cb;
-	req->cb_arg = cb_arg;
-	req->nc = nvmf_allocate_command(qp->qp, sqe, how);
-	if (req->nc == NULL) {
+	mtx_lock(&qp->lock);
+	nq = qp->qp;
+	if (nq == NULL) {
+		mtx_unlock(&qp->lock);
 		free(req, M_NVMF);
 		return (NULL);
 	}
+	qp->allocating++;
+	MPASS(qp->allocating != 0);
+	mtx_unlock(&qp->lock);
+
+	req->qp = qp;
+	req->cb = cb;
+	req->cb_arg = cb_arg;
+	req->nc = nvmf_allocate_command(nq, sqe, how);
+	if (req->nc == NULL) {
+		free(req, M_NVMF);
+		req = NULL;
+	}
+
+	mtx_lock(&qp->lock);
+	qp->allocating--;
+	if (qp->allocating == 0 && qp->shutting_down)
+		wakeup(qp);
+	mtx_unlock(&qp->lock);
 
 	return (req);
 }
@@ -182,6 +201,9 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	 */
 	mtx_lock(&qp->lock);
 	if (qp->qp == NULL) {
+		device_printf(sc->dev,
+		    "received completion for CID %u on shutdown %s\n", cid,
+		    qp->name);
 		mtx_unlock(&qp->lock);
 		nvmf_free_capsule(nc);
 		return;
@@ -278,6 +300,9 @@ nvmf_shutdown_qp(struct nvmf_host_qpair *qp)
 		mtx_unlock(&qp->lock);
 		return;
 	}
+	qp->shutting_down = true;
+	while (qp->allocating != 0)
+		mtx_sleep(qp, &qp->lock, 0, "nvmfqpqu", 0);
 	mtx_unlock(&qp->lock);
 
 	nvmf_free_qpair(nq);
