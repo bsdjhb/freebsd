@@ -625,9 +625,8 @@ ramdisk_namespace_data(union ctl_io *io)
 	nsdata->nsfeat = NVMEB(NVME_NS_DATA_NSFEAT_THIN_PROV) |
 	    NVMEB(NVME_NS_DATA_NSFEAT_DEALLOC);
 	nsdata->nlbaf = 1 - 1;
-	/* XXX: DWZ? */
-	nsdata->dlfeat = NVME_NS_DATA_DLFEAT_READ_00 <<
-	    NVME_NS_DATA_DLFEAT_READ_SHIFT;
+	nsdata->dlfeat = NVMEB(NVME_NS_DATA_DLFEAT_DWZ) |
+	    NVME_NS_DATA_DLFEAT_READ_00 << NVME_NS_DATA_DLFEAT_READ_SHIFT;
 	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
 	nsdata->lbaf[0] = (ffs(cbe_lun->blocksize) - 1) <<
 	    NVME_NS_DATA_LBAF_LBADS_SHIFT;
