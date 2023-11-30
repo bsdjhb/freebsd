@@ -365,7 +365,6 @@ ctl_backend_ramdisk_cmp(union ctl_io *io)
 	struct ctl_be_lun *cbe_lun = CTL_BACKEND_LUN(io);
 	struct ctl_be_ramdisk_lun *be_lun = (struct ctl_be_ramdisk_lun *)cbe_lun;
 	uint8_t *page;
-	uint8_t info[8];
 	uint64_t lba;
 	u_int lbaoff, lbas, res, off;
 
@@ -386,23 +385,7 @@ ctl_backend_ramdisk_cmp(union ctl_io *io)
 	free(io->scsiio.kern_data_ptr, M_RAMDISK);
 	if (lbas > 0) {
 		off += ctl_kern_rel_offset(io) - ctl_kern_data_len(io);
-		switch (io->io_hdr.io_type) {
-		case CTL_IO_SCSI:
-			scsi_u64to8b(off, info);
-			ctl_set_sense(&io->scsiio, /*current_error*/ 1,
-			    /*sense_key*/ SSD_KEY_MISCOMPARE,
-			    /*asc*/ 0x1D, /*ascq*/ 0x00,
-			    /*type*/ SSD_ELEM_INFO,
-			    /*size*/ sizeof(info), /*data*/ &info,
-			    /*type*/ SSD_ELEM_NONE);
-			break;
-		case CTL_IO_NVME:
-			ctl_nvme_set_error(&io->nvmeio,
-			    NVME_SCT_MEDIA_ERROR, NVME_SC_COMPARE_FAILURE);
-			break;
-		default:
-			__assert_unreachable();
-		}
+		ctl_io_set_compare_failure(io, off);
 		return (1);
 	}
 	return (0);
