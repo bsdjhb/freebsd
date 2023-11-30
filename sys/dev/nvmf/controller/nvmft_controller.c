@@ -80,7 +80,6 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	ctrlr->np = np;
 	mtx_init(&ctrlr->lock, "nvmft controller", NULL, MTX_DEF);
 	callout_init(&ctrlr->ka_timer, 1);
-	refcount_init(&ctrlr->refs, 1);
 	TASK_INIT(&ctrlr->shutdown_task, 0, nvmft_controller_shutdown, ctrlr);
 	TIMEOUT_TASK_INIT(taskqueue_thread, &ctrlr->terminate_task, 0,
 	    nvmft_controller_terminate, ctrlr);
@@ -94,24 +93,11 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 }
 
 static void
-nvmft_controller_ref(struct nvmft_controller *ctrlr)
-{
-	refcount_acquire(&ctrlr->refs);
-}
-
-static void
 nvmft_controller_free(struct nvmft_controller *ctrlr)
 {
 	mtx_destroy(&ctrlr->lock);
 	MPASS(ctrlr->io_qpairs == NULL);
 	free(ctrlr, M_NVMFT);
-}
-
-static void
-nvmft_controller_rele(struct nvmft_controller *ctrlr)
-{
-	if (refcount_release(&ctrlr->refs))
-		nvmft_controller_free(ctrlr);
 }
 
 static void
@@ -402,7 +388,7 @@ nvmft_controller_terminate(void *arg, int pending)
 	callout_drain(&ctrlr->ka_timer);
 
 	nvmft_printf(ctrlr, "association terminated\n");
-	nvmft_controller_rele(ctrlr);
+	nvmft_controller_free(ctrlr);
 	nvmft_port_rele(np);
 }
 

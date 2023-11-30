@@ -86,7 +86,6 @@ struct nvmft_controller {
 	uint8_t	hostnqn[NVME_NQN_FIELD_SIZE];
 
 	TAILQ_ENTRY(nvmft_controller) link;
-	u_int	refs;
 
 	/*
 	 * Each queue can have at most UINT16_MAX commands, so the total
