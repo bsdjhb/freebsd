@@ -726,6 +726,9 @@ ctl_backend_ramdisk_ws(union ctl_io *io)
 	uint64_t lba;
 	u_int lbaoff, lbas;
 
+	KASSERT(io->io_hdr.io_type == CTL_IO_SCSI,
+	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
+
 	if (lbalen->flags & ~(SWS_LBDATA | SWS_UNMAP | SWS_ANCHOR | SWS_NDOB)) {
 		ctl_set_invalid_field(&io->scsiio,
 				      /*sks_valid*/ 1,
@@ -773,6 +776,9 @@ ctl_backend_ramdisk_unmap(union ctl_io *io)
 	struct ctl_be_lun *cbe_lun = CTL_BACKEND_LUN(io);
 	struct ctl_ptr_len_flags *ptrlen = (struct ctl_ptr_len_flags *)ARGS(io);
 	struct scsi_unmap_desc *buf, *end;
+
+	KASSERT(io->io_hdr.io_type == CTL_IO_SCSI,
+	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
 
 	if ((ptrlen->flags & ~SU_ANCHOR) != 0) {
 		ctl_set_invalid_field(&io->scsiio,
@@ -859,6 +865,9 @@ ctl_backend_ramdisk_wu(union ctl_io *io)
 	struct ctl_be_lun *cbe_lun = CTL_BACKEND_LUN(io);
 	struct ctl_lba_len_flags *lbalen = ARGS(io);
 
+	KASSERT(io->io_hdr.io_type == CTL_IO_NVME,
+	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
+
 	/*
 	 * XXX: Not quite right as reads will return zeroes rather
 	 * than failing.
@@ -877,6 +886,9 @@ ctl_backend_ramdisk_wz(union ctl_io *io)
 	uint8_t *page;
 	uint64_t lba;
 	u_int lbaoff, lbas;
+
+	KASSERT(io->io_hdr.io_type == CTL_IO_NVME,
+	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
 
 	if ((le32toh(io->nvmeio.cmd.cdw12) & (1U << 25)) != 0) {
 		ctl_backend_ramdisk_delete(cbe_lun, lbalen->lba, lbalen->len,
@@ -910,6 +922,9 @@ ctl_backend_ramdisk_dsm(union ctl_io *io)
 	uint64_t lba;
 	uint32_t num_blocks;
 	u_int i, ranges;
+
+	KASSERT(io->io_hdr.io_type == CTL_IO_NVME,
+	    ("%s: unexpected I/O type %x", __func__, io->io_hdr.io_type));
 
 	ranges = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
 	r = (struct nvme_dsm_range *)io->nvmeio.kern_data_ptr;
