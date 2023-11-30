@@ -770,6 +770,13 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 
 	switch (cmd->opc) {
 	case NVME_OPC_FLUSH:
+		if (cmd->nsid == htole32(0xffffffff)) {
+			nvmft_send_generic_error(qp, nc,
+			    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
+			nvmf_free_capsule(nc);
+			break;
+		}
+		/* FALLTHROUGH */
 	case NVME_OPC_WRITE:
 	case NVME_OPC_READ:
 	case NVME_OPC_WRITE_UNCORRECTABLE:
