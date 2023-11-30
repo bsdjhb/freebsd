@@ -445,7 +445,7 @@ struct ctl_nvmeio {
 
 	struct nvme_command cmd;	/* SQE */
 	struct nvme_completion cpl;	/* CQE */
-	bool success_sent;		/* datamove already sent CQE */
+	bool       success_sent;	/* datamove already sent CQE */
 	ctl_be_move_done_t be_move_done;	/* called by fe */
 	ctl_io_cont io_cont;		/* to continue processing */
 	ctl_ref	    kern_data_ref;	/* Method to reference/release data */
@@ -887,6 +887,38 @@ ctl_set_io_cont(union ctl_io *io, ctl_io_cont io_cont)
 	case CTL_IO_NVME:
 	case CTL_IO_NVME_ADMIN:
 		io->nvmeio.io_cont = io_cont;
+		break;
+	default:
+		__assert_unreachable();
+	}
+}
+
+static __inline void
+ctl_set_kern_data_ref(union ctl_io *io, ctl_ref kern_data_ref)
+{
+	switch (io->io_hdr.io_type) {
+	case CTL_IO_SCSI:
+		io->scsiio.kern_data_ref = kern_data_ref;
+		break;
+	case CTL_IO_NVME:
+	case CTL_IO_NVME_ADMIN:
+		io->nvmeio.kern_data_ref = kern_data_ref;
+		break;
+	default:
+		__assert_unreachable();
+	}
+}
+
+static __inline void
+ctl_set_kern_data_arg(union ctl_io *io, void *kern_data_arg)
+{
+	switch (io->io_hdr.io_type) {
+	case CTL_IO_SCSI:
+		io->scsiio.kern_data_arg = kern_data_arg;
+		break;
+	case CTL_IO_NVME:
+	case CTL_IO_NVME_ADMIN:
+		io->nvmeio.kern_data_arg = kern_data_arg;
 		break;
 	default:
 		__assert_unreachable();
