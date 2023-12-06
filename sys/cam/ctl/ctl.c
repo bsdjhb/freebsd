@@ -12704,9 +12704,6 @@ ctl_abort_tasks_lun(struct ctl_lun *lun, uint32_t targ_port, uint32_t init_id,
 	 */
 	LIST_FOREACH(xioh, &lun->ooa_queue, ooa_links) {
 		union ctl_io *xio = (union ctl_io *)xioh;
-		KASSERT(xio->io_hdr.io_type == CTL_IO_SCSI,
-		    ("%s: unexpected I/O type %x", __func__,
-			xio->io_hdr.io_type));
 
 		if ((targ_port == UINT32_MAX ||
 		     targ_port == xioh->nexus.targ_port) &&
@@ -12719,6 +12716,9 @@ ctl_abort_tasks_lun(struct ctl_lun *lun, uint32_t targ_port, uint32_t init_id,
 			if (!other_sc && !(lun->flags & CTL_LUN_PRIMARY_SC)) {
 				union ctl_ha_msg msg_info;
 
+				KASSERT(xio->io_hdr.io_type == CTL_IO_SCSI,
+				    ("%s: unexpected I/O type %x", __func__,
+					xio->io_hdr.io_type));
 				msg_info.hdr.nexus = xioh->nexus;
 				msg_info.task.task_action = CTL_TASK_ABORT_TASK;
 				msg_info.task.tag_num = xio->scsiio.tag_num;
