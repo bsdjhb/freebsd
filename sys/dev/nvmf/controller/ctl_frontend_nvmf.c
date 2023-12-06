@@ -371,13 +371,59 @@ nvmft_copy_data(struct ctl_nvmeio *ctnio)
 }
 
 static void
+m_free_ref_data(struct mbuf *m)
+{
+	ctl_ref kern_data_ref = m->m_ext.ext_arg1;
+
+	kern_data_ref(m->m_ext.ext_arg2, -1);
+}
+
+static struct mbuf *
+m_get_ref_data(struct ctl_nvmeio *ctnio, void *buf, u_int size)
+{
+	struct mbuf *m;
+
+	m = m_get(M_WAITOK, MT_DATA);
+	m_extadd(m, buf, size, m_free_ref_data, ctnio->kern_data_ref,
+	    ctnio->kern_data_arg, M_RDONLY, EXT_CTL);
+	m->m_len = size;
+	ctnio->kern_data_ref(ctnio->kern_data_arg, 1);
+	return (m);
+}
+
+static struct mbuf *
+nvmft_ref_data(struct ctl_nvmeio *ctnio)
+{
+	struct ctl_sg_entry *sgl;
+	struct mbuf *m0, *m;
+
+	MPASS(ctnio->kern_data_len != 0);
+
+	if (ctnio->kern_sg_entries == 0)
+		return (m_get_ref_data(ctnio, ctnio->kern_data_ptr,
+		    ctnio->kern_data_len));
+
+	sgl = (struct ctl_sg_entry *)ctnio->kern_data_ptr;
+	m0 = m_get_ref_data(ctnio, sgl[0].addr, sgl[0].len);
+	m = m0;
+	for (u_int i = 1; i < ctnio->kern_sg_entries; i++) {
+		m->m_next = m_get_ref_data(ctnio, sgl[i].addr, sgl[i].len);
+		m = m->m_next;
+	}
+	return (m0);
+}
+
+static void
 nvmft_datamove_in(struct ctl_nvmeio *ctnio, struct nvmft_qpair *qp,
     struct nvmf_capsule *nc)
 {
 	struct mbuf *m;
 	u_int status;
 
-	m = nvmft_copy_data(ctnio);
+	if (ctnio->kern_data_ref != NULL)
+		m = nvmft_ref_data(ctnio);
+	else
+		m = nvmft_copy_data(ctnio);
 	status = nvmf_send_controller_data(nc, ctnio->kern_rel_offset, m,
 	    ctnio->kern_data_len);
 	switch (status) {
