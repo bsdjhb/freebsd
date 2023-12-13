@@ -3113,12 +3113,12 @@ ctl_be_block_nvme_config_write(union ctl_io *io)
 	be_lun = (struct ctl_be_block_lun *)CTL_BACKEND_LUN(io);
 
 	switch (io->nvmeio.cmd.opc) {
-	case NVME_OPC_FLUSH:
+	case NVME_OPC_DATASET_MANAGEMENT:
 		DSM_RANGE(io) = 0;
 		/* FALLTHROUGH */
+	case NVME_OPC_FLUSH:
 	case NVME_OPC_WRITE_UNCORRECTABLE:
 	case NVME_OPC_WRITE_ZEROES:
-	case NVME_OPC_DATASET_MANAGEMENT:
 		mtx_lock(&be_lun->queue_lock);
 		STAILQ_INSERT_TAIL(&be_lun->config_write_queue, &io->io_hdr,
 				   links);
