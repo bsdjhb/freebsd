@@ -110,7 +110,7 @@ init_discovery_log_entry(struct nvme_discovery_log_entry *entry, int s,
 		errx(1, "Unsupported address family %u", ss.ss_family);
 	}
 	entry->subtype = NVMF_SUBTYPE_NVME;
-	if (!flow_control_disable)
+	if (flow_control_disable)
 		entry->treq |= (1 << 2);
 	entry->portid = htole16(1);
 	entry->cntlid = htole16(NVMF_CNTLID_DYNAMIC);
