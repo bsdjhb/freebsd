@@ -37,6 +37,7 @@
 #include <errno.h>
 #include <libnvmf.h>
 #include <netdb.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +51,7 @@ bool flow_control_disable = false;
 bool kernel_io = false;
 
 static const char *subnqn;
+static volatile bool quit = false;
 
 static void
 usage(void)
@@ -62,6 +64,12 @@ usage(void)
 	    "\tpathame      - file or disk device\n"
 	    "\tramdisk:size - memory disk of given size\n");
 	exit(1);
+}
+
+static void
+handle_sig(int sig __unused)
+{
+	quit = true;
 }
 
 static void
@@ -123,7 +131,12 @@ handle_connections(int kqfd)
 	struct kevent ev;
 	int s;
 
-	for (;;) {
+	signal(SIGHUP, handle_sig);
+	signal(SIGINT, handle_sig);
+	signal(SIGQUIT, handle_sig);
+	signal(SIGTERM, handle_sig);
+
+	while (!quit) {
 		if (kevent(kqfd, NULL, 0, &ev, 1, NULL) == -1) {
 			if (errno == EINTR)
 				continue;
@@ -233,5 +246,6 @@ main(int ac, char **av)
 	create_passive_sockets(kqfd, ioport, false);
 
 	handle_connections(kqfd);
+	shutdown_io();
 	return (0);
 }

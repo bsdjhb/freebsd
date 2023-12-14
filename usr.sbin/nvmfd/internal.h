@@ -60,6 +60,7 @@ void	discovery_add_io_controller(int s, const char *subnqn);
 /* io.c */
 void	init_io(const char *subnqn);
 void	handle_io_socket(int s);
+void	shutdown_io(void);
 
 /* devices.c */
 void	register_devices(int ac, char **av);
@@ -76,5 +77,6 @@ void	init_ctl_port(const char *subnqn,
 void	ctl_handoff_qpair(struct nvmf_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd,
     const struct nvmf_fabric_connect_data *data);
+void	shutdown_ctl_port(const char *subnqn);
 
 #endif /* !__INTERNAL_H__ */

@@ -104,6 +104,13 @@ init_io(const char *subnqn)
 		init_ctl_port(subnqn, &aparams);
 }
 
+void
+shutdown_io(void)
+{
+	if (kernel_io)
+		shutdown_ctl_port(nqn);
+}
+
 static bool
 handle_io_identify_command(const struct nvmf_capsule *nc,
     const struct nvme_command *cmd)

@@ -110,6 +110,34 @@ init_ctl_port(const char *subnqn, const struct nvmf_association_params *params)
 }
 
 void
+shutdown_ctl_port(const char *subnqn)
+{
+	struct ctl_req req;
+	nvlist_t *nvl;
+
+	open_ctl();
+
+	nvl = nvlist_create(0);
+
+	nvlist_add_string(nvl, "subnqn", subnqn);
+
+	memset(&req, 0, sizeof(req));
+	strlcpy(req.driver, "nvmf", sizeof(req.driver));
+	req.reqtype = CTL_REQ_REMOVE;
+	req.args = nvlist_pack(nvl, &req.args_len);
+	if (req.args == NULL)
+		errx(1, "Failed to pack nvlist for CTL_PORT/CTL_REQ_REMOVE");
+	if (ioctl(ctl_fd, CTL_PORT_REQ, &req) != 0)
+		err(1, "ioctl(CTL_PORT/CTL_REQ_REMOVE)");
+	if (req.status == CTL_LUN_ERROR)
+		errx(1, "Failed to remove CTL port: %s", req.error_str);
+	if (req.status != CTL_LUN_OK)
+		errx(1, "Failed to remove CTL port: %d", req.status);
+
+	nvlist_destroy(nvl);
+}
+
+void
 ctl_handoff_qpair(struct nvmf_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd,
     const struct nvmf_fabric_connect_data *data)
