@@ -433,8 +433,8 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 			 * cannot call nvmft_controller_terminate from
 			 * here directly as this is called from the
 			 * transport layer and freeing the admin qpair
-			 * might deadlock waiting for this thread to
-			 * exit.
+			 * might deadlock waiting for the current
+			 * thread to exit.
 			 */
 			if (taskqueue_cancel_timeout(taskqueue_thread,
 			    &ctrlr->terminate_task, NULL) == 0)
@@ -442,10 +442,17 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 				    &ctrlr->terminate_task, 0);
 			return;
 		}
-	}
+
+		/*
+		 * Treat closing of the admin queue pair while enabled
+		 * as a transport error.  Note that the admin queue
+		 * pair has been closed.
+		 */
+		ctrlr->admin_closed = true;
+	} else
+		mtx_lock(&ctrlr->lock);
 
 	/* Ignore transport errors if we are already shutting down. */
-	mtx_lock(&ctrlr->lock);
 	if (ctrlr->shutdown) {
 		mtx_unlock(&ctrlr->lock);
 		return;
