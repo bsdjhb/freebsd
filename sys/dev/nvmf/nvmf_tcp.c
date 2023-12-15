@@ -90,8 +90,8 @@ struct nvmf_tcp_qpair {
 	bool header_digests;
 	bool data_digests;
 	uint32_t maxr2t;
-	uint32_t maxh2cdata;
-	uint32_t maxc2hdata;
+	uint32_t maxh2cdata;	/* Controller only */
+	uint32_t max_tx_data;
 	uint32_t max_icd;	/* Host only */
 	uint16_t next_ttag;	/* Controller only */
 	u_int num_ttags;	/* Controller only */
@@ -163,9 +163,10 @@ static void	tcp_free_qpair(struct nvmf_qpair *nq);
 
 SYSCTL_NODE(_kern_nvmf, OID_AUTO, tcp, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "TCP transport");
-static u_int max_c2hdata = 256 * 1024;
-SYSCTL_UINT(_kern_nvmf_tcp, OID_AUTO, max_c2hdata, CTLFLAG_RWTUN, &max_c2hdata,
-    0, "Maximum size of data payload in a C2H_DATA PDU");
+static u_int tcp_max_transmit_data = 256 * 1024;
+SYSCTL_UINT(_kern_nvmf_tcp, OID_AUTO, max_c2hdata, CTLFLAG_RWTUN,
+    &tcp_max_transmit_data, 0,
+    "Maximum size of data payload in a transmitted PDU");
 
 static MALLOC_DEFINE(M_NVMF_TCP, "nvmf_tcp", "NVMe over TCP");
 
@@ -1231,8 +1232,8 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		uint32_t sent, todo;
 
 		todo = data_len;
-		if (todo > qp->maxh2cdata)
-			todo = qp->maxh2cdata;
+		if (todo > qp->max_tx_data)
+			todo = qp->max_tx_data;
 		m = nvmf_tcp_command_buffer_mbuf(cb, data_offset, todo, &sent,
 		    todo < data_len);
 		tcp_send_h2c_pdu(qp, r2t->cccid, r2t->ttag, data_offset, m,
@@ -1682,7 +1683,11 @@ tcp_allocate_qpair(bool controller,
 	qp->data_digests = params->tcp.data_digests;
 	qp->maxr2t = params->tcp.maxr2t;
 	qp->maxh2cdata = params->tcp.maxh2cdata;
-	qp->maxc2hdata = max_c2hdata;
+	qp->max_tx_data = tcp_max_transmit_data;
+	if (!controller) {
+		if (qp->max_tx_data > params->tcp.maxh2cdata)
+			qp->max_tx_data = params->tcp.maxh2cdata;
+	}
 	qp->max_icd = params->tcp.max_icd;
 
 	if (controller) {
@@ -2041,7 +2046,7 @@ tcp_send_controller_data(struct nvmf_capsule *nc, uint32_t data_offset,
 		p = m;
 		n = p->m_next;
 		while (n != NULL) {
-			if (todo + n->m_len > qp->maxc2hdata) {
+			if (todo + n->m_len > qp->max_tx_data) {
 				p->m_next = NULL;
 				break;
 			}
