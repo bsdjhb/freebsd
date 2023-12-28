@@ -858,7 +858,7 @@ mbuf_copyto_io(struct mbuf *m, u_int skip, u_int len,
 			todo = len;
 
 		memdesc_copyback(&io->io_mem, io->io_offset + io_offset,
-		    todo, mtod(m, const char *) + skip);
+		    todo, mtodo(m, skip));
 		skip = 0;
 		io_offset += todo;
 		len -= todo;
@@ -1248,7 +1248,11 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	return (0);
 }
 
-/* A variant of m_pullup that uses M_WAITOK instead of failing. */
+/*
+ * A variant of m_pullup that uses M_WAITOK instead of failing.  It
+ * also doesn't do anything if enough bytes are already present in the
+ * first mbuf.
+ */
 static struct mbuf *
 pullup_pdu_hdr(struct mbuf *m, int len)
 {
