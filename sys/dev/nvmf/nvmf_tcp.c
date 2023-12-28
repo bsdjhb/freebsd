@@ -127,7 +127,7 @@ struct nvmf_tcp_qpair {
 
 struct nvmf_tcp_rxpdu {
 	struct mbuf *m;
-	struct nvme_tcp_common_pdu_hdr *hdr;
+	const struct nvme_tcp_common_pdu_hdr *hdr;
 	uint32_t data_len;
 	bool data_digest_mismatch;
 };
@@ -598,9 +598,9 @@ nvmf_tcp_free_pdu(struct nvmf_tcp_rxpdu *pdu)
 static int
 nvmf_tcp_handle_term_req(struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvme_tcp_term_req_hdr *hdr;
+	const struct nvme_tcp_term_req_hdr *hdr;
 
-	hdr = (void *)pdu->hdr;
+	hdr = (const void *)pdu->hdr;
 
 	printf("NVMe/TCP: Received termination request: fes %#x fei %#x\n",
 	    le16toh(hdr->fes), le32dec(hdr->fei));
@@ -612,11 +612,11 @@ static int
 nvmf_tcp_save_command_capsule(struct nvmf_tcp_qpair *qp,
     struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvme_tcp_cmd *cmd;
+	const struct nvme_tcp_cmd *cmd;
 	struct nvmf_capsule *nc;
 	struct nvmf_tcp_capsule *tc;
 
-	cmd = (void *)pdu->hdr;
+	cmd = (const void *)pdu->hdr;
 
 	nc = nvmf_allocate_command(&qp->qp, &cmd->ccsqe, M_WAITOK);
 
@@ -631,11 +631,11 @@ static int
 nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
     struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvme_tcp_rsp *rsp;
+	const struct nvme_tcp_rsp *rsp;
 	struct nvmf_capsule *nc;
 	struct nvmf_tcp_capsule *tc;
 
-	rsp = (void *)pdu->hdr;
+	rsp = (const void *)pdu->hdr;
 
 	nc = nvmf_allocate_response(&qp->qp, &rsp->rccqe, M_WAITOK);
 
@@ -869,12 +869,12 @@ mbuf_copyto_io(struct mbuf *m, u_int skip, u_int len,
 static int
 nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvme_tcp_h2c_data_hdr *h2c;
+	const struct nvme_tcp_h2c_data_hdr *h2c;
 	struct nvmf_tcp_command_buffer *cb;
 	uint32_t data_len, data_offset;
 	uint16_t ttag;
 
-	h2c = (void *)pdu->hdr;
+	h2c = (const void *)pdu->hdr;
 	if (le32toh(h2c->datal) > qp->maxh2cdata) {
 		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_LIMIT_EXCEEDED, 0,
@@ -979,11 +979,11 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 static int
 nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvme_tcp_c2h_data_hdr *c2h;
+	const struct nvme_tcp_c2h_data_hdr *c2h;
 	struct nvmf_tcp_command_buffer *cb;
 	uint32_t cid, data_len, data_offset;
 
-	c2h = (void *)pdu->hdr;
+	c2h = (const void *)pdu->hdr;
 
 	mtx_lock(&qp->rx_buffers.lock);
 	cb = tcp_find_command_buffer(&qp->rx_buffers, c2h->cccid, 0);
@@ -1175,10 +1175,10 @@ static int
 nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
 	struct nvmf_tcp_command_buffer *cb;
-	struct nvme_tcp_r2t_hdr *r2t;
+	const struct nvme_tcp_r2t_hdr *r2t;
 	uint32_t data_len, data_offset;
 
-	r2t = (void *)pdu->hdr;
+	r2t = (const void *)pdu->hdr;
 
 	mtx_lock(&qp->tx_buffers.lock);
 	cb = tcp_find_command_buffer(&qp->tx_buffers, r2t->cccid, 0);
@@ -1286,7 +1286,7 @@ nvmf_tcp_dispatch_pdu(struct nvmf_tcp_qpair *qp,
 {
 	/* Ensure the PDU header is contiguous. */
 	pdu->m = pullup_pdu_hdr(pdu->m, ch->hlen);
-	pdu->hdr = mtod(pdu->m, void *);
+	pdu->hdr = mtod(pdu->m, const void *);
 
 	switch (ch->pdu_type) {
 	default:
