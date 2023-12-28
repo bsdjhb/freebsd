@@ -1174,8 +1174,8 @@ tcp_send_h2c_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
 static int
 nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
-	struct nvmf_tcp_command_buffer *cb;
 	const struct nvme_tcp_r2t_hdr *r2t;
+	struct nvmf_tcp_command_buffer *cb;
 	uint32_t data_len, data_offset;
 
 	r2t = (const void *)pdu->hdr;
