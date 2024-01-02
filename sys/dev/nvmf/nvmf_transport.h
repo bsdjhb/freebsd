@@ -93,7 +93,7 @@ struct nvmf_capsule *nvmf_allocate_response(struct nvmf_qpair *qp,
     const void *cqe, int how);
 void	nvmf_free_capsule(struct nvmf_capsule *nc);
 int	nvmf_capsule_append_data(struct nvmf_capsule *nc,
-    struct memdesc *mem, size_t len, u_int offset, bool send,
+    struct memdesc *mem, size_t len, bool send,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
 int	nvmf_transmit_capsule(struct nvmf_capsule *nc);
 void	nvmf_abort_capsule_data(struct nvmf_capsule *nc, int error);
@@ -127,7 +127,7 @@ size_t	nvmf_capsule_data_len(const struct nvmf_capsule *cc);
  * invoked before this function returns.
  */
 int	nvmf_receive_controller_data(struct nvmf_capsule *nc,
-    uint32_t data_offset, struct memdesc *mem, size_t len, u_int offset,
+    uint32_t data_offset, struct memdesc *mem, size_t len,
     nvmf_io_complete_t *complete_cb, void *cb_arg);
 
 /*

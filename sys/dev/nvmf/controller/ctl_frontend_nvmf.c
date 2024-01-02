@@ -306,7 +306,7 @@ nvmft_datamove_out(struct ctl_nvmeio *ctnio, struct nvmft_qpair *qp,
 		mem = memdesc_vaddr(ctnio->kern_data_ptr, ctnio->kern_data_len);
 
 	error = nvmf_receive_controller_data(nc, ctnio->kern_rel_offset, &mem,
-	    ctnio->kern_data_len, 0, nvmft_datamove_out_cb, ctnio);
+	    ctnio->kern_data_len, nvmft_datamove_out_cb, ctnio);
 	if (error == 0)
 		return;
 

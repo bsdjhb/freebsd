@@ -128,7 +128,7 @@ nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
 	if (req == NULL)
 		return (false);
 	mem = memdesc_vaddr(nsdata, sizeof(*nsdata));
-	nvmf_capsule_append_data(req->nc, &mem, sizeof(*nsdata), 0, false,
+	nvmf_capsule_append_data(req->nc, &mem, sizeof(*nsdata), false,
 	    io_cb, io_cb_arg);
 	nvmf_submit_request(req);
 	return (true);

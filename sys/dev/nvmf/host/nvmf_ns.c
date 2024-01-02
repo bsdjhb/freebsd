@@ -241,13 +241,13 @@ nvmf_ns_submit_bio(struct nvmf_namespace *ns, struct bio *bio)
 	case BIO_WRITE:
 		refcount_init(bio_refs(bio), 2);
 		mem = memdesc_bio(bio);
-		nvmf_capsule_append_data(req->nc, &mem, bio->bio_bcount, 0,
+		nvmf_capsule_append_data(req->nc, &mem, bio->bio_bcount,
 		    bio->bio_cmd == BIO_WRITE, nvmf_ns_io_complete, bio);
 		break;
 	case BIO_DELETE:
 		refcount_init(bio_refs(bio), 2);
 		mem = memdesc_vaddr(dsm_range, sizeof(*dsm_range));
-		nvmf_capsule_append_data(req->nc, &mem, sizeof(*dsm_range), 0,
+		nvmf_capsule_append_data(req->nc, &mem, sizeof(*dsm_range),
 		    true, nvmf_ns_delete_complete, bio);
 		bio->bio_driver2 = dsm_range;
 		break;

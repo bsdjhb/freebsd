@@ -82,12 +82,11 @@ struct nvmf_qpair {
 
 struct nvmf_io_request {
 	/*
-	 * Data buffer contains len bytes starting at offset offset of
-	 * the backing store described by mem.
+	 * Data buffer contains io_len bytes in the backing store
+	 * described by mem.
 	 */
 	struct memdesc io_mem;
 	size_t	io_len;
-	u_int	io_offset;
 	nvmf_io_complete_t *io_complete;
 	void	*io_complete_arg;
 };

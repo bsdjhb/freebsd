@@ -857,8 +857,7 @@ mbuf_copyto_io(struct mbuf *m, u_int skip, u_int len,
 		if (todo > len)
 			todo = len;
 
-		memdesc_copyback(&io->io_mem, io->io_offset + io_offset,
-		    todo, mtodo(m, skip));
+		memdesc_copyback(&io->io_mem, io_offset, todo, mtodo(m, skip));
 		skip = 0;
 		io_offset += todo;
 		len -= todo;
@@ -1143,8 +1142,8 @@ nvmf_tcp_command_buffer_mbuf(struct nvmf_tcp_command_buffer *cb,
 	size_t len;
 
 	m = memdesc_alloc_ext_mbufs(&cb->io.io_mem, nvmf_tcp_mbuf,
-	    nvmf_tcp_mext_pg, cb, M_WAITOK, cb->io.io_offset + data_offset,
-	    data_len, &len, can_truncate);
+	    nvmf_tcp_mext_pg, cb, M_WAITOK, data_offset, data_len, &len,
+	    can_truncate);
 	if (actual_len != NULL)
 		*actual_len = len;
 	return (m);

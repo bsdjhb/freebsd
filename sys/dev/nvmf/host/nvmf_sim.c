@@ -147,7 +147,7 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 	if (nvmeio->dxfer_len != 0) {
 		refcount_init(ccb_refs(ccb), 2);
 		mem = memdesc_ccb(ccb);
-		nvmf_capsule_append_data(req->nc, &mem, nvmeio->dxfer_len, 0,
+		nvmf_capsule_append_data(req->nc, &mem, nvmeio->dxfer_len,
 		    (ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_OUT,
 		    nvmf_ccb_io_complete, ccb);
 	} else

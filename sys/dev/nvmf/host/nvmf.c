@@ -719,7 +719,7 @@ nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
 
 	if (pt->len != 0) {
 		mem = memdesc_vaddr(buf, pt->len);
-		nvmf_capsule_append_data(req->nc, &mem, pt->len, 0,
+		nvmf_capsule_append_data(req->nc, &mem, pt->len,
 		    pt->is_read == 0, nvmf_io_complete, &status);
 		nvmf_status_wait_io(&status);
 	}
