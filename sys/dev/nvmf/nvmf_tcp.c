@@ -1006,6 +1006,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		tcp_remove_command_buffer(&qp->rx_buffers, cb);
 		mtx_unlock(&qp->rx_buffers.lock);
 		tcp_release_command_buffer(cb);
+		nvmf_tcp_free_pdu(pdu);
 		return (0);
 	}
 
