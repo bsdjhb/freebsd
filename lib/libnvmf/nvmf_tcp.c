@@ -370,7 +370,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 		return (EBADMSG);
 	}
 
-	/* Verify that digests are present if enabled. */
+	/* Verify that digests are present iff enabled. */
 	digest_flags = 0;
 	if (qp->header_digests)
 		digest_flags |= NVME_TCP_CH_FLAGS_HDGSTF;

@@ -335,7 +335,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	uint32_t data_len, plen;
 	uint32_t digest, rx_digest;
 	u_int full_hlen, hlen, expected_hlen;
-	uint8_t valid_flags;
+	uint8_t digest_flags, valid_flags;
 
 	/* Determine how large of a PDU header to return for errors. */
 	ch = pdu->hdr;
@@ -421,6 +421,21 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 		break;
 	}
 	if ((ch->flags & ~valid_flags) != 0) {
+		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
+		nvmf_tcp_report_error(qp,
+		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, m, hlen);
+		return (EBADMSG);
+	}
+
+	/* Verify that digests are present iff enabled. */
+	digest_flags = 0;
+	if (qp->header_digests)
+		digest_flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+	if (qp->data_digests)
+		digest_flags |= NVME_TCP_CH_FLAGS_DDGSTF;
+	if ((digest_flags & valid_flags) !=
+	    (ch->flags & (NVME_TCP_CH_FLAGS_HDGSTF |
+	    NVME_TCP_CH_FLAGS_DDGSTF))) {
 		printf("NVMe/TCP: Invalid PDU header flags %#x\n", ch->flags);
 		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 1, m, hlen);
