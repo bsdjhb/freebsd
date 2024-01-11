@@ -32,17 +32,6 @@
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
-void
-nvmf_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status)
-{
-	struct nvme_completion *cpl = cqe;
-	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
-
-	memset(cpl, 0, sizeof(*cpl));
-	cpl->cid = cmd->cid;
-	cpl->status = htole16(status);
-}
-
 bool
 nvmf_nqn_valid(const char *nqn)
 {

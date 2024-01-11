@@ -134,7 +134,6 @@ int	nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)
  * completion status 'status'.  This is useful when additional CQE
  * info is required beyond the completion status.
  */
-void	nvmf_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status);
 
 /* Validate a NVMe Qualified Name. */
 bool	nvmf_nqn_valid(const char *nqn);
@@ -173,6 +172,7 @@ const char *nvmft_qpair_name(struct nvmft_qpair *qp);
 void	nvmft_command_completed(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc);
 int	nvmft_send_response(struct nvmft_qpair *qp, const void *cqe);
+void	nvmft_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status);
 int	nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
     uint8_t sc_type, uint8_t sc_status);
 int	nvmft_send_generic_error(struct nvmft_qpair *qp,

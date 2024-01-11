@@ -522,7 +522,7 @@ handle_property_get(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 {
 	struct nvmf_fabric_prop_get_rsp rsp;
 
-	nvmf_init_cqe(&rsp, nc, 0);
+	nvmft_init_cqe(&rsp, nc, 0);
 
 	switch (le32toh(pget->ofst)) {
 	case NVMF_PROP_CAP:
@@ -706,7 +706,7 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		ctrlr->io_qpairs = io_qpairs;
 		mtx_unlock(&ctrlr->lock);
 
-		nvmf_init_cqe(&cqe, nc, 0);
+		nvmft_init_cqe(&cqe, nc, 0);
 		cqe.cdw0 = cmd->cdw11;
 		nvmft_send_response(ctrlr->admin, &cqe);
 		nvmf_free_capsule(nc);

@@ -240,6 +240,17 @@ nvmft_send_response(struct nvmft_qpair *qp, const void *cqe)
 	return (_nvmft_send_response(qp, cqe));
 }
 
+void
+nvmft_init_cqe(void *cqe, struct nvmf_capsule *nc, uint16_t status)
+{
+	struct nvme_completion *cpl = cqe;
+	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
+
+	memset(cpl, 0, sizeof(*cpl));
+	cpl->cid = cmd->cid;
+	cpl->status = htole16(status);
+}
+
 int
 nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
     uint8_t sc_type, uint8_t sc_status)
@@ -249,7 +260,7 @@ nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 
 	status = sc_type << NVME_STATUS_SCT_SHIFT |
 	    sc_status << NVME_STATUS_SC_SHIFT;
-	nvmf_init_cqe(&cpl, nc, status);
+	nvmft_init_cqe(&cpl, nc, status);
 	return (nvmft_send_response(qp, &cpl));
 }
 
@@ -273,7 +284,7 @@ _nvmft_send_generic_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 
 	status = NVME_SCT_GENERIC << NVME_STATUS_SCT_SHIFT |
 	    sc_status << NVME_STATUS_SC_SHIFT;
-	nvmf_init_cqe(&cpl, nc, status);
+	nvmft_init_cqe(&cpl, nc, status);
 	return (_nvmft_send_response(qp, &cpl));
 }
 
