@@ -39,6 +39,7 @@
 #include <sys/taskqueue.h>
 
 #include <dev/nvmf/nvmf_transport.h>
+#include <dev/nvmf/controller/nvmft_subr.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
 static void	nvmft_controller_shutdown(void *arg, int pending);
@@ -483,7 +484,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		return (false);
 	}
 
-	if (!nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
+	if (!_nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
 		mtx_unlock(&ctrlr->lock);
 		return (false);
 	}

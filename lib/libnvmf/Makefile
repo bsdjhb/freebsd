@@ -1,3 +1,4 @@
+.PATH:  ${SRCTOP}/sys/dev/nvmf/controller
 .PATH:  ${SRCTOP}/sys/libkern
 
 LIB=		nvmf
@@ -10,7 +11,10 @@ SRCS=		gsb_crc32.c \
 		nvmf_controller.c \
 		nvmf_host.c \
 		nvmf_tcp.c \
-		nvmf_transport.c
+		nvmf_transport.c \
+		nvmft_subr.c
+
+CFLAGS+=	-I${SRCTOP}/sys/dev/nvmf/controller
 
 .include <bsd.lib.mk>
 

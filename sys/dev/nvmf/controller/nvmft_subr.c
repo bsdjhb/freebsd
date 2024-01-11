@@ -27,10 +27,17 @@
  */
 
 #include <sys/types.h>
+#ifdef _KERNEL
 #include <sys/libkern.h>
+#else
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#endif
 
-#include <dev/nvmf/nvmf_transport.h>
-#include <dev/nvmf/controller/nvmft_var.h>
+#include <dev/nvmf/nvmf_proto.h>
+
+#include "nvmft_subr.h"
 
 bool
 nvmf_nqn_valid(const char *nqn)
@@ -84,7 +91,7 @@ nvmf_nqn_valid(const char *nqn)
 }
 
 uint64_t
-nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout)
+_nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout)
 {
 	uint32_t caphi, caplo;
 	u_int mps;
@@ -116,7 +123,7 @@ nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout)
 }
 
 bool
-nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
+_nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
     uint32_t new_cc)
 {
 	uint32_t caphi, changes, field;
@@ -170,12 +177,8 @@ nvmf_controller_serial(char *buf, size_t len, u_long hostid)
 	snprintf(buf, len, "HI:%lu", hostid);
 }
 
-/*
- * Copy an ASCII string in the destination buffer but pad the end of
- * the buffer with spaces and no terminating nul.
- */
-static void
-strpad(char *dst, const char *src, size_t len)
+void
+nvmf_strpad(char *dst, const char *src, size_t len)
 {
 	while (len > 0 && *src != '\0') {
 		*dst++ = *src++;
@@ -185,16 +188,16 @@ strpad(char *dst, const char *src, size_t len)
 }
 
 void
-nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
+_nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
     const char *serial, const char *model, const char *firmware_version,
     const char *subnqn, int nn, uint32_t ioccsz, uint32_t iorcsz,
     struct nvme_controller_data *cdata)
 {
 	char *cp;
 
-	strpad(cdata->sn, serial, sizeof(cdata->sn));
-	strpad(cdata->mn, model, sizeof(cdata->mn));
-	strpad(cdata->fr, firmware_version, sizeof(cdata->fr));
+	nvmf_strpad(cdata->sn, serial, sizeof(cdata->sn));
+	nvmf_strpad(cdata->mn, model, sizeof(cdata->mn));
+	nvmf_strpad(cdata->fr, firmware_version, sizeof(cdata->fr));
 	cp = memchr(cdata->fr, '-', sizeof(cdata->fr));
 	if (cp != NULL)
 		memset(cp, ' ', sizeof(cdata->fr) - (cp - (char *)cdata->fr));

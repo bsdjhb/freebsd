@@ -47,6 +47,7 @@
 
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_transport.h>
+#include <dev/nvmf/controller/nvmft_subr.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
 #include <cam/ctl/ctl.h>
@@ -690,15 +691,15 @@ nvmft_port_create(struct ctl_req *req)
 	np = malloc(sizeof(*np), M_NVMFT, M_WAITOK | M_ZERO);
 	refcount_init(&np->refs, 1);
 	np->max_io_qsize = max_io_qsize;
-	np->cap = nvmf_controller_cap(max_io_qsize, enable_timeout / 500);
+	np->cap = _nvmf_controller_cap(max_io_qsize, enable_timeout / 500);
 	sx_init(&np->lock, "nvmft port");
 	np->ids = new_unrhdr(0, MIN(CTL_MAX_INIT_PER_PORT - 1,
 	    NVMF_CNTLID_STATIC_MAX), UNR_NO_MTX);
 	TAILQ_INIT(&np->controllers);
 
 	/* The controller ID is set later for individual controllers. */
-	nvmf_init_io_controller_data(0, max_io_qsize, serial, ostype, osrelease,
-	    subnqn, nn, ioccsz, iorcsz, &np->cdata);
+	_nvmf_init_io_controller_data(0, max_io_qsize, serial, ostype,
+	    osrelease, subnqn, nn, ioccsz, iorcsz, &np->cdata);
 
 	port = &np->port;
 

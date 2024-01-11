@@ -95,7 +95,7 @@ init_io(const char *subnqn)
 	if (sysctlbyname("kern.hostid", &hostid, &len, NULL, 0) == -1)
 		err(1, "sysctl: kern.hostid");
 
-	snprintf(serial, sizeof(serial), "HI:%lu", hostid);
+	nvmf_controller_serial(serial, sizeof(serial), hostid);
 
 	pthread_cond_init(&io_cond, NULL);
 	pthread_mutex_init(&io_na_mutex, NULL);

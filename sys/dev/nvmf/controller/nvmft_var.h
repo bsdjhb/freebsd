@@ -127,39 +127,6 @@ int	nvmft_handoff_io_queue(struct nvmft_port *np,
 int	nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)
     __printflike(2, 3);
 
-/* nvmft_subr.c */
-
-/*
- * Construct a CQE for a reply to a command capsule in 'nc' with the
- * completion status 'status'.  This is useful when additional CQE
- * info is required beyond the completion status.
- */
-
-/* Validate a NVMe Qualified Name. */
-bool	nvmf_nqn_valid(const char *nqn);
-
-/* Compute the initial state of CAP for a controller. */
-uint64_t nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout);
-
-/* Generate a serial string from a host ID. */
-void	nvmf_controller_serial(char *buf, size_t len, u_long hostid);
-
-/*
- * Populate an Identify Controller data structure for an I/O
- * controller.
- */
-void	nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
-    const char *serial, const char *model, const char *firmware_version,
-    const char *subnqn, int nn, uint32_t ioccsz, uint32_t iorcsz,
-    struct nvme_controller_data *cdata);
-
-/*
- * Validate if a new value for CC is legal given the existing values of
- * CAP and CC.
- */
-bool	nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
-    uint32_t new_cc);
-
 /* nvmft_qpair.c */
 struct nvmft_qpair *nvmft_qpair_init(enum nvmf_trtype trtype,
     const struct nvmf_handoff_qpair_params *handoff, uint16_t qid,

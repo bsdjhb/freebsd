@@ -228,6 +228,9 @@ int	nvmf_finish_accept(const struct nvmf_capsule *cc, uint16_t cntlid);
 /* Compute the initial state of CAP for a controller. */
 uint64_t nvmf_controller_cap(struct nvmf_qpair *qp);
 
+/* Generate a serial number string from a host ID. */
+void	nvmf_controller_serial(char *buf, size_t len, u_long hostid);
+
 /*
  * Populate an Identify Controller data structure for a Discovery
  * controller.
