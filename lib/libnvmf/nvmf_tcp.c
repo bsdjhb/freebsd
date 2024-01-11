@@ -172,6 +172,17 @@ tcp_find_command_buffer(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
 }
 
 static void
+tcp_purge_command_buffer(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
+    bool receive)
+{
+	struct nvmf_tcp_command_buffer *cb;
+
+	cb = tcp_find_command_buffer(qp, cid, ttag, receive);
+	if (cb != NULL)
+		LIST_REMOVE(cb, link);
+}
+
+static void
 tcp_free_command_buffer(struct nvmf_tcp_command_buffer *cb)
 {
 	LIST_REMOVE(cb, link);
@@ -661,6 +672,14 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 	tc->rx_pdu = *pdu;
 
 	TAILQ_INSERT_TAIL(&qp->rx_capsules, tc, link);
+
+	/*
+	 * Once the CQE has been received, no further transfers to the
+	 * command buffer for the associated CID can occur.
+	 */
+	tcp_purge_command_buffer(qp, rsp->rccqe.cid, 0, true);
+	tcp_purge_command_buffer(qp, rsp->rccqe.cid, 0, false);
+
 	return (0);
 }
 
