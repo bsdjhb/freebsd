@@ -44,8 +44,12 @@ nvmf_nqn_valid(const char *nqn)
 #if 0
 	/*
 	 * Stricter checks from the spec.  Linux does not seem to
-	 * require these.  NVMF_NQN_MIN_LEN does not include '.',
-	 * and require at least one character of a domain name.
+	 * require these.
+	 */
+
+	/*
+	 * NVMF_NQN_MIN_LEN does not include '.', and require at least
+	 * one character of a domain name.
 	 */
 	if (len < NVMF_NQN_MIN_LEN + 2)
 		return (false);
