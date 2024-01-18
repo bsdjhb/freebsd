@@ -666,6 +666,82 @@ nvmf_tcp_save_response_capsule(struct nvmf_tcp_qpair *qp,
 	return (0);
 }
 
+/*
+ * Construct and send a PDU that contains an optional data payload.
+ * This includes dealing with digests and the length fields in the
+ * common header.
+ */
+static int
+nvmf_tcp_construct_pdu(struct nvmf_tcp_qpair *qp, void *hdr, size_t hlen,
+    void *data, uint32_t data_len)
+{
+	struct nvme_tcp_common_pdu_hdr *ch;
+	struct iovec iov[5];
+	u_int iovcnt;
+	uint32_t header_digest, data_digest, pad, pdo, plen;
+
+	plen = hlen;
+	if (qp->header_digests)
+		plen += sizeof(header_digest);
+	if (data_len != 0) {
+		pdo = roundup2(plen, qp->txpda);
+		pad = pdo - plen;
+		plen = pdo + data_len;
+		if (qp->data_digests)
+			plen += sizeof(data_digest);
+	} else {
+		assert(data == NULL);
+		pdo = 0;
+		pad = 0;
+	}
+
+	ch = hdr;
+	ch->hlen = hlen;
+	if (qp->header_digests)
+		ch->flags |= NVME_TCP_CH_FLAGS_HDGSTF;
+	if (qp->data_digests && data_len != 0)
+		ch->flags |= NVME_TCP_CH_FLAGS_DDGSTF;
+	ch->pdo = pdo;
+	ch->plen = htole32(plen);
+
+	/* CH + PSH */
+	iov[0].iov_base = hdr;
+	iov[0].iov_len = hlen;
+	iovcnt = 1;
+
+	/* HDGST */
+	if (qp->header_digests) {
+		header_digest = compute_digest(hdr, hlen);
+		iov[iovcnt].iov_base = &header_digest;
+		iov[iovcnt].iov_len = sizeof(header_digest);
+		iovcnt++;
+	}
+
+	if (pad != 0) {
+		/* PAD */
+		iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
+		iov[iovcnt].iov_len = pad;
+		iovcnt++;
+	}
+
+	if (data_len != 0) {
+		/* DATA */
+		iov[iovcnt].iov_base = data;
+		iov[iovcnt].iov_len = data_len;
+		iovcnt++;
+
+		/* DDGST */
+		if (qp->data_digests) {
+			data_digest = compute_digest(data, data_len);
+			iov[iovcnt].iov_base = &data_digest;
+			iov[iovcnt].iov_len = sizeof(data_digest);
+			iovcnt++;
+		}
+	}
+
+	return (nvmf_tcp_write_pdu_iov(qp, iov, iovcnt, plen));
+}
+
 static int
 nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
@@ -833,66 +909,18 @@ static int
 tcp_send_h2c_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, void *buf, size_t len, bool last_pdu)
 {
-	struct {
-		struct nvme_tcp_h2c_data_hdr hdr;
-		uint32_t digest;
-	} h2c;
-	struct iovec iov[4];
-	u_int iovcnt;
-	uint32_t data_digest, pad, plen;
+	struct nvme_tcp_h2c_data_hdr h2c;
 
 	memset(&h2c, 0, sizeof(h2c));
-	h2c.hdr.common.pdu_type = NVME_TCP_PDU_TYPE_H2C_DATA;
-	h2c.hdr.common.hlen = sizeof(h2c.hdr);
-	plen = sizeof(h2c.hdr);
+	h2c.common.pdu_type = NVME_TCP_PDU_TYPE_H2C_DATA;
 	if (last_pdu)
-		h2c.hdr.common.flags |= NVME_TCP_H2C_DATA_FLAGS_LAST_PDU;
-	if (qp->header_digests) {
-		h2c.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-		plen += sizeof(h2c.digest);
-	}
-	h2c.hdr.common.pdo = roundup2(plen, qp->txpda);
-	pad = h2c.hdr.common.pdo - plen;
-	h2c.hdr.cccid = cid;
-	h2c.hdr.ttag = ttag;
-	h2c.hdr.datao = htole32(data_offset);
-	h2c.hdr.datal = htole32(len);
+		h2c.common.flags |= NVME_TCP_H2C_DATA_FLAGS_LAST_PDU;
+	h2c.cccid = cid;
+	h2c.ttag = ttag;
+	h2c.datao = htole32(data_offset);
+	h2c.datal = htole32(len);
 
-	/* CH + PSH + optional HDGST */
-	iov[0].iov_base = &h2c;
-	iov[0].iov_len = plen;
-	iovcnt = 1;
-
-	if (pad != 0) {
-		/* PAD */
-		plen += pad;
-		iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
-		iov[iovcnt].iov_len = pad;
-		iovcnt++;
-	}
-
-	/* DATA */
-	plen += len;
-	iov[iovcnt].iov_base = buf;
-	iov[iovcnt].iov_len = len;
-	iovcnt++;
-
-	/* DDGST */
-	if (qp->data_digests) {
-		h2c.hdr.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-		plen += sizeof(data_digest);
-		iov[iovcnt].iov_base = &data_digest;
-		iov[iovcnt].iov_len = sizeof(data_digest);
-		iovcnt++;
-
-		data_digest = compute_digest(buf, len);
-	}
-
-	h2c.hdr.common.plen = htole32(plen);
-	if (qp->header_digests)
-		h2c.digest = compute_digest(&h2c.hdr, sizeof(h2c.hdr));
-
-	return (nvmf_tcp_write_pdu_iov(qp, iov, iovcnt, plen));
+	return (nvmf_tcp_construct_pdu(qp, &h2c, sizeof(h2c), buf, len));
 }
 
 /* Sends one or more H2C_DATA PDUs, subject to MAXH2CDATA. */
@@ -1390,24 +1418,17 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvme_tcp_cmd cmd;
 	struct nvme_sgl_descriptor *sgl;
-	struct iovec iov[5];
-	uint32_t data_digest, header_digest, pad, plen;
-	u_int iovcnt;
 	int error;
 	bool use_icd;
-
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_CMD;
-	if (qp->header_digests)
-		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-	cmd.common.hlen = sizeof(cmd);
-	cmd.ccsqe = nc->nc_sqe;
-	plen = sizeof(cmd);
 
 	use_icd = false;
 	if (nc->nc_data_len != 0 && nc->nc_send_data &&
 	    nc->nc_data_len <= qp->max_icd)
 		use_icd = true;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_CMD;
+	cmd.ccsqe = nc->nc_sqe;
 
 	/* Populate SGL in SQE. */
 	sgl = &cmd.ccsqe.sgl;
@@ -1417,74 +1438,14 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	if (use_icd) {
 		/* Use in-capsule data. */
 		sgl->type = NVME_SGL_TYPE_ICD;
-		use_icd = (nc->nc_data_len != 0);
 	} else {
 		/* Use a command buffer. */
 		sgl->type = NVME_SGL_TYPE_COMMAND_BUFFER;
 	}
 
-	if (qp->header_digests) {
-		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-		plen += sizeof(header_digest);
-	}
-
-	pad = 0;
-	if (use_icd) {
-		cmd.common.pdo = roundup2(plen, qp->txpda);
-		pad = cmd.common.pdo - plen;
-		if (pad != 0)
-			plen += pad;
-
-		plen += nc->nc_data_len;
-
-		if (qp->data_digests) {
-			cmd.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-			plen += sizeof(data_digest);
-
-			data_digest = compute_digest(nc->nc_data,
-			    nc->nc_data_len);
-		}
-	}
-
-	cmd.common.plen = htole32(plen);
-	if (qp->header_digests)
-		header_digest = compute_digest(&cmd, sizeof(cmd));
-
-	/* CH + PSH */
-	iov[0].iov_base = &cmd;
-	iov[0].iov_len = sizeof(cmd);
-	iovcnt = 1;
-
-	/* HDGST */
-	if (qp->header_digests) {
-		iov[iovcnt].iov_base = &header_digest;
-		iov[iovcnt].iov_len = sizeof(header_digest);
-		iovcnt++;
-	}
-
-	if (use_icd) {
-		/* PAD */
-		if (pad != 0) {
-			iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
-			iov[iovcnt].iov_len = pad;
-			iovcnt++;
-		}
-
-		/* DATA */
-		iov[iovcnt].iov_base = nc->nc_data;
-		iov[iovcnt].iov_len = nc->nc_data_len;
-		iovcnt++;
-
-		/* DDGST */
-		if (qp->data_digests) {
-			iov[iovcnt].iov_base = &data_digest;
-			iov[iovcnt].iov_len = sizeof(data_digest);
-			iovcnt++;
-		}
-	}
-
 	/* Send command capsule. */
-	error = nvmf_tcp_write_pdu_iov(qp, iov, iovcnt, plen);
+	error = nvmf_tcp_construct_pdu(qp, &cmd, sizeof(cmd), use_icd ?
+	    nc->nc_data : NULL, use_icd ? nc->nc_data_len : 0);
 	if (error != 0)
 		return (error);
 
@@ -1503,27 +1464,13 @@ static int
 tcp_transmit_response(struct nvmf_capsule *nc)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
-	struct {
-		struct nvme_tcp_rsp hdr;
-		uint32_t digest;
-	} rsp;
-	uint32_t plen;
+	struct nvme_tcp_rsp rsp;
 
 	memset(&rsp, 0, sizeof(rsp));
-	rsp.hdr.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_RESP;
-	rsp.hdr.common.hlen = sizeof(rsp.hdr);
-	plen = sizeof(rsp.hdr);
-	if (qp->header_digests) {
-		rsp.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-		plen += sizeof(rsp.digest);
-	}
-	rsp.hdr.common.plen = htole32(plen);
-	rsp.hdr.rccqe = nc->nc_cqe;
+	rsp.common.pdu_type = NVME_TCP_PDU_TYPE_CAPSULE_RESP;
+	rsp.rccqe = nc->nc_cqe;
 
-	if (qp->header_digests)
-		rsp.digest = compute_digest(&rsp.hdr, sizeof(rsp.hdr));
-
-	return (nvmf_tcp_write_pdu(qp, &rsp, plen));
+	return (nvmf_tcp_construct_pdu(qp, &rsp, sizeof(rsp), NULL, 0));
 }
 
 static int
@@ -1600,30 +1547,16 @@ static int
 tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
     uint32_t data_offset, uint32_t data_len)
 {
-	struct {
-		struct nvme_tcp_r2t_hdr hdr;
-		uint32_t digest;
-	} r2t;
-	uint32_t plen;
+	struct nvme_tcp_r2t_hdr r2t;
 
 	memset(&r2t, 0, sizeof(r2t));
-	r2t.hdr.common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
-	r2t.hdr.common.hlen = sizeof(r2t.hdr);
-	plen = sizeof(r2t.hdr);
-	if (qp->header_digests) {
-		r2t.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-		plen += sizeof(r2t.digest);
-	}
-	r2t.hdr.common.plen = htole32(plen);
-	r2t.hdr.cccid = cid;
-	r2t.hdr.ttag = ttag;
-	r2t.hdr.r2to = htole32(data_offset);
-	r2t.hdr.r2tl = htole32(data_len);
+	r2t.common.pdu_type = NVME_TCP_PDU_TYPE_R2T;
+	r2t.cccid = cid;
+	r2t.ttag = ttag;
+	r2t.r2to = htole32(data_offset);
+	r2t.r2tl = htole32(data_len);
 
-	if (qp->header_digests)
-		r2t.digest = compute_digest(&r2t.hdr, sizeof(r2t.hdr));
-
-	return (nvmf_tcp_write_pdu(qp, &r2t, plen));
+	return (nvmf_tcp_construct_pdu(qp, &r2t, sizeof(r2t), NULL, 0));
 }
 
 static int
@@ -1698,67 +1631,20 @@ tcp_send_c2h_pdu(struct nvmf_tcp_qpair *qp, uint16_t cid,
     uint32_t data_offset, const void *buf, size_t len, bool last_pdu,
     bool success)
 {
-	struct {
-		struct nvme_tcp_c2h_data_hdr hdr;
-		uint32_t digest;
-	} c2h;
-	struct iovec iov[4];
-	u_int iovcnt;
-	uint32_t data_digest, pad, plen;
+	struct nvme_tcp_c2h_data_hdr c2h;
 
 	memset(&c2h, 0, sizeof(c2h));
-	c2h.hdr.common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
-	c2h.hdr.common.hlen = sizeof(c2h.hdr);
-	plen = sizeof(c2h.hdr);
+	c2h.common.pdu_type = NVME_TCP_PDU_TYPE_C2H_DATA;
 	if (last_pdu)
-		c2h.hdr.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
+		c2h.common.flags |= NVME_TCP_C2H_DATA_FLAGS_LAST_PDU;
 	if (success)
-		c2h.hdr.common.flags |= NVME_TCP_C2H_DATA_FLAGS_SUCCESS;
-	if (qp->header_digests) {
-		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
-		plen += sizeof(c2h.digest);
-	}
-	c2h.hdr.common.pdo = roundup2(plen, qp->txpda);
-	pad = c2h.hdr.common.pdo - plen;
-	c2h.hdr.cccid = cid;
-	c2h.hdr.datao = htole32(data_offset);
-	c2h.hdr.datal = htole32(len);
+		c2h.common.flags |= NVME_TCP_C2H_DATA_FLAGS_SUCCESS;
+	c2h.cccid = cid;
+	c2h.datao = htole32(data_offset);
+	c2h.datal = htole32(len);
 
-	/* CH + PSH + optional HDGST */
-	iov[0].iov_base = &c2h;
-	iov[0].iov_len = plen;
-	iovcnt = 1;
-
-	if (pad != 0) {
-		/* PAD */
-		plen += pad;
-		iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
-		iov[iovcnt].iov_len = pad;
-		iovcnt++;
-	}
-
-	/* DATA */
-	plen += len;
-	iov[iovcnt].iov_base = __DECONST(void *, buf);
-	iov[iovcnt].iov_len = len;
-	iovcnt++;
-
-	/* DDGST */
-	if (qp->data_digests) {
-		c2h.hdr.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
-		plen += sizeof(data_digest);
-		iov[iovcnt].iov_base = &data_digest;
-		iov[iovcnt].iov_len = sizeof(data_digest);
-		iovcnt++;
-
-		data_digest = compute_digest(buf, len);
-	}
-
-	c2h.hdr.common.plen = htole32(plen);
-	if (qp->header_digests)
-		c2h.digest = compute_digest(&c2h.hdr, sizeof(c2h.hdr));
-
-	return (nvmf_tcp_write_pdu_iov(qp, iov, iovcnt, plen));
+	return (nvmf_tcp_construct_pdu(qp, &c2h, sizeof(c2h),
+	    __DECONST(void *, buf), len));
 }
 
 static int
