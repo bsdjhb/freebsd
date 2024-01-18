@@ -45,11 +45,10 @@ struct nvmf_tcp_qpair;
 struct nvmf_tcp_command_buffer {
 	struct nvmf_tcp_qpair *qp;
 
-	struct iovec *iov;
-	u_int	iovcnt;
-	uint32_t data_offset;
+	void	*data;
 	size_t	data_len;
 	size_t	data_xfered;
+	uint32_t data_offset;
 
 	uint16_t cid;
 	uint16_t ttag;
@@ -112,37 +111,21 @@ struct nvmf_tcp_qpair {
 static const char zero_padding[NVME_TCP_PDU_PDO_MAX_OFFSET];
 
 static uint32_t
-compute_digest_iov(const struct iovec *iov, u_int iovcnt)
-{
-	uint32_t digest;
-
-	digest = 0xffffffff;
-	while (iovcnt > 0) {
-		digest = calculate_crc32c(digest, iov->iov_base, iov->iov_len);
-		iov++;
-		iovcnt--;
-	}
-	digest ^= 0xffffffff;
-	return (digest);
-}
-
-static uint32_t
 compute_digest(const void *buf, size_t len)
 {
 	return (calculate_crc32c(0xffffffff, buf, len) ^ 0xffffffff);
 }
 
 static struct nvmf_tcp_command_buffer *
-tcp_alloc_command_buffer(struct nvmf_tcp_qpair *qp, struct iovec *iov,
-    u_int iovcnt, uint32_t data_offset, size_t data_len, uint16_t cid,
-    uint16_t ttag, bool receive)
+tcp_alloc_command_buffer(struct nvmf_tcp_qpair *qp, void *data,
+    uint32_t data_offset, size_t data_len, uint16_t cid, uint16_t ttag,
+    bool receive)
 {
 	struct nvmf_tcp_command_buffer *cb;
 
 	cb = malloc(sizeof(*cb));
 	cb->qp = qp;
-	cb->iov = iov;
-	cb->iovcnt = iovcnt;
+	cb->data = data;
 	cb->data_offset = data_offset;
 	cb->data_len = data_len;
 	cb->data_xfered = 0;
@@ -750,23 +733,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	cb->data_xfered += data_len;
 	data_offset -= cb->data_offset;
 	icd = (const char *)pdu->hdr + pdu->hdr->pdo;
-	for (u_int i = 0; i < cb->iovcnt && data_len != 0; i++) {
-		size_t todo;
-
-		if (data_offset >= cb->iov[i].iov_len) {
-			data_offset -= cb->iov[i].iov_len;
-			continue;
-		}
-
-		todo = cb->iov[i].iov_len - data_offset;
-		if (todo > data_len)
-			todo = data_len;
-
-		memcpy((char *)cb->iov[i].iov_base + data_offset, icd, todo);
-		data_offset = 0;
-		icd += todo;
-		data_len -= todo;
-	}
+	memcpy((char *)cb->data + data_offset, icd, data_len);
 
 	nvmf_tcp_free_pdu(pdu);
 	return (0);
@@ -836,23 +803,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	cb->data_xfered += data_len;
 	data_offset -= cb->data_offset;
 	icd = (const char *)pdu->hdr + pdu->hdr->pdo;
-	for (u_int i = 0; i < cb->iovcnt && data_len != 0; i++) {
-		size_t todo;
-
-		if (data_offset >= cb->iov[i].iov_len) {
-			data_offset -= cb->iov[i].iov_len;
-			continue;
-		}
-
-		todo = cb->iov[i].iov_len - data_offset;
-		if (todo > data_len)
-			todo = data_len;
-
-		memcpy((char *)cb->iov[i].iov_base + data_offset, icd, todo);
-		data_offset = 0;
-		icd += todo;
-		data_len -= todo;
-	}
+	memcpy((char *)cb->data + data_offset, icd, data_len);
 
 	if ((pdu->hdr->flags & NVME_TCP_C2H_DATA_FLAGS_SUCCESS) != 0) {
 		struct nvme_completion cqe;
@@ -974,7 +925,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 {
 	struct nvmf_tcp_command_buffer *cb;
 	struct nvme_tcp_r2t_hdr *r2t;
-	uint32_t data_len, data_offset, skip;
+	uint32_t data_len, data_offset;
 	int error;
 
 	r2t = (void *)pdu->hdr;
@@ -1015,33 +966,10 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	/*
 	 * Write out one or more H2C_DATA PDUs containing the
-	 * requested data.  To avoid copying and constructing more
-	 * iovecs, send one iovec entry from the command buffer at a
-	 * time.
+	 * requested data.
 	 */
-	skip = data_offset;
-	error = 0;
-	for (u_int i = 0; i < cb->iovcnt && data_len != 0; i++) {
-		size_t todo;
-
-		if (skip >= cb->iov[i].iov_len) {
-			skip -= cb->iov[i].iov_len;
-			continue;
-		}
-
-		todo = cb->iov[i].iov_len - skip;
-		if (todo > data_len)
-			todo = data_len;
-
-		error = tcp_send_h2c_pdus(qp, r2t->cccid, r2t->ttag,
-		    data_offset, (char *)cb->iov[i].iov_base + skip, todo,
-		    todo == data_len);
-		if (error != 0)
-			break;
-		skip = 0;
-		data_offset += todo;
-		data_len -= todo;
-	}
+	error = tcp_send_h2c_pdus(qp, r2t->cccid, r2t->ttag,
+	    data_offset, (char *)cb->data + data_offset, data_len, true);
 
 	nvmf_tcp_free_pdu(pdu);
 	return (error);
@@ -1462,7 +1390,7 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 	struct nvme_tcp_cmd cmd;
 	struct nvme_sgl_descriptor *sgl;
-	struct iovec *iov, *iov2;
+	struct iovec iov[5];
 	uint32_t data_digest, header_digest, pad, plen;
 	u_int iovcnt;
 	int error;
@@ -1475,7 +1403,6 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	cmd.common.hlen = sizeof(cmd);
 	cmd.ccsqe = nc->nc_sqe;
 	plen = sizeof(cmd);
-	iovcnt = 1;
 
 	use_icd = false;
 	if (nc->nc_data_len != 0 && nc->nc_send_data &&
@@ -1499,28 +1426,23 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	if (qp->header_digests) {
 		cmd.common.flags |= NVME_TCP_CH_FLAGS_HDGSTF;
 		plen += sizeof(header_digest);
-		iovcnt++;
 	}
 
 	pad = 0;
 	if (use_icd) {
 		cmd.common.pdo = roundup2(plen, qp->txpda);
 		pad = cmd.common.pdo - plen;
-		if (pad != 0) {
-			iovcnt++;
+		if (pad != 0)
 			plen += pad;
-		}
 
 		plen += nc->nc_data_len;
 
-		iovcnt += nc->nc_data_iovcnt;
 		if (qp->data_digests) {
 			cmd.common.flags |= NVME_TCP_CH_FLAGS_DDGSTF;
 			plen += sizeof(data_digest);
-			iovcnt++;
 
-			data_digest = compute_digest_iov(nc->nc_data_iov,
-			    nc->nc_data_iovcnt);
+			data_digest = compute_digest(nc->nc_data,
+			    nc->nc_data_len);
 		}
 	}
 
@@ -1528,39 +1450,36 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	if (qp->header_digests)
 		header_digest = compute_digest(&cmd, sizeof(cmd));
 
-	iov = alloca(iovcnt * sizeof(*iov));
-	iov2 = iov;
-
 	/* CH + PSH */
-	iov2->iov_base = &cmd;
-	iov2->iov_len = sizeof(cmd);
-	iov2++;
+	iov[0].iov_base = &cmd;
+	iov[0].iov_len = sizeof(cmd);
+	iovcnt = 1;
 
 	/* HDGST */
 	if (qp->header_digests) {
-		iov2->iov_base = &header_digest;
-		iov2->iov_len = sizeof(header_digest);
-		iov2++;
+		iov[iovcnt].iov_base = &header_digest;
+		iov[iovcnt].iov_len = sizeof(header_digest);
+		iovcnt++;
 	}
 
 	if (use_icd) {
 		/* PAD */
 		if (pad != 0) {
-			iov2->iov_base = __DECONST(char *, zero_padding);
-			iov2->iov_len = pad;
-			iov2++;
+			iov[iovcnt].iov_base = __DECONST(char *, zero_padding);
+			iov[iovcnt].iov_len = pad;
+			iovcnt++;
 		}
 
 		/* DATA */
-		memcpy(iov2, nc->nc_data_iov, nc->nc_data_iovcnt *
-		    sizeof(*iov2));
-		iov2 += nc->nc_data_iovcnt;
+		iov[iovcnt].iov_base = nc->nc_data;
+		iov[iovcnt].iov_len = nc->nc_data_len;
+		iovcnt++;
 
 		/* DDGST */
 		if (qp->data_digests) {
-			iov2->iov_base = &data_digest;
-			iov2->iov_len = sizeof(data_digest);
-			iov2++;
+			iov[iovcnt].iov_base = &data_digest;
+			iov[iovcnt].iov_len = sizeof(data_digest);
+			iovcnt++;
 		}
 	}
 
@@ -1574,9 +1493,8 @@ tcp_transmit_command(struct nvmf_capsule *nc)
 	 * buffer structure and queue it.
 	 */
 	if (nc->nc_data_len != 0 && !use_icd)
-		tc->cb = tcp_alloc_command_buffer(qp, nc->nc_data_iov,
-		    nc->nc_data_iovcnt, 0, nc->nc_data_len, cmd.ccsqe.cid, 0,
-		    !nc->nc_send_data);
+		tc->cb = tcp_alloc_command_buffer(qp, nc->nc_data, 0,
+		    nc->nc_data_len, cmd.ccsqe.cid, 0, !nc->nc_send_data);
 
 	return (0);
 }
@@ -1710,16 +1628,12 @@ tcp_send_r2t(struct nvmf_tcp_qpair *qp, uint16_t cid, uint16_t ttag,
 
 static int
 tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
-    uint32_t data_len, void *buf, size_t len)
+    void *buf, size_t len)
 {
 	struct nvmf_tcp_qpair *qp = TQP(nc->nc_qpair);
 	struct nvmf_tcp_command_buffer *cb;
-	struct iovec iov[1];
 	int error;
 	uint16_t ttag;
-
-	iov[0].iov_base = buf;
-	iov[0].iov_len = len;
 
 	/*
 	 * Don't bother byte-swapping ttag as it is just a cookie
@@ -1727,11 +1641,11 @@ tcp_receive_r2t_data(const struct nvmf_capsule *nc, uint32_t data_offset,
 	 */
 	ttag = qp->next_ttag++;
 
-	error = tcp_send_r2t(qp, nc->nc_sqe.cid, ttag, data_offset, data_len);
+	error = tcp_send_r2t(qp, nc->nc_sqe.cid, ttag, data_offset, len);
 	if (error != 0)
 		return (error);
 
-	cb = tcp_alloc_command_buffer(qp, iov, 1, data_offset, data_len,
+	cb = tcp_alloc_command_buffer(qp, buf, data_offset, len,
 	    nc->nc_sqe.cid, ttag, true);
 
 	/* Parse received PDUs until the data transfer is complete. */
@@ -1775,7 +1689,7 @@ tcp_receive_controller_data(const struct nvmf_capsule *nc, uint32_t data_offset,
 	if (sgl->type == NVME_SGL_TYPE_ICD)
 		return (tcp_receive_icd_data(nc, data_offset, buf, len));
 	else
-		return (tcp_receive_r2t_data(nc, data_offset, len, buf, len));
+		return (tcp_receive_r2t_data(nc, data_offset, buf, len));
 }
 
 /* NB: cid is little-endian already. */

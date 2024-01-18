@@ -120,9 +120,8 @@ struct nvmf_capsule {
 
 	/* Data buffer. */
 	bool	nc_send_data;
-	u_int	nc_data_iovcnt;
+	void	*nc_data;
 	size_t	nc_data_len;
-	struct iovec *nc_data_iov;
 
 	TAILQ_ENTRY(nvmf_capsule) nc_link;
 };

@@ -111,7 +111,7 @@ void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
 /*
  * Capsules are either commands (host -> controller) or responses
- * (controller -> host).  One or more data buffer segments may be
+ * (controller -> host).  A single data buffer segment may be
  * associated with a command capsule.  Transmitted data is not copied
  * by this API but instead must be preserved until the capsule is
  * transmitted and freed.

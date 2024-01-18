@@ -177,28 +177,16 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 }
 
 int
-nvmf_capsule_append_data(struct nvmf_capsule *nc, void *buf, size_t len, bool send)
+nvmf_capsule_append_data(struct nvmf_capsule *nc, void *buf, size_t len,
+    bool send)
 {
-	struct iovec *new_iov;
-
 	if (nc->nc_qe_len == sizeof(struct nvme_completion))
 		return (EINVAL);
-	if (nc->nc_data_iovcnt >= INT_MAX)
-		return (EFBIG);
-	if (nc->nc_data_len + len < nc->nc_data_len)
-		return (EFBIG);
-	if (nc->nc_data_len != 0 && nc->nc_send_data != send)
-		return (EINVAL);
+	if (nc->nc_data_len != 0)
+		return (EBUSY);
 
-	new_iov = realloc(nc->nc_data_iov, (nc->nc_data_iovcnt + 1) *
-	    sizeof(*new_iov));
-	if (new_iov == NULL)
-		return (ENOMEM);
-	new_iov[nc->nc_data_iovcnt].iov_base = buf;
-	new_iov[nc->nc_data_iovcnt].iov_len = len;
-	nc->nc_data_iov = new_iov;
-	nc->nc_data_iovcnt++;
-	nc->nc_data_len += len;
+	nc->nc_data = buf;
+	nc->nc_data_len = len;
 	nc->nc_send_data = send;
 	return (0);
 }
