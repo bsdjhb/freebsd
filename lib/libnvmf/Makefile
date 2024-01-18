@@ -15,6 +15,7 @@ SRCS=		gsb_crc32.c \
 		nvmft_subr.c
 
 CFLAGS+=	-I${SRCTOP}/sys/dev/nvmf/controller
+CFLAGS+=	-I${SRCTOP}/sys/dev/nvmf
 
 .include <bsd.lib.mk>
 
