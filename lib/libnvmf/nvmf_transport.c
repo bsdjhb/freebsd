@@ -177,7 +177,7 @@ nvmf_allocate_response(struct nvmf_qpair *qp, const void *cqe)
 }
 
 int
-nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len, bool send)
+nvmf_capsule_append_data(struct nvmf_capsule *nc, void *buf, size_t len, bool send)
 {
 	struct iovec *new_iov;
 
@@ -194,7 +194,7 @@ nvmf_capsule_append_data(struct nvmf_capsule *nc, const void *buf, size_t len, b
 	    sizeof(*new_iov));
 	if (new_iov == NULL)
 		return (ENOMEM);
-	new_iov[nc->nc_data_iovcnt].iov_base = __DECONST(void *, buf);
+	new_iov[nc->nc_data_iovcnt].iov_base = buf;
 	new_iov[nc->nc_data_iovcnt].iov_len = len;
 	nc->nc_data_iov = new_iov;
 	nc->nc_data_iovcnt++;
