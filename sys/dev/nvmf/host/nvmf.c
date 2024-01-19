@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 Chelsio Communications, Inc.
+ * Copyright (c) 2023-2024 Chelsio Communications, Inc.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,30 +46,9 @@ static struct cdevsw nvmf_cdevsw;
 
 MALLOC_DEFINE(M_NVMF, "nvmf", "NVMe over Fabrics host");
 
-struct nvmf_completion_status {
-	struct nvme_completion cqe;
-	bool	done;
-	bool	io_done;
-	int	io_error;
-};
-
 static void	nvmf_disconnect_task(void *arg, int pending);
 
-static void
-nvmf_status_init(struct nvmf_completion_status *status)
-{
-	status->done = false;
-	status->io_done = true;
-	status->io_error = 0;
-}
-
-static void
-nvmf_status_wait_io(struct nvmf_completion_status *status)
-{
-	status->io_done = false;
-}
-
-static void
+void
 nvmf_complete(void *arg, const struct nvme_completion *cqe)
 {
 	struct nvmf_completion_status *status = arg;
@@ -83,7 +62,7 @@ nvmf_complete(void *arg, const struct nvme_completion *cqe)
 	wakeup(status);
 }
 
-static void
+void
 nvmf_io_complete(void *arg, size_t xfered, int error)
 {
 	struct nvmf_completion_status *status = arg;
@@ -97,7 +76,7 @@ nvmf_io_complete(void *arg, size_t xfered, int error)
 	wakeup(status);
 }
 
-static void
+void
 nvmf_wait_for_reply(struct nvmf_completion_status *status)
 {
 	struct mtx *mtx;

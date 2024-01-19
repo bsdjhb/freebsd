@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 Chelsio Communications, Inc.
+ * Copyright (c) 2023-2024 Chelsio Communications, Inc.
  * Written by: John Baldwin <jhb@FreeBSD.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -110,6 +110,13 @@ struct nvmf_request {
 	STAILQ_ENTRY(nvmf_request) link;
 };
 
+struct nvmf_completion_status {
+	struct nvme_completion cqe;
+	bool	done;
+	bool	io_done;
+	int	io_error;
+};
+
 static __inline struct nvmf_host_qpair *
 nvmf_select_io_queue(struct nvmf_softc *sc)
 {
@@ -127,11 +134,28 @@ nvmf_cqe_aborted(const struct nvme_completion *cqe)
 	    NVME_STATUS_GET_SC(status) == NVME_SC_COMMAND_ABORTED_BY_HOST);
 }
 
+static __inline void
+nvmf_status_init(struct nvmf_completion_status *status)
+{
+	status->done = false;
+	status->io_done = true;
+	status->io_error = 0;
+}
+
+static __inline void
+nvmf_status_wait_io(struct nvmf_completion_status *status)
+{
+	status->io_done = false;
+}
+
 #ifdef MALLOC_DECLARE
 MALLOC_DECLARE(M_NVMF);
 #endif
 
 /* nvmf.c */
+void	nvmf_complete(void *arg, const struct nvme_completion *cqe);
+void	nvmf_io_complete(void *arg, size_t xfered, int error);
+void	nvmf_wait_for_reply(struct nvmf_completion_status *status);
 int	nvmf_init_ivars(struct nvmf_ivars *ivars, struct nvmf_handoff_host *hh);
 void	nvmf_free_ivars(struct nvmf_ivars *ivars);
 void	nvmf_disconnect(struct nvmf_softc *sc);
