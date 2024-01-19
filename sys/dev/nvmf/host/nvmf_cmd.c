@@ -133,3 +133,34 @@ nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
 	nvmf_submit_request(req);
 	return (true);
 }
+
+bool
+nvmf_cmd_get_log_page(struct nvmf_softc *sc, uint32_t nsid, uint8_t lid,
+    uint64_t offset, void *buf, size_t len, nvmf_request_complete_t *req_cb,
+    void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how)
+{
+	struct nvme_command cmd;
+	struct memdesc mem;
+	struct nvmf_request *req;
+	size_t numd;
+
+	MPASS(len != 0 && len % 4 == 0);
+	MPASS(offset % 4 == 0);
+
+	numd = (len / 4) - 1;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opc = NVME_OPC_GET_LOG_PAGE;
+	cmd.nsid = htole32(nsid);
+	cmd.cdw10 = htole32(numd << 16 | lid);
+	cmd.cdw11 = htole32(numd >> 16);
+	cmd.cdw12 = htole32(offset);
+	cmd.cdw13 = htole32(offset >> 32);
+
+	req = nvmf_allocate_request(sc->admin, &cmd, req_cb, req_cb_arg, how);
+	if (req == NULL)
+		return (false);
+	mem = memdesc_vaddr(buf, len);
+	nvmf_capsule_append_data(req->nc, &mem, len, false, io_cb, io_cb_arg);
+	nvmf_submit_request(req);
+	return (true);
+}

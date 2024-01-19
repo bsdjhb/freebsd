@@ -38,6 +38,7 @@
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf_transport.h>
 
+struct nvmf_aer;
 struct nvmf_capsule;
 struct nvmf_host_qpair;
 struct nvmf_namespace;
@@ -99,6 +100,9 @@ struct nvmf_softc {
 	struct sx connection_lock;
 	struct task disconnect_task;
 	bool detaching;
+
+	u_int num_aer;
+	struct nvmf_aer *aer;
 };
 
 struct nvmf_request {
@@ -159,8 +163,13 @@ void	nvmf_wait_for_reply(struct nvmf_completion_status *status);
 int	nvmf_init_ivars(struct nvmf_ivars *ivars, struct nvmf_handoff_host *hh);
 void	nvmf_free_ivars(struct nvmf_ivars *ivars);
 void	nvmf_disconnect(struct nvmf_softc *sc);
+void	nvmf_rescan_ns(struct nvmf_softc *sc, uint32_t nsid);
 int	nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
     bool admin);
+
+/* nvmf_aer.c */
+int	nvmf_init_aer(struct nvmf_softc *sc);
+void	nvmf_destroy_aer(struct nvmf_softc *sc);
 
 /* nvmf_cmd.c */
 bool	nvmf_cmd_get_property(struct nvmf_softc *sc, uint32_t offset,
@@ -173,6 +182,9 @@ bool	nvmf_cmd_keep_alive(struct nvmf_softc *sc, nvmf_request_complete_t *cb,
 bool	nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
     struct nvme_namespace_data *nsdata, nvmf_request_complete_t *req_cb,
     void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how);
+bool	nvmf_cmd_get_log_page(struct nvmf_softc *sc, uint32_t nsid, uint8_t lid,
+    uint64_t offset, void *buf, size_t len, nvmf_request_complete_t *req_cb,
+    void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how);
 
 /* nvmf_ctldev.c */
 int	nvmf_ctl_load(void);
@@ -184,6 +196,8 @@ struct nvmf_namespace *nvmf_init_ns(struct nvmf_softc *sc, uint32_t id,
 void	nvmf_disconnect_ns(struct nvmf_namespace *ns);
 void	nvmf_reconnect_ns(struct nvmf_namespace *ns);
 void	nvmf_destroy_ns(struct nvmf_namespace *ns);
+bool	nvmf_update_ns(struct nvmf_namespace *ns,
+    struct nvme_namespace_data *data);
 
 /* nvmf_qpair.c */
 struct nvmf_host_qpair *nvmf_init_qp(struct nvmf_softc *sc,
@@ -201,6 +215,6 @@ int	nvmf_init_sim(struct nvmf_softc *sc);
 void	nvmf_disconnect_sim(struct nvmf_softc *sc);
 void	nvmf_reconnect_sim(struct nvmf_softc *sc);
 void	nvmf_destroy_sim(struct nvmf_softc *sc);
-void	nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id);
+void	nvmf_sim_rescan_ns(struct nvmf_softc *sc, uint32_t id);
 
 #endif /* !__NVMF_VAR_H__ */

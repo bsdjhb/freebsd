@@ -470,3 +470,35 @@ nvmf_destroy_ns(struct nvmf_namespace *ns)
 	mtx_destroy(&ns->lock);
 	free(ns, M_NVMF);
 }
+
+bool
+nvmf_update_ns(struct nvmf_namespace *ns, struct nvme_namespace_data *data)
+{
+	uint8_t lbads, lbaf;
+
+	if (NVMEV(NVME_NS_DATA_DPS_PIT, data->dps) != 0) {
+		ns_printf(ns, "End-to-end data protection not supported\n");
+		return (false);
+	}
+
+	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, data->flbas);
+	if (lbaf > data->nlbaf) {
+		ns_printf(ns, "Invalid LBA format index\n");
+		return (false);
+	}
+
+	if (NVMEV(NVME_NS_DATA_LBAF_MS, data->lbaf[lbaf]) != 0) {
+		ns_printf(ns, "Namespaces with metadata are not supported\n");
+		return (false);
+	}
+
+	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, data->lbaf[lbaf]);
+	if (lbads == 0) {
+		ns_printf(ns, "Invalid LBA format index\n");
+		return (false);
+	}
+
+	ns->lba_size = 1 << lbads;
+	ns->size = data->nsze * ns->lba_size;
+	return (true);
+}

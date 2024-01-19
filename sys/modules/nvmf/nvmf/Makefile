@@ -3,6 +3,7 @@
 KMOD=	nvmf
 
 SRCS=	nvmf.c \
+	nvmf_aer.c \
 	nvmf_cmd.c \
 	nvmf_ctldev.c \
 	nvmf_ns.c \

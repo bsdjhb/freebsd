@@ -361,7 +361,7 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 		sc->ns[i] = nvmf_init_ns(sc, i, data);
 		free(data, M_NVMF);
 
-		nvmf_sim_add_ns(sc, i);
+		nvmf_sim_rescan_ns(sc, i);
 	}
 	return (true);
 }
@@ -424,7 +424,13 @@ nvmf_attach(device_t dev)
 	if (error != 0)
 		goto out;
 
+	if (!nvmf_init_aer(sc)) {
+		nvmf_destroy_sim(sc);
+		goto out;
+	}
+
 	if (!nvmf_add_namespaces(sc)) {
+		nvmf_destroy_aer(sc);
 		nvmf_destroy_sim(sc);
 		goto out;
 	}
@@ -638,9 +644,69 @@ nvmf_detach(device_t dev)
 	if (sc->admin != NULL)
 		nvmf_destroy_qp(sc->admin);
 
+	nvmf_destroy_aer(sc);
+
 	sx_destroy(&sc->connection_lock);
 	free(sc->cdata, M_NVMF);
 	return (0);
+}
+
+void
+nvmf_rescan_ns(struct nvmf_softc *sc, uint32_t nsid)
+{
+	struct nvmf_completion_status status;
+	struct nvme_namespace_data *data;
+	struct nvmf_namespace *ns;
+
+	data = malloc(sizeof(*data), M_NVMF, M_WAITOK);
+
+	nvmf_status_init(&status);
+	nvmf_status_wait_io(&status);
+	nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
+	    &status, nvmf_io_complete, &status, M_WAITOK);
+	nvmf_wait_for_reply(&status);
+
+	if (status.cqe.status != 0) {
+		device_printf(sc->dev,
+		    "IDENTIFY namespace %u failed, status %#x\n", nsid,
+		    le16toh(status.cqe.status));
+		free(data, M_NVMF);
+		return;
+	}
+
+	if (status.io_error != 0) {
+		device_printf(sc->dev,
+		    "IDENTIFY namespace %u failed with I/O error %d\n",
+		    nsid, status.io_error);
+		free(data, M_NVMF);
+		return;
+	}
+
+	nvme_namespace_data_swapbytes(data);
+
+	/* XXX: Needs locking around sc->ns[]. */
+	ns = sc->ns[nsid];
+	if (data->nsze == 0) {
+		/* XXX: Needs locking */
+		if (ns != NULL) {
+			nvmf_destroy_ns(ns);
+			sc->ns[nsid] = NULL;
+		}
+	} else {
+		/* XXX: Needs locking */
+		if (ns == NULL) {
+			sc->ns[nsid] = nvmf_init_ns(sc, nsid, data);
+		} else {
+			if (!nvmf_update_ns(ns, data)) {
+				nvmf_destroy_ns(ns);
+				sc->ns[nsid] = NULL;
+			}
+		}
+	}
+
+	free(data, M_NVMF);
+
+	nvmf_sim_rescan_ns(sc, nsid);
 }
 
 int

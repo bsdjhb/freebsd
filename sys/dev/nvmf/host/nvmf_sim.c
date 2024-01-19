@@ -297,7 +297,7 @@ nvmf_init_sim(struct nvmf_softc *sc)
 }
 
 void
-nvmf_sim_add_ns(struct nvmf_softc *sc, uint32_t id)
+nvmf_sim_rescan_ns(struct nvmf_softc *sc, uint32_t id)
 {
 	union ccb *ccb;
 
