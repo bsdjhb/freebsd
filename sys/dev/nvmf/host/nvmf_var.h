@@ -110,6 +110,7 @@ struct nvmf_request {
 	struct nvmf_capsule *nc;
 	nvmf_request_complete_t *cb;
 	void	*cb_arg;
+	bool	aer;
 
 	STAILQ_ENTRY(nvmf_request) link;
 };
@@ -168,7 +169,8 @@ int	nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
     bool admin);
 
 /* nvmf_aer.c */
-int	nvmf_init_aer(struct nvmf_softc *sc);
+void	nvmf_init_aer(struct nvmf_softc *sc);
+int	nvmf_start_aer(struct nvmf_softc *sc);
 void	nvmf_destroy_aer(struct nvmf_softc *sc);
 
 /* nvmf_cmd.c */

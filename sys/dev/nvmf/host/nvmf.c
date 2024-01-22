@@ -390,6 +390,8 @@ nvmf_attach(device_t dev)
 	sc->cdata = ivars->cdata;
 	ivars->cdata = NULL;
 
+	nvmf_init_aer(sc);
+
 	/* TODO: Multiqueue support. */
 	sc->max_pending_io = ivars->io_params[0].qsize /* * sc->num_io_queues */;
 
@@ -424,13 +426,13 @@ nvmf_attach(device_t dev)
 	if (error != 0)
 		goto out;
 
-	if (!nvmf_init_aer(sc)) {
+	error = nvmf_start_aer(sc);
+	if (error != 0) {
 		nvmf_destroy_sim(sc);
 		goto out;
 	}
 
 	if (!nvmf_add_namespaces(sc)) {
-		nvmf_destroy_aer(sc);
 		nvmf_destroy_sim(sc);
 		goto out;
 	}
@@ -470,6 +472,8 @@ out:
 	free(sc->io, M_NVMF);
 	if (sc->admin != NULL)
 		nvmf_destroy_qp(sc->admin);
+
+	nvmf_destroy_aer(sc);
 
 	taskqueue_drain(taskqueue_thread, &sc->disconnect_task);
 	sx_destroy(&sc->connection_lock);
@@ -590,6 +594,10 @@ nvmf_reconnect_host(struct nvmf_softc *sc, struct nvmf_handoff_host *hh)
 	 */
 
 	error = nvmf_establish_connection(sc, &ivars);
+	if (error != 0)
+		goto out;
+
+	error = nvmf_start_aer(sc);
 	if (error != 0)
 		goto out;
 

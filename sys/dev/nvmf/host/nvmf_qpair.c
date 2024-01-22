@@ -49,7 +49,7 @@ struct nvmf_host_qpair {
 	bool	sq_flow_control;
 	bool	shutting_down;
 	u_int	allocating;
-	u_int	qsize;
+	u_int	num_commands;
 	uint16_t sqhd;
 	uint16_t sqtail;
 
@@ -190,7 +190,7 @@ nvmf_receive_capsule(void *arg, struct nvmf_capsule *nc)
 	 */
 	cid = cqe->cid;
 
-	if (cid > qp->qsize - 1) {
+	if (cid > qp->num_commands) {
 		device_printf(sc->dev,
 		    "received invalid CID %u, disconnecting\n", cid);
 		nvmf_disconnect(sc);
@@ -248,22 +248,28 @@ nvmf_init_qp(struct nvmf_softc *sc, enum nvmf_trtype trtype,
 {
 	struct nvmf_host_command *cmd, *ncmd;
 	struct nvmf_host_qpair *qp;
-	u_int i, num_commands;
+	u_int i;
 
 	qp = malloc(sizeof(*qp), M_NVMF, M_WAITOK | M_ZERO);
 	qp->sc = sc;
 	qp->sq_flow_control = handoff->sq_flow_control;
-	qp->qsize = handoff->qsize;
 	qp->sqhd = handoff->sqhd;
 	qp->sqtail = handoff->sqtail;
 	strlcpy(qp->name, name, sizeof(qp->name));
 	mtx_init(&qp->lock, "nvmf qp", NULL, MTX_DEF);
 
-	num_commands = qp->qsize - 1;
+	/*
+	 * Allocate a spare command slot for each pending AER command
+	 * on the admin queue.
+	 */
+	qp->num_commands = handoff->qsize - 1;
+	if (handoff->admin)
+		qp->num_commands += sc->num_aer;
+
 	qp->active_commands = malloc(sizeof(*qp->active_commands) *
-	    num_commands, M_NVMF, M_WAITOK | M_ZERO);
+	    qp->num_commands, M_NVMF, M_WAITOK | M_ZERO);
 	TAILQ_INIT(&qp->free_commands);
-	for (i = 0; i < num_commands; i++) {
+	for (i = 0; i < qp->num_commands; i++) {
 		cmd = malloc(sizeof(*cmd), M_NVMF, M_WAITOK | M_ZERO);
 		cmd->cid = i;
 		TAILQ_INSERT_TAIL(&qp->free_commands, cmd, link);
@@ -317,11 +323,12 @@ nvmf_shutdown_qp(struct nvmf_host_qpair *qp)
 	 * requests must have their I/O completion invoked via
 	 * nvmf_abort_capsule_data.
 	 */
-	for (u_int i = 0; i < qp->qsize - 1; i++) {
+	for (u_int i = 0; i < qp->num_commands; i++) {
 		cmd = qp->active_commands[i];
 		if (cmd != NULL) {
-			printf("%s: aborted active command %p (CID %u)\n",
-			    __func__, cmd->req, cmd->cid);
+			if (!cmd->req->aer)
+				printf("%s: aborted active command %p (CID %u)\n",
+				    __func__, cmd->req, cmd->cid);
 
 			/* This was freed by nvmf_free_qpair. */
 			cmd->req->nc = NULL;
@@ -333,7 +340,9 @@ nvmf_shutdown_qp(struct nvmf_host_qpair *qp)
 	while (!STAILQ_EMPTY(&qp->pending_requests)) {
 		req = STAILQ_FIRST(&qp->pending_requests);
 		STAILQ_REMOVE_HEAD(&qp->pending_requests, link);
-		printf("%s: aborted pending command %p\n", __func__, req);
+		if (!req->aer)
+			printf("%s: aborted pending command %p\n", __func__,
+			    req);
 		nvmf_abort_capsule_data(req->nc, ECONNABORTED);
 		nvmf_abort_request(req, 0);
 		nvmf_free_request(req);
