@@ -472,156 +472,6 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
 }
 
-static bool
-update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
-{
-	struct nvmft_port *np = ctrlr->np;
-	uint32_t changes;
-
-	*need_shutdown = false;
-
-	mtx_lock(&ctrlr->lock);
-
-	/* Don't allow any changes while shutting down. */
-	if (ctrlr->shutdown) {
-		mtx_unlock(&ctrlr->lock);
-		return (false);
-	}
-
-	if (!_nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
-		mtx_unlock(&ctrlr->lock);
-		return (false);
-	}
-
-	changes = ctrlr->cc ^ new_cc;
-	ctrlr->cc = new_cc;
-
-	/* Handle shutdown requests. */
-	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
-	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
-		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
-		ctrlr->csts |= NVME_SHST_OCCURRING << NVME_CSTS_REG_SHST_SHIFT;
-		ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
-		ctrlr->shutdown = true;
-		*need_shutdown = true;
-		nvmft_printf(ctrlr, "shutdown requested\n");
-	}
-
-	if (NVMEV(NVME_CC_REG_EN, changes) != 0) {
-		if (NVMEV(NVME_CC_REG_EN, new_cc) == 0) {
-			/* Controller reset. */
-			nvmft_printf(ctrlr, "reset requested\n");
-			ctrlr->shutdown = true;
-			*need_shutdown = true;
-		} else
-			ctrlr->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
-	}
-	mtx_unlock(&ctrlr->lock);
-
-	return (true);
-}
-
-static void
-handle_property_get(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
-    const struct nvmf_fabric_prop_get_cmd *pget)
-{
-	struct nvmf_fabric_prop_get_rsp rsp;
-
-	nvmft_init_cqe(&rsp, nc, 0);
-
-	switch (le32toh(pget->ofst)) {
-	case NVMF_PROP_CAP:
-		if (pget->attrib.size != NVMF_PROP_SIZE_8)
-			goto error;
-		rsp.value.u64 = htole64(ctrlr->np->cap);
-		break;
-	case NVMF_PROP_VS:
-		if (pget->attrib.size != NVMF_PROP_SIZE_4)
-			goto error;
-		rsp.value.u32.low = ctrlr->cdata.ver;
-		break;
-	case NVMF_PROP_CC:
-		if (pget->attrib.size != NVMF_PROP_SIZE_4)
-			goto error;
-		rsp.value.u32.low = htole32(ctrlr->cc);
-		break;
-	case NVMF_PROP_CSTS:
-		if (pget->attrib.size != NVMF_PROP_SIZE_4)
-			goto error;
-		rsp.value.u32.low = htole32(ctrlr->csts);
-		break;
-	default:
-		goto error;
-	}
-
-	nvmft_send_response(ctrlr->admin, &rsp);
-	return;
-error:
-	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
-}
-
-static void
-handle_property_set(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
-    const struct nvmf_fabric_prop_set_cmd *pset)
-{
-	bool need_shutdown;
-
-	need_shutdown = false;
-	switch (le32toh(pset->ofst)) {
-	case NVMF_PROP_CC:
-		if (pset->attrib.size != NVMF_PROP_SIZE_4)
-			goto error;
-		if (!update_cc(ctrlr, le32toh(pset->value.u32.low),
-		    &need_shutdown))
-			goto error;
-		break;
-	default:
-		goto error;
-	}
-
-	nvmft_send_success(ctrlr->admin, nc);
-	if (need_shutdown) {
-		callout_stop(&ctrlr->ka_timer);
-		taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
-	}
-	return;
-error:
-	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
-}
-
-static void
-handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
-    struct nvmf_capsule *nc, const struct nvmf_fabric_cmd *fc)
-{
-	switch (fc->fctype) {
-	case NVMF_FABRIC_COMMAND_PROPERTY_GET:
-		handle_property_get(ctrlr, nc,
-		    (const struct nvmf_fabric_prop_get_cmd *)fc);
-		break;
-	case NVMF_FABRIC_COMMAND_PROPERTY_SET:
-		handle_property_set(ctrlr, nc,
-		    (const struct nvmf_fabric_prop_set_cmd *)fc);
-		break;
-	case NVMF_FABRIC_COMMAND_CONNECT:
-		nvmft_printf(ctrlr, "CONNECT command on connected admin queue\n");
-		nvmft_send_generic_error(ctrlr->admin, nc,
-		    NVME_SC_COMMAND_SEQUENCE_ERROR);
-		break;
-	case NVMF_FABRIC_COMMAND_DISCONNECT:
-		nvmft_printf(ctrlr, "DISCONNECT command on admin queue\n");
-		nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
-		    NVMF_FABRIC_SC_INVALID_QUEUE_TYPE);
-		break;
-	default:
-		nvmft_printf(ctrlr, "Unsupported fabrics command %#x\n",
-		    fc->fctype);
-		nvmft_send_generic_error(ctrlr->admin, nc,
-		    NVME_SC_INVALID_OPCODE);
-		break;
-	}
-	nvmf_free_capsule(nc);
-}
-
 static void
 m_zero(struct mbuf *m, u_int offset, u_int len)
 {
@@ -833,6 +683,156 @@ error:
 	nvmf_free_capsule(nc);
 }
 
+static bool
+update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
+{
+	struct nvmft_port *np = ctrlr->np;
+	uint32_t changes;
+
+	*need_shutdown = false;
+
+	mtx_lock(&ctrlr->lock);
+
+	/* Don't allow any changes while shutting down. */
+	if (ctrlr->shutdown) {
+		mtx_unlock(&ctrlr->lock);
+		return (false);
+	}
+
+	if (!_nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
+		mtx_unlock(&ctrlr->lock);
+		return (false);
+	}
+
+	changes = ctrlr->cc ^ new_cc;
+	ctrlr->cc = new_cc;
+
+	/* Handle shutdown requests. */
+	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
+	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
+		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
+		ctrlr->csts |= NVME_SHST_OCCURRING << NVME_CSTS_REG_SHST_SHIFT;
+		ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
+		ctrlr->shutdown = true;
+		*need_shutdown = true;
+		nvmft_printf(ctrlr, "shutdown requested\n");
+	}
+
+	if (NVMEV(NVME_CC_REG_EN, changes) != 0) {
+		if (NVMEV(NVME_CC_REG_EN, new_cc) == 0) {
+			/* Controller reset. */
+			nvmft_printf(ctrlr, "reset requested\n");
+			ctrlr->shutdown = true;
+			*need_shutdown = true;
+		} else
+			ctrlr->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
+	}
+	mtx_unlock(&ctrlr->lock);
+
+	return (true);
+}
+
+static void
+handle_property_get(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
+    const struct nvmf_fabric_prop_get_cmd *pget)
+{
+	struct nvmf_fabric_prop_get_rsp rsp;
+
+	nvmft_init_cqe(&rsp, nc, 0);
+
+	switch (le32toh(pget->ofst)) {
+	case NVMF_PROP_CAP:
+		if (pget->attrib.size != NVMF_PROP_SIZE_8)
+			goto error;
+		rsp.value.u64 = htole64(ctrlr->np->cap);
+		break;
+	case NVMF_PROP_VS:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = ctrlr->cdata.ver;
+		break;
+	case NVMF_PROP_CC:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = htole32(ctrlr->cc);
+		break;
+	case NVMF_PROP_CSTS:
+		if (pget->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		rsp.value.u32.low = htole32(ctrlr->csts);
+		break;
+	default:
+		goto error;
+	}
+
+	nvmft_send_response(ctrlr->admin, &rsp);
+	return;
+error:
+	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
+}
+
+static void
+handle_property_set(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
+    const struct nvmf_fabric_prop_set_cmd *pset)
+{
+	bool need_shutdown;
+
+	need_shutdown = false;
+	switch (le32toh(pset->ofst)) {
+	case NVMF_PROP_CC:
+		if (pset->attrib.size != NVMF_PROP_SIZE_4)
+			goto error;
+		if (!update_cc(ctrlr, le32toh(pset->value.u32.low),
+		    &need_shutdown))
+			goto error;
+		break;
+	default:
+		goto error;
+	}
+
+	nvmft_send_success(ctrlr->admin, nc);
+	if (need_shutdown) {
+		callout_stop(&ctrlr->ka_timer);
+		taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
+	}
+	return;
+error:
+	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
+}
+
+static void
+handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
+    struct nvmf_capsule *nc, const struct nvmf_fabric_cmd *fc)
+{
+	switch (fc->fctype) {
+	case NVMF_FABRIC_COMMAND_PROPERTY_GET:
+		handle_property_get(ctrlr, nc,
+		    (const struct nvmf_fabric_prop_get_cmd *)fc);
+		break;
+	case NVMF_FABRIC_COMMAND_PROPERTY_SET:
+		handle_property_set(ctrlr, nc,
+		    (const struct nvmf_fabric_prop_set_cmd *)fc);
+		break;
+	case NVMF_FABRIC_COMMAND_CONNECT:
+		nvmft_printf(ctrlr, "CONNECT command on connected admin queue\n");
+		nvmft_send_generic_error(ctrlr->admin, nc,
+		    NVME_SC_COMMAND_SEQUENCE_ERROR);
+		break;
+	case NVMF_FABRIC_COMMAND_DISCONNECT:
+		nvmft_printf(ctrlr, "DISCONNECT command on admin queue\n");
+		nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVMF_FABRIC_SC_INVALID_QUEUE_TYPE);
+		break;
+	default:
+		nvmft_printf(ctrlr, "Unsupported fabrics command %#x\n",
+		    fc->fctype);
+		nvmft_send_generic_error(ctrlr->admin, nc,
+		    NVME_SC_INVALID_OPCODE);
+		break;
+	}
+	nvmf_free_capsule(nc);
+}
+
 void
 nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc)
@@ -853,10 +853,6 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 	atomic_store_int(&ctrlr->ka_active_traffic, 1);
 
 	switch (cmd->opc) {
-	case NVME_OPC_FABRICS_COMMANDS:
-		handle_admin_fabrics_command(ctrlr, nc,
-		    (const struct nvmf_fabric_cmd *)cmd);
-		break;
 	case NVME_OPC_GET_LOG_PAGE:
 		handle_get_log_page(ctrlr, nc, cmd);
 		break;
@@ -885,6 +881,10 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 	case NVME_OPC_KEEP_ALIVE:
 		nvmft_send_success(ctrlr->admin, nc);
 		nvmf_free_capsule(nc);
+		break;
+	case NVME_OPC_FABRICS_COMMANDS:
+		handle_admin_fabrics_command(ctrlr, nc,
+		    (const struct nvmf_fabric_cmd *)cmd);
 		break;
 	default:
 		nvmft_printf(ctrlr, "Unsupported admin opcode %#x\n", cmd->opc);
