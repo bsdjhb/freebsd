@@ -115,6 +115,7 @@ static int
 nvmft_lun_enable(void *arg, int lun_id)
 {
 	struct nvmft_port *np = arg;
+	struct nvmft_controller *ctrlr;
 	u_int *old_luns, *new_luns;
 	u_int i;
 
@@ -154,7 +155,9 @@ nvmft_lun_enable(void *arg, int lun_id)
 	old_luns = np->luns;
 	np->luns = new_luns;
 
-	/* TODO: Notify existing controllers. */
+	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
+		nvmft_controller_lun_changed(ctrlr, lun_id);
+	}
 
 	sx_xunlock(&np->lock);
 	free(old_luns, M_NVMFT);
@@ -166,6 +169,7 @@ static int
 nvmft_lun_disable(void *arg, int lun_id)
 {
 	struct nvmft_port *np = arg;
+	struct nvmft_controller *ctrlr;
 	u_int i;
 
 	if (lun_id >= le32toh(np->cdata.nn))
@@ -189,7 +193,9 @@ found:
 
 	/* NB: Don't bother freeing the old luns array. */
 
-	/* TODO: Notify existing controllers. */
+	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
+		nvmft_controller_lun_changed(ctrlr, lun_id);
+	}
 
 	sx_xunlock(&np->lock);
 
@@ -700,6 +706,7 @@ nvmft_port_create(struct ctl_req *req)
 	/* The controller ID is set later for individual controllers. */
 	_nvmf_init_io_controller_data(0, max_io_qsize, serial, ostype,
 	    osrelease, subnqn, nn, ioccsz, iorcsz, &np->cdata);
+	np->cdata.aerl = NVMFT_NUM_AER - 1;
 
 	port = &np->port;
 

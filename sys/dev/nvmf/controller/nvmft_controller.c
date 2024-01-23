@@ -90,6 +90,9 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	memcpy(ctrlr->hostid, data->hostid, sizeof(ctrlr->hostid));
 	memcpy(ctrlr->hostnqn, data->hostnqn, sizeof(ctrlr->hostnqn));
 
+	ctrlr->changed_ns = malloc(sizeof(*ctrlr->changed_ns), M_NVMFT,
+	    M_WAITOK | M_ZERO);
+
 	return (ctrlr);
 }
 
@@ -98,6 +101,7 @@ nvmft_controller_free(struct nvmft_controller *ctrlr)
 {
 	mtx_destroy(&ctrlr->lock);
 	MPASS(ctrlr->io_qpairs == NULL);
+	free(ctrlr->changed_ns, M_NVMFT);
 	free(ctrlr, M_NVMFT);
 }
 
@@ -619,6 +623,95 @@ handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
 }
 
 static void
+m_zero(struct mbuf *m, u_int offset, u_int len)
+{
+	u_int todo;
+
+	while (m->m_len >= offset) {
+		offset -= m->m_len;
+		m = m->m_next;
+	}
+
+	todo = m->m_len - offset;
+	if (todo > len)
+		todo = len;
+	memset(mtodo(m, offset), 0, todo);
+	m = m->m_next;
+	len -= todo;
+
+	while (len > 0) {
+		todo = m->m_len;
+		if (todo > len)
+			todo = len;
+		memset(mtod(m, void *), 0, todo);
+		m = m->m_next;
+		len -= todo;
+	}
+}
+
+static void
+handle_get_log_page(struct nvmft_controller *ctrlr,
+    struct nvmf_capsule *nc, const struct nvme_command *cmd)
+{
+	struct mbuf *m;
+	uint64_t offset;
+	uint32_t numd;
+	size_t len, todo;
+	u_int status;
+	uint8_t lid;
+	bool rae;
+
+	lid = le32toh(cmd->cdw10) & 0xff;
+	rae = (le32toh(cmd->cdw10) & (1U << 15)) != 0;
+	numd = le32toh(cmd->cdw10) >> 16 | le32toh(cmd->cdw11) << 16;
+	offset = le32toh(cmd->cdw12) | (uint64_t)le32toh(cmd->cdw13) << 32;
+
+	if (offset % 3 != 0) {
+		status = NVME_SC_INVALID_FIELD;
+		goto done;
+	}
+
+	len = (numd + 1) * 4;
+
+	switch (lid) {
+	case NVME_LOG_CHANGED_NAMESPACE:
+		if (offset >= sizeof(ctrlr->changed_ns)) {
+			status = NVME_SC_INVALID_FIELD;
+			goto done;
+		}
+		todo = sizeof(ctrlr->changed_ns) - offset;
+		if (todo > len)
+			todo = len;
+
+		m = m_getm2(NULL, len, M_WAITOK, MT_DATA, 0);
+		mtx_lock(&ctrlr->lock);
+		m_copyback(m, 0, todo, (char *)ctrlr->changed_ns + offset);
+		if (offset == 0 && len == sizeof(ctrlr->changed_ns))
+			memset(ctrlr->changed_ns, 0,
+			    sizeof(*ctrlr->changed_ns));
+		if (!rae)
+			ctrlr->changed_ns_reported = false;
+		mtx_unlock(&ctrlr->lock);
+		if (todo != len)
+			m_zero(m, todo, len - todo);
+		status = nvmf_send_controller_data(nc, 0, m, len);
+		MPASS(status != NVMF_MORE);
+	default:
+		nvmft_printf(ctrlr, "Unsupported page %#x for GET_LOG_PAGE\n",
+		    lid);
+		status = NVME_SC_INVALID_FIELD;
+		break;
+	}
+
+done:
+	if (status == NVMF_SUCCESS_SENT)
+		nvmft_command_completed(ctrlr->admin, nc);
+	else
+		nvmft_send_generic_error(ctrlr->admin, nc, status);
+	nvmf_free_capsule(nc);
+}
+
+static void
 handle_identify_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc, const struct nvme_command *cmd)
 {
@@ -713,6 +806,22 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		nvmf_free_capsule(nc);
 		return;
 	}
+	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
+	{
+		uint32_t aer_mask;
+
+		aer_mask = le32toh(cmd->cdw11);
+
+		/* Check for any reserved or unimplemented feature bits. */
+		if ((aer_mask & 0xffffc000) != 0)
+			goto error;
+
+		mtx_lock(&ctrlr->lock);
+		ctrlr->aer_mask = aer_mask;
+		mtx_unlock(&ctrlr->lock);
+		nvmft_send_success(ctrlr->admin, nc);
+		return;
+	}
 	default:
 		nvmft_printf(ctrlr, "Unsupported feature ID %u for SET_FEATURES\n",
 		    fid);
@@ -748,11 +857,30 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		handle_admin_fabrics_command(ctrlr, nc,
 		    (const struct nvmf_fabric_cmd *)cmd);
 		break;
+	case NVME_OPC_GET_LOG_PAGE:
+		handle_get_log_page(ctrlr, nc, cmd);
+		break;
 	case NVME_OPC_IDENTIFY:
 		handle_identify_command(ctrlr, nc, cmd);
 		break;
 	case NVME_OPC_SET_FEATURES:
 		handle_set_features(ctrlr, nc, cmd);
+		break;
+	case NVME_OPC_ASYNC_EVENT_REQUEST:
+		mtx_lock(&ctrlr->lock);
+		if (ctrlr->aer_pending == NVMFT_NUM_AER) {
+			mtx_unlock(&ctrlr->lock);
+			nvmft_send_error(ctrlr->admin, nc,
+			    NVME_SCT_COMMAND_SPECIFIC,
+			    NVME_SC_ASYNC_EVENT_REQUEST_LIMIT_EXCEEDED);
+		} else {
+			/* NB: Store the CID without byte-swapping. */
+			ctrlr->aer_cids[ctrlr->aer_pidx] = cmd->cid;
+			ctrlr->aer_pending++;
+			ctrlr->aer_pidx = (ctrlr->aer_pidx + 1) % NVMFT_NUM_AER;
+			mtx_unlock(&ctrlr->lock);
+		}
+		nvmf_free_capsule(nc);
 		break;
 	case NVME_OPC_KEEP_ALIVE:
 		nvmft_send_success(ctrlr->admin, nc);
@@ -800,4 +928,101 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 		nvmf_free_capsule(nc);
 		break;
 	}
+}
+
+static void
+nvmft_report_aer(struct nvmft_controller *ctrlr, uint32_t aer_mask,
+    u_int type, uint8_t info, uint8_t log_page_id)
+{
+	struct nvme_completion cpl;
+
+	MPASS(type <= 7);
+
+	/* Drop events that are not enabled. */
+	mtx_lock(&ctrlr->lock);
+	if ((ctrlr->aer_mask & aer_mask) == 0) {
+		mtx_unlock(&ctrlr->lock);
+		return;
+	}
+
+	/*
+	 * If there is no pending AER command, drop it.
+	 * XXX: Should we queue these?
+	 */
+	if (ctrlr->aer_pending == 0) {
+		mtx_unlock(&ctrlr->lock);
+		nvmft_printf(ctrlr,
+		    "dropping AER type %u, info %#x, page %#x\n",
+		    type, info, log_page_id);
+		return;
+	}
+
+	memset(&cpl, 0, sizeof(cpl));
+	cpl.cid = ctrlr->aer_cids[ctrlr->aer_cidx];
+	ctrlr->aer_pending--;
+	ctrlr->aer_cidx = (ctrlr->aer_cidx + 1) % NVMFT_NUM_AER;
+	mtx_unlock(&ctrlr->lock);
+
+	cpl.cdw0 = htole32(type << NVME_ASYNC_EVENT_TYPE_SHIFT |
+	    (uint32_t)info << NVME_ASYNC_EVENT_INFO_SHIFT |
+	    (uint32_t)log_page_id << NVME_ASYNC_EVENT_LOG_PAGE_ID_SHIFT);
+
+	nvmft_send_response(ctrlr->admin, &cpl);
+}
+
+void
+nvmft_controller_lun_changed(struct nvmft_controller *ctrlr, int lun_id)
+{
+	struct nvme_ns_list *nslist;
+	uint32_t new_nsid, nsid;
+	u_int i;
+
+	new_nsid = lun_id + 1;
+
+	mtx_lock(&ctrlr->lock);
+	nslist = ctrlr->changed_ns;
+
+	/* If the first entry is 0xffffffff, the list is already full. */
+	if (nslist->ns[0] != 0xffffffff) {
+		/* Find the insertion point for this namespace ID. */
+		for (i = 0; i < nitems(nslist->ns); i++) {
+			nsid = le32toh(nslist->ns[i]);
+			if (nsid == new_nsid) {
+				/* Already reported, nothing to do. */
+				mtx_unlock(&ctrlr->lock);
+				return;
+			}
+
+			if (nsid == 0 || nsid > new_nsid)
+				break;
+		}
+
+		if (nslist->ns[nitems(nslist->ns) - 1] != htole32(0)) {
+			/* List is full. */
+			memset(ctrlr->changed_ns, 0,
+			    sizeof(*ctrlr->changed_ns));
+			ctrlr->changed_ns->ns[0] = 0xffffffff;
+		} else if (nslist->ns[i] == htole32(0)) {
+			/*
+			 * Optimize case where this ID is appended to
+			 * the end.
+			 */
+			nslist->ns[i] = htole32(new_nsid);
+		} else {
+			memmove(&nslist->ns[i + 1], &nslist->ns[i],
+			    (nitems(nslist->ns) - i - 1) *
+			    sizeof(nslist->ns[0]));
+			nslist->ns[i] = htole32(new_nsid);
+		}
+	}
+
+	if (ctrlr->changed_ns_reported) {
+		mtx_unlock(&ctrlr->lock);
+		return;
+	}
+	ctrlr->changed_ns_reported = true;
+	mtx_unlock(&ctrlr->lock);
+
+	nvmft_report_aer(ctrlr, NVME_ASYNC_EVENT_NS_ATTRIBUTE, 0x2, 0x0,
+	    NVME_LOG_CHANGED_NAMESPACE);
 }

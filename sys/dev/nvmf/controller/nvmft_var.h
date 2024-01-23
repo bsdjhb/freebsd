@@ -43,6 +43,8 @@ struct nvmf_capsule;
 struct nvmft_controller;
 struct nvmft_qpair;
 
+#define	NVMFT_NUM_AER		16
+
 struct nvmft_port {
 	TAILQ_ENTRY(nvmft_port) link;
 	u_int	refs;
@@ -97,6 +99,17 @@ struct nvmft_controller {
 	struct callout ka_timer;
 	sbintime_t ka_sbt;
 
+	/* AER fields. */
+	uint32_t aer_mask;
+	uint16_t aer_cids[NVMFT_NUM_AER];
+	uint8_t aer_pending;
+	uint8_t aer_cidx;
+	uint8_t aer_pidx;
+
+	/* Changed namespace IDs. */
+	struct nvme_ns_list *changed_ns;
+	bool	changed_ns_reported;
+
 	struct task shutdown_task;
 	struct timeout_task terminate_task;
 };
@@ -112,6 +125,8 @@ void	nvmft_terminate_commands(struct nvmft_controller *ctrlr);
 /* nvmft_controller.c */
 void	nvmft_controller_error(struct nvmft_controller *ctrlr,
     struct nvmft_qpair *qp, int error);
+void	nvmft_controller_lun_changed(struct nvmft_controller *ctrlr,
+    int lun_id);
 void	nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc);
 void	nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
