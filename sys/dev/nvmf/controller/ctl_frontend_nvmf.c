@@ -116,7 +116,8 @@ nvmft_lun_enable(void *arg, int lun_id)
 {
 	struct nvmft_port *np = arg;
 	struct nvmft_controller *ctrlr;
-	u_int *old_luns, *new_luns;
+	uint32_t *old_ns, *new_ns;
+	uint32_t nsid;
 	u_int i;
 
 	if (lun_id >= le32toh(np->cdata.nn)) {
@@ -124,16 +125,17 @@ nvmft_lun_enable(void *arg, int lun_id)
 		    np->cdata.subnqn, lun_id, le32toh(np->cdata.nn));
 		return (EOPNOTSUPP);
 	}
+	nsid = lun_id + 1;
 
 	sx_xlock(&np->lock);
-	new_luns = mallocarray(np->num_luns + 1, sizeof(*new_luns), M_NVMFT,
+	new_ns = mallocarray(np->num_ns + 1, sizeof(*new_ns), M_NVMFT,
 	    M_WAITOK);
-	for (i = 0; i < np->num_luns; i++) {
-		if (np->luns[i] < lun_id)
+	for (i = 0; i < np->num_ns; i++) {
+		if (np->active_ns[i] < nsid)
 			continue;
-		if (np->luns[i] == lun_id) {
+		if (np->active_ns[i] == nsid) {
 			sx_xunlock(&np->lock);
-			free(new_luns, M_NVMFT);
+			free(new_ns, M_NVMFT);
 			printf("NVMFT: %s duplicate lun %d\n",
 			    np->cdata.subnqn, lun_id);
 			return (EINVAL);
@@ -141,26 +143,26 @@ nvmft_lun_enable(void *arg, int lun_id)
 		break;
 	}
 
-	/* Copy over luns smaller than lun_id. */
-	memcpy(new_luns, np->luns, i * sizeof(*np->luns));
+	/* Copy over IDs smaller than nsid. */
+	memcpy(new_ns, np->active_ns, i * sizeof(*np->active_ns));
 
-	/* Insert lun_id. */
-	new_luns[i] = lun_id;
+	/* Insert nsid. */
+	new_ns[i] = nsid;
 
-	/* Copy over luns greater than lun_id. */
-	memcpy(new_luns + i + 1, np->luns + i, (np->num_luns - i) *
-	    sizeof(*np->luns));
+	/* Copy over IDs greater than nsid. */
+	memcpy(new_ns + i + 1, np->active_ns + i, (np->num_ns - i) *
+	    sizeof(*np->active_ns));
 
-	np->num_luns++;
-	old_luns = np->luns;
-	np->luns = new_luns;
+	np->num_ns++;
+	old_ns = np->active_ns;
+	np->active_ns = old_ns;
 
 	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
 		nvmft_controller_lun_changed(ctrlr, lun_id);
 	}
 
 	sx_xunlock(&np->lock);
-	free(old_luns, M_NVMFT);
+	free(old_ns, M_NVMFT);
 
 	return (0);
 }
@@ -170,14 +172,16 @@ nvmft_lun_disable(void *arg, int lun_id)
 {
 	struct nvmft_port *np = arg;
 	struct nvmft_controller *ctrlr;
+	uint32_t nsid;
 	u_int i;
 
 	if (lun_id >= le32toh(np->cdata.nn))
 		return (0);
+	nsid = lun_id + 1;
 
 	sx_xlock(&np->lock);
-	for (i = 0; i < np->num_luns; i++) {
-		if (np->luns[i] == lun_id)
+	for (i = 0; i < np->num_ns; i++) {
+		if (np->active_ns[i] == nsid)
 			goto found;
 	}
 	sx_xunlock(&np->lock);
@@ -186,12 +190,12 @@ nvmft_lun_disable(void *arg, int lun_id)
 	return (EINVAL);
 
 found:
-	/* Move down luns greater than lun_id. */
-	memmove(np->luns + i, np->luns + i + 1, (np->num_luns - (i + 1)) *
-	    sizeof(*np->luns));
-	np->num_luns--;
+	/* Move down IDs greater than nsid. */
+	memmove(np->active_ns + i, np->active_ns + i + 1,
+	    (np->num_ns - (i + 1)) * sizeof(*np->active_ns));
+	np->num_ns--;
 
-	/* NB: Don't bother freeing the old luns array. */
+	/* NB: Don't bother freeing the old active_ns array. */
 
 	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
 		nvmft_controller_lun_changed(ctrlr, lun_id);
@@ -200,6 +204,25 @@ found:
 	sx_xunlock(&np->lock);
 
 	return (0);
+}
+
+void
+nvmft_populate_nslist(struct nvmft_port *np, uint32_t nsid,
+    struct nvme_ns_list *nslist)
+{
+	u_int i, count;
+
+	sx_slock(&np->lock);
+	count = 0;
+	for (i = 0; i < np->num_ns; i++) {
+		if (np->active_ns[i] <= nsid)
+			continue;
+		nslist->ns[count] = np->active_ns[i];
+		count++;
+		if (count == nitems(nslist->ns))
+			break;
+	}
+	sx_sunlock(&np->lock);
 }
 
 void
@@ -523,7 +546,7 @@ nvmft_port_free(struct nvmft_port *np)
 			printf("%s: ctl_port_deregister() failed\n", __func__);
 	}
 
-	free(np->luns, M_NVMFT);
+	free(np->active_ns, M_NVMFT);
 	clean_unrhdr(np->ids);
 	delete_unrhdr(np->ids);
 	sx_destroy(&np->lock);

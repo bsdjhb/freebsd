@@ -472,6 +472,26 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
 }
 
+/* Wrapper around m_getm2 that also sets m_len in the mbufs in the chain. */
+static struct mbuf *
+m_getml(size_t len, int how)
+{
+	struct mbuf *m, *n;
+
+	m = m_getm2(NULL, len, how, MT_DATA, 0);
+	if (m == NULL)
+		return (NULL);
+	for (n = m; len > 0; n = n->m_next) {
+		n->m_len = M_SIZE(n);
+		if (n->m_len >= len) {
+			n->m_len = len;
+			MPASS(n->m_next == NULL);
+		}
+		len -= n->m_len;
+	}
+	return (m);
+}
+
 static void
 m_zero(struct mbuf *m, u_int offset, u_int len)
 {
@@ -533,7 +553,7 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 		if (todo > len)
 			todo = len;
 
-		m = m_getm2(NULL, len, M_WAITOK, MT_DATA, 0);
+		m = m_getml(len, M_WAITOK);
 		mtx_lock(&ctrlr->lock);
 		m_copyback(m, 0, todo, (char *)ctrlr->changed_ns + offset);
 		if (offset == 0 && len == sizeof(ctrlr->changed_ns))
@@ -562,6 +582,12 @@ done:
 }
 
 static void
+m_free_nslist(struct mbuf *m)
+{
+	free(m->m_ext.ext_arg1, M_NVMFT);
+}
+
+static void
 handle_identify_command(struct nvmft_controller *ctrlr,
     struct nvmf_capsule *nc, const struct nvme_command *cmd)
 {
@@ -583,16 +609,40 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 	}
 
 	switch (cns) {
+	case 0:
+		/* Namespace data. */
+		nvmft_dispatch_command(ctrlr->admin, nc, true);
+		return;
 	case 1:
-		m = m_getm2(NULL, sizeof(ctrlr->cdata), M_WAITOK, MT_DATA, 0);
+		/* Controller data. */
+		m = m_getml(sizeof(ctrlr->cdata), M_WAITOK);
 		m_copyback(m, 0, sizeof(ctrlr->cdata), (void *)&ctrlr->cdata);
 		status = nvmf_send_controller_data(nc, 0, m,
 		    sizeof(ctrlr->cdata));
 		MPASS(status != NVMF_MORE);
 		break;
-	case 0:
-		nvmft_dispatch_command(ctrlr->admin, nc, true);
-		return;
+	case 2:
+	{
+		/* Active namespace list. */
+		struct nvme_ns_list *nslist;
+		uint32_t nsid;
+
+		nsid = le32toh(cmd->nsid);
+		if (nsid >= 0xfffffffe) {
+			status = NVME_SC_INVALID_FIELD;
+			break;
+		}
+
+		nslist = malloc(sizeof(*nslist), M_NVMFT, M_WAITOK | M_ZERO);
+		nvmft_populate_nslist(ctrlr->np, nsid, nslist);
+		m = m_get(M_WAITOK, MT_DATA);
+		m_extadd(m, (void *)nslist, sizeof(*nslist), m_free_nslist,
+		    nslist, NULL, 0, EXT_CTL);
+		m->m_len = sizeof(*nslist);
+		status = nvmf_send_controller_data(nc, 0, m, m->m_len);
+		MPASS(status != NVMF_MORE);
+		break;
+	}
 	default:
 		nvmft_printf(ctrlr, "Unsupported CNS %#x for IDENTIFY\n", cns);
 		status = NVME_SC_INVALID_FIELD;

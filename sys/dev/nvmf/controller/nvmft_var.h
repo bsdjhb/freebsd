@@ -59,8 +59,8 @@ struct nvmft_port {
 	struct unrhdr *ids;
 	TAILQ_HEAD(, nvmft_controller) controllers;
 
-	int	*luns;
-	u_int	num_luns;
+	uint32_t *active_ns;
+	u_int	num_ns;
 };
 
 struct nvmft_io_qpair {
@@ -118,6 +118,8 @@ MALLOC_DECLARE(M_NVMFT);
 
 /* ctl_frontend_nvmf.c */
 void	nvmft_port_free(struct nvmft_port *np);
+void	nvmft_populate_nslist(struct nvmft_port *np, uint32_t nsid,
+    struct nvme_ns_list *nslist);
 void	nvmft_dispatch_command(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc, bool admin);
 void	nvmft_terminate_commands(struct nvmft_controller *ctrlr);
