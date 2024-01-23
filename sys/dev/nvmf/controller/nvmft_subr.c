@@ -213,8 +213,8 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	    1 << NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID_SHIFT |
 	    1 << NVME_CTRLR_DATA_CTRATT_TBKAS_SHIFT);
 	cdata->cntrltype = 1;
-	cdata->acl = 4;
-	cdata->aerl = 4;
+	cdata->acl = 3;
+	cdata->aerl = 3;
 
 	/* 1 read-only firmware slot */
 	cdata->frmw = 1 << NVME_CTRLR_DATA_FRMW_SLOT1_RO_SHIFT |
