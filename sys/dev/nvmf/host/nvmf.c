@@ -315,36 +315,49 @@ nvmf_establish_connection(struct nvmf_softc *sc, struct nvmf_ivars *ivars)
 }
 
 static bool
-nvmf_add_namespaces(struct nvmf_softc *sc)
+nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
+    struct nvme_namespace_data *data, uint32_t *nsidp)
 {
 	struct nvmf_completion_status status;
-	struct nvme_namespace_data *data;
-	u_int i;
+	uint32_t nsid;
 
-	sc->ns = malloc(sc->cdata->nn * sizeof(*sc->ns), M_NVMF,
-	    M_WAITOK | M_ZERO);
-	for (i = 1; i <= sc->cdata->nn; i++) {
-		data = malloc(sizeof(*data), M_NVMF, M_WAITOK);
+	nvmf_status_init(&status);
+	nvmf_status_wait_io(&status);
+	nvmf_cmd_identify_active_namespaces(sc, *nsidp, nslist, nvmf_complete,
+	    &status, nvmf_io_complete, &status, M_WAITOK);
+	nvmf_wait_for_reply(&status);
+
+	for (u_int i = 0; i < nitems(nslist->ns); i++) {
+		nsid = nslist->ns[i];
+		if (nsid == 0) {
+			*nsidp = 0;
+			return (true);
+		}
+
+		if (sc->ns[i] != NULL) {
+			device_printf(sc->dev,
+			    "duplicate namespace %u in active namespace list\n",
+			    nsid);
+			return (false);
+		}
 
 		nvmf_status_init(&status);
 		nvmf_status_wait_io(&status);
-		nvmf_cmd_identify_namespace(sc, i, data, nvmf_complete,
+		nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
 		    &status, nvmf_io_complete, &status, M_WAITOK);
 		nvmf_wait_for_reply(&status);
 
 		if (status.cqe.status != 0) {
 			device_printf(sc->dev,
-			    "IDENTIFY namespace %u failed, status %#x\n", i,
+			    "IDENTIFY namespace %u failed, status %#x\n", nsid,
 			    le16toh(status.cqe.status));
-			free(data, M_NVMF);
 			return (false);
 		}
 
 		if (status.io_error != 0) {
 			device_printf(sc->dev,
 			    "IDENTIFY namespace %u failed with I/O error %d\n",
-			    i, status.io_error);
-			free(data, M_NVMF);
+			    nsid, status.io_error);
 			return (false);
 		}
 
@@ -354,16 +367,53 @@ nvmf_add_namespaces(struct nvmf_softc *sc)
 		 */
 		nvme_namespace_data_swapbytes(data);
 		if (data->nsze == 0) {
-			free(data, M_NVMF);
+			device_printf(sc->dev,
+			    "ignoring active namespace %u with zero size\n",
+			    nsid);
 			continue;
 		}
 
-		sc->ns[i] = nvmf_init_ns(sc, i, data);
-		free(data, M_NVMF);
+		sc->ns[nsid] = nvmf_init_ns(sc, nsid, data);
 
-		nvmf_sim_rescan_ns(sc, i);
+		nvmf_sim_rescan_ns(sc, nsid);
 	}
+
+	MPASS(nsid == nslist->ns[nitems(nslist->ns) - 1] && nsid != 0);
+
+	if (nsid >= 0xfffffffd)
+		*nsidp = 0;
+	else
+		*nsidp = nsid + 1;
 	return (true);
+}
+
+static bool
+nvmf_add_namespaces(struct nvmf_softc *sc)
+{
+	struct nvme_namespace_data *data;
+	struct nvme_ns_list *nslist;
+	uint32_t nsid;
+	bool retval;
+
+	sc->ns = mallocarray(sc->cdata->nn, sizeof(*sc->ns), M_NVMF,
+	    M_WAITOK | M_ZERO);
+	nslist = malloc(sizeof(*nslist), M_NVMF, M_WAITOK);
+	data = malloc(sizeof(*data), M_NVMF, M_WAITOK);
+
+	nsid = 0;
+	retval = true;
+	for (;;) {
+		if (!nvmf_scan_nslist(sc, nslist, data, &nsid)) {
+			retval = false;
+			break;
+		}
+		if (nsid == 0)
+			break;
+	}
+
+	free(data, M_NVMF);
+	free(nslist, M_NVMF);
+	return (retval);
 }
 
 static int

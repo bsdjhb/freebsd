@@ -181,6 +181,9 @@ bool	nvmf_cmd_set_property(struct nvmf_softc *sc, uint32_t offset,
     int how);
 bool	nvmf_cmd_keep_alive(struct nvmf_softc *sc, nvmf_request_complete_t *cb,
     void *cb_arg, int how);
+bool	nvmf_cmd_identify_active_namespaces(struct nvmf_softc *sc, uint32_t id,
+    struct nvme_ns_list *nslist, nvmf_request_complete_t *req_cb,
+    void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how);
 bool	nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
     struct nvme_namespace_data *nsdata, nvmf_request_complete_t *req_cb,
     void *req_cb_arg, nvmf_io_complete_t *io_cb, void *io_cb_arg, int how);
