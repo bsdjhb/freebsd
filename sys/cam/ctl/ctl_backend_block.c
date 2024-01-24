@@ -1354,6 +1354,16 @@ ctl_be_block_namespace_data(struct ctl_be_block_lun *be_lun,
 }
 
 static void
+ctl_be_block_nvme_ids(struct ctl_be_block_lun *be_lun,
+		      union ctl_io *io)
+{
+	struct ctl_be_lun *cbe_lun = &be_lun->cbe_lun;
+
+	ctl_lun_nvme_ids(cbe_lun, io->nvmeio.kern_data_ptr);
+	ctl_config_read_done(io);
+}
+
+static void
 ctl_be_block_cw_dispatch_sync(struct ctl_be_block_lun *be_lun,
 			    union ctl_io *io)
 {
@@ -1762,12 +1772,23 @@ static void
 ctl_be_block_nvme_cr_dispatch(struct ctl_be_block_lun *be_lun,
 			      union ctl_io *io)
 {
+	uint8_t cns;
+
 	DPRINTF("entered\n");
 
 	MPASS(io->nvmeio.cmd.opc == NVME_OPC_IDENTIFY);
-	MPASS((le32toh(io->nvmeio.cmd.cdw10) & 0xff) == 0);
 
-	ctl_be_block_namespace_data(be_lun, io);
+	cns = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
+	switch (cns) {
+	case 0:
+		ctl_be_block_namespace_data(be_lun, io);
+		break;
+	case 3:
+		ctl_be_block_nvme_ids(be_lun, io);
+		break;
+	default:
+		__assert_unreachable();
+	}
 }
 
 static void
