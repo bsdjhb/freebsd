@@ -730,6 +730,7 @@ nvmft_port_create(struct ctl_req *req)
 	_nvmf_init_io_controller_data(0, max_io_qsize, serial, ostype,
 	    osrelease, subnqn, nn, ioccsz, iorcsz, &np->cdata);
 	np->cdata.aerl = NVMFT_NUM_AER - 1;
+	np->cdata.oaes = htole32(NVME_ASYNC_EVENT_NS_ATTRIBUTE);
 
 	port = &np->port;
 
