@@ -96,8 +96,9 @@ nvmf_read_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	struct nvmf_completion_status status;
 
 	nvmf_status_init(&status);
-	nvmf_cmd_get_property(sc, offset, size, nvmf_complete, &status,
-	    M_WAITOK);
+	if (!nvmf_cmd_get_property(sc, offset, size, nvmf_complete, &status,
+	    M_WAITOK))
+		return (ECONNABORTED);
 	nvmf_wait_for_reply(&status);
 
 	if (status.cqe.status != 0) {
@@ -121,8 +122,9 @@ nvmf_write_property(struct nvmf_softc *sc, uint32_t offset, uint8_t size,
 	struct nvmf_completion_status status;
 
 	nvmf_status_init(&status);
-	nvmf_cmd_set_property(sc, offset, size, value, nvmf_complete, &status,
-	    M_WAITOK);
+	if (!nvmf_cmd_set_property(sc, offset, size, value, nvmf_complete, &status,
+	    M_WAITOK))
+		return (ECONNABORTED);
 	nvmf_wait_for_reply(&status);
 
 	if (status.cqe.status != 0) {
@@ -323,9 +325,27 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 
 	nvmf_status_init(&status);
 	nvmf_status_wait_io(&status);
-	nvmf_cmd_identify_active_namespaces(sc, *nsidp, nslist, nvmf_complete,
-	    &status, nvmf_io_complete, &status, M_WAITOK);
+	if (!nvmf_cmd_identify_active_namespaces(sc, *nsidp, nslist, nvmf_complete,
+	    &status, nvmf_io_complete, &status, M_WAITOK)) {
+		device_printf(sc->dev,
+		    "failed to send IDENTIFY active namespaces command\n");
+		return (false);
+	}
 	nvmf_wait_for_reply(&status);
+
+	if (status.cqe.status != 0) {
+		device_printf(sc->dev,
+		    "IDENTIFY active namespaces failed, status %#x\n",
+		    le16toh(status.cqe.status));
+		return (false);
+	}
+
+	if (status.io_error != 0) {
+		device_printf(sc->dev,
+		    "IDENTIFY active namespaces failed with I/O error %d\n",
+		    status.io_error);
+		return (false);
+	}
 
 	for (u_int i = 0; i < nitems(nslist->ns); i++) {
 		nsid = nslist->ns[i];
@@ -343,8 +363,12 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 
 		nvmf_status_init(&status);
 		nvmf_status_wait_io(&status);
-		nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
-		    &status, nvmf_io_complete, &status, M_WAITOK);
+		if (!nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
+		    &status, nvmf_io_complete, &status, M_WAITOK)) {
+			device_printf(sc->dev,
+			    "failed to send IDENTIFY namespace %u command\n", nsid);
+			return (false);
+		}
 		nvmf_wait_for_reply(&status);
 
 		if (status.cqe.status != 0) {
@@ -720,8 +744,13 @@ nvmf_rescan_ns(struct nvmf_softc *sc, uint32_t nsid)
 
 	nvmf_status_init(&status);
 	nvmf_status_wait_io(&status);
-	nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
-	    &status, nvmf_io_complete, &status, M_WAITOK);
+	if (!nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
+	    &status, nvmf_io_complete, &status, M_WAITOK)) {
+		device_printf(sc->dev,
+		    "failed to send IDENTIFY namespace %u command\n", nsid);
+		free(data, M_NVMF);
+		return;
+	}
 	nvmf_wait_for_reply(&status);
 
 	if (status.cqe.status != 0) {
@@ -819,6 +848,11 @@ nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
 		qp = nvmf_select_io_queue(sc);
 	nvmf_status_init(&status);
 	req = nvmf_allocate_request(qp, &cmd, nvmf_complete, &status, M_WAITOK);
+	if (req == NULL) {
+		device_printf(sc->dev, "failed to send passthrough command\n");
+		error = ECONNABORTED;
+		goto error;
+	}
 
 	if (pt->len != 0) {
 		mem = memdesc_vaddr(buf, pt->len);
@@ -837,6 +871,7 @@ nvmf_passthrough_cmd(struct nvmf_softc *sc, struct nvme_pt_command *pt,
 	error = status.io_error;
 	if (error == 0 && pt->len != 0 && pt->is_read != 0)
 		error = copyout(buf, pt->buf, pt->len);
+error:
 	free(buf, M_NVMF);
 	return (error);
 }

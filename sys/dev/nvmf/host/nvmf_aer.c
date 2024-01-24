@@ -63,6 +63,8 @@ nvmf_submit_aer(struct nvmf_softc *sc, struct nvmf_aer *aer)
 
 	req = nvmf_allocate_request(sc->admin, &cmd, nvmf_complete_aer, aer,
 	    M_WAITOK);
+	if (req == NULL)
+		return;
 	req->aer = true;
 	nvmf_submit_request(req);
 }
@@ -183,7 +185,7 @@ nvmf_complete_aer(void *arg, const struct nvme_completion *cqe)
 		/* Read the associated log page. */
 		aer->page_len = MIN(aer->page_len, MAX_LOG_PAGE_SIZE);
 		aer->pending = 2;
-		nvmf_cmd_get_log_page(sc, NVME_GLOBAL_NAMESPACE_TAG,
+		(void) nvmf_cmd_get_log_page(sc, NVME_GLOBAL_NAMESPACE_TAG,
 		    aer->log_page_id, 0, aer->page, aer->page_len,
 		    nvmf_complete_aer_page, aer, nvmf_io_complete_aer_page,
 		    aer, M_WAITOK);
@@ -208,6 +210,11 @@ nvmf_set_async_event_config(struct nvmf_softc *sc, uint32_t config)
 	nvmf_status_init(&status);
 	req = nvmf_allocate_request(sc->admin, &cmd, nvmf_complete, &status,
 	    M_WAITOK);
+	if (req == NULL) {
+		device_printf(sc->dev,
+		    "failed to allocate SET_FEATURES (ASYNC_EVENT_CONFIGURATION) command\n");
+		return (ECONNABORTED);
+	}
 	nvmf_submit_request(req);
 	nvmf_wait_for_reply(&status);
 
