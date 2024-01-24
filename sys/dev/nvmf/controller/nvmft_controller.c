@@ -613,8 +613,8 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 	}
 
 	switch (cns) {
-	case 0:
-		/* Namespace data. */
+	case 0:	/* Namespace data. */
+	case 3:	/* Namespace Identification Descriptor list. */
 		nvmft_dispatch_command(ctrlr->admin, nc, true);
 		return;
 	case 1:
