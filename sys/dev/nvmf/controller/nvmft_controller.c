@@ -497,7 +497,10 @@ m_zero(struct mbuf *m, u_int offset, u_int len)
 {
 	u_int todo;
 
-	while (m->m_len >= offset) {
+	if (len == 0)
+		return;
+
+	while (m->m_len <= offset) {
 		offset -= m->m_len;
 		m = m->m_next;
 	}
