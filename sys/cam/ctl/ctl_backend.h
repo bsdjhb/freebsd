@@ -248,6 +248,11 @@ void ctl_lun_capacity_changed(struct ctl_be_lun *be_lun);
 void ctl_lun_nsdata_ids(struct ctl_be_lun *be_lun,
     struct nvme_namespace_data *nsdata);
 
+/*
+ * Populate the NVMe namespace identification descriptor list for a LUN.
+ */
+void ctl_lun_nvme_ids(struct ctl_be_lun *be_lun, void *data);
+
 #endif /* _KERNEL */
 #endif /* _CTL_BACKEND_H_ */
 
