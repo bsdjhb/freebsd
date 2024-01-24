@@ -75,7 +75,7 @@ nvmf_handle_changed_namespaces(struct nvmf_softc *sc,
 
 	for (u_int i = 0; i < nitems(ns_list->ns); i++) {
 		if (ns_list->ns[i] == 0)
-			continue;
+			break;
 
 		nsid = le32toh(ns_list->ns[i]);
 		nvmf_rescan_ns(sc, nsid);
