@@ -569,6 +569,7 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 			m_zero(m, todo, len - todo);
 		status = nvmf_send_controller_data(nc, 0, m, len);
 		MPASS(status != NVMF_MORE);
+		break;
 	default:
 		nvmft_printf(ctrlr, "Unsupported page %#x for GET_LOG_PAGE\n",
 		    lid);
