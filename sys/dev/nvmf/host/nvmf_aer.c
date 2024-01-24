@@ -31,6 +31,7 @@
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
+#include <sys/taskqueue.h>
 #include <dev/nvmf/host/nvmf_var.h>
 
 struct nvmf_aer {
@@ -46,6 +47,8 @@ struct nvmf_aer {
 	uint16_t status;
 	int	pending;
 	struct mtx *lock;
+	struct task complete_task;
+	struct task finish_page_task;
 };
 
 #define	MAX_LOG_PAGE_SIZE	4096
@@ -75,6 +78,15 @@ nvmf_handle_changed_namespaces(struct nvmf_softc *sc,
 {
 	uint32_t nsid;
 
+	/*
+	 * If more than 1024 namespaces have changed, we should
+	 * probably just rescan the entire set of namespaces.
+	 */
+	if (ns_list->ns[0] == 0xffffffff) {
+		device_printf(sc->dev, "too many changed namespaces\n");
+		return;
+	}
+
 	for (u_int i = 0; i < nitems(ns_list->ns); i++) {
 		if (ns_list->ns[i] == 0)
 			break;
@@ -90,6 +102,15 @@ nvmf_finish_aer_page(struct nvmf_softc *sc, struct nvmf_aer *aer)
 	/* If an error occurred fetching the page, just bail. */
 	if (aer->error != 0 || aer->status != 0)
 		return;
+
+	taskqueue_enqueue(taskqueue_thread, &aer->finish_page_task);
+}
+
+static void
+nvmf_finish_aer_page_task(void *arg, int pending)
+{
+	struct nvmf_aer *aer = arg;
+	struct nvmf_softc *sc = aer->sc;
 
 	switch (aer->log_page_id) {
 	case NVME_LOG_ERROR:
@@ -181,6 +202,15 @@ nvmf_complete_aer(void *arg, const struct nvme_completion *cqe)
 	    aer->type, aer->info, aer->log_page_id);
 
 	aer->page_len = nvmf_log_page_size(sc, aer->log_page_id);
+	taskqueue_enqueue(taskqueue_thread, &aer->complete_task);
+}
+
+static void
+nvmf_complete_aer_task(void *arg, int pending)
+{
+	struct nvmf_aer *aer = arg;
+	struct nvmf_softc *sc = aer->sc;
+
 	if (aer->page_len != 0) {
 		/* Read the associated log page. */
 		aer->page_len = MIN(aer->page_len, MAX_LOG_PAGE_SIZE);
@@ -239,6 +269,10 @@ nvmf_init_aer(struct nvmf_softc *sc)
 		sc->aer[i].sc = sc;
 		sc->aer[i].page = malloc(MAX_LOG_PAGE_SIZE, M_NVMF, M_WAITOK);
 		sc->aer[i].lock = mtx_pool_find(mtxpool_sleep, &sc->aer[i]);
+		TASK_INIT(&sc->aer[i].complete_task, 0, nvmf_complete_aer_task,
+		    &sc->aer[i]);
+		TASK_INIT(&sc->aer[i].finish_page_task, 0,
+		    nvmf_finish_aer_page_task, &sc->aer[i]);
 	}
 }
 
@@ -268,7 +302,10 @@ nvmf_start_aer(struct nvmf_softc *sc)
 void
 nvmf_destroy_aer(struct nvmf_softc *sc)
 {
-	for (u_int i = 0; i < sc->num_aer; i++)
+	for (u_int i = 0; i < sc->num_aer; i++) {
+		taskqueue_drain(taskqueue_thread, &sc->aer[i].complete_task);
+		taskqueue_drain(taskqueue_thread, &sc->aer[i].finish_page_task);
 		free(sc->aer[i].page, M_NVMF);
+	}
 	free(sc->aer, M_NVMF);
 }
