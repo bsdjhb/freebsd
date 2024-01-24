@@ -85,6 +85,10 @@ nvmf_handle_changed_namespaces(struct nvmf_softc *sc,
 static void
 nvmf_finish_aer_page(struct nvmf_softc *sc, struct nvmf_aer *aer)
 {
+	/* If an error occurred fetching the page, just bail. */
+	if (aer->error != 0 || aer->status != 0)
+		return;
+
 	switch (aer->log_page_id) {
 	case NVME_LOG_ERROR:
 		/* TODO: Should we log these? */
