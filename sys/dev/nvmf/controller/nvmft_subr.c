@@ -243,13 +243,6 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	cdata->maxcmd = htole16(max_io_qsize);
 	cdata->nn = htole32(nn);
 
-	cdata->oncs = htole16(1 << NVME_CTRLR_DATA_ONCS_VERIFY_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_WRZERO_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_DSM_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_COMPARE_SHIFT);
-	
-	cdata->fuses = 1 << NVME_CTRLR_DATA_FUSES_CNW_SHIFT;
-
 	cdata->vwc = NVME_CTRLR_DATA_VWC_ALL_NO <<
 	    NVME_CTRLR_DATA_VWC_ALL_SHIFT | NVMEB(NVME_CTRLR_DATA_VWC_PRESENT);
 
