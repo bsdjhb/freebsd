@@ -293,7 +293,7 @@ nvmf_init_sim(struct nvmf_softc *sc)
 		mtx_destroy(&sc->sim_mtx);
 		return (ENXIO);
 	}
-	return (0);	    
+	return (0);
 }
 
 void
