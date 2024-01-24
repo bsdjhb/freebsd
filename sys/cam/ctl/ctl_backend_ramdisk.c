@@ -637,6 +637,19 @@ ramdisk_namespace_data(union ctl_io *io)
 }
 
 static int
+ramdisk_nvme_ids(union ctl_io *io)
+{
+	struct ctl_be_lun *cbe_lun = CTL_BACKEND_LUN(io);
+
+	if (io->nvmeio.kern_data_len != 4096 || io->nvmeio.kern_sg_entries != 0)
+		return (CTL_RETVAL_ERROR);
+
+	ctl_lun_nvme_ids(cbe_lun, io->nvmeio.kern_data_ptr);
+	ctl_config_read_done(io);
+	return (CTL_RETVAL_COMPLETE);
+}
+
+static int
 ctl_backend_ramdisk_nvme_config_read(union ctl_io *io)
 {
 	switch (io->nvmeio.cmd.opc) {
@@ -648,6 +661,8 @@ ctl_backend_ramdisk_nvme_config_read(union ctl_io *io)
 		switch (cns) {
 		case 0:
 			return (ramdisk_namespace_data(io));
+		case 3:
+			return (ramdisk_nvme_ids(io));
 		default:
 			ctl_nvme_set_invalid_field(&io->nvmeio);
 			ctl_config_read_done(io);
