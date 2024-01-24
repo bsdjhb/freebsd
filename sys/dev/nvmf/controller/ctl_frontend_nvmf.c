@@ -155,7 +155,7 @@ nvmft_lun_enable(void *arg, int lun_id)
 
 	np->num_ns++;
 	old_ns = np->active_ns;
-	np->active_ns = old_ns;
+	np->active_ns = new_ns;
 
 	TAILQ_FOREACH(ctrlr, &np->controllers, link) {
 		nvmft_controller_lun_changed(ctrlr, lun_id);

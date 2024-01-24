@@ -334,7 +334,7 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 			return (true);
 		}
 
-		if (sc->ns[i] != NULL) {
+		if (sc->ns[nsid - 1] != NULL) {
 			device_printf(sc->dev,
 			    "duplicate namespace %u in active namespace list\n",
 			    nsid);
@@ -373,7 +373,7 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 			continue;
 		}
 
-		sc->ns[nsid] = nvmf_init_ns(sc, nsid, data);
+		sc->ns[nsid - 1] = nvmf_init_ns(sc, nsid, data);
 
 		nvmf_sim_rescan_ns(sc, nsid);
 	}
@@ -743,21 +743,21 @@ nvmf_rescan_ns(struct nvmf_softc *sc, uint32_t nsid)
 	nvme_namespace_data_swapbytes(data);
 
 	/* XXX: Needs locking around sc->ns[]. */
-	ns = sc->ns[nsid];
+	ns = sc->ns[nsid - 1];
 	if (data->nsze == 0) {
 		/* XXX: Needs locking */
 		if (ns != NULL) {
 			nvmf_destroy_ns(ns);
-			sc->ns[nsid] = NULL;
+			sc->ns[nsid - 1] = NULL;
 		}
 	} else {
 		/* XXX: Needs locking */
 		if (ns == NULL) {
-			sc->ns[nsid] = nvmf_init_ns(sc, nsid, data);
+			sc->ns[nsid - 1] = nvmf_init_ns(sc, nsid, data);
 		} else {
 			if (!nvmf_update_ns(ns, data)) {
 				nvmf_destroy_ns(ns);
-				sc->ns[nsid] = NULL;
+				sc->ns[nsid - 1] = NULL;
 			}
 		}
 	}
