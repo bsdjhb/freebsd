@@ -548,18 +548,18 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 
 	switch (lid) {
 	case NVME_LOG_CHANGED_NAMESPACE:
-		if (offset >= sizeof(ctrlr->changed_ns)) {
+		if (offset >= sizeof(*ctrlr->changed_ns)) {
 			status = NVME_SC_INVALID_FIELD;
 			goto done;
 		}
-		todo = sizeof(ctrlr->changed_ns) - offset;
+		todo = sizeof(*ctrlr->changed_ns) - offset;
 		if (todo > len)
 			todo = len;
 
 		m = m_getml(len, M_WAITOK);
 		mtx_lock(&ctrlr->lock);
 		m_copyback(m, 0, todo, (char *)ctrlr->changed_ns + offset);
-		if (offset == 0 && len == sizeof(ctrlr->changed_ns))
+		if (offset == 0 && len == sizeof(*ctrlr->changed_ns))
 			memset(ctrlr->changed_ns, 0,
 			    sizeof(*ctrlr->changed_ns));
 		if (!rae)
