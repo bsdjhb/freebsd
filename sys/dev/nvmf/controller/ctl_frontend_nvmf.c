@@ -731,11 +731,11 @@ nvmft_port_create(struct ctl_req *req)
 	    osrelease, subnqn, nn, ioccsz, iorcsz, &np->cdata);
 	np->cdata.aerl = NVMFT_NUM_AER - 1;
 	np->cdata.oaes = htole32(NVME_ASYNC_EVENT_NS_ATTRIBUTE);
-	np->cdata.oncs = htole16(1 << NVME_CTRLR_DATA_ONCS_VERIFY_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_WRZERO_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_DSM_SHIFT |
-	    1 << NVME_CTRLR_DATA_ONCS_COMPARE_SHIFT);
-	np->cdata.fuses = 1 << NVME_CTRLR_DATA_FUSES_CNW_SHIFT;
+	np->cdata.oncs = htole16(NVMEF(NVME_CTRLR_DATA_ONCS_VERIFY, 1) |
+	    NVMEF(NVME_CTRLR_DATA_ONCS_WRZERO, 1) |
+	    NVMEF(NVME_CTRLR_DATA_ONCS_DSM, 1) |
+	    NVMEF(NVME_CTRLR_DATA_ONCS_COMPARE, 1));
+	np->cdata.fuses = NVMEF(NVME_CTRLR_DATA_FUSES_CNW, 1);
 
 	port = &np->port;
 

@@ -144,12 +144,12 @@ connect_admin_queue(struct nvmf_association *na,
 	    NVMEM(NVME_CC_REG_SHN) | NVMEM(NVME_CC_REG_AMS) |
 	    NVMEM(NVME_CC_REG_MPS) | NVMEM(NVME_CC_REG_CSS));
 
-	cc |= 4 << NVME_CC_REG_IOCQES_SHIFT;	/* CQE entry size == 16 */
-	cc |= 6 << NVME_CC_REG_IOSQES_SHIFT;	/* SEQ entry size == 64 */
-	cc |= 0 << NVME_CC_REG_AMS_SHIFT;	/* AMS 0 (Round-robin) */
-	cc |= mps << NVME_CC_REG_MPS_SHIFT;
-	cc |= 0 << NVME_CC_REG_CSS_SHIFT;	/* NVM command set */
-	cc |= (1 << NVME_CC_REG_EN_SHIFT);	/* EN = 1 */
+	cc |= NVMEF(NVME_CC_REG_IOCQES, 4);	/* CQE entry size == 16 */
+	cc |= NVMEF(NVME_CC_REG_IOSQES, 6);	/* SQE entry size == 64 */
+	cc |= NVMEF(NVME_CC_REG_AMS, 0);	/* AMS 0 (Round-robin) */
+	cc |= NVMEF(NVME_CC_REG_MPS, mps);
+	cc |= NVMEF(NVME_CC_REG_CSS, 0);	/* NVM command set */
+	cc |= NVMEF(NVME_CC_REG_EN, 1);		/* EN = 1 */
 
 	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
 	if (error != 0)
@@ -196,7 +196,7 @@ shutdown_controller(struct nvmf_qpair *qp)
 	if (error != 0)
 		errc(1, error, "Failed to fetch CC");
 
-	cc |= NVME_SHN_NORMAL << NVME_CC_REG_SHN_SHIFT;
+	cc |= NVMEF(NVME_CC_REG_SHN, NVME_SHN_NORMAL);
 
 	error = nvmf_write_property(qp, NVMF_PROP_CC, 4, cc);
 	if (error != 0)

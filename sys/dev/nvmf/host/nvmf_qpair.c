@@ -114,8 +114,8 @@ nvmf_abort_request(struct nvmf_request *req, uint16_t cid)
 
 	memset(&cqe, 0, sizeof(cqe));
 	cqe.cid = cid;
-	cqe.status = htole16(NVME_SCT_PATH_RELATED << NVME_STATUS_SCT_SHIFT |
-	    NVME_SC_COMMAND_ABORTED_BY_HOST << NVME_STATUS_SC_SHIFT);
+	cqe.status = htole16(NVMEF(NVME_STATUS_SCT, NVME_SCT_PATH_RELATED) |
+	    NVMEF(NVME_STATUS_SC, NVME_SC_COMMAND_ABORTED_BY_HOST));
 	req->cb(req->cb_arg, &cqe);
 }
 

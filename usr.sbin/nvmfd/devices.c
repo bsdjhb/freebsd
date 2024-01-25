@@ -184,9 +184,9 @@ device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata)
 	nsdata->ncap = nsdata->nsze;
 	nsdata->nuse = nsdata->ncap;
 	nsdata->nlbaf = 1 - 1;
-	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
-	nsdata->lbaf[0] = (ffs(dev->sector_size) - 1) <<
-	    NVME_NS_DATA_LBAF_LBADS_SHIFT;
+	nsdata->flbas = NVMEF(NVME_NS_DATA_FLBAS_FORMAT, 0);
+	nsdata->lbaf[0] = NVMEF(NVME_NS_DATA_LBAF_LBADS,
+	    ffs(dev->sector_size) - 1);
 
 	be64enc(nsdata->eui64, dev->eui64);
 	return (true);

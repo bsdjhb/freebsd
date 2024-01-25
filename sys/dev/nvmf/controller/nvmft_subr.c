@@ -96,28 +96,28 @@ _nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout)
 	uint32_t caphi, caplo;
 	u_int mps;
 
-	caphi = 0 << NVME_CAP_HI_REG_CMBS_SHIFT |
-	    0 << NVME_CAP_HI_REG_PMRS_SHIFT;
+	caphi = NVMEF(NVME_CAP_HI_REG_CMBS, 0) |
+	    NVMEF(NVME_CAP_HI_REG_PMRS, 0);
 	if (max_io_qsize != 0) {
 		mps = ffs(PAGE_SIZE) - 1;
 		if (mps < NVME_MPS_SHIFT)
 			mps = 0;
 		else
 			mps -= NVME_MPS_SHIFT;
-		caphi |= mps << NVME_CAP_HI_REG_MPSMAX_SHIFT |
-		    mps << NVME_CAP_HI_REG_MPSMIN_SHIFT;
+		caphi |= NVMEF(NVME_CAP_HI_REG_MPSMAX, mps) |
+		    NVMEF(NVME_CAP_HI_REG_MPSMIN, mps);
 	}
-	caphi |= 0 << NVME_CAP_HI_REG_BPS_SHIFT |
-	    NVME_CAP_HI_REG_CSS_NVM_MASK << NVME_CAP_HI_REG_CSS_SHIFT |
-	    0 << NVME_CAP_HI_REG_NSSRS_SHIFT |
-	    0 << NVME_CAP_HI_REG_DSTRD_SHIFT;
+	caphi |= NVMEF(NVME_CAP_HI_REG_BPS, 0) |
+	    NVMEF(NVME_CAP_HI_REG_CSS, NVME_CAP_HI_REG_CSS_NVM_MASK) |
+	    NVMEF(NVME_CAP_HI_REG_NSSRS, 0) |
+	    NVMEF(NVME_CAP_HI_REG_DSTRD, 0);
 
-	caplo = (uint32_t)enable_timeout << NVME_CAP_LO_REG_TO_SHIFT |
-	    0 << NVME_CAP_LO_REG_AMS_SHIFT |
-	    1 << NVME_CAP_LO_REG_CQR_SHIFT;
+	caplo = NVMEF(NVME_CAP_LO_REG_TO, enable_timeout) |
+	    NVMEF(NVME_CAP_LO_REG_AMS, 0) |
+	    NVMEF(NVME_CAP_LO_REG_CQR, 1);
 
 	if (max_io_qsize != 0)
-		caplo |= (max_io_qsize - 1) << NVME_CAP_LO_REG_MQES_SHIFT;
+		caplo |= NVMEF(NVME_CAP_LO_REG_MQES, max_io_qsize - 1);
 
 	return ((uint64_t)caphi << 32 | caplo);
 }
@@ -210,17 +210,17 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	cdata->ctrlr_id = htole16(cntlid);
 	cdata->ver = htole32(NVME_REV(1, 4));
 	cdata->ctratt = htole32(
-	    1 << NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID_SHIFT |
-	    1 << NVME_CTRLR_DATA_CTRATT_TBKAS_SHIFT);
+	    NVMEF(NVME_CTRLR_DATA_CTRATT_128BIT_HOSTID, 1) |
+	    NVMEF(NVME_CTRLR_DATA_CTRATT_TBKAS, 1));
 	cdata->cntrltype = 1;
 	cdata->acl = 3;
 	cdata->aerl = 3;
 
 	/* 1 read-only firmware slot */
-	cdata->frmw = 1 << NVME_CTRLR_DATA_FRMW_SLOT1_RO_SHIFT |
-	    1 << NVME_CTRLR_DATA_FRMW_NUM_SLOTS_SHIFT;
+	cdata->frmw = NVMEF(NVME_CTRLR_DATA_FRMW_SLOT1_RO, 1) |
+	    NVMEF(NVME_CTRLR_DATA_FRMW_NUM_SLOTS, 1);
 
-	cdata->lpa = 1 << NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT;
+	cdata->lpa = NVMEF(NVME_CTRLR_DATA_LPA_EXT_DATA, 1);
 
 	/* Single power state */
 	cdata->npss = 0;
@@ -235,22 +235,23 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	/* 1 second granularity for KeepAlive */
 	cdata->kas = htole16(10);
 
-	cdata->sqes = 6 << NVME_CTRLR_DATA_SQES_MAX_SHIFT |
-	    6 << NVME_CTRLR_DATA_SQES_MIN_SHIFT;
-	cdata->cqes = 4 << NVME_CTRLR_DATA_CQES_MAX_SHIFT |
-	    4 << NVME_CTRLR_DATA_CQES_MIN_SHIFT;
+	cdata->sqes = NVMEF(NVME_CTRLR_DATA_SQES_MAX, 6) |
+	    NVMEF(NVME_CTRLR_DATA_SQES_MIN, 6);
+	cdata->cqes = NVMEF(NVME_CTRLR_DATA_CQES_MAX, 4) |
+	    NVMEF(NVME_CTRLR_DATA_CQES_MIN, 4);
 
 	cdata->maxcmd = htole16(max_io_qsize);
 	cdata->nn = htole32(nn);
 
-	cdata->vwc = NVME_CTRLR_DATA_VWC_ALL_NO <<
-	    NVME_CTRLR_DATA_VWC_ALL_SHIFT | NVMEM(NVME_CTRLR_DATA_VWC_PRESENT);
+	cdata->vwc =
+	    NVMEF(NVME_CTRLR_DATA_VWC_ALL, NVME_CTRLR_DATA_VWC_ALL_NO) |
+	    NVMEM(NVME_CTRLR_DATA_VWC_PRESENT);
 
 	/* Transport-specific? */
 	cdata->sgls = htole32(
-	    1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT);
+	    NVMEF(NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK, 1) |
+	    NVMEF(NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET, 1) |
+	    NVMEF(NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET, 1));
 
 	strlcpy(cdata->subnqn, subnqn, sizeof(cdata->subnqn));
 

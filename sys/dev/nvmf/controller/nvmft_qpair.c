@@ -258,8 +258,8 @@ nvmft_send_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 	struct nvme_completion cpl;
 	uint16_t status;
 
-	status = sc_type << NVME_STATUS_SCT_SHIFT |
-	    sc_status << NVME_STATUS_SC_SHIFT;
+	status = NVMEF(NVME_STATUS_SCT, sc_type) |
+	    NVMEF(NVME_STATUS_SC, sc_status);
 	nvmft_init_cqe(&cpl, nc, status);
 	return (nvmft_send_response(qp, &cpl));
 }
@@ -282,8 +282,8 @@ _nvmft_send_generic_error(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 	struct nvme_completion cpl;
 	uint16_t status;
 
-	status = NVME_SCT_GENERIC << NVME_STATUS_SCT_SHIFT |
-	    sc_status << NVME_STATUS_SC_SHIFT;
+	status = NVMEF(NVME_STATUS_SCT, NVME_SCT_GENERIC) |
+	    NVMEF(NVME_STATUS_SC, sc_status);
 	nvmft_init_cqe(&cpl, nc, status);
 	return (_nvmft_send_response(qp, &cpl));
 }
@@ -337,8 +337,8 @@ nvmft_connect_error(struct nvmft_qpair *qp,
 	struct nvmf_fabric_connect_rsp rsp;
 	uint16_t status;
 
-	status = sc_type << NVME_STATUS_SCT_SHIFT |
-	    sc_status << NVME_STATUS_SC_SHIFT;
+	status = NVMEF(NVME_STATUS_SCT, sc_type) |
+	    NVMEF(NVME_STATUS_SC, sc_status);
 	nvmft_init_connect_rsp(&rsp, cmd, status);
 	nvmft_send_connect_response(qp, &rsp);
 }
@@ -350,8 +350,8 @@ nvmft_connect_invalid_parameters(struct nvmft_qpair *qp,
 	struct nvmf_fabric_connect_rsp rsp;
 
 	nvmft_init_connect_rsp(&rsp, cmd,
-	    NVME_SCT_COMMAND_SPECIFIC << NVME_STATUS_SCT_SHIFT |
-	    NVMF_FABRIC_SC_INVALID_PARAM << NVME_STATUS_SC_SHIFT);
+	    NVMEF(NVME_STATUS_SCT, NVME_SCT_COMMAND_SPECIFIC) |
+	    NVMEF(NVME_STATUS_SC, NVMF_FABRIC_SC_INVALID_PARAM));
 	rsp.status_code_specific.invalid.ipo = htole16(offset);
 	rsp.status_code_specific.invalid.iattr = data ? 1 : 0;
 	nvmft_send_connect_response(qp, &rsp);

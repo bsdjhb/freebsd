@@ -334,7 +334,7 @@ nvmft_controller_shutdown(void *arg, int pending)
 	/* Mark shutdown complete. */
 	if (NVMEV(NVME_CSTS_REG_SHST, ctrlr->csts) == NVME_SHST_OCCURRING) {
 		ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
-		ctrlr->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
+		ctrlr->csts |= NVMEF(NVME_CSTS_REG_SHST, NVME_SHST_COMPLETE);
 	}
 
 	if (NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) == 0) {
@@ -463,7 +463,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 		return;
 	}
 
-	ctrlr->csts |= 1 << NVME_CSTS_REG_CFS_SHIFT;
+	ctrlr->csts |= NVMEF(NVME_CSTS_REG_CFS, 1);
 	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
 	mtx_unlock(&ctrlr->lock);
@@ -765,7 +765,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
 	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
 		ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
-		ctrlr->csts |= NVME_SHST_OCCURRING << NVME_CSTS_REG_SHST_SHIFT;
+		ctrlr->csts |= NVMEF(NVME_CSTS_REG_SHST, NVME_SHST_OCCURRING);
 		ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 		ctrlr->shutdown = true;
 		*need_shutdown = true;
@@ -779,7 +779,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			ctrlr->shutdown = true;
 			*need_shutdown = true;
 		} else
-			ctrlr->csts |= 1 << NVME_CSTS_REG_RDY_SHIFT;
+			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
 	}
 	mtx_unlock(&ctrlr->lock);
 
@@ -1017,9 +1017,9 @@ nvmft_report_aer(struct nvmft_controller *ctrlr, uint32_t aer_mask,
 	ctrlr->aer_cidx = (ctrlr->aer_cidx + 1) % NVMFT_NUM_AER;
 	mtx_unlock(&ctrlr->lock);
 
-	cpl.cdw0 = htole32(type << NVME_ASYNC_EVENT_TYPE_SHIFT |
-	    (uint32_t)info << NVME_ASYNC_EVENT_INFO_SHIFT |
-	    (uint32_t)log_page_id << NVME_ASYNC_EVENT_LOG_PAGE_ID_SHIFT);
+	cpl.cdw0 = htole32(NVMEF(NVME_ASYNC_EVENT_TYPE, type) |
+	    NVMEF(NVME_ASYNC_EVENT_INFO, info) |
+	    NVMEF(NVME_ASYNC_EVENT_LOG_PAGE_ID, log_page_id));
 
 	nvmft_send_response(ctrlr->admin, &cpl);
 }

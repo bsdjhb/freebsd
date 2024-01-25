@@ -54,8 +54,8 @@ nvmf_simple_response(const struct nvmf_capsule *nc, uint8_t sc_type,
 	struct nvme_completion cpl;
 	uint16_t status;
 
-	status = sc_type << NVME_STATUS_SCT_SHIFT |
-	    sc_status << NVME_STATUS_SC_SHIFT;
+	status = NVMEF(NVME_STATUS_SCT, sc_type) |
+	    NVMEF(NVME_STATUS_SC, sc_status);
 	nvmf_init_cqe(&cpl, nc, status);
 	return (nvmf_allocate_response(nc->nc_qpair, &cpl));
 }
@@ -146,8 +146,8 @@ nvmf_connect_invalid_parameters(const struct nvmf_capsule *cc, bool data,
 	struct nvmf_capsule *rc;
 
 	nvmf_init_cqe(&rsp, cc,
-	    NVME_SCT_COMMAND_SPECIFIC << NVME_STATUS_SCT_SHIFT |
-	    NVMF_FABRIC_SC_INVALID_PARAM << NVME_STATUS_SC_SHIFT);
+	    NVMEF(NVME_STATUS_SCT, NVME_SCT_COMMAND_SPECIFIC) |
+	    NVMEF(NVME_STATUS_SC, NVMF_FABRIC_SC_INVALID_PARAM));
 	rsp.status_code_specific.invalid.ipo = htole16(offset);
 	rsp.status_code_specific.invalid.iattr = data ? 1 : 0;
 	rc = nvmf_allocate_response(cc->nc_qpair, &rsp);
@@ -422,16 +422,16 @@ nvmf_init_discovery_controller_data(struct nvmf_qpair *qp,
 	cdata->ver = htole32(NVME_REV(1, 4));
 	cdata->cntrltype = 2;
 
-	cdata->lpa = 1 << NVME_CTRLR_DATA_LPA_EXT_DATA_SHIFT;
+	cdata->lpa = NVMEF(NVME_CTRLR_DATA_LPA_EXT_DATA, 1);
 	cdata->elpe = 0;
 
 	cdata->maxcmd = htole16(na->na_params.max_admin_qsize);
 
 	/* Transport-specific? */
 	cdata->sgls = htole32(
-	    1 << NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET_SHIFT |
-	    1 << NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET_SHIFT);
+	    NVMEF(NVME_CTRLR_DATA_SGLS_TRANSPORT_DATA_BLOCK, 1) |
+	    NVMEF(NVME_CTRLR_DATA_SGLS_ADDRESS_AS_OFFSET, 1) |
+	    NVMEF(NVME_CTRLR_DATA_SGLS_NVM_COMMAND_SET, 1));
 
 	strlcpy(cdata->subnqn, NVMF_DISCOVERY_NQN, sizeof(cdata->subnqn));
 }

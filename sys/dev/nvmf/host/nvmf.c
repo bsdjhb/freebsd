@@ -147,7 +147,7 @@ nvmf_shutdown_controller(struct nvmf_softc *sc)
 		return;
 	}
 
-	cc |= NVME_SHN_NORMAL << NVME_CC_REG_SHN_SHIFT;
+	cc |= NVMEF(NVME_CC_REG_SHN, NVME_SHN_NORMAL);
 
 	error = nvmf_write_property(sc, NVMF_PROP_CC, 4, cc);
 	if (error != 0)
