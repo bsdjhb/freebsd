@@ -1344,10 +1344,10 @@ ctl_be_block_namespace_data(struct ctl_be_block_lun *be_lun,
 	nsdata->nuse = nsdata->nuse;
 	nsdata->nlbaf = 1 - 1;
 	nsdata->dlfeat = NVMEM(NVME_NS_DATA_DLFEAT_DWZ) |
-	    NVME_NS_DATA_DLFEAT_READ_00 << NVME_NS_DATA_DLFEAT_READ_SHIFT;
-	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
-	nsdata->lbaf[0] = (ffs(cbe_lun->blocksize) - 1) <<
-	    NVME_NS_DATA_LBAF_LBADS_SHIFT;
+	    NVMEF(NVME_NS_DATA_DLFEAT_READ, NVME_NS_DATA_DLFEAT_READ_00);
+	nsdata->flbas = NVMEF(NVME_NS_DATA_FLBAS_FORMAT, 0);
+	nsdata->lbaf[0] = NVMEF(NVME_NS_DATA_LBAF_LBADS,
+	    ffs(cbe_lun->blocksize) - 1);
 
 	ctl_lun_nsdata_ids(cbe_lun, nsdata);
 	ctl_config_read_done(io);
