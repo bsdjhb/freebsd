@@ -998,8 +998,8 @@ ctl_nvme_set_error(struct ctl_nvmeio *ctnio, uint8_t sc_type,
 	uint16_t status;
 
 	memset(&ctnio->cpl, 0, sizeof(ctnio->cpl));
-	status = sc_type << NVME_STATUS_SCT_SHIFT |
-	    sc_status << NVME_STATUS_SC_SHIFT;
+	status = NVMEF(NVME_STATUS_SCT, sc_type) |
+	    NVMEF(NVME_STATUS_SC, sc_status);
 	ctnio->cpl.status = htole16(status);
 	ctnio->io_hdr.status = CTL_NVME_ERROR;
 }
