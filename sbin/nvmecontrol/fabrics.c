@@ -274,8 +274,8 @@ connect_discovery_adminq(enum nvmf_trtype trtype, const char *address,
 		errc(EX_IOERR, error, "Failed to fetch CC");
 
 	/* Clear known fields preserving any reserved fields. */
-	cc &= ~(NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
-	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
+	cc &= ~(NVMEM(NVME_CC_REG_SHN) | NVMEM(NVME_CC_REG_AMS) |
+	    NVMEM(NVME_CC_REG_MPS) | NVMEM(NVME_CC_REG_CSS));
 
 	/* Leave AMS, MPS, and CSS as 0. */
 
@@ -361,9 +361,9 @@ connect_nvm_adminq(struct nvmf_association *na,
 	}
 
 	/* Clear known fields preserving any reserved fields. */
-	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
-	    NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
-	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
+	cc &= ~(NVMEM(NVME_CC_REG_IOCQES) | NVMEM(NVME_CC_REG_IOSQES) |
+	    NVMEM(NVME_CC_REG_SHN) | NVMEM(NVME_CC_REG_AMS) |
+	    NVMEM(NVME_CC_REG_MPS) | NVMEM(NVME_CC_REG_CSS));
 
 	cc |= 4 << NVME_CC_REG_IOCQES_SHIFT;	/* CQE entry size == 16 */
 	cc |= 6 << NVME_CC_REG_IOSQES_SHIFT;	/* SEQ entry size == 64 */

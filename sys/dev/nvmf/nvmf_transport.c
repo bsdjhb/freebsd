@@ -128,7 +128,7 @@ nvmf_allocate_command(struct nvmf_qpair *qp, const void *sqe, int how)
 	memcpy(&nc->nc_sqe, sqe, nc->nc_qe_len);
 
 	/* 4.2 of NVMe base spec: Fabrics always uses SGL. */
-	nc->nc_sqe.fuse &= ~NVMEB(NVME_CMD_PSDT);
+	nc->nc_sqe.fuse &= ~NVMEM(NVME_CMD_PSDT);
 	nc->nc_sqe.fuse |= NVME_PSDT_SGL << NVME_CMD_PSDT_SHIFT;
 	return (nc);
 }

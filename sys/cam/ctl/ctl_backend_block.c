@@ -1343,7 +1343,7 @@ ctl_be_block_namespace_data(struct ctl_be_block_lun *be_lun,
 	nsdata->ncap = nsdata->nsze;
 	nsdata->nuse = nsdata->nuse;
 	nsdata->nlbaf = 1 - 1;
-	nsdata->dlfeat = NVMEB(NVME_NS_DATA_DLFEAT_DWZ) |
+	nsdata->dlfeat = NVMEM(NVME_NS_DATA_DLFEAT_DWZ) |
 	    NVME_NS_DATA_DLFEAT_READ_00 << NVME_NS_DATA_DLFEAT_READ_SHIFT;
 	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
 	nsdata->lbaf[0] = (ffs(cbe_lun->blocksize) - 1) <<

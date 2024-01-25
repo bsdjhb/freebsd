@@ -622,10 +622,10 @@ ramdisk_namespace_data(union ctl_io *io)
 	nsdata->nsze = htole64(be_lun->size_blocks);
 	nsdata->ncap = htole64(be_lun->cap_bytes / cbe_lun->blocksize);
 	nsdata->nuse = htole64(be_lun->cap_used / cbe_lun->blocksize);
-	nsdata->nsfeat = NVMEB(NVME_NS_DATA_NSFEAT_THIN_PROV) |
-	    NVMEB(NVME_NS_DATA_NSFEAT_DEALLOC);
+	nsdata->nsfeat = NVMEM(NVME_NS_DATA_NSFEAT_THIN_PROV) |
+	    NVMEM(NVME_NS_DATA_NSFEAT_DEALLOC);
 	nsdata->nlbaf = 1 - 1;
-	nsdata->dlfeat = NVMEB(NVME_NS_DATA_DLFEAT_DWZ) |
+	nsdata->dlfeat = NVMEM(NVME_NS_DATA_DLFEAT_DWZ) |
 	    NVME_NS_DATA_DLFEAT_READ_00 << NVME_NS_DATA_DLFEAT_READ_SHIFT;
 	nsdata->flbas = 0 << NVME_NS_DATA_FLBAS_FORMAT_SHIFT;
 	nsdata->lbaf[0] = (ffs(cbe_lun->blocksize) - 1) <<

@@ -244,7 +244,7 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	cdata->nn = htole32(nn);
 
 	cdata->vwc = NVME_CTRLR_DATA_VWC_ALL_NO <<
-	    NVME_CTRLR_DATA_VWC_ALL_SHIFT | NVMEB(NVME_CTRLR_DATA_VWC_PRESENT);
+	    NVME_CTRLR_DATA_VWC_ALL_SHIFT | NVMEM(NVME_CTRLR_DATA_VWC_PRESENT);
 
 	/* Transport-specific? */
 	cdata->sgls = htole32(

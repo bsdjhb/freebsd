@@ -140,9 +140,9 @@ connect_admin_queue(struct nvmf_association *na,
 		errc(1, error, "Failed to fetch CC");
 
 	/* Clear known fields preserving any reserved fields. */
-	cc &= ~(NVMEB(NVME_CC_REG_IOCQES) | NVMEB(NVME_CC_REG_IOSQES) |
-	    NVMEB(NVME_CC_REG_SHN) | NVMEB(NVME_CC_REG_AMS) |
-	    NVMEB(NVME_CC_REG_MPS) | NVMEB(NVME_CC_REG_CSS));
+	cc &= ~(NVMEM(NVME_CC_REG_IOCQES) | NVMEM(NVME_CC_REG_IOSQES) |
+	    NVMEM(NVME_CC_REG_SHN) | NVMEM(NVME_CC_REG_AMS) |
+	    NVMEM(NVME_CC_REG_MPS) | NVMEM(NVME_CC_REG_CSS));
 
 	cc |= 4 << NVME_CC_REG_IOCQES_SHIFT;	/* CQE entry size == 16 */
 	cc |= 6 << NVME_CC_REG_IOSQES_SHIFT;	/* SEQ entry size == 64 */

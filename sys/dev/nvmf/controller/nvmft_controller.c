@@ -333,12 +333,12 @@ nvmft_controller_shutdown(void *arg, int pending)
 
 	/* Mark shutdown complete. */
 	if (NVMEV(NVME_CSTS_REG_SHST, ctrlr->csts) == NVME_SHST_OCCURRING) {
-		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
+		ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
 		ctrlr->csts |= NVME_SHST_COMPLETE << NVME_CSTS_REG_SHST_SHIFT;
 	}
 
 	if (NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) == 0) {
-		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_RDY);
+		ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_RDY);
 		ctrlr->shutdown = false;
 	}
 	mtx_unlock(&ctrlr->lock);
@@ -464,7 +464,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	}
 
 	ctrlr->csts |= 1 << NVME_CSTS_REG_CFS_SHIFT;
-	ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
+	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
 	mtx_unlock(&ctrlr->lock);
 
@@ -764,9 +764,9 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 	/* Handle shutdown requests. */
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
 	    NVMEV(NVME_CC_REG_SHN, new_cc) != 0) {
-		ctrlr->csts &= ~NVMEB(NVME_CSTS_REG_SHST);
+		ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
 		ctrlr->csts |= NVME_SHST_OCCURRING << NVME_CSTS_REG_SHST_SHIFT;
-		ctrlr->cc &= ~NVMEB(NVME_CC_REG_EN);
+		ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 		ctrlr->shutdown = true;
 		*need_shutdown = true;
 		nvmft_printf(ctrlr, "shutdown requested\n");
