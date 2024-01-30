@@ -438,6 +438,9 @@ db_command(struct db_command **last_cmdp, struct db_command_table *cmd_table,
 			}
 		}
 
+		db_printf("Running command %s with flags %#x\n", cmd->name,
+		    cmd->flag);
+
 		if ((cmd->flag & CS_OWN) == 0) {
 			/*
 			 * Standard syntax:
