@@ -1765,6 +1765,8 @@ do_rx_data(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 				 * Data was received while still
 				 * ULP_MODE_NONE, just fall through.
 				 */
+				printf("%s: received data with DDP_OFF=0\n",
+				    __func__);
 			}
 		}
 
