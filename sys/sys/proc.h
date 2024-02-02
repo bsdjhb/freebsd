@@ -1236,6 +1236,7 @@ void	cpu_thread_alloc(struct thread *);
 void	cpu_thread_clean(struct thread *);
 void	cpu_thread_exit(struct thread *);
 void	cpu_thread_free(struct thread *);
+void	cpu_update_pcb(struct thread *);
 struct	thread *thread_alloc(int pages);
 int	thread_check_susp(struct thread *td, bool sleep);
 void	thread_cow_get_proc(struct thread *newtd, struct proc *p);
