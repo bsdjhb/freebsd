@@ -529,6 +529,8 @@ void t4_push_frames(struct adapter *, struct toepcb *, int);
 void t4_push_pdus(struct adapter *, struct toepcb *, int);
 
 /* t4_ddp.c */
+int t4_init_ddp(struct adapter *, struct tom_data *);
+void t4_free_ddp(struct tom_data *);
 int t4_init_ppod_region(struct ppod_region *, struct t4_range *, u_int,
     const char *);
 void t4_free_ppod_region(struct ppod_region *);

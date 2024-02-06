@@ -2983,6 +2983,27 @@ t4_enable_ddp_rcv(struct socket *so, struct toepcb *toep)
 	return (0);
 }
 
+int
+t4_init_ddp(struct adapter *sc, struct tom_data *td)
+{
+	int rc;
+
+	rc = t4_init_ppod_region(&td->pr, &sc->vres.ddp,
+	    t4_read_reg(sc, A_ULP_RX_TDDP_PSZ), "TDDP page pods");
+	if (rc != 0)
+		return (rc);
+	t4_set_reg_field(sc, A_ULP_RX_TDDP_TAGMASK,
+	    V_TDDPTAGMASK(M_TDDPTAGMASK), td->pr.pr_tag_mask);
+
+	return (0);
+}
+
+void
+t4_free_ddp(struct tom_data *td)
+{
+	t4_free_ppod_region(&td->pr);
+}
+
 void
 t4_ddp_mod_load(void)
 {
