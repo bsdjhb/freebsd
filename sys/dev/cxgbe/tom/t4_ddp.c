@@ -193,6 +193,10 @@ recycle_ddp_rcv_buffer(struct toepcb *toep, struct ddp_rcv_buffer *drb)
 	DDP_CACHE_LOCK(toep);
 	if (!(toep->ddp.flags & DDP_DEAD) &&
 	    toep->ddp.cached_count < t4_ddp_rcvbuf_cache) {
+#ifdef VERBOSE_TRACES
+		CTR(KTR_CXGBE, "%s: tid %u, insert %p", __func__, toep->tid,
+		    drb);
+#endif
 		TAILQ_INSERT_HEAD(&toep->ddp.cached_buffers, drb, link);
 		toep->ddp.cached_count++;
 		DDP_CACHE_UNLOCK(toep);
@@ -210,6 +214,10 @@ alloc_cached_ddp_rcv_buffer(struct toepcb *toep)
 	DDP_CACHE_LOCK(toep);
 	if (!TAILQ_EMPTY(&toep->ddp.cached_buffers)) {
 		drb = TAILQ_FIRST(&toep->ddp.cached_buffers);
+#ifdef VERBOSE_TRACES
+		CTR(KTR_CXGBE, "%s: tid %u, remove %p", __func__, toep->tid,
+		    drb);
+#endif
 		TAILQ_REMOVE(&toep->ddp.cached_buffers, drb, link);
 		toep->ddp.cached_count--;
 		counter_u64_add(toep->ofld_rxq->ddp_buffer_reuse, 1);
@@ -336,6 +344,10 @@ release_ddp_resources(struct toepcb *toep)
 	if ((toep->ddp.flags & DDP_RCVBUF) != 0) {
 		DDP_CACHE_LOCK(toep);
 		while ((drb = TAILQ_FIRST(&toep->ddp.cached_buffers)) != NULL) {
+#ifdef VERBOSE_TRACES
+			CTR(KTR_CXGBE, "%s: tid %u, remove %p", __func__,
+			    toep->tid, drb);
+#endif
 			TAILQ_REMOVE(&toep->ddp.cached_buffers, drb, link);
 			free_ddp_rcv_buffer(toep, drb);
 		}
