@@ -49,6 +49,11 @@ struct io_controller {
 	struct nvmf_qpair **io_qpairs;
 	int *io_sockets;
 
+	struct nvme_firmware_page fp;
+	struct nvme_health_information_page hip;
+	uint16_t partial_dur;
+	uint16_t partial_duw;
+
 	uint16_t cntlid;
 	char hostid[16];
 	char hostnqn[NVME_NQN_FIELD_SIZE];
@@ -109,6 +114,58 @@ shutdown_io(void)
 {
 	if (kernel_io)
 		shutdown_ctl_port(nqn);
+}
+
+static void
+handle_get_log_page(struct io_controller *ioc, const struct nvmf_capsule *nc,
+    const struct nvme_command *cmd)
+{
+	uint64_t offset;
+	uint32_t numd;
+	size_t len;
+	uint8_t lid;
+
+	lid = le32toh(cmd->cdw10) & 0xff;
+	numd = le32toh(cmd->cdw10) >> 16 | le32toh(cmd->cdw11) << 16;
+	offset = le32toh(cmd->cdw12) | (uint64_t)le32toh(cmd->cdw13) << 32;
+
+	if (offset % 3 != 0)
+		goto error;
+
+	len = (numd + 1) * 4;
+
+	switch (lid) {
+	case NVME_LOG_ERROR:
+	{
+		void *buf;
+
+		if (len % sizeof(struct nvme_error_information_entry) != 0)
+			goto error;
+
+		buf = calloc(1, len);
+		nvmf_send_controller_data(nc, buf, len);
+		free(buf);
+		return;
+	}
+	case NVME_LOG_HEALTH_INFORMATION:
+		if (len != sizeof(ioc->hip))
+			goto error;
+
+		nvmf_send_controller_data(nc, &ioc->hip, sizeof(ioc->hip));
+		return;
+	case NVME_LOG_FIRMWARE_SLOT:
+		if (len != sizeof(ioc->fp))
+			goto error;
+
+		nvmf_send_controller_data(nc, &ioc->fp, sizeof(ioc->fp));
+		return;
+	default:
+		warnx("Unsupported page %#x for GET_LOG_PAGE\n", lid);
+		goto error;
+	}
+
+error:
+	nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
 }
 
 static bool
@@ -194,6 +251,9 @@ admin_command(const struct nvmf_capsule *nc, const struct nvme_command *cmd,
 	struct io_controller *ioc = arg;
 
 	switch (cmd->opc) {
+	case NVME_OPC_GET_LOG_PAGE:
+		handle_get_log_page(ioc, nc, cmd);
+		return (true);
 	case NVME_OPC_IDENTIFY:
 		return (handle_io_identify_command(nc, cmd));
 	case NVME_OPC_SET_FEATURES:
@@ -269,6 +329,18 @@ handle_io_fabrics_command(const struct nvmf_capsule *nc,
 	return (false);
 }
 
+static void
+hip_add(uint64_t pair[2], uint64_t addend)
+{
+	uint64_t old, new;
+
+	old = pair[0];
+	new = old + addend;
+	pair[0] = new;
+	if (new < old)
+		pair[1]++;
+}
+
 static uint64_t
 cmd_lba(const struct nvme_command *cmd)
 {
@@ -282,21 +354,41 @@ cmd_nlb(const struct nvme_command *cmd)
 }
 
 static void
-handle_read(const struct nvmf_capsule *nc,
+handle_read(struct io_controller *ioc, const struct nvmf_capsule *nc,
     const struct nvme_command *cmd)
 {
+	size_t len;
+
+	len = nvmf_capsule_data_len(nc);
 	device_read(le32toh(cmd->nsid), cmd_lba(cmd), cmd_nlb(cmd), nc);
+	hip_add(ioc->hip.host_read_commands, 1);
+
+	len /= 512;
+	len += ioc->partial_dur;
+	if (len > 1000)
+		hip_add(ioc->hip.data_units_read, len / 1000);
+	ioc->partial_dur = len % 1000;
 }
 
 static void
-handle_write(const struct nvmf_capsule *nc,
+handle_write(struct io_controller *ioc, const struct nvmf_capsule *nc,
     const struct nvme_command *cmd)
 {
+	size_t len;
+
+	len = nvmf_capsule_data_len(nc);
 	device_write(le32toh(cmd->nsid), cmd_lba(cmd), cmd_nlb(cmd), nc);
+	hip_add(ioc->hip.host_write_commands, 1);
+
+	len /= 512;
+	len += ioc->partial_duw;
+	if (len > 1000)
+		hip_add(ioc->hip.data_units_written, len / 1000);
+	ioc->partial_duw = len % 1000;
 }
 
 static bool
-handle_io_commands(struct nvmf_qpair *qp)
+handle_io_commands(struct io_controller *ioc, struct nvmf_qpair *qp)
 {
 	const struct nvme_command *cmd;
 	struct nvmf_capsule *nc;
@@ -317,10 +409,10 @@ handle_io_commands(struct nvmf_qpair *qp)
 
 		switch (cmd->opc) {
 		case NVME_OPC_READ:
-			handle_read(nc, cmd);
+			handle_read(ioc, nc, cmd);
 			break;
 		case NVME_OPC_WRITE:
-			handle_write(nc, cmd);
+			handle_write(ioc, nc, cmd);
 			break;
 		case NVME_OPC_FABRICS_COMMANDS:
 			disconnect = handle_io_fabrics_command(nc,
