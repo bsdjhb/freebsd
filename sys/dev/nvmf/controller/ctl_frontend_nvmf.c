@@ -217,7 +217,7 @@ nvmft_populate_nslist(struct nvmft_port *np, uint32_t nsid,
 	for (i = 0; i < np->num_ns; i++) {
 		if (np->active_ns[i] <= nsid)
 			continue;
-		nslist->ns[count] = np->active_ns[i];
+		nslist->ns[count] = htole32(np->active_ns[i]);
 		count++;
 		if (count == nitems(nslist->ns))
 			break;
