@@ -341,11 +341,11 @@ hip_add(uint64_t pair[2], uint64_t addend)
 {
 	uint64_t old, new;
 
-	old = pair[0];
+	old = le64toh(pair[0]);
 	new = old + addend;
-	pair[0] = new;
+	pair[0] = htole64(new);
 	if (new < old)
-		pair[1]++;
+		pair[1] += htole64(1);
 }
 
 static uint64_t
@@ -490,6 +490,8 @@ connect_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 
 	ioc->fp.afi = NVMEF(NVME_FIRMWARE_PAGE_AFI_SLOT, 1);
 	memcpy(ioc->fp.revision[0], cdata.fr, sizeof(cdata.fr));
+
+	ioc->hip.power_cycles[0] = 1;
 
 	ioc->c = init_controller(qp, &cdata);
 
