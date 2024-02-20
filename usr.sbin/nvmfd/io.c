@@ -284,6 +284,8 @@ admin_command(const struct nvmf_capsule *nc, const struct nvme_command *cmd,
 static void
 handle_admin_qpair(struct io_controller *ioc)
 {
+	pthread_setname_np(pthread_self(), "admin queue");
+
 	controller_handle_admin_commands(ioc->c, admin_command, ioc);
 
 	pthread_mutex_lock(&io_na_mutex);
@@ -439,7 +441,11 @@ handle_io_commands(struct io_controller *ioc, struct nvmf_qpair *qp)
 static void
 handle_io_qpair(struct io_controller *ioc, struct nvmf_qpair *qp, int qid)
 {
+	char name[64];
 	bool disconnect;
+
+	snprintf(name, sizeof(name), "I/O queue %d", qid);
+	pthread_setname_np(pthread_self(), name);
 
 	disconnect = handle_io_commands(ioc, qp);
 
