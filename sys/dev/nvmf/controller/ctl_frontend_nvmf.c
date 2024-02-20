@@ -207,7 +207,7 @@ found:
 }
 
 void
-nvmft_populate_nslist(struct nvmft_port *np, uint32_t nsid,
+nvmft_populate_active_nslist(struct nvmft_port *np, uint32_t nsid,
     struct nvme_ns_list *nslist)
 {
 	u_int i, count;

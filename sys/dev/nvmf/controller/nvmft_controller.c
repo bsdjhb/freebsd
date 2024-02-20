@@ -638,7 +638,7 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 		}
 
 		nslist = malloc(sizeof(*nslist), M_NVMFT, M_WAITOK | M_ZERO);
-		nvmft_populate_nslist(ctrlr->np, nsid, nslist);
+		nvmft_populate_active_nslist(ctrlr->np, nsid, nslist);
 		m = m_get(M_WAITOK, MT_DATA);
 		m_extadd(m, (void *)nslist, sizeof(*nslist), m_free_nslist,
 		    nslist, NULL, 0, EXT_CTL);

@@ -118,7 +118,7 @@ MALLOC_DECLARE(M_NVMFT);
 
 /* ctl_frontend_nvmf.c */
 void	nvmft_port_free(struct nvmft_port *np);
-void	nvmft_populate_nslist(struct nvmft_port *np, uint32_t nsid,
+void	nvmft_populate_active_nslist(struct nvmft_port *np, uint32_t nsid,
     struct nvme_ns_list *nslist);
 void	nvmft_dispatch_command(struct nvmft_qpair *qp,
     struct nvmf_capsule *nc, bool admin);
