@@ -34,6 +34,7 @@
 struct controller;
 struct nvme_command;
 struct nvme_controller_data;
+struct nvme_ns_list;
 struct nvmf_capsule;
 struct nvmf_qpair;
 
@@ -65,10 +66,12 @@ void	shutdown_io(void);
 /* devices.c */
 void	register_devices(int ac, char **av);
 u_int	device_count(void);
-bool	device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata);
-void	device_read(u_int nsid, uint64_t lba, u_int nlb,
+void	device_active_nslist(uint32_t nsid, struct nvme_ns_list *nslist);
+bool	device_identification_descriptor(uint32_t nsid, void *buf);
+bool	device_namespace_data(uint32_t nsid, struct nvme_namespace_data *nsdata);
+void	device_read(uint32_t nsid, uint64_t lba, u_int nlb,
     const struct nvmf_capsule *nc);
-void	device_write(u_int nsid, uint64_t lba, u_int nlb,
+void	device_write(uint32_t nsid, uint64_t lba, u_int nlb,
     const struct nvmf_capsule *nc);
 
 /* ctl.c */

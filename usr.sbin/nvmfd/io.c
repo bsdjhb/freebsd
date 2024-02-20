@@ -165,12 +165,34 @@ handle_io_identify_command(const struct nvmf_capsule *nc,
     const struct nvme_command *cmd)
 {
 	struct nvme_namespace_data nsdata;
+	struct nvme_ns_list nslist;
+	uint32_t nsid;
 	uint8_t cns;
 
 	cns = le32toh(cmd->cdw10) & 0xFF;
 	switch (cns) {
-	case 0:
+	case 0:	/* Namespace data. */
 		if (!device_namespace_data(le32toh(cmd->nsid), &nsdata)) {
+			nvmf_send_generic_error(nc,
+			    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
+			return (true);
+		}
+
+		nvmf_send_controller_data(nc, &nsdata, sizeof(nsdata));
+		return (true);
+	case 2:	/* Active namespace list. */
+		nsid = le32toh(cmd->nsid);
+		if (nsid >= 0xfffffffe) {
+			nvmf_send_generic_error(nc, NVME_SC_INVALID_FIELD);
+			return (true);
+		}
+
+		device_active_nslist(nsid, &nslist);
+		nvmf_send_controller_data(nc, &nslist, sizeof(nslist));
+		return (true);
+	case 3:	/* Namespace Identification Descriptor list. */
+		if (!device_identification_descriptor(le32toh(cmd->nsid),
+		    &nsdata)) {
 			nvmf_send_generic_error(nc,
 			    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
 			return (true);

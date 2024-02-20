@@ -163,15 +163,54 @@ device_count(void)
 }
 
 static struct backing_device *
-lookup_device(u_int nsid)
+lookup_device(uint32_t nsid)
 {
 	if (nsid == 0 || nsid > ndevices)
 		return (NULL);
 	return (&devices[nsid - 1]);
 }
 
+void
+device_active_nslist(uint32_t nsid, struct nvme_ns_list *nslist)
+{
+	u_int count;
+
+	memset(nslist, 0, sizeof(*nslist));
+	count = 0;
+	nsid++;
+	while (nsid <= ndevices) {
+		nslist->ns[count] = htole32(nsid);
+		count++;
+		if (count == nitems(nslist->ns))
+			break;
+		nsid++;
+	}
+}
+
 bool
-device_namespace_data(u_int nsid, struct nvme_namespace_data *nsdata)
+device_identification_descriptor(uint32_t nsid, void *buf)
+{
+	struct backing_device *dev;
+	char *p;
+
+	dev = lookup_device(nsid);
+	if (dev == NULL)
+		return (false);
+
+	memset(buf, 0, 4096);
+
+	p = buf;
+
+	/* EUI64 */
+	*p++ = 1;
+	*p++ = 8;
+	p += 2;
+	be64enc(p, dev->eui64);
+	return (true);
+}
+
+bool
+device_namespace_data(uint32_t nsid, struct nvme_namespace_data *nsdata)
 {
 	struct backing_device *dev;
 
@@ -213,7 +252,8 @@ read_buffer(int fd, void *buf, size_t len, off_t offset)
 }
 
 void
-device_read(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
+device_read(uint32_t nsid, uint64_t lba, u_int nlb,
+    const struct nvmf_capsule *nc)
 {
 	struct backing_device *dev;
 	char *p, *src;
@@ -278,7 +318,8 @@ write_buffer(int fd, const void *buf, size_t len, off_t offset)
 }
 
 void
-device_write(u_int nsid, uint64_t lba, u_int nlb, const struct nvmf_capsule *nc)
+device_write(uint32_t nsid, uint64_t lba, u_int nlb,
+    const struct nvmf_capsule *nc)
 {
 	struct backing_device *dev;
 	char *p, *dst;
