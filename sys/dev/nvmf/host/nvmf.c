@@ -325,8 +325,8 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 
 	nvmf_status_init(&status);
 	nvmf_status_wait_io(&status);
-	if (!nvmf_cmd_identify_active_namespaces(sc, *nsidp, nslist, nvmf_complete,
-	    &status, nvmf_io_complete, &status, M_WAITOK)) {
+	if (!nvmf_cmd_identify_active_namespaces(sc, *nsidp, nslist,
+	    nvmf_complete, &status, nvmf_io_complete, &status, M_WAITOK)) {
 		device_printf(sc->dev,
 		    "failed to send IDENTIFY active namespaces command\n");
 		return (false);
@@ -366,7 +366,8 @@ nvmf_scan_nslist(struct nvmf_softc *sc, struct nvme_ns_list *nslist,
 		if (!nvmf_cmd_identify_namespace(sc, nsid, data, nvmf_complete,
 		    &status, nvmf_io_complete, &status, M_WAITOK)) {
 			device_printf(sc->dev,
-			    "failed to send IDENTIFY namespace %u command\n", nsid);
+			    "failed to send IDENTIFY namespace %u command\n",
+			    nsid);
 			return (false);
 		}
 		nvmf_wait_for_reply(&status);

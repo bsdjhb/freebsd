@@ -224,8 +224,9 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 
 	if (memcmp(ctrlr->hostid, data->hostid, sizeof(ctrlr->hostid)) != 0) {
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "hostid mismatch for I/O queue %u from %.*s\n",
-		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
+		nvmft_printf(ctrlr,
+		    "hostid mismatch for I/O queue %u from %.*s\n", qid,
+		    (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostid));
 		nvmft_qpair_destroy(qp);
@@ -233,8 +234,9 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	}
 	if (memcmp(ctrlr->hostnqn, data->hostnqn, sizeof(ctrlr->hostnqn)) != 0) {
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "hostnqn mismatch for I/O queue %u from %.*s\n",
-		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
+		nvmft_printf(ctrlr,
+		    "hostnqn mismatch for I/O queue %u from %.*s\n", qid,
+		    (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostnqn));
 		nvmft_qpair_destroy(qp);
@@ -245,7 +247,8 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	if (ctrlr->shutdown) {
 		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "attempt to create I/O queue %u on disabled controller from %.*s\n",
+		nvmft_printf(ctrlr,
+		    "attempt to create I/O queue %u on disabled controller from %.*s\n",
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, true,
 		    offsetof(struct nvmf_fabric_connect_data, cntlid));
@@ -255,7 +258,8 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	if (ctrlr->num_io_queues == 0) {
 		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "attempt to create I/O queue %u without enabled queues from %.*s\n",
+		nvmft_printf(ctrlr,
+		    "attempt to create I/O queue %u without enabled queues from %.*s\n",
 		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_error(qp, cmd, NVME_SCT_GENERIC,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
@@ -265,8 +269,9 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	if (cmd->qid > ctrlr->num_io_queues) {
 		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "attempt to create invalid I/O queue %u from %.*s\n",
-		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
+		nvmft_printf(ctrlr,
+		    "attempt to create invalid I/O queue %u from %.*s\n", qid,
+		    (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_invalid_parameters(qp, cmd, false,
 		    offsetof(struct nvmf_fabric_connect_cmd, qid));
 		nvmft_qpair_destroy(qp);
@@ -275,8 +280,9 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 	if (ctrlr->io_qpairs[qid - 1].qp != NULL) {
 		mtx_unlock(&ctrlr->lock);
 		sx_sunlock(&np->lock);
-		nvmft_printf(ctrlr, "attempt to re-create I/O queue %u from %.*s\n",
-		    qid, (int)sizeof(data->hostnqn), data->hostnqn);
+		nvmft_printf(ctrlr,
+		    "attempt to re-create I/O queue %u from %.*s\n", qid,
+		    (int)sizeof(data->hostnqn), data->hostnqn);
 		nvmft_connect_error(qp, cmd, NVME_SCT_GENERIC,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
 		nvmft_qpair_destroy(qp);
@@ -727,8 +733,8 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		return;
 	}
 	default:
-		nvmft_printf(ctrlr, "Unsupported feature ID %u for SET_FEATURES\n",
-		    fid);
+		nvmft_printf(ctrlr,
+		    "Unsupported feature ID %u for SET_FEATURES\n", fid);
 		goto error;
 	}
 
@@ -868,7 +874,8 @@ handle_admin_fabrics_command(struct nvmft_controller *ctrlr,
 		    (const struct nvmf_fabric_prop_set_cmd *)fc);
 		break;
 	case NVMF_FABRIC_COMMAND_CONNECT:
-		nvmft_printf(ctrlr, "CONNECT command on connected admin queue\n");
+		nvmft_printf(ctrlr,
+		    "CONNECT command on connected admin queue\n");
 		nvmft_send_generic_error(ctrlr->admin, nc,
 		    NVME_SC_COMMAND_SEQUENCE_ERROR);
 		break;
