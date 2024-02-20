@@ -89,6 +89,8 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	ctrlr->cdata.ctrlr_id = htole16(cntlid);
 	memcpy(ctrlr->hostid, data->hostid, sizeof(ctrlr->hostid));
 	memcpy(ctrlr->hostnqn, data->hostnqn, sizeof(ctrlr->hostnqn));
+	ctrlr->hip.power_cycles[0] = 1;
+	ctrlr->create_time = sbinuptime();
 
 	ctrlr->changed_ns = malloc(sizeof(*ctrlr->changed_ns), M_NVMFT,
 	    M_WAITOK | M_ZERO);
@@ -323,8 +325,11 @@ nvmft_controller_shutdown(void *arg, int pending)
 	nvmft_terminate_commands(ctrlr);
 
 	/* Wait for all pending CTL commands to complete. */
-	while (!atomic_cmpset_32(&ctrlr->pending_commands, 0, 0))
-		tsleep(&ctrlr->pending_commands, 0, "nvmftsh", hz / 100);
+	mtx_lock(&ctrlr->lock);
+	while (ctrlr->pending_commands != 0)
+		mtx_sleep(&ctrlr->pending_commands, &ctrlr->lock, 0, "nvmftsh",
+		    hz / 100);
+	mtx_unlock(&ctrlr->lock);
 
 	/* Delete all of the I/O queues. */
 	for (u_int i = 0; i < ctrlr->num_io_queues; i++) {
@@ -553,6 +558,59 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 	len = (numd + 1) * 4;
 
 	switch (lid) {
+	case NVME_LOG_ERROR:
+		todo = 0;
+
+		m = m_getml(len, M_WAITOK);
+		if (todo != len)
+			m_zero(m, todo, len - todo);
+		status = nvmf_send_controller_data(nc, 0, m, len);
+		MPASS(status != NVMF_MORE);
+		break;
+	case NVME_LOG_HEALTH_INFORMATION:
+	{
+		struct nvme_health_information_page hip;
+
+		if (offset >= sizeof(hip)) {
+			status = NVME_SC_INVALID_FIELD;
+			goto done;
+		}
+		todo = sizeof(hip) - offset;
+		if (todo > len)
+			todo = len;
+
+		mtx_lock(&ctrlr->lock);
+		hip = ctrlr->hip;
+		hip.controller_busy_time[0] =
+		    sbintime_getsec(ctrlr->busy_total) / 60;
+		hip.power_on_hours[0] =
+		    sbintime_getsec(sbinuptime() - ctrlr->create_time) / 3600;
+		mtx_unlock(&ctrlr->lock);
+
+		m = m_getml(len, M_WAITOK);
+		m_copyback(m, 0, todo, (char *)&hip + offset);
+		if (todo != len)
+			m_zero(m, todo, len - todo);
+		status = nvmf_send_controller_data(nc, 0, m, len);
+		MPASS(status != NVMF_MORE);
+		break;
+	}
+	case NVME_LOG_FIRMWARE_SLOT:
+		if (offset >= sizeof(ctrlr->np->fp)) {
+			status = NVME_SC_INVALID_FIELD;
+			goto done;
+		}
+		todo = sizeof(ctrlr->np->fp) - offset;
+		if (todo > len)
+			todo = len;
+
+		m = m_getml(len, M_WAITOK);
+		m_copyback(m, 0, todo, (char *)&ctrlr->np->fp + offset);
+		if (todo != len)
+			m_zero(m, todo, len - todo);
+		status = nvmf_send_controller_data(nc, 0, m, len);
+		MPASS(status != NVMF_MORE);
+		break;
 	case NVME_LOG_CHANGED_NAMESPACE:
 		if (offset >= sizeof(*ctrlr->changed_ns)) {
 			status = NVME_SC_INVALID_FIELD;

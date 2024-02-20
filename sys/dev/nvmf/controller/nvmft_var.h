@@ -50,6 +50,7 @@ struct nvmft_port {
 	u_int	refs;
 	struct ctl_port port;
 	struct nvme_controller_data cdata;
+	struct nvme_firmware_page fp;
 	uint64_t cap;
 	uint32_t max_io_qsize;
 	bool	online;
@@ -83,6 +84,12 @@ struct nvmft_controller {
 	struct mtx lock;
 
 	struct nvme_controller_data cdata;
+	struct nvme_health_information_page hip;
+	sbintime_t create_time;
+	sbintime_t start_busy;
+	sbintime_t busy_total;
+	uint16_t partial_dur;
+	uint16_t partial_duw;
 
 	uint8_t	hostid[16];
 	uint8_t	hostnqn[NVME_NQN_FIELD_SIZE];

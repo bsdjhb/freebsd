@@ -242,7 +242,11 @@ nvmft_dispatch_command(struct nvmft_qpair *qp, struct nvmf_capsule *nc,
 		return;
 	}
 
-	atomic_add_32(&ctrlr->pending_commands, 1);
+	mtx_lock(&ctrlr->lock);
+	if (ctrlr->pending_commands == 0)
+		ctrlr->start_busy = sbinuptime();
+	ctrlr->pending_commands++;
+	mtx_unlock(&ctrlr->lock);
 	io = ctl_alloc_io(np->port.ctl_pool_ref);
 	ctl_zero_io(io);
 	NVMFT_NC(io) = nc;
@@ -271,7 +275,11 @@ nvmft_terminate_commands(struct nvmft_controller *ctrlr)
 	union ctl_io *io;
 	int error;
 
-	atomic_add_32(&ctrlr->pending_commands, 1);
+	mtx_lock(&ctrlr->lock);
+	if (ctrlr->pending_commands == 0)
+		ctrlr->start_busy = sbinuptime();
+	ctrlr->pending_commands++;
+	mtx_unlock(&ctrlr->lock);
 	io = ctl_alloc_io(np->port.ctl_pool_ref);
 	ctl_zero_io(io);
 	NVMFT_QP(io) = ctrlr->admin;
@@ -492,12 +500,25 @@ nvmft_datamove(union ctl_io *io)
 }
 
 static void
+hip_add(uint64_t pair[2], uint64_t addend)
+{
+	uint64_t old, new;
+
+	old = le64toh(pair[0]);
+	new = old + addend;
+	pair[0] = htole64(new);
+	if (new < old)
+		pair[1] += htole64(1);
+}
+
+static void
 nvmft_done(union ctl_io *io)
 {
 	struct nvmft_controller *ctrlr;
 	const struct nvme_command *cmd;
 	struct nvmft_qpair *qp;
 	struct nvmf_capsule *nc;
+	size_t len;
 
 	KASSERT(io->io_hdr.status == CTL_SUCCESS ||
 	    io->io_hdr.status == CTL_NVME_ERROR,
@@ -509,12 +530,38 @@ nvmft_done(union ctl_io *io)
 
 	if (nc == NULL) {
 		/* Completion of nvmft_terminate_commands. */
-		ctl_free_io(io);
-		atomic_subtract_32(&ctrlr->pending_commands, 1);
-		return;
+		goto end;
 	}
 
 	cmd = nvmf_capsule_sqe(nc);
+
+	if (io->io_hdr.status == CTL_SUCCESS)
+		len = nvmf_capsule_data_len(nc) / 512;
+	else
+		len = 0;
+	switch (cmd->opc) {
+	case NVME_OPC_WRITE:
+		mtx_lock(&ctrlr->lock);
+		hip_add(ctrlr->hip.host_write_commands, 1);
+		len += ctrlr->partial_duw;
+		if (len > 1000)
+			hip_add(ctrlr->hip.data_units_written, len / 1000);
+		ctrlr->partial_duw = len % 1000;
+		mtx_unlock(&ctrlr->lock);
+		break;
+	case NVME_OPC_READ:
+	case NVME_OPC_COMPARE:
+	case NVME_OPC_VERIFY:
+		mtx_lock(&ctrlr->lock);
+		if (cmd->opc != NVME_OPC_VERIFY)
+			hip_add(ctrlr->hip.host_read_commands, 1);
+		len += ctrlr->partial_dur;
+		if (len > 1000)
+			hip_add(ctrlr->hip.data_units_read, len / 1000);
+		ctrlr->partial_dur = len % 1000;
+		mtx_unlock(&ctrlr->lock);
+		break;
+	}
 
 	if (io->nvmeio.success_sent) {
 		MPASS(io->io_hdr.status == CTL_SUCCESS);
@@ -522,9 +569,14 @@ nvmft_done(union ctl_io *io)
 		io->nvmeio.cpl.cid = cmd->cid;
 		nvmft_send_response(qp, &io->nvmeio.cpl);
 	}
-	ctl_free_io(io);
 	nvmf_free_capsule(nc);
-	atomic_subtract_32(&ctrlr->pending_commands, 1);
+end:
+	ctl_free_io(io);
+	mtx_lock(&ctrlr->lock);
+	ctrlr->pending_commands--;
+	if (ctrlr->pending_commands == 0)
+		ctrlr->busy_total += sbinuptime() - ctrlr->start_busy;
+	mtx_unlock(&ctrlr->lock);
 }
 
 static int
@@ -736,6 +788,9 @@ nvmft_port_create(struct ctl_req *req)
 	    NVMEF(NVME_CTRLR_DATA_ONCS_DSM, 1) |
 	    NVMEF(NVME_CTRLR_DATA_ONCS_COMPARE, 1));
 	np->cdata.fuses = NVMEF(NVME_CTRLR_DATA_FUSES_CNW, 1);
+
+	np->fp.afi = NVMEF(NVME_FIRMWARE_PAGE_AFI_SLOT, 1);
+	memcpy(np->fp.revision[0], np->cdata.fr, sizeof(np->cdata.fr));
 
 	port = &np->port;
 
