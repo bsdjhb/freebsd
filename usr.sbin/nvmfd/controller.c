@@ -51,6 +51,8 @@ update_cc(struct controller *c, uint32_t new_cc)
 {
 	uint32_t changes;
 
+	if (c->shutdown)
+		return (false);
 	if (!nvmf_validate_cc(c->qp, c->cap, c->cc, new_cc))
 		return (false);
 
@@ -195,7 +197,7 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 	struct nvmf_capsule *nc;
 	int error;
 
-	while (!c->shutdown) {
+	for (;;) {
 		error = nvmf_controller_receive_capsule(qp, &nc);
 		if (error != 0) {
 			if (error != ECONNRESET)
@@ -204,6 +206,21 @@ controller_handle_admin_commands(struct controller *c, handle_command *cb,
 		}
 
 		cmd = nvmf_capsule_sqe(nc);
+
+		/*
+		 * Only permit Fabrics commands while a controller is
+		 * disabled.
+		 */
+		if (NVMEV(NVME_CC_REG_EN, c->cc) == 0 &&
+		    cmd->opc != NVME_OPC_FABRICS_COMMANDS) {
+			warnx("Unsupported admin opcode %#x whiled disabled\n",
+			    cmd->opc);
+			nvmf_send_generic_error(nc,
+			    NVME_SC_COMMAND_SEQUENCE_ERROR);
+			nvmf_free_capsule(nc);
+			continue;
+		}
+
 		if (cb(nc, cmd, cb_arg)) {
 			nvmf_free_capsule(nc);
 			continue;
