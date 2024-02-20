@@ -123,7 +123,7 @@ _nvmf_controller_cap(uint32_t max_io_qsize, uint8_t enable_timeout)
 }
 
 bool
-_nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
+_nvmf_validate_cc(uint32_t max_io_qsize __unused, uint64_t cap, uint32_t old_cc,
     uint32_t new_cc)
 {
 	uint32_t caphi, changes, field;
@@ -131,15 +131,27 @@ _nvmf_validate_cc(uint32_t max_io_qsize, uint64_t cap, uint32_t old_cc,
 	changes = old_cc ^ new_cc;
 	field = NVMEV(NVME_CC_REG_IOCQES, new_cc);
 	if (field != 0) {
+		/*
+		 * XXX: Linux's initiator writes a non-zero value to
+		 * IOCQES when connecting to a discovery controller.
+		 */
+#if 0
 		if (max_io_qsize == 0)
 			return (false);
+#endif
 		if (field != 4)
 			return (false);
 	}
 	field = NVMEV(NVME_CC_REG_IOSQES, new_cc);
 	if (field != 0) {
+		/*
+		 * XXX: Linux's initiator writes a non-zero value to
+		 * IOCQES when connecting to a discovery controller.
+		 */
+#if 0
 		if (max_io_qsize == 0)
 			return (false);
+#endif
 		if (field != 6)
 			return (false);
 	}
