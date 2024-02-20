@@ -59,7 +59,6 @@ struct discovery_thread_arg {
 
 static struct io_controller_data *io_controllers;
 static struct nvmf_association *discovery_na;
-static pthread_mutex_t discovery_mutex;
 static u_int num_io_controllers;
 
 static bool
@@ -137,8 +136,6 @@ init_discovery(void)
 	    &aparams);
 	if (discovery_na == NULL)
 		err(1, "Failed to create discovery association");
-
-	pthread_mutex_init(&discovery_mutex, NULL);
 }
 
 void
@@ -295,9 +292,7 @@ discovery_thread(void *arg)
 	free(dc.discovery_log);
 	free_controller(dta->c);
 
-	pthread_mutex_lock(&discovery_mutex);
 	nvmf_free_qpair(dta->qp);
-	pthread_mutex_unlock(&discovery_mutex);
 
 	close(dta->s);
 	free(dta);
@@ -320,15 +315,12 @@ handle_discovery_socket(int s)
 	qparams.tcp.fd = s;
 
 	nc = NULL;
-	pthread_mutex_lock(&discovery_mutex);
 	qp = nvmf_accept(discovery_na, &qparams, &nc, &data);
 	if (qp == NULL) {
 		warnx("Failed to create discovery qpair: %s",
 		    nvmf_association_error(discovery_na));
-		pthread_mutex_unlock(&discovery_mutex);
 		goto error;
 	}
-	pthread_mutex_unlock(&discovery_mutex);
 
 	if (strcmp(data.subnqn, NVMF_DISCOVERY_NQN) != 0) {
 		warn("Discovery qpair with invalid SubNQN: %.*s",
@@ -366,10 +358,7 @@ handle_discovery_socket(int s)
 error:
 	if (nc != NULL)
 		nvmf_free_capsule(nc);
-	if (qp != NULL) {
-		pthread_mutex_lock(&discovery_mutex);
+	if (qp != NULL)
 		nvmf_free_qpair(qp);
-		pthread_mutex_unlock(&discovery_mutex);
-	}
 	close(s);
 }

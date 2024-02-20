@@ -41,9 +41,6 @@
 struct io_controller {
 	struct controller *c;
 
-	struct nvmf_qpair *admin_qpair;
-	int admin_socket;
-
 	u_int num_io_queues;
 	u_int active_io_queues;
 	struct nvmf_qpair **io_qpairs;
@@ -57,11 +54,6 @@ struct io_controller {
 	uint16_t cntlid;
 	char hostid[16];
 	char hostnqn[NVME_NQN_FIELD_SIZE];
-};
-
-struct io_thread_data {
-	struct io_controller *ioc;
-	uint16_t qid;
 };
 
 static struct nvmf_association *io_na;
@@ -267,13 +259,9 @@ admin_command(const struct nvmf_capsule *nc, const struct nvme_command *cmd,
 	}
 }
 
-static void *
-admin_qpair_thread(void *arg)
+static void
+handle_admin_qpair(struct io_controller *ioc)
 {
-	struct io_controller *ioc = arg;
-
-	pthread_detach(pthread_self());
-
 	controller_handle_admin_commands(ioc->c, admin_command, ioc);
 
 	pthread_mutex_lock(&io_na_mutex);
@@ -288,15 +276,12 @@ admin_qpair_thread(void *arg)
 	while (ioc->active_io_queues > 0)
 		pthread_cond_wait(&io_cond, &io_na_mutex);
 
-	nvmf_free_qpair(ioc->admin_qpair);
 	io_controller = NULL;
 	pthread_mutex_unlock(&io_na_mutex);
 
 	free_controller(ioc->c);
 
-	close(ioc->admin_socket);
 	free(ioc);
-	return (NULL);
 }
 
 static bool
@@ -429,184 +414,184 @@ handle_io_commands(struct io_controller *ioc, struct nvmf_qpair *qp)
 	return (disconnect);
 }
 
-static void *
-io_qpair_thread(void *arg)
+static void
+handle_io_qpair(struct io_controller *ioc, struct nvmf_qpair *qp, int qid)
 {
-	struct io_thread_data *itd = arg;
-	struct nvmf_qpair *qp;
 	bool disconnect;
 
-	pthread_detach(pthread_self());
-
-	pthread_mutex_lock(&io_na_mutex);
-	qp = itd->ioc->io_qpairs[itd->qid - 1];
-	pthread_mutex_unlock(&io_na_mutex);
-
-	disconnect = handle_io_commands(qp);
+	disconnect = handle_io_commands(ioc, qp);
 
 	pthread_mutex_lock(&io_na_mutex);
 	if (disconnect)
-		itd->ioc->io_qpairs[itd->qid - 1] = NULL;
-	if (itd->ioc->io_sockets[itd->qid - 1] != -1) {
-		close(itd->ioc->io_sockets[itd->qid - 1]);
-		itd->ioc->io_sockets[itd->qid - 1] = -1;
+		ioc->io_qpairs[qid - 1] = NULL;
+	if (ioc->io_sockets[qid - 1] != -1) {
+		close(ioc->io_sockets[qid - 1]);
+		ioc->io_sockets[qid - 1] = -1;
 	}
-	itd->ioc->active_io_queues--;
-	if (itd->ioc->active_io_queues == 0)
+	ioc->active_io_queues--;
+	if (ioc->active_io_queues == 0)
 		pthread_cond_broadcast(&io_cond);
-
-	nvmf_free_qpair(qp);
 	pthread_mutex_unlock(&io_na_mutex);
-
-	free(itd);
-	return (NULL);
 }
 
-static bool
-handle_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
+static void
+connect_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
     const struct nvmf_fabric_connect_data *data)
 {
 	struct nvme_controller_data cdata;
 	struct io_controller *ioc;
-	pthread_t thr;
 	int error;
 
 	/* Can only have one active I/O controller at a time. */
+	pthread_mutex_lock(&io_na_mutex);
 	if (io_controller != NULL) {
+		pthread_mutex_unlock(&io_na_mutex);
 		nvmf_send_error(nc, NVME_SCT_COMMAND_SPECIFIC,
 		    NVMF_FABRIC_SC_CONTROLLER_BUSY);
-		return (false);
+		goto error;
 	}
 
 	error = nvmf_finish_accept(nc, 2);
 	if (error != 0) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnc(error, "Failed to send CONNECT response");
-		return (false);
+		goto error;
 	}
 
 	ioc = calloc(1, sizeof(*ioc));
 	ioc->cntlid = 2;
-	ioc->admin_qpair = qp;
-	ioc->admin_socket = s;
 	memcpy(ioc->hostid, data->hostid, sizeof(ioc->hostid));
 	memcpy(ioc->hostnqn, data->hostnqn, sizeof(ioc->hostnqn));
 
 	nvmf_init_io_controller_data(qp, serial, nqn, device_count(),
 	    NVMF_IOCCSZ, &cdata);
+
+	ioc->fp.afi = NVMEF(NVME_FIRMWARE_PAGE_AFI_SLOT, 1);
+	memcpy(ioc->fp.revision[0], cdata.fr, sizeof(cdata.fr));
+
 	ioc->c = init_controller(qp, &cdata);
 
-	error = pthread_create(&thr, NULL, admin_qpair_thread, ioc);
-	if (error != 0) {
-		warnc(error, "Failed to create I/O admin qpair thread");
-		free_controller(ioc->c);
-		free(ioc);
-		return (false);
-	}
-
 	io_controller = ioc;
-	return (true);
+	pthread_mutex_unlock(&io_na_mutex);
+
+	nvmf_free_capsule(nc);
+
+	handle_admin_qpair(ioc);
+	close(s);
+	return;
+
+error:
+	nvmf_free_capsule(nc);
+	close(s);
 }
 
-static bool
-handle_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
+static void
+connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
     const struct nvmf_fabric_connect_data *data, uint16_t qid)
 {
-	struct io_thread_data *itd;
-	pthread_t thr;
+	struct io_controller *ioc;
 	int error;
 
+	pthread_mutex_lock(&io_na_mutex);
 	if (io_controller == NULL) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("Attempt to create I/O qpair without admin qpair");
 		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
-		return (false);
+		goto error;
 	}
 
 	if (memcmp(io_controller->hostid, data->hostid,
 	    sizeof(data->hostid)) != 0) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("hostid mismatch for I/O qpair CONNECT");
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostid));
-		return (false);
+		goto error;
 	}
 	if (le16toh(data->cntlid) != io_controller->cntlid) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("cntlid mismatch for I/O qpair CONNECT");
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, cntlid));
-		return (false);
+		goto error;
 	}
 	if (memcmp(io_controller->hostnqn, data->hostnqn,
 	    sizeof(data->hostid)) != 0) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("host NQN mismatch for I/O qpair CONNECT");
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, hostnqn));
-		return (false);
+		goto error;
 	}
 
 	if (io_controller->num_io_queues == 0) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("Attempt to create I/O qpair without enabled queues");
 		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
-		return (false);
+		goto error;
 	}
 	if (qid > io_controller->num_io_queues) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("Attempt to create invalid I/O qpair %u", qid);
 		nvmf_connect_invalid_parameters(nc, false,
 		    offsetof(struct nvmf_fabric_connect_cmd, qid));
-		return (false);
+		goto error;
 	}
 	if (io_controller->io_qpairs[qid - 1] != NULL) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnx("Attempt to re-create I/O qpair %u", qid);
 		nvmf_send_generic_error(nc, NVME_SC_COMMAND_SEQUENCE_ERROR);
-		return (false);
+		goto error;
 	}
 
 	error = nvmf_finish_accept(nc, io_controller->cntlid);
 	if (error != 0) {
+		pthread_mutex_unlock(&io_na_mutex);
 		warnc(error, "Failed to send CONNECT response");
-		return (false);
+		goto error;
 	}
 
-	itd = calloc(1, sizeof(*itd));
-	itd->ioc = io_controller;
-	itd->qid = qid;
+	ioc = io_controller;
+	ioc->active_io_queues++;
+	ioc->io_qpairs[qid - 1] = qp;
+	ioc->io_sockets[qid - 1] = s;
+	pthread_mutex_unlock(&io_na_mutex);
 
-	error = pthread_create(&thr, NULL, io_qpair_thread, itd);
-	if (error != 0) {
-		warnc(error, "Failed to create I/O qpair thread");
-		free(itd);
-		return (false);
-	}
+	nvmf_free_capsule(nc);
 
-	io_controller->active_io_queues++;
-	io_controller->io_qpairs[qid - 1] = qp;
-	io_controller->io_sockets[qid - 1] = s;
-	return (true);
+	handle_io_qpair(ioc, qp, qid);
+	return;
+
+error:
+	nvmf_free_capsule(nc);
+	close(s);
 }
 
-void
-handle_io_socket(int s)
+static void *
+io_socket_thread(void *arg)
 {
 	struct nvmf_fabric_connect_data data;
 	struct nvmf_qpair_params qparams;
 	const struct nvmf_fabric_connect_cmd *cmd;
 	struct nvmf_capsule *nc;
 	struct nvmf_qpair *qp;
-	bool ok;
+	int s;
 
+	pthread_detach(pthread_self());
+
+	s = (intptr_t)arg;
 	memset(&qparams, 0, sizeof(qparams));
 	qparams.tcp.fd = s;
 
 	nc = NULL;
-	pthread_mutex_lock(&io_na_mutex);
 	qp = nvmf_accept(io_na, &qparams, &nc, &data);
 	if (qp == NULL) {
 		warnx("Failed to create I/O qpair: %s",
 		    nvmf_association_error(io_na));
-		pthread_mutex_unlock(&io_na_mutex);
 		goto error;
 	}
 
 	if (kernel_io) {
-		pthread_mutex_unlock(&io_na_mutex);
 		ctl_handoff_qpair(qp, nvmf_capsule_sqe(nc), &data);
 		goto error;
 	}
@@ -616,30 +601,37 @@ handle_io_socket(int s)
 		    (int)sizeof(data.subnqn), data.subnqn);
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, subnqn));
-		pthread_mutex_unlock(&io_na_mutex);
 		goto error;
 	}
 
 	/* Is this an admin or I/O queue pair? */
 	cmd = nvmf_capsule_sqe(nc);
 	if (cmd->qid == 0)
-		ok = handle_admin_qpair(s, qp, nc, &data);
+		connect_admin_qpair(s, qp, nc, &data);
 	else
-		ok = handle_io_qpair(s, qp, nc, &data, le16toh(cmd->qid));
-	pthread_mutex_unlock(&io_na_mutex);
-	if (!ok)
-		goto error;
-
-	nvmf_free_capsule(nc);
-	return;
+		connect_io_qpair(s, qp, nc, &data, le16toh(cmd->qid));
+	nvmf_free_qpair(qp);
+	return (NULL);
 
 error:
 	if (nc != NULL)
 		nvmf_free_capsule(nc);
-	if (qp != NULL) {
-		pthread_mutex_lock(&io_na_mutex);
+	if (qp != NULL)
 		nvmf_free_qpair(qp);
-		pthread_mutex_unlock(&io_na_mutex);
-	}
 	close(s);
+	return (NULL);
+}
+
+void
+handle_io_socket(int s)
+{
+	pthread_t thr;
+	int error;
+
+	error = pthread_create(&thr, NULL, io_socket_thread,
+	    (void *)(uintptr_t)s);
+	if (error != 0) {
+		warnc(error, "Failed to create I/O qpair thread");
+		close(s);
+	}
 }
