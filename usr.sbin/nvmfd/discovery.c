@@ -50,7 +50,7 @@ struct discovery_controller {
 	size_t discovery_log_len;
 	int s;
 };
-	
+
 struct discovery_thread_arg {
 	struct controller *c;
 	struct nvmf_qpair *qp;
@@ -209,7 +209,7 @@ build_discovery_log_page(struct discovery_controller *dc)
 			continue;
 		nentries++;
 	}
-	    
+
 	dc->discovery_log_len = sizeof(*dc->discovery_log) +
 	    nentries * sizeof(struct nvme_discovery_log_entry);
 	dc->discovery_log = calloc(dc->discovery_log_len, 1);
