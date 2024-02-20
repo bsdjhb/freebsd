@@ -980,6 +980,7 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 	case NVME_OPC_COMPARE:
 	case NVME_OPC_WRITE_ZEROES:
 	case NVME_OPC_DATASET_MANAGEMENT:
+	case NVME_OPC_VERIFY:
 		nvmft_dispatch_command(qp, nc, false);
 		break;
 	default:
