@@ -69,8 +69,16 @@ nvmft_qpair_error(void *arg, int error)
 	struct nvmft_qpair *qp = arg;
 	struct nvmft_controller *ctrlr = qp->ctrlr;
 
+	/*
+	 * XXX: The Linux TCP initiator sends a RST immediately after
+	 * the FIN, so treat ECONNRESET as plain EOF to avoid spurious
+	 * errors on shutdown.
+	 */
+	if (error == ECONNRESET)
+		error = 0;
+
 	if (error != 0)
-		nvmft_printf(ctrlr, "error on %s\n", qp->name);
+		nvmft_printf(ctrlr, "error %d on %s\n", error, qp->name);
 	nvmft_controller_error(ctrlr, qp, error);
 }
 
