@@ -3225,6 +3225,7 @@ ctl_be_block_nvme_config_read(union ctl_io *io)
 		cns = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
 		switch (cns) {
 		case 0:
+		case 3:
 			mtx_lock(&be_lun->queue_lock);
 			STAILQ_INSERT_TAIL(&be_lun->config_read_queue,
 			    &io->io_hdr, links);
