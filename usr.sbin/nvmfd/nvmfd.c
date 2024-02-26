@@ -36,6 +36,7 @@
 #include <err.h>
 #include <errno.h>
 #include <libnvmf.h>
+#include <libutil.h>
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
@@ -56,8 +57,8 @@ static volatile bool quit = false;
 static void
 usage(void)
 {
-	fprintf(stderr, "nvmfd -K [-DFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
-	    "nvmfd [-DFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
+	fprintf(stderr, "nvmfd -K [-dDFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
+	    "nvmfd [-dDFH] [-P port] [-p port] [-t transport] [-n subnqn]\n"
 	    "\tdevice [device [...]]\n"
 	    "\n"
 	    "Devices use one of the following syntaxes:\n"
@@ -167,18 +168,25 @@ handle_connections(int kqfd)
 int
 main(int ac, char **av)
 {
+	struct pidfh *pfh;
 	const char *dport, *ioport, *transport;
+	pid_t pid;
 	int ch, error, kqfd;
+	bool daemonize;
 	static char nqn[NVMF_NQN_MAX_LEN];
 
 	/* 7.4.9.3 Default port for discovery */
 	dport = "8009";
 
+	daemonize = true;
 	ioport = "0";
 	subnqn = NULL;
 	transport = "tcp";
-	while ((ch = getopt(ac, av, "DFHKn:P:p:t:")) != -1) {
+	while ((ch = getopt(ac, av, "dDFHKn:P:p:t:")) != -1) {
 		switch (ch) {
+		case 'd':
+			daemonize = false;
+			break;
 		case 'D':
 			data_digests = true;
 			break;
@@ -238,14 +246,33 @@ main(int ac, char **av)
 	init_discovery();
 	init_io(subnqn);
 
+	pfh = pidfile_open(NULL, 0600, &pid);
+	if (pfh == NULL) {
+		if (errno == EEXIST)
+			errx(1, "Daemon already running, pid: %jd",
+			    (intmax_t)pid);
+		warn("Cannot open or create pidfile");
+	}
+
+	if (daemonize) {
+		if (daemon(0, 0) != 0) {
+			pidfile_remove(pfh);
+			err(1, "Failed to fork into the background");
+		}
+	}
+	pidfile_write(pfh);
+
 	kqfd = kqueue();
-	if (kqfd == -1)
+	if (kqfd == -1) {
+		pidfile_remove(pfh);
 		err(1, "kqueue");
+	}
 
 	create_passive_sockets(kqfd, dport, true);
 	create_passive_sockets(kqfd, ioport, false);
 
 	handle_connections(kqfd);
 	shutdown_io();
+	pidfile_remove(pfh);
 	return (0);
 }
