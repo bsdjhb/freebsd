@@ -977,6 +977,66 @@ out:
 	free(data, M_NVMFT);
 }
 
+static void
+nvmft_list(struct ctl_nvmf *cn)
+{
+	struct ctl_nvmf_list_params *lp;
+	struct nvmft_controller *ctrlr;
+	struct nvmft_port *np;
+	struct sbuf *sb;
+	int error;
+
+	lp = &cn->data.list;
+
+	sb = sbuf_new(NULL, NULL, lp->alloc_len, SBUF_FIXEDLEN |
+	    SBUF_INCLUDENUL);
+	if (sb == NULL) {
+		cn->status = CTL_NVMF_ERROR;
+		snprintf(cn->error_str, sizeof(cn->error_str),
+		    "Failed to allocate NVMeoF session list");
+		return;
+	}
+
+	sbuf_printf(sb, "<ctlnvmflist>\n");
+	sx_slock(&nvmft_ports_lock);
+	TAILQ_FOREACH(np, &nvmft_ports, link) {
+		sx_slock(&np->lock);
+		TAILQ_FOREACH(ctrlr, &np->controllers, link) {
+			sbuf_printf(sb, "<connection id=\"%d\">"
+			    "<hostnqn>%s</hostnqn>"
+			    "<subnqn>%s</subnqn>"
+			    "<trtype>%u</trtype>"
+			    "</connection>\n",
+			    ctrlr->cntlid,
+			    ctrlr->hostnqn,
+			    np->cdata.subnqn,
+			    ctrlr->trtype);
+		}
+		sx_sunlock(&np->lock);
+	}
+	sx_sunlock(&nvmft_ports_lock);
+	sbuf_printf(sb, "</ctlnvmflist>\n");
+	if (sbuf_finish(sb) != 0) {
+		sbuf_delete(sb);
+		cn->status = CTL_NVMF_LIST_NEED_MORE_SPACE;
+		snprintf(cn->error_str, sizeof(cn->error_str),
+		    "Out of space, %d bytes is too small", lp->alloc_len);
+		return;
+	}
+
+	error = copyout(sbuf_data(sb), lp->conn_xml, sbuf_len(sb));
+	if (error != 0) {
+		sbuf_delete(sb);
+		cn->status = CTL_NVMF_ERROR;
+		snprintf(cn->error_str, sizeof(cn->error_str),
+		    "Failed to copyout session list: %d", error);
+		return;
+	}
+	lp->fill_len = sbuf_len(sb);
+	cn->status = CTL_NVMF_OK;
+	sbuf_delete(sb);
+}
+
 static int
 nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int flag,
     struct thread *td)
@@ -1006,6 +1066,9 @@ nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int flag,
 		switch (cn->type) {
 		case CTL_NVMF_HANDOFF:
 			nvmft_handoff(cn);
+			break;
+		case CTL_NVMF_LIST:
+			nvmft_list(cn);
 			break;
 		default:
 			cn->status = CTL_NVMF_ERROR;

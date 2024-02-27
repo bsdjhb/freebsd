@@ -167,6 +167,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np,
 	nvmft_printf(ctrlr, "associated with %.*s\n",
 	    (int)sizeof(data->hostnqn), data->hostnqn);
 	ctrlr->admin = qp;
+	ctrlr->trtype = handoff->trtype;
 
 	/*
 	 * The spec requires a non-zero KeepAlive timer, but allow a
@@ -244,6 +245,8 @@ nvmft_handoff_io_queue(struct nvmft_port *np,
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
+
+	/* XXX: Require handoff->trtype == ctrlr->trtype? */
 
 	mtx_lock(&ctrlr->lock);
 	if (ctrlr->shutdown) {

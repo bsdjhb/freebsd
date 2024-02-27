@@ -773,14 +773,24 @@ struct ctl_lun_map {
 typedef enum {
 	CTL_NVMF_OK,
 	CTL_NVMF_ERROR,
+	CTL_NVMF_LIST_NEED_MORE_SPACE,
 } ctl_nvmf_status;
 
 typedef enum {
 	CTL_NVMF_HANDOFF,
+	CTL_NVMF_LIST,
 } ctl_nvmf_type;
+
+struct ctl_nvmf_list_params {
+	uint32_t		alloc_len;	/* passed to kernel */
+	char                   *conn_xml;	/* filled in kernel */
+	uint32_t		fill_len;	/* passed to userland */
+	int			spare[4];
+};
 
 union ctl_nvmf_data {
 	struct nvmf_handoff_controller_qpair	handoff;
+	struct ctl_nvmf_list_params		list;
 };
 
 /*

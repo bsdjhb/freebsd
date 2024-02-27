@@ -93,6 +93,7 @@ struct nvmft_controller {
 
 	uint8_t	hostid[16];
 	uint8_t	hostnqn[NVME_NQN_FIELD_SIZE];
+	u_int	trtype;
 
 	TAILQ_ENTRY(nvmft_controller) link;
 
