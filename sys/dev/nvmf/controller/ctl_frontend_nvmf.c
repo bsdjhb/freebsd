@@ -1037,6 +1037,50 @@ nvmft_list(struct ctl_nvmf *cn)
 	sbuf_delete(sb);
 }
 
+static void
+nvmft_terminate(struct ctl_nvmf *cn)
+{
+	struct ctl_nvmf_terminate_params *tp;
+	struct nvmft_controller *ctrlr;
+	struct nvmft_port *np;
+	bool found, match;
+
+	tp = &cn->data.terminate;
+
+	found = false;
+	sx_slock(&nvmft_ports_lock);
+	TAILQ_FOREACH(np, &nvmft_ports, link) {
+		sx_slock(&np->lock);
+		TAILQ_FOREACH(ctrlr, &np->controllers, link) {
+			if (tp->all != 0)
+				match = true;
+			else if (tp->connection_id != -1)
+				match = tp->connection_id == ctrlr->cntlid;
+			else if (tp->host_nqn[0] != '\0')
+				match = strncmp(tp->host_nqn, ctrlr->hostnqn,
+				    sizeof(tp->host_nqn)) == 0;
+			else
+				match = false;
+			if (!match)
+				continue;
+			nvmft_printf(ctrlr,
+			    "disconnecting due to administrative request\n");
+			nvmft_controller_error(ctrlr, NULL, ECONNABORTED);
+			found = true;
+		}
+		sx_sunlock(&np->lock);
+	}
+	sx_sunlock(&nvmft_ports_lock);
+
+	if (!found) {
+		cn->status = CTL_NVMF_ASSOCIATION_NOT_FOUND;
+		snprintf(cn->error_str, sizeof(cn->error_str),
+		    "No matching associations found");
+		return;
+	}
+	cn->status = CTL_NVMF_OK;
+}
+
 static int
 nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int flag,
     struct thread *td)
@@ -1069,6 +1113,9 @@ nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data, int flag,
 			break;
 		case CTL_NVMF_LIST:
 			nvmft_list(cn);
+			break;
+		case CTL_NVMF_TERMINATE:
+			nvmft_terminate(cn);
 			break;
 		default:
 			cn->status = CTL_NVMF_ERROR;

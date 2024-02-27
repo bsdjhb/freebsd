@@ -49,6 +49,7 @@
 #include <sys/ioccom.h>
 #include <sys/nv.h>
 #include <dev/nvmf/nvmf.h>
+#include <dev/nvmf/nvmf_proto.h>
 
 #define	CTL_DEFAULT_DEV		"/dev/cam/ctl"
 /*
@@ -774,11 +775,13 @@ typedef enum {
 	CTL_NVMF_OK,
 	CTL_NVMF_ERROR,
 	CTL_NVMF_LIST_NEED_MORE_SPACE,
+	CTL_NVMF_ASSOCIATION_NOT_FOUND
 } ctl_nvmf_status;
 
 typedef enum {
 	CTL_NVMF_HANDOFF,
 	CTL_NVMF_LIST,
+	CTL_NVMF_TERMINATE
 } ctl_nvmf_type;
 
 struct ctl_nvmf_list_params {
@@ -788,9 +791,18 @@ struct ctl_nvmf_list_params {
 	int			spare[4];
 };
 
+struct ctl_nvmf_terminate_params {
+	int			connection_id;	/* passed to kernel */
+	char			host_nqn[NVME_NQN_FIELD_SIZE];
+						/* passed to kernel */
+	int			all;		/* passed to kernel */
+	int			spare[4];
+};
+
 union ctl_nvmf_data {
 	struct nvmf_handoff_controller_qpair	handoff;
 	struct ctl_nvmf_list_params		list;
+	struct ctl_nvmf_terminate_params	terminate;
 };
 
 /*
