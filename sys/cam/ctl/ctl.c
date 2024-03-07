@@ -11988,7 +11988,8 @@ ctl_nvme_try_unblock_io(struct ctl_lun *lun, union ctl_io *io, bool skip)
 
 	mtx_assert(&lun->lun_lock, MA_OWNED);
 
-	MPASS(io->io_hdr.blocker != NULL);
+	if (io->io_hdr.blocker == NULL)
+		return;
 
 	/*
 	 * If this is the second half of a fused operation, it should
