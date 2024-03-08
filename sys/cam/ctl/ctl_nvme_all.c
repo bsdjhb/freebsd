@@ -77,7 +77,7 @@ ctl_nvme_command_string(struct ctl_nvmeio *ctnio, struct sbuf *sb)
 {
 	const char *s, *type;
 
-	if (ctnio->io_hdr.io_type == CTL_IO_NVME) {
+	if (ctnio->io_hdr.io_type == CTL_IO_NVME_ADMIN) {
 		s = admin_opcode[ctnio->cmd.opc];
 		type = "ADMIN";
 	} else {
