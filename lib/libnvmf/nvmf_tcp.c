@@ -893,7 +893,7 @@ nvmf_tcp_validate_ic_pdu(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 		return (false);
 	}
 
-	if (pdu->hpda > NVME_TCP_CPDA_MAX) {
+	if (pdu->hpda > NVME_TCP_HPDA_MAX) {
 		na_error(na, "NVMe/TCP: Unsupported PDA %u", pdu->hpda);
 		nvmf_tcp_report_error(na, qp,
 		    NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD, 10, ch, pdu_len,
