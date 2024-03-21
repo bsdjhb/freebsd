@@ -34,16 +34,6 @@
 #include <stdbool.h>
 #endif
 
-/* XXX: Should be in nvmf_proto.h */
-#define	NVMF_CNTLID_DYNAMIC	0xFFFF
-#define	NVMF_CNTLID_STATIC_ANY	0xFFFE
-
-/*
- * XXX: 5.3 in NVMe-over-Fabrics 1.1 gives this as an upper bound in
- * the Discovery Log Entry.
- */
-#define	NVMF_CNTLID_STATIC_MAX	0xFFEF
-
 /*
  * Default settings in Fabrics controllers.  These match values used by the
  * Linux target.

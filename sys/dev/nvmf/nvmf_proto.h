@@ -235,6 +235,15 @@ struct nvmf_fabric_connect_cmd {
 };
 _Static_assert(sizeof(struct nvmf_fabric_connect_cmd) == 64, "Incorrect size");
 
+#define	NVMF_CNTLID_DYNAMIC	0xFFFF
+#define	NVMF_CNTLID_STATIC_ANY	0xFFFE
+
+/*
+ * XXX: 5.3 in NVMe-over-Fabrics 1.1 gives this as an upper bound in
+ * the Discovery Log Entry.
+ */
+#define	NVMF_CNTLID_STATIC_MAX	0xFFEF
+
 /* 5.21.1.15 in NVMe 1.4b */
 #define	NVMF_KATO_DEFAULT			(120000)
 
