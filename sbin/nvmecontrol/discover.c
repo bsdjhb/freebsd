@@ -188,8 +188,10 @@ nvmf_tcp_security_type(uint8_t sectype)
 	switch (sectype) {
 	case NVME_TCP_SECURITY_NONE:
 		return ("None");
-	case NVME_TCP_SECURITY_TLS:
-		return ("TLS");
+	case NVME_TCP_SECURITY_TLS_1_2:
+		return ("TLS 1.2");
+	case NVME_TCP_SECURITY_TLS_1_3:
+		return ("TLS 1.3");
 	default:
 		snprintf(buf, sizeof(buf), "0x%02x\n", sectype);
 		return (buf);
