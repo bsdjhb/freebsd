@@ -25,6 +25,7 @@
 #include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <dev/nvme/nvme.h>
 #include <dev/nvmf/nvmf.h>
 #include <dev/nvmf/nvmf_proto.h>
@@ -1420,7 +1421,7 @@ tcp_allocate_qpair(bool controller,
 	struct socket *so;
 	struct file *fp;
 	cap_rights_t rights;
-	int error;
+	int error, one = 1;
 
 	error = fget(curthread, params->tcp.fd, cap_rights_init_one(&rights,
 	    CAP_SOCK_CLIENT), &fp);
@@ -1478,6 +1479,8 @@ tcp_allocate_qpair(bool controller,
 	cv_init(&qp->tx_cv, "-");
 	mbufq_init(&qp->tx_pdus, 0);
 	STAILQ_INIT(&qp->tx_capsules);
+
+	(void)so_setsockopt(so, IPPROTO_TCP, TCP_USE_DDP, &one, sizeof(one));
 
 	/* Register socket upcalls. */
 	SOCKBUF_LOCK(&so->so_rcv);
