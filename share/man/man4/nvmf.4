@@ -65,6 +65,23 @@ disk driver.
 Associations require a supported transport such as
 .Xr nvmf_tcp 4
 for associations using TCP/IP.
+.Sh SYSCTL VARIABLES
+The following variables are available as both
+.Xr sysctl 8
+variables and
+.Xr loader 8
+tunables:
+.Bl -tag -width indent
+.It Va kern.nvmf.fail_on_disconnection
+Determines the behavior when an association's connection is interrupted.
+By default, input/output operations are suspended while a host is disconnected.
+This includes operations pending at the time the association's connection was
+interrupted as well as new requests submitted while the host is disconnected.
+Once a new association is established, suspended I/O requests are retried.
+When set to 1, input/output operations fail with
+.Er EIO
+while a host is disconnected.
+.El
 .Sh SEE ALSO
 .Xr nda 4 ,
 .Xr nvme 4 ,
