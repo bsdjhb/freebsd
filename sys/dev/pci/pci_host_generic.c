@@ -72,6 +72,64 @@ static int generic_pcie_read_ivar(device_t dev, device_t child, int index,
 static int generic_pcie_write_ivar(device_t dev, device_t child, int index,
     uintptr_t value);
 
+/*
+ * Some systems share a single window for I/O resources across
+ * multiple bridges.  The first bridge allocates the rman and parent
+ * resource for the shared window.
+ */
+static device_t io_window_bridge;
+
+static bool
+generic_pcie_contains_range(struct generic_pcie_core_softc *sc,
+    const struct pcie_range *range)
+{
+	for (tuple = 0; tuple < MAX_RANGES_TUPLES; tuple++) {
+		if (sc->ranges[tuple].pci_base == range->pci_base &&
+		    sc->ranges[tuple].phys_base == range->phys_base &&
+		    sc->ranges[tuple].size == range->size &&
+		    sc->ranges[tuple].flags == range->flags)
+			return (true);
+	}
+	return (false);
+}
+
+static bool
+use_shared_io_window(struct generic_pcie_core_softc *sc)
+{
+	struct generic_pcie_core_softc *sc2;
+	int tuple, matches, count;
+
+	if (io_window_bridge == NULL)
+		return (false);
+
+	/*
+	 * First, verify that all I/O windows in the new bridge match
+	 * I/O windows in the shared bridge.
+	 */
+	sc2 = device_get_softc(io_window_bridge);
+	matches = 0;
+	for (tuple = 0; tuple < MAX_RANGES_TUPLES; tuple++) {
+		if (FLAG_TYPE(sc->ranges[tuple].flags) != FLAG_TYPE_IO)
+			continue;
+		if (!generic_pcie_contains_range(sc2, &sc->ranges[tuple]))
+			return (false);
+		matches++;
+	}
+
+	/*
+	 * Second, ensure that the new bridge decodes all of the I/O
+	 * window ranges decoded by the shared bridge.
+	 */
+	count = 0;
+	for (tuple = 0; tuple < MAX_RANGES_TUPLES; tuple++) {
+		if (FLAG_TYPE(sc2->ranges[tuple].flags) != FLAG_TYPE_IO)
+			continue;
+		count++;
+	}
+
+	return (matches == count);
+}
+
 int
 pci_host_generic_core_attach(device_t dev)
 {
@@ -135,6 +193,9 @@ pci_host_generic_core_attach(device_t dev)
 		rman_set_mapping(sc->res, &map);
 #endif
 	}
+
+	if (use_shared_io_window(sc))
+		sc->quirks |= PCIE_SHARED_IO_WINDOW;
 
 	sc->has_pmem = false;
 	sc->pmem_rman.rm_type = RMAN_ARRAY;
@@ -205,6 +266,9 @@ pci_host_generic_core_attach(device_t dev)
 			device_printf(dev,
 			    "PCI addr: 0x%jx, CPU addr: 0x%jx, Size: 0x%jx, Type: %s\n",
 			    pci_base, phys_base, size, range_descr);
+		if (type == SYS_RES_IOPORT &&
+		    (sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+			continue;
 		error = bus_set_resource(dev, type, rid, phys_base, size);
 		if (error != 0) {
 			device_printf(dev,
@@ -225,6 +289,8 @@ pci_host_generic_core_attach(device_t dev)
 						"error = %d\n", error);
 			continue;
 		}
+		if (type == SYS_RES_IOPORT && io_window_bridge == NULL)
+			io_window_bridge = dev;
 	}
 
 	return (0);
@@ -252,6 +318,9 @@ pci_host_generic_core_detach(device_t dev)
 
 	sc = device_get_softc(dev);
 
+	if (dev == io_window_bridge)
+		return (EBUSY);
+
 	error = bus_generic_detach(dev);
 	if (error != 0)
 		return (error);
@@ -265,6 +334,8 @@ pci_host_generic_core_detach(device_t dev)
 			type = SYS_RES_MEMORY;
 			break;
 		case FLAG_TYPE_IO:
+			if ((sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+				continue;
 			type = SYS_RES_IOPORT;
 			break;
 		default:
@@ -400,6 +471,8 @@ generic_pcie_get_rman(device_t dev, int type, u_int flags)
 
 	switch (type) {
 	case SYS_RES_IOPORT:
+		if ((sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+			sc = device_get_softc(io_window_bridge);
 		return (&sc->io_rman);
 	case SYS_RES_MEMORY:
 		if (sc->has_pmem && (flags & RF_PREFETCHABLE) != 0)
@@ -445,6 +518,9 @@ generic_pcie_containing_range(device_t dev, int type, rman_res_t start,
 
 	switch (type) {
 	case SYS_RES_IOPORT:
+		if ((sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+			sc = device_get_softc(io_window_bridge);
+		break;
 	case SYS_RES_MEMORY:
 		break;
 	default:
@@ -646,6 +722,8 @@ generic_pcie_map_resource(device_t dev, device_t child, struct resource *r,
 
 	args.offset = start - range->pci_base;
 	args.length = length;
+	if ((sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+		dev = io_window_bridge;
 	return (bus_map_resource(dev, range->res, &args, map));
 }
 
@@ -673,6 +751,8 @@ generic_pcie_unmap_resource(device_t dev, device_t child, struct resource *r,
 	    rman_get_end(r));
 	if (range == NULL || range->res == NULL)
 		return (ENOENT);
+	if ((sc->quirks & PCIE_SHARED_IO_WINDOW) != 0)
+		dev = io_window_bridge;
 	return (bus_unmap_resource(dev, range->res, map));
 }
 
