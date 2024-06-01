@@ -89,6 +89,8 @@ struct generic_pcie_core_softc {
 #define PCIE_ECAM_DESIGNWARE_QUIRK	(1 << 0)
 /* Child will map resources to access config registers */
 #define PCIE_CUSTOM_CONFIG_SPACE_QUIRK	(1 << 1)
+/* Use shared I/O resource window. */
+#define	PCIE_SHARED_IO_WINDOW		(1 << 2)
 
 DECLARE_CLASS(generic_pcie_core_driver);
 
