@@ -810,7 +810,7 @@ sgx_ioctl_add_page(struct sgx_softc *sc,
 	}
 
 	object = enclave->object;
-	KASSERT(object != NULL, ("vm object is NULL\n"));
+	KASSERT(object != NULL, ("vm object is NULL"));
 	vmh = object->handle;
 
 	ret = sgx_get_epc_page(sc, &epc);
