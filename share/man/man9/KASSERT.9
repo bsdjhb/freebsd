@@ -40,7 +40,14 @@
 .Pp
 .In sys/param.h
 .In sys/systm.h
-.Fn KASSERT expression msg
+.Fn KASSERT expression fmt ...
+.Fo KASSERT
+.Fa expression
+.Ns , (
+.Fa fmt
+.Fa ...
+.Ns )
+.Ns Fc
 .Fn MPASS expression
 .Sh DESCRIPTION
 Assertions are widely used within the
@@ -69,12 +76,20 @@ function is called.
 This terminates the running system at the point of the error, possibly dropping
 into the kernel debugger or initiating a kernel core dump.
 The second argument,
-.Fa msg ,
+.Fa fmt ,
 is a
 .Xr printf 9
-format string and its arguments,
-enclosed in parentheses.
+format string followed by its arguments.
 The formatted string will become the panic string.
+.Pp
+The second form of
+.Fn KASSERT
+which encloses
+.Fa fmt
+and its arguments in a nested pair of parentheses is deprecated but must currently
+be used when
+.Fa fmt
+does not accept additional arguments.
 .Pp
 In a kernel that is built without
 .Cd "options INVARIANTS" ,
@@ -135,8 +150,8 @@ foo_dealloc(struct foo *fp)
 {
 
 	KASSERT((fp->foo_flags & FOO_ACTIVE) == 0,
-	    ("%s: fp %p is still active, flags=%x", __func__, fp,
-	    fp->foo_flags));
+	    "%s: fp %p is still active, flags=%x", __func__, fp,
+	    fp->foo_flags);
 	...
 }
 .Ed
@@ -181,9 +196,18 @@ According to the guidelines above, this would be correctly expressed as:
 .Bd -literal -offset indent
 MPASS(td == curthread);
 KASSERT(sz >= SIZE_MIN && sz <= SIZE_MAX,
-    ("invalid size argument: %u", sz));
+    "invalid size argument: %u", sz);
 .Ed
 .Sh HISTORY
+The second form of the
+.Nm KASSERT
+macro first appeared in
+.Fx 3.0 .
+The first form of
+.Nm KASSERT
+macro first appeared in
+.Fx 15.0 .
+.Pp
 The
 .Nm MPASS
 macro first appeared in

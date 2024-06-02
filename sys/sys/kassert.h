@@ -141,12 +141,25 @@ void	kassert_panic(const char *fmt, ...)  __printflike(1, 2);
  * Kernel assertion; see KASSERT(9) for details.
  */
 #if (defined(_KERNEL) && defined(INVARIANTS)) || defined(_STANDALONE)
-#define	KASSERT(exp,msg) do {						\
+#define	KASSERTN(exp, ...) do {						\
+	if (__predict_false(!(exp)))					\
+		kassert_panic(__VA_ARGS__);				\
+} while (0)
+#define	KASSERT2(exp, msg) do {						\
 	if (__predict_false(!(exp)))					\
 		kassert_panic msg;					\
 } while (0)
+
+#define _KASSERT_MACRO(exp, fmt, _1, _2, _3, _4, _5, _6, _7, _8, _9,	\
+    NAME, ...)								\
+	NAME
+
+#define KASSERT(...)							\
+	_KASSERT_MACRO(__VA_ARGS__, KASSERTN, KASSERTN, KASSERTN,	\
+	    KASSERTN, KASSERTN, KASSERTN, KASSERTN, KASSERTN, KASSERTN, \
+	    KASSERT2)(__VA_ARGS__)
 #else /* !(KERNEL && INVARIANTS) && !_STANDALONE */
-#define	KASSERT(exp,msg) do { \
+#define	KASSERT(...) do { \
 } while (0)
 #endif /* (_KERNEL && INVARIANTS) || _STANDALONE */
 
@@ -162,7 +175,7 @@ void	kassert_panic(const char *fmt, ...)  __printflike(1, 2);
 #define MPASS2(ex, what)	MPASS4(ex, what, __FILE__, __LINE__)
 #define MPASS3(ex, file, line)	MPASS4(ex, #ex, file, line)
 #define MPASS4(ex, what, file, line)					\
-	KASSERT((ex), ("Assertion %s failed at %s:%d", what, file, line))
+	KASSERT((ex), "Assertion %s failed at %s:%d", what, file, line)
 
 /*
  * Assert that a pointer can be loaded from memory atomically.
@@ -171,9 +184,9 @@ void	kassert_panic(const char *fmt, ...)  __printflike(1, 2);
  * on some architectures, atomicity for unaligned loads will depend on
  * whether or not the load spans multiple cache lines.
  */
-#define	ASSERT_ATOMIC_LOAD_PTR(var, msg)				\
+#define	ASSERT_ATOMIC_LOAD_PTR(var, ...)				\
 	KASSERT(sizeof(var) == sizeof(void *) &&			\
-	    ((uintptr_t)&(var) & (sizeof(void *) - 1)) == 0, msg)
+	    ((uintptr_t)&(var) & (sizeof(void *) - 1)) == 0, __VA_ARGS__)
 /*
  * Assert that a thread is in critical(9) section.
  */
