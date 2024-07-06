@@ -173,7 +173,7 @@ efi_1t1_pte(vm_offset_t va)
 
 	pte = (pt_entry_t *)PHYS_TO_DMAP(mphys);
 	pte += pmap_pte_index(va);
-	KASSERT(*pte == 0, ("va %#jx *pt %#jx", va, *pte));
+	KASSERT(*pte == 0, "va %#jx *pt %#jx", va, *pte);
 
 	return (pte);
 }

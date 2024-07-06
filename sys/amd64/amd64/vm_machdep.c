@@ -95,8 +95,8 @@ get_pcb_user_save_td(struct thread *td)
 {
 	KASSERT(((vm_offset_t)td->td_md.md_usr_fpu_save %
 	    XSAVE_AREA_ALIGN) == 0,
-	    ("Unaligned pcb_user_save area ptr %p td %p",
-	    td->td_md.md_usr_fpu_save, td));
+	    "Unaligned pcb_user_save area ptr %p td %p",
+	    td->td_md.md_usr_fpu_save, td);
 	return (td->td_md.md_usr_fpu_save);
 }
 

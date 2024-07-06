@@ -1203,7 +1203,7 @@ amd64_syscall(struct thread *td, int traced)
 	kmsan_mark(td->td_frame, sizeof(*td->td_frame), KMSAN_STATE_INITED);
 
 	KASSERT(TRAPF_USERMODE(td->td_frame),
-	    ("%s: not from user mode", __func__));
+	    "%s: not from user mode", __func__);
 
 	syscallenter(td);
 
@@ -1220,15 +1220,15 @@ amd64_syscall(struct thread *td, int traced)
 	}
 
 	KASSERT(PCB_USER_FPU(td->td_pcb),
-	    ("System call %s returning with kernel FPU ctx leaked",
-	     syscallname(td->td_proc, td->td_sa.code)));
+	    "System call %s returning with kernel FPU ctx leaked",
+	    syscallname(td->td_proc, td->td_sa.code));
 	KASSERT(td->td_pcb->pcb_save == get_pcb_user_save_td(td),
-	    ("System call %s returning with mangled pcb_save",
-	     syscallname(td->td_proc, td->td_sa.code)));
+	    "System call %s returning with mangled pcb_save",
+	    syscallname(td->td_proc, td->td_sa.code));
 	KASSERT(pmap_not_in_di(),
-	    ("System call %s returning with leaked invl_gen %lu",
+	    "System call %s returning with leaked invl_gen %lu",
 	    syscallname(td->td_proc, td->td_sa.code),
-	    td->td_md.md_invl_gen.gen));
+	    td->td_md.md_invl_gen.gen);
 
 	syscallret(td);
 

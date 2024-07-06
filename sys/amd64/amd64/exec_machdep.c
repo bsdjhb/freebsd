@@ -563,7 +563,7 @@ fill_fpregs(struct thread *td, struct fpreg *fpregs)
 
 	KASSERT(td == curthread || TD_IS_SUSPENDED(td) ||
 	    P_SHOULDSTOP(td->td_proc),
-	    ("not suspended thread %p", td));
+	    "not suspended thread %p", td);
 	fpugetregs(td);
 	fill_fpregs_xmm(get_pcb_user_save_td(td), fpregs);
 	return (0);

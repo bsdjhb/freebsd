@@ -649,8 +649,8 @@ smp_targeted_tlb_shootdown_native(pmap_t pmap, vm_offset_t addr1,
 
 	CPU_FOREACH_ISSET(cpu, &mask) {
 		KASSERT(*invl_scoreboard_slot(cpu) != 0,
-		    ("IPI scoreboard is zero, initiator %d target %d",
-		    curcpu, cpu));
+		    "IPI scoreboard is zero, initiator %d target %d",
+		    curcpu, cpu);
 		*invl_scoreboard_slot(cpu) = 0;
 	}
 

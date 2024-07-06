@@ -382,8 +382,8 @@ extern int pmap_pcid_invlpg_workaround_uena;
 #define	pmap_vm_page_alloc_check(m)					\
 	KASSERT(m->phys_addr < kernphys ||				\
 	    m->phys_addr >= kernphys + (vm_offset_t)&_end - KERNSTART,	\
-	    ("allocating kernel page %p pa %#lx kernphys %#lx end %p", \
-	    m, m->phys_addr, kernphys, &_end));
+	    "allocating kernel page %p pa %#lx kernphys %#lx end %p", \
+	    m, m->phys_addr, kernphys, &_end);
 
 struct thread;
 

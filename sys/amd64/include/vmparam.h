@@ -252,14 +252,14 @@
 #define	PMAP_HAS_DMAP	1
 #define	PHYS_TO_DMAP(x)	__extension__ ({				\
 	KASSERT(PHYS_IN_DMAP(x),					\
-	    ("physical address %#jx not covered by the DMAP",		\
-	    (uintmax_t)x));						\
+	    "physical address %#jx not covered by the DMAP",		\
+	    (uintmax_t)x);						\
 	(x) + kva_layout.dmap_low; })
 
 #define	DMAP_TO_PHYS(x)	__extension__ ({				\
 	KASSERT(VIRT_IN_DMAP(x),					\
-	    ("virtual address %#jx not covered by the DMAP",		\
-	    (uintmax_t)x));						\
+	    "virtual address %#jx not covered by the DMAP",		\
+	    (uintmax_t)x);						\
 	(x) - kva_layout.dmap_low; })
 
 /*

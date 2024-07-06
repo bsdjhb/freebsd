@@ -271,7 +271,7 @@ get_i386_segbases(struct regset *rs, struct thread *td, void *buf,
 	struct pcb *pcb;
 
 	if (buf != NULL) {
-		KASSERT(*sizep == sizeof(*reg), ("%s: invalid size", __func__));
+		KASSERT(*sizep == sizeof(*reg), "%s: invalid size", __func__);
 		reg = buf;
 
 		pcb = td->td_pcb;
@@ -291,7 +291,7 @@ set_i386_segbases(struct regset *rs, struct thread *td, void *buf,
 	struct segbasereg32 *reg;
 	struct pcb *pcb;
 
-	KASSERT(size == sizeof(*reg), ("%s: invalid size", __func__));
+	KASSERT(size == sizeof(*reg), "%s: invalid size", __func__);
 	reg = buf;
 
 	pcb = td->td_pcb;
