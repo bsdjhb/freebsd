@@ -192,7 +192,7 @@ check_svm_features(void)
 	 */
 	if (nasid == 0 || nasid > regs[1])
 		nasid = regs[1];
-	KASSERT(nasid > 1, ("Insufficient ASIDs for guests: %#x", nasid));
+	KASSERT(nasid > 1, "Insufficient ASIDs for guests: %#x", nasid);
 
 	/* bhyve requires the Nested Paging feature */
 	if (!(svm_feature & AMD_CPUID_SVM_NP)) {
@@ -325,7 +325,7 @@ svm_get_cs_info(struct vmcb *vmcb, struct vm_guest_paging *paging, int *cs_d,
 	int error __diagused;
 
 	error = vmcb_seg(vmcb, VM_REG_GUEST_CS, &seg);
-	KASSERT(error == 0, ("%s: vmcb_seg error %d", __func__, error));
+	KASSERT(error == 0, "%s: vmcb_seg error %d", __func__, error);
 
 	switch (paging->cpu_mode) {
 	case CPU_MODE_REAL:
@@ -388,11 +388,11 @@ svm_msr_perm(uint8_t *perm_bitmap, uint64_t msr, bool read, bool write)
 	int index, bit, error __diagused;
 
 	error = svm_msr_index(msr, &index, &bit);
-	KASSERT(error == 0, ("%s: invalid msr %#lx", __func__, msr));
+	KASSERT(error == 0, "%s: invalid msr %#lx", __func__, msr);
 	KASSERT(index >= 0 && index < SVM_MSR_BITMAP_SIZE,
-	    ("%s: invalid index %d for msr %#lx", __func__, index, msr));
-	KASSERT(bit >= 0 && bit <= 6, ("%s: invalid bit position %d "
-	    "msr %#lx", __func__, bit, msr));
+	    "%s: invalid index %d for msr %#lx", __func__, index, msr);
+	KASSERT(bit >= 0 && bit <= 6, "%s: invalid bit position %d "
+	    "msr %#lx", __func__, bit, msr);
 
 	if (read)
 		perm_bitmap[index] &= ~(1UL << bit);
@@ -420,7 +420,7 @@ svm_get_intercept(struct svm_vcpu *vcpu, int idx, uint32_t bitmask)
 {
 	struct vmcb_ctrl *ctrl;
 
-	KASSERT(idx >=0 && idx < 5, ("invalid intercept index %d", idx));
+	KASSERT(idx >=0 && idx < 5, "invalid intercept index %d", idx);
 
 	ctrl = svm_get_vmcb_ctrl(vcpu);
 	return (ctrl->intercept[idx] & bitmask ? 1 : 0);
@@ -432,7 +432,7 @@ svm_set_intercept(struct svm_vcpu *vcpu, int idx, uint32_t bitmask, int enabled)
 	struct vmcb_ctrl *ctrl;
 	uint32_t oldval;
 
-	KASSERT(idx >=0 && idx < 5, ("invalid intercept index %d", idx));
+	KASSERT(idx >=0 && idx < 5, "invalid intercept index %d", idx);
 
 	ctrl = svm_get_vmcb_ctrl(vcpu);
 	oldval = ctrl->intercept[idx];
@@ -699,8 +699,8 @@ svm_vcpu_mode(struct vmcb *vmcb)
 
 	if (state->efer & EFER_LMA) {
 		error = vmcb_seg(vmcb, VM_REG_GUEST_CS, &seg);
-		KASSERT(error == 0, ("%s: vmcb_seg(cs) error %d", __func__,
-		    error));
+		KASSERT(error == 0, "%s: vmcb_seg(cs) error %d", __func__,
+		    error);
 
 		/*
 		 * Section 4.8.1 for APM2, check if Code Segment has
@@ -788,7 +788,7 @@ svm_inout_str_seginfo(struct svm_vcpu *vcpu, int64_t info1, int in,
 	}
 
 	error = svm_getdesc(vcpu, vis->seg_name, &vis->seg_desc);
-	KASSERT(error == 0, ("%s: svm_getdesc error %d", __func__, error));
+	KASSERT(error == 0, "%s: svm_getdesc error %d", __func__, error);
 }
 
 static int
@@ -963,10 +963,10 @@ svm_eventinject(struct svm_vcpu *vcpu, int intr_type, int vector,
 	ctrl = svm_get_vmcb_ctrl(vcpu);
 
 	KASSERT((ctrl->eventinj & VMCB_EVENTINJ_VALID) == 0,
-	    ("%s: event already pending %#lx", __func__, ctrl->eventinj));
+	    "%s: event already pending %#lx", __func__, ctrl->eventinj);
 
-	KASSERT(vector >=0 && vector <= 255, ("%s: invalid vector %d",
-	    __func__, vector));
+	KASSERT(vector >=0 && vector <= 255, "%s: invalid vector %d",
+	    __func__, vector);
 
 	switch (intr_type) {
 	case VMCB_EVENTINJ_TYPE_INTR:
@@ -1006,8 +1006,8 @@ svm_update_virqinfo(struct svm_vcpu *vcpu)
 	vlapic_set_cr8(vlapic, ctrl->v_tpr);
 
 	/* Virtual interrupt injection is not used. */
-	KASSERT(ctrl->v_intr_vector == 0, ("%s: invalid "
-	    "v_intr_vector %d", __func__, ctrl->v_intr_vector));
+	KASSERT(ctrl->v_intr_vector == 0, "%s: invalid "
+	    "v_intr_vector %d", __func__, ctrl->v_intr_vector);
 }
 
 static void
@@ -1050,9 +1050,9 @@ enable_intr_window_exiting(struct svm_vcpu *vcpu)
 	ctrl = svm_get_vmcb_ctrl(vcpu);
 
 	if (ctrl->v_irq && ctrl->v_intr_vector == 0) {
-		KASSERT(ctrl->v_ign_tpr, ("%s: invalid v_ign_tpr", __func__));
+		KASSERT(ctrl->v_ign_tpr, "%s: invalid v_ign_tpr", __func__);
 		KASSERT(vintr_intercept_enabled(vcpu),
-		    ("%s: vintr intercept should be enabled", __func__));
+		    "%s: vintr intercept should be enabled", __func__);
 		return;
 	}
 
@@ -1073,7 +1073,7 @@ disable_intr_window_exiting(struct svm_vcpu *vcpu)
 
 	if (!ctrl->v_irq && ctrl->v_intr_vector == 0) {
 		KASSERT(!vintr_intercept_enabled(vcpu),
-		    ("%s: vintr intercept should be disabled", __func__));
+		    "%s: vintr intercept should be disabled", __func__);
 		return;
 	}
 
@@ -1158,7 +1158,7 @@ clear_nmi_blocking(struct svm_vcpu *vcpu)
 	 * immediate VMRUN.
 	 */
 	error = svm_modify_intr_shadow(vcpu, 1);
-	KASSERT(!error, ("%s: error %d setting intr_shadow", __func__, error));
+	KASSERT(!error, "%s: error %d setting intr_shadow", __func__, error);
 }
 
 #define	EFER_MBZ_BITS	0xFFFFFFFFFFFF0200UL
@@ -1225,7 +1225,7 @@ svm_write_efer(struct svm_softc *sc, struct svm_vcpu *vcpu, uint64_t newval,
 	}
 
 	error = svm_setreg(vcpu, VM_REG_GUEST_EFER, newval);
-	KASSERT(error == 0, ("%s: error %d updating efer", __func__, error));
+	KASSERT(error == 0, "%s: error %d updating efer", __func__, error);
 	return (0);
 gpf:
 	vm_inject_gp(vcpu->vcpu);
@@ -1384,12 +1384,12 @@ svm_vmexit(struct svm_softc *svm_sc, struct svm_vcpu *vcpu,
 		return (0);
 	}
 
-	KASSERT((ctrl->eventinj & VMCB_EVENTINJ_VALID) == 0, ("%s: event "
-	    "injection valid bit is set %#lx", __func__, ctrl->eventinj));
+	KASSERT((ctrl->eventinj & VMCB_EVENTINJ_VALID) == 0, "%s: event "
+	    "injection valid bit is set %#lx", __func__, ctrl->eventinj);
 
 	KASSERT(vmexit->inst_length >= 0 && vmexit->inst_length <= 15,
-	    ("invalid inst_length %d: code (%#lx), info1 (%#lx), info2 (%#lx)",
-	    vmexit->inst_length, code, info1, info2));
+	    "invalid inst_length %d: code (%#lx), info1 (%#lx), info2 (%#lx)",
+	    vmexit->inst_length, code, info1, info2);
 
 	svm_update_virqinfo(vcpu);
 	svm_save_intinfo(svm_sc, vcpu);
@@ -1430,8 +1430,8 @@ svm_vmexit(struct svm_softc *svm_sc, struct svm_vcpu *vcpu,
 			break;
 		case IDT_PF:
 			error = svm_setreg(vcpu, VM_REG_GUEST_CR2, info2);
-			KASSERT(error == 0, ("%s: error %d updating cr2",
-			    __func__, error));
+			KASSERT(error == 0, "%s: error %d updating cr2",
+			    __func__, error);
 			/* fallthru */
 		case IDT_NP:
 		case IDT_SS:
@@ -1501,8 +1501,8 @@ svm_vmexit(struct svm_softc *svm_sc, struct svm_vcpu *vcpu,
 				dr6 &= ~DBREG_DR6_BS;
 				error = svm_setreg(vcpu, VM_REG_GUEST_DR6, dr6);
 				KASSERT(error == 0,
-				    ("%s: error %d updating DR6\r\n", __func__,
-					error));
+				    "%s: error %d updating DR6\r\n", __func__,
+				    error);
 
 				reflect = 0;
 			}
@@ -1539,16 +1539,16 @@ svm_vmexit(struct svm_softc *svm_sc, struct svm_vcpu *vcpu,
 
 		if (reflect) {
 			KASSERT(vmexit->inst_length == 0,
-			    ("invalid inst_length (%d) "
-			     "when reflecting exception %d into guest",
-				vmexit->inst_length, idtvec));
+			    "invalid inst_length (%d) "
+			    "when reflecting exception %d into guest",
+			    vmexit->inst_length, idtvec);
 			/* Reflect the exception back into the guest */
 			SVM_CTR2(vcpu, "Reflecting exception "
 			    "%d/%#x into the guest", idtvec, (int)info1);
 			error = vm_inject_exception(vcpu->vcpu, idtvec,
 			    errcode_valid, info1, 0);
-			KASSERT(error == 0, ("%s: vm_inject_exception error %d",
-			    __func__, error));
+			KASSERT(error == 0, "%s: vm_inject_exception error %d",
+			    __func__, error);
 			handled = 1;
 		}
 		break;
@@ -1726,8 +1726,8 @@ svm_inj_intinfo(struct svm_softc *svm_sc, struct svm_vcpu *vcpu)
 	if (!vm_entry_intinfo(vcpu->vcpu, &intinfo))
 		return;
 
-	KASSERT(VMCB_EXITINTINFO_VALID(intinfo), ("%s: entry intinfo is not "
-	    "valid: %#lx", __func__, intinfo));
+	KASSERT(VMCB_EXITINTINFO_VALID(intinfo), "%s: entry intinfo is not "
+	    "valid: %#lx", __func__, intinfo);
 
 	svm_eventinject(vcpu, VMCB_EXITINTINFO_TYPE(intinfo),
 		VMCB_EXITINTINFO_VECTOR(intinfo),
@@ -1832,12 +1832,12 @@ svm_inj_interrupts(struct svm_softc *sc, struct svm_vcpu *vcpu,
 		if (!vlapic_pending_intr(vlapic, &vector))
 			goto done;
 		KASSERT(vector >= 16 && vector <= 255,
-		    ("invalid vector %d from local APIC", vector));
+		    "invalid vector %d from local APIC", vector);
 	} else {
 		/* Ask the legacy pic for a vector to inject */
 		vatpic_pending_intr(sc->vm, &vector);
 		KASSERT(vector >= 0 && vector <= 255,
-		    ("invalid vector %d from INTR", vector));
+		    "invalid vector %d from INTR", vector);
 	}
 
 	/*
@@ -1894,7 +1894,7 @@ done:
 	 * VMRUN.
 	 */
 	v_tpr = vlapic_get_cr8(vlapic);
-	KASSERT(v_tpr <= 15, ("invalid v_tpr %#x", v_tpr));
+	KASSERT(v_tpr <= 15, "invalid v_tpr %#x", v_tpr);
 	if (ctrl->v_tpr != v_tpr) {
 		SVM_CTR2(vcpu, "VMCB V_TPR changed from %#x to %#x",
 		    ctrl->v_tpr, v_tpr);
@@ -1914,9 +1914,9 @@ done:
 		 */
 		KASSERT((ctrl->eventinj & VMCB_EVENTINJ_VALID) != 0 ||
 		    (state->rflags & PSL_I) == 0 || ctrl->intr_shadow,
-		    ("Bogus intr_window_exiting: eventinj (%#lx), "
+		    "Bogus intr_window_exiting: eventinj (%#lx), "
 		    "intr_shadow (%u), rflags (%#lx)",
-		    ctrl->eventinj, ctrl->intr_shadow, state->rflags));
+		    ctrl->eventinj, ctrl->intr_shadow, state->rflags);
 		enable_intr_window_exiting(vcpu);
 	} else {
 		disable_intr_window_exiting(vcpu);
@@ -2006,7 +2006,7 @@ svm_pmap_activate(struct svm_vcpu *vcpu, pmap_t pmap)
 		 */
 		KASSERT(!alloc_asid, ("ASID allocation not necessary"));
 		KASSERT(ctrl->tlb_ctrl == VMCB_TLB_FLUSH_NOTHING,
-		    ("Invalid VMCB tlb_ctrl: %#x", ctrl->tlb_ctrl));
+		    "Invalid VMCB tlb_ctrl: %#x", ctrl->tlb_ctrl);
 	}
 
 	if (alloc_asid) {
@@ -2040,7 +2040,7 @@ svm_pmap_activate(struct svm_vcpu *vcpu, pmap_t pmap)
 
 	KASSERT(ctrl->asid != 0, ("Guest ASID must be non-zero"));
 	KASSERT(ctrl->asid == vcpu->asid.num,
-	    ("ASID mismatch: %u/%u", ctrl->asid, vcpu->asid.num));
+	    "ASID mismatch: %u/%u", ctrl->asid, vcpu->asid.num);
 }
 
 static void

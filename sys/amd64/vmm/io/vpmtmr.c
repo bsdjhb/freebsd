@@ -97,8 +97,8 @@ vpmtmr_handler(struct vm *vm, bool in, int port, int bytes, uint32_t *val)
 	 */
 	now = sbinuptime();
 	delta = now - vpmtmr->baseuptime;
-	KASSERT(delta >= 0, ("vpmtmr_handler: uptime went backwards: "
-	    "%#lx to %#lx", vpmtmr->baseuptime, now));
+	KASSERT(delta >= 0, "vpmtmr_handler: uptime went backwards: "
+	    "%#lx to %#lx", vpmtmr->baseuptime, now);
 	*val = vpmtmr->baseval + delta / vpmtmr->freq_sbt;
 
 	return (0);

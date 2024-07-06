@@ -378,7 +378,7 @@ ivhd_identify(driver_t *driver, device_t parent)
 		M_WAITOK | M_ZERO);
 	for (i = 0; i < count; i++) {
 		ivhd = ivhd_find_by_index(i);
-		KASSERT(ivhd, ("ivhd%d is NULL\n", i));
+		KASSERT(ivhd, "ivhd%d is NULL", i);
 
 		/*
 		 * Scan for presence of legacy and non-legacy device type
@@ -400,7 +400,7 @@ ivhd_identify(driver_t *driver, device_t parent)
 		M_WAITOK | M_ZERO);
 	for (i = 0, j = 0; i < ivhd_count; i++) {
 		ivhd = ivhd_hdrs[i];
-		KASSERT(ivhd, ("ivhd%d is NULL\n", i));
+		KASSERT(ivhd, "ivhd%d is NULL", i);
 
 		/*
 		 * Use a high order to ensure that this driver is probed after
@@ -440,7 +440,7 @@ ivhd_probe(device_t dev)
 
 	unit = device_get_unit(dev);
 	KASSERT((unit < ivhd_count),
-		("ivhd unit %d > count %d", unit, ivhd_count));
+	    "ivhd unit %d > count %d", unit, ivhd_count);
 	ivhd = ivhd_hdrs[unit];
 	KASSERT(ivhd, ("ivhd is NULL"));
 
@@ -640,10 +640,10 @@ ivhd_attach(device_t dev)
 
 	unit = device_get_unit(dev);
 	KASSERT((unit < ivhd_count),
-		("ivhd unit %d > count %d", unit, ivhd_count));
+	    "ivhd unit %d > count %d", unit, ivhd_count);
 	/* Make sure its same device for which attach is called. */
 	KASSERT((ivhd_devs[unit] == dev),
-		("Not same device old %p new %p", ivhd_devs[unit], dev));
+	    "Not same device old %p new %p", ivhd_devs[unit], dev);
 
 	softc = device_get_softc(dev);
 	softc->dev = dev;

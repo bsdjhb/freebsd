@@ -218,8 +218,8 @@ vlapic_get_ccr(struct vlapic *vlapic)
 			ccr += bt_rem.frac / vlapic->timer_freq_bt.frac;
 		}
 	}
-	KASSERT(ccr <= lapic->icr_timer, ("vlapic_get_ccr: invalid ccr %#x, "
-	    "icr_timer is %#x", ccr, lapic->icr_timer));
+	KASSERT(ccr <= lapic->icr_timer, "vlapic_get_ccr: invalid ccr %#x, "
+	    "icr_timer is %#x", ccr, lapic->icr_timer);
 	VLAPIC_CTR2(vlapic, "vlapic ccr_timer = %#x, icr_timer = %#x",
 	    ccr, lapic->icr_timer);
 	VLAPIC_TIMER_UNLOCK(vlapic);
@@ -269,7 +269,7 @@ vlapic_set_intr_ready(struct vlapic *vlapic, int vector, bool level)
 	uint32_t *irrptr, *tmrptr, mask;
 	int idx;
 
-	KASSERT(vector >= 0 && vector < 256, ("invalid vector %d", vector));
+	KASSERT(vector >= 0 && vector < 256, "invalid vector %d", vector);
 
 	lapic = vlapic->apic_page;
 	if (!(lapic->svr & APIC_SVR_ENABLE)) {
@@ -358,8 +358,8 @@ lvt_off_to_idx(uint32_t offset)
 		index = -1;
 		break;
 	}
-	KASSERT(index >= 0 && index <= VLAPIC_MAXLVT_INDEX, ("lvt_off_to_idx: "
-	    "invalid lvt index %d for offset %#x", index, offset));
+	KASSERT(index >= 0 && index <= VLAPIC_MAXLVT_INDEX, "lvt_off_to_idx: "
+	    "invalid lvt index %d for offset %#x", index, offset);
 
 	return (index);
 }
@@ -736,9 +736,9 @@ vlapic_callout_handler(void *arg)
 	if (vlapic_periodic_timer(vlapic)) {
 		binuptime(&btnow);
 		KASSERT(bintime_cmp(&btnow, &vlapic->timer_fire_bt, >=),
-		    ("vlapic callout at %#lx.%#lx, expected at %#lx.#%lx",
+		    "vlapic callout at %#lx.%#lx, expected at %#lx.#%lx",
 		    btnow.sec, btnow.frac, vlapic->timer_fire_bt.sec,
-		    vlapic->timer_fire_bt.frac));
+		    vlapic->timer_fire_bt.frac);
 
 		/*
 		 * Compute the delta between when the timer was supposed to
@@ -1422,8 +1422,8 @@ vlapic_read(struct vlapic *vlapic, int mmio_access, uint64_t offset,
 			*data = vlapic_get_lvt(vlapic, offset);
 #ifdef INVARIANTS
 			reg = vlapic_get_lvtptr(vlapic, offset);
-			KASSERT(*data == *reg, ("inconsistent lvt value at "
-			    "offset %#lx: %#lx/%#x", offset, *data, *reg));
+			KASSERT(*data == *reg, "inconsistent lvt value at "
+			    "offset %#lx: %#lx/%#x", offset, *data, *reg);
 #endif
 			break;
 		case APIC_OFFSET_TIMER_ICR:
@@ -1460,7 +1460,7 @@ vlapic_write(struct vlapic *vlapic, int mmio_access, uint64_t offset,
 	int		retval;
 
 	KASSERT((offset & 0xf) == 0 && offset < PAGE_SIZE,
-	    ("vlapic_write: invalid offset %#lx", offset));
+	    "vlapic_write: invalid offset %#lx", offset);
 
 	VLAPIC_CTR2(vlapic, "vlapic write offset %#lx, data %#lx",
 	    offset, data);
@@ -1776,7 +1776,7 @@ vlapic_set_tmr_level(struct vlapic *vlapic, uint32_t dest, bool phys,
 	cpuset_t dmask;
 	bool lowprio;
 
-	KASSERT(vector >= 0 && vector <= 255, ("invalid vector %d", vector));
+	KASSERT(vector >= 0 && vector <= 255, "invalid vector %d", vector);
 
 	/*
 	 * A level trigger is valid only for fixed and lowprio delivery modes.
@@ -1844,7 +1844,7 @@ vlapic_snapshot(struct vm *vm, struct vm_snapshot_meta *meta)
 	uint32_t ccr;
 	uint16_t i, maxcpus;
 
-	KASSERT(vm != NULL, ("%s: arg was NULL", __func__));
+	KASSERT(vm != NULL, "%s: arg was NULL", __func__);
 
 	ret = 0;
 

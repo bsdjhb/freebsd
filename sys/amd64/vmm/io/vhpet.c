@@ -154,8 +154,8 @@ vhpet_counter(struct vhpet *vhpet, sbintime_t *nowptr)
 	if (vhpet_counter_enabled(vhpet)) {
 		now = sbinuptime();
 		delta = now - vhpet->countbase_sbt;
-		KASSERT(delta >= 0, ("vhpet_counter: uptime went backwards: "
-		    "%#lx to %#lx", vhpet->countbase_sbt, now));
+		KASSERT(delta >= 0, "vhpet_counter: uptime went backwards: "
+		    "%#lx to %#lx", vhpet->countbase_sbt, now);
 		val += delta / vhpet->freq_sbt;
 		if (nowptr != NULL)
 			*nowptr = now;
@@ -177,7 +177,7 @@ vhpet_timer_clear_isr(struct vhpet *vhpet, int n)
 
 	if (vhpet->isr & (1 << n)) {
 		pin = vhpet_timer_ioapic_pin(vhpet, n);
-		KASSERT(pin != 0, ("vhpet timer %d irq incorrectly routed", n));
+		KASSERT(pin != 0, "vhpet timer %d irq incorrectly routed", n);
 		vioapic_deassert_irq(vhpet->vm, pin);
 		vhpet->isr &= ~(1 << n);
 	}
@@ -201,8 +201,8 @@ static __inline bool
 vhpet_timer_edge_trig(struct vhpet *vhpet, int n)
 {
 
-	KASSERT(!vhpet_timer_msi_enabled(vhpet, n), ("vhpet_timer_edge_trig: "
-	    "timer %d is using MSI", n));
+	KASSERT(!vhpet_timer_msi_enabled(vhpet, n), "vhpet_timer_edge_trig: "
+	    "timer %d is using MSI", n);
 
 	if ((vhpet->timer[n].cap_config & HPET_TCNF_INT_TYPE) == 0)
 		return (true);
@@ -252,7 +252,7 @@ vhpet_adjust_compval(struct vhpet *vhpet, int n, uint32_t counter)
 {
 	uint32_t compval, comprate, compnext;
 
-	KASSERT(vhpet->timer[n].comprate != 0, ("hpet t%d is not periodic", n));
+	KASSERT(vhpet->timer[n].comprate != 0, "hpet t%d is not periodic", n);
 
 	compval = vhpet->timer[n].compval;
 	comprate = vhpet->timer[n].comprate;
@@ -444,8 +444,8 @@ vhpet_timer_update_config(struct vhpet *vhpet, int n, uint64_t data,
 	 * not remain asserted forever.
 	 */
 	if (vhpet->isr & (1 << n)) {
-		KASSERT(old_pin != 0, ("timer %d isr asserted to ioapic pin %d",
-		    n, old_pin));
+		KASSERT(old_pin != 0, "timer %d isr asserted to ioapic pin %d",
+		    n, old_pin);
 		if (!vhpet_timer_interrupt_enabled(vhpet, n))
 			clear_isr = true;
 		else if (vhpet_timer_msi_enabled(vhpet, n))
@@ -586,8 +586,8 @@ vhpet_mmio_write(struct vcpu *vcpu, uint64_t gpa, uint64_t val, int size,
 				}
 			} else {
 				KASSERT(vhpet->timer[i].comprate == 0,
-				    ("vhpet one-shot timer %d has invalid "
-				    "rate %u", i, vhpet->timer[i].comprate));
+				    "vhpet one-shot timer %d has invalid "
+				    "rate %u", i, vhpet->timer[i].comprate);
 				val64 = vhpet->timer[i].compval;
 				update_register(&val64, data, mask);
 				vhpet->timer[i].compval = val64;

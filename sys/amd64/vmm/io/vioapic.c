@@ -103,7 +103,7 @@ vioapic_send_intr(struct vioapic *vioapic, int pin)
 	bool level, phys;
 
 	KASSERT(pin >= 0 && pin < REDIR_ENTRIES,
-	    ("vioapic_set_pinstate: invalid pin number %d", pin));
+	    "vioapic_set_pinstate: invalid pin number %d", pin);
 
 	KASSERT(VIOAPIC_LOCKED(vioapic),
 	    ("vioapic_set_pinstate: vioapic is not locked"));
@@ -149,7 +149,7 @@ vioapic_set_pinstate(struct vioapic *vioapic, int pin, bool newstate)
 	bool needintr;
 
 	KASSERT(pin >= 0 && pin < REDIR_ENTRIES,
-	    ("vioapic_set_pinstate: invalid pin number %d", pin));
+	    "vioapic_set_pinstate: invalid pin number %d", pin);
 
 	KASSERT(VIOAPIC_LOCKED(vioapic),
 	    ("vioapic_set_pinstate: vioapic is not locked"));
@@ -467,7 +467,7 @@ vioapic_process_eoi(struct vm *vm, int vector)
 	int pin;
 
 	KASSERT(vector >= 0 && vector < 256,
-	    ("vioapic_process_eoi: invalid vector %d", vector));
+	    "vioapic_process_eoi: invalid vector %d", vector);
 
 	vioapic = vm_ioapic(vm);
 	VIOAPIC_CTR1(vioapic, "ioapic processing eoi for vector %d", vector);

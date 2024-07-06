@@ -57,7 +57,7 @@
 #include <strings.h>
 #include <vmmapi.h>
 #define	__diagused
-#define	KASSERT(exp,msg)	assert((exp))
+#define	KASSERT(exp,...)	assert((exp))
 #define	panic(...)		errx(4, __VA_ARGS__)
 #endif	/* _KERNEL */
 
@@ -416,7 +416,7 @@ static u_long
 getcc(int opsize, uint64_t x, uint64_t y)
 {
 	KASSERT(opsize == 1 || opsize == 2 || opsize == 4 || opsize == 8,
-	    ("getcc: invalid operand size %d", opsize));
+	    "getcc: invalid operand size %d", opsize);
 
 	if (opsize == 1)
 		return (getcc8(x, y));
@@ -451,7 +451,7 @@ static u_long
 getaddflags(int opsize, uint64_t x, uint64_t y)
 {
 	KASSERT(opsize == 1 || opsize == 2 || opsize == 4 || opsize == 8,
-	    ("getaddflags: invalid operand size %d", opsize));
+	    "getaddflags: invalid operand size %d", opsize);
 
 	if (opsize == 1)
 		return (getaddflags8(x, y));
@@ -486,7 +486,7 @@ static u_long
 getandflags(int opsize, uint64_t x, uint64_t y)
 {
 	KASSERT(opsize == 1 || opsize == 2 || opsize == 4 || opsize == 8,
-	    ("getandflags: invalid operand size %d", opsize));
+	    "getandflags: invalid operand size %d", opsize);
 
 	if (opsize == 1)
 		return (getandflags8(x, y));
@@ -710,18 +710,18 @@ get_gla(struct vcpu *vcpu, struct vie *vie __unused,
 	int error __diagused;
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_CR0, &cr0);
-	KASSERT(error == 0, ("%s: error %d getting cr0", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting cr0", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RFLAGS, &rflags);
-	KASSERT(error == 0, ("%s: error %d getting rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rflags", __func__, error);
 
 	error = vm_get_seg_desc(vcpu, seg, &desc);
-	KASSERT(error == 0, ("%s: error %d getting segment descriptor %d",
-	    __func__, error, seg));
+	KASSERT(error == 0, "%s: error %d getting segment descriptor %d",
+	    __func__, error, seg);
 
 	error = vie_read_register(vcpu, gpr, &val);
-	KASSERT(error == 0, ("%s: error %d getting register %d", __func__,
-	    error, gpr));
+	KASSERT(error == 0, "%s: error %d getting register %d", __func__,
+	    error, gpr);
 
 	if (vie_calculate_gla(paging->cpu_mode, seg, &desc, val, opsize,
 	    addrsize, prot, gla)) {
@@ -782,7 +782,7 @@ emulate_movs(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 
 	if (repeat) {
 		error = vie_read_register(vcpu, VM_REG_GUEST_RCX, &rcx);
-		KASSERT(!error, ("%s: error %d getting rcx", __func__, error));
+		KASSERT(!error, "%s: error %d getting rcx", __func__, error);
 
 		/*
 		 * The count register is %rcx, %ecx or %cx depending on the
@@ -893,13 +893,13 @@ emulate_movs(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 	}
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RSI, &rsi);
-	KASSERT(error == 0, ("%s: error %d getting rsi", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rsi", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RDI, &rdi);
-	KASSERT(error == 0, ("%s: error %d getting rdi", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rdi", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RFLAGS, &rflags);
-	KASSERT(error == 0, ("%s: error %d getting rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rflags", __func__, error);
 
 	if (rflags & PSL_D) {
 		rsi -= opsize;
@@ -911,17 +911,17 @@ emulate_movs(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 
 	error = vie_update_register(vcpu, VM_REG_GUEST_RSI, rsi,
 	    vie->addrsize);
-	KASSERT(error == 0, ("%s: error %d updating rsi", __func__, error));
+	KASSERT(error == 0, "%s: error %d updating rsi", __func__, error);
 
 	error = vie_update_register(vcpu, VM_REG_GUEST_RDI, rdi,
 	    vie->addrsize);
-	KASSERT(error == 0, ("%s: error %d updating rdi", __func__, error));
+	KASSERT(error == 0, "%s: error %d updating rdi", __func__, error);
 
 	if (repeat) {
 		rcx = rcx - 1;
 		error = vie_update_register(vcpu, VM_REG_GUEST_RCX,
 		    rcx, vie->addrsize);
-		KASSERT(!error, ("%s: error %d updating rcx", __func__, error));
+		KASSERT(!error, "%s: error %d updating rcx", __func__, error);
 
 		/*
 		 * Repeat the instruction if the count register is not zero.
@@ -930,8 +930,8 @@ emulate_movs(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 			vm_restart_instruction(vcpu);
 	}
 done:
-	KASSERT(error == 0 || error == EFAULT, ("%s: unexpected error %d",
-	    __func__, error));
+	KASSERT(error == 0 || error == EFAULT, "%s: unexpected error %d",
+	    __func__, error);
 	return (error);
 }
 
@@ -949,7 +949,7 @@ emulate_stos(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 
 	if (repeat) {
 		error = vie_read_register(vcpu, VM_REG_GUEST_RCX, &rcx);
-		KASSERT(!error, ("%s: error %d getting rcx", __func__, error));
+		KASSERT(!error, "%s: error %d getting rcx", __func__, error);
 
 		/*
 		 * The count register is %rcx, %ecx or %cx depending on the
@@ -960,17 +960,17 @@ emulate_stos(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 	}
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RAX, &val);
-	KASSERT(!error, ("%s: error %d getting rax", __func__, error));
+	KASSERT(!error, "%s: error %d getting rax", __func__, error);
 
 	error = memwrite(vcpu, gpa, val, opsize, arg);
 	if (error)
 		return (error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RDI, &rdi);
-	KASSERT(error == 0, ("%s: error %d getting rdi", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rdi", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RFLAGS, &rflags);
-	KASSERT(error == 0, ("%s: error %d getting rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rflags", __func__, error);
 
 	if (rflags & PSL_D)
 		rdi -= opsize;
@@ -979,13 +979,13 @@ emulate_stos(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 
 	error = vie_update_register(vcpu, VM_REG_GUEST_RDI, rdi,
 	    vie->addrsize);
-	KASSERT(error == 0, ("%s: error %d updating rdi", __func__, error));
+	KASSERT(error == 0, "%s: error %d updating rdi", __func__, error);
 
 	if (repeat) {
 		rcx = rcx - 1;
 		error = vie_update_register(vcpu, VM_REG_GUEST_RCX,
 		    rcx, vie->addrsize);
-		KASSERT(!error, ("%s: error %d updating rcx", __func__, error));
+		KASSERT(!error, "%s: error %d updating rcx", __func__, error);
 
 		/*
 		 * Repeat the instruction if the count register is not zero.
@@ -1549,8 +1549,8 @@ emulate_stack_op(struct vcpu *vcpu, uint64_t mmio_gpa, struct vie *vie,
 		 * stack pointer.
 		 */
 		error = vm_get_seg_desc(vcpu, VM_REG_GUEST_SS, &ss_desc);
-		KASSERT(error == 0, ("%s: error %d getting SS descriptor",
-		    __func__, error));
+		KASSERT(error == 0, "%s: error %d getting SS descriptor",
+		    __func__, error);
 		if (SEG_DESC_DEF32(ss_desc.access))
 			stackaddrsize = 4;
 		else
@@ -1558,13 +1558,13 @@ emulate_stack_op(struct vcpu *vcpu, uint64_t mmio_gpa, struct vie *vie,
 	}
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_CR0, &cr0);
-	KASSERT(error == 0, ("%s: error %d getting cr0", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting cr0", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RFLAGS, &rflags);
-	KASSERT(error == 0, ("%s: error %d getting rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rflags", __func__, error);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RSP, &rsp);
-	KASSERT(error == 0, ("%s: error %d getting rsp", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rsp", __func__, error);
 	if (pushop) {
 		rsp -= size;
 	}
@@ -1606,7 +1606,7 @@ emulate_stack_op(struct vcpu *vcpu, uint64_t mmio_gpa, struct vie *vie,
 	if (error == 0) {
 		error = vie_update_register(vcpu, VM_REG_GUEST_RSP, rsp,
 		    stackaddrsize);
-		KASSERT(error == 0, ("error %d updating rsp", error));
+		KASSERT(error == 0, "error %d updating rsp", error);
 	}
 	return (error);
 }
@@ -1699,7 +1699,7 @@ emulate_bittest(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 		return (EINVAL);
 
 	error = vie_read_register(vcpu, VM_REG_GUEST_RFLAGS, &rflags);
-	KASSERT(error == 0, ("%s: error %d getting rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d getting rflags", __func__, error);
 
 	error = memread(vcpu, gpa, &val, vie->opsize, memarg);
 	if (error)
@@ -1719,7 +1719,7 @@ emulate_bittest(struct vcpu *vcpu, uint64_t gpa, struct vie *vie,
 		rflags &= ~PSL_C;
 
 	error = vie_update_register(vcpu, VM_REG_GUEST_RFLAGS, rflags, 8);
-	KASSERT(error == 0, ("%s: error %d updating rflags", __func__, error));
+	KASSERT(error == 0, "%s: error %d updating rflags", __func__, error);
 
 	return (0);
 }
@@ -1844,8 +1844,8 @@ int
 vie_alignment_check(int cpl, int size, uint64_t cr0, uint64_t rf, uint64_t gla)
 {
 	KASSERT(size == 1 || size == 2 || size == 4 || size == 8,
-	    ("%s: invalid size %d", __func__, size));
-	KASSERT(cpl >= 0 && cpl <= 3, ("%s: invalid cpl %d", __func__, cpl));
+	    "%s: invalid size %d", __func__, size);
+	KASSERT(cpl >= 0 && cpl <= 3, "%s: invalid cpl %d", __func__, cpl);
 
 	if (cpl != 3 || (cr0 & CR0_AM) == 0 || (rf & PSL_AC) == 0)
 		return (0);
@@ -1876,7 +1876,7 @@ uint64_t
 vie_size2mask(int size)
 {
 	KASSERT(size == 1 || size == 2 || size == 4 || size == 8,
-	    ("vie_size2mask: invalid size %d", size));
+	    "vie_size2mask: invalid size %d", size);
 	return (size2mask[size]);
 }
 
@@ -1889,20 +1889,20 @@ vie_calculate_gla(enum vm_cpu_mode cpu_mode, enum vm_reg_name seg,
 	int glasize, type;
 
 	KASSERT(seg >= VM_REG_GUEST_ES && seg <= VM_REG_GUEST_GS,
-	    ("%s: invalid segment %d", __func__, seg));
+	    "%s: invalid segment %d", __func__, seg);
 	KASSERT(length == 1 || length == 2 || length == 4 || length == 8,
-	    ("%s: invalid operand size %d", __func__, length));
+	    "%s: invalid operand size %d", __func__, length);
 	KASSERT((prot & ~(PROT_READ | PROT_WRITE)) == 0,
-	    ("%s: invalid prot %#x", __func__, prot));
+	    "%s: invalid prot %#x", __func__, prot);
 
 	firstoff = offset;
 	if (cpu_mode == CPU_MODE_64BIT) {
-		KASSERT(addrsize == 4 || addrsize == 8, ("%s: invalid address "
-		    "size %d for cpu_mode %d", __func__, addrsize, cpu_mode));
+		KASSERT(addrsize == 4 || addrsize == 8, "%s: invalid address "
+		    "size %d for cpu_mode %d", __func__, addrsize, cpu_mode);
 		glasize = 8;
 	} else {
-		KASSERT(addrsize == 2 || addrsize == 4, ("%s: invalid address "
-		    "size %d for cpu mode %d", __func__, addrsize, cpu_mode));
+		KASSERT(addrsize == 2 || addrsize == 4, "%s: invalid address "
+		    "size %d for cpu mode %d", __func__, addrsize, cpu_mode);
 		glasize = 4;
 		/*
 		 * If the segment selector is loaded with a NULL selector
@@ -1919,14 +1919,14 @@ vie_calculate_gla(enum vm_cpu_mode cpu_mode, enum vm_reg_name seg,
 		 * it would have been checked before the VM-exit.
 		 */
 		KASSERT(SEG_DESC_PRESENT(desc->access),
-		    ("segment %d not present: %#x", seg, desc->access));
+		    "segment %d not present: %#x", seg, desc->access);
 
 		/*
 		 * The descriptor type must indicate a code/data segment.
 		 */
 		type = SEG_DESC_TYPE(desc->access);
-		KASSERT(type >= 16 && type <= 31, ("segment %d has invalid "
-		    "descriptor type %#x", seg, type));
+		KASSERT(type >= 16 && type <= 31, "segment %d has invalid "
+		    "descriptor type %#x", seg, type);
 
 		if (prot & PROT_READ) {
 			/* #GP on a read access to a exec-only code segment */
@@ -2013,7 +2013,7 @@ void
 vie_init(struct vie *vie, const char *inst_bytes, int inst_length)
 {
 	KASSERT(inst_length >= 0 && inst_length <= VIE_INST_SIZE,
-	    ("%s: invalid instruction length (%d)", __func__, inst_length));
+	    "%s: invalid instruction length (%d)", __func__, inst_length);
 
 	vie_restart(vie);
 	memset(vie->inst, 0, sizeof(vie->inst));
@@ -2251,8 +2251,8 @@ restart:
 	*gpa = pte | (gla & (pgsize - 1));
 done:
 	ptp_release(&cookie);
-	KASSERT(retval == 0 || retval == EFAULT, ("%s: unexpected retval %d",
-	    __func__, retval));
+	KASSERT(retval == 0 || retval == EFAULT, "%s: unexpected retval %d",
+	    __func__, retval);
 	return (retval);
 error:
 	retval = EFAULT;
@@ -2750,7 +2750,7 @@ decode_immediate(struct vie *vie)
 		return (0);
 
 	KASSERT(n == 1 || n == 2 || n == 4,
-	    ("%s: invalid number of immediate bytes: %d", __func__, n));
+	    "%s: invalid number of immediate bytes: %d", __func__, n);
 
 	for (i = 0; i < n; i++) {
 		if (vie_peek(vie, &x))
@@ -2789,7 +2789,7 @@ decode_moffset(struct vie *vie)
 	 * The memory offset size follows the address-size of the instruction.
 	 */
 	n = vie->addrsize;
-	KASSERT(n == 2 || n == 4 || n == 8, ("invalid moffset bytes: %d", n));
+	KASSERT(n == 2 || n == 4 || n == 8, "invalid moffset bytes: %d", n);
 
 	u.u64 = 0;
 	for (i = 0; i < n; i++) {

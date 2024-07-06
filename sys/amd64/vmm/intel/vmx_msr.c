@@ -98,8 +98,8 @@ vmx_set_ctlreg(int ctl_reg, int true_ctl_reg, uint32_t ones_mask,
 		zero_allowed = vmx_ctl_allows_zero_setting(trueval, i);
 
 		KASSERT(one_allowed || zero_allowed,
-			("invalid zero/one setting for bit %d of ctl 0x%0x, "
-			 "truectl 0x%0x\n", i, ctl_reg, true_ctl_reg));
+		    "invalid zero/one setting for bit %d of ctl 0x%0x, "
+		    "truectl 0x%0x\n", i, ctl_reg, true_ctl_reg);
 
 		if (zero_allowed && !one_allowed) {		/* b(i),c(i) */
 			if (ones_mask & (1 << i))

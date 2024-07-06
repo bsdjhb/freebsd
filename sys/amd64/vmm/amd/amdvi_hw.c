@@ -737,7 +737,7 @@ amdvi_print_pci_cap(device_t dev)
 
 	/* Make sure capability type[18:16] is 3. */
 	KASSERT((((cap >> 16) & 0x7) == 0x3),
-	    ("Not a IOMMU capability 0x%x@0x%x", cap, off));
+	    "Not a IOMMU capability 0x%x@0x%x", cap, off);
 
 	softc->pci_cap = cap >> 24;
 	device_printf(softc->dev, "PCI cap 0x%x@0x%x feature:%b\n",
@@ -1224,8 +1224,8 @@ amdvi_set_dte(struct amdvi_domain *domain, struct amdvi_softc *softc,
 {
 	struct amdvi_dte* temp;
 
-	KASSERT(domain, ("domain is NULL for pci_rid:0x%x\n", devid));
-	KASSERT(softc, ("softc is NULL for pci_rid:0x%x\n", devid));
+	KASSERT(domain, "domain is NULL for pci_rid:0x%x\n", devid);
+	KASSERT(softc, "softc is NULL for pci_rid:0x%x\n", devid);
 
 	temp = &amdvi_dte[devid];
 

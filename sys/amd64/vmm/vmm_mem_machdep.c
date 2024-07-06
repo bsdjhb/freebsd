@@ -55,7 +55,7 @@ vmm_mmio_alloc(struct vmspace *vmspace, vm_paddr_t gpa, size_t len,
 
 	sg = sglist_alloc(1, M_WAITOK);
 	error = sglist_append_phys(sg, hpa, len);
-	KASSERT(error == 0, ("error %d appending physaddr to sglist", error));
+	KASSERT(error == 0, "error %d appending physaddr to sglist", error);
 
 	obj = vm_pager_allocate(OBJT_SG, sg, len, VM_PROT_RW, 0, NULL);
 	if (obj != NULL) {

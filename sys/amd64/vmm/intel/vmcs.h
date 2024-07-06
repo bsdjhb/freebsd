@@ -78,7 +78,7 @@ vmcs_read(uint32_t encoding)
 	uint64_t val;
 
 	error = vmread(encoding, &val);
-	KASSERT(error == 0, ("vmcs_read(%u) error %d", encoding, error));
+	KASSERT(error == 0, "vmcs_read(%u) error %d", encoding, error);
 	return (val);
 }
 
@@ -88,7 +88,7 @@ vmcs_write(uint32_t encoding, uint64_t val)
 	int error __diagused;
 
 	error = vmwrite(encoding, val);
-	KASSERT(error == 0, ("vmcs_write(%u) error %d", encoding, error));
+	KASSERT(error == 0, "vmcs_write(%u) error %d", encoding, error);
 }
 #endif	/* _VMX_CPUFUNC_H_ */
 

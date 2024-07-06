@@ -90,8 +90,8 @@ inout_instruction(struct vm_exit *vmexit)
 	if (vmexit->u.inout.string)
 		index += 6;
 
-	KASSERT(index < nitems(iodesc), ("%s: invalid index %d",
-	    __func__, index));
+	KASSERT(index < nitems(iodesc), "%s: invalid index %d",
+	    __func__, index);
 
 	return (iodesc[index]);
 }
@@ -137,8 +137,8 @@ emulate_inout_port(struct vcpu *vcpu, struct vm_exit *vmexit, bool *retu)
 		vmexit->u.inout.eax |= val & mask;
 		error = vm_set_register(vcpu, VM_REG_GUEST_RAX,
 		    vmexit->u.inout.eax);
-		KASSERT(error == 0, ("emulate_ioport: error %d setting guest "
-		    "rax register", error));
+		KASSERT(error == 0, "emulate_ioport: error %d setting guest "
+		    "rax register", error);
 	}
 	*retu = false;
 	return (0);
@@ -198,7 +198,7 @@ vm_handle_inout(struct vcpu *vcpu, struct vm_exit *vmexit, bool *retu)
 
 	bytes = vmexit->u.inout.bytes;
 	KASSERT(bytes == 1 || bytes == 2 || bytes == 4,
-	    ("vm_handle_inout: invalid operand size %d", bytes));
+	    "vm_handle_inout: invalid operand size %d", bytes);
 
 	if (vmexit->u.inout.string)
 		error = emulate_inout_str(vcpu, vmexit, retu);

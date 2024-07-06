@@ -648,8 +648,8 @@ vm_cpuid_capability(struct vcpu *vcpu, enum vm_cpuid_capability cap)
 {
 	bool rv;
 
-	KASSERT(cap > 0 && cap < VCC_LAST, ("%s: invalid vm_cpu_capability %d",
-	    __func__, cap));
+	KASSERT(cap > 0 && cap < VCC_LAST, "%s: invalid vm_cpu_capability %d",
+	    __func__, cap);
 
 	/*
 	 * Simply passthrough the capabilities of the host cpu for now.

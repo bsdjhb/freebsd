@@ -347,7 +347,7 @@ vcpu_alloc(struct vm *vm, int vcpu_id)
 	struct vcpu *vcpu;
 
 	KASSERT(vcpu_id >= 0 && vcpu_id < vm->maxcpus,
-	    ("vcpu_init: invalid vcpu %d", vcpu_id));
+	    "vcpu_init: invalid vcpu %d", vcpu_id);
 
 	vcpu = malloc(sizeof(*vcpu), M_VM, M_WAITOK | M_ZERO);
 	vcpu_lock_init(vcpu);
@@ -757,8 +757,8 @@ vm_iommu_map(struct vm *vm)
 
 		mm = &vm->mem.mem_maps[i];
 		KASSERT((mm->flags & VM_MEMMAP_F_IOMMU) == 0,
-		    ("iommu map found invalid memmap %#lx/%#lx/%#x",
-		    mm->gpa, mm->len, mm->flags));
+		    "iommu map found invalid memmap %#lx/%#lx/%#x",
+		    mm->gpa, mm->len, mm->flags);
 		if ((mm->flags & VM_MEMMAP_F_WIRED) == 0)
 			continue;
 		mm->flags |= VM_MEMMAP_F_IOMMU;
@@ -779,8 +779,8 @@ vm_iommu_map(struct vm *vm)
 			 * supporting page faults on IOMMU maps.
 			 */
 			KASSERT(vm_page_wired(PHYS_TO_VM_PAGE(hpa)),
-			    ("vm_iommu_map: vm %p gpa %jx hpa %jx not wired",
-			    vm, (uintmax_t)gpa, (uintmax_t)hpa));
+			    "vm_iommu_map: vm %p gpa %jx hpa %jx not wired",
+			    vm, (uintmax_t)gpa, (uintmax_t)hpa);
 
 			iommu_create_mapping(vm->iommu, gpa, hpa, PAGE_SIZE);
 		}
@@ -808,14 +808,14 @@ vm_iommu_unmap(struct vm *vm)
 			continue;
 		mm->flags &= ~VM_MEMMAP_F_IOMMU;
 		KASSERT((mm->flags & VM_MEMMAP_F_WIRED) != 0,
-		    ("iommu unmap found invalid memmap %#lx/%#lx/%#x",
-		    mm->gpa, mm->len, mm->flags));
+		    "iommu unmap found invalid memmap %#lx/%#lx/%#x",
+		    mm->gpa, mm->len, mm->flags);
 
 		for (gpa = mm->gpa; gpa < mm->gpa + mm->len; gpa += PAGE_SIZE) {
 			KASSERT(vm_page_wired(PHYS_TO_VM_PAGE(pmap_extract(
 			    vmspace_pmap(vm_vmspace(vm)), gpa))),
-			    ("vm_iommu_unmap: vm %p gpa %jx not wired",
-			    vm, (uintmax_t)gpa));
+			    "vm_iommu_unmap: vm %p gpa %jx not wired",
+			    vm, (uintmax_t)gpa);
 			iommu_remove_mapping(vm->iommu, gpa, PAGE_SIZE);
 		}
 	}
@@ -1061,11 +1061,11 @@ vcpu_set_state_locked(struct vcpu *vcpu, enum vcpu_state newstate,
 	}
 
 	if (vcpu->state == VCPU_RUNNING) {
-		KASSERT(vcpu->hostcpu == curcpu, ("curcpu %d and hostcpu %d "
-		    "mismatch for running vcpu", curcpu, vcpu->hostcpu));
+		KASSERT(vcpu->hostcpu == curcpu, "curcpu %d and hostcpu %d "
+		    "mismatch for running vcpu", curcpu, vcpu->hostcpu);
 	} else {
-		KASSERT(vcpu->hostcpu == NOCPU, ("Invalid hostcpu %d for a "
-		    "vcpu that is not running", vcpu->hostcpu));
+		KASSERT(vcpu->hostcpu == NOCPU, "Invalid hostcpu %d for a "
+		    "vcpu that is not running", vcpu->hostcpu);
 	}
 
 	/*
@@ -1357,13 +1357,13 @@ vm_handle_paging(struct vcpu *vcpu, bool *retu)
 
 	vme = &vcpu->exitinfo;
 
-	KASSERT(vme->inst_length == 0, ("%s: invalid inst_length %d",
-	    __func__, vme->inst_length));
+	KASSERT(vme->inst_length == 0, "%s: invalid inst_length %d",
+	    __func__, vme->inst_length);
 
 	ftype = vme->u.paging.fault_type;
 	KASSERT(ftype == VM_PROT_READ ||
 	    ftype == VM_PROT_WRITE || ftype == VM_PROT_EXECUTE,
-	    ("vm_handle_paging: invalid fault_type %d", ftype));
+	    "vm_handle_paging: invalid fault_type %d", ftype);
 
 	if (ftype == VM_PROT_READ || ftype == VM_PROT_WRITE) {
 		rv = pmap_emulate_accessed_dirty(vmspace_pmap(vm_vmspace(vm)),
@@ -1402,8 +1402,8 @@ vm_handle_inst_emul(struct vcpu *vcpu, bool *retu)
 
 	vme = &vcpu->exitinfo;
 
-	KASSERT(vme->inst_length == 0, ("%s: invalid inst_length %d",
-	    __func__, vme->inst_length));
+	KASSERT(vme->inst_length == 0, "%s: invalid inst_length %d",
+	    __func__, vme->inst_length);
 
 	gla = vme->u.inst_emul.gla;
 	gpa = vme->u.inst_emul.gpa;
@@ -1526,7 +1526,7 @@ static int
 vm_handle_reqidle(struct vcpu *vcpu, bool *retu)
 {
 	vcpu_lock(vcpu);
-	KASSERT(vcpu->reqidle, ("invalid vcpu reqidle %d", vcpu->reqidle));
+	KASSERT(vcpu->reqidle, "invalid vcpu reqidle %d", vcpu->reqidle);
 	vcpu->reqidle = 0;
 	vcpu_unlock(vcpu);
 	*retu = true;
@@ -1601,7 +1601,7 @@ vm_exit_suspended(struct vcpu *vcpu, uint64_t rip)
 	struct vm_exit *vmexit;
 
 	KASSERT(vm->suspend > VM_SUSPEND_NONE && vm->suspend < VM_SUSPEND_LAST,
-	    ("vm_exit_suspended: invalid suspend type %d", vm->suspend));
+	    "vm_exit_suspended: invalid suspend type %d", vm->suspend);
 
 	vmexit = vm_exitinfo(vcpu);
 	vmexit->rip = rip;
@@ -1791,7 +1791,7 @@ vm_restart_instruction(struct vcpu *vcpu)
 		 * 'nextrip' to the vcpu's %rip.
 		 */
 		error = vm_get_register(vcpu, VM_REG_GUEST_RIP, &rip);
-		KASSERT(!error, ("%s: error %d getting rip", __func__, error));
+		KASSERT(!error, "%s: error %d getting rip", __func__, error);
 		VMM_CTR2(vcpu, "restarting instruction by updating "
 		    "nextrip from %#lx to %#lx", vcpu->nextrip, rip);
 		vcpu->nextrip = rip;
@@ -1836,7 +1836,7 @@ exception_class(uint64_t info)
 {
 	int type, vector;
 
-	KASSERT(info & VM_INTINFO_VALID, ("intinfo must be valid: %#lx", info));
+	KASSERT(info & VM_INTINFO_VALID, "intinfo must be valid: %#lx", info);
 	type = info & VM_INTINFO_TYPE;
 	vector = info & 0xff;
 
@@ -1884,8 +1884,8 @@ nested_fault(struct vcpu *vcpu, uint64_t info1, uint64_t info2,
 	enum exc_class exc1, exc2;
 	int type1, vector1;
 
-	KASSERT(info1 & VM_INTINFO_VALID, ("info1 %#lx is not valid", info1));
-	KASSERT(info2 & VM_INTINFO_VALID, ("info2 %#lx is not valid", info2));
+	KASSERT(info1 & VM_INTINFO_VALID, "info1 %#lx is not valid", info1);
+	KASSERT(info2 & VM_INTINFO_VALID, "info2 %#lx is not valid", info2);
 
 	/*
 	 * If an exception occurs while attempting to call the double-fault
@@ -2009,7 +2009,7 @@ vm_inject_exception(struct vcpu *vcpu, int vector, int errcode_valid,
 		 * Exceptions don't deliver an error code in real mode.
 		 */
 		error = vm_get_register(vcpu, VM_REG_GUEST_CR0, &regval);
-		KASSERT(!error, ("%s: error %d getting CR0", __func__, error));
+		KASSERT(!error, "%s: error %d getting CR0", __func__, error);
 		if (!(regval & CR0_PE))
 			errcode_valid = 0;
 	}
@@ -2021,8 +2021,8 @@ vm_inject_exception(struct vcpu *vcpu, int vector, int errcode_valid,
 	 * one instruction or incurs an exception.
 	 */
 	error = vm_set_register(vcpu, VM_REG_GUEST_INTR_SHADOW, 0);
-	KASSERT(error == 0, ("%s: error %d clearing interrupt shadow",
-	    __func__, error));
+	KASSERT(error == 0, "%s: error %d clearing interrupt shadow",
+	    __func__, error);
 
 	if (restart_instruction)
 		vm_restart_instruction(vcpu);
@@ -2044,7 +2044,7 @@ vm_inject_fault(struct vcpu *vcpu, int vector, int errcode_valid, int errcode)
 
 	error = vm_inject_exception(vcpu, vector, errcode_valid,
 	    errcode, restart_instruction);
-	KASSERT(error == 0, ("vm_inject_exception error %d", error));
+	KASSERT(error == 0, "vm_inject_exception error %d", error);
 }
 
 void
@@ -2056,7 +2056,7 @@ vm_inject_pf(struct vcpu *vcpu, int error_code, uint64_t cr2)
 	    error_code, cr2);
 
 	error = vm_set_register(vcpu, VM_REG_GUEST_CR2, cr2);
-	KASSERT(error == 0, ("vm_set_register(cr2) error %d", error));
+	KASSERT(error == 0, "vm_set_register(cr2) error %d", error);
 
 	vm_inject_fault(vcpu, IDT_PF, 1, error_code);
 }
@@ -2404,8 +2404,8 @@ vcpu_notify_event_locked(struct vcpu *vcpu, bool lapic_intr)
 			 */
 		}
 	} else {
-		KASSERT(hostcpu == NOCPU, ("vcpu state %d not consistent "
-		    "with hostcpu %d", vcpu->state, hostcpu));
+		KASSERT(hostcpu == NOCPU, "vcpu state %d not consistent "
+		    "with hostcpu %d", vcpu->state, hostcpu);
 		if (vcpu->state == VCPU_SLEEPING)
 			wakeup_one(vcpu);
 	}
@@ -2522,7 +2522,7 @@ vm_segment_name(int seg)
 	};
 
 	KASSERT(seg >= 0 && seg < nitems(seg_names),
-	    ("%s: invalid segment encoding %d", __func__, seg));
+	    "%s: invalid segment encoding %d", __func__, seg);
 	return (seg_names[seg]);
 }
 

@@ -227,8 +227,8 @@ vmcb_read(struct svm_vcpu *vcpu, int ident, uint64_t *retval)
 	case VM_REG_GUEST_LDTR:
 	case VM_REG_GUEST_TR:
 		seg = vmcb_segptr(vmcb, ident);
-		KASSERT(seg != NULL, ("%s: unable to get segment %d from VMCB",
-		    __func__, ident));
+		KASSERT(seg != NULL, "%s: unable to get segment %d from VMCB",
+		    __func__, ident);
 		*retval = seg->selector;
 		break;
 
@@ -236,8 +236,8 @@ vmcb_read(struct svm_vcpu *vcpu, int ident, uint64_t *retval)
 	case VM_REG_GUEST_GS_BASE:
 		seg = vmcb_segptr(vmcb, ident == VM_REG_GUEST_FS_BASE ?
 		    VM_REG_GUEST_FS : VM_REG_GUEST_GS);
-		KASSERT(seg != NULL, ("%s: unable to get segment %d from VMCB",
-		    __func__, ident));
+		KASSERT(seg != NULL, "%s: unable to get segment %d from VMCB",
+		    __func__, ident);
 		*retval = seg->base;
 		break;
 	case VM_REG_GUEST_KGS_BASE:
@@ -343,8 +343,8 @@ vmcb_write(struct svm_vcpu *vcpu, int ident, uint64_t val)
 	case VM_REG_GUEST_LDTR:
 	case VM_REG_GUEST_TR:
 		seg = vmcb_segptr(vmcb, ident);
-		KASSERT(seg != NULL, ("%s: unable to get segment %d from VMCB",
-		    __func__, ident));
+		KASSERT(seg != NULL, "%s: unable to get segment %d from VMCB",
+		    __func__, ident);
 		seg->selector = val;
 		if (dirtyseg)
 			svm_set_dirty(vcpu, VMCB_CACHE_SEG);
@@ -387,8 +387,8 @@ vmcb_setdesc(struct svm_vcpu *vcpu, int reg, struct seg_desc *desc)
 	vmcb = svm_get_vmcb(vcpu);
 
 	seg = vmcb_segptr(vmcb, reg);
-	KASSERT(seg != NULL, ("%s: invalid segment descriptor %d",
-	    __func__, reg));
+	KASSERT(seg != NULL, "%s: invalid segment descriptor %d",
+	    __func__, reg);
 
 	seg->base = desc->base;
 	seg->limit = desc->limit;
@@ -435,8 +435,8 @@ vmcb_getdesc(struct svm_vcpu *vcpu, int reg, struct seg_desc *desc)
 
 	vmcb = svm_get_vmcb(vcpu);
 	seg = vmcb_segptr(vmcb, reg);
-	KASSERT(seg != NULL, ("%s: invalid segment descriptor %d",
-	    __func__, reg));
+	KASSERT(seg != NULL, "%s: invalid segment descriptor %d",
+	    __func__, reg);
 
 	desc->base = seg->base;
 	desc->limit = seg->limit;

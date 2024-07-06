@@ -422,7 +422,7 @@ vatpic_set_pinstate(struct vatpic *vatpic, int pin, bool newstate)
 	bool level;
 
 	KASSERT(pin >= 0 && pin < 16,
-	    ("vatpic_set_pinstate: invalid pin number %d", pin));
+	    "vatpic_set_pinstate: invalid pin number %d", pin);
 	KASSERT(VATPIC_LOCKED(vatpic),
 	    ("vatpic_set_pinstate: vatpic is not locked"));
 
@@ -574,7 +574,7 @@ vatpic_pending_intr(struct vm *vm, int *vecptr)
 	if (pin == -1)
 		pin = 7;
 
-	KASSERT(pin >= 0 && pin <= 7, ("%s: invalid pin %d", __func__, pin));
+	KASSERT(pin >= 0 && pin <= 7, "%s: invalid pin %d", __func__, pin);
 	*vecptr = atpic->irq_base + pin;
 
 	VATPIC_UNLOCK(vatpic);

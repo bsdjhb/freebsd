@@ -1003,18 +1003,18 @@ vmx_trigger_hostintr(int vector)
 
 	gd = &idt[vector];
 
-	KASSERT(vector >= 32 && vector <= 255, ("vmx_trigger_hostintr: "
-	    "invalid vector %d", vector));
-	KASSERT(gd->gd_p == 1, ("gate descriptor for vector %d not present",
-	    vector));
-	KASSERT(gd->gd_type == SDT_SYSIGT, ("gate descriptor for vector %d "
-	    "has invalid type %d", vector, gd->gd_type));
-	KASSERT(gd->gd_dpl == SEL_KPL, ("gate descriptor for vector %d "
-	    "has invalid dpl %d", vector, gd->gd_dpl));
-	KASSERT(gd->gd_selector == GSEL(GCODE_SEL, SEL_KPL), ("gate descriptor "
-	    "for vector %d has invalid selector %d", vector, gd->gd_selector));
-	KASSERT(gd->gd_ist == 0, ("gate descriptor for vector %d has invalid "
-	    "IST %d", vector, gd->gd_ist));
+	KASSERT(vector >= 32 && vector <= 255, "vmx_trigger_hostintr: "
+	    "invalid vector %d", vector);
+	KASSERT(gd->gd_p == 1, "gate descriptor for vector %d not present",
+	    vector);
+	KASSERT(gd->gd_type == SDT_SYSIGT, "gate descriptor for vector %d "
+	    "has invalid type %d", vector, gd->gd_type);
+	KASSERT(gd->gd_dpl == SEL_KPL, "gate descriptor for vector %d "
+	    "has invalid dpl %d", vector, gd->gd_dpl);
+	KASSERT(gd->gd_selector == GSEL(GCODE_SEL, SEL_KPL), "gate descriptor "
+	    "for vector %d has invalid selector %d", vector, gd->gd_selector);
+	KASSERT(gd->gd_ist == 0, "gate descriptor for vector %d has invalid "
+	    "IST %d", vector, gd->gd_ist);
 
 	func = ((long)gd->gd_hioffset << 16 | gd->gd_looffset);
 	vmx_call_isr(func);
@@ -1121,7 +1121,7 @@ vmx_init(struct vm *vm, pmap_t pmap)
 		error = vm_map_mmio(vm, DEFAULT_APIC_BASE, PAGE_SIZE,
 		    APIC_ACCESS_ADDRESS);
 		/* XXX this should really return an error to the caller */
-		KASSERT(error == 0, ("vm_map_mmio(apicbase) error %d", error));
+		KASSERT(error == 0, "vm_map_mmio(apicbase) error %d", error);
 	}
 
 	vmx->pmap = pmap;
@@ -1162,7 +1162,7 @@ vmx_vcpu_init(void *vmi, struct vcpu *vcpu1, int vcpuid)
 	vmx_msr_guest_init(vmx, vcpu);
 
 	error = vmcs_init(vmcs);
-	KASSERT(error == 0, ("vmcs_init error %d", error));
+	KASSERT(error == 0, "vmcs_init error %d", error);
 
 	VMPTRLD(vmcs);
 	error = 0;
@@ -1306,8 +1306,8 @@ vmx_invvpid(struct vmx *vmx, struct vmx_vcpu *vcpu, pmap_t pmap, int running)
 		return;
 	}
 
-	KASSERT(curthread->td_critnest > 0, ("%s: vcpu %d running outside "
-	    "critical section", __func__, vcpu->vcpuid));
+	KASSERT(curthread->td_critnest > 0, "%s: vcpu %d running outside "
+	    "critical section", __func__, vcpu->vcpuid);
 
 	/*
 	 * Invalidate all mappings tagged with 'vpid'
@@ -1382,7 +1382,7 @@ vmx_clear_int_window_exiting(struct vmx_vcpu *vcpu)
 {
 
 	KASSERT((vcpu->cap.proc_ctls & PROCBASED_INT_WINDOW_EXITING) != 0,
-	    ("intr_window_exiting not set: %#x", vcpu->cap.proc_ctls));
+	    "intr_window_exiting not set: %#x", vcpu->cap.proc_ctls);
 	vcpu->cap.proc_ctls &= ~PROCBASED_INT_WINDOW_EXITING;
 	vmcs_write(VMCS_PRI_PROC_BASED_CTLS, vcpu->cap.proc_ctls);
 	VMX_CTR0(vcpu, "Disabling interrupt window exiting");
@@ -1404,7 +1404,7 @@ vmx_clear_nmi_window_exiting(struct vmx_vcpu *vcpu)
 {
 
 	KASSERT((vcpu->cap.proc_ctls & PROCBASED_NMI_WINDOW_EXITING) != 0,
-	    ("nmi_window_exiting not set %#x", vcpu->cap.proc_ctls));
+	    "nmi_window_exiting not set %#x", vcpu->cap.proc_ctls);
 	vcpu->cap.proc_ctls &= ~PROCBASED_NMI_WINDOW_EXITING;
 	vmcs_write(VMCS_PRI_PROC_BASED_CTLS, vcpu->cap.proc_ctls);
 	VMX_CTR0(vcpu, "Disabling NMI window exiting");
@@ -1440,12 +1440,12 @@ vmx_inject_nmi(struct vmx_vcpu *vcpu)
 	uint32_t gi __diagused, info;
 
 	gi = vmcs_read(VMCS_GUEST_INTERRUPTIBILITY);
-	KASSERT((gi & NMI_BLOCKING) == 0, ("vmx_inject_nmi: invalid guest "
-	    "interruptibility-state %#x", gi));
+	KASSERT((gi & NMI_BLOCKING) == 0, "vmx_inject_nmi: invalid guest "
+	    "interruptibility-state %#x", gi);
 
 	info = vmcs_read(VMCS_ENTRY_INTR_INFO);
-	KASSERT((info & VMCS_INTR_VALID) == 0, ("vmx_inject_nmi: invalid "
-	    "VM-entry interruption information %#x", info));
+	KASSERT((info & VMCS_INTR_VALID) == 0, "vmx_inject_nmi: invalid "
+	    "VM-entry interruption information %#x", info);
 
 	/*
 	 * Inject the virtual NMI. The vector must be the NMI IDT entry
@@ -1484,12 +1484,12 @@ vmx_inject_interrupts(struct vmx_vcpu *vcpu, struct vlapic *vlapic,
 	}
 
 	if (vm_entry_intinfo(vcpu->vcpu, &entryinfo)) {
-		KASSERT((entryinfo & VMCS_INTR_VALID) != 0, ("%s: entry "
-		    "intinfo is not valid: %#lx", __func__, entryinfo));
+		KASSERT((entryinfo & VMCS_INTR_VALID) != 0, "%s: entry "
+		    "intinfo is not valid: %#lx", __func__, entryinfo);
 
 		info = vmcs_read(VMCS_ENTRY_INTR_INFO);
-		KASSERT((info & VMCS_INTR_VALID) == 0, ("%s: cannot inject "
-		     "pending exception: %#lx/%#x", __func__, entryinfo, info));
+		KASSERT((info & VMCS_INTR_VALID) == 0, "%s: cannot inject "
+		     "pending exception: %#lx/%#x", __func__, entryinfo, info);
 
 		info = entryinfo;
 		vector = info & 0xff;
@@ -1570,7 +1570,7 @@ vmx_inject_interrupts(struct vmx_vcpu *vcpu, struct vlapic *vlapic,
 		 *   through the local APIC.
 		*/
 		KASSERT(vector >= 16 && vector <= 255,
-		    ("invalid vector %d from local APIC", vector));
+		    "invalid vector %d from local APIC", vector);
 	} else {
 		/* Ask the legacy pic for a vector to inject */
 		vatpic_pending_intr(vcpu->vmx->vm, &vector);
@@ -1582,7 +1582,7 @@ vmx_inject_interrupts(struct vmx_vcpu *vcpu, struct vlapic *vlapic,
 		 *   through the INTR pin.
 		 */
 		KASSERT(vector >= 0 && vector <= 255,
-		    ("invalid vector %d from INTR", vector));
+		    "invalid vector %d from INTR", vector);
 	}
 
 	/* Check RFLAGS.IF and the interruptibility state of the guest */
@@ -1690,7 +1690,7 @@ vmx_assert_nmi_blocking(struct vmx_vcpu *vcpu)
 
 	gi = vmcs_read(VMCS_GUEST_INTERRUPTIBILITY);
 	KASSERT(gi & VMCS_INTERRUPTIBILITY_NMI_BLOCKING,
-	    ("NMI blocking is not in effect %#x", gi));
+	    "NMI blocking is not in effect %#x", gi);
 }
 
 static int
@@ -2017,7 +2017,7 @@ inout_str_index(struct vmx_vcpu *vcpu, int in)
 
 	reg = in ? VM_REG_GUEST_RDI : VM_REG_GUEST_RSI;
 	error = vmx_getreg(vcpu, reg, &val);
-	KASSERT(error == 0, ("%s: vmx_getreg error %d", __func__, error));
+	KASSERT(error == 0, "%s: vmx_getreg error %d", __func__, error);
 	return (val);
 }
 
@@ -2029,7 +2029,7 @@ inout_str_count(struct vmx_vcpu *vcpu, int rep)
 
 	if (rep) {
 		error = vmx_getreg(vcpu, VM_REG_GUEST_RCX, &val);
-		KASSERT(!error, ("%s: vmx_getreg error %d", __func__, error));
+		KASSERT(!error, "%s: vmx_getreg error %d", __func__, error);
 	} else {
 		val = 1;
 	}
@@ -2068,7 +2068,7 @@ inout_str_seginfo(struct vmx_vcpu *vcpu, uint32_t inst_info, int in,
 	}
 
 	error = vmx_getdesc(vcpu, vis->seg_name, &vis->seg_desc);
-	KASSERT(error == 0, ("%s: vmx_getdesc error %d", __func__, error));
+	KASSERT(error == 0, "%s: vmx_getdesc error %d", __func__, error);
 }
 
 static void
@@ -2368,11 +2368,11 @@ emulate_rdmsr(struct vmx_vcpu *vcpu, u_int num, bool *retu)
 		eax = result;
 		vmxctx = &vcpu->ctx;
 		error = vmxctx_setreg(vmxctx, VM_REG_GUEST_RAX, eax);
-		KASSERT(error == 0, ("vmxctx_setreg(rax) error %d", error));
+		KASSERT(error == 0, "vmxctx_setreg(rax) error %d", error);
 
 		edx = result >> 32;
 		error = vmxctx_setreg(vmxctx, VM_REG_GUEST_RDX, edx);
-		KASSERT(error == 0, ("vmxctx_setreg(rdx) error %d", error));
+		KASSERT(error == 0, "vmxctx_setreg(rdx) error %d", error);
 	}
 
 	return (error);
@@ -2439,8 +2439,8 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 			exitintinfo |= (uint64_t)idtvec_err << 32;
 		}
 		error = vm_exit_intinfo(vcpu->vcpu, exitintinfo);
-		KASSERT(error == 0, ("%s: vm_set_intinfo error %d",
-		    __func__, error));
+		KASSERT(error == 0, "%s: vm_set_intinfo error %d",
+		    __func__, error);
 
 		/*
 		 * If 'virtual NMIs' are being used and the VM-exit
@@ -2495,8 +2495,8 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 		 */
 		if (ts->reason == TSR_IDT_GATE) {
 			KASSERT(idtvec_info & VMCS_IDT_VEC_VALID,
-			    ("invalid idtvec_info %#x for IDT task switch",
-			    idtvec_info));
+			    "invalid idtvec_info %#x for IDT task switch",
+			    idtvec_info);
 			intr_type = idtvec_info & VMCS_INTR_T_MASK;
 			if (intr_type != VMCS_INTR_T_SWINTR &&
 			    intr_type != VMCS_INTR_T_SWEXCEPTION &&
@@ -2623,7 +2623,7 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 			return (1);
 		KASSERT((intr_info & VMCS_INTR_VALID) != 0 &&
 		    (intr_info & VMCS_INTR_T_MASK) == VMCS_INTR_T_HWINTR,
-		    ("VM exit interruption info invalid: %#x", intr_info));
+		    "VM exit interruption info invalid: %#x", intr_info);
 		vmx_trigger_hostintr(intr_info & 0xff);
 
 		/*
@@ -2674,7 +2674,7 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 		vmm_stat_incr(vcpu->vcpu, VMEXIT_EXCEPTION, 1);
 		intr_info = vmcs_read(VMCS_EXIT_INTR_INFO);
 		KASSERT((intr_info & VMCS_INTR_VALID) != 0,
-		    ("VM exit interruption info invalid: %#x", intr_info));
+		    "VM exit interruption info invalid: %#x", intr_info);
 
 		intr_vec = intr_info & 0xff;
 		intr_type = intr_info & VMCS_INTR_T_MASK;
@@ -2723,8 +2723,8 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 
 		if (intr_vec == IDT_PF) {
 			error = vmxctx_setreg(vmxctx, VM_REG_GUEST_CR2, qual);
-			KASSERT(error == 0, ("%s: vmxctx_setreg(cr2) error %d",
-			    __func__, error));
+			KASSERT(error == 0, "%s: vmxctx_setreg(cr2) error %d",
+			    __func__, error);
 		}
 
 		/*
@@ -2748,8 +2748,8 @@ vmx_exit_process(struct vmx *vmx, struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 		    vmx, vcpuid, vmexit, intr_vec, errcode);
 		error = vm_inject_exception(vcpu->vcpu, intr_vec,
 		    errcode_valid, errcode, 0);
-		KASSERT(error == 0, ("%s: vm_inject_exception error %d",
-		    __func__, error));
+		KASSERT(error == 0, "%s: vm_inject_exception error %d",
+		    __func__, error);
 		return (1);
 
 	case EXIT_REASON_EPT_FAULT:
@@ -2892,8 +2892,8 @@ vmx_exit_inst_error(struct vmxctx *vmxctx, int rc, struct vm_exit *vmexit)
 {
 
 	KASSERT(vmxctx->inst_fail_status != VM_SUCCESS,
-	    ("vmx_exit_inst_error: invalid inst_fail_status %d",
-	    vmxctx->inst_fail_status));
+	    "vmx_exit_inst_error: invalid inst_fail_status %d",
+	    vmxctx->inst_fail_status);
 
 	vmexit->inst_length = 0;
 	vmexit->exitcode = VM_EXITCODE_VMX;
@@ -2932,11 +2932,11 @@ vmx_exit_handle_nmi(struct vmx_vcpu *vcpu, struct vm_exit *vmexit)
 
 	intr_info = vmcs_read(VMCS_EXIT_INTR_INFO);
 	KASSERT((intr_info & VMCS_INTR_VALID) != 0,
-	    ("VM exit interruption info invalid: %#x", intr_info));
+	    "VM exit interruption info invalid: %#x", intr_info);
 
 	if ((intr_info & VMCS_INTR_T_MASK) == VMCS_INTR_T_NMI) {
-		KASSERT((intr_info & 0xff) == IDT_NMI, ("VM exit due "
-		    "to NMI has invalid vector: %#x", intr_info));
+		KASSERT((intr_info & 0xff) == IDT_NMI, "VM exit due "
+		    "to NMI has invalid vector: %#x", intr_info);
 		VMX_CTR0(vcpu, "Vectoring to NMI handler");
 		__asm __volatile("int $2");
 	}
@@ -3057,7 +3057,7 @@ vmx_run(void *vcpui, register_t rip, pmap_t pmap, struct vm_eventinfo *evinfo)
 	launched = 0;
 
 	KASSERT(vmxctx->pmap == pmap,
-	    ("pmap %p different than ctx pmap %p", pmap, vmxctx->pmap));
+	    "pmap %p different than ctx pmap %p", pmap, vmxctx->pmap);
 
 	vmx_msr_guest_enter(vcpu);
 
@@ -3076,8 +3076,8 @@ vmx_run(void *vcpui, register_t rip, pmap_t pmap, struct vm_eventinfo *evinfo)
 	vmcs_write(VMCS_GUEST_RIP, rip);
 	vmx_set_pcpu_defaults(vmx, vcpu, pmap);
 	do {
-		KASSERT(vmcs_guest_rip() == rip, ("%s: vmcs guest rip mismatch "
-		    "%#lx/%#lx", __func__, vmcs_guest_rip(), rip));
+		KASSERT(vmcs_guest_rip() == rip, "%s: vmcs guest rip mismatch "
+		    "%#lx/%#lx", __func__, vmcs_guest_rip(), rip);
 
 		handled = UNHANDLED;
 		/*
@@ -3901,7 +3901,7 @@ vmx_set_tmr(struct vlapic *vlapic, int vector, bool level)
 	struct vmcs *vmcs;
 	uint64_t mask, val;
 
-	KASSERT(vector >= 0 && vector <= 255, ("invalid vector %d", vector));
+	KASSERT(vector >= 0 && vector <= 255, "invalid vector %d", vector);
 	KASSERT(!vcpu_is_running(vlapic->vcpu, NULL),
 	    ("vmx_set_tmr: vcpu cannot be running"));
 
@@ -3959,7 +3959,7 @@ vmx_enable_x2apic_mode_vid(struct vlapic *vlapic)
 
 	proc_ctls2 = vcpu->cap.proc_ctls2;
 	KASSERT((proc_ctls2 & PROCBASED2_VIRTUALIZE_APIC_ACCESSES) != 0,
-	    ("%s: invalid proc_ctls2 %#x", __func__, proc_ctls2));
+	    "%s: invalid proc_ctls2 %#x", __func__, proc_ctls2);
 
 	proc_ctls2 &= ~PROCBASED2_VIRTUALIZE_APIC_ACCESSES;
 	proc_ctls2 |= PROCBASED2_VIRTUALIZE_X2APIC_MODE;
@@ -3975,16 +3975,16 @@ vmx_enable_x2apic_mode_vid(struct vlapic *vlapic)
 		 * so unmap the APIC access page just once.
 		 */
 		error = vm_unmap_mmio(vmx->vm, DEFAULT_APIC_BASE, PAGE_SIZE);
-		KASSERT(error == 0, ("%s: vm_unmap_mmio error %d",
-		    __func__, error));
+		KASSERT(error == 0, "%s: vm_unmap_mmio error %d",
+		    __func__, error);
 
 		/*
 		 * The MSR bitmap is shared by all vcpus so modify it only
 		 * once in the context of vcpu 0.
 		 */
 		error = vmx_allow_x2apic_msrs(vmx);
-		KASSERT(error == 0, ("%s: vmx_allow_x2apic_msrs error %d",
-		    __func__, error));
+		KASSERT(error == 0, "%s: vmx_allow_x2apic_msrs error %d",
+		    __func__, error);
 	}
 }
 
