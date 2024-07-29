@@ -795,6 +795,13 @@ int
 pci_emul_alloc_bar(struct pci_devinst *pdi, int idx, enum pcibar_type type,
     uint64_t size)
 {
+	bool romboot;
+
+#ifdef __amd64__
+	romboot = lpc_bootrom() != NULL;
+#else
+	romboot = true;
+#endif
 	assert((type == PCIBAR_ROM) || (idx >= 0 && idx <= PCI_BARMAX));
 	assert((type != PCIBAR_ROM) || (idx == PCI_ROM_IDX));
 
@@ -854,6 +861,12 @@ pci_emul_alloc_bar(struct pci_devinst *pdi, int idx, enum pcibar_type type,
 	}
 
 	/*
+	 * Don't enable decoding when booting from a ROM.
+	 */
+	if (romboot)
+		return (0);
+
+	/*
 	 * pci_passthru devices synchronize their physical and virtual command
 	 * register on init. For that reason, the virtual cmd reg should be
 	 * updated as early as possible.
@@ -884,7 +897,9 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 {
 	int error;
 	uint64_t *baseptr, limit, addr, mask, lobits, bar;
+	bool decoding;
 
+	decoding = false;
 	switch (type) {
 	case PCIBAR_NONE:
 		baseptr = NULL;
@@ -895,6 +910,7 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 		limit = PCI_EMUL_IOLIMIT;
 		mask = PCIM_BAR_IO_BASE;
 		lobits = PCIM_BAR_IO_SPACE;
+		decoding = porten(pdi);
 		break;
 	case PCIBAR_MEM64:
 		/*
@@ -916,12 +932,14 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 			mask = PCIM_BAR_MEM_BASE;
 			lobits = PCIM_BAR_MEM_SPACE | PCIM_BAR_MEM_64;
 		}
+		decoding = memen(pdi);
 		break;
 	case PCIBAR_MEM32:
 		baseptr = &pci_emul_membase32;
 		limit = PCI_EMUL_MEMLIMIT32;
 		mask = PCIM_BAR_MEM_BASE;
 		lobits = PCIM_BAR_MEM_SPACE | PCIM_BAR_MEM_32;
+		decoding = memen(pdi);
 		break;
 	case PCIBAR_ROM:
 		/* do not claim memory for ROM. OVMF will do it for us. */
@@ -966,7 +984,7 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 		pci_set_cfgdata32(pdi, PCIR_BAR(idx + 1), bar >> 32);
 	}
 
-	if (type != PCIBAR_ROM) {
+	if (decoding) {
 		register_bar(pdi, idx);
 	}
 
