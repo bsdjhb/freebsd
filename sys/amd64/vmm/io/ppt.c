@@ -392,6 +392,7 @@ ppt_assign_device(struct vm *vm, int bus, int slot, int func)
 	pci_restore_state(ppt->dev);
 	ppt->vm = vm;
 	iommu_add_device(vm_iommu_domain(vm), pci_get_rid(ppt->dev));
+	pci_enable_busmaster(ppt->dev);
 	return (0);
 }
 
@@ -405,6 +406,7 @@ ppt_unassign_device(struct vm *vm, int bus, int slot, int func)
 	if (error)
 		return (error);
 
+	pci_disable_busmaster(ppt->dev);
 	pci_save_state(ppt->dev);
 	ppt_pci_reset(ppt->dev);
 	pci_restore_state(ppt->dev);
