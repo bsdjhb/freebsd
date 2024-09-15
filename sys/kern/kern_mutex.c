@@ -284,13 +284,13 @@ __mtx_lock_flags(volatile uintptr_t *c, int opts, const char *file, int line)
 
 	KASSERT(kdb_active != 0 || SCHEDULER_STOPPED() ||
 	    !TD_IS_IDLETHREAD(curthread),
-	    ("mtx_lock() by idle thread %p on mutex %p @ %s:%d",
-	    curthread, m, file, line));
+	    "mtx_lock() by idle thread %p on mutex %p @ %s:%d",
+	    curthread, m, file, line);
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_lock() of destroyed mutex %p @ %s:%d", m, file, line));
+	    "mtx_lock() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_spin,
-	    ("mtx_lock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
-	    file, line));
+	    "mtx_lock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
+	    file, line);
 	WITNESS_CHECKORDER(&m->lock_object, (opts & ~MTX_RECURSE) |
 	    LOP_NEWORDER | LOP_EXCLUSIVE, file, line, NULL);
 
@@ -316,10 +316,10 @@ __mtx_unlock_flags(volatile uintptr_t *c, int opts, const char *file, int line)
 	m = mtxlock2mtx(c);
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_unlock() of destroyed mutex %p @ %s:%d", m, file, line));
+	    "mtx_unlock() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_spin,
-	    ("mtx_unlock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
-	    file, line));
+	    "mtx_unlock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
+	    file, line);
 	WITNESS_UNLOCK(&m->lock_object, opts | LOP_EXCLUSIVE, file, line);
 	LOCK_LOG_LOCK("UNLOCK", &m->lock_object, opts, m->mtx_recurse, file,
 	    line);
@@ -345,15 +345,15 @@ __mtx_lock_spin_flags(volatile uintptr_t *c, int opts, const char *file,
 	m = mtxlock2mtx(c);
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_lock_spin() of destroyed mutex %p @ %s:%d", m, file, line));
+	    "mtx_lock_spin() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_sleep,
-	    ("mtx_lock_spin() of sleep mutex %s @ %s:%d",
-	    m->lock_object.lo_name, file, line));
+	    "mtx_lock_spin() of sleep mutex %s @ %s:%d",
+	    m->lock_object.lo_name, file, line);
 	if (mtx_owned(m))
 		KASSERT((m->lock_object.lo_flags & LO_RECURSABLE) != 0 ||
 		    (opts & MTX_RECURSE) != 0,
-	    ("mtx_lock_spin: recursed on non-recursive mutex %s @ %s:%d\n",
-		    m->lock_object.lo_name, file, line));
+	    "mtx_lock_spin: recursed on non-recursive mutex %s @ %s:%d\n",
+		    m->lock_object.lo_name, file, line);
 	opts &= ~MTX_RECURSE;
 	WITNESS_CHECKORDER(&m->lock_object, opts | LOP_NEWORDER | LOP_EXCLUSIVE,
 	    file, line, NULL);
@@ -386,14 +386,13 @@ __mtx_trylock_spin_flags(volatile uintptr_t *c, int opts, const char *file,
 	m = mtxlock2mtx(c);
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_trylock_spin() of destroyed mutex %p @ %s:%d", m, file,
-	    line));
+	    "mtx_trylock_spin() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_sleep,
-	    ("mtx_trylock_spin() of sleep mutex %s @ %s:%d",
-	    m->lock_object.lo_name, file, line));
+	    "mtx_trylock_spin() of sleep mutex %s @ %s:%d",
+	    m->lock_object.lo_name, file, line);
 	KASSERT((opts & MTX_RECURSE) == 0,
-	    ("mtx_trylock_spin: unsupp. opt MTX_RECURSE on mutex %s @ %s:%d\n",
-	    m->lock_object.lo_name, file, line));
+	    "mtx_trylock_spin: unsupp. opt MTX_RECURSE on mutex %s @ %s:%d\n",
+	    m->lock_object.lo_name, file, line);
 	if (__mtx_trylock_spin(m, curthread, opts, file, line)) {
 		LOCK_LOG_TRY("LOCK", &m->lock_object, opts, 1, file, line);
 		WITNESS_LOCK(&m->lock_object, opts | LOP_EXCLUSIVE, file, line);
@@ -412,11 +411,10 @@ __mtx_unlock_spin_flags(volatile uintptr_t *c, int opts, const char *file,
 	m = mtxlock2mtx(c);
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_unlock_spin() of destroyed mutex %p @ %s:%d", m, file,
-	    line));
+	    "mtx_unlock_spin() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_sleep,
-	    ("mtx_unlock_spin() of sleep mutex %s @ %s:%d",
-	    m->lock_object.lo_name, file, line));
+	    "mtx_unlock_spin() of sleep mutex %s @ %s:%d",
+	    m->lock_object.lo_name, file, line);
 	WITNESS_UNLOCK(&m->lock_object, opts | LOP_EXCLUSIVE, file, line);
 	LOCK_LOG_LOCK("UNLOCK", &m->lock_object, opts, m->mtx_recurse, file,
 	    line);
@@ -448,13 +446,13 @@ _mtx_trylock_flags_int(struct mtx *m, int opts LOCK_FILE_LINE_ARG_DEF)
 		return (1);
 
 	KASSERT(kdb_active != 0 || !TD_IS_IDLETHREAD(td),
-	    ("mtx_trylock() by idle thread %p on mutex %p @ %s:%d",
-	    curthread, m, file, line));
+	    "mtx_trylock() by idle thread %p on mutex %p @ %s:%d",
+	    curthread, m, file, line);
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("mtx_trylock() of destroyed mutex %p @ %s:%d", m, file, line));
+	    "mtx_trylock() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_spin,
-	    ("mtx_trylock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
-	    file, line));
+	    "mtx_trylock() of spin mutex %s @ %s:%d", m->lock_object.lo_name,
+	    file, line);
 
 	rval = 1;
 	recursed = false;
@@ -563,8 +561,8 @@ __mtx_lock_sleep(volatile uintptr_t *c, uintptr_t v)
 	if (__predict_false(lv_mtx_owner(v) == td)) {
 		KASSERT((m->lock_object.lo_flags & LO_RECURSABLE) != 0 ||
 		    (opts & MTX_RECURSE) != 0,
-	    ("_mtx_lock_sleep: recursed on non-recursive mutex %s @ %s:%d\n",
-		    m->lock_object.lo_name, file, line));
+	    "_mtx_lock_sleep: recursed on non-recursive mutex %s @ %s:%d\n",
+		    m->lock_object.lo_name, file, line);
 #if LOCK_DEBUG > 0
 		opts &= ~MTX_RECURSE;
 #endif
@@ -823,13 +821,13 @@ thread_lock_validate(struct mtx *m, int opts, const char *file, int line)
 {
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("thread_lock() of destroyed mutex %p @ %s:%d", m, file, line));
+	    "thread_lock() of destroyed mutex %p @ %s:%d", m, file, line);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_sleep,
-	    ("thread_lock() of sleep mutex %s @ %s:%d",
-	    m->lock_object.lo_name, file, line));
+	    "thread_lock() of sleep mutex %s @ %s:%d",
+	    m->lock_object.lo_name, file, line);
 	KASSERT((m->lock_object.lo_flags & LO_RECURSABLE) == 0,
-	    ("thread_lock: got a recursive mutex %s @ %s:%d\n",
-	    m->lock_object.lo_name, file, line));
+	    "thread_lock: got a recursive mutex %s @ %s:%d\n",
+	    m->lock_object.lo_name, file, line);
 	WITNESS_CHECKORDER(&m->lock_object,
 	    opts | LOP_NEWORDER | LOP_EXCLUSIVE, file, line, NULL);
 }
@@ -993,8 +991,8 @@ thread_lock_unblock(struct thread *td, struct mtx *new)
 
 	mtx_assert(new, MA_OWNED);
 	KASSERT(td->td_lock == &blocked_lock,
-	    ("thread %p lock %p not blocked_lock %p",
-	    td, td->td_lock, &blocked_lock));
+	    "thread %p lock %p not blocked_lock %p",
+	    td, td->td_lock, &blocked_lock);
 	atomic_store_rel_ptr((volatile void *)&td->td_lock, (uintptr_t)new);
 }
 
@@ -1280,12 +1278,12 @@ mtx_spin_wait_unlocked(struct mtx *m)
 	struct lock_delay_arg lda;
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("%s() of destroyed mutex %p", __func__, m));
+	    "%s() of destroyed mutex %p", __func__, m);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_sleep,
-	    ("%s() of sleep mutex %p (%s)", __func__, m,
-	    m->lock_object.lo_name));
-	KASSERT(!mtx_owned(m), ("%s() waiting on myself on lock %p (%s)", __func__, m,
-	    m->lock_object.lo_name));
+	    "%s() of sleep mutex %p (%s)", __func__, m,
+	    m->lock_object.lo_name);
+	KASSERT(!mtx_owned(m), "%s() waiting on myself on lock %p (%s)", __func__, m,
+	    m->lock_object.lo_name);
 
 	lda.spin_cnt = 0;
 
@@ -1306,12 +1304,11 @@ mtx_wait_unlocked(struct mtx *m)
 	uintptr_t v;
 
 	KASSERT(m->mtx_lock != MTX_DESTROYED,
-	    ("%s() of destroyed mutex %p", __func__, m));
+	    "%s() of destroyed mutex %p", __func__, m);
 	KASSERT(LOCK_CLASS(&m->lock_object) != &lock_class_mtx_spin,
-	    ("%s() of spin mutex %p (%s)", __func__, m,
-	    m->lock_object.lo_name));
-	KASSERT(!mtx_owned(m), ("%s() waiting on myself on lock %p (%s)", __func__, m,
-	    m->lock_object.lo_name));
+	    "%s() of spin mutex %p (%s)", __func__, m, m->lock_object.lo_name);
+	KASSERT(!mtx_owned(m), "%s() waiting on myself on lock %p (%s)",
+	    __func__, m, m->lock_object.lo_name);
 
 	for (;;) {
 		v = atomic_load_acq_ptr(&m->mtx_lock);
