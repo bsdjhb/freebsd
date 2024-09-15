@@ -161,7 +161,7 @@ legacy_attach(device_t dev)
 	 * can find.  Once that is done attach any devices that we
 	 * found.
 	 */
-	bus_generic_probe(dev);
+	bus_identify_children(dev);
 	bus_generic_attach(dev);
 
 	/*
@@ -342,7 +342,7 @@ cpu_probe(device_t dev)
 static int
 cpu_attach(device_t dev)
 {
-	device_identify_children(dev);
+	bus_identify_children(dev);
 	device_attach_children(dev);
 	return (0);
 }
