@@ -1199,11 +1199,8 @@ iichid_attach(device_t dev)
 	}
 
 	device_set_ivars(child, &sc->hw);
-	error = bus_generic_attach(dev);
-	if (error) {
-		device_printf(dev, "failed to attach child: error %d\n", error);
-		iichid_detach(dev);
-	}
+	bus_attach_children(dev);
+	error = 0;
 done:
 	(void)iichid_set_power(sc, I2C_HID_POWER_OFF);
 	sc->power_on = false;
