@@ -623,7 +623,8 @@ hdspe_attach(device_t dev)
 	    sc, 0, hdspe_sysctl_sample_rate, "A",
 	    "Force sample rate (32000, 44100, 48000, ... 192000)");
 
-	return (bus_generic_attach(dev));
+	bus_attach_children(dev);
+	return (0);
 }
 
 static void
