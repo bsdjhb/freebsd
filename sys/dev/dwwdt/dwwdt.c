@@ -310,6 +310,7 @@ static int
 dwwdt_detach(device_t dev)
 {
 	struct dwwdt_softc *sc = device_get_softc(dev);
+	int error;
 
 	if (dwwdt_started(sc)) {
 		/*
@@ -318,6 +319,10 @@ dwwdt_detach(device_t dev)
 		 */
 		return (EBUSY);
 	}
+
+	error = bus_generic_detach(dev);
+	if (error != 0)
+		return (error);
 
 	EVENTHANDLER_DEREGISTER(watchdog_list, sc->sc_evtag);
 	sc->sc_evtag = NULL;
@@ -338,7 +343,7 @@ dwwdt_detach(device_t dev)
 		    sc->sc_mem_res);
 	}
 
-	return (bus_generic_detach(dev));
+	return (0);
 }
 
 static int
