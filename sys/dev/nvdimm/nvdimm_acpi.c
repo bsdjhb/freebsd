@@ -215,11 +215,7 @@ nvdimm_root_detach(device_t dev)
 		SLIST_REMOVE_HEAD(&root->spas, link);
 		free(spa, M_NVDIMM_ACPI);
 	}
-	error = bus_generic_detach(dev);
-	if (error != 0)
-		return (error);
-	error = device_delete_children(dev);
-	return (error);
+	return (bus_generic_detach(dev));
 }
 
 static int
