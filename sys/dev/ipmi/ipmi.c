@@ -1060,22 +1060,6 @@ ipmi_release_resources(device_t dev)
 			    sc->ipmi_io_rid + i, sc->ipmi_io_res[i]);
 }
 
-/* XXX: Why? */
-static void
-ipmi_unload(void *arg)
-{
-	device_t *	devs;
-	int		count;
-	int		i;
-
-	if (devclass_get_devices(devclass_find("ipmi"), &devs, &count) != 0)
-		return;
-	for (i = 0; i < count; i++)
-		device_delete_child(device_get_parent(devs[i]), devs[i]);
-	free(devs, M_TEMP);
-}
-SYSUNINIT(ipmi_unload, SI_SUB_DRIVERS, SI_ORDER_FIRST, ipmi_unload, NULL);
-
 #ifdef IMPI_DEBUG
 static void
 dump_buf(u_char *data, int len)
