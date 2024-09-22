@@ -642,7 +642,7 @@ mlx_shutdown(device_t dev)
 static int
 mlx_shutdown_locked(struct mlx_softc *sc)
 {
-    int			i, error;
+    int			error;
 
     debug_called(1);
 
@@ -660,15 +660,9 @@ mlx_shutdown_locked(struct mlx_softc *sc)
 	printf("done\n");
     }
     MLX_IO_UNLOCK(sc);
-    
+
     /* delete all our child devices */
-    for (i = 0; i < MLX_MAXDRIVES; i++) {
-	if (sc->mlx_sysdrive[i].ms_disk != 0) {
-	    if ((error = device_delete_child(sc->mlx_dev, sc->mlx_sysdrive[i].ms_disk)) != 0)
-		return (error);
-	    sc->mlx_sysdrive[i].ms_disk = 0;
-	}
-    }
+    error = bus_generic_detach(sc->mlx_dev);
 
     return (0);
 }

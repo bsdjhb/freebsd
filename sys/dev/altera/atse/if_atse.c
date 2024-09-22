@@ -1432,9 +1432,7 @@ atse_detach(device_t dev)
 		callout_drain(&sc->atse_tick);
 		ether_ifdetach(ifp);
 	}
-	if (sc->atse_miibus != NULL) {
-		device_delete_child(dev, sc->atse_miibus);
-	}
+	bus_generic_detach(dev);
 
 	if (ifp != NULL) {
 		if_free(ifp);
