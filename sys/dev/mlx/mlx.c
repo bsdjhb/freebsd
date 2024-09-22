@@ -664,7 +664,7 @@ mlx_shutdown_locked(struct mlx_softc *sc)
     /* delete all our child devices */
     error = bus_generic_detach(sc->mlx_dev);
 
-    return (0);
+    return (error);
 }
 
 /********************************************************************************
