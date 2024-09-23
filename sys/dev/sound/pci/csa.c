@@ -314,7 +314,6 @@ csa_detach(device_t dev)
 {
 	csa_res *resp;
 	sc_p scp;
-	struct sndcard_func *func;
 	int err;
 
 	scp = device_get_softc(dev);
