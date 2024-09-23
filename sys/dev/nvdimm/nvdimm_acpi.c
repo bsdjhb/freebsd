@@ -206,7 +206,6 @@ nvdimm_root_detach(device_t dev)
 {
 	struct nvdimm_root_dev *root;
 	struct SPA_mapping *spa, *next;
-	int error;
 
 	root = device_get_softc(dev);
 	SLIST_FOREACH_SAFE(spa, &root->spas, link, next) {
