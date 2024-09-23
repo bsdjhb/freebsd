@@ -714,7 +714,6 @@ static void
 gpiobus_hinted_child(device_t bus, const char *dname, int dunit)
 {
 	struct gpiobus_softc *sc = GPIOBUS_SOFTC(bus);
-	struct gpiobus_ivar *devi;
 	device_t child;
 	const char *pins;
 	int irq, pinmask;
@@ -724,7 +723,6 @@ gpiobus_hinted_child(device_t bus, const char *dname, int dunit)
 	}
 
 	child = BUS_ADD_CHILD(bus, 0, dname, dunit);
-	devi = GPIOBUS_IVAR(child);
 	if (resource_int_value(dname, dunit, "pins", &pinmask) == 0) {
 		if (gpiobus_parse_pins(sc, child, pinmask)) {
 			device_delete_child(bus, child);
