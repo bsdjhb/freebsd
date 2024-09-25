@@ -2147,6 +2147,12 @@ m_unshare(struct mbuf *m0, int how)
 
 	mprev = NULL;
 	for (m = m0; m != NULL; m = mprev->m_next) {
+		/* This code is not safe to use with unmapped mbufs. */
+		if ((m->m_flags & M_EXTPG) != 0) {
+			m_freem(m0);
+			return (NULL);
+		}
+
 		/*
 		 * Regular mbufs are ignored unless there's a cluster
 		 * in front of it that we can use to coalesce.  We do
