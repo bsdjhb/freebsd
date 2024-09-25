@@ -1138,6 +1138,11 @@ m_extrefcnt(struct mbuf *m)
 			 (!(((m)->m_flags & M_EXT)) ||			\
 			 (m_extrefcnt(m) == 1)))
 
+/* Similar to M_WRITABLE but permit writing to M_EXTPG mbufs. */
+#define	M_WRITABLE_EXTPG(m)						\
+	(((m)->m_flags & M_RDONLY) == 0 &&				\
+	 (!(((m)->m_flags & M_EXT)) || (m_extrefcnt(m) == 1)))
+
 /* Check if the supplied mbuf has a packet header, or else panic. */
 #define	M_ASSERTPKTHDR(m)						\
 	KASSERT((m) != NULL && (m)->m_flags & M_PKTHDR,			\
