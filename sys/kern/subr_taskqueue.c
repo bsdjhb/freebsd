@@ -698,7 +698,8 @@ taskqueue_swi_giant_run(void *dummy)
 
 static int
 _taskqueue_start_threads(struct taskqueue **tqp, int count, int pri,
-    cpuset_t *mask, struct proc *p, const char *name, va_list ap)
+    cpuset_t *mask, struct proc **pp, const char *procname, const char *name,
+    va_list ap)
 {
 	char ktname[MAXCOMLEN + 1];
 	struct thread *td;
@@ -720,11 +721,12 @@ _taskqueue_start_threads(struct taskqueue **tqp, int count, int pri,
 
 	for (i = 0; i < count; i++) {
 		if (count == 1)
-			error = kthread_add(taskqueue_thread_loop, tqp, p,
-			    &tq->tq_threads[i], RFSTOPPED, 0, "%s", ktname);
+			error = kproc_kthread_add(taskqueue_thread_loop, tqp,
+			    pp, &tq->tq_threads[i], RFSTOPPED, 0, procname,
+			    "%s", ktname);
 		else
-			error = kthread_add(taskqueue_thread_loop, tqp, p,
-			    &tq->tq_threads[i], RFSTOPPED, 0,
+			error = kproc_kthread_add(taskqueue_thread_loop, tqp,
+			    pp, &tq->tq_threads[i], RFSTOPPED, 0, procname,
 			    "%s_%d", ktname, i);
 		if (error) {
 			/* should be ok to continue, taskqueue_free will dtrt */
@@ -768,11 +770,13 @@ int
 taskqueue_start_threads(struct taskqueue **tqp, int count, int pri,
     const char *name, ...)
 {
+	struct proc *p = &proc0;
 	va_list ap;
 	int error;
 
 	va_start(ap, name);
-	error = _taskqueue_start_threads(tqp, count, pri, NULL, NULL, name, ap);
+	error = _taskqueue_start_threads(tqp, count, pri, NULL, &p, NULL, name,
+	    ap);
 	va_end(ap);
 	return (error);
 }
@@ -784,8 +788,25 @@ taskqueue_start_threads_in_proc(struct taskqueue **tqp, int count, int pri,
 	va_list ap;
 	int error;
 
+	if (proc == NULL)
+		return (EINVAL);
 	va_start(ap, name);
-	error = _taskqueue_start_threads(tqp, count, pri, NULL, proc, name, ap);
+	error = _taskqueue_start_threads(tqp, count, pri, NULL, &proc, NULL,
+	    name, ap);
+	va_end(ap);
+	return (error);
+}
+
+int
+taskqueue_start_threads_proc(struct taskqueue **tqp, int count, int pri,
+    struct proc **pp, const char *procname, const char *name, ...)
+{
+	va_list ap;
+	int error;
+
+	va_start(ap, name);
+	error = _taskqueue_start_threads(tqp, count, pri, NULL, pp, procname,
+	    name, ap);
 	va_end(ap);
 	return (error);
 }
@@ -794,11 +815,13 @@ int
 taskqueue_start_threads_cpuset(struct taskqueue **tqp, int count, int pri,
     cpuset_t *mask, const char *name, ...)
 {
+	struct proc *p = &proc0;
 	va_list ap;
 	int error;
 
 	va_start(ap, name);
-	error = _taskqueue_start_threads(tqp, count, pri, mask, NULL, name, ap);
+	error = _taskqueue_start_threads(tqp, count, pri, mask, &p, NULL, name,
+	    ap);
 	va_end(ap);
 	return (error);
 }
