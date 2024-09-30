@@ -1764,6 +1764,25 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
 #endif
 }
 
+static void hexdump(const void *buf, size_t len)
+{
+    const unsigned char *cp = buf;
+    size_t done = 0;
+
+    while (len > 0) {
+        printf(" %02x", *cp);
+        done++;
+        if (done == 16) {
+            printf("\n");
+            done = 0;
+        }
+        cp++;
+        len--;
+    }
+    if (done != 0)
+        printf("\n");
+}
+
 int CRYPTO_gcm128_finish(GCM128_CONTEXT *ctx, const unsigned char *tag,
                          size_t len)
 {
@@ -1829,8 +1848,16 @@ int CRYPTO_gcm128_finish(GCM128_CONTEXT *ctx, const unsigned char *tag,
     ctx->Xi.u[0] ^= ctx->EK0.u[0];
     ctx->Xi.u[1] ^= ctx->EK0.u[1];
 
-    if (tag && len <= sizeof(ctx->Xi))
-        return CRYPTO_memcmp(ctx->Xi.c, tag, len);
+    if (tag && len <= sizeof(ctx->Xi)) {
+	int rval = CRYPTO_memcmp(ctx->Xi.c, tag, len);
+	if (rval != 0) {
+		printf("%s expected tag:\n", __func__);
+		hexdump(ctx->Xi.c, len);
+		printf("actual tag:\n");
+		hexdump(tag, len);
+	}
+	return rval;
+    }
     else
         return -1;
 }
