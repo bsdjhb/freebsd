@@ -1472,11 +1472,13 @@ struct ssl_st {
     unsigned char early_exporter_master_secret[EVP_MAX_MD_SIZE];
     EVP_CIPHER_CTX *enc_read_ctx; /* cryptographic state */
     unsigned char read_iv[EVP_MAX_IV_LENGTH]; /* TLSv1.3 static read IV */
+    unsigned char read_key[EVP_MAX_KEY_LENGTH];
     EVP_MD_CTX *read_hash;      /* used for mac generation */
     COMP_CTX *compress;         /* compression */
     COMP_CTX *expand;           /* uncompress */
     EVP_CIPHER_CTX *enc_write_ctx; /* cryptographic state */
     unsigned char write_iv[EVP_MAX_IV_LENGTH]; /* TLSv1.3 static write IV */
+    unsigned char write_key[EVP_MAX_KEY_LENGTH];
     EVP_MD_CTX *write_hash;     /* used for mac generation */
     /* session info */
     /* client cert? */
