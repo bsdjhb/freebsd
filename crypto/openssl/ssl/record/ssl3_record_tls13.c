@@ -11,6 +11,25 @@
 #include "record_local.h"
 #include "internal/cryptlib.h"
 
+static void hexdump(const void *buf, size_t len)
+{
+    const unsigned char *cp = buf;
+    size_t done = 0;
+
+    while (len > 0) {
+        printf(" %02x", *cp);
+        done++;
+        if (done == 16) {
+            printf("\n");
+            done = 0;
+        }
+        cp++;
+        len--;
+    }
+    if (done != 0)
+        printf("\n");
+}
+
 /*-
  * tls13_enc encrypts/decrypts |n_recs| in |recs|. Calls SSLfatal on internal
  * error, but not otherwise. It is the responsibility of the caller to report
@@ -26,8 +45,8 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     EVP_CIPHER_CTX *ctx;
     unsigned char iv[EVP_MAX_IV_LENGTH], recheader[SSL3_RT_HEADER_LENGTH];
     size_t taglen, offset, loop, hdrlen;
-    int ivlen;
-    unsigned char *staticiv;
+    int ivlen, keylen;
+    unsigned char *staticiv, *key, *input;
     unsigned char *seq;
     int lenu, lenf;
     SSL3_RECORD *rec = &recs[0];
@@ -43,10 +62,12 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     if (sending) {
         ctx = s->enc_write_ctx;
         staticiv = s->write_iv;
+        key = s->write_key;
         seq = RECORD_LAYER_get_write_sequence(&s->rlayer);
     } else {
         ctx = s->enc_read_ctx;
         staticiv = s->read_iv;
+        key = s->read_key;
         seq = RECORD_LAYER_get_read_sequence(&s->rlayer);
     }
 
@@ -63,7 +84,8 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     }
 
     ivlen = EVP_CIPHER_CTX_get_iv_length(ctx);
-    if (ivlen < 0) {
+    keylen = EVP_CIPHER_CTX_get_key_length(ctx);
+    if (ivlen < 0 || keylen < 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         return 0;
     }
@@ -164,6 +186,9 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
         return 0;
     }
 
+    input = OPENSSL_malloc(rec->length);
+    memcpy(input, rec->input, rec->length);
+
     /*
      * For CCM we must explicitly set the total plaintext length before we add
      * any AAD.
@@ -177,8 +202,24 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                                 (unsigned int)rec->length) <= 0
             || EVP_CipherFinal_ex(ctx, rec->data + lenu, &lenf) <= 0
             || (size_t)(lenu + lenf) != rec->length) {
+        printf("key:\n");
+        hexdump(key, keylen);
+        printf("staticiv:\n");
+        hexdump(staticiv, ivlen);
+        printf("seq + 1:\n");
+        hexdump(seq, SEQ_NUM_SIZE);
+        printf("iv:\n");
+        hexdump(iv, ivlen);
+        printf("aad:\n");
+        hexdump(recheader, sizeof(recheader));
+        printf("input:\n");
+        hexdump(input, rec->length);
+        printf("output:\n");
+        hexdump(rec->data, rec->length);
+        OPENSSL_free(input);
         return 0;
     }
+    OPENSSL_free(input);
     if (sending) {
         /* Add the tag */
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, taglen,

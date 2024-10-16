@@ -421,7 +421,7 @@ int tls13_change_cipher_state(SSL *s, int which)
     static const unsigned char resumption_master_secret[] = "res master";
     static const unsigned char early_exporter_master_secret[] = "e exp master";
 #endif
-    unsigned char *iv;
+    unsigned char *iv, *key_copy;
     unsigned char key[EVP_MAX_KEY_LENGTH];
     unsigned char secret[EVP_MAX_MD_SIZE];
     unsigned char hashval[EVP_MAX_MD_SIZE];
@@ -454,6 +454,7 @@ int tls13_change_cipher_state(SSL *s, int which)
         }
         ciph_ctx = s->enc_read_ctx;
         iv = s->read_iv;
+        key_copy = s->read_key;
 
         RECORD_LAYER_reset_read_sequence(&s->rlayer);
     } else {
@@ -469,6 +470,7 @@ int tls13_change_cipher_state(SSL *s, int which)
         }
         ciph_ctx = s->enc_write_ctx;
         iv = s->write_iv;
+        key_copy = s->write_key;
 
         RECORD_LAYER_reset_write_sequence(&s->rlayer);
     }
@@ -654,6 +656,7 @@ int tls13_change_cipher_state(SSL *s, int which)
         /* SSLfatal() already called */
         goto err;
     }
+    memcpy(key_copy, key, sizeof(key));
 
     if (label == server_application_traffic) {
         memcpy(s->server_app_traffic_secret, secret, hashlen);
