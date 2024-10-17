@@ -151,6 +151,7 @@ int tls1_change_cipher_state(SSL *s, int which)
 {
     unsigned char *p, *mac_secret;
     unsigned char *ms, *key, *iv;
+    unsigned char *key_copy, *iv_copy;
     EVP_CIPHER_CTX *dd;
     const EVP_CIPHER *c;
 #ifndef OPENSSL_NO_COMP
@@ -228,6 +229,8 @@ int tls1_change_cipher_state(SSL *s, int which)
             RECORD_LAYER_reset_read_sequence(&s->rlayer);
         mac_secret = &(s->s3.read_mac_secret[0]);
         mac_secret_size = &(s->s3.read_mac_secret_size);
+        iv_copy = s->read_iv;
+        key_copy = s->read_key;
     } else {
         s->statem.enc_write_state = ENC_WRITE_STATE_INVALID;
         if (s->ext.use_etm)
@@ -284,6 +287,8 @@ int tls1_change_cipher_state(SSL *s, int which)
             RECORD_LAYER_reset_write_sequence(&s->rlayer);
         mac_secret = &(s->s3.write_mac_secret[0]);
         mac_secret_size = &(s->s3.write_mac_secret_size);
+        iv_copy = s->write_iv;
+        key_copy = s->write_key;
     }
 
     if (reuse_dd)
@@ -319,6 +324,8 @@ int tls1_change_cipher_state(SSL *s, int which)
     }
 
     memcpy(mac_secret, ms, i);
+    memcpy(key_copy, key, cl);
+    memcpy(iv_copy, iv, k);
 
     if (!(EVP_CIPHER_get_flags(c) & EVP_CIPH_FLAG_AEAD_CIPHER)) {
         if (mac_type == EVP_PKEY_HMAC) {
