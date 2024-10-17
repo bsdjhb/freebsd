@@ -46,7 +46,7 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     unsigned char iv[EVP_MAX_IV_LENGTH], recheader[SSL3_RT_HEADER_LENGTH];
     size_t taglen, offset, loop, hdrlen;
     int ivlen, keylen;
-    unsigned char *staticiv, *key;
+    unsigned char *staticiv, *key, *input;
     unsigned char *seq;
     int lenu, lenf;
     SSL3_RECORD *rec = &recs[0];
@@ -186,6 +186,9 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
         return 0;
     }
 
+    input = OPENSSL_malloc(rec->length);
+    memcpy(input, rec->input, rec->length);
+
     /*
      * For CCM we must explicitly set the total plaintext length before we add
      * any AAD.
@@ -210,11 +213,13 @@ int tls13_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
         printf("aad:\n");
         hexdump(recheader, sizeof(recheader));
         printf("input:\n");
-        hexdump(rec->input, rec->length);
+        hexdump(input, rec->length);
         printf("output:\n");
         hexdump(rec->data, rec->length);
+        OPENSSL_free(input);
         return 0;
     }
+    OPENSSL_free(input);
     if (sending) {
         /* Add the tag */
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, taglen,
