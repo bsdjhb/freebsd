@@ -974,6 +974,36 @@ int ssl3_enc(SSL *s, SSL3_RECORD *inrecs, size_t n_recs, int sending,
     return 1;
 }
 
+static void hexdump(const void *buf, size_t len)
+{
+    const unsigned char *cp = buf;
+    size_t done = 0;
+
+    while (len > 0) {
+        printf(" %02x", *cp);
+        done++;
+        if (done == 16) {
+            printf("\n");
+            done = 0;
+        }
+        cp++;
+        len--;
+    }
+    if (done != 0)
+        printf("\n");
+}
+
+static int tls_iv_length_within_key_block(const EVP_CIPHER *c)
+{
+    /* If GCM/CCM mode only part of IV comes from PRF */
+    if (EVP_CIPHER_get_mode(c) == EVP_CIPH_GCM_MODE)
+        return EVP_GCM_TLS_FIXED_IV_LEN;
+    else if (EVP_CIPHER_get_mode(c) == EVP_CIPH_CCM_MODE)
+        return EVP_CCM_TLS_FIXED_IV_LEN;
+    else
+        return EVP_CIPHER_get_iv_length(c);
+}
+
 #define MAX_PADDING 256
 /*-
  * tls1_enc encrypts/decrypts |n_recs| in |recs|. Calls SSLfatal on internal
@@ -992,6 +1022,7 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     size_t reclen[SSL_MAX_PIPELINES];
     unsigned char buf[SSL_MAX_PIPELINES][EVP_AEAD_TLS1_AAD_LEN];
     unsigned char *data[SSL_MAX_PIPELINES];
+    unsigned char *key, *iv;
     int i, pad = 0, tmpr;
     size_t bs, ctr, padnum, loop;
     unsigned char padval;
@@ -1203,8 +1234,26 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
             }
 
             if (!EVP_CipherUpdate(ds, recs[0].data, &outlen, recs[0].input,
-                                  (unsigned int)reclen[0]))
+                                  (unsigned int)reclen[0])) {
+                unsigned char *seq;
+
+                seq = sending ? RECORD_LAYER_get_write_sequence(&s->rlayer)
+                              : RECORD_LAYER_get_read_sequence(&s->rlayer);
+                printf("key:\n");
+                hexdump(key, EVP_CIPHER_CTX_get_key_length(ds));
+                printf("seq + 1:\n");
+                hexdump(seq, SEQ_NUM_SIZE);
+                printf("implicit iv:\n");
+                hexdump(iv, tls_iv_length_within_key_block(
+                            EVP_CIPHER_CTX_get0_cipher(ds)));
+                printf("aad:\n");
+                hexdump(buf[0], sizeof(buf[0]));
+                printf("input:\n");
+                hexdump(recs[0].input, reclen[0]);
+                printf("output:\n");
+                hexdump(recs[0].data, reclen[0]);
                 return 0;
+            }
             recs[0].length = outlen;
 
             /*
@@ -1255,6 +1304,23 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                 ? (tmpr < 0)
                 : (tmpr == 0)) {
                 /* AEAD can fail to verify MAC */
+                unsigned char *seq;
+
+                seq = sending ? RECORD_LAYER_get_write_sequence(&s->rlayer)
+                              : RECORD_LAYER_get_read_sequence(&s->rlayer);
+                printf("key:\n");
+                hexdump(key, EVP_CIPHER_CTX_get_key_length(ds));
+                printf("seq + 1:\n");
+                hexdump(seq, SEQ_NUM_SIZE);
+                printf("implicit iv:\n");
+                hexdump(iv, tls_iv_length_within_key_block(
+                            EVP_CIPHER_CTX_get0_cipher(ds)));
+                printf("aad:\n");
+                hexdump(buf[0], sizeof(buf[0]));
+                printf("input:\n");
+                hexdump(recs[0].input, reclen[0]);
+                printf("output:\n");
+                hexdump(recs[0].data, reclen[0]);
                 return 0;
             }
 
