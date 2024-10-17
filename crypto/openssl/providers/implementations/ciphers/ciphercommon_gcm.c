@@ -555,8 +555,10 @@ static int gcm_tls_cipher(PROV_GCM_CTX *ctx, unsigned char *out, size_t *padlen,
     tag = ctx->enc ? out + len : (unsigned char *)in + len;
     if (!ctx->hw->oneshot(ctx, ctx->buf, ctx->tls_aad_len, in, len, out, tag,
                           EVP_GCM_TLS_TAG_LEN)) {
+#if 0
         if (!ctx->enc)
             OPENSSL_cleanse(out, len);
+#endif
         goto err;
     }
     if (ctx->enc)
