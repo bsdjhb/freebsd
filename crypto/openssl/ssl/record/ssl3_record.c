@@ -1022,7 +1022,7 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
     size_t reclen[SSL_MAX_PIPELINES];
     unsigned char buf[SSL_MAX_PIPELINES][EVP_AEAD_TLS1_AAD_LEN];
     unsigned char *data[SSL_MAX_PIPELINES];
-    unsigned char *key, *iv;
+    unsigned char *key, *iv, *input;
     int i, pad = 0, tmpr;
     size_t bs, ctr, padnum, loop;
     unsigned char padval;
@@ -1237,6 +1237,8 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                 return 0;
             }
 
+            input = OPENSSL_malloc(reclen[0]);
+            memcpy(input, recs[0].input, reclen[0]);
             if (!EVP_CipherUpdate(ds, recs[0].data, &outlen, recs[0].input,
                                   (unsigned int)reclen[0])) {
                 unsigned char *seq;
@@ -1253,11 +1255,13 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                 printf("aad:\n");
                 hexdump(buf[0], sizeof(buf[0]));
                 printf("input:\n");
-                hexdump(recs[0].input, reclen[0]);
+                hexdump(input, reclen[0]);
                 printf("output:\n");
                 hexdump(recs[0].data, reclen[0]);
+                OPENSSL_free(input);
                 return 0;
             }
+            OPENSSL_free(input);
             recs[0].length = outlen;
 
             /*
@@ -1300,6 +1304,8 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
             }
         } else {
             /* Legacy cipher */
+            input = OPENSSL_malloc(reclen[0]);
+            memcpy(input, recs[0].input, reclen[0]);
 
             tmpr = EVP_Cipher(ds, recs[0].data, recs[0].input,
                               (unsigned int)reclen[0]);
@@ -1322,11 +1328,13 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                 printf("aad:\n");
                 hexdump(buf[0], sizeof(buf[0]));
                 printf("input:\n");
-                hexdump(recs[0].input, reclen[0]);
+                hexdump(input, reclen[0]);
                 printf("output:\n");
                 hexdump(recs[0].data, reclen[0]);
+                OPENSSL_free(input);
                 return 0;
             }
+            OPENSSL_free(input);
 
             if (!sending) {
                 for (ctr = 0; ctr < n_recs; ctr++) {
