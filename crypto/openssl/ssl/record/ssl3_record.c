@@ -1314,7 +1314,7 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                               : RECORD_LAYER_get_read_sequence(&s->rlayer);
                 printf("key:\n");
                 hexdump(key, EVP_CIPHER_CTX_get_key_length(ds));
-                printf("seq + 1:\n");
+                printf("seq + %d:\n", n_recs);
                 hexdump(seq, SEQ_NUM_SIZE);
                 printf("implicit iv:\n");
                 hexdump(iv, tls_iv_length_within_key_block(
