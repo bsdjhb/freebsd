@@ -73,9 +73,6 @@ int	taskqueue_start_threads(struct taskqueue **tqp, int count, int pri,
 	    const char *name, ...) __printflike(4, 5);
 int	taskqueue_start_threads_in_proc(struct taskqueue **tqp, int count,
 	    int pri, struct proc *p, const char *name, ...) __printflike(5, 6);
-int	taskqueue_start_threads_proc(struct taskqueue **tqp, int count,
-	    int pri, struct proc **pp, const char *procname, const char *name,
-	    ...) __printflike(6, 7);
 int	taskqueue_start_threads_cpuset(struct taskqueue **tqp, int count,
 	    int pri, cpuset_t *mask, const char *name, ...) __printflike(5, 6);
 int	taskqueue_enqueue(struct taskqueue *queue, struct task *task);
