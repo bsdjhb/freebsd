@@ -1073,6 +1073,8 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
                 }
             }
         }
+        iv = s->write_iv;
+        key = s->write_key;
     } else {
         if (EVP_MD_CTX_get0_md(s->read_hash)) {
             int n = EVP_MD_CTX_get_size(s->read_hash);
@@ -1086,6 +1088,8 @@ int tls1_enc(SSL *s, SSL3_RECORD *recs, size_t n_recs, int sending,
             enc = NULL;
         else
             enc = EVP_CIPHER_CTX_get0_cipher(s->enc_read_ctx);
+        iv = s->read_iv;
+        key = s->read_key;
     }
 
     if ((s->session == NULL) || (ds == NULL) || (enc == NULL)) {
