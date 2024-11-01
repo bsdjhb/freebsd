@@ -31,6 +31,7 @@ static struct options {
 	const char	*subnqn;
 	const char	*hostnqn;
 	uint32_t	kato;
+	uint32_t	pda;
 	uint16_t	num_io_queues;
 	uint16_t	queue_size;
 	bool		data_digests;
@@ -43,6 +44,7 @@ static struct options {
 	.subnqn = NULL,
 	.hostnqn = NULL,
 	.kato = NVMF_KATO_DEFAULT / 1000,
+	.pda = 4,
 	.num_io_queues = 1,
 	.queue_size = 0,
 	.data_digests = false,
@@ -53,7 +55,7 @@ static struct options {
 static void
 tcp_association_params(struct nvmf_association_params *params)
 {
-	params->tcp.pda = 0;
+	params->tcp.pda = (opt.pda / 4) - 1;
 	params->tcp.header_digests = opt.header_digests;
 	params->tcp.data_digests = opt.data_digests;
 	/* XXX */
@@ -204,6 +206,10 @@ connect_fn(const struct cmd *f, int argc, char *argv[])
 	if (opt.num_io_queues <= 0)
 		errx(EX_USAGE, "Invalid number of I/O queues");
 
+	if (opt.pda % 4 != 0 || opt.pda == 0 ||
+	    opt.pda >= NVME_TCP_PDU_PDO_MAX_OFFSET)
+		errx(EX_USAGE, "Invalid PDU data alignment");
+
 	if (strcasecmp(opt.transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
 	} else
@@ -236,6 +242,10 @@ connect_all_fn(const struct cmd *f, int argc, char *argv[])
 	if (opt.num_io_queues <= 0)
 		errx(EX_USAGE, "Invalid number of I/O queues");
 
+	if (opt.pda % 4 != 0 || opt.pda == 0 ||
+	    opt.pda >= NVME_TCP_PDU_PDO_MAX_OFFSET)
+		errx(EX_USAGE, "Invalid PDU data alignment");
+
 	if (strcasecmp(opt.transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
 	} else
@@ -267,6 +277,8 @@ static const struct opts connect_opts[] = {
 	    "Enable TCP PDU header digests"),
 	OPT("data_digests", 'G', arg_none, opt, data_digests,
 	    "Enable TCP PDU data digests"),
+	OPT("pdu_data_alignment", 'a', arg_uint32, opt, pda,
+	    "PDU data alignment"),
 	{ NULL, 0, arg_none, NULL, NULL }
 };
 #undef OPT

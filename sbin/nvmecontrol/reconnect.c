@@ -27,6 +27,7 @@ static struct options {
 	const char	*transport;
 	const char	*hostnqn;
 	uint32_t	kato;
+	uint32_t	pda;
 	uint16_t	num_io_queues;
 	uint16_t	queue_size;
 	bool		data_digests;
@@ -37,6 +38,7 @@ static struct options {
 	.transport = "tcp",
 	.hostnqn = NULL,
 	.kato = NVMF_KATO_DEFAULT / 1000,
+	.pda = 4,
 	.num_io_queues = 1,
 	.queue_size = 0,
 	.data_digests = false,
@@ -46,9 +48,9 @@ static struct options {
 
 static void
 tcp_association_params(struct nvmf_association_params *params,
-    bool header_digests, bool data_digests)
+    uint8_t pda, bool header_digests, bool data_digests)
 {
-	params->tcp.pda = 0;
+	params->tcp.pda = pda;
 	params->tcp.header_digests = header_digests;
 	params->tcp.data_digests = data_digests;
 	/* XXX */
@@ -111,12 +113,16 @@ reconnect_by_address(int fd, const nvlist_t *rparams, const char *addr)
 	if (opt.num_io_queues <= 0)
 		errx(EX_USAGE, "Invalid number of I/O queues");
 
+	if (opt.pda % 4 != 0 || opt.pda == 0 ||
+	    opt.pda >= NVME_TCP_PDU_PDO_MAX_OFFSET)
+		errx(EX_USAGE, "Invalid PDU data alignment");
+
 	memset(&aparams, 0, sizeof(aparams));
 	aparams.sq_flow_control = opt.flow_control;
 	if (strcasecmp(opt.transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
-		tcp_association_params(&aparams, opt.header_digests,
-		    opt.data_digests);
+		tcp_association_params(&aparams, (opt.pda / 4) - 1,
+		    opt.header_digests, opt.data_digests);
 	} else {
 		warnx("Unsupported or invalid transport");
 		return (EX_USAGE);
@@ -181,6 +187,7 @@ reconnect_by_params(int fd, const nvlist_t *rparams)
 		break;
 
 		tcp_association_params(&aparams,
+		    nvlist_get_number(rparams, "pda"),
 		    nvlist_get_bool(rparams, "header_digests"),
 		    nvlist_get_bool(rparams, "data_digests"));
 		break;
@@ -246,6 +253,9 @@ fetch_and_validate_rparams(int fd, nvlist_t **rparamsp)
 			warnx("Missing required reconnect parameters");
 			return (EX_IOERR);
 		}
+
+		if (!nvlist_exists_number(rparams, "pda"))
+			nvlist_add_number(rparams, "pda", 0);
 		break;
 	default:
 		nvlist_destroy(rparams);
@@ -302,6 +312,8 @@ static const struct opts reconnect_opts[] = {
 	    "Enable TCP PDU header digests"),
 	OPT("data_digests", 'G', arg_none, opt, data_digests,
 	    "Enable TCP PDU data digests"),
+	OPT("pdu_data_alignment", 'a', arg_uint32, opt, pda,
+	    "PDU data alignment"),
 	{ NULL, 0, arg_none, NULL, NULL }
 };
 #undef OPT
