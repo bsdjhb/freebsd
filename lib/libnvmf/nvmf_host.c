@@ -825,6 +825,8 @@ prepare_queues_for_handoff(struct nvmf_ioc_nv *nv,
 	    na->na_params.sq_flow_control);
 	switch (na->na_trtype) {
 	case NVMF_TRTYPE_TCP:
+		nvlist_add_number(nvl_rparams, "pda",
+		    na->na_params.tcp.pda);
 		nvlist_add_bool(nvl_rparams, "header_digests",
 		    na->na_params.tcp.header_digests);
 		nvlist_add_bool(nvl_rparams, "data_digests",
