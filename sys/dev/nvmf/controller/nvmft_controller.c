@@ -669,21 +669,19 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 	}
 
 	switch (cns) {
-	case 0:	/* Namespace data. */
-	case 3:	/* Namespace Identification Descriptor list. */
+	case NVME_CNS_NS_DATA:
+	case NVME_CNS_NS_IDENT_DESCRIPTORS:
 		nvmft_dispatch_command(ctrlr->admin, nc, true);
 		return;
-	case 1:
-		/* Controller data. */
+	case NVME_CNS_CONTROLLER_DATA:
 		m = m_getml(sizeof(ctrlr->cdata), M_WAITOK);
 		m_copyback(m, 0, sizeof(ctrlr->cdata), (void *)&ctrlr->cdata);
 		status = nvmf_send_controller_data(nc, 0, m,
 		    sizeof(ctrlr->cdata));
 		MPASS(status != NVMF_MORE);
 		break;
-	case 2:
+	case NVME_CNS_ACTIVE_NSID_LIST:
 	{
-		/* Active namespace list. */
 		struct nvme_ns_list *nslist;
 		uint32_t nsid;
 

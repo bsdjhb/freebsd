@@ -99,8 +99,7 @@ nvmf_cmd_identify_active_namespaces(struct nvmf_softc *sc, uint32_t id,
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opc = NVME_OPC_IDENTIFY;
 
-	/* 5.15.1 Use CNS of 0x02 for namespace data. */
-	cmd.cdw10 = htole32(2);
+	cmd.cdw10 = htole32(NVME_CNS_ACTIVE_NSID_LIST);
 	cmd.nsid = htole32(id);
 
 	req = nvmf_allocate_request(sc->admin, &cmd, req_cb, req_cb_arg, how);
@@ -125,8 +124,7 @@ nvmf_cmd_identify_namespace(struct nvmf_softc *sc, uint32_t id,
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opc = NVME_OPC_IDENTIFY;
 
-	/* 5.15.1 Use CNS of 0x00 for namespace data. */
-	cmd.cdw10 = htole32(0);
+	cmd.cdw10 = htole32(NVME_CNS_NS_DATA);
 	cmd.nsid = htole32(id);
 
 	req = nvmf_allocate_request(sc->admin, &cmd, req_cb, req_cb_arg, how);

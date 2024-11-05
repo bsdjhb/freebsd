@@ -497,8 +497,7 @@ nvmf_host_identify_controller(struct nvmf_qpair *qp,
 
 	nvmf_init_sqe(&cmd, NVME_OPC_IDENTIFY);
 
-	/* 5.15.1 Use CNS of 0x01 for controller data. */
-	cmd.cdw10 = htole32(1);
+	cmd.cdw10 = htole32(NVME_CNS_CONTROLLER_DATA);
 
 	cc = nvmf_allocate_command(qp, &cmd);
 	if (cc == NULL)
@@ -546,8 +545,7 @@ nvmf_host_identify_namespace(struct nvmf_qpair *qp, uint32_t nsid,
 
 	nvmf_init_sqe(&cmd, NVME_OPC_IDENTIFY);
 
-	/* 5.15.1 Use CNS of 0x00 for namespace data. */
-	cmd.cdw10 = htole32(0);
+	cmd.cdw10 = htole32(NVME_CNS_NS_DATA);
 	cmd.nsid = htole32(nsid);
 
 	cc = nvmf_allocate_command(qp, &cmd);

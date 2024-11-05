@@ -1771,10 +1771,10 @@ ctl_be_block_nvme_cr_dispatch(struct ctl_be_block_lun *be_lun,
 
 	cns = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
 	switch (cns) {
-	case 0:
+	case NVME_CNS_NS_DATA:
 		ctl_be_block_namespace_data(be_lun, io);
 		break;
-	case 3:
+	case NVME_CNS_NS_IDENT_DESCRIPTORS:
 		ctl_be_block_nvme_ids(be_lun, io);
 		break;
 	default:
@@ -3213,8 +3213,8 @@ ctl_be_block_nvme_config_read(union ctl_io *io)
 
 		cns = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
 		switch (cns) {
-		case 0:
-		case 3:
+		case NVME_CNS_NS_DATA:
+		case NVME_CNS_NS_IDENT_DESCRIPTORS:
 			mtx_lock(&be_lun->queue_lock);
 			STAILQ_INSERT_TAIL(&be_lun->config_read_queue,
 			    &io->io_hdr, links);

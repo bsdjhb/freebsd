@@ -1497,7 +1497,7 @@ nvme_opc_identify(struct pci_nvme_softc* sc, struct nvme_command* command,
 	pci_nvme_status_genc(&status, NVME_SC_SUCCESS);
 
 	switch (command->cdw10 & 0xFF) {
-	case 0x00: /* return Identify Namespace data structure */
+	case NVME_CNS_NS_DATA:
 		/* Global NS only valid with NS Management */
 		if (command->nsid == NVME_GLOBAL_NAMESPACE_TAG) {
 			pci_nvme_status_genc(&status,
@@ -1508,20 +1508,21 @@ nvme_opc_identify(struct pci_nvme_softc* sc, struct nvme_command* command,
 		    command->prp2, (uint8_t *)&sc->nsdata, sizeof(sc->nsdata),
 		    NVME_COPY_TO_PRP);
 		break;
-	case 0x01: /* return Identify Controller data structure */
+	case NVME_CNS_CONTROLLER_DATA:
 		nvme_prp_memcpy(sc->nsc_pi->pi_vmctx, command->prp1,
 		    command->prp2, (uint8_t *)&sc->ctrldata,
 		    sizeof(sc->ctrldata),
 		    NVME_COPY_TO_PRP);
 		break;
-	case 0x02: /* list of 1024 active NSIDs > CDW1.NSID */
+	case NVME_CNS_ACTIVE_NSID_LIST:
+		/* list of 1024 active NSIDs > CDW1.NSID */
 		dest = vm_map_gpa(sc->nsc_pi->pi_vmctx, command->prp1,
 		                  sizeof(uint32_t) * 1024);
 		/* All unused entries shall be zero */
 		memset(dest, 0, sizeof(uint32_t) * 1024);
 		((uint32_t *)dest)[0] = 1;
 		break;
-	case 0x03: /* list of NSID structures in CDW1.NSID, 4096 bytes */
+	case NVME_CNS_NS_IDENT_DESCRIPTORS:
 		if (command->nsid != 1) {
 			pci_nvme_status_genc(&status,
 			    NVME_SC_INVALID_NAMESPACE_OR_FORMAT);
@@ -1537,7 +1538,7 @@ nvme_opc_identify(struct pci_nvme_softc* sc, struct nvme_command* command,
 		((uint8_t *)dest)[1] = sizeof(uint64_t);
 		memcpy(((uint8_t *)dest) + 4, sc->nsdata.eui64, sizeof(uint64_t));
 		break;
-	case 0x13:
+	case NVME_CNS_CONTROLLER_LIST:
 		/*
 		 * Controller list is optional but used by UNH tests. Return
 		 * a valid but empty list.

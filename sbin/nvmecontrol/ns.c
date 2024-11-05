@@ -422,7 +422,7 @@ nsactive(const struct cmd *f, int argc, char *argv[])
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(0);
-	pt.cmd.cdw10 = htole32(0x02);
+	pt.cmd.cdw10 = htole32(NVME_CNS_ACTIVE_NSID_LIST);
 	pt.buf = list;
 	pt.len = sizeof(list);
 	pt.is_read = 1;
@@ -467,7 +467,7 @@ nsallocated(const struct cmd *f, int argc, char *argv[])
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(0);
-	pt.cmd.cdw10 = htole32(0x10);
+	pt.cmd.cdw10 = htole32(NVME_CNS_ALLOCATED_NSID_LIST);
 	pt.buf = list;
 	pt.len = sizeof(list);
 	pt.is_read = 1;
@@ -511,7 +511,7 @@ nscontrollers(const struct cmd *f, int argc, char *argv[])
 
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
-	pt.cmd.cdw10 = htole32(0x13);
+	pt.cmd.cdw10 = htole32(NVME_CNS_CONTROLLER_LIST);
 	pt.buf = clist;
 	pt.len = sizeof(clist);
 	pt.is_read = 1;
@@ -728,7 +728,7 @@ nsattach(const struct cmd *f, int argc, char *argv[])
 		/* Get full list of controllers to attach to. */
 		memset(&pt, 0, sizeof(pt));
 		pt.cmd.opc = NVME_OPC_IDENTIFY;
-		pt.cmd.cdw10 = htole32(0x13);
+		pt.cmd.cdw10 = htole32(NVME_CNS_CONTROLLER_LIST);
 		pt.buf = clist;
 		pt.len = sizeof(clist);
 		pt.is_read = 1;
@@ -799,7 +799,7 @@ nsdetach(const struct cmd *f, int argc, char *argv[])
 		memset(&pt, 0, sizeof(pt));
 		pt.cmd.opc = NVME_OPC_IDENTIFY;
 		pt.cmd.nsid = htole32(nsid);
-		pt.cmd.cdw10 = htole32(0x12);
+		pt.cmd.cdw10 = htole32(NVME_CNS_NSID_CONTROLLER_LIST);
 		pt.buf = clist;
 		pt.len = sizeof(clist);
 		pt.is_read = 1;
@@ -874,7 +874,7 @@ nsattached(const struct cmd *f, int argc, char *argv[])
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(nsid);
-	pt.cmd.cdw10 = htole32(0x12);
+	pt.cmd.cdw10 = htole32(NVME_CNS_NSID_CONTROLLER_LIST);
 	pt.buf = clist;
 	pt.len = sizeof(clist);
 	pt.is_read = 1;
@@ -927,7 +927,7 @@ nsidentify(const struct cmd *f, int argc, char *argv[])
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(nsid);
-	pt.cmd.cdw10 = htole32(0x11);
+	pt.cmd.cdw10 = htole32(NVME_CNS_ALLOCATED_NS_DATA);
 	pt.buf = &nsdata;
 	pt.len = sizeof(nsdata);
 	pt.is_read = 1;

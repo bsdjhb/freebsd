@@ -46,7 +46,7 @@ nvme_ctrlr_cmd_identify_controller(struct nvme_controller *ctrlr, void *payload,
 	 * TODO: create an identify command data structure, which
 	 *  includes this CNS bit in cdw10.
 	 */
-	cmd->cdw10 = htole32(1);
+	cmd->cdw10 = htole32(NVME_CNS_CONTROLLER_DATA);
 
 	nvme_ctrlr_submit_admin_request(ctrlr, req);
 }
@@ -68,6 +68,7 @@ nvme_ctrlr_cmd_identify_namespace(struct nvme_controller *ctrlr, uint32_t nsid,
 	 * TODO: create an identify command data structure
 	 */
 	cmd->nsid = htole32(nsid);
+	cmd->cdw10 = htole32(NVME_CNS_NS_DATA);
 
 	nvme_ctrlr_submit_admin_request(ctrlr, req);
 }

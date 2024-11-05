@@ -102,7 +102,7 @@ read_controller_data(int fd, struct nvme_controller_data *cdata)
 
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
-	pt.cmd.cdw10 = htole32(1);
+	pt.cmd.cdw10 = htole32(NVME_CNS_CONTROLLER_DATA);
 	pt.buf = cdata;
 	pt.len = sizeof(*cdata);
 	pt.is_read = 1;
@@ -126,7 +126,7 @@ read_namespace_data(int fd, uint32_t nsid, struct nvme_namespace_data *nsdata)
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(nsid);
-	pt.cmd.cdw10 = htole32(0);
+	pt.cmd.cdw10 = htole32(NVME_CNS_NS_DATA);
 	pt.buf = nsdata;
 	pt.len = sizeof(*nsdata);
 	pt.is_read = 1;
@@ -150,7 +150,7 @@ read_active_namespaces(int fd, uint32_t nsid, struct nvme_ns_list *nslist)
 	memset(&pt, 0, sizeof(pt));
 	pt.cmd.opc = NVME_OPC_IDENTIFY;
 	pt.cmd.nsid = htole32(nsid);
-	pt.cmd.cdw10 = htole32(2);
+	pt.cmd.cdw10 = htole32(NVME_CNS_ACTIVE_NSID_LIST);
 	pt.buf = nslist;
 	pt.len = sizeof(*nslist);
 	pt.is_read = 1;

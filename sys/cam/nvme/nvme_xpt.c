@@ -281,7 +281,7 @@ nvme_probe_start(struct cam_periph *periph, union ccb *start_ccb)
 		    sizeof(softc->cd),		/* dxfer_len */
 		    30 * 1000); /* timeout 30s */
 		nvme_ns_cmd(nvmeio, NVME_OPC_IDENTIFY, 0,
-		    1, 0, 0, 0, 0, 0);
+		    NVME_CNS_CONTROLLER_DATA, 0, 0, 0, 0, 0);
 		break;
 	case NVME_PROBE_IDENTIFY_NS:
 		cam_fill_nvmeadmin(nvmeio,
@@ -292,7 +292,7 @@ nvme_probe_start(struct cam_periph *periph, union ccb *start_ccb)
 		    sizeof(softc->ns),		/* dxfer_len */
 		    30 * 1000); /* timeout 30s */
 		nvme_ns_cmd(nvmeio, NVME_OPC_IDENTIFY, lun,
-		    0, 0, 0, 0, 0, 0);
+		    NVME_CNS_NS_DATA, 0, 0, 0, 0, 0);
 		break;
 	default:
 		panic("nvme_probe_start: invalid action state 0x%x\n", softc->action);

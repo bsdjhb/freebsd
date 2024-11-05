@@ -154,7 +154,7 @@ handle_identify_command(const struct controller *c,
 
 	cns = le32toh(cmd->cdw10) & 0xFF;
 	switch (cns) {
-	case 1:
+	case NVME_CNS_CONTROLLER_DATA:
 		break;
 	default:
 		warnx("Unsupported CNS %#x for IDENTIFY", cns);

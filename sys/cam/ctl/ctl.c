@@ -10778,7 +10778,7 @@ ctl_nvme_identify(struct ctl_nvmeio *ctnio)
 	if (lun == NULL) {
 		cns = le32toh(ctnio->cmd.cdw10) & 0xff;
 		switch (cns) {
-		case 0:
+		case NVME_CNS_NS_DATA:
 			memset(ctnio->kern_data_ptr, 0, len);
 			ctl_datamove((union ctl_io *)ctnio);
 			break;

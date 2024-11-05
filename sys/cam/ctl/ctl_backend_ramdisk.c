@@ -658,9 +658,9 @@ ctl_backend_ramdisk_nvme_config_read(union ctl_io *io)
 
 		cns = le32toh(io->nvmeio.cmd.cdw10) & 0xff;
 		switch (cns) {
-		case 0:
+		case NVME_CNS_NS_DATA:
 			return (ramdisk_namespace_data(io));
-		case 3:
+		case NVME_CNS_NS_IDENT_DESCRIPTORS:
 			return (ramdisk_nvme_ids(io));
 		default:
 			ctl_nvme_set_invalid_field(&io->nvmeio);

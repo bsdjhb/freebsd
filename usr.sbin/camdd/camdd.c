@@ -1398,7 +1398,7 @@ camdd_probe_pass_nvme(struct cam_device *cam_dev, union ccb *ccb,
 	nc->opc = NVME_OPC_IDENTIFY;
 
 	nc->nsid = nsid;
-	nc->cdw10 = 0; /* Identify Namespace is CNS = 0 */
+	nc->cdw10 = NVME_CNS_NS_DATA;
 
 	cam_fill_nvmeadmin(&ccb->nvmeio,
 			/*retries*/ probe_retry_count,
