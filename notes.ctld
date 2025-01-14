@@ -1,0 +1,21 @@
+- support for NVMe targets
+  - auth-group
+    - "initiator-name" : need to support "host-nqn" as well?
+  - portal-group
+    - "protocol" keyword?
+    - "listen" accepts an optional protocol?
+    - offload is iSCSI only (ignored)
+    - redirect is iSCSI only (ignored)
+    - tag?
+    - default port needs to be different for nvme vs iscsi
+    - no, new "transport-group" instead
+  - target
+    - "protocol" keyword (default chosen based on name)
+      - no, "controller" keyword for target instead
+    - "initiator-name" : need to support "host-nqn" as well?
+    - "initiator-portal" : "host-address"
+    - "portal-group" : "transport-group"
+    - redirect is iSCSI only (error if nvme)
+
+- operations to turn into protocol methods
+  - validating target name
