@@ -6,17 +6,19 @@ CFLAGS+=-I${SRCTOP}/contrib/libucl/include
 PACKAGE=	iscsi
 PROG=		ctld
 SRCS=		ctld.c conf.c isns.c kernel.c
+SRCS+=		nvme.c nvme_discovery.c
 SRCS+=		parse.y token.l y.tab.h uclparse.c
 CFLAGS+=	-I${.CURDIR}
 CFLAGS+=	-I${SRCTOP}/sys
 CFLAGS+=	-I${SRCTOP}/sys/cam/ctl
 CFLAGS+=	-I${SRCTOP}/sys/dev/iscsi
 CFLAGS+=	-I${SRCTOP}/lib/libiscsiutil
+CFLAGS+=	-I${SRCTOP}/lib/libnvmf
 #CFLAGS+=	-DICL_KERNEL_PROXY
 NO_WCAST_ALIGN=
 MAN=		ctld.8 ctl.conf.5
 
-LIBADD=		bsdxml iscsiutil md sbuf util ucl m nv
+LIBADD=		bsdxml iscsiutil nvmf md sbuf util ucl m nv
 
 YFLAGS+=	-v
 CLEANFILES=	y.tab.c y.tab.h y.output

@@ -51,6 +51,11 @@ static bool uclparse_lun(const char *, const ucl_object_t *);
 static bool uclparse_lun_entries(const char *, const ucl_object_t *);
 static bool uclparse_auth_group(const char *, const ucl_object_t *);
 static bool uclparse_portal_group(const char *, const ucl_object_t *);
+static bool uclparse_transport_group(const char *, const ucl_object_t *);
+static bool uclparse_controller(const char *, const ucl_object_t *);
+static bool uclparse_controller_transport_group(const char *,
+    const ucl_object_t *);
+static bool uclparse_controller_namespace(const char *, const ucl_object_t *);
 static bool uclparse_target(const char *, const ucl_object_t *);
 static bool uclparse_target_portal_group(const char *, const ucl_object_t *);
 static bool uclparse_target_lun(const char *, const ucl_object_t *);
@@ -229,6 +234,49 @@ uclparse_target_portal_group(const char *t_name, const ucl_object_t *obj)
 }
 
 static bool
+uclparse_controller_transport_group(const char *t_name, const ucl_object_t *obj)
+{
+	const ucl_object_t *portal_group, *auth_group;
+	const char *ag_name;
+
+	/*
+	 * If the value is a single string, assume it is a
+	 * transport-group name.
+	 */
+	if (obj->type == UCL_STRING)
+		return (controller_add_transport_group(ucl_object_tostring(obj),
+		    NULL));
+
+	if (obj->type != UCL_OBJECT) {
+		log_warnx("transport-group section in controller \"%s\" must "
+		    "be an object or string", t_name);
+		return (false);
+	}
+
+	portal_group = ucl_object_find_key(obj, "name");
+	if (!portal_group || portal_group->type != UCL_STRING) {
+		log_warnx("transport-group section in controller \"%s\" is "
+		    "missing \"name\" string key", t_name);
+		return (false);
+	}
+
+	auth_group = ucl_object_find_key(obj, "auth-group-name");
+	if (auth_group != NULL) {
+		if (auth_group->type != UCL_STRING) {
+			log_warnx("\"auth-group-name\" property in "
+			    "transport-group section for controller \"%s\" is "
+			    "not a string", t_name);
+			return (false);
+		}
+		ag_name = ucl_object_tostring(auth_group);
+	} else
+		ag_name = NULL;
+
+	return (controller_add_transport_group(
+	    ucl_object_tostring(portal_group), ag_name));
+}
+
+static bool
 uclparse_target_lun(const char *t_name, const ucl_object_t *obj)
 {
 	const ucl_object_t *num;
@@ -285,6 +333,67 @@ uclparse_target_lun(const char *t_name, const ucl_object_t *obj)
 	}
 
 	return (target_add_lun(id, ucl_object_tostring(name)));
+}
+
+static bool
+uclparse_controller_namespace(const char *t_name, const ucl_object_t *obj)
+{
+	const ucl_object_t *num;
+	const ucl_object_t *name;
+	const char *key;
+	char *end, *lun_name;
+	u_int id;
+	bool ok;
+
+	key = ucl_object_key(obj);
+	if (key != NULL) {
+		id = strtoul(key, &end, 0);
+		if (*end != '\0') {
+			log_warnx("namespace key \"%s\" in controller \"%s\""
+			    " is invalid", key, t_name);
+			return (false);
+		}
+
+		if (obj->type == UCL_STRING)
+			return (controller_add_namespace(id,
+			    ucl_object_tostring(obj)));
+	}
+
+	if (obj->type != UCL_OBJECT) {
+		log_warnx("namespace section entries in controller \"%s\""
+		    " must be objects", t_name);
+		return (false);
+	}
+
+	if (key == NULL) {
+		num = ucl_object_find_key(obj, "id");
+		if (num == NULL || num->type != UCL_INT) {
+			log_warnx("namespace section in controller \"%s\" is "
+			    "missing \"id\" integer property", t_name);
+			return (false);
+		}
+		id = ucl_object_toint(num);
+	}
+
+	name = ucl_object_find_key(obj, "name");
+	if (name == NULL) {
+		if (!controller_start_namespace(id))
+			return (false);
+
+		asprintf(&lun_name, "namespace %u for controller \"%s\"", id,
+		    t_name);
+		ok = uclparse_lun_entries(lun_name, obj);
+		free(lun_name);
+		return (ok);
+	}
+
+	if (name->type != UCL_STRING) {
+		log_warnx("\"name\" property for namespace %u for "
+		    "controller \"%s\" is not a string", id, t_name);
+		return (false);
+	}
+
+	return (controller_add_namespace(id, ucl_object_tostring(name)));
 }
 
 static bool
@@ -400,6 +509,21 @@ uclparse_toplevel(const ucl_object_t *top)
 			}
 		}
 
+		if (strcmp(key, "transport-group") == 0) {
+			if (obj->type == UCL_OBJECT) {
+				iter = NULL;
+				while ((child = ucl_iterate_object(obj, &iter,
+				    true))) {
+					if (!uclparse_transport_group(
+					    ucl_object_key(child), child))
+						return (false);
+				}
+			} else {
+				log_warnx("\"transport-group\" section is not an object");
+				return (false);
+			}
+		}
+
 		if (strcmp(key, "lun") == 0) {
 			if (obj->type == UCL_OBJECT) {
 				iter = NULL;
@@ -419,6 +543,21 @@ uclparse_toplevel(const ucl_object_t *top)
 	it = NULL;
 	while ((obj = ucl_iterate_object(top, &it, true))) {
 		const char *key = ucl_object_key(obj);
+
+		if (strcmp(key, "controller") == 0) {
+			if (obj->type == UCL_OBJECT) {
+				iter = NULL;
+				while ((child = ucl_iterate_object(obj, &iter,
+				    true))) {
+					if (!uclparse_controller(
+					    ucl_object_key(child), child))
+						return (false);
+				}
+			} else {
+				log_warnx("\"controller\" section is not an object");
+				return (false);
+			}
+		}
 
 		if (strcmp(key, "target") == 0) {
 			if (obj->type == UCL_OBJECT) {
@@ -492,6 +631,54 @@ uclparse_auth_group(const char *name, const ucl_object_t *top)
 			} else {
 				log_warnx("\"chap-mutual\" property of "
 				    "auth-group \"%s\" is not an array or object",
+				    name);
+				goto fail;
+			}
+		}
+
+		if (strcmp(key, "host-address") == 0) {
+			if (obj->type == UCL_STRING) {
+				const char *value = ucl_object_tostring(obj);
+
+				if (!auth_group_add_host_address(value))
+					goto fail;
+			} else if (obj->type == UCL_ARRAY) {
+				it2 = NULL;
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					const char *value =
+					    ucl_object_tostring(tmp);
+
+					if (!auth_group_add_host_address(value))
+						goto fail;
+				}
+			} else {
+				log_warnx("\"host-address\" property of "
+				    "auth-group \"%s\" is not an array or string",
+				    name);
+				goto fail;
+			}
+		}
+
+		if (strcmp(key, "host-nqn") == 0) {
+			if (obj->type == UCL_STRING) {
+				const char *value = ucl_object_tostring(obj);
+
+				if (!auth_group_add_host_nqn(value))
+					goto fail;
+			} else if (obj->type == UCL_ARRAY) {
+				it2 = NULL;
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					const char *value =
+					    ucl_object_tostring(tmp);
+
+					if (!auth_group_add_host_nqn(value))
+						goto fail;
+				}
+			} else {
+				log_warnx("\"host-nqn\" property of "
+				    "auth-group \"%s\" is not an array or string",
 				    name);
 				goto fail;
 			}
@@ -787,6 +974,247 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 	return (true);
 fail:
 	portal_group_finish();
+	return (false);
+}
+
+static bool
+uclparse_transport_listen_obj(const char *pg_name, const ucl_object_t *top)
+{
+	ucl_object_iter_t it = NULL, it2;
+	const ucl_object_t *obj = NULL, *tmp;
+	const char *key;
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+		if (key == NULL) {
+			log_warnx("missing protocol for \"listen\" "
+			    "property of transport-group \"%s\"", pg_name);
+			return (false);
+		}
+
+		if (strcmp(key, "tcp") == 0) {
+			if (obj->type == UCL_STRING) {
+				if (!transport_group_add_listen_tcp(
+				    ucl_object_tostring(obj)))
+					return (false);
+			} else if (obj->type == UCL_ARRAY) {
+				it2 = NULL;
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!transport_group_add_listen_tcp(
+					    ucl_object_tostring(obj)))
+						return (false);
+				}
+			}
+		} else if (strcmp(key, "discovery-tcp") == 0) {
+			if (obj->type == UCL_STRING) {
+				if (!transport_group_add_listen_discovery_tcp(
+				    ucl_object_tostring(obj)))
+					return (false);
+			} else if (obj->type == UCL_ARRAY) {
+				it2 = NULL;
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!transport_group_add_listen_discovery_tcp(
+					    ucl_object_tostring(obj)))
+						return (false);
+				}
+			}
+		} else {
+			log_warnx("invalid listen protocol \"%s\" for "
+			    "transport-group \"%s\"", key, pg_name);
+			return (false);
+		}
+	}
+	return (true);
+}
+
+static bool
+uclparse_transport_group(const char *name, const ucl_object_t *top)
+{
+	ucl_object_iter_t it = NULL, it2 = NULL;
+	const ucl_object_t *obj = NULL, *tmp = NULL;
+	const char *key;
+
+	if (!transport_group_start(name))
+		return (false);
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+
+		if (strcmp(key, "discovery-auth-group") == 0) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"discovery-auth-group\" property "
+				    "of transport-group \"%s\" is not a string",
+				    name);
+				goto fail;
+			}
+
+			if (!portal_group_set_discovery_auth_group(
+			    ucl_object_tostring(obj)))
+				goto fail;
+		}
+
+		if (strcmp(key, "discovery-filter") == 0) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"discovery-filter\" property of "
+				    "transport-group \"%s\" is not a string",
+				    name);
+				goto fail;
+			}
+
+			if (!transport_group_set_filter(
+			    ucl_object_tostring(obj)))
+				goto fail;
+		}
+
+		if (strcmp(key, "listen") == 0) {
+			if (obj->type != UCL_OBJECT) {
+				log_warnx("\"listen\" property of "
+				    "transport-group \"%s\" is not an object",
+				    name);
+				goto fail;
+			}
+			if (!uclparse_transport_listen_obj(name, obj))
+				goto fail;
+		}
+
+		if (strcmp(key, "options") == 0) {
+			if (obj->type != UCL_OBJECT) {
+				log_warnx("\"options\" property of transport group "
+				    "\"%s\" is not an object", name);
+				goto fail;
+			}
+
+			while ((tmp = ucl_iterate_object(obj, &it2,
+			    true))) {
+				if (!portal_group_add_option(
+				    ucl_object_key(tmp),
+				    ucl_object_tostring_forced(tmp)))
+					goto fail;
+			}
+		}
+
+		if (strcmp(key, "dscp") == 0) {
+			if (!uclparse_dscp("transport", name, obj))
+				goto fail;
+		}
+
+		if (strcmp(key, "pcp") == 0) {
+			if (!uclparse_pcp("transport", name, obj))
+				goto fail;
+		}
+	}
+
+	portal_group_finish();
+	return (true);
+fail:
+	portal_group_finish();
+	return (false);
+}
+
+static bool
+uclparse_controller(const char *name, const ucl_object_t *top)
+{
+	ucl_object_iter_t it = NULL, it2 = NULL;
+	const ucl_object_t *obj = NULL, *tmp = NULL;
+	const char *key;
+
+	if (!controller_start(name))
+		return (false);
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+
+		if (strcmp(key, "auth-group") == 0) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"auth-group\" property of "
+				    "controller \"%s\" is not a string", name);
+				goto fail;
+			}
+
+			if (!target_set_auth_group(ucl_object_tostring(obj)))
+				goto fail;
+		}
+
+		if (strcmp(key, "auth-type") == 0) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"auth-type\" property of "
+				    "controller \"%s\" is not a string", name);
+				goto fail;
+			}
+
+			if (!target_set_auth_type(ucl_object_tostring(obj)))
+				goto fail;
+		}
+
+		if (strcmp(key, "host-address") == 0) {
+			if (obj->type == UCL_STRING) {
+				if (!controller_add_host_address(
+				    ucl_object_tostring(obj)))
+					goto fail;
+			} else if (obj->type == UCL_ARRAY) {
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!controller_add_host_address(
+					    ucl_object_tostring(tmp)))
+						goto fail;
+				}
+			} else {
+				log_warnx("\"host-address\" property of "
+				    "controller \"%s\" is not an array or "
+				    "string", name);
+				goto fail;
+			}
+		}
+
+		if (strcmp(key, "host-nqn") == 0) {
+			if (obj->type == UCL_STRING) {
+				if (!controller_add_host_nqn(
+				    ucl_object_tostring(obj)))
+					goto fail;
+			} else if (obj->type == UCL_ARRAY) {
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!controller_add_host_nqn(
+					    ucl_object_tostring(tmp)))
+						goto fail;
+				}
+			} else {
+				log_warnx("\"host-nqn\" property of "
+				    "controller \"%s\" is not an array or "
+				    "string", name);
+				goto fail;
+			}
+		}
+
+		if (strcmp(key, "transport-group") == 0) {
+			if (obj->type == UCL_ARRAY) {
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!uclparse_controller_transport_group(name,
+					    tmp))
+						goto fail;
+				}
+			} else {
+				if (!uclparse_controller_transport_group(name,
+				    obj))
+					goto fail;
+			}
+		}
+
+		if (strcmp(key, "namespace") == 0) {
+			while ((tmp = ucl_iterate_object(obj, &it2, true))) {
+				if (!uclparse_controller_namespace(name, tmp))
+					goto fail;
+			}
+		}
+	}
+
+	target_finish();
+	return (true);
+fail:
+	target_finish();
 	return (false);
 }
 

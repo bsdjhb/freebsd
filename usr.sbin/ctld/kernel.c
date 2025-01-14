@@ -117,10 +117,13 @@ struct cctl_port {
 	char *port_name;
 	int pp;
 	int vp;
+	uint16_t portid;
 	int cfiscsi_state;
 	char *cfiscsi_target;
+	char *nqn;
 	uint16_t cfiscsi_portal_group_tag;
 	char *ctld_portal_group_name;
+	char *ctld_transport_group_name;
 	nvlist_t *attr_list;
 	STAILQ_ENTRY(cctl_port) links;
 };
@@ -358,6 +361,16 @@ cctl_end_pelement(void *user_data, const char *name)
 	} else if (strcmp(name, "ctld_portal_group_name") == 0) {
 		cur_port->ctld_portal_group_name = str;
 		str = NULL;
+	} else if (strcmp(name, "ctld_transport_group_name") == 0) {
+		cur_port->ctld_transport_group_name = str;
+		str = NULL;
+	} else if (strcmp(name, "nqn") == 0) {
+		cur_port->nqn = str;
+		str = NULL;
+	} else if (strcmp(name, "portid") == 0) {
+		if (str == NULL)
+			log_errx(1, "%s: %s missing its argument", __func__, name);
+		cur_port->portid = strtoul(str, NULL, 0);
 	} else if (strcmp(name, "targ_port") == 0) {
 		devlist->cur_port = NULL;
 	} else if (strcmp(name, "ctlportlist") == 0) {
@@ -516,6 +529,8 @@ retry_port:
 			continue;
 		if (strcmp(port->port_frontend, "iscsi") == 0)
 			protocol = TARGET_PROTOCOL_ISCSI;
+		else if (strcmp(port->port_frontend, "nvmf") == 0)
+			protocol = TARGET_PROTOCOL_NVME;
 		else
 			/* XXX: Treat all unknown ports as iSCSI? */
 			protocol = TARGET_PROTOCOL_ISCSI;
@@ -539,6 +554,11 @@ retry_port:
 			target_name = port->cfiscsi_target;
 			pg_name = port->ctld_portal_group_name;
 			pg_tag = port->cfiscsi_portal_group_tag;
+			break;
+		case TARGET_PROTOCOL_NVME:
+			target_name = port->nqn;
+			pg_name = port->ctld_transport_group_name;
+			pg_tag = port->portid;
 			break;
 		default:
 			__assert_unreachable();
@@ -596,7 +616,9 @@ retry_port:
 		free(port->port_frontend);
 		free(port->port_name);
 		free(port->cfiscsi_target);
+		free(port->nqn);
 		free(port->ctld_portal_group_name);
+		free(port->ctld_transport_group_name);
 		nvlist_destroy(port->attr_list);
 		free(port);
 	}
@@ -1173,7 +1195,7 @@ void
 kernel_capsicate(void)
 {
 	cap_rights_t rights;
-	const unsigned long cmds[] = { CTL_ISCSI };
+	const unsigned long cmds[] = { CTL_ISCSI, CTL_NVMF };
 
 	cap_rights_init(&rights, CAP_IOCTL);
 	if (caph_rights_limit(ctl_fd, &rights) < 0)

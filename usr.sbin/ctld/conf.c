@@ -167,6 +167,18 @@ auth_group_add_chap_mutual(const char *user, const char *secret,
 }
 
 bool
+auth_group_add_host_address(const char *portal)
+{
+	return (auth_portal_new(auth_group, TARGET_PROTOCOL_NVME, portal));
+}
+
+bool
+auth_group_add_host_nqn(const char *name)
+{
+	return (auth_name_new(auth_group, TARGET_PROTOCOL_NVME, name));
+}
+
+bool
 auth_group_add_initiator_name(const char *name)
 {
 	return (auth_name_new(auth_group, TARGET_PROTOCOL_ISCSI, name));
@@ -374,6 +386,93 @@ void
 portal_group_set_tag(uint16_t tag)
 {
 	portal_group->pg_tag = tag;
+}
+
+bool
+transport_group_start(const char *name)
+{
+	/*
+	 * Make it possible to redefine the default transport-group,
+	 * but only once.
+	 */
+	if (strcmp(name, "default") == 0) {
+		if (conf->conf_default_tg_defined) {
+			log_warnx("duplicated transport-group \"default\"");
+			return (false);
+		}
+
+		conf->conf_default_tg_defined = true;
+		portal_group = portal_group_find(conf, TARGET_PROTOCOL_NVME,
+		    "default");
+		return (true);
+	}
+
+	portal_group = portal_group_new(conf, TARGET_PROTOCOL_NVME, name);
+	return (portal_group != NULL);
+}
+
+bool
+transport_group_add_listen_discovery_tcp(const char *listen)
+{
+	return (portal_group_add_portal(portal_group, listen,
+	    PORTAL_PROTOCOL_NVME_DISCOVERY_TCP));
+}
+
+bool
+transport_group_add_listen_tcp(const char *listen)
+{
+	return (portal_group_add_portal(portal_group, listen,
+	    PORTAL_PROTOCOL_NVME_TCP));
+}
+
+bool
+transport_group_set_discovery_auth_group(const char *name)
+{
+	if (portal_group->pg_discovery_auth_group != NULL) {
+		log_warnx("discovery-auth-group for transport-group "
+		    "\"%s\" specified more than once",
+		    portal_group->pg_name);
+		return (false);
+	}
+	portal_group->pg_discovery_auth_group = auth_group_find(conf, name);
+	if (portal_group->pg_discovery_auth_group == NULL) {
+		log_warnx("unknown discovery-auth-group \"%s\" "
+		    "for transport-group \"%s\"", name, portal_group->pg_name);
+		return (false);
+	}
+	return (true);
+}
+
+bool
+transport_group_set_filter(const char *str)
+{
+	int filter;
+
+	if (strcmp(str, "none") == 0) {
+		filter = PG_FILTER_NONE;
+	} else if (strcmp(str, "address") == 0) {
+		filter = PG_FILTER_PORTAL;
+	} else if (strcmp(str, "address-name") == 0) {
+		filter = PG_FILTER_PORTAL_NAME;
+	} else {
+		log_warnx("invalid discovery-filter \"%s\" for transport-group "
+		    "\"%s\"; valid values are \"none\", \"address\", "
+		    "and \"address-name\"",
+		    str, portal_group->pg_name);
+		return (false);
+	}
+
+	if (portal_group->pg_discovery_filter != PG_FILTER_UNKNOWN &&
+	    portal_group->pg_discovery_filter != filter) {
+		log_warnx("cannot set discovery-filter to \"%s\" for "
+		    "transport-group \"%s\"; already has a different "
+		    "value", str, portal_group->pg_name);
+		return (false);
+	}
+
+	portal_group->pg_discovery_filter = filter;
+
+	return (true);
 }
 
 bool
@@ -770,6 +869,158 @@ target_start_lun(u_int id)
 	free(name);
 
 	target->t_luns[id] = new_lun;
+
+	lun = new_lun;
+	return (true);
+}
+
+bool
+controller_start(const char *name)
+{
+	target = target_new(conf, name, TARGET_PROTOCOL_NVME);
+	return (target != NULL);
+}
+
+bool
+controller_add_host_address(const char *addr)
+{
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "host-address for controller \"%s\"",
+			    target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_portal_new(target->t_auth_group, TARGET_PROTOCOL_NVME,
+	    addr));
+}
+
+bool
+controller_add_host_nqn(const char *name)
+{
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "host-nqn for controller \"%s\"", target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_name_new(target->t_auth_group, TARGET_PROTOCOL_NVME,
+	    name));
+}
+
+bool
+controller_add_namespace(u_int id, const char *name)
+{
+	struct lun *t_lun;
+
+	if (id == 0) {
+		log_warnx("namespace ID cannot be 0 for controller \"%s\"",
+		    target->t_name);
+		return (false);
+	}
+	if (id - 1 >= MAX_LUNS) {
+		log_warnx("namespace ID %u too big for controller \"%s\"", id,
+		    target->t_name);
+		return (false);
+	}
+
+	if (target->t_luns[id - 1] != NULL) {
+		log_warnx("duplicate namespace ID %u for controller \"%s\"", id,
+		    target->t_name);
+		return (false);
+	}
+
+	t_lun = lun_find(conf, name);
+	if (t_lun == NULL) {
+		log_warnx("unknown LUN named %s used for controller \"%s\"",
+		    name, target->t_name);
+		return (false);
+	}
+
+	target->t_luns[id - 1] = t_lun;
+	return (true);
+}
+
+bool
+controller_add_transport_group(const char *pg_name, const char *ag_name)
+{
+	struct portal_group *pg;
+	struct auth_group *ag;
+	struct port *p;
+
+	pg = portal_group_find(conf, TARGET_PROTOCOL_NVME, pg_name);
+	if (pg == NULL) {
+		log_warnx("unknown transport-group \"%s\" for controller \"%s\"",
+		    pg_name, target->t_name);
+		return (false);
+	}
+
+	if (ag_name != NULL) {
+		ag = auth_group_find(conf, ag_name);
+		if (ag == NULL) {
+			log_warnx("unknown auth-group \"%s\" for controller \"%s\"",
+			    ag_name, target->t_name);
+			return (false);
+		}
+	} else
+		ag = NULL;
+
+	p = port_new(conf, target, pg);
+	if (p == NULL) {
+		log_warnx("can't link portal-group \"%s\" to controller \"%s\"",
+		    pg_name, target->t_name);
+		return (false);
+	}
+	p->p_auth_group = ag;
+	return (true);
+}
+
+bool
+controller_start_namespace(u_int id)
+{
+	struct lun *new_lun;
+	char *name;
+
+	if (id == 0) {
+		log_warnx("namespace ID cannot be 0 for controller \"%s\"",
+		    target->t_name);
+		return (false);
+	}
+	if (id - 1 >= MAX_LUNS) {
+		log_warnx("namespace ID %u too big for controller \"%s\"", id,
+		    target->t_name);
+		return (false);
+	}
+
+	if (target->t_luns[id - 1] != NULL) {
+		log_warnx("duplicate namespace ID %u for controller \"%s\"", id,
+		    target->t_name);
+		return (false);
+	}
+
+	if (asprintf(&name, "%s,nsid,%u", target->t_name, id) <= 0)
+		log_err(1, "asprintf");
+
+	new_lun = lun_new(conf, name);
+	if (new_lun == NULL)
+		return (false);
+
+	lun_set_scsiname(new_lun, name);
+	free(name);
+
+	target->t_luns[id - 1] = new_lun;
 
 	lun = new_lun;
 	return (true);

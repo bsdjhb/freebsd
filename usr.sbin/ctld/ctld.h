@@ -49,6 +49,8 @@
 #define	MAX_LUNS			1024
 
 struct ctl_req;
+struct nvmf_association;
+struct nvmf_association_params;
 struct port;
 struct target_protocol_ops;
 
@@ -94,10 +96,14 @@ struct auth_group {
 	TAILQ_HEAD(, auth)		ag_auths;
 	struct auth_name_head		ag_initiator_names;
 	struct auth_portal_head		ag_initiator_portals;
+	struct auth_name_head		ag_host_names;
+	struct auth_portal_head		ag_host_addresses;
 };
 
 #define	PORTAL_PROTOCOL_ISCSI			0
 #define	PORTAL_PROTOCOL_ISER			1
+#define	PORTAL_PROTOCOL_NVME_TCP		2
+#define	PORTAL_PROTOCOL_NVME_DISCOVERY_TCP	3
 
 struct portal {
 	TAILQ_ENTRY(portal)		p_next;
@@ -111,9 +117,17 @@ struct portal {
 
 	TAILQ_HEAD(, target)		p_targets;
 	int				p_socket;
+
+	union {
+		struct {
+			struct nvmf_association_params	*aparams;
+			struct nvmf_association		*association;
+		} p_nvme;
+	};
 };
 
 #define	TARGET_PROTOCOL_ISCSI		0
+#define	TARGET_PROTOCOL_NVME		1
 
 struct target_protocol_ops {
 	/* Initialize protocol-specific state for a new portal group. */
@@ -249,6 +263,7 @@ struct conf {
 	int				conf_debug;
 	int				conf_timeout;
 	int				conf_maxproc;
+	uint32_t			conf_genctr;
 
 #ifdef ICL_KERNEL_PROXY
 	int				conf_portal_id;
@@ -256,6 +271,7 @@ struct conf {
 	struct pidfh			*conf_pidfh;
 
 	bool				conf_default_pg_defined;
+	bool				conf_default_tg_defined;
 	bool				conf_default_ag_defined;
 	bool				conf_kernel_port_on;
 };
@@ -291,6 +307,7 @@ struct ctld_connection {
 extern bool proxy_mode;
 extern int ctl_fd;
 extern struct target_protocol_ops target_iscsi;
+extern struct target_protocol_ops target_nvme;
 
 bool			uclparse_conf(const char *path);
 
@@ -408,5 +425,8 @@ void			login(struct ctld_connection *conn);
 void			discovery(struct ctld_connection *conn);
 
 void			set_timeout(int timeout, int fatal);
+
+void			nvme_handle_discovery_socket(struct portal *p, int s,
+			    const struct sockaddr *client_sa);
 
 #endif /* !CTLD_H */
