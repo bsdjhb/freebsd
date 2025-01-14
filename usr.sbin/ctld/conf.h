@@ -41,6 +41,8 @@ void	auth_group_finish(void);
 bool	auth_group_add_chap(const char *user, const char *secret);
 bool	auth_group_add_chap_mutual(const char *user, const char *secret,
 	    const char *user2, const char *secret2);
+bool	auth_group_add_host_address(const char *portal);
+bool	auth_group_add_host_nqn(const char *name);
 bool	auth_group_add_initiator_name(const char *name);
 bool	auth_group_add_initiator_portal(const char *portal);
 bool	auth_group_set_type(const char *type);
@@ -67,6 +69,12 @@ bool	portal_group_set_pcp(u_int pcp);
 bool	portal_group_set_redirection(const char *addr);
 void	portal_group_set_tag(uint16_t tag);
 
+bool	transport_group_start(const char *name);
+bool	transport_group_add_listen_discovery_tcp(const char *listen);
+bool	transport_group_add_listen_tcp(const char *listen);
+bool	transport_group_set_discovery_auth_group(const char *name);
+bool	transport_group_set_filter(const char *filter);
+
 bool	target_start(const char *name);
 void	target_finish(void);
 bool	target_add_chap(const char *user, const char *secret);
@@ -82,6 +90,14 @@ bool	target_set_auth_type(const char *type);
 bool	target_set_physical_port(const char *pport);
 bool	target_set_redirection(const char *addr);
 bool	target_start_lun(u_int id);
+
+bool	controller_start(const char *name);
+bool	controller_add_host_address(const char *addr);
+bool	controller_add_host_nqn(const char *name);
+bool	controller_add_namespace(u_int id, const char *name);
+bool	controller_add_transport_group(const char *pg_name,
+	    const char *ag_name);
+bool	controller_start_namespace(u_int id);
 
 bool	lun_start(const char *name);
 void	lun_finish(void);

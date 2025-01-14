@@ -76,6 +76,7 @@ usage(void)
 struct conf *
 conf_new(void)
 {
+	static uint32_t genctr;
 	struct conf *conf;
 
 	conf = calloc(1, sizeof(*conf));
@@ -93,6 +94,7 @@ conf_new(void)
 	conf->conf_debug = 0;
 	conf->conf_timeout = 60;
 	conf->conf_maxproc = 30;
+	conf->conf_genctr = genctr++;
 
 	return (conf);
 }
@@ -287,6 +289,8 @@ auth_name_head(struct auth_group *ag, int protocol)
 	switch (protocol) {
 	case TARGET_PROTOCOL_ISCSI:
 		return (&ag->ag_initiator_names);
+	case TARGET_PROTOCOL_NVME:
+		return (&ag->ag_host_names);
 	default:
 		__assert_unreachable();
 	}
@@ -298,6 +302,8 @@ auth_name_const_head(const struct auth_group *ag, int protocol)
 	switch (protocol) {
 	case TARGET_PROTOCOL_ISCSI:
 		return (&ag->ag_initiator_names);
+	case TARGET_PROTOCOL_NVME:
+		return (&ag->ag_host_names);
 	default:
 		__assert_unreachable();
 	}
@@ -373,6 +379,8 @@ auth_portal_head(struct auth_group *ag, int protocol)
 	switch (protocol) {
 	case TARGET_PROTOCOL_ISCSI:
 		return (&ag->ag_initiator_portals);
+	case TARGET_PROTOCOL_NVME:
+		return (&ag->ag_host_addresses);
 	default:
 		__assert_unreachable();
 	}
@@ -384,6 +392,8 @@ auth_portal_const_head(const struct auth_group *ag, int protocol)
 	switch (protocol) {
 	case TARGET_PROTOCOL_ISCSI:
 		return (&ag->ag_initiator_portals);
+	case TARGET_PROTOCOL_NVME:
+		return (&ag->ag_host_addresses);
 	default:
 		__assert_unreachable();
 	}
@@ -549,6 +559,8 @@ auth_group_new(struct conf *conf, const char *name)
 	TAILQ_INIT(&ag->ag_auths);
 	TAILQ_INIT(&ag->ag_initiator_names);
 	TAILQ_INIT(&ag->ag_initiator_portals);
+	TAILQ_INIT(&ag->ag_host_names);
+	TAILQ_INIT(&ag->ag_host_addresses);
 	ag->ag_conf = conf;
 	TAILQ_INSERT_TAIL(&conf->conf_auth_groups, ag, ag_next);
 
@@ -570,6 +582,12 @@ auth_group_delete(struct auth_group *ag)
 	    auth_name_tmp)
 		auth_name_delete(auth_name);
 	TAILQ_FOREACH_SAFE(auth_portal, &ag->ag_initiator_portals, ap_next,
+	    auth_portal_tmp)
+		auth_portal_delete(auth_portal);
+	TAILQ_FOREACH_SAFE(auth_name, &ag->ag_host_names, an_next,
+	    auth_name_tmp)
+		auth_name_delete(auth_name);
+	TAILQ_FOREACH_SAFE(auth_portal, &ag->ag_host_addresses, ap_next,
 	    auth_portal_tmp)
 		auth_portal_delete(auth_portal);
 	free(ag->ag_name);
@@ -623,6 +641,8 @@ target_ops(int protocol)
 	case TARGET_PROTOCOL_ISCSI:
 		return (&target_iscsi);
 #endif
+	case TARGET_PROTOCOL_NVME:
+		return (&target_nvme);
 	default:
 		return (NULL);
 	}
@@ -634,6 +654,8 @@ portal_group_keyword(int protocol)
 	switch (protocol) {
 	case TARGET_PROTOCOL_ISCSI:
 		return "portal-group";
+	case TARGET_PROTOCOL_NVME:
+		return "transport-group";
 	default:
 		__assert_unreachable();
 	}
@@ -774,6 +796,12 @@ portal_group_add_portal(struct portal_group *pg, const char *value,
 	case PORTAL_PROTOCOL_ISER:
 	case PORTAL_PROTOCOL_ISCSI:
 		def_port = "3260";
+		break;
+	case PORTAL_PROTOCOL_NVME_TCP:
+		def_port = "4420";
+		break;
+	case PORTAL_PROTOCOL_NVME_DISCOVERY_TCP:
+		def_port = "8009";
 		break;
 	default:
 		__builtin_unreachable();
@@ -1447,6 +1475,12 @@ conf_print(struct conf *conf)
 			    auth_name->an_name);
 		TAILQ_FOREACH(auth_portal, &ag->ag_initiator_portals, ap_next)
 			fprintf(stderr, "\t initiator-portal %s\n",
+			    auth_portal->ap_portal);
+		TAILQ_FOREACH(auth_name, &ag->ag_host_names, an_next)
+			fprintf(stderr, "\t host-nqn %s\n",
+			    auth_name->an_name);
+		TAILQ_FOREACH(auth_portal, &ag->ag_host_addresses, ap_next)
+			fprintf(stderr, "\t host-address %s\n",
 			    auth_portal->ap_portal);
 		fprintf(stderr, "}\n");
 	}
@@ -2412,6 +2446,9 @@ conf_new_from_file(const char *path, bool ucl)
 	pg = portal_group_new(conf, TARGET_PROTOCOL_ISCSI, "default");
 	assert(pg != NULL);
 
+	pg = portal_group_new(conf, TARGET_PROTOCOL_NVME, "default");
+	assert(pg != NULL);
+
 	conf_start(conf);
 	if (ucl)
 		valid = uclparse_conf(path);
@@ -2441,6 +2478,20 @@ conf_new_from_file(const char *path, bool ucl)
 		assert(pg != NULL);
 		portal_group_add_portal(pg, "0.0.0.0", PORTAL_PROTOCOL_ISCSI);
 		portal_group_add_portal(pg, "[::]", PORTAL_PROTOCOL_ISCSI);
+	}
+
+	if (conf->conf_default_tg_defined == false) {
+		log_debugx("transport-group \"default\" not defined; "
+		    "going with defaults");
+		pg = portal_group_find(conf, TARGET_PROTOCOL_NVME, "default");
+		assert(pg != NULL);
+		portal_group_add_portal(pg, "0.0.0.0",
+		    PORTAL_PROTOCOL_NVME_DISCOVERY_TCP);
+		portal_group_add_portal(pg, "[::]",
+		    PORTAL_PROTOCOL_NVME_DISCOVERY_TCP);
+		portal_group_add_portal(pg, "0.0.0.0",
+		    PORTAL_PROTOCOL_NVME_TCP);
+		portal_group_add_portal(pg, "[::]", PORTAL_PROTOCOL_NVME_TCP);
 	}
 
 	conf->conf_kernel_port_on = true;
