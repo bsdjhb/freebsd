@@ -51,6 +51,10 @@ static bool uclparse_chap_mutual(struct auth_group *, const ucl_object_t *);
 static bool uclparse_lun(const char *, const ucl_object_t *);
 static bool uclparse_auth_group(const char *, const ucl_object_t *);
 static bool uclparse_portal_group(const char *, const ucl_object_t *);
+static bool uclparse_transport_group(const char *, const ucl_object_t *);
+static bool uclparse_controller(const char *, const ucl_object_t *);
+static bool uclparse_controller_transport_group(struct target *,
+    const ucl_object_t *);
 static bool uclparse_target(const char *, const ucl_object_t *);
 static bool uclparse_target_portal_group(struct target *, const ucl_object_t *);
 static bool uclparse_target_lun(struct target *, const ucl_object_t *);
@@ -156,7 +160,8 @@ uclparse_target_portal_group(struct target *target, const ucl_object_t *obj)
 	}
 
 
-	tpg = portal_group_find(conf, ucl_object_tostring(portal_group));
+	tpg = portal_group_find(conf, TARGET_PROTOCOL_ISCSI,
+	    ucl_object_tostring(portal_group));
 	if (tpg == NULL) {
 		log_warnx("unknown portal-group \"%s\" for target "
 		    "\"%s\"", ucl_object_tostring(portal_group), target->t_name);
@@ -176,6 +181,58 @@ uclparse_target_portal_group(struct target *target, const ucl_object_t *obj)
 	tp = port_new(conf, target, tpg);
 	if (tp == NULL) {
 		log_warnx("can't link portal-group \"%s\" to target "
+		    "\"%s\"", ucl_object_tostring(portal_group), target->t_name);
+		return (false);
+	}
+	tp->p_auth_group = tag;
+
+	return (true);
+}
+
+static bool
+uclparse_controller_transport_group(struct target *target,
+    const ucl_object_t *obj)
+{
+	struct portal_group *tpg;
+	struct auth_group *tag = NULL;
+	struct port *tp;
+	const ucl_object_t *portal_group, *auth_group;
+
+	portal_group = ucl_object_find_key(obj, "name");
+	if (!portal_group || portal_group->type != UCL_STRING) {
+		log_warnx("transport-group section in controller \"%s\" is "
+		    "missing \"name\" string key", target->t_name);
+		return (false);
+	}
+
+	auth_group = ucl_object_find_key(obj, "auth-group-name");
+	if (auth_group && auth_group->type != UCL_STRING) {
+		log_warnx("transport-group section in controller \"%s\" is "
+		    "missing \"auth-group-name\" string key", target->t_name);
+		return (false);
+	}
+
+	tpg = portal_group_find(conf, TARGET_PROTOCOL_NVME,
+	    ucl_object_tostring(portal_group));
+	if (tpg == NULL) {
+		log_warnx("unknown transport-group \"%s\" for controller "
+		    "\"%s\"", ucl_object_tostring(portal_group), target->t_name);
+		return (false);
+	}
+
+	if (auth_group) {
+		tag = auth_group_find(conf, ucl_object_tostring(auth_group));
+		if (tag == NULL) {
+			log_warnx("unknown auth-group \"%s\" for controller "
+			    "\"%s\"", ucl_object_tostring(auth_group),
+			    target->t_name);
+			return (false);
+		}
+	}
+
+	tp = port_new(conf, target, tpg);
+	if (tp == NULL) {
+		log_warnx("can't link transport-group \"%s\" to controller "
 		    "\"%s\"", ucl_object_tostring(portal_group), target->t_name);
 		return (false);
 	}
@@ -353,6 +410,18 @@ uclparse_toplevel(const ucl_object_t *top)
 			}
 		}
 
+		if (!strcmp(key, "transport-group")) {
+			if (obj->type == UCL_OBJECT) {
+				iter = NULL;
+				while ((child = ucl_iterate_object(obj, &iter, true))) {
+					uclparse_transport_group(ucl_object_key(child), child);
+				}
+			} else {
+				log_warnx("\"transport-group\" section is not an object");
+				return (false);
+			}
+		}
+
 		if (!strcmp(key, "lun")) {
 			if (obj->type == UCL_OBJECT) {
 				iter = NULL;
@@ -370,6 +439,20 @@ uclparse_toplevel(const ucl_object_t *top)
 	it = NULL;
 	while ((obj = ucl_iterate_object(top, &it, true))) {
 		const char *key = ucl_object_key(obj);
+
+		if (!strcmp(key, "controller")) {
+			if (obj->type == UCL_OBJECT) {
+				iter = NULL;
+				while ((child = ucl_iterate_object(obj, &iter,
+				    true))) {
+					uclparse_controller(ucl_object_key(child),
+					    child);
+				}
+			} else {
+				log_warnx("\"controller\" section is not an object");
+				return (false);
+			}
+		}
 
 		if (!strcmp(key, "target")) {
 			if (obj->type == UCL_OBJECT) {
@@ -452,6 +535,42 @@ uclparse_auth_group(const char *name, const ucl_object_t *top)
 			}
 		}
 
+		if (!strcmp(key, "host-address")) {
+			if (obj->type != UCL_ARRAY) {
+				log_warnx("\"host-address\" property of "
+				    "auth-group \"%s\" is not an array",
+				    name);
+				return (false);
+			}
+
+			it2 = NULL;
+			while ((tmp = ucl_iterate_object(obj, &it2, true))) {
+				const char *value = ucl_object_tostring(tmp);
+
+				ap = auth_portal_new(auth_group, value);
+				if (ap == NULL)
+					return (false);
+			}
+		}
+
+		if (!strcmp(key, "host-nqn")) {
+			if (obj->type != UCL_ARRAY) {
+				log_warnx("\"host-nqn\" property of "
+				    "auth-group \"%s\" is not an array",
+				    name);
+				return (false);
+			}
+
+			it2 = NULL;
+			while ((tmp = ucl_iterate_object(obj, &it2, true))) {
+				const char *value = ucl_object_tostring(tmp);
+
+				an = auth_name_new(auth_group, value);
+				if (an == NULL)
+					return (false);
+			}
+		}
+
 		if (!strcmp(key, "initiator-name")) {
 			if (obj->type != UCL_ARRAY) {
 				log_warnx("\"initiator-name\" property of "
@@ -493,6 +612,93 @@ uclparse_auth_group(const char *name, const ucl_object_t *top)
 }
 
 static bool
+uclparse_dscp(const char *group_type, struct portal_group *portal_group,
+    const ucl_object_t *obj)
+{
+	const char *key;
+
+	if ((obj->type != UCL_STRING) && (obj->type != UCL_INT)) {
+		log_warnx("\"dscp\" property of %s group \"%s\" is not a "
+		    "string or integer", group_type, portal_group->pg_name);
+		return (false);
+	}
+	if (obj->type == UCL_INT)
+		portal_group->pg_dscp = ucl_object_toint(obj);
+	else {
+		key = ucl_object_tostring(obj);
+		if (strcmp(key, "0x") == 0)
+			portal_group->pg_dscp = strtol(key + 2, NULL, 16);
+		else if (strcmp(key, "be") || strcmp(key, "cs0"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS0 >> 2;
+		else if (strcmp(key, "ef"))
+			portal_group->pg_dscp = IPTOS_DSCP_EF >> 2;
+		else if (strcmp(key, "cs0"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS0 >> 2;
+		else if (strcmp(key, "cs1"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS1 >> 2;
+		else if (strcmp(key, "cs2"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS2 >> 2;
+		else if (strcmp(key, "cs3"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS3 >> 2;
+		else if (strcmp(key, "cs4"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS4 >> 2;
+		else if (strcmp(key, "cs5"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS5 >> 2;
+		else if (strcmp(key, "cs6"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS6 >> 2;
+		else if (strcmp(key, "cs7"))
+			portal_group->pg_dscp = IPTOS_DSCP_CS7 >> 2;
+		else if (strcmp(key, "af11"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF11 >> 2;
+		else if (strcmp(key, "af12"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF12 >> 2;
+		else if (strcmp(key, "af13"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF13 >> 2;
+		else if (strcmp(key, "af21"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF21 >> 2;
+		else if (strcmp(key, "af22"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF22 >> 2;
+		else if (strcmp(key, "af23"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF23 >> 2;
+		else if (strcmp(key, "af31"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF31 >> 2;
+		else if (strcmp(key, "af32"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF32 >> 2;
+		else if (strcmp(key, "af33"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF33 >> 2;
+		else if (strcmp(key, "af41"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF41 >> 2;
+		else if (strcmp(key, "af42"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF42 >> 2;
+		else if (strcmp(key, "af43"))
+			portal_group->pg_dscp = IPTOS_DSCP_AF43 >> 2;
+		else {
+			log_warnx("\"dscp\" property value is not a supported textual value");
+			return (false);
+		}
+	}
+	return (true);
+}
+
+static bool
+uclparse_pcp(const char *group_type, struct portal_group *portal_group,
+    const ucl_object_t *obj)
+{
+	if (obj->type != UCL_INT) {
+		log_warnx("\"pcp\" property of %s group \"%s\" is not an "
+		    "integer", group_type, portal_group->pg_name);
+		return (false);
+	}
+	portal_group->pg_pcp = ucl_object_toint(obj);
+	if (!((portal_group->pg_pcp >= 0) && (portal_group->pg_pcp <= 7))) {
+		log_warnx("invalid \"pcp\" value %d, using default",
+		    portal_group->pg_pcp);
+		portal_group->pg_pcp = -1;
+	}
+	return (true);
+}
+
+static bool
 uclparse_portal_group(const char *name, const ucl_object_t *top)
 {
 	struct portal_group *portal_group;
@@ -502,10 +708,12 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 
 	if (strcmp(name, "default") == 0 &&
 	    conf->conf_default_pg_defined == false) {
-		portal_group = portal_group_find(conf, name);
+		portal_group = portal_group_find(conf, TARGET_PROTOCOL_ISCSI,
+		    name);
 		conf->conf_default_pg_defined = true;
 	} else {
-		portal_group = portal_group_new(conf, name);
+		portal_group = portal_group_new(conf, TARGET_PROTOCOL_ISCSI,
+		    name);
 	}
 
 	if (portal_group == NULL)
@@ -542,7 +750,8 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 		if (!strcmp(key, "listen")) {
 			if (obj->type == UCL_STRING) {
 				if (portal_group_add_listen(portal_group,
-				    ucl_object_tostring(obj), false) != 0)
+				    ucl_object_tostring(obj),
+				    PORTAL_PROTOCOL_ISCSI) != 0)
 					return (false);
 			} else if (obj->type == UCL_ARRAY) {
 				while ((tmp = ucl_iterate_object(obj, &it2,
@@ -550,7 +759,7 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 					if (portal_group_add_listen(
 					    portal_group,
 					    ucl_object_tostring(tmp),
-					    false) != 0)
+					    PORTAL_PROTOCOL_ISCSI) != 0)
 						return (false);
 				}
 			} else {
@@ -564,7 +773,7 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 		if (!strcmp(key, "listen-iser")) {
 			if (obj->type == UCL_STRING) {
 				if (portal_group_add_listen(portal_group,
-				    ucl_object_tostring(obj), true) != 0)
+				    ucl_object_tostring(obj), PORTAL_PROTOCOL_ISER) != 0)
 					return (false);
 			} else if (obj->type == UCL_ARRAY) {
 				while ((tmp = ucl_iterate_object(obj, &it2,
@@ -572,7 +781,7 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 					if (portal_group_add_listen(
 					    portal_group,
 					    ucl_object_tostring(tmp),
-					    true) != 0)
+					    PORTAL_PROTOCOL_ISER) != 0)
 						return (false);
 				}
 			} else {
@@ -613,78 +822,312 @@ uclparse_portal_group(const char *name, const ucl_object_t *top)
 		}
 
 		if (!strcmp(key, "dscp")) {
-			if ((obj->type != UCL_STRING) && (obj->type != UCL_INT)) {
-				log_warnx("\"dscp\" property of portal group "
-				    "\"%s\" is not a string or integer", portal_group->pg_name);
+			if (!uclparse_dscp("portal", portal_group, obj))
+				return (false);
+		}
+
+		if (!strcmp(key, "pcp")) {
+			if (!uclparse_pcp("portal", portal_group, obj))
+				return (false);
+		}
+	}
+
+	return (true);
+}
+
+static int
+parse_transport_protocol(const char *name)
+{
+	if (strcmp(name, "tcp") == 0)
+		return (PORTAL_PROTOCOL_NVME_TCP);
+	else if (strcmp(name, "discovery-tcp") == 0)
+		return (PORTAL_PROTOCOL_NVME_DISCOVERY_TCP);
+	else
+		return (-1);
+}
+
+static bool
+uclparse_transport_listen_obj(struct portal_group *portal_group,
+    const ucl_object_t *top)
+{
+	ucl_object_iter_t it = NULL;
+	const ucl_object_t *obj = NULL;
+	const char *key;
+	int protocol;
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+
+		protocol = parse_transport_protocol(key);
+		if (protocol < 0) {
+			log_warnx("invalid listen protocol \"%s\" for "
+			    "transport-group \"%s\"", key,
+			    portal_group->pg_name);
+			return (false);
+		}
+
+		if (portal_group_add_listen(portal_group,
+		    ucl_object_tostring(obj), protocol) != 0)
+			return (false);
+	}
+	return (true);
+}
+
+static bool
+uclparse_transport_group(const char *name, const ucl_object_t *top)
+{
+	struct portal_group *portal_group;
+	ucl_object_iter_t it = NULL, it2 = NULL;
+	const ucl_object_t *obj = NULL, *tmp = NULL;
+	const char *key;
+
+	if (strcmp(name, "default") == 0 &&
+	    conf->conf_default_tg_defined == false) {
+		portal_group = portal_group_find(conf, TARGET_PROTOCOL_NVME,
+		    name);
+		conf->conf_default_tg_defined = true;
+	} else {
+		portal_group = portal_group_new(conf, TARGET_PROTOCOL_NVME,
+		    name);
+	}
+
+	if (portal_group == NULL)
+		return (false);
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+
+		if (!strcmp(key, "discovery-auth-group")) {
+			portal_group->pg_discovery_auth_group =
+			    auth_group_find(conf, ucl_object_tostring(obj));
+			if (portal_group->pg_discovery_auth_group == NULL) {
+				log_warnx("unknown discovery-auth-group \"%s\" "
+				    "for transport-group \"%s\"",
+				    ucl_object_tostring(obj),
+				    portal_group->pg_name);
 				return (false);
 			}
-			if (obj->type == UCL_INT)
-				portal_group->pg_dscp = ucl_object_toint(obj);
-			else {
-				key = ucl_object_tostring(obj);
-				if (strcmp(key, "0x") == 0)
-					portal_group->pg_dscp = strtol(key + 2, NULL, 16);
-				else if (strcmp(key, "be") || strcmp(key, "cs0"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS0 >> 2;
-				else if (strcmp(key, "ef"))
-					portal_group->pg_dscp = IPTOS_DSCP_EF >> 2;
-				else if (strcmp(key, "cs0"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS0 >> 2;
-				else if (strcmp(key, "cs1"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS1 >> 2;
-				else if (strcmp(key, "cs2"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS2 >> 2;
-				else if (strcmp(key, "cs3"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS3 >> 2;
-				else if (strcmp(key, "cs4"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS4 >> 2;
-				else if (strcmp(key, "cs5"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS5 >> 2;
-				else if (strcmp(key, "cs6"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS6 >> 2;
-				else if (strcmp(key, "cs7"))
-					portal_group->pg_dscp = IPTOS_DSCP_CS7 >> 2;
-				else if (strcmp(key, "af11"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF11 >> 2;
-				else if (strcmp(key, "af12"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF12 >> 2;
-				else if (strcmp(key, "af13"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF13 >> 2;
-				else if (strcmp(key, "af21"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF21 >> 2;
-				else if (strcmp(key, "af22"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF22 >> 2;
-				else if (strcmp(key, "af23"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF23 >> 2;
-				else if (strcmp(key, "af31"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF31 >> 2;
-				else if (strcmp(key, "af32"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF32 >> 2;
-				else if (strcmp(key, "af33"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF33 >> 2;
-				else if (strcmp(key, "af41"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF41 >> 2;
-				else if (strcmp(key, "af42"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF42 >> 2;
-				else if (strcmp(key, "af43"))
-					portal_group->pg_dscp = IPTOS_DSCP_AF43 >> 2;
-				else {
-					log_warnx("\"dscp\" property value is not a supported textual value");
+		}
+
+		if (!strcmp(key, "discovery-filter")) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"discovery-filter\" property of "
+				    "portal-group \"%s\" is not a string",
+				    portal_group->pg_name);
+				return (false);
+			}
+
+			if (portal_group_set_filter(portal_group,
+			    ucl_object_tostring(obj)) != 0)
+				return (false);
+		}
+
+		if (!strcmp(key, "listen")) {
+			if (obj->type != UCL_OBJECT) {
+				log_warnx("missing protocol for \"listen\" "
+				    "property of transport-group \"%s\"",
+				    portal_group->pg_name);
+				return (false);
+			}
+			if (!uclparse_transport_listen_obj(portal_group, obj))
+				return (false);
+		}
+
+		if (!strcmp(key, "options")) {
+			if (obj->type != UCL_OBJECT) {
+				log_warnx("\"options\" property of transport group "
+				    "\"%s\" is not an object", portal_group->pg_name);
+				return (false);
+			}
+
+			while ((tmp = ucl_iterate_object(obj, &it2,
+			    true))) {
+				nvlist_add_string(portal_group->pg_options,
+				    ucl_object_key(tmp),
+				    ucl_object_tostring_forced(tmp));
+			}
+		}
+
+		if (!strcmp(key, "dscp")) {
+			if (!uclparse_dscp("transport", portal_group, obj))
+				return (false);
+		}
+
+		if (!strcmp(key, "pcp")) {
+			if (!uclparse_pcp("transport", portal_group, obj))
+				return (false);
+		}
+	}
+
+	return (true);
+}
+
+static bool
+uclparse_controller(const char *name, const ucl_object_t *top)
+{
+	struct target *target;
+	ucl_object_iter_t it = NULL, it2 = NULL;
+	const ucl_object_t *obj = NULL, *tmp = NULL;
+	const char *key;
+
+	target = target_new(conf, name, TARGET_PROTOCOL_NVME);
+	if (target == NULL)
+		return (false);
+
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		key = ucl_object_key(obj);
+
+		if (!strcmp(key, "alias")) {
+			if (obj->type != UCL_STRING) {
+				log_warnx("\"alias\" property of controller "
+				    "\"%s\" is not a string", target->t_name);
+				return (false);
+			}
+
+			target->t_alias = strdup(ucl_object_tostring(obj));
+		}
+
+		if (!strcmp(key, "auth-group")) {
+			const char *ag;
+
+			if (target->t_auth_group != NULL) {
+				if (target->t_auth_group->ag_name != NULL)
+					log_warnx("auth-group for controller "
+					    "\"%s\" specified more than once",
+					    target->t_name);
+				else
+					log_warnx("cannot use both auth-group "
+					    "and explicit authorisations for "
+					    "controller \"%s\"", target->t_name);
+				return (false);
+			}
+			ag = ucl_object_tostring(obj);
+			if (!ag) {
+				log_warnx("auth-group must be a string");
+				return (false);
+			}
+			target->t_auth_group = auth_group_find(conf, ag);
+			if (target->t_auth_group == NULL) {
+				log_warnx("unknown auth-group \"%s\" for "
+				    "controller \"%s\"",
+				    ucl_object_tostring(obj), target->t_name);
+				return (false);
+			}
+		}
+
+		if (!strcmp(key, "auth-type")) {
+			int error;
+
+			if (target->t_auth_group != NULL) {
+				if (target->t_auth_group->ag_name != NULL) {
+					log_warnx("cannot use both auth-group and "
+					    "auth-type for controller \"%s\"",
+					    target->t_name);
 					return (false);
+				}
+			} else {
+				target->t_auth_group = auth_group_new(conf, NULL);
+				if (target->t_auth_group == NULL)
+					return (false);
+
+				target->t_auth_group->ag_target = target;
+			}
+			error = auth_group_set_type(target->t_auth_group,
+			    ucl_object_tostring(obj));
+			if (error != 0)
+				return (false);
+		}
+
+		if (!strcmp(key, "chap")) {
+			if (target->t_auth_group != NULL) {
+				if (target->t_auth_group->ag_name != NULL) {
+					log_warnx("cannot use both auth-group "
+					    "and chap for controller \"%s\"",
+					    target->t_name);
+					return (false);
+				}
+			} else {
+				target->t_auth_group = auth_group_new(conf, NULL);
+				if (target->t_auth_group == NULL) {
+					return (false);
+				}
+				target->t_auth_group->ag_target = target;
+			}
+			if (!uclparse_chap(target->t_auth_group, obj))
+				return (false);
+		}
+
+		if (!strcmp(key, "chap-mutual")) {
+			if (!uclparse_chap_mutual(target->t_auth_group, obj))
+				return (false);
+		}
+
+		if (!strcmp(key, "host-nqn")) {
+			const struct auth_name *an;
+
+			if (target->t_auth_group != NULL) {
+				if (target->t_auth_group->ag_name != NULL) {
+					log_warnx("cannot use both auth-group and "
+					    "host-nqn for controller \"%s\"",
+					    target->t_name);
+					return (false);
+				}
+			} else {
+				target->t_auth_group = auth_group_new(conf, NULL);
+				if (target->t_auth_group == NULL)
+					return (false);
+
+				target->t_auth_group->ag_target = target;
+			}
+			an = auth_name_new(target->t_auth_group,
+			    ucl_object_tostring(obj));
+			if (an == NULL)
+				return (false);
+		}
+
+		if (!strcmp(key, "host-address")) {
+			const struct auth_portal *ap;
+
+			if (target->t_auth_group != NULL) {
+				if (target->t_auth_group->ag_name != NULL) {
+					log_warnx("cannot use both auth-group and "
+					    "host-address for controller \"%s\"",
+					    target->t_name);
+					return (false);
+				}
+			} else {
+				target->t_auth_group = auth_group_new(conf, NULL);
+				if (target->t_auth_group == NULL)
+					return (false);
+
+				target->t_auth_group->ag_target = target;
+			}
+			ap = auth_portal_new(target->t_auth_group,
+			    ucl_object_tostring(obj));
+			if (ap == NULL)
+				return (false);
+		}
+
+		if (!strcmp(key, "transport-group")) {
+			if (obj->type == UCL_OBJECT) {
+				if (!uclparse_controller_transport_group(target, obj))
+					return (false);
+			}
+
+			if (obj->type == UCL_ARRAY) {
+				while ((tmp = ucl_iterate_object(obj, &it2,
+				    true))) {
+					if (!uclparse_controller_transport_group(target,
+					    tmp))
+						return (false);
 				}
 			}
 		}
 
-		if (!strcmp(key, "pcp")) {
-			if (obj->type != UCL_INT) {
-				log_warnx("\"pcp\" property of portal group "
-				    "\"%s\" is not an integer", portal_group->pg_name);
-				return (false);
-			}
-			portal_group->pg_pcp = ucl_object_toint(obj);
-			if (!((portal_group->pg_pcp >= 0) && (portal_group->pg_pcp <= 7))) {
-				log_warnx("invalid \"pcp\" value %d, using default", portal_group->pg_pcp);
-				portal_group->pg_pcp = -1;
+		if (!strcmp(key, "lun")) {
+			while ((tmp = ucl_iterate_object(obj, &it2, true))) {
+				if (!uclparse_target_lun(target, tmp))
+					return (false);
 			}
 		}
 	}
@@ -700,7 +1143,7 @@ uclparse_target(const char *name, const ucl_object_t *top)
 	const ucl_object_t *obj = NULL, *tmp = NULL;
 	const char *key;
 
-	target = target_new(conf, name);
+	target = target_new(conf, name, TARGET_PROTOCOL_ISCSI);
 	if (target == NULL)
 		return (false);
 

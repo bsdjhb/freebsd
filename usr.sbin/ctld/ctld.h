@@ -47,8 +47,12 @@
 #define	DEFAULT_CD_BLOCKSIZE		2048
 
 #define	MAX_LUNS			1024
-#define	MAX_DATA_SEGMENT_LENGTH		(128 * 1024)
-#define	SOCKBUF_SIZE			1048576
+
+struct ctl_req;
+struct nvmf_association;
+struct nvmf_association_params;
+struct port;
+struct target_protocol_ops;
 
 struct auth {
 	TAILQ_ENTRY(auth)		a_next;
@@ -90,18 +94,60 @@ struct auth_group {
 	TAILQ_HEAD(, auth_portal)	ag_portals;
 };
 
+#define	PORTAL_PROTOCOL_ISCSI			0
+#define	PORTAL_PROTOCOL_ISER			1
+#define	PORTAL_PROTOCOL_NVME_TCP		2
+#define	PORTAL_PROTOCOL_NVME_DISCOVERY_TCP	3
+
 struct portal {
 	TAILQ_ENTRY(portal)		p_next;
 	struct portal_group		*p_portal_group;
-	bool				p_iser;
 	char				*p_listen;
 	struct addrinfo			*p_ai;
+	int				p_protocol;
 #ifdef ICL_KERNEL_PROXY
 	int				p_id;
 #endif
 
 	TAILQ_HEAD(, target)		p_targets;
 	int				p_socket;
+
+	union {
+		struct {
+			struct nvmf_association_params	*aparams;
+			struct nvmf_association		*association;
+		} p_nvme;
+	};
+};
+
+#define	TARGET_PROTOCOL_ISCSI		0
+#define	TARGET_PROTOCOL_NVME		1
+
+struct target_protocol_ops {
+	/* Initialize protocol-specific state for a new portal group. */
+	void (*portal_group_init)(struct portal_group *pg);
+
+	/* Copy protocol-specific state from oldpg to a new portal group. */
+	void (*portal_group_copy)(struct portal_group *oldpg,
+	    struct portal_group *newpg);
+
+	/* Initialize protocol-specific state for a new portal. */
+	void (*portal_init)(struct portal *p);
+
+	/* Set protocol-specific socket options for a new socket. */
+	void (*portal_init_socket)(struct portal *p);
+
+	/* Initialize protocol-specific state for a new portal. */
+	void (*portal_delete)(struct portal *p);
+
+	/* Set req->driver and add fields to req->args_nvl. */
+	void (*kernel_port_add)(struct port *port, struct ctl_req *req);
+	void (*kernel_port_remove)(struct port *port, struct ctl_req *req);
+
+	char *(*validate_target_name)(const char *name);
+
+	void (*handle_connection)(struct portal *portal, int fd,
+	    const char *host, const struct sockaddr *client_sa);
 };
 
 #define	PG_FILTER_UNKNOWN		0
@@ -118,6 +164,8 @@ struct portal_group {
 	struct auth_group		*pg_discovery_auth_group;
 	int				pg_discovery_filter;
 	int				pg_foreign;
+	struct target_protocol_ops	*pg_ops;
+	int				pg_protocol;
 	bool				pg_unassigned;
 	TAILQ_HEAD(, portal)		pg_portals;
 	TAILQ_HEAD(, port)		pg_ports;
@@ -185,6 +233,8 @@ struct target {
 	char				*t_redirection;
 	/* Name of this target's physical port, if any, i.e. "isp0" */
 	char				*t_pport;
+	struct target_protocol_ops	*t_ops;
+	int				t_protocol;
 };
 
 struct isns {
@@ -207,6 +257,7 @@ struct conf {
 	int				conf_debug;
 	int				conf_timeout;
 	int				conf_maxproc;
+	uint32_t			conf_genctr;
 
 #ifdef ICL_KERNEL_PROXY
 	int				conf_portal_id;
@@ -214,6 +265,7 @@ struct conf {
 	struct pidfh			*conf_pidfh;
 
 	bool				conf_default_pg_defined;
+	bool				conf_default_tg_defined;
 	bool				conf_default_ag_defined;
 	bool				conf_kernel_port_on;
 };
@@ -245,6 +297,11 @@ struct ctld_connection {
 	const char		*conn_user;
 	struct chap		*conn_chap;
 };
+
+extern bool proxy_mode;
+extern int ctl_fd;
+extern struct target_protocol_ops target_iscsi;
+extern struct target_protocol_ops target_nvme;
 
 int			parse_conf(struct conf *newconf, const char *path);
 int			uclparse_conf(struct conf *conf, const char *path);
@@ -285,12 +342,13 @@ const struct auth_portal	*auth_portal_find(const struct auth_group *ag,
 int				auth_portal_check(const struct auth_group *ag,
 				    const struct sockaddr_storage *sa);
 
-struct portal_group	*portal_group_new(struct conf *conf, const char *name);
+struct portal_group	*portal_group_new(struct conf *conf, int protocol,
+				    const char *name);
 void			portal_group_delete(struct portal_group *pg);
 struct portal_group	*portal_group_find(const struct conf *conf,
-			    const char *name);
+				    int protocol, const char *name);
 int			portal_group_add_listen(struct portal_group *pg,
-			    const char *listen, bool iser);
+			    const char *listen, int protocol);
 int			portal_group_set_filter(struct portal_group *pg,
 			    const char *filter);
 int			portal_group_set_offload(struct portal_group *pg,
@@ -324,7 +382,8 @@ struct port		*port_find_in_pg(const struct portal_group *pg,
 void			port_delete(struct port *port);
 int			port_is_dummy(struct port *port);
 
-struct target		*target_new(struct conf *conf, const char *name);
+struct target		*target_new(struct conf *conf, const char *name,
+			    int protocol);
 void			target_delete(struct target *target);
 struct target		*target_find(struct conf *conf,
 			    const char *name);
@@ -351,12 +410,6 @@ void			kernel_init(void);
 int			kernel_lun_add(struct lun *lun);
 int			kernel_lun_modify(struct lun *lun);
 int			kernel_lun_remove(struct lun *lun);
-void			kernel_handoff(struct ctld_connection *conn);
-void			kernel_limits(const char *offload, int s,
-			    int *max_recv_data_segment_length,
-			    int *max_send_data_segment_length,
-			    int *max_burst_length,
-			    int *first_burst_length);
 int			kernel_port_add(struct port *port);
 int			kernel_port_update(struct port *port, struct port *old);
 int			kernel_port_remove(struct port *port);
@@ -372,10 +425,15 @@ void			kernel_send(struct pdu *pdu);
 void			kernel_receive(struct pdu *pdu);
 #endif
 
+bool			timed_out(void);
+
 void			login(struct ctld_connection *conn);
 
 void			discovery(struct ctld_connection *conn);
 
 void			set_timeout(int timeout, int fatal);
+
+void			nvme_handle_discovery_socket(struct portal *p, int s,
+			    const struct sockaddr *client_sa);
 
 #endif /* !CTLD_H */

@@ -58,12 +58,15 @@ extern void	yyrestart(FILE *);
 %}
 
 %token ALIAS AUTH_GROUP AUTH_TYPE BACKEND BLOCKSIZE CHAP CHAP_MUTUAL
-%token CLOSING_BRACKET CTL_LUN DEBUG DEVICE_ID DEVICE_TYPE
-%token DISCOVERY_AUTH_GROUP DISCOVERY_FILTER DSCP FOREIGN
-%token INITIATOR_NAME INITIATOR_PORTAL ISNS_SERVER ISNS_PERIOD ISNS_TIMEOUT
-%token LISTEN LISTEN_ISER LUN MAXPROC OFFLOAD OPENING_BRACKET OPTION
+%token CLOSING_BRACKET CONTROLLER CTL_LUN DEBUG DEVICE_ID DEVICE_TYPE
+%token DISCOVERY_AUTH_GROUP DISCOVERY_FILTER DISCOVERY_TCP DSCP FOREIGN
+%token HOST_ADDRESS HOST_NQN
+%token INITIATOR_NAME INITIATOR_PORTAL
+%token ISNS_SERVER ISNS_PERIOD ISNS_TIMEOUT
+%token LISTEN LISTEN_ISER LUN MAXPROC
+%token OFFLOAD OPENING_BRACKET OPTION
 %token PATH PCP PIDFILE PORT PORTAL_GROUP REDIRECT SEMICOLON SERIAL
-%token SIZE STR TAG TARGET TIMEOUT
+%token SIZE STR TAG TARGET TCP TIMEOUT TRANSPORT_GROUP
 %token AF11 AF12 AF13 AF21 AF22 AF23 AF31 AF32 AF33 AF41 AF42 AF43
 %token BE EF CS0 CS1 CS2 CS3 CS4 CS5 CS6 CS7
 
@@ -102,9 +105,13 @@ statement:
 	|
 	portal_group
 	|
+	transport_group
+	|
 	lun
 	|
 	target
+	|
+	controller
 	;
 
 debug:		DEBUG STR
@@ -239,6 +246,10 @@ auth_group_entry:
 	|
 	auth_group_chap_mutual
 	|
+	auth_group_host_address
+	|
+	auth_group_host_nqn
+	|
 	auth_group_initiator_name
 	|
 	auth_group_initiator_portal
@@ -281,6 +292,28 @@ auth_group_chap_mutual:	CHAP_MUTUAL STR STR STR STR
 	}
 	;
 
+auth_group_host_address:	HOST_ADDRESS STR
+	{
+		const struct auth_portal *ap;
+
+		ap = auth_portal_new(auth_group, $2);
+		free($2);
+		if (ap == NULL)
+			return (1);
+	}
+	;
+
+auth_group_host_nqn:	HOST_NQN STR
+	{
+		const struct auth_name *an;
+
+		an = auth_name_new(auth_group, $2);
+		free($2);
+		if (an == NULL)
+			return (1);
+	}
+	;
+
 auth_group_initiator_name:	INITIATOR_NAME STR
 	{
 		const struct auth_name *an;
@@ -313,15 +346,17 @@ portal_group:	PORTAL_GROUP portal_group_name
 portal_group_name:	STR
 	{
 		/*
-		 * Make it possible to redefine default
+		 * Make it possible to redefine default iSCSI
 		 * portal-group. but only once.
 		 */
 		if (strcmp($1, "default") == 0 &&
 		    conf->conf_default_pg_defined == false) {
-			portal_group = portal_group_find(conf, $1);
+			portal_group = portal_group_find(conf,
+			    TARGET_PROTOCOL_ISCSI, $1);
 			conf->conf_default_pg_defined = true;
 		} else {
-			portal_group = portal_group_new(conf, $1);
+			portal_group = portal_group_new(conf,
+			    TARGET_PROTOCOL_ISCSI, $1);
 		}
 		free($1);
 		if (portal_group == NULL)
@@ -402,7 +437,8 @@ portal_group_listen:	LISTEN STR
 	{
 		int error;
 
-		error = portal_group_add_listen(portal_group, $2, false);
+		error = portal_group_add_listen(portal_group, $2,
+		    PORTAL_PROTOCOL_ISCSI);
 		free($2);
 		if (error != 0)
 			return (1);
@@ -413,7 +449,8 @@ portal_group_listen_iser:	LISTEN_ISER STR
 	{
 		int error;
 
-		error = portal_group_add_listen(portal_group, $2, true);
+		error = portal_group_add_listen(portal_group, $2,
+		    PORTAL_PROTOCOL_ISER);
 		free($2);
 		if (error != 0)
 			return (1);
@@ -530,6 +567,103 @@ portal_group_pcp:	PCP STR
 	}
 	;
 
+transport_group:	TRANSPORT_GROUP transport_group_name
+    OPENING_BRACKET transport_group_entries CLOSING_BRACKET
+	{
+		portal_group = NULL;
+	}
+	;
+
+transport_group_name:	STR
+	{
+		/*
+		 * Make it possible to redefine default
+		 * transport-group. but only once.
+		 */
+		if (strcmp($1, "default") == 0 &&
+		    conf->conf_default_tg_defined == false) {
+			portal_group = portal_group_find(conf,
+			    TARGET_PROTOCOL_NVME, $1);
+			conf->conf_default_tg_defined = true;
+		} else {
+			portal_group = portal_group_new(conf,
+			    TARGET_PROTOCOL_NVME, $1);
+		}
+		free($1);
+		if (portal_group == NULL)
+			return (1);
+	}
+	;
+
+transport_group_entries:
+	|
+	transport_group_entries transport_group_entry
+	|
+	transport_group_entries transport_group_entry SEMICOLON
+	;
+
+transport_group_entry:
+	transport_group_discovery_auth_group
+	|
+	portal_group_discovery_filter
+	|
+	transport_group_listen_nvme_discovery_tcp
+	|
+	transport_group_listen_nvme_tcp
+	|
+	portal_group_option
+	|
+	portal_group_tag
+	|
+	portal_group_dscp
+	|
+	portal_group_pcp
+	;
+
+transport_group_discovery_auth_group:	DISCOVERY_AUTH_GROUP STR
+	{
+		if (portal_group->pg_discovery_auth_group != NULL) {
+			log_warnx("discovery-auth-group for transport-group "
+			    "\"%s\" specified more than once",
+			    portal_group->pg_name);
+			return (1);
+		}
+		portal_group->pg_discovery_auth_group =
+		    auth_group_find(conf, $2);
+		if (portal_group->pg_discovery_auth_group == NULL) {
+			log_warnx("unknown discovery-auth-group \"%s\" "
+			    "for transport-group \"%s\"",
+			    $2, portal_group->pg_name);
+			return (1);
+		}
+		free($2);
+	}
+	;
+
+portal_group_listen_nvme_discovery_tcp:	LISTEN DISCOVERY_TCP STR
+	{
+		int error;
+
+		error = portal_group_add_listen(portal_group, $3,
+		    PORTAL_PROTOCOL_NVME_DISCOVERY_TCP);
+		free($3);
+		if (error != 0)
+			return (1);
+	}
+	;
+
+portal_group_listen_nvme_tcp:	LISTEN TCP STR
+	{
+		int error;
+
+		error = portal_group_add_listen(portal_group, $3,
+		    PORTAL_PROTOCOL_NVME_TCP);
+		free($3);
+		if (error != 0)
+			return (1);
+	}
+	;
+
 lun:	LUN lun_name
     OPENING_BRACKET lun_entries CLOSING_BRACKET
 	{
@@ -555,7 +689,7 @@ target:	TARGET target_name
 
 target_name:	STR
 	{
-		target = target_new(conf, $1);
+		target = target_new(conf, $1, TARGET_PROTOCOL_ISCSI);
 		free($1);
 		if (target == NULL)
 			return (1);
@@ -781,7 +915,7 @@ target_portal_group:	PORTAL_GROUP STR STR
 		struct auth_group *tag;
 		struct port *tp;
 
-		tpg = portal_group_find(conf, $2);
+		tpg = portal_group_find(conf, TARGET_PROTOCOL_ISCSI, $2);
 		if (tpg == NULL) {
 			log_warnx("unknown portal-group \"%s\" for target "
 			    "\"%s\"", $2, target->t_name);
@@ -813,7 +947,7 @@ target_portal_group:	PORTAL_GROUP STR STR
 		struct portal_group *tpg;
 		struct port *tp;
 
-		tpg = portal_group_find(conf, $2);
+		tpg = portal_group_find(conf, TARGET_PROTOCOL_ISCSI, $2);
 		if (tpg == NULL) {
 			log_warnx("unknown portal-group \"%s\" for target "
 			    "\"%s\"", $2, target->t_name);
@@ -909,6 +1043,161 @@ target_lun_ref:	LUN STR STR
 			return (1);
 
 		target->t_luns[tmp] = lun;
+	}
+	;
+
+controller:	CONTROLLER controller_name
+    OPENING_BRACKET controller_entries CLOSING_BRACKET
+	{
+		target = NULL;
+	}
+	;
+
+controller_name:	STR
+	{
+		target = target_new(conf, $1, TARGET_PROTOCOL_NVME);
+		free($1);
+		if (target == NULL)
+			return (1);
+	}
+	;
+
+controller_entries:
+	|
+	controller_entries controller_entry
+	|
+	controller_entries controller_entry SEMICOLON
+	;
+
+controller_entry:
+	target_alias
+	|
+	target_auth_group
+	|
+	target_auth_type
+	|
+	target_chap
+	|
+	target_chap_mutual
+	|
+	controller_host_address
+	|
+	controller_host_nqn
+	|
+	controller_transport_group
+	|
+	target_lun
+	|
+	target_lun_ref
+	;
+
+controller_host_address:	HOST_ADDRESS STR
+	{
+		const struct auth_portal *ap;
+
+		if (target->t_auth_group != NULL) {
+			if (target->t_auth_group->ag_name != NULL) {
+				log_warnx("cannot use both auth-group and "
+				    "host-address for controller \"%s\"",
+				    target->t_name);
+				free($2);
+				return (1);
+			}
+		} else {
+			target->t_auth_group = auth_group_new(conf, NULL);
+			if (target->t_auth_group == NULL) {
+				free($2);
+				return (1);
+			}
+			target->t_auth_group->ag_target = target;
+		}
+		ap = auth_portal_new(target->t_auth_group, $2);
+		free($2);
+		if (ap == NULL)
+			return (1);
+	}
+	;
+
+controller_host_nqn:	HOST_NQN STR
+	{
+		const struct auth_name *an;
+
+		if (target->t_auth_group != NULL) {
+			if (target->t_auth_group->ag_name != NULL) {
+				log_warnx("cannot use both auth-group and "
+				    "host-nqn for controller \"%s\"",
+				    target->t_name);
+				free($2);
+				return (1);
+			}
+		} else {
+			target->t_auth_group = auth_group_new(conf, NULL);
+			if (target->t_auth_group == NULL) {
+				free($2);
+				return (1);
+			}
+			target->t_auth_group->ag_target = target;
+		}
+		an = auth_name_new(target->t_auth_group, $2);
+		free($2);
+		if (an == NULL)
+			return (1);
+	}
+	;
+
+controller_transport_group:	TRANSPORT_GROUP STR STR
+	{
+		struct portal_group *tpg;
+		struct auth_group *tag;
+		struct port *tp;
+
+		tpg = portal_group_find(conf, TARGET_PROTOCOL_NVME, $2);
+		if (tpg == NULL) {
+			log_warnx("unknown transport-group \"%s\" for controller "
+			    "\"%s\"", $2, target->t_name);
+			free($2);
+			free($3);
+			return (1);
+		}
+		tag = auth_group_find(conf, $3);
+		if (tag == NULL) {
+			log_warnx("unknown auth-group \"%s\" for controller "
+			    "\"%s\"", $3, target->t_name);
+			free($2);
+			free($3);
+			return (1);
+		}
+		tp = port_new(conf, target, tpg);
+		if (tp == NULL) {
+			log_warnx("can't link transport-group \"%s\" to controller "
+			    "\"%s\"", $2, target->t_name);
+			free($2);
+			return (1);
+		}
+		tp->p_auth_group = tag;
+		free($2);
+		free($3);
+	}
+	|		TRANSPORT_GROUP STR
+	{
+		struct portal_group *tpg;
+		struct port *tp;
+
+		tpg = portal_group_find(conf, TARGET_PROTOCOL_NVME, $2);
+		if (tpg == NULL) {
+			log_warnx("unknown transport-group \"%s\" for controller "
+			    "\"%s\"", $2, target->t_name);
+			free($2);
+			return (1);
+		}
+		tp = port_new(conf, target, tpg);
+		if (tp == NULL) {
+			log_warnx("can't link transport-group \"%s\" to controller "
+			    "\"%s\"", $2, target->t_name);
+			free($2);
+			return (1);
+		}
+		free($2);
 	}
 	;
 
