@@ -75,8 +75,6 @@
 
 #define	NVLIST_BUFSIZE	1024
 
-extern bool proxy_mode;
-
 int	ctl_fd = 0;
 
 void
@@ -95,14 +93,6 @@ kernel_init(void)
 	}
 	if (ctl_fd < 0)
 		log_err(1, "failed to open %s", CTL_DEFAULT_DEV);
-#ifdef	WANT_ISCSI
-	else {
-		saved_errno = errno;
-		if (modfind("cfiscsi") == -1 && kldload("cfiscsi") == -1)
-			log_warn("couldn't load cfiscsi");
-		errno = saved_errno;
-	}
-#endif
 }
 
 /*
@@ -409,9 +399,10 @@ conf_new_from_kernel(struct kports *kports)
 	struct cctl_port *port;
 	XML_Parser parser;
 	const char *key;
-	char *str, *name;
+	char *str, *name, *pg_name, *target_name;
 	void *cookie;
-	int error, len, retval;
+	int error, len, protocol, retval;
+	uint16_t pg_tag;
 
 	bzero(&devlist, sizeof(devlist));
 	STAILQ_INIT(&devlist.lun_list);
@@ -523,6 +514,11 @@ retry_port:
 	STAILQ_FOREACH(port, &devlist.port_list, links) {
 		if (strcmp(port->port_frontend, "ha") == 0)
 			continue;
+		if (strcmp(port->port_frontend, "iscsi") == 0)
+			protocol = TARGET_PROTOCOL_ISCSI;
+		else
+			/* XXX: Treat all unknown ports as iSCSI? */
+			protocol = TARGET_PROTOCOL_ISCSI;
 		free(name);
 		if (port->pp == 0 && port->vp == 0) {
 			name = checked_strdup(port->port_name);
@@ -538,7 +534,17 @@ retry_port:
 				log_err(1, "asprintf");
 		}
 
-		if (port->cfiscsi_target == NULL) {
+		switch (protocol) {
+		case TARGET_PROTOCOL_ISCSI:
+			target_name = port->cfiscsi_target;
+			pg_name = port->ctld_portal_group_name;
+			pg_tag = port->cfiscsi_portal_group_tag;
+			break;
+		default:
+			__assert_unreachable();
+			break;
+		}
+		if (target_name == NULL) {
 			log_debugx("CTL port %u \"%s\" wasn't managed by ctld; ",
 			    port->port_id, name);
 			pp = pport_find(kports, name);
@@ -551,32 +557,33 @@ retry_port:
 			}
 			continue;
 		}
-		if (port->cfiscsi_state != 1) {
+		if (protocol == TARGET_PROTOCOL_ISCSI &&
+		    port->cfiscsi_state != 1) {
 			log_debugx("CTL port %ju is not active (%d); ignoring",
 			    (uintmax_t)port->port_id, port->cfiscsi_state);
 			continue;
 		}
 
-		targ = target_find(conf, port->cfiscsi_target);
+		targ = target_find(conf, target_name);
 		if (targ == NULL) {
-			targ = target_new(conf, port->cfiscsi_target);
+			targ = target_new(conf, target_name, protocol);
 			if (targ == NULL) {
 				log_warnx("target_new failed");
 				continue;
 			}
 		}
 
-		if (port->ctld_portal_group_name == NULL)
+		if (pg_name == NULL)
 			continue;
-		pg = portal_group_find(conf, port->ctld_portal_group_name);
+		pg = portal_group_find(conf, protocol, pg_name);
 		if (pg == NULL) {
-			pg = portal_group_new(conf, port->ctld_portal_group_name);
+			pg = portal_group_new(conf, protocol, pg_name);
 			if (pg == NULL) {
 				log_warnx("portal_group_new failed");
 				continue;
 			}
 		}
-		pg->pg_tag = port->cfiscsi_portal_group_tag;
+		pg->pg_tag = pg_tag;
 		cp = port_new(conf, targ, pg);
 		if (cp == NULL) {
 			log_warnx("port_new failed");
@@ -837,67 +844,6 @@ kernel_lun_remove(struct lun *lun)
 	return (0);
 }
 
-void
-kernel_handoff(struct ctld_connection *conn)
-{
-	struct ctl_iscsi req;
-
-	bzero(&req, sizeof(req));
-
-	req.type = CTL_ISCSI_HANDOFF;
-	strlcpy(req.data.handoff.initiator_name,
-	    conn->conn_initiator_name, sizeof(req.data.handoff.initiator_name));
-	strlcpy(req.data.handoff.initiator_addr,
-	    conn->conn_initiator_addr, sizeof(req.data.handoff.initiator_addr));
-	if (conn->conn_initiator_alias != NULL) {
-		strlcpy(req.data.handoff.initiator_alias,
-		    conn->conn_initiator_alias, sizeof(req.data.handoff.initiator_alias));
-	}
-	memcpy(req.data.handoff.initiator_isid, conn->conn_initiator_isid,
-	    sizeof(req.data.handoff.initiator_isid));
-	strlcpy(req.data.handoff.target_name,
-	    conn->conn_target->t_name, sizeof(req.data.handoff.target_name));
-	if (conn->conn_portal->p_portal_group->pg_offload != NULL) {
-		strlcpy(req.data.handoff.offload,
-		    conn->conn_portal->p_portal_group->pg_offload,
-		    sizeof(req.data.handoff.offload));
-	}
-#ifdef ICL_KERNEL_PROXY
-	if (proxy_mode)
-		req.data.handoff.connection_id = conn->conn.conn_socket;
-	else
-		req.data.handoff.socket = conn->conn.conn_socket;
-#else
-	req.data.handoff.socket = conn->conn.conn_socket;
-#endif
-	req.data.handoff.portal_group_tag =
-	    conn->conn_portal->p_portal_group->pg_tag;
-	if (conn->conn.conn_header_digest == CONN_DIGEST_CRC32C)
-		req.data.handoff.header_digest = CTL_ISCSI_DIGEST_CRC32C;
-	if (conn->conn.conn_data_digest == CONN_DIGEST_CRC32C)
-		req.data.handoff.data_digest = CTL_ISCSI_DIGEST_CRC32C;
-	req.data.handoff.cmdsn = conn->conn.conn_cmdsn;
-	req.data.handoff.statsn = conn->conn.conn_statsn;
-	req.data.handoff.max_recv_data_segment_length =
-	    conn->conn.conn_max_recv_data_segment_length;
-	req.data.handoff.max_send_data_segment_length =
-	    conn->conn.conn_max_send_data_segment_length;
-	req.data.handoff.max_burst_length = conn->conn.conn_max_burst_length;
-	req.data.handoff.first_burst_length =
-	    conn->conn.conn_first_burst_length;
-	req.data.handoff.immediate_data = conn->conn.conn_immediate_data;
-
-	if (ioctl(ctl_fd, CTL_ISCSI, &req) == -1) {
-		log_err(1, "error issuing CTL_ISCSI ioctl; "
-		    "dropping connection");
-	}
-
-	if (req.status != CTL_ISCSI_OK) {
-		log_errx(1, "error returned from CTL iSCSI handoff request: "
-		    "%s; dropping connection", req.error_str);
-	}
-}
-
 int
 kernel_port_add(struct port *port)
 {
@@ -914,29 +860,16 @@ kernel_port_add(struct port *port)
 		bzero(&req, sizeof(req));
 		req.reqtype = CTL_REQ_CREATE;
 
-		if (port->p_portal_group) {
-			strlcpy(req.driver, "iscsi", sizeof(req.driver));
-			req.args_nvl = nvlist_clone(pg->pg_options);
-			nvlist_add_string(req.args_nvl, "cfiscsi_target",
-			    targ->t_name);
-			nvlist_add_string(req.args_nvl,
-			    "ctld_portal_group_name", pg->pg_name);
-			nvlist_add_stringf(req.args_nvl,
-			    "cfiscsi_portal_group_tag", "%u", pg->pg_tag);
-
-			if (targ->t_alias) {
-				nvlist_add_string(req.args_nvl,
-				    "cfiscsi_target_alias", targ->t_alias);
-			}
-		}
-
 		if (port->p_ioctl_port) {
-			strlcpy(req.driver, "ioctl", sizeof(req.driver));
 			req.args_nvl = nvlist_create(0);
+			strlcpy(req.driver, "ioctl", sizeof(req.driver));
 			nvlist_add_stringf(req.args_nvl, "pp", "%d",
 			    port->p_ioctl_pp);
 			nvlist_add_stringf(req.args_nvl, "vp", "%d",
 			    port->p_ioctl_vp);
+		} else {
+			req.args_nvl = nvlist_clone(pg->pg_options);
+			pg->pg_ops->kernel_port_add(port, &req);
 		}
 
 		req.args = nvlist_pack(req.args_nvl, &req.args_len);
@@ -1058,7 +991,6 @@ kernel_port_remove(struct port *port)
 	struct ctl_port_entry entry;
 	struct ctl_lun_map lm;
 	struct ctl_req req;
-	struct target *targ = port->p_target;
 	struct portal_group *pg = port->p_portal_group;
 	int error;
 
@@ -1074,22 +1006,18 @@ kernel_port_remove(struct port *port)
 	/* Remove iSCSI or ioctl port. */
 	if (port->p_portal_group || port->p_ioctl_port) {
 		bzero(&req, sizeof(req));
-		strlcpy(req.driver, port->p_ioctl_port ? "ioctl" : "iscsi",
-		    sizeof(req.driver));
 		req.reqtype = CTL_REQ_REMOVE;
 		req.args_nvl = nvlist_create(0);
 		if (req.args_nvl == NULL)
 			log_err(1, "nvlist_create");
 
-		if (port->p_ioctl_port)
+		if (port->p_ioctl_port) {
+			strlcpy(req.driver, "ioctl", sizeof(req.driver));
+
 			nvlist_add_stringf(req.args_nvl, "port_id", "%d",
 			    port->p_ctl_port);
-		else {
-			nvlist_add_string(req.args_nvl, "cfiscsi_target",
-			    targ->t_name);
-			nvlist_add_stringf(req.args_nvl,
-			    "cfiscsi_portal_group_tag", "%u", pg->pg_tag);
-		}
+		} else
+			pg->pg_ops->kernel_port_remove(port, &req);
 
 		req.args = nvlist_pack(req.args_nvl, &req.args_len);
 		if (req.args == NULL) {

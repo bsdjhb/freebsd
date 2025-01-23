@@ -55,13 +55,6 @@
 #include "ctld.h"
 #include "isns.h"
 
-static bool	timed_out(void);
-#ifdef ICL_KERNEL_PROXY
-static void	pdu_receive_proxy(struct pdu *pdu);
-static void	pdu_send_proxy(struct pdu *pdu);
-#endif /* ICL_KERNEL_PROXY */
-static void	pdu_fail(const struct connection *conn, const char *reason);
-
 bool proxy_mode = false;
 
 static volatile bool sighup_received = false;
@@ -70,16 +63,6 @@ static volatile bool sigalrm_received = false;
 
 static int kqfd;
 static int nchildren = 0;
-static uint16_t last_portal_group_tag = 0xff;
-
-static struct connection_ops conn_ops = {
-	.timed_out = timed_out,
-#ifdef ICL_KERNEL_PROXY
-	.pdu_receive_proxy = pdu_receive_proxy,
-	.pdu_send_proxy = pdu_send_proxy,
-#endif
-	.fail = pdu_fail,
-};
 
 static void
 usage(void)
@@ -298,44 +281,74 @@ auth_new_chap_mutual(struct auth_group *ag, const char *user,
 	return (true);
 }
 
-bool
-auth_name_new(struct auth_group *ag, const char *name)
+static struct auth_name_head *
+auth_name_head(struct auth_group *ag, int protocol)
 {
+	switch (protocol) {
+	case TARGET_PROTOCOL_ISCSI:
+		return (&ag->ag_initiator_names);
+	default:
+		__assert_unreachable();
+	}
+}
+
+static const struct auth_name_head *
+auth_name_const_head(const struct auth_group *ag, int protocol)
+{
+	switch (protocol) {
+	case TARGET_PROTOCOL_ISCSI:
+		return (&ag->ag_initiator_names);
+	default:
+		__assert_unreachable();
+	}
+}
+
+bool
+auth_name_new(struct auth_group *ag, int protocol, const char *name)
+{
+	struct auth_name_head *head = auth_name_head(ag, protocol);
 	struct auth_name *an;
 
 	an = calloc(1, sizeof(*an));
 	if (an == NULL)
 		log_err(1, "calloc");
 	an->an_auth_group = ag;
-	an->an_initiator_name = checked_strdup(name);
-	TAILQ_INSERT_TAIL(&ag->ag_names, an, an_next);
+	an->an_name = checked_strdup(name);
+	an->an_protocol = protocol;
+	TAILQ_INSERT_TAIL(head, an, an_next);
 	return (true);
 }
 
 static void
 auth_name_delete(struct auth_name *an)
 {
-	TAILQ_REMOVE(&an->an_auth_group->ag_names, an, an_next);
+	struct auth_name_head *head;
 
-	free(an->an_initiator_name);
+	head = auth_name_head(an->an_auth_group, an->an_protocol);
+	TAILQ_REMOVE(head, an, an_next);
+
+	free(an->an_name);
 	free(an);
 }
 
 bool
-auth_name_defined(const struct auth_group *ag)
+auth_name_defined(const struct auth_group *ag, int protocol)
 {
-	if (TAILQ_EMPTY(&ag->ag_names))
+	const struct auth_name_head *head = auth_name_const_head(ag, protocol);
+
+	if (TAILQ_EMPTY(head))
 		return (false);
 	return (true);
 }
 
 const struct auth_name *
-auth_name_find(const struct auth_group *ag, const char *name)
+auth_name_find(const struct auth_group *ag, int protocol, const char *name)
 {
+	const struct auth_name_head *head = auth_name_const_head(ag, protocol);
 	const struct auth_name *auth_name;
 
-	TAILQ_FOREACH(auth_name, &ag->ag_names, an_next) {
-		if (strcmp(auth_name->an_initiator_name, name) == 0)
+	TAILQ_FOREACH(auth_name, head, an_next) {
+		if (strcmp(auth_name->an_name, name) == 0)
 			return (auth_name);
 	}
 
@@ -343,20 +356,43 @@ auth_name_find(const struct auth_group *ag, const char *name)
 }
 
 bool
-auth_name_check(const struct auth_group *ag, const char *initiator_name)
+auth_name_check(const struct auth_group *ag, int protocol, const char *name)
 {
-	if (!auth_name_defined(ag))
+	if (!auth_name_defined(ag, protocol))
 		return (true);
 
-	if (auth_name_find(ag, initiator_name) == NULL)
+	if (auth_name_find(ag, protocol, name) == NULL)
 		return (false);
 
 	return (true);
 }
 
-bool
-auth_portal_new(struct auth_group *ag, const char *portal)
+static struct auth_portal_head *
+auth_portal_head(struct auth_group *ag, int protocol)
 {
+	switch (protocol) {
+	case TARGET_PROTOCOL_ISCSI:
+		return (&ag->ag_initiator_portals);
+	default:
+		__assert_unreachable();
+	}
+}
+
+static const struct auth_portal_head *
+auth_portal_const_head(const struct auth_group *ag, int protocol)
+{
+	switch (protocol) {
+	case TARGET_PROTOCOL_ISCSI:
+		return (&ag->ag_initiator_portals);
+	default:
+		__assert_unreachable();
+	}
+}
+
+bool
+auth_portal_new(struct auth_group *ag, int protocol, const char *portal)
+{
+	struct auth_portal_head *head = auth_portal_head(ag, protocol);
 	struct auth_portal *ap;
 	char *net, *mask, *str, *tmp;
 	int len, dm, m;
@@ -365,7 +401,7 @@ auth_portal_new(struct auth_group *ag, const char *portal)
 	if (ap == NULL)
 		log_err(1, "calloc");
 	ap->ap_auth_group = ag;
-	ap->ap_initiator_portal = checked_strdup(portal);
+	ap->ap_portal = checked_strdup(portal);
 	mask = str = checked_strdup(portal);
 	net = strsep(&mask, "/");
 	if (net[0] == '[')
@@ -401,8 +437,9 @@ auth_portal_new(struct auth_group *ag, const char *portal)
 	} else
 		m = dm;
 	ap->ap_mask = m;
+	ap->ap_protocol = protocol;
 	free(str);
-	TAILQ_INSERT_TAIL(&ag->ag_portals, ap, ap_next);
+	TAILQ_INSERT_TAIL(head, ap, ap_next);
 	return (true);
 
 error:
@@ -415,29 +452,38 @@ error:
 static void
 auth_portal_delete(struct auth_portal *ap)
 {
-	TAILQ_REMOVE(&ap->ap_auth_group->ag_portals, ap, ap_next);
+	struct auth_portal_head *head;
 
-	free(ap->ap_initiator_portal);
+	head = auth_portal_head(ap->ap_auth_group, ap->ap_protocol);
+	TAILQ_REMOVE(head, ap, ap_next);
+
+	free(ap->ap_portal);
 	free(ap);
 }
 
 bool
-auth_portal_defined(const struct auth_group *ag)
+auth_portal_defined(const struct auth_group *ag, int protocol)
 {
-	if (TAILQ_EMPTY(&ag->ag_portals))
+	const struct auth_portal_head *head;
+
+	head = auth_portal_const_head(ag, protocol);
+	if (TAILQ_EMPTY(head))
 		return (false);
 	return (true);
 }
 
 const struct auth_portal *
-auth_portal_find(const struct auth_group *ag, const struct sockaddr_storage *ss)
+auth_portal_find(const struct auth_group *ag, int protocol,
+    const struct sockaddr_storage *ss)
 {
+	const struct auth_portal_head *head;
 	const struct auth_portal *ap;
 	const uint8_t *a, *b;
 	int i;
 	uint8_t bmask;
 
-	TAILQ_FOREACH(ap, &ag->ag_portals, ap_next) {
+	head = auth_portal_const_head(ag, protocol);
+	TAILQ_FOREACH(ap, head, ap_next) {
 		if (ap->ap_sa.ss_family != ss->ss_family)
 			continue;
 		if (ss->ss_family == AF_INET) {
@@ -469,13 +515,14 @@ next:
 }
 
 bool
-auth_portal_check(const struct auth_group *ag, const struct sockaddr_storage *sa)
+auth_portal_check(const struct auth_group *ag, int protocol,
+    const struct sockaddr_storage *sa)
 {
 
-	if (!auth_portal_defined(ag))
+	if (!auth_portal_defined(ag, protocol))
 		return (true);
 
-	if (auth_portal_find(ag, sa) == NULL)
+	if (auth_portal_find(ag, protocol, sa) == NULL)
 		return (false);
 
 	return (true);
@@ -500,8 +547,8 @@ auth_group_new(struct conf *conf, const char *name)
 	if (name != NULL)
 		ag->ag_name = checked_strdup(name);
 	TAILQ_INIT(&ag->ag_auths);
-	TAILQ_INIT(&ag->ag_names);
-	TAILQ_INIT(&ag->ag_portals);
+	TAILQ_INIT(&ag->ag_initiator_names);
+	TAILQ_INIT(&ag->ag_initiator_portals);
 	ag->ag_conf = conf;
 	TAILQ_INSERT_TAIL(&conf->conf_auth_groups, ag, ag_next);
 
@@ -519,9 +566,10 @@ auth_group_delete(struct auth_group *ag)
 
 	TAILQ_FOREACH_SAFE(auth, &ag->ag_auths, a_next, auth_tmp)
 		auth_delete(auth);
-	TAILQ_FOREACH_SAFE(auth_name, &ag->ag_names, an_next, auth_name_tmp)
+	TAILQ_FOREACH_SAFE(auth_name, &ag->ag_initiator_names, an_next,
+	    auth_name_tmp)
 		auth_name_delete(auth_name);
-	TAILQ_FOREACH_SAFE(auth_portal, &ag->ag_portals, ap_next,
+	TAILQ_FOREACH_SAFE(auth_portal, &ag->ag_initiator_portals, ap_next,
 	    auth_portal_tmp)
 		auth_portal_delete(auth_portal);
 	free(ag->ag_name);
@@ -559,7 +607,7 @@ portal_new(struct portal_group *pg)
 static void
 portal_delete(struct portal *portal)
 {
-
+	portal->p_portal_group->pg_ops->portal_delete(portal);
 	TAILQ_REMOVE(&portal->p_portal_group->pg_portals, portal, p_next);
 	if (portal->p_ai != NULL)
 		freeaddrinfo(portal->p_ai);
@@ -567,14 +615,39 @@ portal_delete(struct portal *portal)
 	free(portal);
 }
 
+static struct target_protocol_ops *
+target_ops(int protocol)
+{
+	switch (protocol) {
+#ifdef WANT_ISCSI
+	case TARGET_PROTOCOL_ISCSI:
+		return (&target_iscsi);
+#endif
+	default:
+		return (NULL);
+	}
+}
+
+static const char *
+portal_group_keyword(int protocol)
+{
+	switch (protocol) {
+	case TARGET_PROTOCOL_ISCSI:
+		return "portal-group";
+	default:
+		__assert_unreachable();
+	}
+}
+
 struct portal_group *
-portal_group_new(struct conf *conf, const char *name)
+portal_group_new(struct conf *conf, int protocol, const char *name)
 {
 	struct portal_group *pg;
 
-	pg = portal_group_find(conf, name);
+	pg = portal_group_find(conf, protocol, name);
 	if (pg != NULL) {
-		log_warnx("duplicated portal-group \"%s\"", name);
+		log_warnx("duplicated %s \"%s\"",
+		    portal_group_keyword(protocol), name);
 		return (NULL);
 	}
 
@@ -585,6 +658,8 @@ portal_group_new(struct conf *conf, const char *name)
 	pg->pg_options = nvlist_create(0);
 	TAILQ_INIT(&pg->pg_portals);
 	TAILQ_INIT(&pg->pg_ports);
+	pg->pg_protocol = protocol;
+	pg->pg_ops = target_ops(protocol);
 	pg->pg_conf = conf;
 	pg->pg_tag = 0;		/* Assigned later in conf_apply(). */
 	pg->pg_dscp = -1;
@@ -614,12 +689,13 @@ portal_group_delete(struct portal_group *pg)
 }
 
 struct portal_group *
-portal_group_find(const struct conf *conf, const char *name)
+portal_group_find(const struct conf *conf, int protocol, const char *name)
 {
 	struct portal_group *pg;
 
 	TAILQ_FOREACH(pg, &conf->conf_portal_groups, pg_next) {
-		if (strcmp(pg->pg_name, name) == 0)
+		if (pg->pg_protocol == protocol &&
+		    strcmp(pg->pg_name, name) == 0)
 			return (pg);
 	}
 
@@ -684,15 +760,26 @@ parse_addr_port(char *arg, const char *def_port, struct addrinfo **ai)
 }
 
 bool
-portal_group_add_portal(struct portal_group *pg, const char *value, bool iser)
+portal_group_add_portal(struct portal_group *pg, const char *value,
+    int protocol)
 {
 	struct portal *portal;
+	const char *def_port;
 
 	portal = portal_new(pg);
 	portal->p_listen = checked_strdup(value);
-	portal->p_iser = iser;
+	portal->p_protocol = protocol;
 
-	if (parse_addr_port(portal->p_listen, "3260", &portal->p_ai)) {
+	switch (protocol) {
+	case PORTAL_PROTOCOL_ISER:
+	case PORTAL_PROTOCOL_ISCSI:
+		def_port = "3260";
+		break;
+	default:
+		__builtin_unreachable();
+	}
+
+	if (parse_addr_port(portal->p_listen, def_port, &portal->p_ai)) {
 		log_warnx("invalid listen address %s", portal->p_listen);
 		portal_delete(portal);
 		return (false);
@@ -703,6 +790,7 @@ portal_group_add_portal(struct portal_group *pg, const char *value, bool iser)
 	 *	those into multiple portals.
 	 */
 
+	pg->pg_ops->portal_init(portal);
 	return (true);
 }
 
@@ -789,6 +877,8 @@ isns_do_register(struct isns *isns, int s, const char *hostname)
 		}
 	}
 	TAILQ_FOREACH(target, &conf->conf_targets, t_next) {
+		if (target->t_protocol != TARGET_PROTOCOL_ISCSI)
+			continue;
 		isns_req_add_str(req, 32, target->t_name);
 		isns_req_add_32(req, 33, 1); /* 1 -- Target*/
 		if (target->t_alias != NULL)
@@ -1174,31 +1264,31 @@ port_is_dummy(struct port *port)
 }
 
 struct target *
-target_new(struct conf *conf, const char *name)
+target_new(struct conf *conf, const char *name, int protocol)
 {
+	struct target_protocol_ops *ops;
 	struct target *targ;
-	int i, len;
+	char *t_name;
 
 	targ = target_find(conf, name);
 	if (targ != NULL) {
 		log_warnx("duplicated target \"%s\"", name);
 		return (NULL);
 	}
-	if (valid_iscsi_name(name, log_warnx) == false) {
+	ops = target_ops(protocol);
+	if (ops == NULL) {
+		log_warnx("unsupported protocol for target \"%s\"", name);
 		return (NULL);
 	}
+	t_name = ops->normalize_target_name(name);
+	if (t_name == NULL)
+		return (NULL);
 	targ = calloc(1, sizeof(*targ));
 	if (targ == NULL)
 		log_err(1, "calloc");
-	targ->t_name = checked_strdup(name);
-
-	/*
-	 * RFC 3722 requires us to normalize the name to lowercase.
-	 */
-	len = strlen(name);
-	for (i = 0; i < len; i++)
-		targ->t_name[i] = tolower(targ->t_name[i]);
-
+	targ->t_name = t_name;
+	targ->t_ops = ops;
+	targ->t_protocol = protocol;
 	targ->t_conf = conf;
 	TAILQ_INIT(&targ->t_ports);
 	TAILQ_INSERT_TAIL(&conf->conf_targets, targ, t_next);
@@ -1320,63 +1410,6 @@ option_new(nvlist_t *nvl, const char *name, const char *value)
 	return (true);
 }
 
-#ifdef ICL_KERNEL_PROXY
-
-static void
-pdu_receive_proxy(struct pdu *pdu)
-{
-	struct connection *conn;
-	size_t len;
-
-	assert(proxy_mode);
-	conn = pdu->pdu_connection;
-
-	kernel_receive(pdu);
-
-	len = pdu_ahs_length(pdu);
-	if (len > 0)
-		log_errx(1, "protocol error: non-empty AHS");
-
-	len = pdu_data_segment_length(pdu);
-	assert(len <= (size_t)conn->conn_max_recv_data_segment_length);
-	pdu->pdu_data_len = len;
-}
-
-static void
-pdu_send_proxy(struct pdu *pdu)
-{
-
-	assert(proxy_mode);
-
-	pdu_set_data_segment_length(pdu, pdu->pdu_data_len);
-	kernel_send(pdu);
-}
-
-#endif /* ICL_KERNEL_PROXY */
-
-static void
-pdu_fail(const struct connection *conn __unused, const char *reason __unused)
-{
-}
-
-static struct ctld_connection *
-connection_new(struct portal *portal, int fd, const char *host,
-    const struct sockaddr *client_sa)
-{
-	struct ctld_connection *conn;
-
-	conn = calloc(1, sizeof(*conn));
-	if (conn == NULL)
-		log_err(1, "calloc");
-	connection_init(&conn->conn, &conn_ops, proxy_mode);
-	conn->conn.conn_socket = fd;
-	conn->conn_portal = portal;
-	conn->conn_initiator_addr = checked_strdup(host);
-	memcpy(&conn->conn_initiator_sa, client_sa, client_sa->sa_len);
-
-	return (conn);
-}
-
 #if 0
 static void
 options_print(const char *prefix, nvlist_t *nvl)
@@ -1409,16 +1442,17 @@ conf_print(struct conf *conf)
 			fprintf(stderr, "\t chap-mutual %s %s %s %s\n",
 			    auth->a_user, auth->a_secret,
 			    auth->a_mutual_user, auth->a_mutual_secret);
-		TAILQ_FOREACH(auth_name, &ag->ag_names, an_next)
+		TAILQ_FOREACH(auth_name, &ag->ag_initiator_names, an_next)
 			fprintf(stderr, "\t initiator-name %s\n",
-			    auth_name->an_initiator_name);
-		TAILQ_FOREACH(auth_portal, &ag->ag_portals, ap_next)
+			    auth_name->an_name);
+		TAILQ_FOREACH(auth_portal, &ag->ag_initiator_portals, ap_next)
 			fprintf(stderr, "\t initiator-portal %s\n",
-			    auth_portal->ap_initiator_portal);
+			    auth_portal->ap_portal);
 		fprintf(stderr, "}\n");
 	}
 	TAILQ_FOREACH(pg, &conf->conf_portal_groups, pg_next) {
-		fprintf(stderr, "portal-group %s {\n", pg->pg_name);
+		fprintf(stderr, "%s %s {\n",
+		    portal_group_keyword(pg->pg_protocol), pg->pg_name);
 		TAILQ_FOREACH(portal, &pg->pg_portals, p_next)
 			fprintf(stderr, "\t listen %s\n", portal->p_listen);
 		options_print("\t", pg->pg_options);
@@ -1520,7 +1554,8 @@ conf_verify(struct conf *conf)
 			assert(targ->t_auth_group != NULL);
 		}
 		if (TAILQ_EMPTY(&targ->t_ports)) {
-			pg = portal_group_find(conf, "default");
+			pg = portal_group_find(conf, targ->t_protocol,
+			    "default");
 			assert(pg != NULL);
 			port_new(conf, targ, pg);
 		}
@@ -1562,8 +1597,10 @@ conf_verify(struct conf *conf)
 			pg->pg_unassigned = false;
 		} else {
 			if (strcmp(pg->pg_name, "default") != 0)
-				log_warnx("portal-group \"%s\" not assigned "
-				    "to any target", pg->pg_name);
+				log_warnx("%s \"%s\" not assigned "
+				    "to any target",
+				    portal_group_keyword(pg->pg_protocol),
+				    pg->pg_name);
 			pg->pg_unassigned = true;
 		}
 	}
@@ -1629,7 +1666,7 @@ portal_init_socket(struct portal *p)
 {
 	struct portal_group *pg = p->p_portal_group;
 	struct kevent kev;
-	int error, sockbuf;
+	int error;
 	int one = 1;
 
 	log_debugx("listening on %s, portal-group \"%s\"",
@@ -1642,15 +1679,6 @@ portal_init_socket(struct portal *p)
 		return (false);
 	}
 
-	sockbuf = SOCKBUF_SIZE;
-	if (setsockopt(p->p_socket, SOL_SOCKET, SO_RCVBUF, &sockbuf,
-	    sizeof(sockbuf)) == -1)
-		log_warn("setsockopt(SO_RCVBUF) failed for %s",
-		    p->p_listen);
-	sockbuf = SOCKBUF_SIZE;
-	if (setsockopt(p->p_socket, SOL_SOCKET, SO_SNDBUF, &sockbuf,
-	    sizeof(sockbuf)) == -1)
-		log_warn("setsockopt(SO_SNDBUF) failed for %s", p->p_listen);
 	if (setsockopt(p->p_socket, SOL_SOCKET, SO_NO_DDP, &one,
 	    sizeof(one)) == -1)
 		log_warn("setsockopt(SO_NO_DDP) failed for %s", p->p_listen);
@@ -1698,6 +1726,8 @@ portal_init_socket(struct portal *p)
 			break;
 		}
 	}
+
+	pg->pg_ops->portal_init_socket(p);
 
 	error = bind(p->p_socket, p->p_ai->ai_addr,
 	    p->p_ai->ai_addrlen);
@@ -1767,11 +1797,12 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 	TAILQ_FOREACH(newpg, &newconf->conf_portal_groups, pg_next) {
 		if (newpg->pg_tag != 0)
 			continue;
-		oldpg = portal_group_find(oldconf, newpg->pg_name);
+		oldpg = portal_group_find(oldconf, newpg->pg_protocol,
+		    newpg->pg_name);
 		if (oldpg != NULL)
-			newpg->pg_tag = oldpg->pg_tag;
+			newpg->pg_ops->portal_group_copy(oldpg, newpg);
 		else
-			newpg->pg_tag = ++last_portal_group_tag;
+			newpg->pg_ops->portal_group_init(newpg);
 	}
 
 	/* Deregister on removed iSNS servers. */
@@ -1952,8 +1983,9 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 		if (newpg->pg_foreign)
 			continue;
 		if (newpg->pg_unassigned) {
-			log_debugx("not listening on portal-group \"%s\", "
+			log_debugx("not listening on %s \"%s\", "
 			    "not assigned to any target",
+			    portal_group_keyword(newpg->pg_protocol),
 			    newpg->pg_name);
 			continue;
 		}
@@ -1993,7 +2025,7 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 			}
 #endif
 			assert(proxy_mode == false);
-			assert(newp->p_iser == false);
+			assert(newp->p_protocol != PORTAL_PROTOCOL_ISER);
 
 			if (!portal_init_socket(newp)) {
 				cumulated_error++;
@@ -2009,8 +2041,10 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 		TAILQ_FOREACH(oldp, &oldpg->pg_portals, p_next) {
 			if (oldp->p_socket <= 0)
 				continue;
-			log_debugx("closing socket for %s, portal-group \"%s\"",
-			    oldp->p_listen, oldpg->pg_name);
+			log_debugx("closing socket for %s, %s \"%s\"",
+			    oldp->p_listen,
+			    portal_group_keyword(oldpg->pg_protocol),
+			    oldpg->pg_name);
 			close(oldp->p_socket);
 			oldp->p_socket = 0;
 		}
@@ -2032,7 +2066,7 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 	return (cumulated_error);
 }
 
-static bool
+bool
 timed_out(void)
 {
 
@@ -2143,13 +2177,13 @@ static void
 handle_connection(struct portal *portal, int fd,
     const struct sockaddr *client_sa, bool dont_fork)
 {
-	struct ctld_connection *conn;
+	struct portal_group *pg = portal->p_portal_group;
 	int error;
 	pid_t pid;
 	char host[NI_MAXHOST + 1];
 	struct conf *conf;
 
-	conf = portal->p_portal_group->pg_conf;
+	conf = pg->pg_conf;
 
 	if (dont_fork) {
 		log_debugx("incoming connection; not forking due to -d flag");
@@ -2181,22 +2215,12 @@ handle_connection(struct portal *portal, int fd,
 	if (error != 0)
 		log_errx(1, "getnameinfo: %s", gai_strerror(error));
 
-	log_debugx("accepted connection from %s; portal group \"%s\"",
-	    host, portal->p_portal_group->pg_name);
+	log_debugx("accepted connection from %s; %s \"%s\"",
+	    host, portal_group_keyword(pg->pg_protocol), pg->pg_name);
 	log_set_peer_addr(host);
 	setproctitle("%s", host);
 
-	conn = connection_new(portal, fd, host, client_sa);
-	set_timeout(conf->conf_timeout, true);
-	kernel_capsicate();
-	login(conn);
-	if (conn->conn_session_type == CONN_SESSION_TYPE_NORMAL) {
-		kernel_handoff(conn);
-		log_debugx("connection handed off to the kernel");
-	} else {
-		assert(conn->conn_session_type == CONN_SESSION_TYPE_DISCOVERY);
-		discovery(conn);
-	}
+	pg->pg_ops->handle_connection(portal, fd, host, client_sa);
 	log_debugx("nothing more to do; exiting");
 	exit(0);
 }
@@ -2385,7 +2409,7 @@ conf_new_from_file(const char *path, bool ucl)
 	assert(ag != NULL);
 	ag->ag_type = AG_TYPE_DENY;
 
-	pg = portal_group_new(conf, "default");
+	pg = portal_group_new(conf, TARGET_PROTOCOL_ISCSI, "default");
 	assert(pg != NULL);
 
 	conf_start(conf);
@@ -2413,10 +2437,10 @@ conf_new_from_file(const char *path, bool ucl)
 	if (conf->conf_default_pg_defined == false) {
 		log_debugx("portal-group \"default\" not defined; "
 		    "going with defaults");
-		pg = portal_group_find(conf, "default");
+		pg = portal_group_find(conf, TARGET_PROTOCOL_ISCSI, "default");
 		assert(pg != NULL);
-		portal_group_add_portal(pg, "0.0.0.0", false);
-		portal_group_add_portal(pg, "[::]", false);
+		portal_group_add_portal(pg, "0.0.0.0", PORTAL_PROTOCOL_ISCSI);
+		portal_group_add_portal(pg, "[::]", PORTAL_PROTOCOL_ISCSI);
 	}
 
 	conf->conf_kernel_port_on = true;

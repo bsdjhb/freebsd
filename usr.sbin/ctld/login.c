@@ -1027,12 +1027,13 @@ login(struct ctld_connection *conn)
 	/*
 	 * Enforce initiator-name and initiator-portal.
 	 */
-	if (!auth_name_check(ag, initiator_name)) {
+	if (!auth_name_check(ag, TARGET_PROTOCOL_ISCSI, initiator_name)) {
 		login_send_error(request, 0x02, 0x02);
 		log_errx(1, "initiator does not match allowed initiator names");
 	}
 
-	if (!auth_portal_check(ag, &conn->conn_initiator_sa)) {
+	if (!auth_portal_check(ag, TARGET_PROTOCOL_ISCSI,
+	    &conn->conn_initiator_sa)) {
 		login_send_error(request, 0x02, 0x02);
 		log_errx(1, "initiator does not match allowed "
 		    "initiator portals");

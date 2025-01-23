@@ -169,13 +169,13 @@ auth_group_add_chap_mutual(const char *user, const char *secret,
 bool
 auth_group_add_initiator_name(const char *name)
 {
-	return (auth_name_new(auth_group, name));
+	return (auth_name_new(auth_group, TARGET_PROTOCOL_ISCSI, name));
 }
 
 bool
 auth_group_add_initiator_portal(const char *portal)
 {
-	return (auth_portal_new(auth_group, portal));
+	return (auth_portal_new(auth_group, TARGET_PROTOCOL_ISCSI, portal));
 }
 
 bool
@@ -216,8 +216,8 @@ bool
 portal_group_start(const char *name)
 {
 	/*
-	 * Make it possible to redefine the default portal-group. but
-	 * only once.
+	 * Make it possible to redefine the default iSCSI
+	 * portal-group, but only once.
 	 */
 	if (strcmp(name, "default") == 0) {
 		if (conf->conf_default_pg_defined) {
@@ -226,11 +226,12 @@ portal_group_start(const char *name)
 		}
 
 		conf->conf_default_pg_defined = true;
-		portal_group = portal_group_find(conf, "default");
+		portal_group = portal_group_find(conf, TARGET_PROTOCOL_ISCSI,
+		    "default");
 		return (true);
 	}
 
-	portal_group = portal_group_new(conf, name);
+	portal_group = portal_group_new(conf, TARGET_PROTOCOL_ISCSI, name);
 	return (portal_group != NULL);
 }
 
@@ -243,7 +244,8 @@ portal_group_finish(void)
 bool
 portal_group_add_listen(const char *listen, bool iser)
 {
-	return (portal_group_add_portal(portal_group, listen, iser));
+	return (portal_group_add_portal(portal_group, listen,
+	    iser ? PORTAL_PROTOCOL_ISER : PORTAL_PROTOCOL_ISCSI));
 }
 
 bool
@@ -511,7 +513,7 @@ lun_set_ctl_lun(uint32_t value)
 bool
 target_start(const char *name)
 {
-	target = target_new(conf, name);
+	target = target_new(conf, name, TARGET_PROTOCOL_ISCSI);
 	return (target != NULL);
 }
 
@@ -574,7 +576,8 @@ target_add_initiator_name(const char *name)
 			return (false);
 		target->t_auth_group->ag_target = target;
 	}
-	return (auth_name_new(target->t_auth_group, name));
+	return (auth_name_new(target->t_auth_group, TARGET_PROTOCOL_ISCSI,
+	    name));
 }
 
 bool
@@ -593,7 +596,8 @@ target_add_initiator_portal(const char *addr)
 			return (false);
 		target->t_auth_group->ag_target = target;
 	}
-	return (auth_portal_new(target->t_auth_group, addr));
+	return (auth_portal_new(target->t_auth_group, TARGET_PROTOCOL_ISCSI,
+	    addr));
 }
 
 bool
@@ -631,7 +635,7 @@ target_add_portal_group(const char *pg_name, const char *ag_name)
 	struct auth_group *ag;
 	struct port *p;
 
-	pg = portal_group_find(conf, pg_name);
+	pg = portal_group_find(conf, TARGET_PROTOCOL_ISCSI, pg_name);
 	if (pg == NULL) {
 		log_warnx("unknown portal-group \"%s\" for target \"%s\"",
 		    pg_name, target->t_name);
