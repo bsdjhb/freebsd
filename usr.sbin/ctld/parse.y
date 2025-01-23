@@ -63,7 +63,7 @@ extern void	yyrestart(FILE *);
 %token HOST_ADDRESS HOST_NQN
 %token INITIATOR_NAME INITIATOR_PORTAL
 %token ISNS_SERVER ISNS_PERIOD ISNS_TIMEOUT
-%token LISTEN LISTEN_ISER LUN MAXPROC
+%token LISTEN LISTEN_ISER LUN MAXPROC NAMESPACE
 %token OFFLOAD OPENING_BRACKET OPTION
 %token PATH PCP PIDFILE PORT PORTAL_GROUP REDIRECT SEMICOLON SERIAL
 %token SIZE STR TAG TARGET TCP TIMEOUT TRANSPORT_GROUP
@@ -1086,9 +1086,9 @@ controller_entry:
 	|
 	controller_transport_group
 	|
-	target_lun
+	controller_namespace
 	|
-	target_lun_ref
+	controller_namespace_ref
 	;
 
 controller_host_address:	HOST_ADDRESS STR
@@ -1198,6 +1198,78 @@ controller_transport_group:	TRANSPORT_GROUP STR STR
 			return (1);
 		}
 		free($2);
+	}
+	;
+
+controller_namespace:	NAMESPACE ns_number
+    OPENING_BRACKET lun_entries CLOSING_BRACKET
+	{
+		lun = NULL;
+	}
+	;
+
+ns_number:	STR
+	{
+		uint64_t tmp;
+		int ret;
+		char *name;
+
+		if (expand_number($1, &tmp) != 0) {
+			yyerror("invalid numeric value");
+			free($1);
+			return (1);
+		}
+		if (tmp == 0) {
+			yyerror("namespace ID cannot be 0");
+			free($1);
+			return (1);
+		}
+		if (tmp - 1 >= MAX_LUNS) {
+			yyerror("namespace ID is too big");
+			free($1);
+			return (1);
+		}
+
+		ret = asprintf(&name, "%s,nsid,%ju", target->t_name, tmp);
+		if (ret <= 0)
+			log_err(1, "asprintf");
+		lun = lun_new(conf, name);
+		if (lun == NULL)
+			return (1);
+
+		lun_set_scsiname(lun, name);
+		target->t_luns[tmp - 1] = lun;
+	}
+	;
+
+controller_namespace_ref:	NAMESPACE STR STR
+	{
+		uint64_t tmp;
+
+		if (expand_number($2, &tmp) != 0) {
+			yyerror("invalid numeric value");
+			free($2);
+			free($3);
+			return (1);
+		}
+		free($2);
+		if (tmp == 0) {
+			yyerror("namespace ID cannot be 0");
+			free($3);
+			return (1);
+		}
+		if (tmp - 1 >= MAX_LUNS) {
+			yyerror("namespace ID is too big");
+			free($3);
+			return (1);
+		}
+
+		lun = lun_find(conf, $3);
+		free($3);
+		if (lun == NULL)
+			return (1);
+
+		target->t_luns[tmp - 1] = lun;
 	}
 	;
 

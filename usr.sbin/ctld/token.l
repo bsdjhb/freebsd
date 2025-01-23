@@ -73,6 +73,7 @@ listen			{ return LISTEN; }
 listen-iser		{ return LISTEN_ISER; }
 lun			{ return LUN; }
 maxproc			{ return MAXPROC; }
+namespace		{ return NAMESPACE; }
 offload			{ return OFFLOAD; }
 option			{ return OPTION; }
 path			{ return PATH; }

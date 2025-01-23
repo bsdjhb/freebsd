@@ -55,6 +55,8 @@ static bool uclparse_transport_group(const char *, const ucl_object_t *);
 static bool uclparse_controller(const char *, const ucl_object_t *);
 static bool uclparse_controller_transport_group(struct target *,
     const ucl_object_t *);
+static bool uclparse_controller_namespace(struct target *,
+    const ucl_object_t *);
 static bool uclparse_target(const char *, const ucl_object_t *);
 static bool uclparse_target_portal_group(struct target *, const ucl_object_t *);
 static bool uclparse_target_lun(struct target *, const ucl_object_t *);
@@ -294,6 +296,73 @@ uclparse_target_lun(struct target *target, const ucl_object_t *obj)
 			return (false);
 
 		target->t_luns[tmp] = lun;
+	}
+
+	return (true);
+}
+
+static bool
+uclparse_controller_namespace(struct target *target, const ucl_object_t *obj)
+{
+	struct lun *lun;
+	uint64_t tmp;
+
+	if (obj->type == UCL_INT) {
+		char *name;
+
+		tmp = ucl_object_toint(obj);
+		if (tmp == 0) {
+			log_warnx("namespace ID cannot be 0");
+			return (false);
+		}
+		if (tmp - 1 >= MAX_LUNS) {
+			log_warnx("namespace ID %ju in controller \"%s\" is "
+			    "too big", tmp, target->t_name);
+			return (false);
+		}
+
+		asprintf(&name, "%s,nsid,%ju", target->t_name, tmp);
+		lun = lun_new(conf, name);
+		if (lun == NULL)
+			return (false);
+
+		lun_set_scsiname(lun, name);
+		target->t_luns[tmp - 1] = lun;
+		return (true);
+	}
+
+	if (obj->type == UCL_OBJECT) {
+		const ucl_object_t *num = ucl_object_find_key(obj, "nsid");
+		const ucl_object_t *name = ucl_object_find_key(obj, "name");
+
+		if (num == NULL || num->type != UCL_INT) {
+			log_warnx("namespace section in controller \"%s\" is "
+			    "missing \"nsid\" integer property",
+			    target->t_name);
+			return (false);
+		}
+		tmp = ucl_object_toint(num);
+		if (tmp == 0) {
+			log_warnx("namespace ID cannot be 0");
+			return (false);
+		}
+		if (tmp - 1 >= MAX_LUNS) {
+			log_warnx("namespace ID %ju in controller \"%s\" is "
+			    "too big", tmp, target->t_name);
+			return (false);
+		}
+
+		if (name == NULL || name->type != UCL_STRING) {
+			log_warnx("namespace section in controller \"%s\" is "
+			    "missing \"name\" string property", target->t_name);
+			return (false);
+		}
+
+		lun = lun_find(conf, ucl_object_tostring(name));
+		if (lun == NULL)
+			return (false);
+
+		target->t_luns[tmp - 1] = lun;
 	}
 
 	return (true);
@@ -1124,9 +1193,9 @@ uclparse_controller(const char *name, const ucl_object_t *top)
 			}
 		}
 
-		if (!strcmp(key, "lun")) {
+		if (!strcmp(key, "namespace")) {
 			while ((tmp = ucl_iterate_object(obj, &it2, true))) {
-				if (!uclparse_target_lun(target, tmp))
+				if (!uclparse_controller_namespace(target, tmp))
 					return (false);
 			}
 		}
