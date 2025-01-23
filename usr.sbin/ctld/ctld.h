@@ -47,7 +47,10 @@
 #define	DEFAULT_CD_BLOCKSIZE		2048
 
 #define	MAX_LUNS			1024
-#define	SOCKBUF_SIZE			1048576
+
+struct ctl_req;
+struct port;
+struct target_protocol_ops;
 
 struct auth {
 	TAILQ_ENTRY(auth)		a_next;
@@ -61,16 +64,20 @@ struct auth {
 struct auth_name {
 	TAILQ_ENTRY(auth_name)		an_next;
 	struct auth_group		*an_auth_group;
-	char				*an_initiator_name;
+	char				*an_name;
+	int				an_protocol;
 };
+TAILQ_HEAD(auth_name_head, auth_name);
 
 struct auth_portal {
 	TAILQ_ENTRY(auth_portal)	ap_next;
 	struct auth_group		*ap_auth_group;
-	char				*ap_initiator_portal;
+	char				*ap_portal;
 	struct sockaddr_storage		ap_sa;
 	int				ap_mask;
+	int				ap_protocol;
 };
+TAILQ_HEAD(auth_portal_head, auth_portal);
 
 #define	AG_TYPE_UNKNOWN			0
 #define	AG_TYPE_DENY			1
@@ -85,22 +92,54 @@ struct auth_group {
 	struct target			*ag_target;
 	int				ag_type;
 	TAILQ_HEAD(, auth)		ag_auths;
-	TAILQ_HEAD(, auth_name)		ag_names;
-	TAILQ_HEAD(, auth_portal)	ag_portals;
+	struct auth_name_head		ag_initiator_names;
+	struct auth_portal_head		ag_initiator_portals;
 };
+
+#define	PORTAL_PROTOCOL_ISCSI			0
+#define	PORTAL_PROTOCOL_ISER			1
 
 struct portal {
 	TAILQ_ENTRY(portal)		p_next;
 	struct portal_group		*p_portal_group;
-	bool				p_iser;
 	char				*p_listen;
 	struct addrinfo			*p_ai;
+	int				p_protocol;
 #ifdef ICL_KERNEL_PROXY
 	int				p_id;
 #endif
 
 	TAILQ_HEAD(, target)		p_targets;
 	int				p_socket;
+};
+
+#define	TARGET_PROTOCOL_ISCSI		0
+
+struct target_protocol_ops {
+	/* Initialize protocol-specific state for a new portal group. */
+	void (*portal_group_init)(struct portal_group *pg);
+
+	/* Copy protocol-specific state from oldpg to a new portal group. */
+	void (*portal_group_copy)(struct portal_group *oldpg,
+	    struct portal_group *newpg);
+
+	/* Initialize protocol-specific state for a new portal. */
+	void (*portal_init)(struct portal *p);
+
+	/* Set protocol-specific socket options for a new socket. */
+	void (*portal_init_socket)(struct portal *p);
+
+	/* Initialize protocol-specific state for a new portal. */
+	void (*portal_delete)(struct portal *p);
+
+	/* Set req->driver and add fields to req->args_nvl. */
+	void (*kernel_port_add)(struct port *port, struct ctl_req *req);
+	void (*kernel_port_remove)(struct port *port, struct ctl_req *req);
+
+	char *(*normalize_target_name)(const char *name);
+
+	void (*handle_connection)(struct portal *portal, int fd,
+	    const char *host, const struct sockaddr *client_sa);
 };
 
 #define	PG_FILTER_UNKNOWN		0
@@ -116,6 +155,8 @@ struct portal_group {
 	char				*pg_name;
 	struct auth_group		*pg_discovery_auth_group;
 	int				pg_discovery_filter;
+	struct target_protocol_ops	*pg_ops;
+	int				pg_protocol;
 	bool				pg_foreign;
 	bool				pg_unassigned;
 	TAILQ_HEAD(, portal)		pg_portals;
@@ -184,6 +225,8 @@ struct target {
 	char				*t_redirection;
 	/* Name of this target's physical port, if any, i.e. "isp0" */
 	char				*t_pport;
+	struct target_protocol_ops	*t_ops;
+	int				t_protocol;
 };
 
 struct isns {
@@ -245,7 +288,9 @@ struct ctld_connection {
 	struct chap		*conn_chap;
 };
 
+extern bool proxy_mode;
 extern int ctl_fd;
+extern struct target_protocol_ops target_iscsi;
 
 bool			uclparse_conf(const char *path);
 
@@ -269,28 +314,33 @@ bool			auth_new_chap_mutual(struct auth_group *ag,
 const struct auth	*auth_find(const struct auth_group *ag,
 			    const char *user);
 
-bool			auth_name_new(struct auth_group *ag,
-			    const char *initiator_name);
-bool			auth_name_defined(const struct auth_group *ag);
+bool			auth_name_new(struct auth_group *ag, int protocol,
+			    const char *name);
+bool			auth_name_defined(const struct auth_group *ag,
+			    int protocol);
 const struct auth_name	*auth_name_find(const struct auth_group *ag,
-			    const char *initiator_name);
+			    int protocol, const char *name);
 bool			auth_name_check(const struct auth_group *ag,
-			    const char *initiator_name);
+			    int protocol, const char *name);
 
 bool				auth_portal_new(struct auth_group *ag,
-				    const char *initiator_portal);
-bool			auth_portal_defined(const struct auth_group *ag);
+				    int protocol, const char *portal);
+bool			auth_portal_defined(const struct auth_group *ag,
+				    int protocol);
 const struct auth_portal	*auth_portal_find(const struct auth_group *ag,
+				    int protocol,
 				    const struct sockaddr_storage *sa);
 bool				auth_portal_check(const struct auth_group *ag,
+				    int protocol,
 				    const struct sockaddr_storage *sa);
 
-struct portal_group	*portal_group_new(struct conf *conf, const char *name);
+struct portal_group	*portal_group_new(struct conf *conf, int protocol,
+			    const char *name);
 void			portal_group_delete(struct portal_group *pg);
 struct portal_group	*portal_group_find(const struct conf *conf,
-			    const char *name);
+			    int protocol, const char *name);
 bool			portal_group_add_portal(struct portal_group *pg,
-			    const char *value, bool iser);
+			    const char *value, int protocol);
 
 bool			isns_new(struct conf *conf, const char *addr);
 void			isns_delete(struct isns *is);
@@ -318,7 +368,8 @@ struct port		*port_find_in_pg(const struct portal_group *pg,
 void			port_delete(struct port *port);
 bool			port_is_dummy(struct port *port);
 
-struct target		*target_new(struct conf *conf, const char *name);
+struct target		*target_new(struct conf *conf, const char *name,
+			    int protocol);
 void			target_delete(struct target *target);
 struct target		*target_find(struct conf *conf,
 			    const char *name);
@@ -335,7 +386,6 @@ void			kernel_init(void);
 int			kernel_lun_add(struct lun *lun);
 int			kernel_lun_modify(struct lun *lun);
 int			kernel_lun_remove(struct lun *lun);
-void			kernel_handoff(struct ctld_connection *conn);
 int			kernel_port_add(struct port *port);
 int			kernel_port_update(struct port *port, struct port *old);
 int			kernel_port_remove(struct port *port);
@@ -350,6 +400,8 @@ void			kernel_accept(int *connection_id, int *portal_id,
 void			kernel_send(struct pdu *pdu);
 void			kernel_receive(struct pdu *pdu);
 #endif
+
+bool			timed_out(void);
 
 void			login(struct ctld_connection *conn);
 
