@@ -342,7 +342,24 @@ and
 .Qq Ar discovery-tcp
 .Pq for NVMe/TCP discovery controllers .
 .It Ic option Ar name Ar value
-The CTL-specific port options passed to the kernel.
+One of the following options:
+.Bl -column "max_admin_qsize" "Default" "Transports"
+.It Sy Name Ta Sy Default Ta Sy Transports Ta Sy Description
+.It MAXH2CDATA Ta 256KiB Ta TCP Ta
+Size in bytes of the maximum data payload size for data PDUs accepted from
+remote hosts.
+The value must be at least 4KiB and must be a multiple of 4.
+.It SQFC Ta false Ta any Ta
+Always enable SQ flow control.
+.It HDGST Ta false Ta TCP Ta
+Enable PDU header digests if requested by a remote host.
+.It DDGST Ta false Ta TCP Ta
+Enable PDU data digests if requested by a remote host.
+.It max_admin_qsize Ta 4096 Ta any Ta
+The maximum number of entries a remote host can request for an admin queue pair.
+.It max_io_qsize Ta 65536 Ta any Ta
+The maximum number of entries a remote host can request for an I/O queue pair.
+.El
 .It Ic tag Ar value
 Unique 16-bit port ID for this
 .Sy transport-group .
