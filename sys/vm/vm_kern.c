@@ -959,7 +959,7 @@ kmem_bootstrap_free(vm_offset_t start, vm_size_t size)
 	 * Restore the default permissions to ensure that the direct map alias
 	 * is updated.
 	 */
-	pmap_change_prot(start, end - start, VM_PROT_RW);
+	pmap_change_prot((void *)start, end - start, VM_PROT_RW);
 #endif
 	for (va = start; va < end; va += PAGE_SIZE) {
 		pa = pmap_kextract(va);
