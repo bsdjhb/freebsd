@@ -572,8 +572,18 @@ uclparse_dscp(const char *group_type, const char *pg_name,
 		return (portal_group_set_dscp(ucl_object_toint(obj)));
 
 	key = ucl_object_tostring(obj);
-	if (strcmp(key, "0x") == 0)
-		return (portal_group_set_dscp(strtol(key + 2, NULL, 16)));
+	if (strncmp(key, "0x", 2) == 0) {
+		long value;
+		char *end;
+
+		value = strtol(key + 2, &end, 16);
+		if (*end != '\0' && end != key + 2) {
+			log_warnx("\"dscp\" property %s group \"%s\" is "
+			    "invalid", group_type, pg_name);
+			return (false);
+		}
+		return (portal_group_set_dscp(value));
+	}
 
 	if (strcmp(key, "be") == 0 || strcmp(key, "cs0") == 0)
 		portal_group_set_dscp(IPTOS_DSCP_CS0 >> 2);
