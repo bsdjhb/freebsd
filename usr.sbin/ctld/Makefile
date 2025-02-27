@@ -29,3 +29,5 @@ CFLAGS+=	-DWANT_ISCSI
 .endif
 
 .include <bsd.prog.mk>
+
+CXXWARNFLAGS.uclparse.cc= -Wno-shadow -Wno-cast-qual
