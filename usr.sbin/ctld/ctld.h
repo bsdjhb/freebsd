@@ -245,6 +245,18 @@ struct ctld_connection {
 	struct chap		*conn_chap;
 };
 
+template <class T>
+struct free_deleter
+{
+	void operator() (T *p) const
+	{
+		free(p);
+	}
+};
+
+template <class T>
+using malloc_up = std::unique_ptr<T, free_deleter<T>>;
+
 extern int ctl_fd;
 
 bool			parse_conf(const char *path);
