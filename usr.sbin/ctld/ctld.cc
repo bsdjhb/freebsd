@@ -160,42 +160,14 @@ conf_delete(struct conf *conf)
 	free(conf);
 }
 
-static struct auth *
-auth_new(struct auth_group *ag)
-{
-	struct auth *auth;
-
-	auth = reinterpret_cast<struct auth *>(calloc(1, sizeof(*auth)));
-	if (auth == NULL)
-		log_err(1, "calloc");
-	auth->a_auth_group = ag;
-	TAILQ_INSERT_TAIL(&ag->ag_auths, auth, a_next);
-	return (auth);
-}
-
-static void
-auth_delete(struct auth *auth)
-{
-	TAILQ_REMOVE(&auth->a_auth_group->ag_auths, auth, a_next);
-
-	free(auth->a_user);
-	free(auth->a_secret);
-	free(auth->a_mutual_user);
-	free(auth->a_mutual_secret);
-	free(auth);
-}
-
 const struct auth *
 auth_find(const struct auth_group *ag, const char *user)
 {
-	const struct auth *auth;
+	auto it = ag->ag_auths.find(user);
+	if (it == ag->ag_auths.end())
+		return (nullptr);
 
-	TAILQ_FOREACH(auth, &ag->ag_auths, a_next) {
-		if (strcmp(auth->a_user, user) == 0)
-			return (auth);
-	}
-
-	return (NULL);
+	return (&it->second);
 }
 
 static void
@@ -205,6 +177,7 @@ auth_check_secret_length(const struct auth_group *ag, const char *user,
 	size_t len;
 
 	len = strlen(secret);
+	assert(len != 0);
 	if (len > 16) {
 		log_warnx("%s for user \"%s\", %s, is too long; it should be "
 		    "at most 16 characters long", label, user, ag->ag_label);
@@ -219,8 +192,6 @@ bool
 auth_new_chap(struct auth_group *ag, const char *user,
     const char *secret)
 {
-	struct auth *auth;
-
 	if (ag->ag_type == AG_TYPE_UNKNOWN)
 		ag->ag_type = AG_TYPE_CHAP;
 	if (ag->ag_type != AG_TYPE_CHAP) {
@@ -231,9 +202,12 @@ auth_new_chap(struct auth_group *ag, const char *user,
 
 	auth_check_secret_length(ag, user, secret, "secret");
 
-	auth = auth_new(ag);
-	auth->a_user = checked_strdup(user);
-	auth->a_secret = checked_strdup(secret);
+	auto const &pair = ag->ag_auths.try_emplace(user, secret);
+	if (!pair.second) {
+		log_warnx("duplicate credentials for user \"%s\" for %s",
+		    user, ag->ag_label);
+		return (false);
+	}
 
 	return (true);
 }
@@ -242,8 +216,6 @@ bool
 auth_new_chap_mutual(struct auth_group *ag, const char *user,
     const char *secret, const char *user2, const char *secret2)
 {
-	struct auth *auth;
-
 	if (ag->ag_type == AG_TYPE_UNKNOWN)
 		ag->ag_type = AG_TYPE_CHAP_MUTUAL;
 	if (ag->ag_type != AG_TYPE_CHAP_MUTUAL) {
@@ -255,11 +227,13 @@ auth_new_chap_mutual(struct auth_group *ag, const char *user,
 	auth_check_secret_length(ag, user, secret, "secret");
 	auth_check_secret_length(ag, user, secret2, "mutual secret");
 
-	auth = auth_new(ag);
-	auth->a_user = checked_strdup(user);
-	auth->a_secret = checked_strdup(secret);
-	auth->a_mutual_user = checked_strdup(user2);
-	auth->a_mutual_secret = checked_strdup(secret2);
+	auto const &pair = ag->ag_auths.try_emplace(user, secret, user2,
+	    secret2);
+	if (!pair.second) {
+		log_warnx("duplicate credentials for user \"%s\" for %s",
+		    user, ag->ag_label);
+		return (false);
+	}
 
 	return (true);
 }
@@ -452,13 +426,10 @@ auth_group_create(struct conf *conf, const char *name, char *label)
 {
 	struct auth_group *ag;
 
-	ag = reinterpret_cast<struct auth_group *>(calloc(1, sizeof(*ag)));
-	if (ag == NULL)
-		log_err(1, "calloc");
+	ag = new auth_group();
 	if (name != NULL)
 		ag->ag_name = checked_strdup(name);
 	ag->ag_label = label;
-	TAILQ_INIT(&ag->ag_auths);
 	TAILQ_INIT(&ag->ag_names);
 	TAILQ_INIT(&ag->ag_portals);
 	ag->ag_conf = conf;
@@ -495,14 +466,11 @@ auth_group_new(struct conf *conf, struct target *target)
 void
 auth_group_delete(struct auth_group *ag)
 {
-	struct auth *auth, *auth_tmp;
 	struct auth_name *auth_name, *auth_name_tmp;
 	struct auth_portal *auth_portal, *auth_portal_tmp;
 
 	TAILQ_REMOVE(&ag->ag_conf->conf_auth_groups, ag, ag_next);
 
-	TAILQ_FOREACH_SAFE(auth, &ag->ag_auths, a_next, auth_tmp)
-		auth_delete(auth);
 	TAILQ_FOREACH_SAFE(auth_name, &ag->ag_names, an_next, auth_name_tmp)
 		auth_name_delete(auth_name);
 	TAILQ_FOREACH_SAFE(auth_portal, &ag->ag_portals, ap_next,
@@ -510,7 +478,7 @@ auth_group_delete(struct auth_group *ag)
 		auth_portal_delete(auth_portal);
 	free(ag->ag_label);
 	free(ag->ag_name);
-	free(ag);
+	delete ag;
 }
 
 struct auth_group *
@@ -1380,7 +1348,6 @@ static void
 conf_print(struct conf *conf)
 {
 	struct auth_group *ag;
-	struct auth *auth;
 	struct auth_name *auth_name;
 	struct auth_portal *auth_portal;
 	struct portal_group *pg;
@@ -1390,10 +1357,14 @@ conf_print(struct conf *conf)
 
 	TAILQ_FOREACH(ag, &conf->conf_auth_groups, ag_next) {
 		fprintf(stderr, "auth-group %s {\n", ag->ag_name);
-		TAILQ_FOREACH(auth, &ag->ag_auths, a_next)
+		for (const auto &kv : ag->ag_auths) {
+			const std::string &user = kv.first;
+			const struct auth &auth = kv.second;
 			fprintf(stderr, "\t chap-mutual %s %s %s %s\n",
-			    auth->a_user, auth->a_secret,
-			    auth->a_mutual_user, auth->a_mutual_secret);
+			    user.c_str(), auth.a_secret.c_str(),
+			    auth.a_mutual_user.c_str(),
+			    auth.a_mutual_secret.c_str());
+		}
 		TAILQ_FOREACH(auth_name, &ag->ag_names, an_next)
 			fprintf(stderr, "\t initiator-name %s\n",
 			    auth_name->an_initiator_name);

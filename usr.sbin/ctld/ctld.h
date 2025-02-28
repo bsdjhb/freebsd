@@ -42,6 +42,7 @@
 #include <libutil.h>
 
 #include <string>
+#include <unordered_map>
 
 #define	DEFAULT_CONFIG_PATH		"/etc/ctl.conf"
 #define	DEFAULT_PIDFILE			"/var/run/ctld.pid"
@@ -52,12 +53,14 @@
 #define	SOCKBUF_SIZE			1048576
 
 struct auth {
-	TAILQ_ENTRY(auth)		a_next;
-	struct auth_group		*a_auth_group;
-	char				*a_user;
-	char				*a_secret;
-	char				*a_mutual_user;
-	char				*a_mutual_secret;
+	auth(const char *secret) : a_secret(secret) {};
+	auth(const char *secret, const char *mutual_user,
+	    const char *mutual_secret) : a_secret(secret),
+	    a_mutual_user(mutual_user), a_mutual_secret(mutual_secret) {};
+
+	std::string			a_secret;
+	std::string			a_mutual_user;
+	std::string			a_mutual_secret;
 };
 
 struct auth_name {
@@ -86,7 +89,7 @@ struct auth_group {
 	char				*ag_name;
 	char				*ag_label;
 	int				ag_type;
-	TAILQ_HEAD(, auth)		ag_auths;
+	std::unordered_map<std::string, auth> ag_auths;
 	TAILQ_HEAD(, auth_name)		ag_names;
 	TAILQ_HEAD(, auth_portal)	ag_portals;
 };
