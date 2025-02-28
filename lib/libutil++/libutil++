@@ -1,0 +1,17 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2025 Chelsio Communications, Inc.
+ * Written by: John Baldwin <jhb@FreeBSD.org>
+ */
+
+#ifndef __LIBUTILPP__
+#define	__LIBUTILPP__
+
+#include <sys/cdefs.h>
+
+namespace freebsd {
+	std::string stringf(const char *fmt, ...) __printflike(1, 2);
+}
+
+#endif /* !__LIBUTILPP__ */
