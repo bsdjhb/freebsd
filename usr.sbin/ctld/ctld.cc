@@ -84,6 +84,23 @@ static struct connection_ops conn_ops = {
 	.fail = pdu_fail,
 };
 
+std::string
+stringf(const char *fmt, ...)
+{
+	va_list ap;
+	char *str;
+
+	va_start(ap, fmt);
+	vasprintf(&str, fmt, ap);
+	va_end(ap);
+	if (str == NULL)
+		throw std::bad_alloc();
+
+	std::string res(str);
+	free(str);
+	return res;
+}
+
 static void
 usage(void)
 {
