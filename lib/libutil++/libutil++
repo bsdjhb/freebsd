@@ -10,8 +10,22 @@
 
 #include <sys/cdefs.h>
 
+#include <memory>
+
 namespace freebsd {
 	std::string stringf(const char *fmt, ...) __printflike(1, 2);
+
+	template <class T>
+	struct free_deleter
+	{
+		void operator() (T *p) const
+		{
+			free(p);
+		}
+	};
+
+	template <class T>
+	using malloc_up = std::unique_ptr<T, free_deleter<T>>;
 }
 
 #endif /* !__LIBUTILPP__ */
