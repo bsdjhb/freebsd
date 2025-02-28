@@ -41,6 +41,8 @@
 #include <libiscsiutil.h>
 #include <libutil.h>
 
+#include <string>
+
 #define	DEFAULT_CONFIG_PATH		"/etc/ctl.conf"
 #define	DEFAULT_PIDFILE			"/var/run/ctld.pid"
 #define	DEFAULT_BLOCKSIZE		512
@@ -258,6 +260,8 @@ template <class T>
 using malloc_up = std::unique_ptr<T, free_deleter<T>>;
 
 extern int ctl_fd;
+
+std::string		stringf(const char *fmt, ...) __printflike(1, 2);
 
 bool			parse_conf(const char *path);
 bool			uclparse_conf(const char *path);
