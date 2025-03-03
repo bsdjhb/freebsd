@@ -335,7 +335,7 @@ login_send_chap_c(struct pdu *request, struct chap *chap)
 }
 
 static struct pdu *
-login_receive_chap_r(struct connection *conn, struct auth_group *ag,
+login_receive_chap_r(struct connection *conn, auth_group_sp &ag,
     struct chap *chap, const struct auth **authp, std::string &user)
 {
 	struct pdu *request;
@@ -367,9 +367,8 @@ login_receive_chap_r(struct connection *conn, struct auth_group *ag,
 	/*
 	 * Verify the response.
 	 */
-	assert(ag->ag_type == AG_TYPE_CHAP ||
-	    ag->ag_type == AG_TYPE_CHAP_MUTUAL);
-	auth = auth_find(ag, chap_n);
+	assert(ag->type() == AG_TYPE_CHAP || ag->type() == AG_TYPE_CHAP_MUTUAL);
+	auth = ag->find_auth(chap_n);
 	if (auth == NULL) {
 		login_send_error(request, 0x02, 0x01);
 		log_errx(1, "received CHAP Login with invalid user \"%s\"",
@@ -457,7 +456,7 @@ login_send_chap_success(struct pdu *request,
 }
 
 static void
-login_chap(struct ctld_connection *conn, struct auth_group *ag)
+login_chap(struct ctld_connection *conn, auth_group_sp &ag)
 {
 	std::string user;
 	const struct auth *auth;
@@ -897,7 +896,7 @@ login(struct ctld_connection *conn)
 	struct pdu *request, *response;
 	struct iscsi_bhs_login_request *bhslr;
 	struct keys *request_keys, *response_keys;
-	struct auth_group *ag;
+	auth_group_sp ag;
 	struct portal_group *pg;
 	const char *initiator_name, *initiator_alias, *session_type,
 	    *target_name, *auth_method;
@@ -988,31 +987,30 @@ login(struct ctld_connection *conn)
 	 */
 	if (conn->conn_session_type == CONN_SESSION_TYPE_NORMAL) {
 		ag = conn->conn_port->p_auth_group;
-		if (ag == NULL)
+		if (ag == nullptr)
 			ag = conn->conn_target->t_auth_group;
-		if (conn->conn_port->p_auth_group == NULL &&
+		if (conn->conn_port->p_auth_group == nullptr &&
 		    conn->conn_target->t_private_auth) {
 			log_debugx("initiator requests to connect "
 			    "to target \"%s\"", conn->conn_target->t_name);
 		} else {
 			log_debugx("initiator requests to connect "
 			    "to target \"%s\"; %s",
-			    conn->conn_target->t_name,
-			    ag->ag_label);
+			    conn->conn_target->t_name, ag->label());
 		}
 	} else {
 		assert(conn->conn_session_type == CONN_SESSION_TYPE_DISCOVERY);
 		ag = pg->pg_discovery_auth_group;
 		log_debugx("initiator requests discovery session; %s",
-		    ag->ag_label);
+		    ag->label());
 	}
 
-	if (ag->ag_type == AG_TYPE_DENY) {
+	if (ag->type() == AG_TYPE_DENY) {
 		login_send_error(request, 0x02, 0x01);
 		log_errx(1, "auth-type is \"deny\"");
 	}
 
-	if (ag->ag_type == AG_TYPE_UNKNOWN) {
+	if (ag->type() == AG_TYPE_UNKNOWN) {
 		/*
 		 * This can happen with empty auth-group.
 		 */
@@ -1023,12 +1021,12 @@ login(struct ctld_connection *conn)
 	/*
 	 * Enforce initiator-name and initiator-portal.
 	 */
-	if (!auth_name_check(ag, initiator_name)) {
+	if (!ag->initiator_permitted(initiator_name)) {
 		login_send_error(request, 0x02, 0x02);
 		log_errx(1, "initiator does not match allowed initiator names");
 	}
 
-	if (!auth_portal_check(ag, &conn->conn_initiator_sa)) {
+	if (!ag->initiator_permitted(&conn->conn_initiator_sa)) {
 		login_send_error(request, 0x02, 0x02);
 		log_errx(1, "initiator does not match allowed "
 		    "initiator portals");
@@ -1039,7 +1037,7 @@ login(struct ctld_connection *conn)
 	 * at all.
 	 */
 	if (login_csg(request) == BHSLR_STAGE_OPERATIONAL_NEGOTIATION) {
-		if (ag->ag_type != AG_TYPE_NO_AUTHENTICATION) {
+		if (ag->type() != AG_TYPE_NO_AUTHENTICATION) {
 			login_send_error(request, 0x02, 0x01);
 			log_errx(1, "initiator skipped the authentication, "
 			    "but authentication is required");
@@ -1058,7 +1056,7 @@ login(struct ctld_connection *conn)
 	response_keys = keys_new();
 	trans = (bhslr->bhslr_flags & BHSLR_FLAGS_TRANSIT) != 0;
 	auth_method = keys_find(request_keys, "AuthMethod");
-	if (ag->ag_type == AG_TYPE_NO_AUTHENTICATION) {
+	if (ag->type() == AG_TYPE_NO_AUTHENTICATION) {
 		log_debugx("authentication not required");
 		if (auth_method == NULL ||
 		    login_list_contains(auth_method, "None")) {
@@ -1104,7 +1102,7 @@ login(struct ctld_connection *conn)
 		exit(1);
 	}
 
-	if (ag->ag_type != AG_TYPE_NO_AUTHENTICATION) {
+	if (ag->type() != AG_TYPE_NO_AUTHENTICATION) {
 		login_chap(conn, ag);
 		login_negotiate(conn, NULL);
 	} else if (trans) {
