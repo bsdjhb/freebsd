@@ -55,7 +55,7 @@
 #include "opt_stack.h"          /* for OPT_STACK */
 
 static bool elf32_arm_abi_supported(const struct image_params *,
-    const int32_t *, const uint32_t *);
+    const Elf32_Ehdr *, const Elf32_Phdr *, const int32_t *, const uint32_t *);
 
 u_long elf_hwcap;
 u_long elf_hwcap2;
@@ -124,10 +124,9 @@ C_SYSINIT(elf32, SI_SUB_EXEC, SI_ORDER_FIRST,
 
 static bool
 elf32_arm_abi_supported(const struct image_params *imgp,
+    const Elf32_Ehdr *hdr, const Elf32_Phdr *phdr __unused,
     const int32_t *osrel __unused, const uint32_t *fctl0 __unused)
 {
-	const Elf_Ehdr *hdr = (const Elf_Ehdr *)imgp->image_header;
-
 	/*
 	 * When configured for EABI, FreeBSD supports EABI vesions 4 and 5.
 	 */
