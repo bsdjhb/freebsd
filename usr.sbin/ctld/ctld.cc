@@ -506,15 +506,16 @@ portal_group_find(const struct conf *conf, const char *name)
 	return (NULL);
 }
 
-static int
-parse_addr_port(char *arg, const char *def_port, struct addrinfo **ai)
+static freebsd::addrinfo_up
+parse_addr_port(const char *address, const char *def_port)
 {
-	struct addrinfo hints;
-	char *str, *addr, *ch;
+	struct addrinfo hints, *ai;
+	char *addr, *arg, *ch;
 	const char *port;
 	int error, colons = 0;
 
-	str = arg = strdup(arg);
+	freebsd::malloc_up<char> str(strdup(address));
+	arg = str.get();
 	if (arg[0] == '[') {
 		/*
 		 * IPv6 address in square brackets, perhaps with port.
@@ -522,16 +523,14 @@ parse_addr_port(char *arg, const char *def_port, struct addrinfo **ai)
 		arg++;
 		addr = strsep(&arg, "]");
 		if (arg == NULL) {
-			free(str);
-			return (1);
+			return {};
 		}
 		if (arg[0] == '\0') {
 			port = def_port;
 		} else if (arg[0] == ':') {
 			port = arg + 1;
 		} else {
-			free(str);
-			return (1);
+			return {};
 		}
 	} else {
 		/*
@@ -558,9 +557,10 @@ parse_addr_port(char *arg, const char *def_port, struct addrinfo **ai)
 	hints.ai_family = PF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
-	error = getaddrinfo(addr, port, &hints, ai);
-	free(str);
-	return ((error != 0) ? 1 : 0);
+	error = getaddrinfo(addr, port, &hints, &ai);
+	if (error != 0)
+		return {};
+	return freebsd::addrinfo_up(ai);
 }
 
 bool
@@ -572,7 +572,8 @@ portal_group_add_portal(struct portal_group *pg, const char *value, bool iser)
 	portal->p_listen = checked_strdup(value);
 	portal->p_iser = iser;
 
-	if (parse_addr_port(portal->p_listen, "3260", &portal->p_ai)) {
+	freebsd::addrinfo_up ai = parse_addr_port(portal->p_listen, "3260");
+	if (!ai) {
 		log_warnx("invalid listen address %s", portal->p_listen);
 		portal_delete(portal);
 		return (false);
@@ -583,6 +584,7 @@ portal_group_add_portal(struct portal_group *pg, const char *value, bool iser)
 	 *	those into multiple portals.
 	 */
 
+	portal->p_ai = ai.release();
 	return (true);
 }
 
@@ -598,7 +600,8 @@ isns_new(struct conf *conf, const char *addr)
 	TAILQ_INSERT_TAIL(&conf->conf_isns, isns, i_next);
 	isns->i_addr = checked_strdup(addr);
 
-	if (parse_addr_port(isns->i_addr, "3205", &isns->i_ai)) {
+	freebsd::addrinfo_up ai = parse_addr_port(isns->i_addr, "3205");
+	if (!ai) {
 		log_warnx("invalid iSNS address %s", isns->i_addr);
 		isns_delete(isns);
 		return (false);
@@ -609,6 +612,7 @@ isns_new(struct conf *conf, const char *addr)
 	 *	those into multiple servers.
 	 */
 
+	isns->i_ai = ai.release();
 	return (true);
 }
 
