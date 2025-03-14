@@ -15,6 +15,16 @@
 namespace freebsd {
 	std::string stringf(const char *fmt, ...) __printflike(1, 2);
 
+	struct file_closer
+	{
+		void operator() (FILE *fp) const
+		{
+			fclose(fp);
+		}
+	};
+
+	typedef std::unique_ptr<FILE, file_closer> FILE_up;
+
 	template <class T>
 	struct free_deleter
 	{
