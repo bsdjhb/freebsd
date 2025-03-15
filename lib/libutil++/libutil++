@@ -9,6 +9,7 @@
 #define	__LIBUTILPP__
 
 #include <sys/cdefs.h>
+#include <netdb.h>
 
 #include <memory>
 
@@ -24,6 +25,21 @@ namespace freebsd {
 	};
 
 	typedef std::unique_ptr<FILE, file_closer> FILE_up;
+
+	/*
+	 * A unique_ptr<> wrapper intended to be used with the result
+	 * of getaddrinfo(3).  The deleter calls freeaddrinfo() when
+	 * the object is destroyed.
+	 */
+	struct freeaddrinfo_deleter
+	{
+		void operator() (struct addrinfo *ai) const
+		{
+			freeaddrinfo(ai);
+		}
+	};
+
+	typedef std::unique_ptr<addrinfo, freeaddrinfo_deleter> addrinfo_up;
 
 	template <class T>
 	struct free_deleter
