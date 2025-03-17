@@ -9,6 +9,7 @@
 #define	__LIBUTILPP__
 
 #include <sys/cdefs.h>
+#include <sys/nv.h>
 #include <netdb.h>
 #include <unistd.h>
 
@@ -123,6 +124,22 @@ namespace freebsd {
 
 	template <class T>
 	using malloc_up = std::unique_ptr<T, free_deleter<T>>;
+
+	/*
+	 * A unique_ptr<> wrapper intended to be used with nvlist_t
+	 * objects.  The deleter calls nvlist_destroy() when the
+	 * object is destroyed.
+	 */
+	struct nvlist_deleter
+	{
+		void operator() (nvlist_t *nvl) const
+		{
+			nvlist_destroy(nvl);
+		}
+	};
+
+	typedef std::unique_ptr<nvlist_t, nvlist_deleter> nvlist_up;
+
 }
 
 #endif /* !__LIBUTILPP__ */
