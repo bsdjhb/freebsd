@@ -320,10 +320,24 @@ struct target {
 };
 
 struct isns {
-	TAILQ_ENTRY(isns)		i_next;
+	isns(struct conf *conf, const char *addr, struct addrinfo *ai)
+	    : i_conf(conf), i_addr(addr), i_ai(ai) {}
+
+	const char *addr() const { return i_addr.c_str(); }
+
+	void	check();
+	void	deregister_targets();
+	void	register_targets(struct isns *oldisns);
+
+private:
+	freebsd::fd_up connect();
+	bool	do_check(int s, const char *hostname);
+	void	do_deregister(int s, const char *hostname);
+	void	do_register(int s, const char *hostname);
+
 	struct conf			*i_conf;
-	char				*i_addr;
-	struct addrinfo			*i_ai;
+	std::string			i_addr;
+	freebsd::addrinfo_up		i_ai;
 };
 
 struct conf {
@@ -335,7 +349,7 @@ struct conf {
 	std::unordered_map<std::string, auth_group_sp> conf_auth_groups;
 	std::unordered_map<std::string, std::unique_ptr<port>> conf_ports;
 	std::unordered_map<std::string, portal_group> conf_portal_groups;
-	TAILQ_HEAD(, isns)		conf_isns;
+	std::unordered_map<std::string, isns> conf_isns;
 	int				conf_isns_period;
 	int				conf_isns_timeout;
 	int				conf_debug;
@@ -426,10 +440,6 @@ struct portal_group	*portal_group_new(struct conf *conf, const char *name);
 struct portal_group	*portal_group_find(struct conf *conf, const char *name);
 
 bool			isns_new(struct conf *conf, const char *addr);
-void			isns_delete(struct isns *is);
-void			isns_register(struct isns *isns, struct isns *oldisns);
-void			isns_check(struct isns *isns);
-void			isns_deregister(struct isns *isns);
 
 bool			port_new(struct conf *conf, struct target *target,
 			    struct portal_group *pg, auth_group_sp ag);
