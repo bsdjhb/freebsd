@@ -8,6 +8,7 @@
 #ifndef __LIBNVMF_H__
 #define	__LIBNVMF_H__
 
+#include <sys/cdefs.h>
 #include <sys/_nv.h>
 #include <sys/uio.h>
 #include <stdbool.h>
@@ -50,6 +51,8 @@ struct nvmf_qpair_params {
 		} tcp;
 	};
 };
+
+__BEGIN_DECLS
 
 /* Transport-independent APIs. */
 
@@ -383,5 +386,7 @@ int	nvmf_reconnect_host(int fd, const struct nvme_discovery_log_entry *dle,
  * Fetch connection status from an existing kernel host.
  */
 int	nvmf_connection_status(int fd, nvlist_t **nvlp);
+
+__END_DECLS
 
 #endif /* !__LIBNVMF_H__ */
