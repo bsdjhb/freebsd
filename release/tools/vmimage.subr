@@ -16,7 +16,7 @@ trap "cleanup" INT QUIT TRAP ABRT TERM
 PARTSCHEME=gpt
 ROOTLABEL="gpt"
 case "${TARGET}:${TARGET_ARCH}" in
-	powerpc:powerpc*)
+	powerpc:powerpc64*)
 		PARTSCHEME=mbr
 		ROOTLABEL="ufs"
 		NOSWAP=yes # Can't label swap partition with MBR, so no swap
@@ -310,7 +310,7 @@ vm_create_disk() {
 			ROOTFSPART="-p ${FSPARTTYPE}/rootfs:=${VMBASE}"
 			MAKEFSARGS="$MAKEFSARGS -B little"
 			;;
-		powerpc:powerpc*)
+		powerpc:powerpc64*)
 			ESP=no
 			BOOTPARTS="-p prepboot:=${BOOTFILES}/powerpc/boot1.chrp/boot1.elf -a 1"
 			ROOTFSPART="-p freebsd:=${VMBASE}"
