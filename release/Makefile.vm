@@ -98,7 +98,7 @@ emulator-portinstall:
 	touch ${.TARGET}
 
 .if ${TARGET_ARCH} != ${MACHINE_ARCH} && !defined(WITHOUT_QEMU)
-.if ( ${TARGET_ARCH} != "i386" ) || ( ${MACHINE_ARCH} != "amd64" )
+.if ${MACHINE_ARCH} != "amd64"
 QEMUSTATIC=/usr/local/bin/qemu-${TARGET_ARCH}-static
 QEMUTGT=emulator-portinstall
 .endif

@@ -61,9 +61,6 @@ set_cmd() {
 normalize_arch() {
 	local arch=$1; shift
 	case ${arch} in
-		i386)
-		       arch=386
-		       ;;
 		aarch64)
 		       arch=arm64
 		       ;;

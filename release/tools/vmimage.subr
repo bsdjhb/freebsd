@@ -297,7 +297,7 @@ vm_create_disk() {
 	MAKEFSARGS="-s ${VMSIZE} -D"
 
 	case "${TARGET}:${TARGET_ARCH}" in
-		amd64:amd64 | i386:i386)
+		amd64:amd64)
 			ESP=yes
 			BOOTPARTS="-b ${BOOTFILES}/i386/pmbr/pmbr \
 				   -p freebsd-boot/bootfs:=${BOOTFILES}/${X86GPTBOOTFILE}${BOOTPARTSOFFSET}"
