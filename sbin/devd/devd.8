@@ -154,6 +154,12 @@ to communicate with its clients.
 .It Pa /var/run/devd.pipe
 A deprecated socket retained for use with old clients.
 .El
+.Sh EXAMPLES
+Use
+.Xr cat 1
+to monitor kernel events:
+.Pp
+.Dl cat /var/run/devd.seqpacket.pipe
 .Sh SEE ALSO
 .Xr devctl 4 ,
 .Xr devd.conf 5
