@@ -38,6 +38,7 @@ struct nvmf_softc {
 
 	struct cam_sim *sim;
 	struct cam_path *path;
+	LIST_HEAD(, ccb_hdr) sim_ccbs;
 	struct mtx sim_mtx;
 	bool sim_disconnected;
 	bool sim_shutdown;

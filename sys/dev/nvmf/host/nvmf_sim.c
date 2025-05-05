@@ -36,13 +36,21 @@ ccb_refs(union ccb *ccb)
 static void
 nvmf_ccb_done(union ccb *ccb)
 {
+	struct cam_sim *sim;
+	struct nvmf_softc *sc __diagused;
+
 	if (!refcount_release(ccb_refs(ccb)))
 		return;
 
-	if (nvmf_cqe_aborted(&ccb->nvmeio.cpl)) {
-		struct cam_sim *sim = xpt_path_sim(ccb->ccb_h.path);
-		struct nvmf_softc *sc = cam_sim_softc(sim);
+	sim = xpt_path_sim(ccb->ccb_h.path);
+	sc = cam_sim_softc(sim);
+#ifdef INVARIANTS
+	mtx_lock(&sc->sim_mtx);
+	LIST_REMOVE(&ccb->ccb_h, sim_links.le);
+	mtx_unlock(&sc->sim_mtx);
+#endif
 
+	if (nvmf_cqe_aborted(&ccb->nvmeio.cpl)) {
 		if (nvmf_fail_disconnect || sc->sim_shutdown)
 			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
 		else
@@ -125,6 +133,10 @@ nvmf_sim_io(struct nvmf_softc *sc, union ccb *ccb)
 		qp = sc->admin;
 	req = nvmf_allocate_request(qp, &nvmeio->cmd, nvmf_ccb_complete,
 	    ccb, M_NOWAIT);
+#ifdef INVARIANTS
+	if (req != NULL)
+		LIST_INSERT_HEAD(&sc->sim_ccbs, &ccb->ccb_h, sim_links.le);
+#endif
 	mtx_unlock(&sc->sim_mtx);
 	if (req == NULL) {
 		nvmeio->ccb_h.status = CAM_RESRC_UNAVAIL;
@@ -257,6 +269,7 @@ nvmf_init_sim(struct nvmf_softc *sc)
 		return (ENOMEM);
 	}
 
+	LIST_INIT(&sc->sim_ccbs);
 	mtx_init(&sc->sim_mtx, "nvmf sim", NULL, MTX_DEF);
 	sc->sim = cam_sim_alloc(nvmf_sim_action, NULL, "nvme", sc,
 	    device_get_unit(sc->dev), NULL, max_trans, max_trans, devq);
