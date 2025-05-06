@@ -326,6 +326,7 @@ void
 nvmf_disconnect_sim(struct nvmf_softc *sc)
 {
 	mtx_lock(&sc->sim_mtx);
+	MPASS(sc->sim_disconnected == false);
 	sc->sim_disconnected = true;
 	xpt_freeze_simq(sc->sim, 1);
 	mtx_unlock(&sc->sim_mtx);
@@ -335,6 +336,7 @@ void
 nvmf_reconnect_sim(struct nvmf_softc *sc)
 {
 	mtx_lock(&sc->sim_mtx);
+	MPASS(sc->sim_disconnected == true);
 	sc->sim_disconnected = false;
 	mtx_unlock(&sc->sim_mtx);
 	xpt_release_simq(sc->sim, 1);
@@ -344,6 +346,7 @@ void
 nvmf_shutdown_sim(struct nvmf_softc *sc)
 {
 	mtx_lock(&sc->sim_mtx);
+	MPASS(sc->sim_shutdown == false);
 	sc->sim_shutdown = true;
 	mtx_unlock(&sc->sim_mtx);
 	xpt_release_simq(sc->sim, 1);
