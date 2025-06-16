@@ -31,6 +31,7 @@ bool header_digests = false;
 bool flow_control_disable = false;
 bool kernel_io = false;
 uint32_t maxh2cdata = 256 * 1024;
+uint32_t pda = 4;
 
 static const char *subnqn;
 static volatile bool quit = false;
@@ -38,9 +39,11 @@ static volatile bool quit = false;
 static void
 usage(void)
 {
-	fprintf(stderr, "nvmfd -K [-dFGg] [-H MAXH2CDATA] [-P port] [-p port] [-t transport] [-n subnqn]\n"
-	    "nvmfd [-dFGg] [-H MAXH2CDATA] [-P port] [-p port] [-t transport] [-n subnqn]\n"
-	    "\tdevice [device [...]]\n"
+	fprintf(stderr,
+	    "nvmfd -K [-dFGg] [-a pda] [-H MAXH2CDATA] [-P port] [-p port] [-t transport]\n"
+	    "\t[-n subnqn]\n"
+	    "nvmfd [-dFGg] [-a pda] [-H MAXH2CDATA] [-P port] [-p port] [-t transport]\n"
+	    "\t[-n subnqn] device [device [...]]\n"
 	    "\n"
 	    "Devices use one of the following syntaxes:\n"
 	    "\tpathame      - file or disk device\n"
@@ -165,8 +168,16 @@ main(int ac, char **av)
 	ioport = "0";
 	subnqn = NULL;
 	transport = "tcp";
-	while ((ch = getopt(ac, av, "dFgGH:Kn:P:p:t:")) != -1) {
+	while ((ch = getopt(ac, av, "a:dFgGH:Kn:P:p:t:")) != -1) {
 		switch (ch) {
+		case 'a':
+			if (expand_number(optarg, &value) != 0)
+				errx(1, "Invalid PDA value %s", optarg);
+			if (value % 4 != 0 || value == 0 ||
+			    value >= NVME_TCP_PDU_PDO_MAX_OFFSET)
+				errx(1, "Invalid PDA value %s", optarg);
+			pda = value;
+			break;
 		case 'd':
 			daemonize = false;
 			break;

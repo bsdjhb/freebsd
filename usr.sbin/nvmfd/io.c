@@ -54,7 +54,7 @@ init_io(const char *subnqn)
 	aparams.dynamic_controller_model = true;
 	aparams.max_admin_qsize = NVME_MAX_ADMIN_ENTRIES;
 	aparams.max_io_qsize = NVMF_MAX_IO_ENTRIES;
-	aparams.tcp.pda = 0;
+	aparams.tcp.pda = (pda / 4) - 1;
 	aparams.tcp.header_digests = header_digests;
 	aparams.tcp.data_digests = data_digests;
 	aparams.tcp.maxh2cdata = maxh2cdata;
