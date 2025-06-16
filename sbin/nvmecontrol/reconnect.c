@@ -108,6 +108,9 @@ reconnect_by_address(int fd, const nvlist_t *rparams, const char *addr)
 	char *subnqn, *tofree;
 	int error;
 
+	if (opt.num_io_queues <= 0)
+		errx(EX_USAGE, "Invalid number of I/O queues");
+
 	memset(&aparams, 0, sizeof(aparams));
 	aparams.sq_flow_control = opt.flow_control;
 	if (strcasecmp(opt.transport, "tcp") == 0) {
