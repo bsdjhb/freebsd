@@ -42,6 +42,7 @@
 #include <cam/ctl/ctl_ioctl.h>
 
 #include "ctld.h"
+#include "iscsi.hh"
 #include "iscsi_proto.h"
 
 #define	MAX_DATA_SEGMENT_LENGTH		(128 * 1024)
@@ -454,7 +455,7 @@ login_send_chap_success(struct pdu *request,
 }
 
 void
-ctld_connection::login_chap(struct auth_group *ag)
+iscsi_connection::login_chap(struct auth_group *ag)
 {
 	std::string user;
 	const struct auth *auth;
@@ -502,7 +503,7 @@ ctld_connection::login_chap(struct auth_group *ag)
 }
 
 void
-ctld_connection::login_negotiate_key(struct pdu *request, const char *name,
+iscsi_connection::login_negotiate_key(struct pdu *request, const char *name,
     const char *value, bool skipped_security, struct keys *response_keys)
 {
 	int which;
@@ -693,7 +694,7 @@ login_redirect(struct pdu *request, const char *target_address)
 }
 
 bool
-ctld_connection::login_portal_redirect(struct pdu *request)
+iscsi_connection::login_portal_redirect(struct pdu *request)
 {
 	const struct portal_group *pg;
 
@@ -709,7 +710,7 @@ ctld_connection::login_portal_redirect(struct pdu *request)
 }
 
 bool
-ctld_connection::login_target_redirect(struct pdu *request)
+iscsi_connection::login_target_redirect(struct pdu *request)
 {
 	const char *target_address;
 
@@ -730,7 +731,7 @@ ctld_connection::login_target_redirect(struct pdu *request)
 }
 
 void
-ctld_connection::login_negotiate(struct pdu *request)
+iscsi_connection::login_negotiate(struct pdu *request)
 {
 	struct portal_group *pg = conn_portal->portal_group();
 	struct pdu *response;
@@ -859,7 +860,7 @@ ctld_connection::login_negotiate(struct pdu *request)
 }
 
 void
-ctld_connection::login_wait_transition()
+iscsi_connection::login_wait_transition()
 {
 	struct pdu *request, *response;
 	struct iscsi_bhs_login_request *bhslr;
@@ -883,7 +884,7 @@ ctld_connection::login_wait_transition()
 }
 
 void
-ctld_connection::login()
+iscsi_connection::login()
 {
 	struct pdu *request, *response;
 	struct iscsi_bhs_login_request *bhslr;
