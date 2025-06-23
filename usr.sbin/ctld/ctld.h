@@ -56,7 +56,6 @@
 #define	DEFAULT_CD_BLOCKSIZE		2048
 
 #define	MAX_LUNS			1024
-#define	SOCKBUF_SIZE			1048576
 
 struct isns_req;
 struct port;
@@ -133,9 +132,13 @@ struct portal {
 	portal(struct portal_group *pg, std::string_view listen, bool iser,
 	    struct addrinfo *ai) : p_portal_group(pg), p_listen(listen),
 	    p_ai(ai), p_iser(iser) {}
+	virtual ~portal() = default;
 
 	bool reuse_socket(portal &oldp);
 	bool init_socket();
+	virtual bool init_socket_options(int s __unused) { return true; }
+	virtual void handle_connection(int fd, const char *host,
+	    const struct sockaddr *client_sa) = 0;
 
 	portal_group *portal_group() { return p_portal_group; }
 	const char *listen() const { return p_listen.c_str(); }
@@ -161,9 +164,11 @@ typedef std::unique_ptr<portal> portal_up;
 #define	PG_FILTER_PORTAL_NAME_AUTH	4
 
 struct portal_group {
-	portal_group(struct conf *conf, std::string_view name);
+	portal_group(struct conf *conf, const char *keyword,
+	    std::string_view name);
 
 	struct conf *conf() const { return pg_conf; }
+	const char *keyword() const { return pg_keyword; }
 	const char *name() const { return pg_name.c_str(); }
 	bool assigned() const { return pg_assigned; }
 	bool is_dummy() const;
@@ -206,6 +211,7 @@ struct portal_group {
 private:
 	struct conf			*pg_conf;
 	freebsd::nvlist_up		pg_options;
+	const char			*pg_keyword;
 	std::string			pg_name;
 	auth_group_sp			pg_discovery_auth_group;
 	int				pg_discovery_filter = PG_FILTER_UNKNOWN;
@@ -520,50 +526,7 @@ private:
 	std::unordered_map<std::string, struct pport> pports;
 };
 
-#define	CONN_SESSION_TYPE_NONE		0
-#define	CONN_SESSION_TYPE_DISCOVERY	1
-#define	CONN_SESSION_TYPE_NORMAL	2
-
-struct ctld_connection {
-	ctld_connection(struct portal *portal, int fd, const char *host,
-	    const struct sockaddr *client_sa);
-	~ctld_connection();
-
-	int session_type() const { return conn_session_type; }
-
-	void login();
-	void discovery();
-	void kernel_handoff();
-private:
-	void login_chap(struct auth_group *ag);
-	void login_negotiate_key(struct pdu *request, const char *name,
-	    const char *value, bool skipped_security,
-	    struct keys *response_keys);
-	bool login_portal_redirect(struct pdu *request);
-	bool login_target_redirect(struct pdu *request);
-	void login_negotiate(struct pdu *request);
-	void login_wait_transition();
-
-	bool discovery_target_filtered_out(const struct port *port) const;
-
-	struct connection	conn;
-	struct portal		*conn_portal = nullptr;
-	const struct port	*conn_port = nullptr;
-	struct target		*conn_target = nullptr;
-	int			conn_session_type = CONN_SESSION_TYPE_NORMAL;
-	std::string		conn_initiator_name;
-	std::string		conn_initiator_addr;
-	std::string		conn_initiator_alias;
-	uint8_t			conn_initiator_isid[6];
-	struct sockaddr_storage	conn_initiator_sa;
-	int			conn_max_recv_data_segment_limit = 0;
-	int			conn_max_send_data_segment_limit = 0;
-	int			conn_max_burst_limit = 0;
-	int			conn_first_burst_limit = 0;
-	std::string		conn_user;
-	struct chap		*conn_chap = nullptr;
-};
-
+extern bool proxy_mode;
 extern int ctl_fd;
 
 bool			parse_conf(const char *path);
@@ -589,7 +552,13 @@ void			kernel_send(struct pdu *pdu);
 void			kernel_receive(struct pdu *pdu);
 #endif
 
+void			iscsi_load_kernel_module();
+portal_up		iscsi_make_portal(struct portal_group *pg,
+			    const char *listen, bool iser, struct addrinfo *ai);
+uint16_t		iscsi_new_portal_group_tag();
+
 void			start_timer(int timeout, bool fatal = false);
 void			stop_timer();
+bool			timed_out();
 
 #endif /* !CTLD_H */
