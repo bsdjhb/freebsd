@@ -1048,7 +1048,7 @@ port_new_ioctl(struct conf *conf, struct kports &kports, struct target *target,
 
 	std::string pname = freebsd::stringf("ioctl/%d/%d", pp, vp);
 
-	pport = kports.find_port(pname.c_str());
+	pport = kports.find_port(pname);
 	if (pport != NULL)
 		return (port_new_pp(conf, target, pport));
 
