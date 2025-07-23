@@ -1004,6 +1004,55 @@ for pointers.
 	int &xp = x;
 .Ed
 .Pp
+Initializers may be included in a single line for constructor definitions.
+If a constructor definition requires multiple lines,
+a newline should be inserted after the
+.Ic :
+before the first initializer.
+Initializers should then be indented by a full tab rather than a normal
+second layer indent.
+TODO: What about multiline constructors with initializers:
+.Bd -literal
+class auth {
+	auth(std::string_view secret) : a_secret(secret) {}
+
+	auth(std::string_view secret, std::string_view mutual_user,
+	    std::string_view mutual_secret) : a_secret(secret),
+	    a_mutual_user(mutual_user), a_mutual_secret(mutual_secret) {}
+
+vs
+
+	auth(std::string_view secret, std::string_view mutual_user,
+	    std::string_view mutual_secret) :
+	    a_secret(secret), a_mutual_user(mutual_user),
+	    a_mutual_secret(mutual_secret)
+	{}
+
+vs
+
+	auth(std::string_view secret, std::string_view mutual_user,
+	    std::string_view mutual_secret)
+	    : a_secret(secret), a_mutual_user(mutual_user),
+	    a_mutual_secret(mutual_secret)
+	{}
+
+vs
+
+	auth(std::string_view secret, std::string_view mutual_user,
+	    std::string_view mutual_secret)
+	  : a_secret(secret), a_mutual_user(mutual_user),
+	    a_mutual_secret(mutual_secret)
+	{}
+
+vs
+
+	auth(std::string_view secret, std::string_view mutual_user,
+	    std::string_view mutual_secret) :
+		a_secret(secret), a_mutual_user(mutual_user),
+		a_mutual_secret(mutual_secret) {}
+}
+.Ed
+.Pp
 Variables may be declared at any point within a function,
 not just at the start of blocks.
 .Pp
