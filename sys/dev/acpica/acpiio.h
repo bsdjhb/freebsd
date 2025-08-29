@@ -201,6 +201,9 @@ union acpi_battery_ioctl_arg {
 /* Get AC adapter status. */
 #define ACPIIO_ACAD_GET_STATUS	  _IOR('A', 1, int)
 
+/* Error injection commands. */
+#define ACPIIO_EINJ_GET_ERROR_TYPE	_IOR('E', 1, uint64_t)
+
 #ifdef _KERNEL
 typedef int	(*acpi_ioctl_fn)(u_long cmd, caddr_t addr, void *arg);
 extern int	acpi_register_ioctl(u_long cmd, acpi_ioctl_fn fn, void *arg);
