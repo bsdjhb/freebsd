@@ -16,6 +16,7 @@ SUBDIR=	\
 .endif
 
 SUBDIR+= \
+	acpi_einj \
 	acpi_ged
 
 .include <bsd.subdir.mk>
