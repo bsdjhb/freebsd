@@ -4112,6 +4112,13 @@ acpi_register_ioctl(u_long cmd, acpi_ioctl_fn fn, void *arg)
 	TAILQ_INIT(&acpi_ioctl_hooks);
 	acpi_ioctl_hooks_initted = 1;
     }
+    TAILQ_FOREACH(hp, &acpi_ioctl_hooks, link) {
+	if (hp->cmd == cmd) {
+	    ACPI_UNLOCK(acpi);
+	    return (EBUSY);
+	}
+    }
+
     TAILQ_INSERT_TAIL(&acpi_ioctl_hooks, hp, link);
     ACPI_UNLOCK(acpi);
 
