@@ -729,7 +729,7 @@ kern_ioctl(struct thread *td, int fd, u_long com, caddr_t data)
 {
 	struct file *fp;
 	struct filedesc *fdp;
-	int error, tmp, locked;
+	int error, f_flag, tmp, locked;
 
 	AUDIT_ARG_FD(fd);
 	AUDIT_ARG_CMD(com);
@@ -782,6 +782,7 @@ kern_ioctl(struct thread *td, int fd, u_long com, caddr_t data)
 		goto out;
 	}
 
+	f_flag = 0;
 	switch (com) {
 	case FIONCLEX:
 		fdp->fd_ofiles[fd].fde_flags &= ~UF_EXCLOSE;
@@ -790,22 +791,28 @@ kern_ioctl(struct thread *td, int fd, u_long com, caddr_t data)
 		fdp->fd_ofiles[fd].fde_flags |= UF_EXCLOSE;
 		goto out;
 	case FIONBIO:
-		if ((tmp = *(int *)data))
-			atomic_set_int(&fp->f_flag, FNONBLOCK);
-		else
-			atomic_clear_int(&fp->f_flag, FNONBLOCK);
-		data = (void *)&tmp;
-		break;
 	case FIOASYNC:
-		if ((tmp = *(int *)data))
-			atomic_set_int(&fp->f_flag, FASYNC);
-		else
-			atomic_clear_int(&fp->f_flag, FASYNC);
+		f_flag = com == FIONBIO ? FNONBLOCK : FASYNC;
+		tmp = *(int *)data;
 		data = (void *)&tmp;
+		fsetfl_lock(fp);
+		if (((fp->f_flag & f_flag) != 0) == (tmp != 0)) {
+			fsetfl_unlock(fp);
+			goto out;
+		}
 		break;
 	}
 
 	error = fo_ioctl(fp, com, data, td->td_ucred, td);
+	if (f_flag != 0) {
+		if (error == 0) {
+			if (tmp != 0)
+				atomic_set_int(&fp->f_flag, f_flag);
+			else
+				atomic_clear_int(&fp->f_flag, f_flag);
+		}
+		fsetfl_unlock(fp);
+	}
 out:
 	switch (locked) {
 	case LA_XLOCKED:
