@@ -40,6 +40,7 @@
 .Pp
 .In sys/param.h
 .In sys/systm.h
+.Fn KASSERT expression
 .Fn KASSERT expression fmt ...
 .Fo KASSERT
 .Fa expression
@@ -81,8 +82,11 @@ is a
 .Xr printf 9
 format string followed by its arguments.
 The formatted string will become the panic string.
+If no
+.Fa fmt
+argument is provided, a default string including the current file and line is used.
 .Pp
-The second form of
+The third form of
 .Fn KASSERT
 which encloses
 .Fa fmt
@@ -165,7 +169,7 @@ for example with a 'show foo' command in
 .Pp
 The assertion
 .Bd -literal -offset indent
-MPASS(td == curthread);
+KASSERT(td == curthread);
 .Ed
 .Pp
 located on line 87 of a file named foo.c would generate the following panic
@@ -194,16 +198,16 @@ the assertion failed.
 .Pp
 According to the guidelines above, this would be correctly expressed as:
 .Bd -literal -offset indent
-MPASS(td == curthread);
+KASSERT(td == curthread);
 KASSERT(sz >= SIZE_MIN && sz <= SIZE_MAX,
     "invalid size argument: %u", sz);
 .Ed
 .Sh HISTORY
-The second form of the
+The third form of the
 .Nm KASSERT
 macro first appeared in
 .Fx 3.0 .
-The first form of
+The first and second forms of
 .Nm KASSERT
 macro first appeared in
 .Fx 15.0 .

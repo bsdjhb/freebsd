@@ -149,15 +149,20 @@ void	kassert_panic(const char *fmt, ...)  __printflike(1, 2);
 	if (__predict_false(!(exp)))					\
 		kassert_panic msg;					\
 } while (0)
+#define	KASSERT1(exp) do {						\
+	if (__predict_false(!(exp)))					\
+		kassert_panic("Assertion %s failed at %s:%d", #exp,	\
+		    __FILE__, __LINE__);				\
+} while (0)
 
-#define _KASSERT_MACRO(exp, fmt, _1, _2, _3, _4, _5, _6, _7, _8, _9,	\
+#define _KASSERT_MACRO(exp, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10,	\
     NAME, ...)								\
 	NAME
 
 #define KASSERT(...)							\
 	_KASSERT_MACRO(__VA_ARGS__, KASSERTN, KASSERTN, KASSERTN,	\
 	    KASSERTN, KASSERTN, KASSERTN, KASSERTN, KASSERTN, KASSERTN, \
-	    KASSERT2)(__VA_ARGS__)
+	    KASSERT2, KASSERT1)(__VA_ARGS__)
 #else /* !(KERNEL && INVARIANTS) && !_STANDALONE */
 #define	KASSERT(...) do { \
 } while (0)
@@ -184,9 +189,9 @@ void	kassert_panic(const char *fmt, ...)  __printflike(1, 2);
  * on some architectures, atomicity for unaligned loads will depend on
  * whether or not the load spans multiple cache lines.
  */
-#define	ASSERT_ATOMIC_LOAD_PTR(var, ...)				\
+#define	ASSERT_ATOMIC_LOAD_PTR(var, msg)				\
 	KASSERT(sizeof(var) == sizeof(void *) &&			\
-	    ((uintptr_t)&(var) & (sizeof(void *) - 1)) == 0, __VA_ARGS__)
+	    ((uintptr_t)&(var) & (sizeof(void *) - 1)) == 0, msg)
 /*
  * Assert that a thread is in critical(9) section.
  */
