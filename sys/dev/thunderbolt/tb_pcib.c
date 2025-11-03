@@ -334,6 +334,20 @@ tb_pcib_detach(device_t dev)
 	return (pcib_detach(dev));
 }
 
+static int
+tb_pcib_read_ivar(device_t dev, device_t child, int which, uintptr_t *result)
+{
+	struct tb_pcib_softc *sc = device_get_softc(dev);
+
+	switch (which) {
+	case PCIB_IVAR_TB_GEN:
+		*result = sc->flags & TB_GEN_MASK;
+		return (0);
+	default:
+		return (pcib_read_ivar(dev, child, which, result));
+	}
+}
+
 /* Read/write the Link Controller registers in CFG space */
 static int
 tb_pcib_lc_mailbox(device_t dev, struct tb_lcmbox_cmd *cmd)
@@ -535,6 +549,8 @@ static device_method_t tb_pcib_methods[] = {
 	DEVMETHOD(device_attach,	tb_pcib_attach),
 	DEVMETHOD(device_detach,	tb_pcib_detach),
 
+	DEVMETHOD(bus_read_ivar,	tb_pcib_read_ivar),
+
 	DEVMETHOD(tb_lc_mailbox,	tb_pcib_lc_mailbox),
 	DEVMETHOD(tb_pcie2cio_read,	tb_pcib_pcie2cio_read),
 	DEVMETHOD(tb_pcie2cio_write,	tb_pcib_pcie2cio_write),
@@ -554,42 +570,37 @@ MODULE_DEPEND(tb_pcib, pci, 1, 1, 1);
 static int
 tb_pci_probe(device_t dev)
 {
-	struct tb_pcib_ident *n;
-	device_t parent;
-	devclass_t dc;
+	uintptr_t tb_gen;
+	int error;
 
 	/*
-	 * This driver is only valid if the parent device is a PCI-PCI
-	 * bridge.  To determine that, check if the grandparent is a
-	 * PCI bus.
+	 * This driver is only valid if the parent device is a
+	 * Thunderbolt PCI-PCI bridge.
 	 */
-	parent = device_get_parent(dev);
-	dc = device_get_devclass(device_get_parent(parent));
-	if (strcmp(devclass_get_name(dc), "pci") != 0)
+	error = BUS_READ_IVAR(device_get_parent(dev), dev, PCIB_IVAR_TB_GEN,
+	    &tb_gen);
+	if (error != 0)
 		return (ENXIO);
 
-	if ((n = tb_pcib_find_ident(parent)) != NULL) {
-		switch (n->flags & TB_GEN_MASK) {
-		case TB_GEN_TB1:
-			device_set_desc(dev, "Thunderbolt 1 Link");
-			break;
-		case TB_GEN_TB2:
-			device_set_desc(dev, "Thunderbolt 2 Link");
-			break;
-		case TB_GEN_TB3:
-			device_set_desc(dev, "Thunderbolt 3 Link");
-			break;
-		case TB_GEN_USB4:
-			device_set_desc(dev, "USB4 Link");
-			break;
-		case TB_GEN_UNK:
-			/* Fallthrough */
-		default:
-			device_set_desc(dev, "Thunderbolt Link");
-		}
-		return (BUS_PROBE_VENDOR);
+	switch (tb_gen) {
+	case TB_GEN_TB1:
+		device_set_desc(dev, "Thunderbolt 1 Link");
+		break;
+	case TB_GEN_TB2:
+		device_set_desc(dev, "Thunderbolt 2 Link");
+		break;
+	case TB_GEN_TB3:
+		device_set_desc(dev, "Thunderbolt 3 Link");
+		break;
+	case TB_GEN_USB4:
+		device_set_desc(dev, "USB4 Link");
+		break;
+	case TB_GEN_UNK:
+		/* Fallthrough */
+	default:
+		device_set_desc(dev, "Thunderbolt Link");
 	}
-	return (ENXIO);
+	return (BUS_PROBE_VENDOR);
 }
 
 static int
