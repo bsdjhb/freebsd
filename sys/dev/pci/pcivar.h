@@ -415,7 +415,8 @@ pci_write_config(device_t dev, int reg, uint32_t val, int width)
 /*typedef enum pci_device_ivars pcib_device_ivars;*/
 enum pcib_device_ivars {
 	PCIB_IVAR_DOMAIN = BUS_IVARS_PRIVATE,
-	PCIB_IVAR_BUS
+	PCIB_IVAR_BUS,
+	PCIB_IVAR_TB_GEN
 };
 
 #define	PCIB_ACCESSOR(var, ivar, type)					 \
