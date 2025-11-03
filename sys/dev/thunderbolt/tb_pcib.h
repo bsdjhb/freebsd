@@ -87,6 +87,10 @@ struct tb_pcib_softc {
 #define TB_PCIB_VSEC(dev) ((struct tb_pcib_softc *)(device_get_softc(dev)))->vsec;
 #define TB_DESC_MAX	80
 
+enum {
+	TB_PCIB_IVAR_FLAGS = BUS_IVARS_THUNDERBOLT
+};
+
 int tb_pcib_probe_common(device_t, char *);
 int tb_pcib_attach_common(device_t dev);
 

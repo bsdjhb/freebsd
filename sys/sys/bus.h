@@ -312,6 +312,7 @@ enum intr_polarity {
 #define	BUS_IVARS_GIC3		0x300
 #define	BUS_IVARS_GPIOBUS	0x400
 #define	BUS_IVARS_SUPERIO	0x600
+#define	BUS_IVARS_THUNDERBOLT	0x700
 
 /**
  * CPU sets supported by bus_get_cpus().  Note that not all sets may be
