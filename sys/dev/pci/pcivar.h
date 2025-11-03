@@ -340,7 +340,7 @@ struct pci_devinfo {
 #include "pci_if.h"
 
 enum pci_device_ivars {
-    PCI_IVAR_SUBVENDOR,
+    PCI_IVAR_SUBVENDOR = BUS_IVARS_PRIVATE,
     PCI_IVAR_SUBDEVICE,
     PCI_IVAR_VENDOR,
     PCI_IVAR_DEVICE,
