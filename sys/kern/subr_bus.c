@@ -793,9 +793,6 @@ devclass_driver_deleted(devclass_t busclass, devclass_t dc, driver_t *driver)
 	 * Note that since a driver can be in multiple devclasses, we
 	 * should not detach devices which are not children of devices in
 	 * the affected devclass.
-	 *
-	 * If we're frozen, we don't generate NOMATCH events. Mark to
-	 * generate later.
 	 */
 	for (i = 0; i < dc->maxunit; i++) {
 		if (dc->devices[i]) {
@@ -804,12 +801,6 @@ devclass_driver_deleted(devclass_t busclass, devclass_t dc, driver_t *driver)
 			    dev->parent->devclass == busclass) {
 				if ((error = device_detach(dev)) != 0)
 					return (error);
-				if (device_frozen) {
-					dev->flags &= ~DF_DONENOMATCH;
-					dev->flags |= DF_NEEDNOMATCH;
-				} else {
-					device_handle_nomatch(dev);
-				}
 			}
 		}
 	}
