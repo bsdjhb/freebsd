@@ -438,7 +438,7 @@ vga_pci_alloc_resource(device_t dev, device_t child, int type, int *rid,
 		 */
 		vr = lookup_res(device_get_softc(dev), *rid);
 		if (vr == NULL)
-			return (NULL);
+			break;
 		if (vr->vr_res == NULL)
 			vr->vr_res = bus_alloc_resource(dev, type, rid, start,
 			    end, count, flags);
@@ -464,7 +464,7 @@ vga_pci_release_resource(device_t dev, device_t child, struct resource *r)
 		 */
 		vr = lookup_res(device_get_softc(dev), rman_get_rid(r));
 		if (vr == NULL)
-			return (EINVAL);
+			break;
 		if (vr->vr_res == NULL)
 			return (EINVAL);
 		KASSERT(vr->vr_res == r, ("vga_pci resource mismatch"));
