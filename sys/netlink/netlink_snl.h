@@ -106,6 +106,18 @@ lb_allocz(struct linear_buffer *lb, int len)
 	return (data);
 }
 
+#if 0
+static inline char *
+lb_extend(struct linear_buffer *lb, int new_offset)
+{
+	new_offset = roundup2(len, alignof(__max_align_t));
+	if (new_offset > lb->size)
+		return (NULL);
+	lb->offset = new_offset;
+	return (lb->base);
+}
+#endif
+
 static inline void
 lb_clear(struct linear_buffer *lb)
 {
@@ -1090,23 +1102,34 @@ snl_realloc_msg_buffer(struct snl_writer *nw, size_t sz)
 	if (nw->error)
 		return (false);
 
-	if (snl_allocz(nw->ss, new_size) == NULL) {
+#if 0
+	if (lb_extend(nw->ss->lb, new_size) != NULL) {
+		nw->size = new_size;
+		return (true);
+	}
+#endif
+
+	void *new_base = snl_allocz(nw->ss, new_size);
+	if (new_base == NULL) {
 		nw->error = true;
 		return (false);
 	}
-	nw->size = new_size;
 
-	void *new_base = nw->ss->lb->base;
-	if (new_base != nw->base) {
-		memcpy(new_base, nw->base, nw->offset);
-		if (nw->hdr != NULL) {
-			int hdr_off = (char *)(nw->hdr) - nw->base;
+	if (new_base == nw->ss->lb->base) {
+		/* Claim the entire linear buffer. */
+		nw->size = nw->ss->lb->size;
+		nw->ss->lb->offset = nw->ss->lb->size;
+	} else
+		nw->size = new_size;
 
-			nw->hdr = (struct nlmsghdr *)
-			    (void *)((char *)new_base + hdr_off);
-		}
-		nw->base = (char *)new_base;
+	memcpy(new_base, nw->base, nw->offset);
+	if (nw->hdr != NULL) {
+		int hdr_off = (char *)(nw->hdr) - nw->base;
+
+		nw->hdr = (struct nlmsghdr *)
+		    (void *)((char *)new_base + hdr_off);
 	}
+	nw->base = (char *)new_base;
 
 	return (true);
 }
