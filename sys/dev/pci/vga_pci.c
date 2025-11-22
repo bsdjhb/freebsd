@@ -485,6 +485,39 @@ vga_pci_release_resource(device_t dev, device_t child, struct resource *r)
 	return (bus_release_resource(dev, r));
 }
 
+static int
+vga_pci_activate_resource(device_t dev, device_t child, struct resource *r)
+{
+	return (bus_activate_resource(dev, r));
+}
+
+static int
+vga_pci_deactivate_resource(device_t dev, device_t child, struct resource *r)
+{
+	return (bus_deactivate_resource(dev, r));
+}
+
+static int
+vga_pci_adjust_resource(device_t dev, device_t child, struct resource *r,
+    rman_res_t start, rman_res_t end)
+{
+	return (bus_adjust_resource(dev, r, start, end));
+}
+
+static int
+vga_pci_map_resource(device_t dev, device_t child, struct resource *r,
+    struct resource_map_request *argsp, struct resource_map *map)
+{
+	return (bus_map_resource(dev, r, argsp, map));
+}
+
+static int
+vga_pci_unmap_resource(device_t dev, device_t child, struct resource *r,
+    struct resource_map *map)
+{
+	return (bus_unmap_resource(dev, r, map));
+}
+
 /* PCI interface. */
 
 static uint32_t
@@ -718,8 +751,11 @@ static device_method_t vga_pci_methods[] = {
 	DEVMETHOD(bus_teardown_intr,	vga_pci_teardown_intr),
 	DEVMETHOD(bus_alloc_resource,	vga_pci_alloc_resource),
 	DEVMETHOD(bus_release_resource,	vga_pci_release_resource),
-	DEVMETHOD(bus_activate_resource, bus_generic_activate_resource),
-	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
+	DEVMETHOD(bus_activate_resource, vga_pci_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, vga_pci_deactivate_resource),
+	DEVMETHOD(bus_adjust_resource,	vga_pci_adjust_resource),
+	DEVMETHOD(bus_map_resource,	vga_pci_map_resource),
+	DEVMETHOD(bus_unmap_resource,	vga_pci_unmap_resource),
 	DEVMETHOD(bus_get_dma_tag,	vga_pci_get_dma_tag),
 
 	/* PCI interface */
