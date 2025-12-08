@@ -106,6 +106,26 @@ lb_allocz(struct linear_buffer *lb, uint32_t len)
 	return (data);
 }
 
+static inline bool
+lb_extendz(struct linear_buffer *lb, void *old, u_int old_len, u_int new_len)
+{
+	u_int delta;
+
+	/* Is the old buffer the last allocated region in the lb? */
+	old_len = roundup2(old_len, alignof(__max_align_t));
+	if ((char *)old + old_len != lb->base + lb->offset)
+		return (false);
+
+	/* Is there room to grow the end of the lb? */
+	new_len = roundup2(new_len, alignof(__max_align_t));
+	delta = new_len - old_len;
+	if (delta > lb->size - lb->offset)
+		return (false);
+
+	lb->offset += delta;
+	return (true);
+}
+
 static inline void
 lb_clear(struct linear_buffer *lb)
 {
@@ -219,6 +239,12 @@ snl_allocz(struct snl_state *ss, uint32_t len)
 	}
 
 	return (data);
+}
+
+static inline bool
+snl_extendz(struct snl_state *ss, void *old, u_int old_len, u_int new_len)
+{
+	return (lb_extendz(ss->lb, old, old_len, new_len));
 }
 
 static inline void
@@ -1092,6 +1118,11 @@ snl_realloc_msg_buffer(struct snl_writer *nw, size_t sz)
 
 	if (nw->error)
 		return (false);
+
+	if (snl_extendz(nw->ss, nw->base, nw->size, new_size)) {
+		nw->size = new_size;
+		return (true);
+	}
 
 	new_base = snl_allocz(nw->ss, new_size);
 	if (new_base == NULL) {
