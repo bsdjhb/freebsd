@@ -1,4 +1,4 @@
-SRCDIR=${SRCTOP}/sys/contrib/openzfs/module
+SRCDIR=${ZFSDIR}/module
 
 KMOD=	zfs
 

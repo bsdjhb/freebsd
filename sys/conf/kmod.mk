@@ -569,7 +569,8 @@ OBJS_DEPEND_GUESS+= ${SRCS:M*.h}
 OBJS_DEPEND_GUESS+= opt_global.h
 .endif
 
-ZINCDIR=${SYSDIR}/contrib/openzfs/include
+ZFSDIR=${SYSDIR}/contrib/openzfs
+ZINCDIR=${ZFSDIR}/include
 OPENZFS_CFLAGS=     \
 	-D_SYS_VMEM_H_  \
 	-D__KERNEL__ \

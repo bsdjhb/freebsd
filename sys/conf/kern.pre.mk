@@ -170,7 +170,8 @@ ZSTD_C= ${CC} -c -DZSTD_HEAPMODE=1 -I$S/contrib/zstd/lib/freebsd ${CFLAGS} \
 ZSTD_DECOMPRESS_BLOCK_FLAGS= -fno-tree-vectorize
 .endif
 
-ZINCDIR=$S/contrib/openzfs/include
+ZFSDIR=$S/contrib/openzfs
+ZINCDIR=${ZFSDIR}/include
 # Common for dtrace / zfs
 CDDL_CFLAGS=	\
 	-DFREEBSD_NAMECACHE \
@@ -184,7 +185,7 @@ CDDL_CFLAGS=	\
 	-I${ZINCDIR}/os/freebsd/spl \
 	-I${ZINCDIR}/os/freebsd/zfs  \
 	-I$S/modules/zfs \
-	-I$S/contrib/openzfs/module/zstd/include \
+	-I${ZFSDIR}/module/zstd/include \
 	${CFLAGS} \
 	-Wno-cast-qual \
 	-Wno-duplicate-decl-specifier \
@@ -204,7 +205,7 @@ CDDL_CFLAGS=	\
 CDDL_C=		${CC} -c ${CDDL_CFLAGS} ${WERROR} ${.IMPSRC}
 
 # Special flags for managing the compat compiles for ZFS
-ZFS_CFLAGS+=	-I$S/contrib/openzfs/module/icp/include \
+ZFS_CFLAGS+=	-I${ZFSDIR}/module/icp/include \
 	${CDDL_CFLAGS} -DBUILDING_ZFS -DHAVE_UIO_ZEROCOPY \
 	-DWITH_NETDUMP -D__KERNEL__ -D_SYS_CONDVAR_H_ -DSMP
 
