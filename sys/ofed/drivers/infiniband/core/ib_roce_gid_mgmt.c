@@ -209,11 +209,10 @@ roce_gid_update_addr_callback(struct ib_device *device, u8 port,
 	struct if_iter iter;
 	struct ipx_entry *entry;
 	VNET_ITERATOR_DECL(vnet_iter);
-	struct ib_gid_attr gid_attr;
+	const struct ib_gid_attr *sgid_attr;
 	union ib_gid gid;
 	if_t ifp;
 	int default_gids;
-	u16 index_num;
 	int i;
 
 	struct ipx_queue ipx_head;
@@ -259,8 +258,9 @@ roce_gid_update_addr_callback(struct ib_device *device, u8 port,
 			if (!((1UL << i) & gid_type_mask))
 				continue;
 			/* check if entry found */
-			if (ib_find_cached_gid_by_port(device, &gid, i,
-			    port, entry->ndev, &index_num) == 0)
+			sgid_attr = rdma_find_gid_by_port(device, &gid, i,
+                                                          port, entry->ndev);
+			if (!IS_ERR(sgid_attr))
 				break;
 		}
 		if (i != IB_GID_TYPE_SIZE)
@@ -270,14 +270,20 @@ roce_gid_update_addr_callback(struct ib_device *device, u8 port,
 	}
 
 	/* remove stale GIDs, if any */
-	for (i = default_gids; ib_get_cached_gid(device, port, i, &gid, &gid_attr) == 0; i++) {
+	for (i = default_gids;; i++) {
 		union ipx_addr ipx;
 
+		sgid_attr = rdma_get_gid_attr(device, port, i);
+		if (IS_ERR(sgid_attr))
+			break;
+
+		ndev = sgid_attr->ndev;
+		gid = sgid_attr->gid;
+		rdma_put_gid_attr(sgid_attr);
+
 		/* check for valid network device pointer */
-		ndev = gid_attr.ndev;
 		if (ndev == NULL)
 			continue;
-		dev_put(ndev);
 
 		/* don't delete empty entries */
 		if (rdma_is_zero_gid(&gid))
