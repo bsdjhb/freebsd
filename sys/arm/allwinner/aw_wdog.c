@@ -161,7 +161,6 @@ static int
 aw_wdog_attach(device_t dev)
 {
 	struct aw_wdog_softc *sc;
-	int rid;
 
 	if (aw_wdog_sc != NULL)
 		return (ENXIO);
@@ -169,8 +168,7 @@ aw_wdog_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -217,7 +215,7 @@ aw_wdog_attach(device_t dev)
 		sc->wdog_config_value = H616_WDOG_CONFIG_RST_EN_SYSTEM;
 		break;
 	default:
-		bus_release_resource(dev, SYS_RES_MEMORY, rid, sc->res);
+		bus_release_resource(dev, sc->res);
 		return (ENXIO);
 	}
 

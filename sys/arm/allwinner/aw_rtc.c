@@ -208,9 +208,8 @@ aw_rtc_attach(device_t dev)
 {
 	struct aw_rtc_softc *sc  = device_get_softc(dev);
 	uint32_t val;
-	int rid = 0;
 
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (!sc->res) {
 		device_printf(dev, "could not allocate resources\n");
 		return (ENXIO);

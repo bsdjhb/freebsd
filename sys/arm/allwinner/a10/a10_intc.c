@@ -322,12 +322,11 @@ static int
 a10_aintc_attach(device_t dev)
 {
 	struct a10_aintc_softc *sc = device_get_softc(dev);
-	int rid = 0;
 	int i;
 	sc->sc_dev = dev;
 
-	sc->aintc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	sc->aintc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (!sc->aintc_res) {
 		device_printf(dev, "could not allocate resource\n");
 		return (ENXIO);
@@ -357,8 +356,7 @@ a10_aintc_attach(device_t dev)
 	return (0);
 
 error:
-	bus_release_resource(dev, SYS_RES_MEMORY, rid,
-	    sc->aintc_res);
+	bus_release_resource(dev, sc->aintc_res);
 	return (ENXIO);
 }
 

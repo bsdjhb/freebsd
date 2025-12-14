@@ -477,7 +477,6 @@ h3_pr_set_clear(struct a10codec_info *sc, u_int addr, u_int set, u_int clr)
 static int
 h3_mixer_init(struct snd_mixer *m)
 {
-	int rid=1;
 	pcell_t reg[2];
 	phandle_t analogref;
 	struct a10codec_info *sc = mix_getdevinfo(m);
@@ -492,7 +491,7 @@ h3_mixer_init(struct snd_mixer *m)
 		return (ENXIO);
 	}
 
-	sc->res[1] = bus_alloc_resource(sc->dev, SYS_RES_MEMORY, &rid, reg[0],
+	sc->res[1] = bus_alloc_resource(sc->dev, SYS_RES_MEMORY, 1, reg[0],
 	    reg[0]+reg[1], reg[1], RF_ACTIVE );
 
 	if (sc->res[1] == NULL) {

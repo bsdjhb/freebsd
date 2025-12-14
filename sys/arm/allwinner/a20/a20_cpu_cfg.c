@@ -82,12 +82,11 @@ static int
 a20_cpu_cfg_attach(device_t dev)
 {
 	struct a20_cpu_cfg_softc *sc = device_get_softc(dev);
-	int rid = 0;
 
 	if (a20_cpu_cfg_sc)
 		return (ENXIO);
 
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (!sc->res) {
 		device_printf(dev, "could not allocate resource\n");
 		return (ENXIO);

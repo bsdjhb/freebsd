@@ -221,7 +221,7 @@ static int
 a64codec_attach(device_t dev)
 {
 	struct a64codec_softc *sc;
-	int error, rid;
+	int error;
 	phandle_t node;
 	regulator_t reg;
 
@@ -230,8 +230,7 @@ a64codec_attach(device_t dev)
 
 	mtx_init(&sc->mtx, device_get_nameunit(dev), NULL, MTX_DEF);
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (!sc->res) {
 		device_printf(dev, "cannot allocate resource for device\n");
 		error = ENXIO;
@@ -306,7 +305,7 @@ a64codec_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	if (sc->res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->res);
+		bus_release_resource(dev, sc->res);
 	mtx_destroy(&sc->mtx);
 
 	return (0);

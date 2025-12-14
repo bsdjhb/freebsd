@@ -817,10 +817,10 @@ emac_detach(device_t dev)
 		clk_disable(sc->emac_clk);
 
 	if (sc->emac_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->emac_res);
+		bus_release_resource(dev, sc->emac_res);
 
 	if (sc->emac_irq != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->emac_irq);
+		bus_release_resource(dev, sc->emac_irq);
 
 	if (sc->emac_ifp != NULL)
 		if_free(sc->emac_ifp);
@@ -879,7 +879,7 @@ emac_attach(device_t dev)
 {
 	struct emac_softc *sc;
 	if_t ifp;
-	int error, rid;
+	int error;
 	uint8_t eaddr[ETHER_ADDR_LEN];
 
 	sc = device_get_softc(dev);
@@ -890,8 +890,7 @@ emac_attach(device_t dev)
 	    MTX_DEF);
 	callout_init_mtx(&sc->emac_tick_ch, &sc->emac_mtx, 0);
 
-	rid = 0;
-	sc->emac_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->emac_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->emac_res == NULL) {
 		device_printf(dev, "unable to map memory\n");
@@ -902,8 +901,7 @@ emac_attach(device_t dev)
 	sc->emac_tag = rman_get_bustag(sc->emac_res);
 	sc->emac_handle = rman_get_bushandle(sc->emac_res);
 
-	rid = 0;
-	sc->emac_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->emac_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_SHAREABLE | RF_ACTIVE);
 	if (sc->emac_irq == NULL) {
 		device_printf(dev, "cannot allocate IRQ resources.\n");

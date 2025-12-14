@@ -245,7 +245,7 @@ awusbphy_init(device_t dev)
 		device_printf(dev, "Cannot locate phy control resource\n");
 		return (ENXIO);
 	}
-	sc->phy_ctrl = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->phy_ctrl = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
 	    RF_ACTIVE);
 	if (sc->phy_ctrl == NULL) {
 		device_printf(dev, "Cannot allocate resource\n");
@@ -297,7 +297,7 @@ awusbphy_init(device_t dev)
 		    pname, &rid) != 0)
 			continue;
 
-		sc->pmu[off] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+		sc->pmu[off] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
 		    RF_ACTIVE);
 		if (sc->pmu[off] == NULL) {
 			device_printf(dev, "Cannot allocate resource\n");
