@@ -140,9 +140,7 @@ ahci_gen_attach(device_t dev)
 	struct ahci_controller *ctlr = device_get_softc(dev);
 	int	error;
 
-	ctlr->r_rid = 0;
-	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &ctlr->r_rid,
-	    RF_ACTIVE);
+	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (ctlr->r_mem == NULL)
 		return (ENXIO);
 
@@ -155,8 +153,7 @@ ahci_gen_attach(device_t dev)
 
 	if (error != 0) {
 		if (ctlr->r_mem != NULL)
-			bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid,
-			    ctlr->r_mem);
+			bus_release_resource(dev, ctlr->r_mem);
 	}
 	return error;
 }

@@ -661,7 +661,7 @@ tegra_ahci_attach(device_t dev)
 	struct tegra_ahci_sc *sc;
 	struct ahci_controller *ctlr;
 	phandle_t node;
-	int rv, rid;
+	int rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -670,24 +670,19 @@ tegra_ahci_attach(device_t dev)
 	sc->soc = (struct ahci_soc *)ofw_bus_search_compatible(dev,
 	    compat_data)->ocd_data;
 
-	ctlr->r_rid = 0;
-	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ctlr->r_rid, RF_ACTIVE);
+	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (ctlr->r_mem == NULL)
 		return (ENXIO);
 
-	rid = 1;
-	sc->sata_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	sc->sata_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
+	    RF_ACTIVE);
 	if (sc->sata_mem == NULL) {
 		rv = ENXIO;
 		goto fail;
 	}
 
 	/* Aux is optionall */
-	rid = 2;
-	sc->aux_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	sc->aux_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 2, RF_ACTIVE);
 
 	rv = get_fdt_resources(sc, node);
 	if (rv != 0) {
@@ -721,10 +716,9 @@ tegra_ahci_attach(device_t dev)
 fail:
 	/* XXX FDT  stuff */
 	if (sc->sata_mem != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 1, sc->sata_mem);
+		bus_release_resource(dev, sc->sata_mem);
 	if (ctlr->r_mem != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid,
-		    ctlr->r_mem);
+		bus_release_resource(dev, ctlr->r_mem);
 	return (rv);
 }
 

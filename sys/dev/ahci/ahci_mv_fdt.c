@@ -94,7 +94,6 @@ ahci_mv_fdt_attach(device_t dev)
 
 	ctlr = device_get_softc(dev);
 	ctlr->dev = dev;
-	ctlr->r_rid = 0;
 	ctlr->quirks = AHCI_Q_2CH;
 	ctlr->numirqs = 1;
 
@@ -102,8 +101,8 @@ ahci_mv_fdt_attach(device_t dev)
 		ctlr->quirks |= AHCI_Q_MRVL_SR_DEL;
 
 	/* Allocate memory for controller */
-	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ctlr->r_rid, RF_ACTIVE | RF_SHAREABLE);
+	ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE | RF_SHAREABLE);
 	if (ctlr->r_mem == NULL) {
 		device_printf(dev, "Failed to alloc memory for controller\n");
 		return (ENOMEM);
@@ -113,7 +112,7 @@ ahci_mv_fdt_attach(device_t dev)
 	rc = ahci_ctlr_reset(dev);
 	if (rc != 0) {
 		device_printf(dev, "Failed to reset controller\n");
-		bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid, ctlr->r_mem);
+		bus_release_resource(dev, ctlr->r_mem);
 		return (ENXIO);
 	}
 

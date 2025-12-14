@@ -403,8 +403,7 @@ ahci_detach(device_t dev)
 		if (ctlr->irqs[i].r_irq) {
 			bus_teardown_intr(dev, ctlr->irqs[i].r_irq,
 			    ctlr->irqs[i].handle);
-			bus_release_resource(dev, SYS_RES_IRQ,
-			    ctlr->irqs[i].r_irq_rid, ctlr->irqs[i].r_irq);
+			bus_release_resource(dev, ctlr->irqs[i].r_irq);
 		}
 	}
 	bus_dma_tag_destroy(ctlr->dma_tag);
@@ -422,13 +421,11 @@ ahci_free_mem(device_t dev)
 
 	/* Release memory resources */
 	if (ctlr->r_mem)
-		bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid, ctlr->r_mem);
+		bus_release_resource(dev, ctlr->r_mem);
 	if (ctlr->r_msix_table)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    ctlr->r_msix_tab_rid, ctlr->r_msix_table);
+		bus_release_resource(dev, ctlr->r_msix_table);
 	if (ctlr->r_msix_pba)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    ctlr->r_msix_pba_rid, ctlr->r_msix_pba);
+		bus_release_resource(dev, ctlr->r_msix_pba);
 
 	ctlr->r_msix_pba = ctlr->r_mem = ctlr->r_msix_table = NULL;
 }
@@ -437,7 +434,7 @@ int
 ahci_setup_interrupt(device_t dev)
 {
 	struct ahci_controller *ctlr = device_get_softc(dev);
-	int i;
+	int i, rid;
 
 	/* Check for single MSI vector fallback. */
 	if (ctlr->numirqs > 1 &&
@@ -456,7 +453,8 @@ ahci_setup_interrupt(device_t dev)
 	/* Allocate all IRQs. */
 	for (i = 0; i < ctlr->numirqs; i++) {
 		ctlr->irqs[i].ctlr = ctlr;
-		ctlr->irqs[i].r_irq_rid = i + (ctlr->msi ? 1 : 0);
+		ctlr->irqs[i].unit = i;
+		rid = i + (ctlr->msi ? 1 : 0);
 		if (ctlr->channels == 1 && !ctlr->ccc && ctlr->msi)
 			ctlr->irqs[i].mode = AHCI_IRQ_MODE_ONE;
 		else if (ctlr->numirqs == 1 || i >= ctlr->channels ||
@@ -468,7 +466,7 @@ ahci_setup_interrupt(device_t dev)
 		else
 			ctlr->irqs[i].mode = AHCI_IRQ_MODE_ONE;
 		if (!(ctlr->irqs[i].r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &ctlr->irqs[i].r_irq_rid, RF_SHAREABLE | RF_ACTIVE))) {
+		    rid, RF_SHAREABLE | RF_ACTIVE))) {
 			device_printf(dev, "unable to map interrupt\n");
 			return (ENXIO);
 		}
@@ -504,16 +502,15 @@ ahci_intr(void *data)
 	int unit;
 
 	if (irq->mode == AHCI_IRQ_MODE_ALL) {
-		unit = 0;
 		if (ctlr->ccc)
 			is = ctlr->ichannels;
 		else
 			is = ATA_INL(ctlr->r_mem, AHCI_IS);
 	} else {	/* AHCI_IRQ_MODE_AFTER */
-		unit = irq->r_irq_rid - 1;
 		is = ATA_INL(ctlr->r_mem, AHCI_IS);
 		is &= (0xffffffff << unit);
 	}
+	unit = irq->unit;
 	/* CCC interrupt is edge triggered. */
 	if (ctlr->ccc)
 		ise = 1 << ctlr->cccv;
@@ -551,7 +548,7 @@ ahci_intr_one(void *data)
 	void *arg;
 	int unit;
 
-	unit = irq->r_irq_rid - 1;
+	unit = irq->unit;
 	if ((arg = ctlr->interrupt[unit].argument))
 	    ctlr->interrupt[unit].function(arg);
 	/* AHCI declares level triggered IS. */
@@ -567,7 +564,7 @@ ahci_intr_one_edge(void *data)
 	void *arg;
 	int unit;
 
-	unit = irq->r_irq_rid - 1;
+	unit = irq->unit;
 	/* Some controllers have edge triggered IS. */
 	ATA_OUTL(ctlr->r_mem, AHCI_IS, 1 << unit);
 	if ((arg = ctlr->interrupt[unit].argument))
@@ -804,7 +801,7 @@ ahci_ch_attach(device_t dev)
 	struct cam_devq *devq;
 	struct sysctl_ctx_list *ctx;
 	struct sysctl_oid *tree;
-	int rid, error, i, sata_rev = 0;
+	int error, i, sata_rev = 0;
 	u_int32_t version;
 
 	ch->dev = dev;
@@ -848,9 +845,8 @@ ahci_ch_attach(device_t dev)
 		ch->user[i].caps |= CTS_SATA_CAPS_H_DMAAA |
 		    CTS_SATA_CAPS_H_AN;
 	}
-	rid = 0;
-	if (!(ch->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE)))
+	if (!(ch->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE)))
 		return (ENXIO);
 	ch->chcaps = ATA_INL(ch->r_mem, AHCI_P_CMD);
 	version = ATA_INL(ctlr->r_mem, AHCI_VS);
@@ -871,9 +867,8 @@ ahci_ch_attach(device_t dev)
 	ahci_slotsalloc(dev);
 	mtx_lock(&ch->mtx);
 	ahci_ch_init(dev);
-	rid = ATA_IRQ_RID;
-	if (!(ch->r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &rid, RF_SHAREABLE | RF_ACTIVE))) {
+	if (!(ch->r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, ATA_IRQ_RID,
+	    RF_SHAREABLE | RF_ACTIVE))) {
 		device_printf(dev, "Unable to map interrupt\n");
 		error = ENXIO;
 		goto err0;
@@ -934,9 +929,9 @@ err3:
 err2:
 	cam_sim_free(ch->sim, /*free_devq*/TRUE);
 err1:
-	bus_release_resource(dev, SYS_RES_IRQ, ATA_IRQ_RID, ch->r_irq);
+	bus_release_resource(dev, ch->r_irq);
 err0:
-	bus_release_resource(dev, SYS_RES_MEMORY, ch->unit, ch->r_mem);
+	bus_release_resource(dev, ch->r_mem);
 	mtx_unlock(&ch->mtx);
 	mtx_destroy(&ch->mtx);
 	return (error);
@@ -964,13 +959,13 @@ ahci_ch_detach(device_t dev)
 		callout_drain(&ch->pm_timer);
 	callout_drain(&ch->reset_timer);
 	bus_teardown_intr(dev, ch->r_irq, ch->ih);
-	bus_release_resource(dev, SYS_RES_IRQ, ATA_IRQ_RID, ch->r_irq);
+	bus_release_resource(dev, ch->r_irq);
 
 	ahci_ch_deinit(dev);
 	ahci_slotsfree(dev);
 	ahci_dmafini(dev);
 
-	bus_release_resource(dev, SYS_RES_MEMORY, ch->unit, ch->r_mem);
+	bus_release_resource(dev, ch->r_mem);
 	mtx_destroy(&ch->mtx);
 	return (0);
 }

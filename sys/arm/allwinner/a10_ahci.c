@@ -311,9 +311,8 @@ ahci_a10_attach(device_t dev)
 	ctlr->deviceid = 0;
 	ctlr->subvendorid = 0;
 	ctlr->subdeviceid = 0;
-	ctlr->r_rid = 0;
-	if (!(ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ctlr->r_rid, RF_ACTIVE)))
+	if (!(ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE)))
 		return (ENXIO);
 
 	/* Enable the (optional) regulator */
@@ -378,7 +377,7 @@ fail:
 		clk_release(sc->clk_gate);
 	if (sc->clk_pll != NULL)
 		clk_release(sc->clk_pll);
-	bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid, ctlr->r_mem);
+	bus_release_resource(dev, ctlr->r_mem);
 	return (error);
 }
 
@@ -397,7 +396,7 @@ ahci_a10_detach(device_t dev)
 		clk_release(sc->clk_gate);
 	if (sc->clk_pll != NULL)
 		clk_release(sc->clk_pll);
-	bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid, ctlr->r_mem);
+	bus_release_resource(dev, ctlr->r_mem);
 	return (ahci_detach(dev));
 }
 

@@ -492,9 +492,6 @@ struct ahci_enclosure {
 struct ahci_controller {
 	device_t		dev;
 	bus_dma_tag_t		dma_tag;
-	int			r_rid;
-	int			r_msix_tab_rid;
-	int			r_msix_pba_rid;
 	uint16_t		vendorid;	/* Vendor ID from the bus */
 	uint16_t		deviceid;	/* Device ID from the bus */
 	uint16_t		subvendorid;	/* Subvendor ID from the bus */
@@ -507,7 +504,7 @@ struct ahci_controller {
 		struct ahci_controller	*ctlr;
 		struct resource		*r_irq;
 		void			*handle;
-		int			r_irq_rid;
+		int			unit;
 		int			mode;
 #define	AHCI_IRQ_MODE_ALL	0
 #define	AHCI_IRQ_MODE_AFTER	1

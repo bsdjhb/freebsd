@@ -476,6 +476,7 @@ ahci_pci_attach(device_t dev)
 	uint32_t devid = pci_get_devid(dev);
 	uint8_t revid = pci_get_revid(dev);
 	int msi_count, msix_count;
+	int msix_pba_rid, msix_table_rid, rid;
 	uint32_t caps, pi;
 
 	msi_count = pci_msi_count(dev);
@@ -512,11 +513,11 @@ ahci_pci_attach(device_t dev)
 
 	/* Default AHCI Base Address is BAR(5), Cavium uses BAR(0) */
 	if (ctlr->quirks & AHCI_Q_ABAR0)
-		ctlr->r_rid = PCIR_BAR(0);
+		rid = PCIR_BAR(0);
 	else
-		ctlr->r_rid = PCIR_BAR(5);
-	if (!(ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ctlr->r_rid, RF_ACTIVE)))
+		rid = PCIR_BAR(5);
+	if (!(ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
+	    RF_ACTIVE)))
 		return ENXIO;
 
 	/*
@@ -566,18 +567,18 @@ ahci_pci_attach(device_t dev)
 
 	/* Allocate resources for MSI-x table and PBA */
 	if (msix_count > 0) {
-		ctlr->r_msix_tab_rid = pci_msix_table_bar(dev);
-		ctlr->r_msix_pba_rid = pci_msix_pba_bar(dev);
+		msix_table_rid = pci_msix_table_bar(dev);
+		msix_pba_rid = pci_msix_pba_bar(dev);
 
 		/*
 		 * Allocate new MSI-x table only if not
 		 * allocated before.
 		 */
 		ctlr->r_msix_table = NULL;
-		if (ctlr->r_msix_tab_rid != ctlr->r_rid) {
+		if (msix_table_rid != rid) {
 			/* Separate BAR for MSI-x */
 			ctlr->r_msix_table = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-			    &ctlr->r_msix_tab_rid, RF_ACTIVE);
+			    msix_table_rid, RF_ACTIVE);
 			if (ctlr->r_msix_table == NULL) {
 				msix_count = 0;
 				goto no_msix;
@@ -589,11 +590,10 @@ ahci_pci_attach(device_t dev)
 		 * allocated before.
 		 */
 		ctlr->r_msix_pba = NULL;
-		if ((ctlr->r_msix_pba_rid != ctlr->r_msix_tab_rid) &&
-		    (ctlr->r_msix_pba_rid != ctlr->r_rid)) {
+		if ((msix_pba_rid != msix_table_rid) && (msix_pba_rid != rid)) {
 			/* Separate BAR for PBA */
 			ctlr->r_msix_pba = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-			    &ctlr->r_msix_pba_rid, RF_ACTIVE);
+			    msix_pba_rid, RF_ACTIVE);
 			if (ctlr->r_msix_pba == NULL) {
 				msix_count = 0;
 			}

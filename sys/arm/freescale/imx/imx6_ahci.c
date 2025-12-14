@@ -247,9 +247,8 @@ imx6_ahci_attach(device_t dev)
 	ctlr->subvendorid = 0;
 	ctlr->subdeviceid = 0;
 	ctlr->numirqs = 1;
-	ctlr->r_rid = 0;
-	if ((ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ctlr->r_rid, RF_ACTIVE)) == NULL) {
+	if ((ctlr->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE)) == NULL) {
 		return (ENXIO);
 	}
 
@@ -321,7 +320,7 @@ imx6_ahci_attach(device_t dev)
 	return (ahci_attach(dev));
 
 fail:
-	bus_release_resource(dev, SYS_RES_MEMORY, ctlr->r_rid, ctlr->r_mem);
+	bus_release_resource(dev, ctlr->r_mem);
 	return (error);
 }
 

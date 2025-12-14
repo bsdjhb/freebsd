@@ -170,7 +170,6 @@ struct ahci_fsl_fdt_controller {
 	struct ahci_controller	ctlr;	/* Must be the first field. */
 	int			soc_type;
 	struct resource		*r_ecc;
-	int			r_ecc_rid;
 };
 
 static const struct ofw_compat_data ahci_fsl_fdt_compat_data[] = {
@@ -296,7 +295,7 @@ ahci_fsl_fdt_attach(device_t dev)
 	struct ahci_controller *ahci;
 	phandle_t node;
 	clk_t clock;
-	int ret;
+	int ret, rid;
 
 	node = ofw_bus_get_node(dev);
 	ctlr = device_get_softc(dev);
@@ -304,7 +303,6 @@ ahci_fsl_fdt_attach(device_t dev)
 	    ofw_bus_search_compatible(dev, ahci_fsl_fdt_compat_data)->ocd_data;
 	ahci = &ctlr->ctlr;
 	ahci->dev = dev;
-	ahci->r_rid = 0;
 	ahci->quirks = AHCI_Q_NOPMP;
 
 	ahci->dma_coherent = OF_hasprop(node, "dma-coherent");
@@ -322,25 +320,24 @@ ahci_fsl_fdt_attach(device_t dev)
 	}
 
 	if (OF_hasprop(node, "reg-names") && ofw_bus_find_string_index(node,
-	    "reg-names", "ahci", &ahci->r_rid)) {
+	    "reg-names", "ahci", &rid)) {
 		device_printf(dev, "Could not locate 'ahci' string in the "
 		    "'reg-names' property");
 		return (ENOENT);
 	}
 
-	ahci->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &ahci->r_rid, RF_ACTIVE);
+	ahci->r_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
+	    RF_ACTIVE);
 	if (!ahci->r_mem) {
 		device_printf(dev,
 		    "Could not allocate resources for controller\n");
 		return (ENOMEM);
 	}
 
-	ret = ofw_bus_find_string_index(node, "reg-names", "sata-ecc",
-	    &ctlr->r_ecc_rid);
+	ret = ofw_bus_find_string_index(node, "reg-names", "sata-ecc", &rid);
 	if (ret == 0) {
-		ctlr->r_ecc = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &ctlr->r_ecc_rid, RF_ACTIVE| RF_SHAREABLE);
+		ctlr->r_ecc = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
+		    RF_ACTIVE| RF_SHAREABLE);
 		if (!ctlr->r_ecc) {
 			device_printf(dev,
 			    "Could not allocate resources for controller\n");

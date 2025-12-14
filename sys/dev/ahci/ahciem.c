@@ -74,7 +74,7 @@ ahci_em_attach(device_t dev)
 	struct ahci_controller *ctlr = device_get_softc(parent);
 	struct ahci_enclosure *enc = device_get_softc(dev);
 	struct cam_devq *devq;
-	int i, c, rid, error;
+	int i, c, error;
 	char buf[32];
 
 	enc->dev = dev;
@@ -82,13 +82,11 @@ ahci_em_attach(device_t dev)
 	enc->channels = ctlr->channels;
 	enc->ichannels = ctlr->ichannels;
 	mtx_init(&enc->mtx, "AHCI enclosure lock", NULL, MTX_DEF);
-	rid = 0;
-	if ((enc->r_memc = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE)) != NULL) {
+	if ((enc->r_memc = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE)) != NULL) {
 		enc->capsem = ATA_INL(enc->r_memc, 0);
-		rid = 1;
 		if (!(enc->r_memt = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &rid, RF_ACTIVE))) {
+		    1, RF_ACTIVE))) {
 			error = ENXIO;
 			goto err0;
 		}
@@ -97,9 +95,8 @@ ahci_em_attach(device_t dev)
 		enc->r_memt = NULL;
 	}
 	if ((enc->capsem & (AHCI_EM_XMT | AHCI_EM_SMB)) == 0) {
-		rid = 2;
 		if (!(enc->r_memr = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &rid, RF_ACTIVE))) {
+		    2, RF_ACTIVE))) {
 			error = ENXIO;
 			goto err0;
 		}
@@ -110,7 +107,6 @@ ahci_em_attach(device_t dev)
 	    error = ENXIO;
 	    goto err1;
 	}
-	rid = ATA_IRQ_RID;
 	/* Create the device queue for our SIM. */
 	devq = cam_simq_alloc(1);
 	if (devq == NULL) {
