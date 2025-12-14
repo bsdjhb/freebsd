@@ -43,7 +43,6 @@
 struct amdviiommu_softc {
 	struct resource *event_res;	/* Event interrupt resource. */
 	void   		*event_tag;	/* Event interrupt tag. */
-	int		event_rid;
 };
 
 static int	amdviiommu_probe(device_t);
@@ -124,7 +123,6 @@ ivhd_setup_intr(device_t dev, driver_intr_t handler, void *arg,
 	msicnt = 1;
 	if (sc->event_res != NULL)
 		panic("%s is called without intr teardown", __func__);
-	sc->event_rid = 1;
 
 	error = pci_alloc_msi(dev, &msicnt);
 	if (error) {
@@ -132,8 +130,7 @@ ivhd_setup_intr(device_t dev, driver_intr_t handler, void *arg,
 		return (ENOENT);
 	}
 
-	sc->event_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->event_rid, RF_ACTIVE);
+	sc->event_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1, RF_ACTIVE);
 	if (sc->event_res == NULL) {
 		device_printf(dev, "Unable to allocate event INTR resource.\n");
 		error = ENOMEM;
@@ -167,8 +164,7 @@ ivhd_teardown_intr(device_t dev)
 		sc->event_tag = NULL;
 	}
 	if (sc->event_res != NULL) {
-		bus_release_resource(dev, SYS_RES_IRQ, sc->event_rid,
-		    sc->event_res);
+		bus_release_resource(dev, sc->event_res);
 		sc->event_res = NULL;
 	}
 	pci_release_msi(dev);

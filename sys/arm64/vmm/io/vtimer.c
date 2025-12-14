@@ -516,7 +516,6 @@ vtimer_phys_tval_write(struct vcpu *vcpu, uint64_t wval, void *arg)
 struct vtimer_softc {
 	struct resource *res;
 	void *ihl;
-	int rid;
 };
 
 static int
@@ -533,8 +532,7 @@ vtimer_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	sc->rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->res == NULL)
 		return (ENXIO);
 
