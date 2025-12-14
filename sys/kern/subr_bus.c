@@ -3412,7 +3412,7 @@ resource_list_purge(struct resource_list *rl)
 	while ((rle = STAILQ_FIRST(rl)) != NULL) {
 		if (rle->res)
 			bus_release_resource(rman_get_device(rle->res),
-			    rle->type, rle->rid, rle->res);
+			    rle->res);
 		STAILQ_REMOVE_HEAD(rl, link);
 		free(rle, M_BUS);
 	}
@@ -4634,7 +4634,7 @@ bus_alloc_resources(device_t dev, struct resource_spec *rs,
 		res[i] = NULL;
 	for (i = 0; rs[i].type != -1; i++) {
 		res[i] = bus_alloc_resource_any(dev,
-		    rs[i].type, &rs[i].rid, rs[i].flags);
+		    rs[i].type, rs[i].rid, rs[i].flags);
 		if (res[i] == NULL && !(rs[i].flags & RF_OPTIONAL)) {
 			bus_release_resources(dev, rs, res);
 			return (ENXIO);
@@ -4651,8 +4651,7 @@ bus_release_resources(device_t dev, const struct resource_spec *rs,
 
 	for (i = 0; rs[i].type != -1; i++)
 		if (res[i] != NULL) {
-			bus_release_resource(
-			    dev, rs[i].type, rs[i].rid, res[i]);
+			bus_release_resource(dev, res[i]);
 			res[i] = NULL;
 		}
 }
