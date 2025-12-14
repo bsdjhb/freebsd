@@ -369,7 +369,7 @@ epit_probe(device_t dev)
 	if (memres == NULL)
 		return (ENXIO);
 	ioaddr = rman_get_start(memres);
-	bus_free_resource(dev, SYS_RES_MEMORY, memres);
+	bus_release_resource(dev, memres);
 
 	if (imx_soc_family() == 6) {
 		if (unit > 0)

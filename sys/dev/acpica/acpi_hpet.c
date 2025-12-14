@@ -493,7 +493,7 @@ hpet_attach(device_t dev)
 	if (hpet_region_size < HPET_MEM_MIN_WIDTH) {
 		device_printf(dev, "memory region width %jd too small\n",
 		    hpet_region_size);
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 		return (ENXIO);
 	}
 
@@ -505,7 +505,7 @@ hpet_attach(device_t dev)
 	if (val == 0) {
 		device_printf(dev, "invalid period\n");
 		hpet_disable(sc);
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 		return (ENXIO);
 	}
 
@@ -530,7 +530,7 @@ hpet_attach(device_t dev)
 		    "memory region width %jd too small for %d timers\n",
 		    hpet_region_size, num_timers);
 		hpet_disable(sc);
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 		return (ENXIO);
 	}
 
@@ -576,7 +576,7 @@ hpet_attach(device_t dev)
 	if (val == val2) {
 		device_printf(dev, "HPET never increments, disabling\n");
 		hpet_disable(sc);
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 		return (ENXIO);
 	}
 	/* Announce first HPET as timecounter. */

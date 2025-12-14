@@ -377,10 +377,10 @@ ahci_fsl_fdt_attach(device_t dev)
 	return (0);
 
 err_free_mem:
-	bus_free_resource(dev, SYS_RES_MEMORY, ahci->r_mem);
+	bus_release_resource(dev, ahci->r_mem);
 err_free_ecc:
 	if (ctlr->r_ecc)
-		bus_free_resource(dev, SYS_RES_MEMORY, ctlr->r_ecc);
+		bus_release_resource(dev, ctlr->r_ecc);
 	return (ret);
 }
 
@@ -391,7 +391,7 @@ ahci_fsl_fdt_detach(device_t dev)
 
 	ctlr = device_get_softc(dev);
 	if (ctlr->r_ecc)
-		bus_free_resource(dev, SYS_RES_MEMORY, ctlr->r_ecc);
+		bus_release_resource(dev, ctlr->r_ecc);
 	return ahci_detach(dev);
 }
 

@@ -290,7 +290,7 @@ adf_request_msi_irq(struct adf_accel_dev *accel_dev)
 
 	return ret;
 errout:
-	bus_free_resource(pdev, SYS_RES_IRQ, accel_dev->u1.vf.irq);
+	bus_release_resource(pdev, accel_dev->u1.vf.irq);
 
 	return ret;
 }
@@ -310,7 +310,7 @@ adf_vf_isr_resource_free(struct adf_accel_dev *accel_dev)
 		bus_teardown_intr(pdev,
 				  accel_dev->u1.vf.irq,
 				  accel_dev->u1.vf.cookie);
-		bus_free_resource(pdev, SYS_RES_IRQ, accel_dev->u1.vf.irq);
+		bus_release_resource(pdev, accel_dev->u1.vf.irq);
 	}
 	adf_cleanup_bh(accel_dev);
 	adf_cleanup_pf2vf_bh(accel_dev);

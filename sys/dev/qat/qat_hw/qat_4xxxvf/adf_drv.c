@@ -62,9 +62,8 @@ adf_cleanup_accel(struct adf_accel_dev *accel_dev)
 		struct adf_bar *bar = &accel_pci_dev->pci_bars[i];
 
 		if (bar->virt_addr)
-			bus_free_resource(accel_pci_dev->pci_dev,
-					  SYS_RES_MEMORY,
-					  bar->virt_addr);
+			bus_release_resource(accel_pci_dev->pci_dev,
+					     bar->virt_addr);
 	}
 
 	/*

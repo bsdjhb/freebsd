@@ -911,7 +911,7 @@ fail_io:
 fail_mem:
 	rman_fini(&sc->mem_rman);
 fail:
-	bus_free_resource(dev, SYS_RES_MEMORY, sc->reg);
+	bus_release_resource(dev, sc->reg);
 	return (ENXIO);
 }
 
@@ -926,7 +926,7 @@ thunder_pem_release_all(device_t dev)
 	rman_fini(&sc->mem_rman);
 
 	if (sc->reg != NULL)
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->reg);
+		bus_release_resource(dev, sc->reg);
 }
 
 static int

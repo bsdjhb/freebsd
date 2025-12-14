@@ -693,11 +693,11 @@ jh7110_pcie_release_resources(device_t dev)
 	if (sc->irq_res != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_cookie);
 	if (sc->irq_res != NULL)
-		bus_free_resource(dev, SYS_RES_IRQ, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->reg_mem_res != NULL)
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->reg_mem_res);
+		bus_release_resource(dev, sc->reg_mem_res);
 	if (sc->cfg_mem_res != NULL)
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->cfg_mem_res);
+		bus_release_resource(dev, sc->cfg_mem_res);
 
 	if (sc->clk_noc != NULL)
 		clk_release(sc->clk_noc);

@@ -271,9 +271,8 @@ adf_free_irqs(struct adf_accel_dev *accel_dev)
 				bus_teardown_intr(info_pci_dev->pci_dev,
 						  msixe[i].irq,
 						  msixe[i].cookie);
-				bus_free_resource(info_pci_dev->pci_dev,
-						  SYS_RES_IRQ,
-						  msixe[i].irq);
+				bus_release_resource(info_pci_dev->pci_dev,
+						     msixe[i].irq);
 			}
 		}
 	}

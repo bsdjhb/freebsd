@@ -1073,9 +1073,9 @@ err_free_gpio:
 err_free_irq:
 	bus_teardown_intr(dev, sc->irq_res, sc->irq_cookie);
 err_free_irq_res:
-	bus_free_resource(dev, SYS_RES_IRQ, sc->irq_res);
+	bus_release_resource(dev, sc->irq_res);
 err_free_mem:
-	bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+	bus_release_resource(dev, sc->mem_res);
 	return (ret);
 }
 
@@ -1092,9 +1092,9 @@ sdhci_fsl_fdt_detach(device_t dev)
 	if (sc->irq_cookie != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_cookie);
 	if (sc->irq_res != NULL)
-		bus_free_resource(dev, SYS_RES_IRQ, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_free_resource(dev, SYS_RES_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	return (0);
 }
 

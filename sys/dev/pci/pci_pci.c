@@ -586,7 +586,7 @@ pcib_probe_windows(struct pcib_softc *sc)
 }
 
 static void
-pcib_release_window(struct pcib_softc *sc, struct pcib_window *w, int type)
+pcib_release_window(struct pcib_softc *sc, struct pcib_window *w)
 {
 	device_t dev;
 	int error, i;
@@ -603,7 +603,7 @@ pcib_release_window(struct pcib_softc *sc, struct pcib_window *w, int type)
 	free(__DECONST(char *, w->rman.rm_descr), M_DEVBUF);
 
 	for (i = 0; i < w->count; i++) {
-		error = bus_free_resource(dev, type, w->res[i]);
+		error = bus_release_resource(dev, w->res[i]);
 		if (error)
 			device_printf(dev,
 			    "failed to release %s resource: %d\n", w->name,
@@ -616,9 +616,9 @@ static void
 pcib_free_windows(struct pcib_softc *sc)
 {
 
-	pcib_release_window(sc, &sc->pmem, SYS_RES_MEMORY);
-	pcib_release_window(sc, &sc->mem, SYS_RES_MEMORY);
-	pcib_release_window(sc, &sc->io, SYS_RES_IOPORT);
+	pcib_release_window(sc, &sc->pmem);
+	pcib_release_window(sc, &sc->mem);
+	pcib_release_window(sc, &sc->io);
 }
 
 /*
@@ -706,7 +706,7 @@ pcib_free_secbus(device_t dev, struct pcib_secbus *bus)
 	}
 	free(__DECONST(char *, bus->rman.rm_descr), M_DEVBUF);
 
-	error = bus_free_resource(dev, PCI_RES_BUS, bus->res);
+	error = bus_release_resource(dev, bus->res);
 	if (error)
 		device_printf(dev,
 		    "failed to release bus numbers resource: %d\n", error);
@@ -1280,14 +1280,14 @@ pcib_release_pcie_irq(struct pcib_softc *sc)
 	error = bus_teardown_intr(dev, sc->pcie_irq, sc->pcie_ihand);
 	if (error)
 		return (error);
-	error = bus_free_resource(dev, SYS_RES_IRQ, sc->pcie_irq);
+	error = bus_release_resource(dev, sc->pcie_irq);
 	if (error)
 		return (error);
 	error = pci_release_msi(dev);
 	if (error)
 		return (error);
 	if (sc->pcie_mem != NULL)
-		error = bus_free_resource(dev, SYS_RES_MEMORY, sc->pcie_mem);
+		error = bus_release_resource(dev, sc->pcie_mem);
 	return (error);
 }
 

@@ -1364,11 +1364,11 @@ out_full:
 	ofw_pcib_fini(dev);
 out:
 	bus_dma_tag_destroy(sc->dmat);
-	bus_free_resource(dev, SYS_RES_IRQ, sc->sys_irq_res);
-	bus_free_resource(dev, SYS_RES_IRQ, sc->legacy_irq_res);
-	bus_free_resource(dev, SYS_RES_IRQ, sc->client_irq_res);
-	bus_free_resource(dev, SYS_RES_MEMORY, sc->apb_mem_res);
-	bus_free_resource(dev, SYS_RES_MEMORY, sc->axi_mem_res);
+	bus_release_resource(dev, sc->sys_irq_res);
+	bus_release_resource(dev, sc->legacy_irq_res);
+	bus_release_resource(dev, sc->client_irq_res);
+	bus_release_resource(dev, sc->apb_mem_res);
+	bus_release_resource(dev, sc->axi_mem_res);
 	/* GPIO */
 	gpio_pin_release(sc->gpio_ep);
 	/* Phys */
