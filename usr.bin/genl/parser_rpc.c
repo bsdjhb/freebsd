@@ -71,7 +71,7 @@ parser_rpc(struct snl_state *ss __unused, struct nlmsghdr *hdr)
 	if (!snl_parse_nlmsg(NULL, hdr, &request_parser, &req))
 		errx(EXIT_FAILURE, "failed to parse RPC message");
 
-	printf("RPC %s: group %8s[0x%2x] length %4u XDR length %4u\n",
+	printf("RPC %s: group %8s[0x%2x] length %4u XDR length %4zu\n",
 	    ghdr->cmd == RPCNL_REQUEST ? "request" : "unknown",
 	    group_name(req.group), req.group,
 	    hdr->nlmsg_len, NLA_DATA_LEN(req.data));

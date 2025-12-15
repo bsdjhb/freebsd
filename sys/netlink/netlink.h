@@ -257,7 +257,7 @@ struct nlattr {
 #ifndef _KERNEL
 #define	NLA_ALIGNTO	NL_ITEM_ALIGN_SIZE
 #define	NLA_ALIGN(_len)	NL_ITEM_ALIGN(_len)
-#define	NLA_HDRLEN	((int)sizeof(struct nlattr))
+#define	NLA_HDRLEN	(sizeof(struct nlattr))
 #endif
 
 #endif
