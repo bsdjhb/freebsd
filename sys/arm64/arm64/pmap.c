@@ -9614,8 +9614,7 @@ pmap_map_io_transient(vm_page_t page[], vm_offset_t vaddr[], int count,
 	for (i = 0; i < count; i++) {
 		paddr = VM_PAGE_TO_PHYS(page[i]);
 		if (!PHYS_IN_DMAP(paddr)) {
-			panic(
-			   "pmap_map_io_transient: TODO: Map out of DMAP data");
+			pmap_qenter(vaddr[i], &page[i], 1);
 		}
 	}
 
@@ -9634,7 +9633,8 @@ pmap_unmap_io_transient(vm_page_t page[], vm_offset_t vaddr[], int count,
 	for (i = 0; i < count; i++) {
 		paddr = VM_PAGE_TO_PHYS(page[i]);
 		if (!PHYS_IN_DMAP(paddr)) {
-			panic("ARM64TODO: pmap_unmap_io_transient: Unmap data");
+			pmap_qremove(vaddr[i], 1);
+			vmem_free(kernel_arena, vaddr[i], PAGE_SIZE);
 		}
 	}
 }
