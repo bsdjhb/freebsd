@@ -266,6 +266,12 @@ apei_alloc_register(struct apei_softc *sc, int type, rman_res_t start,
 					    error);
 				return (NULL);
 			}
+			if (bootverbose)
+				device_printf(sc->dev,
+				    "grew %s (%u) to %#jx-%#jx\n", descr,
+				    rman_get_rid(reg->res),
+				    rman_get_start(reg->res),
+				    rman_get_end(reg->res));
 		}
 
 		return (reg);
@@ -297,6 +303,11 @@ apei_alloc_register(struct apei_softc *sc, int type, rman_res_t start,
 		bus_delete_resource(sc->dev, type, next_rid);
 		return (NULL);
 	}
+
+	if (bootverbose)
+		device_printf(sc->dev, "allocated %s (%u) %#jx-%#jx\n", descr,
+		    rman_get_rid(reg->res), rman_get_start(reg->res),
+		    rman_get_end(reg->res));
 
 	if (prev == NULL)
 		TAILQ_INSERT_HEAD(list, reg, link);
@@ -335,6 +346,12 @@ apei_map_register_method(device_t dev, device_t child, int type,
 		free(m, M_APEI);
 		return (NULL);
 	}
+
+	if (bootverbose)
+		device_printf(sc->dev, "mapped %s %#jx-%#jx for %s\n",
+		    type == SYS_RES_MEMORY ? "iomem" : "port", start, start + (count - 1),
+		    device_get_nameunit(child));
+		    
 	TAILQ_INSERT_TAIL(&ai->mappings, m, link);
 	return (&m->map);
 }
@@ -357,6 +374,12 @@ apei_unmap_register_method(device_t dev, device_t child,
 
 	if (m == NULL)
 		return (EINVAL);
+
+	if (bootverbose)
+		device_printf(dev, "unmapped %s %#jx-%#jx for %s\n",
+		    rman_get_type(m->reg->res) == SYS_RES_MEMORY ? "iomem" :
+		    "port", rman_get_start(m->reg->res),
+		    rman_get_end(m->reg->res), device_get_nameunit(child));
 
 	TAILQ_REMOVE(&ai->mappings, m, link);
 	error = bus_unmap_resource(dev, m->reg->res, &m->map);
