@@ -38,6 +38,8 @@
 #include <dev/acpica/acpivar.h>
 #include <dev/acpica/apeivar.h>
 
+#define	bootverbose	1
+
 /*
  * Different APEI tables can reuse the same registers (and sometimes
  * different views of the same register, e.g. 32- vs 64-bit mappings

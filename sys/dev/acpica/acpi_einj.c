@@ -26,6 +26,8 @@
 
 #define	ACPI_EINJ_MAX_ACTION	(ACPI_EINJV2_GET_ERROR_TYPE)
 
+#define	bootverbose 1
+
 struct einj_instruction {
 	struct resource_map *res;
 	u_int instruction;
