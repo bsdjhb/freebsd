@@ -6,6 +6,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/systm.h>
 #include <sys/bus.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
@@ -618,6 +619,8 @@ einj_parse_set_error_with_address(struct einj_softc *sc,
 
 	vendor_offset = bus_read_4(res,
 	    offsetof(ACPI_EINJ_ERROR_TYPE_WITH_ADDR, VendorStructOffset));
+	if (bootverbose)
+		device_printf(sc->dev, "vendor offset = %u\n", vendor_offset);
 
 	if (vendor_offset < sizeof(ACPI_EINJ_ERROR_TYPE_WITH_ADDR)) {
 		device_printf(sc->dev,
@@ -635,6 +638,14 @@ einj_parse_set_error_with_address(struct einj_softc *sc,
 
 	sc->info.vendor_length =
 	    bus_read_4(res, offsetof(ACPI_EINJ_VENDOR, Length));
+	if (bootverbose) {
+		ACPI_EINJ_VENDOR v;
+
+		device_printf(sc->dev, "vendor_length = %u\n",
+		    sc->info.vendor_length);
+		bus_read_region_4(res, 0, (void *)&v, sizeof(v) / 4);
+		hexdump(&v, sizeof(v), "    ", HD_OMIT_CHARS);
+	}
 
 	if (sc->info.vendor_length < sizeof(ACPI_EINJ_VENDOR)) {
 		device_printf(sc->dev,
