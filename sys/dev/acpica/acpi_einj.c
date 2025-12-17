@@ -306,6 +306,8 @@ einj_trigger_error(struct einj_softc *sc, vm_paddr_t table_pa)
 	}
 
 	if (table->EntryCount == 0) {
+		if (bootverbose)
+			device_printf(sc->dev, "empty trigger table\n");
 		error = 0;
 		goto out;
 	}
@@ -328,6 +330,10 @@ einj_trigger_error(struct einj_softc *sc, vm_paddr_t table_pa)
 			device_printf(sc->dev,
 			    "invalid action %#x for trigger instruction %u\n",
 			    e->WheaHeader.Action, i);
+
+		if (bootverbose)
+			device_printf(sc->dev, "trigger[%u]: instruction %u\n",
+			    i, e->WheaHeader.Action);
 
 		if (e->WheaHeader.Instruction == ACPI_EINJ_NOOP)
 			continue;
