@@ -665,21 +665,23 @@ static int cma_acquire_dev(struct rdma_id_private *id_priv,
 		cma_dev = listen_id_priv->cma_dev;
 		port = listen_id_priv->id.port_num;
 
-		if (rdma_is_port_valid(cma_dev->device, port)) {
-			gidp = rdma_protocol_roce(cma_dev->device, port) ?
-			       &iboe_gid : &gid;
-			gid_type = listen_id_priv->gid_type;
-			sgid_attr = cma_validate_port(cma_dev->device, port,
-						      gid_type, gidp, id_priv);
-			if (!IS_ERR(sgid_attr)) {
-				id_priv->id.port_num = port;
-				cma_bind_sgid_attr(id_priv, sgid_attr);
-				ret = 0;
-				goto out;
-			}
+		if (!rdma_is_port_valid(cma_dev->device, port))
+                    goto skip_listen_id;
+
+                gidp = rdma_protocol_roce(cma_dev->device, port) ?
+		       &iboe_gid : &gid;
+		gid_type = listen_id_priv->gid_type;
+		sgid_attr = cma_validate_port(cma_dev->device, port,
+					      gid_type, gidp, id_priv);
+		if (!IS_ERR(sgid_attr)) {
+			id_priv->id.port_num = port;
+			cma_bind_sgid_attr(id_priv, sgid_attr);
+			ret = 0;
+			goto out;
 		}
 	}
 
+skip_listen_id:
 	list_for_each_entry(cma_dev, &dev_list, list) {
 		for (port = 1; port <= cma_dev->device->phys_port_cnt; ++port) {
 			if (listen_id_priv &&
