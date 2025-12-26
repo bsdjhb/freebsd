@@ -663,10 +663,8 @@ einj_cleanup(struct einj_softc *sc)
 {
 	struct einj_action *ea;
 
-	/* These are idempotent if the handler isn't registered. */
-	acpi_deregister_ioctl(ACPIIO_EINJ_SET_ERROR, einj_ioctl);
-	acpi_deregister_ioctl(ACPIIO_EINJ_GET_VENDOR, einj_ioctl);
-	acpi_deregister_ioctl(ACPIIO_EINJ_GET_INFO, einj_ioctl);
+	/* This is idempotent if the handler isn't registered. */
+	acpi_deregister_ioctls(einj_ioctl);
 
 	ea = sc->actions;
 	for (u_int i = 0; i < nitems(sc->actions); i++, ea++) {
