@@ -575,7 +575,6 @@ bus_dma_tag_t bus_get_dma_tag(device_t dev);
 bus_space_tag_t bus_get_bus_tag(device_t dev);
 int	bus_get_domain(device_t dev, int *domain);
 int	bus_release_resource(device_t dev, struct resource *r);
-int	bus_free_resource(device_t dev, int type, struct resource *r);
 int	bus_setup_intr(device_t dev, struct resource *r, int flags,
 		       driver_filter_t filter, driver_intr_t handler,
 		       void *arg, void **cookiep);
