@@ -128,8 +128,7 @@ imx_hdmi_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	if (sc->base.sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->base.sc_mem_rid, sc->base.sc_mem_res);
+		bus_release_resource(dev, sc->base.sc_mem_res);
 
 	return (0);
 }
@@ -148,9 +147,8 @@ imx_hdmi_attach(device_t dev)
 	err = 0;
 
 	/* Allocate memory resources. */
-	sc->base.sc_mem_rid = 0;
-	sc->base.sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->base.sc_mem_rid, RF_ACTIVE);
+	sc->base.sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->base.sc_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		err = ENXIO;

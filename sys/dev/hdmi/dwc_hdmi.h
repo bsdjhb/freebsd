@@ -29,7 +29,6 @@
 struct dwc_hdmi_softc {
 	device_t		sc_dev;
 	struct resource		*sc_mem_res;
-	int			sc_mem_rid;
 	uint32_t		sc_reg_shift;
 	device_t		(*sc_get_i2c_dev)(device_t);
 
