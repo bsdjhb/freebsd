@@ -298,10 +298,9 @@ epit_intr(void *arg)
 static int
 epit_et_attach(struct epit_softc *sc)
 {
-	int err, rid;
+	int err;
 
-	rid = 0;
-	sc->intres = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &rid,
+	sc->intres = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->intres == NULL) {
 		device_printf(sc->dev, "could not allocate interrupt\n");
@@ -338,7 +337,7 @@ epit_probe(device_t dev)
 {
 	struct resource *memres;
 	rman_res_t ioaddr;
-	int num_units, rid, unit;
+	int num_units, unit;
 
 	if (!ofw_bus_status_okay(dev))
 		return (ENXIO);
@@ -364,8 +363,7 @@ epit_probe(device_t dev)
 	if (strstr(ofw_bus_get_name(dev), "epit") == NULL)
 		return (ENXIO);
 
-	rid = 0;
-	memres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_UNMAPPED);
+	memres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_UNMAPPED);
 	if (memres == NULL)
 		return (ENXIO);
 	ioaddr = rman_get_start(memres);
@@ -406,14 +404,13 @@ static int
 epit_attach(device_t dev)
 {
 	struct epit_softc *sc;
-	int err, rid;
+	int err;
 	uint32_t clksrc;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->memres = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, &rid,
+	sc->memres = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->memres == NULL) {
 		device_printf(sc->dev, "could not allocate registers\n");

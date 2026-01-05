@@ -140,7 +140,6 @@ struct i2c_softc {
 	device_t		dev;
 	device_t		iicbus;
 	struct resource		*res;
-	int			rid;
 	sbintime_t		byte_time_sbt;
 	int			rb_pinctl_idx;
 	gpio_pin_t		rb_sclpin;
@@ -391,7 +390,6 @@ i2c_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
-	sc->rid = 0;
 
 #ifdef IMX_ENABLE_CLOCKS
 	if (clk_get_by_ofw_index(sc->dev, 0, 0, &sc->ipgclk) != 0) {
@@ -406,7 +404,7 @@ i2c_attach(device_t dev)
 	}
 #endif
 
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->rid,
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate resources");
@@ -499,7 +497,7 @@ i2c_detach(device_t dev)
 	gpio_pin_release(sc->rb_sdapin);
 
 	if (sc->res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->res);
+		bus_release_resource(dev, sc->res);
 
 	return (0);
 }

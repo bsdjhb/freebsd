@@ -205,7 +205,6 @@ static int
 iomux_attach(device_t dev)
 {
 	struct iomux_softc * sc;
-	int rid;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -231,8 +230,7 @@ iomux_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

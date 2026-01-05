@@ -640,12 +640,10 @@ initialize_tempmon(struct imx6_anatop_softc *sc)
 static void
 intr_setup(void *arg)
 {
-	int rid;
 	struct imx6_anatop_softc *sc;
 
 	sc = arg;
-	rid = 0;
-	sc->res[IRQRES] = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &rid,
+	sc->res[IRQRES] = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->res[IRQRES] != NULL) {
 		bus_setup_intr(sc->dev, sc->res[IRQRES],

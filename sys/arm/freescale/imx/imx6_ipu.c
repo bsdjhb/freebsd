@@ -366,9 +366,7 @@ enum dc_event_t {
 struct ipu_softc {
 	device_t		sc_dev;
 	struct resource		*sc_mem_res;
-	int			sc_mem_rid;
 	struct resource		*sc_irq_res;
-	int			sc_irq_rid;
 	void			*sc_intr_hl;
 	struct mtx		sc_mtx;
 	struct fb_info		sc_fb_info;
@@ -1179,30 +1177,25 @@ ipu_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
 		return (ENXIO);
 	}
 
-	sc->sc_irq_rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot allocate interrupt\n");
 		return (ENXIO);
 	}
 
 	/* Enable IPU1 */
 	if (imx_ccm_pll_video_enable() != 0) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 		device_printf(dev, "failed to set up video PLL\n");
 		return (ENXIO);
 	}
@@ -1210,10 +1203,8 @@ ipu_attach(device_t dev)
 	imx_ccm_ipu_enable(1);
 
 	if (src_reset_ipu() != 0) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 		device_printf(dev, "failed to reset IPU\n");
 		return (ENXIO);
 	}

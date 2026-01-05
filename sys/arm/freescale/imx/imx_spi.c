@@ -481,9 +481,9 @@ spi_detach(device_t dev)
 	if (sc->inthandle != NULL)
 		bus_teardown_intr(sc->dev, sc->intres, sc->inthandle);
 	if (sc->intres != NULL)
-		bus_release_resource(sc->dev, SYS_RES_IRQ, 0, sc->intres);
+		bus_release_resource(sc->dev, sc->intres);
 	if (sc->memres != NULL)
-		bus_release_resource(sc->dev, SYS_RES_MEMORY, 0, sc->memres);
+		bus_release_resource(sc->dev, sc->memres);
 
 	mtx_destroy(&sc->mtx);
 
@@ -495,7 +495,7 @@ spi_attach(device_t dev)
 {
 	struct spi_softc *sc = device_get_softc(dev);
 	phandle_t node;
-	int err, idx, rid;
+	int err, idx;
 
 	sc->dev = dev;
 	sc->basefreq = imx_ccm_ecspi_hz();
@@ -509,8 +509,7 @@ spi_attach(device_t dev)
 	    "Enable debug, higher values = more info");
 
 	/* Allocate mmio register access resources. */
-	rid = 0;
-	sc->memres = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, &rid,
+	sc->memres = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->memres == NULL) {
 		device_printf(sc->dev, "could not allocate registers\n");
@@ -519,8 +518,7 @@ spi_attach(device_t dev)
 	}
 
 	/* Allocate interrupt resources and set up handler. */
-	rid = 0;
-	sc->intres = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &rid,
+	sc->intres = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->intres == NULL) {
 		device_printf(sc->dev, "could not allocate interrupt\n");

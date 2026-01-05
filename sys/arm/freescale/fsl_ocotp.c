@@ -113,14 +113,13 @@ static int
 ocotp_attach(device_t dev)
 {
 	struct ocotp_softc *sc;
-	int err, rid;
+	int err;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
 	/* Allocate bus_space resources. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
