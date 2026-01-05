@@ -1520,7 +1520,7 @@ tegra_pcib_attach(device_t dev)
 	rid = 1;
 	sc->msi_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
 	    RF_ACTIVE);
-	if (sc->irq_res == NULL) {
+	if (sc->msi_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate MSI IRQ resources\n");
 		rv = ENXIO;
 		goto out;
