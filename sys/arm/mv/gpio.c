@@ -343,8 +343,7 @@ mv_gpio_attach(device_t dev)
 	sc->sc_busdev = gpiobus_add_bus(dev);
 	if (sc->sc_busdev == NULL) {
 		mtx_destroy(&sc->mutex);
-		bus_release_resource(dev, SYS_RES_IRQ,
-			sc->irq_rid[i], sc->irq_res[i]);
+		bus_release_resource(dev, sc->mem_res);
 		return (ENXIO);
 	}
 
