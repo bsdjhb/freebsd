@@ -91,7 +91,6 @@ static int
 bcm2835_clkman_attach(device_t dev)
 {
 	struct bcm2835_clkman_softc *sc;
-	int rid;
 
 	if (device_get_unit(dev) != 0) {
 		device_printf(dev, "only one clk manager supported\n");
@@ -101,8 +100,7 @@ bcm2835_clkman_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	rid = 0;
-	sc->sc_m_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_m_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_m_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -186,7 +184,7 @@ bcm2835_clkman_detach(device_t dev)
 
 	sc = device_get_softc(dev);
 	if (sc->sc_m_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_m_res);
+		bus_release_resource(dev, sc->sc_m_res);
 
 	return (0);
 }

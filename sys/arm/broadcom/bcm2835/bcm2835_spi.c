@@ -240,7 +240,6 @@ static int
 bcm_spi_attach(device_t dev)
 {
 	struct bcm_spi_softc *sc;
-	int rid;
 
 	if (device_get_unit(dev) != 0) {
 		device_printf(dev, "only one SPI controller supported\n");
@@ -250,8 +249,7 @@ bcm_spi_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -261,11 +259,10 @@ bcm_spi_attach(device_t dev)
 	sc->sc_bst = rman_get_bustag(sc->sc_mem_res);
 	sc->sc_bsh = rman_get_bushandle(sc->sc_mem_res);
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot allocate interrupt\n");
 		return (ENXIO);
 	}
@@ -273,8 +270,8 @@ bcm_spi_attach(device_t dev)
 	/* Hook up our interrupt handler. */
 	if (bus_setup_intr(dev, sc->sc_irq_res, INTR_TYPE_MISC | INTR_MPSAFE,
 	    NULL, bcm_spi_intr, sc, &sc->sc_intrhand)) {
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot setup the interrupt handler\n");
 		return (ENXIO);
 	}
@@ -316,9 +313,9 @@ bcm_spi_detach(device_t dev)
 	if (sc->sc_intrhand)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intrhand);
 	if (sc->sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }

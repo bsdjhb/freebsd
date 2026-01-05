@@ -679,7 +679,7 @@ static int
 bcm_lintc_attach(device_t dev)
 {
 	struct bcm_lintc_softc *sc;
-	int cpu, rid;
+	int cpu;
 
 	sc = device_get_softc(dev);
 
@@ -687,8 +687,7 @@ bcm_lintc_attach(device_t dev)
 	if (bcm_lintc_sc != NULL)
 		return (ENXIO);
 
-	rid = 0;
-	sc->bls_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->bls_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->bls_mem == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");

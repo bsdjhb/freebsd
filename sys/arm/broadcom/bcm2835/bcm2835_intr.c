@@ -381,14 +381,13 @@ static int
 bcm_intc_attach(device_t dev)
 {
 	struct		bcm_intc_softc *sc = device_get_softc(dev);
-	int		rid = 0;
 	intptr_t	xref;
 	sc->sc_dev = dev;
 
 	if (bcm_intc_sc)
 		return (ENXIO);
 
-	sc->intc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->intc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->intc_res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -396,13 +395,12 @@ bcm_intc_attach(device_t dev)
 
 	xref = OF_xref_from_node(ofw_bus_get_node(dev));
 	if (bcm_intc_pic_register(sc, xref) != 0) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->intc_res);
+		bus_release_resource(dev, sc->intc_res);
 		device_printf(dev, "could not register PIC\n");
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->intc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->intc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->intc_irq_res == NULL) {
 		if (intr_pic_claim_root(dev, xref, bcm2835_intc_intr, sc, INTR_ROOT_IRQ)

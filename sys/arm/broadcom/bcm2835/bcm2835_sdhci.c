@@ -220,7 +220,7 @@ static int
 bcm_sdhci_attach(device_t dev)
 {
 	struct bcm_sdhci_softc *sc = device_get_softc(dev);
-	int rid, err;
+	int err;
 	phandle_t node;
 	pcell_t cell;
 	u_int default_freq;
@@ -278,8 +278,7 @@ bcm_sdhci_attach(device_t dev)
 	}
 #endif
 
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -290,8 +289,7 @@ bcm_sdhci_attach(device_t dev)
 	sc->sc_bst = rman_get_bustag(sc->sc_mem_res);
 	sc->sc_bsh = rman_get_bushandle(sc->sc_mem_res);
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (!sc->sc_irq_res) {
 		device_printf(dev, "cannot allocate interrupt\n");
@@ -369,9 +367,9 @@ fail:
 	if (sc->sc_intrhand)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intrhand);
 	if (sc->sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (err);
 }

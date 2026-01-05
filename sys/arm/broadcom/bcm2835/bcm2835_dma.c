@@ -713,8 +713,7 @@ bcm_dma_attach(device_t dev)
 	bcm_dma_channel_mask &= ~BCM_DMA_CH_GPU_MASK;
 
 	/* DMA0 - DMA14 */
-	rid = 0;
-	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->sc_mem == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -725,7 +724,7 @@ bcm_dma_attach(device_t dev)
 		if ((bcm_dma_channel_mask & (1 << rid)) == 0)
 			continue;
 
-		sc->sc_irq[rid] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+		sc->sc_irq[rid] = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
 		    RF_ACTIVE | RF_SHAREABLE);
 		if (sc->sc_irq[rid] == NULL) {
 			device_printf(dev, "cannot allocate interrupt\n");
@@ -752,13 +751,13 @@ bcm_dma_attach(device_t dev)
 
 fail:
 	if (sc->sc_mem)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem);
+		bus_release_resource(dev, sc->sc_mem);
 
 	for (i = 0; i < BCM_DMA_CH_MAX; i++) {
 		if (sc->sc_intrhand[i])
 			bus_teardown_intr(dev, sc->sc_irq[i], sc->sc_intrhand[i]);
 		if (sc->sc_irq[i])
-			bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq[i]);
+			bus_release_resource(dev, sc->sc_irq[i]);
 	}
 
 	return (err);

@@ -499,7 +499,7 @@ bcm_pcib_msi_attach(device_t dev)
 	struct bcm_pcib_softc *sc;
 	phandle_t node, xref;
 	char const *bcm_name;
-	int error, i, rid;
+	int error, i;
 
 	sc = device_get_softc(dev);
 	sc->msi_addr = 0xffffffffc;
@@ -507,8 +507,7 @@ bcm_pcib_msi_attach(device_t dev)
 	/* Clear any pending interrupts. */
 	bcm_pcib_set_reg(sc, REG_MSI_CLR, 0xffffffff);
 
-	rid = 1;
-	sc->msi_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->msi_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1,
 	    RF_ACTIVE);
 	if (sc->msi_irq_res == NULL) {
 		device_printf(dev, "could not allocate MSI irq resource.\n");

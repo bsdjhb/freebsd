@@ -201,10 +201,10 @@ bcm_mbox_attach(device_t dev)
 	return (0);
 
 fail_irq:
-	bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+	bus_release_resource(dev, sc->irq_res);
 	sc->irq_res = NULL;
 fail_mem:
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+	bus_release_resource(dev, sc->mem_res);
 	sc->mem_res = NULL;
 	return (ENXIO);
 }

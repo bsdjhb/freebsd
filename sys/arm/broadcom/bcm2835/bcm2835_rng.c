@@ -441,7 +441,7 @@ bcm2835_rng_attach(device_t dev)
 	struct bcm2835_rng_softc *sc;
 	struct sysctl_ctx_list *sysctl_ctx;
 	struct sysctl_oid *sysctl_tree;
-	int error, rid;
+	int error;
 
 	error = 0;
 	sc = device_get_softc(dev);
@@ -460,8 +460,7 @@ bcm2835_rng_attach(device_t dev)
 	    TUNABLE_INT_FETCH("bcmrng.2xspeed", &sc->sc_rbg2x);
 
 	/* Allocate memory resources */
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		bcm2835_rng_detach(dev);
@@ -527,7 +526,7 @@ bcm2835_rng_detach(device_t dev)
 
 	/* Release memory resource */
 	if (sc->sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }

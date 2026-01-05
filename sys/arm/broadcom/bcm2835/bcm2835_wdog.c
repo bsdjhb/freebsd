@@ -114,7 +114,6 @@ static int
 bcmwd_attach(device_t dev)
 {
 	struct bcmwd_softc *sc;
-	int rid;
 
 	if (bcmwd_lsc != NULL)
 		return (ENXIO);
@@ -125,8 +124,7 @@ bcmwd_attach(device_t dev)
 	sc->wdog_armed = 0;
 	sc->dev = dev;
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
