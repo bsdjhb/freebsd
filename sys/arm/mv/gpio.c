@@ -74,9 +74,7 @@ struct mv_gpio_softc {
 	device_t		dev;
 	device_t		sc_busdev;
 	struct resource	*	mem_res;
-	int			mem_rid;
 	struct resource	*	irq_res[GPIO_MAX_INTR_COUNT];
-	int			irq_rid[GPIO_MAX_INTR_COUNT];
 	struct intr_event *	gpio_events[MV_GPIO_MAX_NPINS];
 	void			*ih_cookie[GPIO_MAX_INTR_COUNT];
 	bus_space_tag_t		bst;
@@ -241,9 +239,8 @@ mv_gpio_setup_interrupts(struct mv_gpio_softc *sc, phandle_t node)
 	}
 
 	for (i = 0; i < sc->irq_num; i++) {
-		sc->irq_rid[i] = i;
-		sc->irq_res[i] = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ,
-			&sc->irq_rid[i], RF_ACTIVE);
+		sc->irq_res[i] = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, i
+		    RF_ACTIVE);
 		if (!sc->irq_res[i]) {
 			mtx_destroy(&sc->mutex);
 			device_printf(sc->dev,
@@ -265,8 +262,7 @@ mv_gpio_setup_interrupts(struct mv_gpio_softc *sc, phandle_t node)
 		    (driver_filter_t *)mv_gpio_intr, NULL,
 		    sc, &sc->ih_cookie[i]) != 0) {
 			mtx_destroy(&sc->mutex);
-			bus_release_resource(sc->dev, SYS_RES_IRQ,
-				sc->irq_rid[i], sc->irq_res[i]);
+			bus_release_resource(sc->dev, sc->irq_res[i]);
 			device_printf(sc->dev, "could not set up intr %d\n", i);
 			return (ENXIO);
 		}
@@ -323,8 +319,7 @@ mv_gpio_attach(device_t dev)
 
 	mtx_init(&sc->mutex, device_get_nameunit(dev), NULL, MTX_SPIN);
 
-	sc->mem_rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->mem_rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 		 RF_ACTIVE | RF_SHAREABLE );
 
 	if (!sc->mem_res) {

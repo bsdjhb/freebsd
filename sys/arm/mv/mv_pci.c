@@ -306,7 +306,6 @@ struct mv_pcib_softc {
 	struct resource	*sc_res;
 	bus_space_handle_t sc_bsh;
 	bus_space_tag_t	sc_bst;
-	int		sc_rid;
 
 	struct mtx	sc_msi_mtx;
 	uint32_t	sc_msi_bitmap;
@@ -491,8 +490,7 @@ mv_pcib_attach(device_t self)
 	/*
 	 * Retrieve our mem-mapped registers range.
 	 */
-	sc->sc_rid = 0;
-	sc->sc_res = bus_alloc_resource_any(self, SYS_RES_MEMORY, &sc->sc_rid,
+	sc->sc_res = bus_alloc_resource_any(self, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_res == NULL) {
 		device_printf(self, "could not map memory\n");

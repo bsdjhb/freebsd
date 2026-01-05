@@ -152,28 +152,24 @@ armada_thermal_attach(device_t dev)
 	struct sysctl_ctx_list *sctx;
 	struct sysctl_oid_list *schildren;
 	int timeout;
-	int rid;
 
 	sc = device_get_softc(dev);
 
 	/* Allocate CTRL and STAT register spaces */
-	rid = STAT_RID;
-	sc->stat_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	sc->stat_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, STAT_RID,
+	    RF_ACTIVE);
 	if (sc->stat_res == NULL) {
 		device_printf(dev,
 		    "Could not allocate memory for the status register\n");
 		return (ENXIO);
 	}
 
-	rid = CTRL_RID;
-	sc->ctrl_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	sc->ctrl_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, CTRL_RID,
+	    RF_ACTIVE);
 	if (sc->ctrl_res == NULL) {
 		device_printf(dev,
 		    "Could not allocate memory for the control register\n");
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->stat_res), sc->stat_res);
+		bus_release_resource(dev, sc->stat_res);
 		sc->stat_res = NULL;
 		return (ENXIO);
 	}
@@ -188,11 +184,9 @@ armada_thermal_attach(device_t dev)
 		DELAY(10);
 	}
 	if (timeout <= 0) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->stat_res), sc->stat_res);
+		bus_release_resource(dev, sc->stat_res);
 		sc->stat_res = NULL;
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->ctrl_res), sc->ctrl_res);
+		bus_release_resource(dev, sc->ctrl_res);
 		sc->ctrl_res = NULL;
 		return (ENXIO);
 	}
@@ -225,12 +219,10 @@ armada_thermal_detach(device_t dev)
 
 	sc->chip_temperature = 0;
 
-	bus_release_resource(dev, SYS_RES_MEMORY,
-	    rman_get_rid(sc->stat_res), sc->stat_res);
+	bus_release_resource(dev, sc->stat_res);
 	sc->stat_res = NULL;
 
-	bus_release_resource(dev, SYS_RES_MEMORY,
-	    rman_get_rid(sc->ctrl_res), sc->ctrl_res);
+	bus_release_resource(dev, sc->ctrl_res);
 	sc->ctrl_res = NULL;
 
 	return (0);

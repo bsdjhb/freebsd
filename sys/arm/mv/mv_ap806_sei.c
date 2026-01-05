@@ -324,7 +324,7 @@ mv_ap806_sei_attach(device_t dev)
 	phandle_t xref, node;
 	uint32_t irq;
 	const char *name;
-	int rv, rid;
+	int rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -332,8 +332,7 @@ mv_ap806_sei_attach(device_t dev)
 	MV_AP806_SEI_LOCK_INIT(sc);
 
 	/* Allocate resources. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
@@ -341,8 +340,7 @@ mv_ap806_sei_attach(device_t dev)
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");
 		rv = ENXIO;
@@ -391,9 +389,9 @@ fail:
 	if (sc->irq_ih != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_ih);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	MV_AP806_SEI_LOCK_DESTROY(sc);
 	return (ENXIO);
 }

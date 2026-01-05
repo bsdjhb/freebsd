@@ -101,7 +101,7 @@ mv_ap806_gicp_attach(device_t dev)
 {
 	struct mv_ap806_gicp_softc *sc;
 	phandle_t node, xref, intr_parent;
-	int i, rid;
+	int i;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -119,8 +119,7 @@ mv_ap806_gicp_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "cannot allocate resources for device\n");
 		return (ENXIO);

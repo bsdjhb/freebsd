@@ -705,8 +705,7 @@ mvebu_gpio_detach(device_t dev)
 
 	for (i = 0; i < MV_GPIO_MAX_NIRQS; i++) {
 		if (sc->irq_res[i] != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ, 0,
-			     sc->irq_res[i]);
+			bus_release_resource(dev, sc->irq_res[i]);
 	}
 	GPIO_LOCK_DESTROY(sc);
 
@@ -720,7 +719,7 @@ mvebu_gpio_attach(device_t dev)
 	phandle_t node;
 	struct gpio_pin *pin;
 	pcell_t pincnt;
-	int i, rv, rid;
+	int i, rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -757,9 +756,8 @@ mvebu_gpio_attach(device_t dev)
 	for (i = 0; i < MV_GPIO_MAX_NIRQS; i++) {
 		sc->irq_cookies[i].sc = sc;
 		sc->irq_cookies[i].bank_num = i;
-		rid = i;
-		sc->irq_res[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &rid, RF_ACTIVE);
+		sc->irq_res[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ, i,
+		    RF_ACTIVE);
 		if (sc->irq_res[i] == NULL)
 			break;
 		if ((bus_setup_intr(dev, sc->irq_res[i],
