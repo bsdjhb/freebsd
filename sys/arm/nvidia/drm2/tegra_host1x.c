@@ -440,7 +440,7 @@ static void
 host1x_new_pass(device_t dev)
 {
 	struct host1x_softc *sc;
-	int rv, rid;
+	int rv;
 	phandle_t node;
 
 	/*
@@ -457,16 +457,14 @@ host1x_new_pass(device_t dev)
 	node = ofw_bus_get_node(dev);
 
 	/* Allocate our IRQ resource. */
-	rid = 0;
-	sc->syncpt_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->syncpt_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->syncpt_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate interrupt.\n");
 		rv = ENXIO;
 		goto fail;
 	}
-	rid = 1;
-	sc->gen_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->gen_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1,
 	    RF_ACTIVE);
 	if (sc->gen_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate interrupt.\n");
@@ -545,7 +543,7 @@ host1x_probe(device_t dev)
 static int
 host1x_attach(device_t dev)
 {
-	int rv, rid;
+	int rv;
 	struct host1x_softc *sc;
 
 	sc = device_get_softc(dev);
@@ -562,8 +560,7 @@ host1x_attach(device_t dev)
 	LOCK_INIT(sc);
 
 	/* Get the memory resource for the register mapping. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot map registers.\n");
@@ -578,7 +575,7 @@ fail:
 	if (sc->tegra_drm != NULL)
 		free(sc->tegra_drm, DRM_MEM_DRIVER);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	LOCK_DESTROY(sc);
 	return (rv);
 }
@@ -608,11 +605,11 @@ host1x_detach(device_t dev)
 	if (sc->syncpt_irq_h != NULL)
 		bus_teardown_intr(dev, sc->syncpt_irq_res, sc->syncpt_irq_h);
 	if (sc->gen_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 1, sc->gen_irq_res);
+		bus_release_resource(dev, sc->gen_irq_res);
 	if (sc->syncpt_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->syncpt_irq_res);
+		bus_release_resource(dev, sc->syncpt_irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	LOCK_DESTROY(sc);
 	return (0);
 }

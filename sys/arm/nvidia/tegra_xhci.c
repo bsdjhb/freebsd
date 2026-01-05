@@ -936,13 +936,11 @@ tegra_xhci_detach(device_t dev)
 		xsc->sc_intr_hdl = NULL;
 	}
 	if (xsc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(xsc->sc_irq_res), xsc->sc_irq_res);
+		bus_release_resource(dev, xsc->sc_irq_res);
 		xsc->sc_irq_res = NULL;
 	}
 	if (xsc->sc_io_res != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(xsc->sc_io_res), xsc->sc_io_res);
+		bus_release_resource(dev, xsc->sc_io_res);
 		xsc->sc_io_res = NULL;
 	}
 	if (sc->xhci_inited)
@@ -960,7 +958,7 @@ tegra_xhci_attach(device_t dev)
 {
 	struct tegra_xhci_softc *sc;
 	struct xhci_softc *xsc;
-	int rv, rid;
+	int rv;
 	phandle_t node;
 
 	sc = device_get_softc(dev);
@@ -983,8 +981,7 @@ tegra_xhci_attach(device_t dev)
 	}
 
 	/* Allocate resources. */
-	rid = 0;
-	xsc->sc_io_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	xsc->sc_io_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (xsc->sc_io_res == NULL) {
 		device_printf(dev,
@@ -992,8 +989,7 @@ tegra_xhci_attach(device_t dev)
 		rv = ENXIO;
 		goto error;
 	}
-	rid = 1;
-	sc->mem_res_fpci = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res_fpci = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE);
 	if (sc->mem_res_fpci == NULL) {
 		device_printf(dev,
@@ -1001,8 +997,7 @@ tegra_xhci_attach(device_t dev)
 		rv = ENXIO;
 		goto error;
 	}
-	rid = 2;
-	sc->mem_res_ipfs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res_ipfs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 2,
 	    RF_ACTIVE);
 	if (sc->mem_res_ipfs == NULL) {
 		device_printf(dev,
@@ -1011,16 +1006,14 @@ tegra_xhci_attach(device_t dev)
 		goto error;
 	}
 
-	rid = 0;
-	xsc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	xsc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (xsc->sc_irq_res == NULL) {
 		device_printf(dev, "Could not allocate HCD IRQ resources\n");
 		rv = ENXIO;
 		goto error;
 	}
-	rid = 1;
-	sc->irq_res_mbox = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res_mbox = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1,
 	    RF_ACTIVE);
 	if (sc->irq_res_mbox == NULL) {
 		device_printf(dev, "Could not allocate MBOX IRQ resources\n");

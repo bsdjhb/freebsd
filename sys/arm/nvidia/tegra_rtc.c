@@ -185,7 +185,7 @@ tegra_rtc_probe(device_t dev)
 static int
 tegra_rtc_attach(device_t dev)
 {
-	int rv, rid;
+	int rv;
 	struct tegra_rtc_softc *sc;
 
 	sc = device_get_softc(dev);
@@ -194,8 +194,7 @@ tegra_rtc_attach(device_t dev)
 	LOCK_INIT(sc);
 
 	/* Get the memory resource for the register mapping. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot map registers.\n");
@@ -204,8 +203,7 @@ tegra_rtc_attach(device_t dev)
 	}
 
 	/* Allocate our IRQ resource. */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate interrupt.\n");
@@ -255,9 +253,9 @@ fail:
 	if (sc->irq_h != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_h);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	LOCK_DESTROY(sc);
 
 	return (rv);
@@ -277,9 +275,9 @@ tegra_rtc_detach(device_t dev)
 	if (sc->irq_h != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_h);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	LOCK_DESTROY(sc);
 	return (0);

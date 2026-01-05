@@ -1319,7 +1319,7 @@ dc_attach(device_t dev)
 {
 	struct dc_softc *sc;
 	phandle_t node;
-	int rid, rv;
+	int rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -1328,16 +1328,14 @@ dc_attach(device_t dev)
 	node = ofw_bus_get_node(sc->dev);
 	LOCK_INIT(sc);
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");
 		goto fail;
@@ -1382,9 +1380,9 @@ fail:
 	if (sc->hwreset_dc != NULL)
 		hwreset_release(sc->hwreset_dc);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	LOCK_DESTROY(sc);
 
 	return (ENXIO);
@@ -1413,9 +1411,9 @@ dc_detach(device_t dev)
 	if (sc->hwreset_dc != NULL)
 		hwreset_release(sc->hwreset_dc);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	LOCK_DESTROY(sc);
 
 	return (0);

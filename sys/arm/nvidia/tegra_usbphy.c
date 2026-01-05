@@ -705,7 +705,7 @@ static int
 usbphy_attach(device_t dev)
 {
 	struct usbphy_softc *sc;
-	int rid, rv;
+	int rv;
 	phandle_t node;
 	struct phynode *phynode;
 	struct phynode_init_def phy_init;
@@ -713,16 +713,14 @@ usbphy_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		return (ENXIO);
 	}
 
-	rid = 1;
-	sc->pads_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->pads_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

@@ -130,11 +130,9 @@ tegra_ehci_detach(device_t dev)
 		bus_teardown_intr(dev, esc->sc_irq_res,
 		    esc->sc_intr_hdl);
 	if (sc->ehci_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0,
-		    sc->ehci_irq_res);
+		bus_release_resource(dev, sc->ehci_irq_res);
 	if (sc->ehci_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0,
-		    sc->ehci_mem_res);
+		bus_release_resource(dev, sc->ehci_mem_res);
 	if (sc->usb_alloc_called)
 		usb_bus_mem_free_all(&esc->sc_bus, &ehci_iterate_hw_softc);
 
@@ -146,7 +144,7 @@ tegra_ehci_attach(device_t dev)
 {
 	struct tegra_ehci_softc *sc;
 	ehci_softc_t *esc;
-	int rv, rid;
+	int rv;
 	uint64_t freq;
 
 	sc = device_get_softc(dev);
@@ -154,8 +152,7 @@ tegra_ehci_attach(device_t dev)
 	esc = &sc->ehci_softc;
 
 	/* Allocate resources. */
-	rid = 0;
-	sc->ehci_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->ehci_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->ehci_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
@@ -163,8 +160,7 @@ tegra_ehci_attach(device_t dev)
 		goto out;
 	}
 
-	rid = 0;
-	sc->ehci_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->ehci_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->ehci_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");

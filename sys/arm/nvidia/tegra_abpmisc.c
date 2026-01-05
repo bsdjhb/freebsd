@@ -120,22 +120,19 @@ tegra_abpmisc_probe(device_t dev)
 static int
 tegra_abpmisc_attach(device_t dev)
 {
-	int rid;
 	struct tegra_abpmisc_softc *sc;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->abp_misc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->abp_misc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->abp_misc_res == NULL) {
 		device_printf(dev, "Cannot map ABP misc registers.\n");
 		goto fail;
 	}
 
-	rid = 1;
-	sc->strap_opt_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->strap_opt_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE);
 	if (sc->strap_opt_res == NULL) {
 		device_printf(dev, "Cannot map strapping options registers.\n");
@@ -146,7 +143,7 @@ tegra_abpmisc_attach(device_t dev)
 
 	/* XXX - Hack - address collision with pinmux. */
 	if (sc->abp_misc_res != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->abp_misc_res);
+		bus_release_resource(dev, sc->abp_misc_res);
 		sc->abp_misc_res = NULL;
 	}
 
@@ -156,9 +153,9 @@ tegra_abpmisc_attach(device_t dev)
 
 fail:
 	if (sc->abp_misc_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->abp_misc_res);
+		bus_release_resource(dev, sc->abp_misc_res);
 	if (sc->strap_opt_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 1, sc->strap_opt_res);
+		bus_release_resource(dev, sc->strap_opt_res);
 
 	return (ENXIO);
 }
@@ -175,9 +172,9 @@ tegra_abpmisc_detach(device_t dev)
 
 	sc = device_get_softc(dev);
 	if (sc->abp_misc_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->abp_misc_res);
+		bus_release_resource(dev, sc->abp_misc_res);
 	if (sc->strap_opt_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 1, sc->strap_opt_res);
+		bus_release_resource(dev, sc->strap_opt_res);
 	return (0);
 }
 

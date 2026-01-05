@@ -1439,7 +1439,6 @@ tegra_pcib_attach(device_t dev)
 	struct tegra_pcib_softc *sc;
 	phandle_t node;
 	int rv;
-	int rid;
 	struct tegra_pcib_port *port;
 	int i;
 
@@ -1458,8 +1457,7 @@ tegra_pcib_attach(device_t dev)
 	}
 
 	/* Allocate bus_space resources. */
-	rid = 0;
-	sc->pads_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->pads_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->pads_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate PADS register\n");
@@ -1472,8 +1470,7 @@ tegra_pcib_attach(device_t dev)
 	 */
 	sc->bus_tag = rman_get_bustag(sc->pads_mem_res);
 
-	rid = 1;
-	sc->afi_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->afi_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE);
 	if (sc->afi_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate AFI register\n");
@@ -1481,8 +1478,7 @@ tegra_pcib_attach(device_t dev)
 		goto out;
 	}
 
-	rid = 2;
-	sc->cfg_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, 0);
+	sc->cfg_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 2, 0);
 	if (sc->cfg_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate config space memory\n");
 		rv = ENXIO;
@@ -1508,8 +1504,7 @@ tegra_pcib_attach(device_t dev)
 	/*
 	 * Get PCI interrupt
 	 */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");
@@ -1517,8 +1512,7 @@ tegra_pcib_attach(device_t dev)
 		goto out;
 	}
 
-	rid = 1;
-	sc->msi_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->msi_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1,
 	    RF_ACTIVE);
 	if (sc->msi_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate MSI IRQ resources\n");

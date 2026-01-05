@@ -1137,7 +1137,7 @@ static int
 xusbpadctl_attach(device_t dev)
 {
 	struct padctl_softc * sc;
-	int i, rid, rv;
+	int i, rv;
 	struct padctl_port *port;
 	phandle_t node;
 
@@ -1145,8 +1145,7 @@ xusbpadctl_attach(device_t dev)
 	sc->dev = dev;
 	node = ofw_bus_get_node(dev);
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

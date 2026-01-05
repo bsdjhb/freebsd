@@ -261,7 +261,7 @@ static int
 tegra_sdhci_attach(device_t dev)
 {
 	struct tegra_sdhci_softc *sc;
-	int rid, rv;
+	int rv;
 	uint64_t freq;
 	phandle_t node, prop;
 
@@ -269,8 +269,7 @@ tegra_sdhci_attach(device_t dev)
 	sc->dev = dev;
 	node = ofw_bus_get_node(dev);
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -278,8 +277,7 @@ tegra_sdhci_attach(device_t dev)
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->irq_res) {
 		device_printf(dev, "cannot allocate interrupt\n");
@@ -405,9 +403,9 @@ fail:
 	if (sc->reset != NULL)
 		hwreset_release(sc->reset);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (rv);
 }
@@ -426,13 +424,10 @@ tegra_sdhci_detach(device_t dev)
 	sdhci_fdt_gpio_teardown(sc->gpio);
 	clk_release(sc->clk);
 	bus_teardown_intr(dev, sc->irq_res, sc->intr_cookie);
-	bus_release_resource(dev, SYS_RES_IRQ, rman_get_rid(sc->irq_res),
-			     sc->irq_res);
+	bus_release_resource(dev, sc->irq_res);
 
 	sdhci_cleanup_slot(slot);
-	bus_release_resource(dev, SYS_RES_MEMORY,
-			     rman_get_rid(sc->mem_res),
-			     sc->mem_res);
+	bus_release_resource(dev, sc->mem_res);
 	return (0);
 }
 

@@ -435,7 +435,7 @@ tegra_efuse_probe(device_t dev)
 static int
 tegra_efuse_attach(device_t dev)
 {
-	int rv, rid;
+	int rv;
 	struct tegra_efuse_softc *sc;
 
 	sc = device_get_softc(dev);
@@ -444,8 +444,7 @@ tegra_efuse_attach(device_t dev)
 	    compat_data)->ocd_data;
 
 	/* Get the memory resource for the register mapping. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot map registers.\n");
@@ -491,7 +490,7 @@ fail:
 	if (sc->reset != NULL)
 		hwreset_release(sc->reset);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (rv);
 }
@@ -513,7 +512,7 @@ tegra_efuse_detach(device_t dev)
 	if (sc->reset != NULL)
 		hwreset_release(sc->reset);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (0);
 }

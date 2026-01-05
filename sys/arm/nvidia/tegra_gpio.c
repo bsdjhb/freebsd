@@ -738,11 +738,10 @@ tegra_gpio_detach(device_t dev)
 
 	for (i = 0; i < GPIO_NUM_BANKS; i++) {
 		if (sc->irq_res[i] != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ, 0,
-			    sc->irq_res[i]);
+			bus_release_resource(dev, sc->irq_res[i]);
 	}
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	GPIO_LOCK_DESTROY(sc);
 
 	return(0);
@@ -752,15 +751,14 @@ static int
 tegra_gpio_attach(device_t dev)
 {
 	struct tegra_gpio_softc *sc;
-	int i, rid;
+	int i;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 	GPIO_LOCK_INIT(sc);
 
 	/* Allocate bus_space resources. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
@@ -794,9 +792,8 @@ tegra_gpio_attach(device_t dev)
 	for (i = 0; i < GPIO_NUM_BANKS; i++) {
 		sc->irq_cookies[i].sc = sc;
 		sc->irq_cookies[i].bank_num = i;
-		rid = i;
-		sc->irq_res[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &rid, RF_ACTIVE);
+		sc->irq_res[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ, i,
+		    RF_ACTIVE);
 		if (sc->irq_res[i] == NULL) {
 			device_printf(dev, "Cannot allocate IRQ resources\n");
 			tegra_gpio_detach(dev);
