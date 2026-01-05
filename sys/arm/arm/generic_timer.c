@@ -105,7 +105,6 @@ struct arm_tmr_softc;
 struct arm_tmr_irq {
 	struct resource	*res;
 	void		*ihl;
-	int		 rid;
 	int		 idx;
 };
 
@@ -438,7 +437,7 @@ arm_tmr_attach_irq(device_t dev, struct arm_tmr_softc *sc,
 
 	irq = &sc->irqs[sc->irq_count];
 	irq->res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &rid, flags);
+	    rid, flags);
 	if (irq->res == NULL) {
 		if (bootverbose || (flags & RF_OPTIONAL) == 0) {
 			device_printf(dev,
@@ -453,7 +452,6 @@ arm_tmr_attach_irq(device_t dev, struct arm_tmr_softc *sc,
 		if (bootverbose)
 			device_printf(dev, "allocated irq for '%s'\n",
 			    irq_def->name);
-		irq->rid = rid;
 		irq->idx = irq_def->idx;
 		sc->irq_count++;
 	}
@@ -547,8 +545,7 @@ arm_tmr_fdt_attach(device_t dev)
 out:
 	if (error != 0) {
 		for (i = 0; i < sc->irq_count; i++) {
-			bus_release_resource(dev, SYS_RES_IRQ, sc->irqs[i].rid,
-			    sc->irqs[i].res);
+			bus_release_resource(dev, sc->irqs[i].res);
 		}
 	}
 
@@ -630,8 +627,7 @@ arm_tmr_acpi_attach(device_t dev)
 out:
 	if (error != 0) {
 		for (int i = 0; i < sc->irq_count; i++) {
-			bus_release_resource(dev, SYS_RES_IRQ,
-			    sc->irqs[i].rid, sc->irqs[i].res);
+			bus_release_resource(dev, sc->irqs[i].res);
 		}
 	}
 	return (error);

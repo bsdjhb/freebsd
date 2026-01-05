@@ -1338,12 +1338,10 @@ arm_gicv2m_attach(device_t dev)
 {
 	struct arm_gicv2m_softc *sc;
 	uint32_t typer;
-	int rid;
 
 	sc = device_get_softc(dev);
 
-	rid = 0;
-	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem == NULL) {
 		device_printf(dev, "Unable to allocate resources\n");

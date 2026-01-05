@@ -196,13 +196,12 @@ static int
 sp804_timer_attach(device_t dev)
 {
 	struct sp804_timer_softc *sc = device_get_softc(dev);
-	int rid = 0;
 	int i;
 	uint32_t id, reg;
 	phandle_t node;
 	pcell_t clock;
 
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -212,7 +211,7 @@ sp804_timer_attach(device_t dev)
 	sc->bsh = rman_get_bushandle(sc->mem_res);
 
 	/* Request the IRQ resources */
-	sc->irq_res =  bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Error: could not allocate irq resources\n");
 		return (ENXIO);
@@ -229,8 +228,7 @@ sp804_timer_attach(device_t dev)
 	if (bus_setup_intr(dev, sc->irq_res, INTR_TYPE_CLK,
 			sp804_timer_intr, NULL, sc,
 			&sc->intr_hl) != 0) {
-		bus_release_resource(dev, SYS_RES_IRQ, rid,
-			sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 		device_printf(dev, "Unable to setup the clock irq handler.\n");
 		return (ENXIO);
 	}

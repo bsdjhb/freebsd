@@ -133,7 +133,7 @@ al_msix_attach(device_t dev)
 	phandle_t		node;
 	intptr_t		xref;
 	int			interrupts[INTR_RANGE_COUNT];
-	int			nintr, i, rid;
+	int			nintr, i;
 	uint32_t		icells, *intr;
 
 	sc = device_get_softc(dev);
@@ -142,8 +142,7 @@ al_msix_attach(device_t dev)
 	xref = OF_xref_from_node(node);
 	OF_device_register_xref(xref, dev);
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "Failed to allocate resource\n");
 		return (ENXIO);

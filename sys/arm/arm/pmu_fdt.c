@@ -117,7 +117,7 @@ pmu_parse_intr(device_t dev, struct pmu_softc *sc)
 {
 	bool has_affinity;
 	phandle_t node, *cpus;
-	int rid, err, ncpus, i;
+	int err, ncpus, i;
 
 
 	node = ofw_bus_get_node(dev);
@@ -138,8 +138,7 @@ pmu_parse_intr(device_t dev, struct pmu_softc *sc)
 	}
 
 	/* Process first interrupt */
-	rid = 0;
-	sc->irq[0].res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq[0].res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 
 	if (sc->irq[0].res == NULL) {
@@ -171,9 +170,8 @@ pmu_parse_intr(device_t dev, struct pmu_softc *sc)
 	}
 
 	for (i = 1; i < MAX_RLEN; i++) {
-		rid = i;
-		sc->irq[i].res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &rid, RF_ACTIVE | RF_SHAREABLE);
+		sc->irq[i].res = bus_alloc_resource_any(dev, SYS_RES_IRQ, i
+		    RF_ACTIVE | RF_SHAREABLE);
 		if (sc->irq[i].res == NULL)
 			break;
 

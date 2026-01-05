@@ -472,20 +472,17 @@ static int
 pl310_attach(device_t dev)
 {
 	struct pl310_softc *sc = device_get_softc(dev);
-	int rid;
 	uint32_t cache_id, debug_ctrl;
 	phandle_t node;
 
 	sc->sc_dev = dev;
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL)
 		panic("%s: Cannot map registers", device_get_name(dev));
 
 	/* Allocate an IRQ resource */
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	                                        RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "cannot allocate IRQ, not using interrupt\n");

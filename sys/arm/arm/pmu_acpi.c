@@ -53,13 +53,11 @@ madt_handler(ACPI_SUBTABLE_HEADER *entry, void *arg)
 	struct madt_ctx *ctx;
 	struct pmu_softc *sc;
 	struct pcpu *pcpu;
-	int rid;
 	int cpuid;
 	int i;
 
 	ctx = arg;
 	sc = ctx->sc;
-	rid = ctx->i;
 	cpuid = -1;
 
 	if (ctx->error)
@@ -95,7 +93,7 @@ madt_handler(ACPI_SUBTABLE_HEADER *entry, void *arg)
 	    intr->PerformanceInterrupt, 1);
 
 	sc->irq[ctx->i].res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ,
-	    &rid, RF_ACTIVE | RF_SHAREABLE);
+	    ctx->i, RF_ACTIVE | RF_SHAREABLE);
 	if (sc->irq[ctx->i].res == NULL) {
 		device_printf(sc->dev, "Failed to allocate IRQ %d\n", ctx->i);
 		ctx->error = ENXIO;

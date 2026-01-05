@@ -276,14 +276,11 @@ arm_tmr_probe(device_t dev)
 static int
 attach_tc(struct arm_tmr_softc *sc)
 {
-	int rid;
-
 	if (arm_tmr_tc != NULL)
 		return (EBUSY);
 
-	rid = sc->memrid;
-	sc->gbl_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
+	sc->gbl_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
+	    sc->memrid, RF_ACTIVE);
 	if (sc->gbl_mem == NULL) {
 		device_printf(sc->dev, "could not allocate gbl mem resources\n");
 		return (ENXIO);
@@ -304,32 +301,30 @@ static int
 attach_et(struct arm_tmr_softc *sc)
 {
 	void *ihl;
-	int irid, mrid;
 
 	if (arm_tmr_et != NULL)
 		return (EBUSY);
 
-	mrid = sc->memrid;
-	sc->prv_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, &mrid,
-	    RF_ACTIVE);
+	sc->prv_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
+	    sc->memrid, RF_ACTIVE);
 	if (sc->prv_mem == NULL) {
 		device_printf(sc->dev, "could not allocate prv mem resources\n");
 		return (ENXIO);
 	}
 	tmr_prv_write_4(sc, PRV_TIMER_CTRL, 0x00000000);
 
-	irid = sc->irqrid;
-	sc->prv_irq = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &irid, RF_ACTIVE);
+	sc->prv_irq = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, sc->irqrid,
+	    RF_ACTIVE);
 	if (sc->prv_irq == NULL) {
-		bus_release_resource(sc->dev, SYS_RES_MEMORY, mrid, sc->prv_mem);
+		bus_release_resource(sc->dev, sc->prv_mem);
 		device_printf(sc->dev, "could not allocate prv irq resources\n");
 		return (ENXIO);
 	}
 
 	if (bus_setup_intr(sc->dev, sc->prv_irq, INTR_TYPE_CLK, arm_tmr_intr,
 			NULL, sc, &ihl) != 0) {
-		bus_release_resource(sc->dev, SYS_RES_MEMORY, mrid, sc->prv_mem);
-		bus_release_resource(sc->dev, SYS_RES_IRQ, irid, sc->prv_irq);
+		bus_release_resource(sc->dev, sc->prv_mem);
+		bus_release_resource(sc->dev, sc->prv_irq);
 		device_printf(sc->dev, "unable to setup the et irq handler.\n");
 		return (ENXIO);
 	}
