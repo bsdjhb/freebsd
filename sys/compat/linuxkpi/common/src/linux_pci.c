@@ -966,7 +966,7 @@ _lkpi_pci_iomap(struct pci_dev *pdev, int bar, unsigned long maxlen __unused)
 	mmio->rid = PCIR_BAR(bar);
 	mmio->type = type;
 	mmio->res = bus_alloc_resource_any(pdev->dev.bsddev, mmio->type,
-	    &mmio->rid, RF_ACTIVE|RF_SHAREABLE);
+	    mmio->rid, RF_ACTIVE|RF_SHAREABLE);
 	if (mmio->res == NULL) {
 		device_printf(pdev->dev.bsddev, "%s: failed to alloc "
 		    "bar %d type %d rid %d\n",
@@ -1052,8 +1052,7 @@ linuxkpi_pci_iounmap(struct pci_dev *pdev, void *res)
 				  rman_get_size(mmio->res))
 				continue;
 		}
-		bus_release_resource(pdev->dev.bsddev,
-		    mmio->type, mmio->rid, mmio->res);
+		bus_release_resource(pdev->dev.bsddev, mmio->res);
 		TAILQ_REMOVE(&pdev->mmio, mmio, next);
 		free(mmio, M_DEVBUF);
 		return;
@@ -1445,7 +1444,7 @@ linuxkpi_pci_release_region(struct pci_dev *pdev, int bar)
 		free(mmio, M_DEVBUF);
 	}
 
-	bus_release_resource(pdev->dev.bsddev, rle->type, rle->rid, rle->res);
+	bus_release_resource(pdev->dev.bsddev, rle->res);
 }
 
 void

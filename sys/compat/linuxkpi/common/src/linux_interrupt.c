@@ -92,8 +92,7 @@ lkpi_irq_release(struct device *dev, struct irq_ent *irqe)
 	if (irqe->tag != NULL)
 		bus_teardown_intr(dev->bsddev, irqe->res, irqe->tag);
 	if (irqe->res != NULL)
-		bus_release_resource(dev->bsddev, SYS_RES_IRQ,
-		    rman_get_rid(irqe->res), irqe->res);
+		bus_release_resource(dev->bsddev, irqe->res);
 	list_del(&irqe->links);
 }
 
@@ -130,7 +129,7 @@ lkpi_request_irq(struct device *xdev, unsigned int irq,
 	resflags = RF_ACTIVE;
 	if ((flags & IRQF_SHARED) != 0)
 		resflags |= RF_SHAREABLE;
-	res = bus_alloc_resource_any(dev->bsddev, SYS_RES_IRQ, &rid, resflags);
+	res = bus_alloc_resource_any(dev->bsddev, SYS_RES_IRQ, rid, resflags);
 	if (res == NULL)
 		return (-ENXIO);
 	if (xdev != NULL)
@@ -156,7 +155,7 @@ lkpi_request_irq(struct device *xdev, unsigned int irq,
 	return 0;
 
 errout:
-	bus_release_resource(dev->bsddev, SYS_RES_IRQ, rid, irqe->res);
+	bus_release_resource(dev->bsddev, irqe->res);
 	if (xdev != NULL)
 		devres_free(irqe);
 	else
