@@ -183,12 +183,11 @@ bcm_vchiq_attach(device_t dev)
 	struct bcm_vchiq_softc *sc = device_get_softc(dev);
 	phandle_t node;
 	pcell_t cell;
-	int rid = 0;
 
 	if (bcm_vchiq_sc != NULL)
 		return (EINVAL);
 
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -197,8 +196,7 @@ bcm_vchiq_attach(device_t dev)
 	sc->bst = rman_get_bustag(sc->mem_res);
 	sc->bsh = rman_get_bushandle(sc->mem_res);
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "could not allocate interrupt resource\n");
 		return (ENXIO);
@@ -208,7 +206,7 @@ bcm_vchiq_attach(device_t dev)
 	/* XXXMDC: shouldn't happen (checked for in probe)--but, for symmetry */
 	if ((dev_compat_d & CONFIG_VALID) == 0){
 		device_printf(dev, "attempting to attach using invalid config.\n");
-		bus_release_resource(dev, SYS_RES_IRQ, rid, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 		return (EINVAL);
 	}
 	if ((dev_compat_d & BSD_REG_ADDRS) == 0)
@@ -239,8 +237,7 @@ bcm_vchiq_attach(device_t dev)
 	if (bus_setup_intr(dev, sc->irq_res, INTR_TYPE_MISC | INTR_MPSAFE,
 			NULL, bcm_vchiq_intr, sc,
 			&sc->intr_hl) != 0) {
-		bus_release_resource(dev, SYS_RES_IRQ, rid,
-			sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 		device_printf(dev, "Unable to setup the clock irq handler.\n");
 		return (ENXIO);
 	}
@@ -265,10 +262,8 @@ bcm_vchiq_detach(device_t dev)
 
 	if (sc->intr_hl)
                 bus_teardown_intr(dev, sc->irq_res, sc->intr_hl);
-	bus_release_resource(dev, SYS_RES_IRQ, 0,
-		sc->irq_res);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0,
-		sc->mem_res);
+	bus_release_resource(dev, sc->irq_res);
+	bus_release_resource(dev, sc->mem_res);
 
 	mtx_destroy(&sc->lock);
 
