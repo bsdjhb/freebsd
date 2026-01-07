@@ -4625,7 +4625,7 @@ bus_null_rescan(device_t dev)
  */
 
 int
-bus_alloc_resources(device_t dev, struct resource_spec *rs,
+bus_alloc_resources(device_t dev, const struct resource_spec *rs,
     struct resource **res)
 {
 	int i;
