@@ -171,7 +171,7 @@ imx7gpc_attach(device_t dev)
 	struct imx7gpc_softc *sc = device_get_softc(dev);
 	phandle_t node;
 	phandle_t parent_xref;
-	int i, rv;
+	int rv;
 
 	sc->dev = dev;
 
@@ -189,8 +189,7 @@ imx7gpc_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	i = 0;
-	sc->memres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &i,
+	sc->memres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->memres == NULL) {
 		device_printf(dev, "could not allocate resources\n");
@@ -200,7 +199,7 @@ imx7gpc_attach(device_t dev)
 	/* TODO: power up OTG domain and unmask all interrupts */
 
 	if (intr_pic_register(dev, OF_xref_from_node(node)) == NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, i, sc->memres);
+		bus_release_resource(dev, sc->memres);
 		device_printf(dev, "Cannot register PIC\n");
 		return (ENXIO);
 	}

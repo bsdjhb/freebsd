@@ -302,16 +302,14 @@ brcm_iproc_mdio_attach(device_t dev)
 	struct brcm_iproc_mdio_softc *sc;
 	phandle_t node, parent;
 	struct brcm_mdio_ofw_devinfo *di;
-	int rid;
 	device_t child;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
 	/* Allocate memory resources */
-	rid = REG_BASE_RID;
-	sc->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
+	sc->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    REG_BASE_RID, RF_ACTIVE);
 	if (sc->reg_base == NULL) {
 		device_printf(dev, "Could not allocate memory\n");
 		return (ENXIO);
@@ -387,8 +385,7 @@ brcm_iproc_mdio_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	if (sc->reg_base != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, REG_BASE_RID,
-		    sc->reg_base);
+		bus_release_resource(dev, sc->reg_base);
 	}
 
 	return (0);

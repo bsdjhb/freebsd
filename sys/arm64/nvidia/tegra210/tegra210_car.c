@@ -536,7 +536,7 @@ static int
 tegra210_car_attach(device_t dev)
 {
 	struct tegra210_car_softc *sc = device_get_softc(dev);
-	int rid, rv;
+	int rv;
 
 	sc->dev = dev;
 
@@ -544,8 +544,7 @@ tegra210_car_attach(device_t dev)
 	sc->type = ofw_bus_search_compatible(dev, compat_data)->ocd_data;
 
 	/* Resource setup. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->mem_res) {
 		device_printf(dev, "cannot allocate memory resource\n");
@@ -559,7 +558,7 @@ tegra210_car_attach(device_t dev)
 
 fail:
 	if (sc->mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (rv);
 }

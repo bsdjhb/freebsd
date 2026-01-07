@@ -1054,7 +1054,7 @@ static int
 gicv3_its_attach(device_t dev)
 {
 	struct gicv3_its_softc *sc;
-	int domain, err, i, rid;
+	int domain, err, i;
 	uint64_t phys;
 	uint32_t ctlr, iidr;
 
@@ -1066,8 +1066,7 @@ gicv3_its_attach(device_t dev)
 	sc->sc_irq_base += device_get_unit(dev) * sc->sc_irq_length;
 	sc->malloc_max_addr =  ~0;
 
-	rid = 0;
-	sc->sc_its_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_its_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_its_res == NULL) {
 		device_printf(dev, "Could not allocate memory\n");

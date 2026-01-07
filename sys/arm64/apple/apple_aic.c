@@ -183,14 +183,13 @@ apple_aic_attach(device_t dev)
 	struct intr_irqsrc *isrc;
 	const char *name;
 	intptr_t xref;
-	int error, rid;
+	int error;
 	u_int i, cpu, j, info;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	rid = 0;
-	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem == NULL) {
 		device_printf(dev, "Unable to allocate memory\n");

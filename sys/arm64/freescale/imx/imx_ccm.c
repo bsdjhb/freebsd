@@ -79,7 +79,7 @@ imx_ccm_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (0);
 }
@@ -88,7 +88,7 @@ int
 imx_ccm_attach(device_t dev)
 {
 	struct imx_ccm_softc *sc;
-	int err, rid;
+	int err;
 	phandle_t node;
 	int i;
 
@@ -97,8 +97,7 @@ imx_ccm_attach(device_t dev)
 	err = 0;
 
 	/* Allocate bus_space resources. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

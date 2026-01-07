@@ -165,13 +165,12 @@ rk3568_pciephy_attach(device_t dev)
 	struct phynode_init_def phy_init;
 	struct phynode *phynode;
 	uint32_t data_lanes[2] = { 0, 0 };
-	int rid = 0;
 
 	sc->dev = dev;
 	sc->node = ofw_bus_get_node(dev);
 
 	/* Get memory resource */
-	if (!(sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	if (!(sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE))) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		return (ENXIO);

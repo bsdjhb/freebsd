@@ -190,7 +190,6 @@ smmu_acpi_attach(device_t dev)
 	struct iommu_unit *iommu;
 	uintptr_t priv;
 	int err;
-	int rid;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -203,8 +202,7 @@ smmu_acpi_attach(device_t dev)
 		device_printf(sc->dev, "%s: features %x\n",
 		    __func__, sc->features);
 
-	rid = 0;
-	sc->res[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->res[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->res[0] == NULL) {
 		device_printf(dev, "Can't allocate memory resource.\n");
@@ -216,24 +214,21 @@ smmu_acpi_attach(device_t dev)
 	 * Interrupt lines are "eventq", "priq", "cmdq-sync", "gerror".
 	 */
 
-	rid = 0;
-	sc->res[1] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[1] = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->res[1] == NULL) {
 		device_printf(dev, "Can't allocate eventq IRQ resource.\n");
 		err = ENXIO;
 		goto error;
 	}
 
-	rid = 2;
-	sc->res[3] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[3] = bus_alloc_resource_any(dev, SYS_RES_IRQ, 2, RF_ACTIVE);
 	if (sc->res[3] == NULL) {
 		device_printf(dev, "Can't allocate cmdq-sync IRQ resource.\n");
 		err = ENXIO;
 		goto error;
 	}
 
-	rid = 3;
-	sc->res[4] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[4] = bus_alloc_resource_any(dev, SYS_RES_IRQ, 3, RF_ACTIVE);
 	if (sc->res[4] == NULL) {
 		device_printf(dev, "Can't allocate gerror IRQ resource.\n");
 		err = ENXIO;

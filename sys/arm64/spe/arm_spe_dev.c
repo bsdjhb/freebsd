@@ -77,7 +77,7 @@ int
 arm_spe_attach(device_t dev)
 {
 	struct arm_spe_softc *sc;
-	int error, rid;
+	int error;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -97,8 +97,7 @@ arm_spe_attach(device_t dev)
 		return (EINVAL);
 	}
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "Unable to allocate interrupt\n");

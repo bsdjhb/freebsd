@@ -90,8 +90,7 @@ smmu_fdt_attach(device_t dev)
 	if (OF_hasprop(node, "dma-coherent"))
 		sc->features |= SMMU_FEATURE_COHERENCY;
 
-	rid = 0;
-	sc->res[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->res[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->res[0] == NULL) {
 		device_printf(dev, "Can't allocate memory resource.\n");
@@ -111,7 +110,7 @@ smmu_fdt_attach(device_t dev)
 		goto error;
 	}
 
-	sc->res[1] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[1] = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid, RF_ACTIVE);
 	if (sc->res[1] == NULL) {
 		device_printf(dev, "Can't allocate eventq IRQ resource.\n");
 		err = ENXIO;
@@ -132,7 +131,7 @@ smmu_fdt_attach(device_t dev)
 		goto error;
 	}
 
-	sc->res[3] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[3] = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid, RF_ACTIVE);
 	if (sc->res[3] == NULL) {
 		device_printf(dev, "Can't allocate cmdq-sync IRQ resource.\n");
 		err = ENXIO;
@@ -140,14 +139,14 @@ smmu_fdt_attach(device_t dev)
 	}
 
 	err = ofw_bus_find_string_index(node, "interrupt-names", "gerror",
-	    &rid);
+	    rid);
 	if (err != 0) {
 		device_printf(dev, "Can't get gerror IRQ.\n");
 		err = ENXIO;
 		goto error;
 	}
 
-	sc->res[4] = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->res[4] = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid, RF_ACTIVE);
 	if (sc->res[4] == NULL) {
 		device_printf(dev, "Can't allocate gerror IRQ resource.\n");
 		err = ENXIO;

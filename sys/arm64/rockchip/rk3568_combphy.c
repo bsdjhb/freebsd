@@ -370,14 +370,13 @@ rk3568_combphy_attach(device_t dev)
 	struct rk3568_combphy_softc *sc = device_get_softc(dev);
 	struct phynode_init_def phy_init;
 	struct phynode *phynode;
-	int rid = 0;
 
 	sc->dev = dev;
 	sc->node = ofw_bus_get_node(dev);
 
 	/* Get memory resource */
-	if (!(sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE))) {
+	if (!(sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE))) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		return (ENXIO);
 	}

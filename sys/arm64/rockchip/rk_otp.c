@@ -166,9 +166,8 @@ static int
 rk_otp_attach(device_t dev)
 {
 	struct rk_otp_softc *sc = &rk_otp_sc;
-	int rid = 0;
 
-	sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (!sc->mem) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		return (ENXIO);

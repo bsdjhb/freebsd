@@ -381,7 +381,7 @@ static int
 max77620_attach(device_t dev)
 {
 	struct max77620_softc *sc;
-	int rv, rid;
+	int rv;
 	phandle_t node;
 
 	sc = device_get_softc(dev);
@@ -391,8 +391,7 @@ max77620_attach(device_t dev)
 	rv = 0;
 	LOCK_INIT(sc);
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 #ifdef notyet /* Interrupt parent is not implemented */
 	if (sc->irq_res == NULL) {
@@ -442,7 +441,7 @@ fail:
 	if (sc->irq_h != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_h);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	LOCK_DESTROY(sc);
 	return (rv);
 }
@@ -461,7 +460,7 @@ max77620_detach(device_t dev)
 	if (sc->irq_h != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_h);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	LOCK_DESTROY(sc);
 
 	return (0);

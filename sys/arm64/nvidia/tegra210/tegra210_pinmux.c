@@ -706,21 +706,18 @@ static int
 pinmux_attach(device_t dev)
 {
 	struct pinmux_softc * sc;
-	int rid;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->pad_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->pad_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->pad_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		return (ENXIO);
 	}
 
-	rid = 1;
-	sc->mux_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mux_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE);
 	if (sc->mux_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

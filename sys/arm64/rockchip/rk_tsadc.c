@@ -702,7 +702,7 @@ tsadc_attach(device_t dev)
 	struct tsadc_softc *sc;
 	phandle_t node;
 	uint32_t val;
-	int i, rid, rv;
+	int i, rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -711,16 +711,14 @@ tsadc_attach(device_t dev)
 	    ofw_bus_search_compatible(dev, compat_data)->ocd_data;
 	sc->alarm_temp = 90000;
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");
 		goto fail;
@@ -833,9 +831,9 @@ fail:
 	if (sc->hwreset != NULL)
 		hwreset_array_release(sc->hwreset);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (ENXIO);
 }
@@ -856,9 +854,9 @@ tsadc_detach(device_t dev)
 	if (sc->hwreset != NULL)
 		hwreset_array_release(sc->hwreset);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (ENXIO);
 }

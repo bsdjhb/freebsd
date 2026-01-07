@@ -57,7 +57,6 @@
 
 struct pl031_softc {
 	struct resource	*reg;
-	int reg_rid;
 };
 
 static device_probe_t pl031_probe;
@@ -87,10 +86,8 @@ pl031_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	sc->reg_rid = 0;
-	sc->reg = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->reg_rid,
-	    RF_ACTIVE);
-	if (sc->reg == 0)
+	sc->reg = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
+	if (sc->reg == NULL)
 		return (ENXIO);
 
 	clock_register(dev, 1000000);
@@ -106,7 +103,7 @@ pl031_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	clock_unregister(dev);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->reg_rid, sc->reg);
+	bus_release_resource(dev, sc->reg);
 
 	return (0);
 }

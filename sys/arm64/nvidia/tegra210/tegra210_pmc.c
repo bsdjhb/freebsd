@@ -542,7 +542,7 @@ static int
 tegra210_pmc_attach(device_t dev)
 {
 	struct tegra210_pmc_softc *sc;
-	int rid, rv;
+	int rv;
 	uint32_t reg;
 	phandle_t node;
 
@@ -563,8 +563,7 @@ tegra210_pmc_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");

@@ -323,9 +323,9 @@ gic_v3_attach(device_t dev)
 	    M_GIC_V3, M_WAITOK);
 
 	/* Now allocate corresponding resources */
-	for (i = 0, rid = 0; i < (sc->gic_redists.nregions + 1); i++, rid++) {
+	for (rid = 0; rid < (sc->gic_redists.nregions + 1); rid++) {
 		sc->gic_res[rid] = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &rid, RF_ACTIVE);
+		    rid, RF_ACTIVE);
 		if (sc->gic_res[rid] == NULL)
 			return (ENXIO);
 	}
@@ -440,7 +440,7 @@ gic_v3_detach(device_t dev)
 			panic("Trying to detach registered PIC");
 	}
 	for (rid = 0; rid < (sc->gic_redists.nregions + 1); rid++)
-		bus_release_resource(dev, SYS_RES_MEMORY, rid, sc->gic_res[rid]);
+		bus_release_resource(dev, sc->gic_res[rid]);
 
 	free(sc->gic_redists.pcpu, M_GIC_V3);
 

@@ -351,7 +351,7 @@ qoriq_therm_attach(device_t dev)
 	struct qoriq_therm_socs *soc;
 	phandle_t node, root;
 	uint32_t sites;
-	int rid, rv;
+	int rv;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -360,16 +360,14 @@ qoriq_therm_attach(device_t dev)
 
 	sysctl_ctx_init(&qoriq_therm_sysctl_ctx);
 
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Cannot allocate memory resources\n");
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");
 		goto fail;
@@ -474,9 +472,9 @@ fail:
 	if (sc->clk != NULL)
 		clk_release(sc->clk);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (ENXIO);
 }
@@ -493,9 +491,9 @@ qoriq_therm_detach(device_t dev)
 	if (sc->clk != NULL)
 		clk_release(sc->clk);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (0);
 }

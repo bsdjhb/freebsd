@@ -1191,7 +1191,7 @@ rk_pcie_attach(device_t dev)
 		rv = ENXIO;
 		goto out;
 	}
-	sc->axi_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->axi_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
 	    RF_ACTIVE | RF_UNMAPPED);
 	if (sc->axi_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate 'axi-base' (rid: %d)\n",
@@ -1216,7 +1216,7 @@ rk_pcie_attach(device_t dev)
 		rv = ENXIO;
 		goto out;
 	}
-	sc->apb_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->apb_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
 	    RF_ACTIVE);
 	if (sc->apb_mem_res == NULL) {
 		device_printf(dev, "Cannot allocate 'apb-base' (rid: %d)\n",
@@ -1232,7 +1232,7 @@ rk_pcie_attach(device_t dev)
 		rv = ENXIO;
 		goto out;
 	}
-	sc->client_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->client_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->client_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate 'client' IRQ resource\n");
@@ -1247,7 +1247,7 @@ rk_pcie_attach(device_t dev)
 		rv = ENXIO;
 		goto out;
 	}
-	sc->legacy_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->legacy_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->legacy_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate 'legacy' IRQ resource\n");
@@ -1256,13 +1256,13 @@ rk_pcie_attach(device_t dev)
 	}
 
 	rv = ofw_bus_find_string_index(sc->node, "interrupt-names",
-	    "sys", &rid);
+	    "sys", rid);
 	if (rv != 0) {
 		device_printf(dev, "Cannot get 'sys' IRQ\n");
 		rv = ENXIO;
 		goto out;
 	}
-	sc->sys_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sys_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sys_irq_res == NULL) {
 		device_printf(dev, "Cannot allocate 'sys' IRQ resource\n");

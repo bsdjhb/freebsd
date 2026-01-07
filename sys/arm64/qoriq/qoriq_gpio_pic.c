@@ -337,7 +337,7 @@ static int
 qoriq_gpio_pic_attach(device_t dev)
 {
 	struct qoriq_gpio_pic_softc *sc;
-	int error, rid, i;
+	int error, i;
 	const char *name;
 	intptr_t xref;
 
@@ -347,8 +347,7 @@ qoriq_gpio_pic_attach(device_t dev)
 	if (error != 0)
 		return (error);
 
-	rid = 0;
-	sc->res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->res_irq == NULL) {
 		device_printf(dev, "Can't allocate interrupt resource.\n");
@@ -399,8 +398,7 @@ qoriq_gpio_pic_detach(device_t dev)
 		bus_teardown_intr(dev, sc->res_irq, sc->irq_cookie);
 
 	if (sc->res_irq != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->res_irq), sc->res_irq);
+		bus_release_resource(dev, sc->res_irq);
 
 	return (qoriq_gpio_detach(dev));
 }

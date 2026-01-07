@@ -87,11 +87,8 @@
 struct rk3568_pcie_softc {
 	struct pci_dw_softc		dw_sc;  /* Must be first */
 	device_t			dev;
-	int				apb_rid;
 	struct resource			*apb_res;
-	int				dbi_rid;
 	struct resource			*dbi_res;
-	int				irq_rid;
 	struct resource			*irq_res;
 	void				*irq_handle;
 	phandle_t			node;
@@ -278,14 +275,11 @@ rk3568_pcie_detach(device_t dev)
 	if (sc->regulator)
 		regulator_release(sc->regulator);
 	if (sc->irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->irq_rid,
-		    sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->dbi_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->dbi_rid,
-		    sc->dbi_res);
+		bus_release_resource(dev, sc->dbi_res);
 	if (sc->apb_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->apb_rid,
-		    sc->apb_res);
+		bus_release_resource(dev, sc->apb_res);
 	return (0);
 }
 
@@ -293,35 +287,35 @@ static int
 rk3568_pcie_attach(device_t dev)
 {
 	struct rk3568_pcie_softc *sc = device_get_softc(dev);
-	int error;
+	int error, rid;
 
 	sc->dev = dev;
 	sc->node = ofw_bus_get_node(dev);
 
 	/* Setup resources */
 	if ((error = ofw_bus_find_string_index(sc->node, "reg-names", "apb",
-	    &sc->apb_rid))) {
+	    &rid))) {
 		device_printf(dev, "Cannot get APB memory: %d\n", error);
 		goto fail;
 	}
-	if (!(sc->apb_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->apb_rid, RF_ACTIVE))) {
+	if (!(sc->apb_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, rid,
+	    RF_ACTIVE))) {
 		device_printf(dev, "Cannot allocate APB resource\n");
 		goto fail;
 	}
 	if ((error = ofw_bus_find_string_index(sc->node, "reg-names", "dbi",
-	    &sc->dbi_rid))) {
+	    &rid))) {
 		device_printf(dev, "Cannot get DBI memory: %d\n", error);
 		goto fail;
 	}
 	if (!(sc->dw_sc.dbi_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->dbi_rid, RF_ACTIVE))) {
+	    rid, RF_ACTIVE))) {
 		device_printf(dev, "Cannot allocate DBI resource\n");
 		goto fail;
 	}
 
-	if (!(sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->irq_rid, RF_ACTIVE | RF_SHAREABLE))) {
+	if (!(sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE | RF_SHAREABLE))) {
 		device_printf(dev, "Cannot allocate IRQ resource\n");
 		goto fail;
 	}

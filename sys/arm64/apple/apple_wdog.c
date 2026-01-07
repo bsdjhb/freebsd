@@ -106,13 +106,12 @@ static int
 apple_wdog_attach(device_t dev)
 {
 	struct apple_wdog_softc *sc;
-	int error, rid;
+	int error;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
 		return (ENXIO);
@@ -151,7 +150,7 @@ apple_wdog_attach(device_t dev)
 fail_clk:
 	clk_disable(sc->clk);
 fail:
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->res);
+	bus_release_resource(dev, sc->res);
 	return (error);
 }
 

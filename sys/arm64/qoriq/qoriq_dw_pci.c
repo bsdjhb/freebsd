@@ -188,7 +188,6 @@ qorif_dw_pci_attach(device_t dev)
 	struct qorif_dw_pci_softc *sc;
 	phandle_t node;
 	int rv;
-	int rid;
 
 	sc = device_get_softc(dev);
 	node = ofw_bus_get_node(dev);
@@ -197,8 +196,7 @@ qorif_dw_pci_attach(device_t dev)
 	sc->soc_cfg = (struct qoriq_dw_pci_cfg *)
 	    ofw_bus_search_compatible(dev, compat_data)->ocd_data;
 
-	rid = 0;
-	sc->dw_sc.dbi_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->dw_sc.dbi_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE | RF_UNMAPPED);
 	if (sc->dw_sc.dbi_res == NULL) {
 		device_printf(dev, "Cannot allocate DBI memory\n");
@@ -217,8 +215,7 @@ qorif_dw_pci_attach(device_t dev)
 	rman_set_mapping(sc->dw_sc.dbi_res, &map);
 
 	/* PCI interrupt */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Cannot allocate IRQ resources\n");

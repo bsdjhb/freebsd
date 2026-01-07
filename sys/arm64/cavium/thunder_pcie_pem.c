@@ -777,7 +777,7 @@ thunder_pem_attach(device_t dev)
 		rid = RID_PEM_SPACE;
 
 	sc->reg = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE | RF_UNMAPPED);
+	    rid, RF_ACTIVE | RF_UNMAPPED);
 	if (sc->reg == NULL) {
 		device_printf(dev, "Failed to allocate resource\n");
 		return (ENXIO);
