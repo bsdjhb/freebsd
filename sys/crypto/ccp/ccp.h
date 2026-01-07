@@ -154,11 +154,9 @@ struct ccp_softc {
 	/* Primary BAR (RID 2) used for register access */
 	bus_space_tag_t pci_bus_tag;
 	bus_space_handle_t pci_bus_handle;
-	int pci_resource_id;
 	struct resource *pci_resource;
 
 	/* Secondary BAR (RID 5) apparently used for MSI-X */
-	int pci_resource_id_msix;
 	struct resource *pci_resource_msix;
 
 	/* Interrupt resources */

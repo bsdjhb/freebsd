@@ -341,21 +341,18 @@ ccp_map_pci_bar(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	sc->pci_resource_id = PCIR_BAR(2);
 	sc->pci_resource = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->pci_resource_id, RF_ACTIVE);
+	    PCIR_BAR(2), RF_ACTIVE);
 	if (sc->pci_resource == NULL) {
 		device_printf(dev, "unable to allocate pci resource\n");
 		return (ENODEV);
 	}
 
-	sc->pci_resource_id_msix = PCIR_BAR(5);
 	sc->pci_resource_msix = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->pci_resource_id_msix, RF_ACTIVE);
+	    PCIR_BAR(5), RF_ACTIVE);
 	if (sc->pci_resource_msix == NULL) {
 		device_printf(dev, "unable to allocate pci resource msix\n");
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->pci_resource_id,
-		    sc->pci_resource);
+		bus_release_resource(dev, sc->pci_resource);
 		return (ENODEV);
 	}
 
@@ -371,10 +368,8 @@ ccp_unmap_pci_bar(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->pci_resource_id_msix,
-	    sc->pci_resource_msix);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->pci_resource_id,
-	    sc->pci_resource);
+	bus_release_resource(dev, sc->pci_resource_msix);
+	bus_release_resource(dev, sc->pci_resource);
 }
 
 const static struct ccp_error_code {
@@ -668,7 +663,7 @@ static int
 ccp_setup_interrupts(struct ccp_softc *sc)
 {
 	uint32_t nvec;
-	int rid, error, n, ridcopy;
+	int rid, error, n;
 
 	n = pci_msix_count(sc->dev);
 	if (n < 1) {
@@ -695,9 +690,8 @@ ccp_setup_interrupts(struct ccp_softc *sc)
 	}
 
 	for (rid = 1; rid < 1 + nvec; rid++) {
-		ridcopy = rid;
 		sc->intr_res[rid - 1] = bus_alloc_resource_any(sc->dev,
-		    SYS_RES_IRQ, &ridcopy, RF_ACTIVE);
+		    SYS_RES_IRQ, rid, RF_ACTIVE);
 		if (sc->intr_res[rid - 1] == NULL) {
 			device_printf(sc->dev, "%s: Failed to alloc IRQ resource\n",
 			    __func__);
@@ -727,8 +721,7 @@ ccp_release_interrupts(struct ccp_softc *sc)
 			bus_teardown_intr(sc->dev, sc->intr_res[i],
 			    sc->intr_tag[i]);
 		if (sc->intr_res[i] != NULL)
-			bus_release_resource(sc->dev, SYS_RES_IRQ,
-			    rman_get_rid(sc->intr_res[i]), sc->intr_res[i]);
+			bus_release_resource(sc->dev, sc->intr_res[i]);
 	}
 
 	pci_release_msi(sc->dev);
