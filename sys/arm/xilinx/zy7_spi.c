@@ -376,7 +376,7 @@ static int
 zy7_spi_attach(device_t dev)
 {
 	struct zy7_spi_softc *sc;
-	int rid, err;
+	int err;
 	phandle_t node;
 	pcell_t cell;
 
@@ -399,8 +399,7 @@ zy7_spi_attach(device_t dev)
 		sc->spi_clock = ZY7_SPI_DEFAULT_SPI_CLOCK;
 
 	/* Get memory resource. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resources.\n");
@@ -409,8 +408,7 @@ zy7_spi_attach(device_t dev)
 	}
 
 	/* Allocate IRQ. */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "could not allocate IRQ resource.\n");
@@ -468,14 +466,12 @@ zy7_spi_detach(device_t dev)
 	if (sc->irq_res != NULL) {
 		if (sc->intrhandle)
 			bus_teardown_intr(dev, sc->irq_res, sc->intrhandle);
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->irq_res), sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	}
 
 	/* Release memory resource. */
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	SPI_SC_LOCK_DESTROY(sc);
 

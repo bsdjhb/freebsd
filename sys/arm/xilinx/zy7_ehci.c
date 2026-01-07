@@ -215,7 +215,7 @@ zy7_ehci_attach(device_t dev)
 {
 	ehci_softc_t *sc = device_get_softc(dev);
 	bus_space_handle_t bsh;
-	int err, rid;
+	int err;
 
 	/* initialize some bus fields */
 	sc->sc_bus.parent = dev;
@@ -229,9 +229,8 @@ zy7_ehci_attach(device_t dev)
 		return (ENOMEM);
 
 	/* Allocate memory. */
-	rid = 0;
-	sc->sc_io_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-					       &rid, RF_ACTIVE);
+	sc->sc_io_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+					       RF_ACTIVE);
 	if (sc->sc_io_res == NULL) {
 		device_printf(dev, "Can't allocate memory");
 		zy7_ehci_detach(dev);
@@ -248,8 +247,7 @@ zy7_ehci_attach(device_t dev)
 		      device_get_name(dev));
 
 	/* Allocate IRQ. */
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 						RF_ACTIVE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "Can't allocate IRQ\n");
@@ -331,13 +329,11 @@ zy7_ehci_detach(device_t dev)
 		if (sc->sc_intr_hdl != NULL)
 			bus_teardown_intr(dev, sc->sc_irq_res,
 					  sc->sc_intr_hdl);
-		bus_release_resource(dev, SYS_RES_IRQ,
-			     rman_get_rid(sc->sc_irq_res), sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	}
 
 	if (sc->sc_io_res)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			     rman_get_rid(sc->sc_io_res), sc->sc_io_res);
+		bus_release_resource(dev, sc->sc_io_res);
 	usb_bus_mem_free_all(&sc->sc_bus, &ehci_iterate_hw_softc);
 
 	return (0);

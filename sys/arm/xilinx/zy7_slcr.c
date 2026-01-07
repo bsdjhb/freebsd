@@ -558,7 +558,6 @@ static int
 zy7_slcr_attach(device_t dev)
 {
 	struct zy7_slcr_softc *sc = device_get_softc(dev);
-	int rid;
 	phandle_t node;
 	pcell_t cell;
 	uint32_t bootmode;
@@ -580,8 +579,7 @@ zy7_slcr_attach(device_t dev)
 	ZSLCR_LOCK_INIT(sc);
 
 	/* Get memory resource. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 					     RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resources.\n");
@@ -681,8 +679,7 @@ zy7_slcr_detach(device_t dev)
 
 	/* Release memory resource. */
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			     rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	zy7_slcr_softc_p = NULL;
 	zynq7_cpu_reset = NULL;

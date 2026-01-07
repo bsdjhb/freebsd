@@ -710,7 +710,7 @@ zy7_devcfg_attach(device_t dev)
 {
 	struct zy7_devcfg_softc *sc = device_get_softc(dev);
 	int i;
-	int rid, err;
+	int err;
 
 	/* Allow only one attach. */
 	if (zy7_devcfg_softc_p != NULL)
@@ -721,8 +721,7 @@ zy7_devcfg_attach(device_t dev)
 	DEVCFG_SC_LOCK_INIT(sc);
 
 	/* Get memory resource. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 					     RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resources.\n");
@@ -731,8 +730,7 @@ zy7_devcfg_attach(device_t dev)
 	}
 
 	/* Allocate IRQ. */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 					     RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "cannot allocate IRQ\n");
@@ -810,14 +808,12 @@ zy7_devcfg_detach(device_t dev)
 	if (sc->irq_res != NULL) {
 		if (sc->intrhandle)
 			bus_teardown_intr(dev, sc->irq_res, sc->intrhandle);
-		bus_release_resource(dev, SYS_RES_IRQ,
-			     rman_get_rid(sc->irq_res), sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	}
 
 	/* Release memory resource. */
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			     rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	zy7_devcfg_softc_p = NULL;
 

@@ -424,7 +424,6 @@ static int
 zy7_gpio_attach(device_t dev)
 {
 	struct zy7_gpio_softc *sc = device_get_softc(dev);
-	int rid;
 
 	sc->dev = dev;
 	sc->conf = (struct zynq_gpio_conf *)ofw_bus_search_compatible(dev, compat_data)->ocd_data;
@@ -432,9 +431,8 @@ zy7_gpio_attach(device_t dev)
 	ZGPIO_LOCK_INIT(sc);
 
 	/* Allocate memory. */
-	rid = 0;
 	sc->mem_res = bus_alloc_resource_any(dev,
-		     SYS_RES_MEMORY, &rid, RF_ACTIVE);
+		     SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "Can't allocate memory for device");
 		zy7_gpio_detach(dev);
@@ -460,8 +458,7 @@ zy7_gpio_detach(device_t dev)
 
 	if (sc->mem_res != NULL) {
 		/* Release memory resource. */
-		bus_release_resource(dev, SYS_RES_MEMORY,
-				     rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	}
 
 	ZGPIO_LOCK_DESTROY(sc);
