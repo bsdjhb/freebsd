@@ -624,18 +624,16 @@ ti_gpio_attach(device_t dev)
 	ti_gpio_pin_max(dev, &sc->sc_maxpin);
 	sc->sc_maxpin++;
 
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "Error: could not allocate mem resources\n");
 		ti_gpio_detach(dev);
 		return (ENXIO);
 	}
 
-	sc->sc_irq_rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
 		device_printf(dev, "Error: could not allocate irq resources\n");
 		ti_gpio_detach(dev);
@@ -717,11 +715,9 @@ ti_gpio_detach(device_t dev)
 		    sc->sc_irq_hdl);
 	}
 	if (sc->sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid,
-		    sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-		    sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	TI_GPIO_LOCK_DESTROY(sc);
 
 	return (0);

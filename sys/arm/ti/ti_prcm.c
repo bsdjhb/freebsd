@@ -136,7 +136,6 @@ ti_prcm_attach(device_t dev)
 {
 	struct ti_prcm_softc *sc;
 	phandle_t node, child;
-	int rid;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -153,7 +152,7 @@ ti_prcm_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	sc->mem_res = bus_alloc_resource(sc->dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource(sc->dev, SYS_RES_MEMORY, 0,
 		sc->sc_simplebus.ranges[0].host,
 		(sc->sc_simplebus.ranges[0].host +
 			sc->sc_simplebus.ranges[0].size - 1),

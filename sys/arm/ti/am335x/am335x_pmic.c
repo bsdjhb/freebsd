@@ -281,12 +281,10 @@ static int
 am335x_pmic_attach(device_t dev)
 {
 	struct am335x_pmic_softc *sc;
-	int rid;
 
 	sc = device_get_softc(dev);
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
 		device_printf(dev, "cannot allocate interrupt\n");

@@ -957,7 +957,6 @@ am335x_lcd_attach(device_t dev)
 	struct am335x_lcd_softc *sc;
 
 	int err;
-	int rid;
 	struct sysctl_ctx_list *ctx;
 	struct sysctl_oid *tree;
 	phandle_t root, panel_node;
@@ -1008,19 +1007,17 @@ am335x_lcd_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
 		return (ENXIO);
 	}
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot allocate interrupt\n");
 		return (ENXIO);
 	}
@@ -1028,10 +1025,8 @@ am335x_lcd_attach(device_t dev)
 	if (bus_setup_intr(dev, sc->sc_irq_res, INTR_TYPE_MISC | INTR_MPSAFE,
 			NULL, am335x_lcd_intr, sc,
 			&sc->sc_intr_hl) != 0) {
-		bus_release_resource(dev, SYS_RES_IRQ, rid,
-		    sc->sc_irq_res);
-		bus_release_resource(dev, SYS_RES_MEMORY, rid,
-		    sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "Unable to setup the irq handler.\n");
 		return (ENXIO);
 	}

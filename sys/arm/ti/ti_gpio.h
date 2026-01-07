@@ -56,9 +56,7 @@ struct ti_gpio_softc {
 	int			sc_maxpin;
 	struct mtx		sc_mtx;
 
-	int			sc_mem_rid;
 	struct resource		*sc_mem_res;
-	int			sc_irq_rid;
 	struct resource		*sc_irq_res;
 	struct ti_gpio_irqsrc	*sc_isrcs;
 	/* The handle for the register IRQ handlers. */

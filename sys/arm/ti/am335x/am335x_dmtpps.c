@@ -72,7 +72,6 @@
 
 struct dmtpps_softc {
 	device_t		dev;
-	int			mem_rid;
 	struct resource *	mem_res;
 	int			tmr_num;	/* N from hwmod str "timerN" */
 	char			tmr_name[12];	/* "DMTimerN" */
@@ -512,8 +511,8 @@ dmtpps_attach(device_t dev)
 		return (ENXIO);
 	}
 	/* Request the memory resources. */
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->mem_rid, RF_ACTIVE);
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		return (ENXIO);
 	}

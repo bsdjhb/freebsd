@@ -831,9 +831,8 @@ cpsw_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	sc->mem_rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 
-	    &sc->mem_rid, RF_ACTIVE);
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(sc->dev, "failed to allocate memory resource\n");
 		cpsw_detach(dev);
@@ -953,7 +952,7 @@ cpsw_detach(device_t dev)
 
 	/* Free IO memory handler */
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->mem_rid, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	bus_release_resources(dev, irq_res_spec, sc->irq_res);
 
 	/* Destroy mutexes */

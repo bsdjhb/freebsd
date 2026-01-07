@@ -155,11 +155,9 @@ static int
 ti_wdt_attach(device_t dev)
 {
 	struct ti_wdt_softc *sc;
-	int rid;
 
 	sc = device_get_softc(dev);
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
@@ -167,7 +165,7 @@ ti_wdt_attach(device_t dev)
 	}
 	sc->sc_bt = rman_get_bustag(sc->sc_mem_res);
 	sc->sc_bh = rman_get_bushandle(sc->sc_mem_res);
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "could not allocate interrupt resource\n");
 		ti_wdt_detach(dev);
@@ -207,11 +205,9 @@ ti_wdt_detach(device_t dev)
 	if (sc->sc_intr)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intr);
 	if (sc->sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->sc_irq_res), sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->sc_mem_res),  sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }

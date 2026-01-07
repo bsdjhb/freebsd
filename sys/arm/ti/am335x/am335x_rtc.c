@@ -85,7 +85,6 @@ am335x_rtc_probe(device_t dev)
 static int
 am335x_rtc_attach(device_t dev)
 {
-	int rid;
 	struct am335x_rtc_softc *sc;
 	uint32_t rev;
 
@@ -93,15 +92,14 @@ am335x_rtc_attach(device_t dev)
 		return (ENXIO);
 	rtc_sc = sc = device_get_softc(dev);
 	sc->sc_dev = dev;
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory resources\n");
 		return (ENXIO);
 	}
 	if (bus_alloc_resources(dev, am335x_rtc_irq_spec, sc->sc_irq_res) != 0) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot allocate irq resources\n");
 		return (ENXIO);
 	}
@@ -138,7 +136,7 @@ am335x_rtc_detach(device_t dev)
 	if (sc->sc_irq_res[0] != NULL)
 		bus_release_resources(dev, am335x_rtc_irq_spec, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	RTC_LOCK_DESTROY(sc);
 
 	return (0);

@@ -98,7 +98,6 @@ struct cpsw_softc {
 	struct cpsw_queue rx, tx;
 
 	/* We expect 1 memory resource and 4 interrupts from the device tree. */
-	int		mem_rid;
 	struct resource	*mem_res;
 	struct resource	*irq_res[CPSW_INTR_COUNT];
 	void		*ih_cookie[CPSW_INTR_COUNT];

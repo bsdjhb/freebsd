@@ -75,7 +75,6 @@ struct am335x_ecap_softc {
 	device_t		sc_dev;
 	struct mtx		sc_mtx;
 	struct resource		*sc_mem_res;
-	int			sc_mem_rid;
 };
 
 static struct ofw_compat_data compat_data[] = {
@@ -164,8 +163,8 @@ am335x_ecap_attach(device_t dev)
 
 	PWM_LOCK_INIT(sc);
 
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "cannot allocate memory resources\n");
 		goto fail;
@@ -187,8 +186,7 @@ am335x_ecap_detach(device_t dev)
 
 	PWM_LOCK(sc);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	PWM_UNLOCK(sc);
 
 	PWM_LOCK_DESTROY(sc);

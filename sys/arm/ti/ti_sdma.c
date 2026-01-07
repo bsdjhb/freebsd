@@ -1150,7 +1150,6 @@ ti_sdma_attach(device_t dev)
 	struct ti_sdma_softc *sc = device_get_softc(dev);
 	unsigned int timeout;
 	unsigned int i;
-	int      rid;
 	void    *ihl;
 	int      err;
 
@@ -1164,8 +1163,7 @@ ti_sdma_attach(device_t dev)
 	TI_SDMA_LOCK_INIT(sc);
 
 	/* Get the memory resource for the register mapping */
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->sc_mem_res == NULL)
 		panic("%s: Cannot map registers", device_get_name(dev));
 
@@ -1211,8 +1209,7 @@ ti_sdma_attach(device_t dev)
 	 * Install interrupt handlers for the for possible interrupts. Any channel
 	 * can trip one of the four IRQs
 	 */
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sc_irq_res == NULL)
 		panic("Unable to setup the dma irq handler.\n");

@@ -700,13 +700,13 @@ ti_i2c_deactivate(device_t dev)
 
 	/* Unmap the I2C controller registers. */
 	if (sc->sc_mem_res != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		sc->sc_mem_res = NULL;
 	}
 
 	/* Release the IRQ resource. */
 	if (sc->sc_irq_res != NULL) {
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 		sc->sc_irq_res = NULL;
 	}
 
@@ -780,7 +780,7 @@ ti_i2c_probe(device_t dev)
 static int
 ti_i2c_attach(device_t dev)
 {
-	int err, rid;
+	int err;
 	struct ti_i2c_softc *sc;
 	struct sysctl_ctx_list *ctx;
 	struct sysctl_oid_list *tree;
@@ -790,8 +790,7 @@ ti_i2c_attach(device_t dev)
 	sc->sc_dev = dev;
 
 	/* Get the memory resource for the register mapping. */
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "Cannot map registers.\n");
@@ -799,11 +798,10 @@ ti_i2c_attach(device_t dev)
 	}
 
 	/* Allocate our IRQ resource. */
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sc_irq_res == NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "Cannot allocate interrupt.\n");
 		return (ENXIO);
 	}

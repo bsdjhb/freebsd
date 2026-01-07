@@ -51,9 +51,7 @@
 
 struct am335x_dmtimer_softc {
 	device_t		dev;
-	int			tmr_mem_rid;
 	struct resource *	tmr_mem_res;
-	int			tmr_irq_rid;
 	struct resource *	tmr_irq_res;
 	void			*tmr_irq_handler;
 	clk_t			clk_fck;
@@ -179,8 +177,8 @@ am335x_dmtimer_et_init(struct am335x_dmtimer_softc *sc)
 	 * Setup eventtimer interrupt handling.  Panic if anything goes wrong,
 	 * because the system just isn't going to run without an eventtimer.
 	 */
-	sc->tmr_irq_res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ,
-	    &sc->tmr_irq_rid, RF_ACTIVE);
+	sc->tmr_irq_res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 	if (sc->tmr_irq_res == NULL)
 		panic("am335x_dmtimer: could not allocate irq resources");
 	if (bus_setup_intr(sc->dev, sc->tmr_irq_res, INTR_TYPE_CLK,
@@ -326,8 +324,8 @@ am335x_dmtimer_attach(device_t dev)
 	}
 
 	/* Request the memory resources. */
-	sc->tmr_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->tmr_mem_rid, RF_ACTIVE);
+	sc->tmr_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->tmr_mem_res == NULL) {
 		return (ENXIO);
 	}

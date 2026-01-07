@@ -512,13 +512,12 @@ static int
 ti_pruss_attach(device_t dev)
 {
 	struct ti_pruss_softc *sc;
-	int rid, i, err, ncells;
+	int i, err, ncells;
 	phandle_t node;
 	clk_t l3_gclk, pruss_ocp_gclk;
 	phandle_t ti_prm_ref, *cells;
         device_t ti_prm_dev;
 
-	rid = 0;
 	sc = device_get_softc(dev);
 	node = ofw_bus_get_node(device_get_parent(dev));
 	if (node <= 0) {
@@ -595,7 +594,7 @@ ti_pruss_attach(device_t dev)
 	/* End of clock activation */
 
 	mtx_init(&sc->sc_mtx, "TI PRUSS", NULL, MTX_DEF);
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resource\n");
@@ -704,9 +703,7 @@ ti_pruss_detach(device_t dev)
 		if (sc->sc_intr[i])
 			bus_teardown_intr(dev, sc->sc_irq_res[i], sc->sc_intr[i]);
 		if (sc->sc_irq_res[i])
-			bus_release_resource(dev, SYS_RES_IRQ,
-			    rman_get_rid(sc->sc_irq_res[i]),
-			    sc->sc_irq_res[i]);
+			bus_release_resource(dev, sc->sc_irq_res[i]);
 		knlist_clear(&sc->sc_irq_devs[i].sc_selinfo.si_note, 0);
 		mtx_lock(&sc->sc_irq_devs[i].sc_mtx);
 		if (!knlist_empty(&sc->sc_irq_devs[i].sc_selinfo.si_note))
@@ -718,8 +715,7 @@ ti_pruss_detach(device_t dev)
 
 	mtx_destroy(&sc->sc_mtx);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, rman_get_rid(sc->sc_mem_res),
-		    sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	if (sc->sc_pdev)
 		destroy_dev(sc->sc_pdev);
 

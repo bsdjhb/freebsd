@@ -129,7 +129,6 @@ static device_detach_t musbotg_detach;
 struct musbotg_super_softc {
 	struct musbotg_softc	sc_otg;
 	struct resource		*sc_mem_res[2];
-	int			sc_irq_rid;
 	struct syscon		*syscon;
 };
 
@@ -291,8 +290,8 @@ musbotg_attach(device_t dev)
 	}
 
 	/* Request the IRQ resources */
-	sc->sc_otg.sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_otg.sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 	if (sc->sc_otg.sc_irq_res == NULL) {
 		device_printf(dev,
 		    "Error: could not allocate irq resources\n");
@@ -430,8 +429,7 @@ musbotg_detach(device_t dev)
 		    sc->sc_mem_res);
 
 	if (sc->sc_otg.sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid,
-		    sc->sc_otg.sc_irq_res);
+		bus_release_resource(dev, sc->sc_otg.sc_irq_res);
 
 	return (0);
 }

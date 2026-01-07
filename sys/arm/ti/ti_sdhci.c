@@ -511,7 +511,7 @@ static int
 ti_sdhci_attach(device_t dev)
 {
 	struct ti_sdhci_softc *sc = device_get_softc(dev);
-	int rid, err;
+	int err;
 	pcell_t prop;
 	phandle_t node;
 
@@ -556,8 +556,7 @@ ti_sdhci_attach(device_t dev)
 	sc->sdhci_reg_off = sc->mmchs_reg_off + SDHCI_REG_OFFSET;
 
 	/* Resource setup. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -565,8 +564,7 @@ ti_sdhci_attach(device_t dev)
 		goto fail;
 	}
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->irq_res) {
 		device_printf(dev, "cannot allocate interrupt\n");
@@ -689,9 +687,9 @@ fail:
 	if (sc->intr_cookie)
 		bus_teardown_intr(dev, sc->irq_res, sc->intr_cookie);
 	if (sc->irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	if (sc->mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	return (err);
 }

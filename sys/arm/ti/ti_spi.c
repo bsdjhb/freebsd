@@ -163,7 +163,7 @@ ti_spi_probe(device_t dev)
 static int
 ti_spi_attach(device_t dev)
 {
-	int err, i, rid, timeout;
+	int err, i, timeout;
 	struct ti_spi_softc *sc;
 	uint32_t rev;
 
@@ -183,8 +183,7 @@ ti_spi_attach(device_t dev)
 		sc->sc_numcs = 2;
 	}
 
-	rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_mem_res) {
 		device_printf(dev, "cannot allocate memory window\n");
@@ -194,11 +193,10 @@ ti_spi_attach(device_t dev)
 	sc->sc_bst = rman_get_bustag(sc->sc_mem_res);
 	sc->sc_bsh = rman_get_bushandle(sc->sc_mem_res);
 
-	rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (!sc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot allocate interrupt\n");
 		return (ENXIO);
 	}
@@ -206,8 +204,8 @@ ti_spi_attach(device_t dev)
 	/* Hook up our interrupt handler. */
 	if (bus_setup_intr(dev, sc->sc_irq_res, INTR_TYPE_MISC | INTR_MPSAFE,
 	    NULL, ti_spi_intr, sc, &sc->sc_intrhand)) {
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "cannot setup the interrupt handler\n");
 		return (ENXIO);
 	}
@@ -292,9 +290,9 @@ ti_spi_detach(device_t dev)
 	if (sc->sc_intrhand)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intrhand);
 	if (sc->sc_irq_res)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }
