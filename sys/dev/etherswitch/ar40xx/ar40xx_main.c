@@ -333,8 +333,7 @@ ar40xx_attach(device_t dev)
 		    __func__);
 		goto error;
 	}
-	sc->sc_ess_mem_size = (size_t) bus_get_resource_count(dev,
-	    SYS_RES_MEMORY, sc->sc_ess_mem_rid);
+	sc->sc_ess_mem_size = (size_t) rman_get_size(sc->sc_ess_mem_res);
 	if (sc->sc_ess_mem_size == 0) {
 		device_printf(dev, "%s: failed to get device memory size\n",
 		    __func__);
