@@ -507,8 +507,8 @@ s3pci_attach(device_t dev)
 	/* The memory base address will be our LFB base address
 	 */
 	/* sc->mem_base = (u_long)rman_get_virtual(sc->mem_res); */
-	sc->mem_base = bus_get_resource_start(dev, SYS_RES_MEMORY, rid);
-	sc->mem_size = bus_get_resource_count(dev, SYS_RES_MEMORY, rid);
+	sc->mem_base = rman_get_start(sc->mem_res);
+	sc->mem_size = rman_get_size(sc->mem_res);
 
 	/* Attach the driver to the VGA/VESA framework
 	 */
