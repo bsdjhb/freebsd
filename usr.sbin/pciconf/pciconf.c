@@ -51,6 +51,13 @@
 #include "pathnames.h"
 #include "pciconf.h"
 
+#define	OLD
+
+#ifdef OLD
+#define	pc_secbus	pc_spare[0]
+#define	pc_subbus	pc_spare[1]
+#endif
+
 struct pci_device_info
 {
     TAILQ_ENTRY(pci_device_info)	link;
@@ -281,6 +288,26 @@ fetch_devs(int fd, const char *name, struct pci_conf **confp, size_t *countp)
 
 	*confp = p;
 	*countp = count;
+#ifdef OLD
+	for (p = *confp; p < *confp + count; p++) {
+		switch (p->pc_hdr) {
+		case PCIM_HDRTYPE_BRIDGE:
+			p->pc_secbus = read_config(fd, &p->pc_sel,
+			    PCIR_SECBUS_1, 1);
+			p->pc_subbus = read_config(fd, &p->pc_sel,
+			    PCIR_SUBBUS_1, 1);
+			break;
+		case PCIM_HDRTYPE_CARDBUS:
+			p->pc_secbus = read_config(fd, &p->pc_sel,
+			    PCIR_SECBUS_2, 1);
+			p->pc_subbus = read_config(fd, &p->pc_sel,
+			    PCIR_SUBBUS_2, 1);
+			break;
+		}
+		p->pc_reported_len = offsetof(struct pci_conf, pc_subbus) +
+		    sizeof(p->pc_subbus);
+	}
+#endif
 	return (true);
 }
 
@@ -296,8 +323,12 @@ list_devs(const char *name, int verbose, int bars, int bridge, int caps,
 	if (verbose)
 		load_vendors();
 
+#ifdef OLD
+	fd = open(_PATH_DEVPCI, O_RDWR);
+#else
 	fd = open(_PATH_DEVPCI, (bridge || caps || errors) ? O_RDWR : O_RDONLY,
 	    0);
+#endif
 	if (fd < 0)
 		err(1, "%s", _PATH_DEVPCI);
 
@@ -533,7 +564,11 @@ show_tree(int verbose)
 	if (verbose)
 		load_vendors();
 
+#ifdef OLD
+	fd = open(_PATH_DEVPCI, O_RDWR);
+#else
 	fd = open(_PATH_DEVPCI, O_RDONLY);
+#endif
 	if (fd < 0)
 		err(1, "%s", _PATH_DEVPCI);
 
