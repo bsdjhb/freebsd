@@ -39,11 +39,9 @@ bool unwind_frame(struct thread *, struct unwind_state *);
 
 #ifdef _SYS_PROC_H_
 
-#include <machine/pcb.h>
-
 #define	GET_STACK_USAGE(total, used) do {				\
 	struct thread *td = curthread;					\
-	(total) = td->td_kstack_pages * PAGE_SIZE - sizeof(struct pcb);	\
+	(total) = td->td_kstack_pages * PAGE_SIZE;			\
 	(used) = td->td_kstack + (total) - (char *)&td;			\
 } while (0)
 
@@ -52,7 +50,7 @@ kstack_contains(struct thread *td, vm_offset_t va, size_t len)
 {
 	return (va >= (vm_offset_t)td->td_kstack && va + len >= va &&
 	    va + len <= (vm_offset_t)td->td_kstack + td->td_kstack_pages *
-	    PAGE_SIZE - sizeof(struct pcb));
+	    PAGE_SIZE);
 }
 #endif	/* _SYS_PROC_H_ */
 

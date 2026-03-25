@@ -29,6 +29,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/limits.h>
 #include <sys/proc.h>
 #include <sys/sf_buf.h>
@@ -60,6 +61,8 @@
  * Therefore, it is safe to default the cpu_reset_hook to psci_reset.
  */
 cpu_reset_hook_t cpu_reset_hook = psci_reset;
+
+static uma_zone_t pcb_zone;
 
 /*
  * Finish a fork operation, with process p2 nearly set up.
@@ -256,21 +259,21 @@ cpu_thread_exit(struct thread *td)
 void
 cpu_thread_alloc(struct thread *td)
 {
+	td->td_pcb = uma_zalloc(pcb_zone, M_WAITOK);
 	ptrauth_thread_alloc(td);
 }
 
 void
 cpu_thread_new_kstack(struct thread *td)
 {
-	td->td_pcb = (struct pcb *)(td->td_kstack +
+	td->td_frame = (struct trapframe *)(td->td_kstack +
 	    td->td_kstack_pages * PAGE_SIZE) - 1;
-	td->td_frame = (struct trapframe *)STACKALIGN(
-	    (struct trapframe *)td->td_pcb - 1);
 }
 
 void
 cpu_thread_free(struct thread *td)
 {
+	uma_zfree(pcb_zone, td->td_pcb);
 }
 
 void
@@ -330,3 +333,11 @@ cpu_sync_core(void)
 	 * return from ELx is a context synchronization event.
 	 */
 }
+
+static void
+pcbinit(void *dummy __unused)
+{
+	pcb_zone = uma_zcreate("pcb", sizeof(struct pcb), NULL, NULL, NULL,
+	    NULL, UMA_ALIGNOF(struct pcb), 0);
+}
+SYSINIT(pcbinit, SI_SUB_INTRINSIC, SI_ORDER_ANY, pcbinit, NULL);
