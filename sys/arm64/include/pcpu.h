@@ -55,7 +55,6 @@ struct debug_monitor_state;
 
 #ifdef _KERNEL
 
-struct pcb;
 struct pcpu;
 
 register struct pcpu *pcpup __asm ("x18");
