@@ -356,6 +356,7 @@ void
 cpu_thread_clean(struct thread *td)
 {
 	struct pcb *pcb;
+	struct xstate_hdr *xhdr;
 
 	pcb = td->td_pcb; 
 	if (pcb->pcb_ext != NULL) {
@@ -366,6 +367,13 @@ cpu_thread_clean(struct thread *td)
 		 */
 		pmap_trm_free(pcb->pcb_ext, ctob(IOPAGES + 1));
 		pcb->pcb_ext = NULL;
+	}
+
+	/* Reset FP save state. */
+	if (use_xsave) {
+		xhdr = (struct xstate_hdr *)(pcb->pcb_save + 1);
+		bzero(xhdr, sizeof(*xhdr));
+		xhdr->xstate_bv = xsave_mask;
 	}
 }
 

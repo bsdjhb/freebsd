@@ -357,6 +357,7 @@ void
 cpu_thread_clean(struct thread *td)
 {
 	struct pcb *pcb;
+	struct xstate_hdr *xhdr;
 
 	pcb = td->td_pcb;
 
@@ -368,6 +369,14 @@ cpu_thread_clean(struct thread *td)
 		    (vm_offset_t)pcb->pcb_tssp + ctob(IOPAGES + 1));
 		kmem_free(pcb->pcb_tssp, ctob(IOPAGES + 1));
 		pcb->pcb_tssp = NULL;
+	}
+
+	/* Reset FP save state */
+	MPASS(pcb->pcb_save == get_pcb_user_save_pcb(pcb));
+	if (use_xsave) {
+		xhdr = (struct xstate_hdr *)(pcb->pcb_save + 1);
+		bzero(xhdr, sizeof(*xhdr));
+		xhdr->xstate_bv = xsave_mask;
 	}
 }
 
