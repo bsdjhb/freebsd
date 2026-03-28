@@ -34,6 +34,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/limits.h>
 #include <sys/proc.h>
 #include <sys/sf_buf.h>
@@ -58,24 +59,25 @@
 #define	TP_OFFSET	16	/* sizeof(struct tcb) */
 #endif
 
+static uma_zone_t pcb_zone;
+
 void
 cpu_thread_new_kstack(struct thread *td)
 {
-	td->td_pcb = (struct pcb *)(td->td_kstack +
-	    td->td_kstack_pages * PAGE_SIZE) - 1;
+	char *kstack_end = td->td_kstack + td->td_kstack_pages * PAGE_SIZE;
 
 	/*
 	 * td->td_frame + TF_SIZE will be the saved kernel stack pointer whilst
 	 * in userspace, so keep it aligned so it's also aligned when we
 	 * subtract TF_SIZE in the trap handler (and here for the initial stack
 	 * pointer). This also keeps the struct kernframe just afterwards
-	 * aligned no matter what's in it or struct pcb.
+	 * aligned no matter what's in it.
 	 *
 	 * NB: TF_SIZE not sizeof(struct trapframe) as we need the rounded
 	 * value to match the trap handler.
 	 */
 	td->td_frame = (struct trapframe *)(STACKALIGN(
-	    (char *)td->td_pcb - sizeof(struct kernframe)) - TF_SIZE);
+	    kstack_end - sizeof(struct kernframe)) - TF_SIZE);
 }
 
 /*
@@ -228,11 +230,13 @@ cpu_thread_exit(struct thread *td)
 void
 cpu_thread_alloc(struct thread *td)
 {
+	td->td_pcb = uma_zalloc(pcb_zone, M_WAITOK);
 }
 
 void
 cpu_thread_free(struct thread *td)
 {
+	uma_zfree(pcb_zone, td->td_pcb);
 }
 
 void
@@ -286,3 +290,11 @@ cpu_sync_core(void)
 {
 	fence_i();
 }
+
+static void
+pcbinit(void *dummy __unused)
+{
+	pcb_zone = uma_zcreate("pcb", sizeof(struct pcb), NULL, NULL, NULL,
+	    NULL, UMA_ALIGNOF(struct pcb), 0);
+}
+SYSINIT(pcbinit, SI_SUB_INTRINSIC, SI_ORDER_ANY, pcbinit, NULL);
