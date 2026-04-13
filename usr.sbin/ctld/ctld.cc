@@ -1160,7 +1160,6 @@ conf::add_port(struct target *target, struct pport *pp)
 		return (false);
 	}
 
-	pp->link();
 	return (true);
 }
 
@@ -2601,6 +2600,7 @@ conf_new_from_file(const char *path, bool ucl)
 bool
 conf::add_pports(struct kports &kports)
 {
+	std::unordered_map<struct pport *, struct target *> linked_ports;
 	struct pport *pp;
 	int ret, i_pp, i_vp;
 
@@ -2614,11 +2614,13 @@ conf::add_pports(struct kports &kports)
 			 */
 			pp = kports.find_port(pport);
 			if (pp != nullptr) {
-				if (pp->linked()) {
+				const auto &pair = linked_ports.try_emplace(pp,
+				    targ);
+				if (!pair.second) {
 					log_warnx("can't link port \"%s\" to "
-					    "%s, port already linked to some "
-					    "target", pport.c_str(),
-					    targ->label());
+					    "%s, port already linked to %s",
+					    pport.c_str(), targ->label(),
+					    pair.first->second->label());
 					return (false);
 				}
 
