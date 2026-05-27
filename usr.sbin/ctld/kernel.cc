@@ -446,7 +446,7 @@ add_iscsi_port(struct kports &kports, struct conf *conf,
     const struct cctl_port &port, std::string &name)
 {
 	if (port.cfiscsi_target.empty()) {
-		log_debugx("CTL port %u \"%s\" wasn't managed by ctld; ",
+		log_debugx("CTL iSCSI port %u \"%s\" wasn't managed by ctld; ",
 		    port.port_id, name.c_str());
 		if (!kports.has_port(name)) {
 			if (!kports.add_port(name, port.port_id)) {
@@ -498,7 +498,7 @@ add_nvmf_port(struct conf *conf, const struct cctl_port &port,
     std::string &name)
 {
 	if (port.nqn.empty() || port.ctld_transport_group_name.empty()) {
-		log_debugx("CTL port %u \"%s\" wasn't managed by ctld; ",
+		log_debugx("CTL NVMe port %u \"%s\" wasn't managed by ctld; ",
 		    port.port_id, name.c_str());
 		return;
 	}
@@ -563,8 +563,12 @@ conf_new_from_kernel(struct kports &kports)
 		} else if (port.port_frontend == "nvmf") {
 			add_nvmf_port(conf.get(), port, name);
 		} else {
-			/* XXX: Treat all unknown ports as iSCSI? */
-			add_iscsi_port(kports, conf.get(), port, name);
+			log_debugx("CTL kernel port %u \"%s\"", port.port_id,
+			    name.c_str());
+			if (!kports.has_port(name)) {
+				if (!kports.add_port(name, port.port_id))
+					log_warnx("kports::add_port failed");
+			}
 		}
 	}
 
