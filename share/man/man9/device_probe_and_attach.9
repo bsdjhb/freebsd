@@ -64,6 +64,24 @@ If
 is already attached to a device driver or has been disabled via
 .Xr device_disable 9 ,
 then it will not be probed and -1 is returned.
+If no matching driver is found,
+.Xr BUS_PROBE_NOMATCH 9
+is called and an error value is returned.
+If consecutive calls to
+.Fn device_probe
+for a single device fail to find a matching driver,
+.Xr BUS_PROBE_NOMATCH 9
+is only called when the first call to
+.Fn device_probe
+fails to find a matching driver.
+If a subseqent
+.Fn device_probe
+for the same device finds a matching driver
+.Pq for example, if a new driver is loaded dynamically ,
+a later call to
+.Fn device_probe
+that fails to find a matching driver will call
+.Xr BUS_PROBE_NOMATCH 9 .
 .Pp
 .Fn device_attach
 fully attaches a device driver to
@@ -154,6 +172,7 @@ is disabled or already attached.
 .Sh SEE ALSO
 .Xr devctl 8 ,
 .Xr BUS_CHILD_DETACHED 9 ,
+.Xr BUS_PROBE_NOMATCH 9 ,
 .Xr device 9 ,
 .Xr DEVICE_ATTACH 9 ,
 .Xr DEVICE_DETACH 9 ,

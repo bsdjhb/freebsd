@@ -52,6 +52,7 @@ MAN=	accept_filter.9 \
 	bus_map_resource.9 \
 	BUS_NEW_PASS.9 \
 	BUS_PRINT_CHILD.9 \
+	BUS_PROBE_NOMATCH.9 \
 	BUS_READ_IVAR.9 \
 	BUS_RESCAN.9 \
 	bus_release_resource.9 \

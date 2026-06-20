@@ -1,0 +1,25 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2025 John Baldwin <jhb@FreeBSD.org>
+.Dd June 19, 2026
+.Dt BUS_PROBE_NOMATCH 9
+.Os
+.Sh NAME
+.Nm BUS_PROBE_NOMATCH
+.Nd notify a bus device that a child device did not match any drivers
+.Sh SYNOPSIS
+.In sys/param.h
+.In sys/bus.h
+.Ft void
+.Fn BUS_PROBE_NOMATCH "device_t dev" "device_t child"
+.Sh DESCRIPTION
+The
+.Fn BUS_PROBE_NOMATCH
+method is invoked by the new-bus framework after probing a device
+if no matching driver is found.
+A bus driver can provide an implementation of this method to
+output a description of the unmatched child device.
+.Sh SEE ALSO
+.Xr device 9 ,
+.Xr device_probe 9
