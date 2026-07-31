@@ -892,19 +892,21 @@ static int
 pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
     const enum pcibar_type type, const uint64_t size)
 {
-	int error;
+	int decode, error;
 	uint64_t *baseptr, limit, addr, mask, lobits, bar;
 
 	switch (type) {
 	case PCIBAR_NONE:
 		baseptr = NULL;
-		addr = mask = lobits = 0;
+		mask = lobits = 0;
+		decode = 0;
 		break;
 	case PCIBAR_IO:
 		baseptr = &pci_emul_iobase;
 		limit = PCI_EMUL_IOLIMIT;
 		mask = PCIM_BAR_IO_BASE;
 		lobits = PCIM_BAR_IO_SPACE;
+		decode = porten(pdi);
 		break;
 	case PCIBAR_MEM64:
 		/*
@@ -926,26 +928,31 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 			mask = PCIM_BAR_MEM_BASE;
 			lobits = PCIM_BAR_MEM_SPACE | PCIM_BAR_MEM_64;
 		}
+		decode = memen(pdi);
 		break;
 	case PCIBAR_MEM32:
 		baseptr = &pci_emul_membase32;
 		limit = PCI_EMUL_MEMLIMIT32;
 		mask = PCIM_BAR_MEM_BASE;
 		lobits = PCIM_BAR_MEM_SPACE | PCIM_BAR_MEM_32;
+		decode = memen(pdi);
 		break;
 	case PCIBAR_ROM:
-		/* do not claim memory for ROM. OVMF will do it for us. */
+		/*
+		 * Do not claim memory for ROM.  This is not needed
+		 * for the non-bootrom case.
+		 */
 		baseptr = NULL;
-		limit = 0;
 		mask = PCIM_BIOS_ADDR_MASK;
 		lobits = 0;
+		decode = 0;
 		break;
 	default:
 		printf("pci_emul_alloc_base: invalid bar type %d\n", type);
 		assert(0);
 	}
 
-	if (baseptr != NULL) {
+	if (decode && baseptr != NULL) {
 		error = pci_emul_alloc_resource(baseptr, limit, size, &addr);
 		if (error != 0)
 			return (error);
@@ -976,20 +983,8 @@ pci_emul_assign_bar(struct pci_devinst *const pdi, const int idx,
 		pci_set_cfgdata32(pdi, PCIR_BAR(idx + 1), bar >> 32);
 	}
 
-	switch (type) {
-	case PCIBAR_IO:
-		if (porten(pdi))
-			register_bar(pdi, idx);
-		break;
-	case PCIBAR_MEM32:
-	case PCIBAR_MEM64:
-	case PCIBAR_MEMHI64:
-		if (memen(pdi))
-			register_bar(pdi, idx);
-		break;
-	default:
-		break;
-	}
+	if (decode)
+		register_bar(pdi, idx);
 
 	return (0);
 }
