@@ -3290,7 +3290,6 @@ dev/syscons/syscons.c		optional sc
 dev/syscons/sysmouse.c		optional sc
 dev/syscons/warp/warp_saver.c	optional warp_saver
 dev/tcp_log/tcp_log_dev.c	optional tcp_blackbox inet | tcp_blackbox inet6
-dev/tdfx/tdfx_pci.c		optional tdfx pci
 dev/ti/if_ti.c			optional ti pci
 dev/tpm/tpm20.c			optional	tpm
 dev/tpm/tpm_bus.c		optional tpm acpi

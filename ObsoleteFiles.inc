@@ -51,6 +51,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Retire tdfx(4)
+OLD_FILES+=usr/share/man/man4/tdfx.4.gz
+OLD_FILES+=usr/share/man/man4/tdfx_linux.4.gz
+
 # 2026xxxx: apm(8) only displays ACPI status
 OLD_FILES+=etc/rc.d/apm
 
