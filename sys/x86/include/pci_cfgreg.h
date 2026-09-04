@@ -60,10 +60,5 @@ int		pcie_cfgregopen(uint64_t base, uint16_t domain, uint8_t minbus, uint8_t max
 int		pci_cfgregopen(void);
 u_int32_t	pci_cfgregread(int domain, int bus, int slot, int func, int reg, int bytes);
 void		pci_cfgregwrite(int domain, int bus, int slot, int func, int reg, u_int32_t data, int bytes);
-#ifdef __HAVE_PIR
-void		pci_pir_open(void);
-int		pci_pir_probe(int bus, int require_parse);
-int		pci_pir_route_interrupt(int bus, int device, int func, int pin);
-#endif
 
 #endif /* !__X86_PCI_CFGREG_H__ */

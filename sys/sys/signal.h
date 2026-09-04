@@ -430,8 +430,7 @@ struct sigvec {
 #endif
 
 /* Keep this in one place only */
-#if defined(_KERNEL) && defined(COMPAT_43) && \
-    !defined(__i386__)
+#if defined(_KERNEL) && defined(COMPAT_43)
 struct osigcontext {
 	int _not_used;
 };

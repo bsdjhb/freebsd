@@ -376,7 +376,7 @@ xen_intr_handle_upcall(void *unused __unused)
 
 	v->evtchn_upcall_pending = 0;
 /* No need for a barrier on x86 -- XCHG is a barrier on x86. */
-#if !defined(__amd64__) && !defined(__i386__)
+#if !defined(__amd64__)
 	/* Clear master flag /before/ clearing selector flag. */
 	wmb();
 #endif

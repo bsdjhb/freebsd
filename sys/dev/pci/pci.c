@@ -60,7 +60,7 @@
 #include <sys/rman.h>
 #include <machine/resource.h>
 
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__)
+#if defined(__amd64__) || defined(__powerpc__)
 #include <machine/intr_machdep.h>
 #endif
 
@@ -399,7 +399,7 @@ static int pci_honor_msi_blacklist = 1;
 SYSCTL_INT(_hw_pci, OID_AUTO, honor_msi_blacklist, CTLFLAG_RDTUN,
     &pci_honor_msi_blacklist, 1, "Honor chipset blacklist for MSI/MSI-X");
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static int pci_usb_takeover = 1;
 #else
 static int pci_usb_takeover = 0;
@@ -426,7 +426,7 @@ SYSCTL_INT(_hw_pci, OID_AUTO, enable_ari, CTLFLAG_RDTUN, &pci_enable_ari,
  * Some x86 firmware only enables PCIe hotplug if we claim to support aspm,
  * however enabling it breaks some arm64 firmware as it powers off devices.
  */
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 int pci_enable_aspm = 1;
 #else
 int pci_enable_aspm = 0;
@@ -904,7 +904,7 @@ pci_read_cap(device_t pcib, pcicfgregs *cfg)
 {
 #define	REG(n, w)	PCIB_READ_CONFIG(pcib, cfg->bus, cfg->slot, cfg->func, n, w)
 #define	WREG(n, v, w)	PCIB_WRITE_CONFIG(pcib, cfg->bus, cfg->slot, cfg->func, n, v, w)
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__)
+#if defined(__amd64__) || defined(__powerpc__)
 	uint64_t addr;
 #endif
 	uint32_t val;
@@ -950,7 +950,7 @@ pci_read_cap(device_t pcib, pcicfgregs *cfg)
 			if ((val & 0xe000) == PCIM_HTCAP_SLAVE)
 				cfg->ht.ht_slave = ptr;
 
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__)
+#if defined(__amd64__) || defined(__powerpc__)
 			switch (val & PCIM_HTCMD_CAP_MASK) {
 			case PCIM_HTCAP_MSI_MAPPING:
 				if (!(val & PCIM_HTCMD_MSI_FIXED)) {

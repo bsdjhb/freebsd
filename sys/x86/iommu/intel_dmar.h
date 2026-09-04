@@ -278,15 +278,7 @@ dmar_read4(const struct dmar_unit *unit, int reg)
 static inline uint64_t
 dmar_read8(const struct dmar_unit *unit, int reg)
 {
-#ifdef __i386__
-	uint32_t high, low;
-
-	low = bus_read_4(unit->regs, reg);
-	high = bus_read_4(unit->regs, reg + 4);
-	return (low | ((uint64_t)high << 32));
-#else
 	return (bus_read_8(unit->regs, reg));
-#endif
 }
 
 static inline void
@@ -305,46 +297,13 @@ dmar_write8(const struct dmar_unit *unit, int reg, uint64_t val)
 {
 
 	KASSERT(reg != DMAR_GCMD_REG, ("8byte GCMD write"));
-#ifdef __i386__
-	uint32_t high, low;
-
-	low = val;
-	high = val >> 32;
-	bus_write_4(unit->regs, reg, low);
-	bus_write_4(unit->regs, reg + 4, high);
-#else
 	bus_write_8(unit->regs, reg, val);
-#endif
 }
 
-/*
- * dmar_pte_store and dmar_pte_clear ensure that on i386, 32bit writes
- * are issued in the correct order.  For store, the lower word,
- * containing the P or R and W bits, is set only after the high word
- * is written.  For clear, the P bit is cleared first, then the high
- * word is cleared.
- *
- * dmar_pte_update updates the pte.  For amd64, the update is atomic.
- * For i386, it first disables the entry by clearing the word
- * containing the P bit, and then defer to dmar_pte_store.  The locked
- * cmpxchg8b is probably available on any machine having DMAR support,
- * but interrupt translation table may be mapped uncached.
- */
 static inline void
 dmar_pte_store1(volatile uint64_t *dst, uint64_t val)
 {
-#ifdef __i386__
-	volatile uint32_t *p;
-	uint32_t hi, lo;
-
-	hi = val >> 32;
-	lo = val;
-	p = (volatile uint32_t *)dst;
-	*(p + 1) = hi;
-	*p = lo;
-#else
 	*dst = val;
-#endif
 }
 
 static inline void
@@ -359,28 +318,13 @@ dmar_pte_store(volatile uint64_t *dst, uint64_t val)
 static inline void
 dmar_pte_update(volatile uint64_t *dst, uint64_t val)
 {
-
-#ifdef __i386__
-	volatile uint32_t *p;
-
-	p = (volatile uint32_t *)dst;
-	*p = 0;
-#endif
 	dmar_pte_store1(dst, val);
 }
 
 static inline void
 dmar_pte_clear(volatile uint64_t *dst)
 {
-#ifdef __i386__
-	volatile uint32_t *p;
-
-	p = (volatile uint32_t *)dst;
-	*p = 0;
-	*(p + 1) = 0;
-#else
 	*dst = 0;
-#endif
 }
 
 extern struct timespec dmar_hw_timeout;

@@ -1252,7 +1252,7 @@ linux_socketpair(struct thread *td, struct linux_socketpair_args *args)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 struct linux_send_args {
 	register_t s;
 	register_t msg;
@@ -1323,7 +1323,7 @@ linux_recv(struct thread *td, struct linux_recv_args *args)
 	bsd_args.fromlenaddr = 0;
 	return (sys_recvfrom(td, &bsd_args));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_sendto(struct thread *td, struct linux_sendto_args *args)
@@ -1673,7 +1673,7 @@ recvmsg_scm_creds2(socklen_t *datalen, void **data, void **udata)
 _Static_assert(sizeof(struct sockcred2) >= sizeof(struct l_ucred),
     "scm_creds2 sizeof l_ucred");
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 static int
 recvmsg_scm_timestamp(l_int msg_type, socklen_t *datalen, void **data,
     void **udata)
@@ -1715,9 +1715,9 @@ recvmsg_scm_timestamp(l_int msg_type, socklen_t *datalen, void **data,
 #else
 _Static_assert(sizeof(struct timeval) == sizeof(l_timeval),
     "scm_timestamp sizeof l_timeval");
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 static int
 recvmsg_scm_timestampns(l_int msg_type, socklen_t *datalen, void **data,
     void **udata)
@@ -1762,7 +1762,7 @@ recvmsg_scm_timestampns(l_int msg_type, socklen_t *datalen, void **data,
 }
 _Static_assert(sizeof(struct bintime) >= sizeof(struct timespec),
     "scm_timestampns sizeof timespec");
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 static int
 recvmsg_scm_sol_socket(struct thread *td, l_int msg_type, l_int lmsg_type,
@@ -1783,7 +1783,7 @@ recvmsg_scm_sol_socket(struct thread *td, l_int msg_type, l_int lmsg_type,
 		error = recvmsg_scm_creds2(datalen, data, udata);
 		break;
 	case SCM_TIMESTAMP:
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 		error = recvmsg_scm_timestamp(lmsg_type, datalen,
 		    data, udata);
 #endif
@@ -2079,7 +2079,7 @@ linux_recvmmsg(struct thread *td, struct linux_recvmmsg_args *args)
 	    args->vlen, args->flags, ptts));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_recvmmsg_time64(struct thread *td, struct linux_recvmmsg_time64_args *args)
 {
@@ -2908,7 +2908,7 @@ linux_sendfile(struct thread *td, struct linux_sendfile_args *arg)
 	    arg->offset != NULL ? &offset64 : NULL, arg->count);
 
 	if (error == 0 && arg->offset != NULL) {
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 		if (offset64 > INT32_MAX)
 			return (EOVERFLOW);
 #endif
@@ -2919,7 +2919,7 @@ linux_sendfile(struct thread *td, struct linux_sendfile_args *arg)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_sendfile64(struct thread *td, struct linux_sendfile64_args *arg)
 {
@@ -3029,4 +3029,4 @@ linux_socketcall(struct thread *td, struct linux_socketcall_args *args)
 	linux_msg(td, "socket type %d not implemented", args->what);
 	return (ENOSYS);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */

@@ -66,43 +66,7 @@ static int	aout_fixup(uintptr_t *stack_base, struct image_params *imgp);
 
 #define	AOUT32_USRSTACK		0xbfc00000
 
-#if defined(__i386__)
-
-#define	AOUT32_PS_STRINGS	(AOUT32_USRSTACK - sizeof(struct ps_strings))
-
-struct sysentvec aout_sysvec = {
-	.sv_size	= SYS_MAXSYSCALL,
-	.sv_table	= sysent,
-	.sv_fixup	= aout_fixup,
-	.sv_sendsig	= sendsig,
-	.sv_sigcode	= sigcode,
-	.sv_szsigcode	= &szsigcode,
-	.sv_name	= "FreeBSD a.out",
-	.sv_coredump	= NULL,
-	.sv_minsigstksz	= MINSIGSTKSZ,
-	.sv_minuser	= VM_MIN_ADDRESS,
-	.sv_maxuser	= AOUT32_USRSTACK,
-	.sv_usrstack	= AOUT32_USRSTACK,
-	.sv_psstrings	= AOUT32_PS_STRINGS,
-	.sv_psstringssz	= sizeof(struct ps_strings),
-	.sv_stackprot	= VM_PROT_ALL,
-	.sv_copyout_strings	= exec_copyout_strings,
-	.sv_setregs	= exec_setregs,
-	.sv_fixlimit	= NULL,
-	.sv_maxssiz	= NULL,
-	.sv_flags	= SV_ABI_FREEBSD | SV_AOUT | SV_ILP32 | SV_SIGSYS,
-	.sv_set_syscall_retval = cpu_set_syscall_retval,
-	.sv_fetch_syscall_args = cpu_fetch_syscall_args,
-	.sv_syscallnames = syscallnames,
-	.sv_schedtail	= NULL,
-	.sv_thread_detach = NULL,
-	.sv_trap	= NULL,
-	.sv_onexec_old = exec_onexec_old,
-	.sv_onexit =  exit_onexit,
-	.sv_set_fork_retval = x86_set_fork_retval,
-};
-
-#elif defined(__amd64__)
+#if defined(__amd64__)
 
 #include "vdso_ia32_offsets.h"
 

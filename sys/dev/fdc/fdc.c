@@ -1878,7 +1878,7 @@ fdc_print_child(device_t me, device_t child)
 static int
 fd_probe(device_t dev)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	int	unit;
 #endif
 	int	i;
@@ -1908,7 +1908,7 @@ fd_probe(device_t dev)
 		fd->type = type;
 	}
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	unit = device_get_unit(dev);
 	if (fd->type == FDT_NONE && (unit == 0 || unit == 1)) {
 		/* Look up what the BIOS thinks we have. */
@@ -1919,7 +1919,7 @@ fd_probe(device_t dev)
 		if (fd->type == FDT_288M_1)
 			fd->type = FDT_288M;
 	}
-#endif /* __i386__ || __amd64__ */
+#endif /* __amd64__ */
 	/* is there a unit? */
 	if (fd->type == FDT_NONE)
 		return (ENXIO);

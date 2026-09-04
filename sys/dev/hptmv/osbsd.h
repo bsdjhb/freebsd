@@ -242,15 +242,10 @@ hpt_get_periph(int path_id,int target_id)
 	return periph;	
 }
 
-#ifdef __i386__
-#define BITS_PER_LONG 32
-#define VDEV_TO_ID(pVDev) (DEVICEID)(pVDev)
-#define ID_TO_VDEV(id) (PVDevice)(id)
-#else /*Only support x86_64(AMD64 and EM64T)*/
+/*Only support x86_64(AMD64 and EM64T)*/
 #define BITS_PER_LONG 64
 #define VDEV_TO_ID(pVDev) (DEVICEID)(ULONG_PTR)(pVDev)
 #define ID_TO_VDEV(id) (PVDevice)(((ULONG_PTR)gIal_Adapter & 0xffffffff00000000) | (id))
-#endif
 
 #define INVALID_DEVICEID		(-1)
 #define INVALID_STRIPSIZE		(-1)

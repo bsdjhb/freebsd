@@ -43,7 +43,7 @@
 #include <dev/pci/pcivar.h>
 #include <machine/atomic.h>
 #include <machine/bus.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/clock.h>
 #include <machine/specialreg.h>
 #include <machine/md_var.h>
@@ -150,7 +150,7 @@ static struct sysctl_ctx_list cpu_sysctl_ctx;
 static struct sysctl_oid *cpu_sysctl_tree;
 static int		 cpu_cx_generic;
 static int		 cpu_cx_lowest_lim;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static bool		 cppc_notify;
 #endif
 
@@ -177,19 +177,18 @@ static int	acpi_cpu_cx_cst(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_startup(void *arg);
 static void	acpi_cpu_startup_cx(struct acpi_cpu_softc *sc);
 static void	acpi_cpu_cx_list(struct acpi_cpu_softc *sc);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static void	acpi_cpu_idle(sbintime_t sbt);
 #endif
 static void	acpi_cpu_notify(ACPI_HANDLE h, UINT32 notify, void *context);
 static void	acpi_cpu_quirks(void);
-static void	acpi_cpu_quirks_piix4(void);
 static int	acpi_cpu_usage_sysctl(SYSCTL_HANDLER_ARGS);
 static int	acpi_cpu_usage_counters_sysctl(SYSCTL_HANDLER_ARGS);
 static int	acpi_cpu_duration_counters_sysctl(SYSCTL_HANDLER_ARGS);
 static int	acpi_cpu_set_cx_lowest(struct acpi_cpu_softc *sc);
 static int	acpi_cpu_cx_lowest_sysctl(SYSCTL_HANDLER_ARGS);
 static int	acpi_cpu_global_cx_lowest_sysctl(SYSCTL_HANDLER_ARGS);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static int	acpi_cpu_method_sysctl(SYSCTL_HANDLER_ARGS);
 #endif
 
@@ -382,7 +381,7 @@ acpi_cpu_attach(device_t dev)
 	    SYSCTL_CHILDREN(acpi_sc->acpi_sysctl_tree), OID_AUTO, "cpu",
 	    CTLFLAG_RD | CTLFLAG_MPSAFE, 0, "node for CPU children");
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	/* Add sysctl handler to control registering for CPPC notifications */
 	cppc_notify = 1;
 	SYSCTL_ADD_BOOL(&cpu_sysctl_ctx, SYSCTL_CHILDREN(cpu_sysctl_tree),
@@ -400,7 +399,7 @@ acpi_cpu_attach(device_t dev)
     sc->cpu_features = ACPI_CAP_SMP_SAME | ACPI_CAP_SMP_SAME_C3 |
       ACPI_CAP_C1_IO_HALT;
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     /*
      * Ask for MWAIT modes if not disabled and interrupts work
      * reasonable with MWAIT.
@@ -522,7 +521,7 @@ enable_idle(struct acpi_cpu_softc *sc)
     sc->cpu_disable_idle = FALSE;
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static int
 is_idle_disabled(struct acpi_cpu_softc *sc)
 {
@@ -686,7 +685,7 @@ acpi_cpu_read_ivar(device_t dev, device_t child, int index, uintptr_t *result)
     case CPU_IVAR_PCPU:
 	*result = (uintptr_t)sc->cpu_pcpu;
 	break;
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     case CPU_IVAR_NOMINAL_MHZ:
 	if (tsc_is_invariant) {
 	    *result = (uintptr_t)(atomic_load_acq_64(&tsc_freq) / 1000000);
@@ -817,7 +816,7 @@ acpi_cpu_generic_cx_probe(struct acpi_cpu_softc *sc)
     }
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static void
 acpi_cpu_cx_cst_mwait(struct acpi_cx *cx_ptr, uint64_t address, int accsize)
 {
@@ -855,7 +854,7 @@ acpi_cpu_cx_cst(struct acpi_cpu_softc *sc)
     ACPI_OBJECT	*pkg;
     uint32_t	 count;
     int		 i;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     uint64_t	 address;
     int		 vendor, class, accsize;
 #endif
@@ -913,7 +912,7 @@ acpi_cpu_cx_cst(struct acpi_cpu_softc *sc)
 	switch (cx_ptr->type) {
 	case ACPI_STATE_C1:
 	    acpi_cpu_cx_cst_free_plvlx(sc->cpu_dev, cx_ptr);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	    if (acpi_PkgFFH_IntelCpu(pkg, 0, &vendor, &class, &address,
 	      &accsize) == 0 &&
 		(vendor == CST_FFH_VENDOR_INTEL || vendor == CST_FFH_VENDOR_AMD)) {
@@ -967,7 +966,7 @@ acpi_cpu_cx_cst(struct acpi_cpu_softc *sc)
 	acpi_cpu_cx_cst_free_plvlx(sc->cpu_dev, cx_ptr);
 
 	/* Allocate the control register for C2 or C3. */
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	if (acpi_PkgFFH_IntelCpu(pkg, 0, &vendor, &class, &address,
 	  &accsize) == 0 && vendor == CST_FFH_VENDOR_INTEL &&
 	  class == CST_FFH_INTEL_CL_MWAIT) {
@@ -1066,7 +1065,7 @@ acpi_cpu_startup(void *arg)
 	if ((sc = cpu_softc[i]) != NULL)
 	    enable_idle(sc);
     }
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     cpu_idle_hook = acpi_cpu_idle;
 #endif
 }
@@ -1120,7 +1119,7 @@ acpi_cpu_startup_cx(struct acpi_cpu_softc *sc)
 	(void *)sc, 0, acpi_cpu_duration_counters_sysctl, "A",
 	"Cx sleep duration cumulative time");
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     SYSCTL_ADD_PROC(&sc->cpu_sysctl_ctx,
         SYSCTL_CHILDREN(device_get_sysctl_tree(sc->cpu_dev)), OID_AUTO,
 	"cx_method", CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE,
@@ -1135,7 +1134,7 @@ acpi_cpu_startup_cx(struct acpi_cpu_softc *sc)
     }
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 /*
  * Idle the CPU in the lowest state possible.  This function is called with
  * interrupts disabled.  Note that once it re-enables interrupts, a task
@@ -1360,68 +1359,6 @@ acpi_cpu_quirks(void)
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO,
 	    "acpi_cpu: SMP, using flush cache mode for C3\n"));
     }
-
-    /* Look for various quirks of the PIIX4 part. */
-    acpi_cpu_quirks_piix4();
-}
-
-static void
-acpi_cpu_quirks_piix4(void)
-{
-#ifdef __i386__
-    device_t acpi_dev;
-    uint32_t val;
-    ACPI_STATUS status;
-
-    acpi_dev = pci_find_device(PCI_VENDOR_INTEL, PCI_DEVICE_82371AB_3);
-    if (acpi_dev != NULL) {
-	switch (pci_get_revid(acpi_dev)) {
-	/*
-	 * Disable C3 support for all PIIX4 chipsets.  Some of these parts
-	 * do not report the BMIDE status to the BM status register and
-	 * others have a livelock bug if Type-F DMA is enabled.  Linux
-	 * works around the BMIDE bug by reading the BM status directly
-	 * but we take the simpler approach of disabling C3 for these
-	 * parts.
-	 *
-	 * See erratum #18 ("C3 Power State/BMIDE and Type-F DMA
-	 * Livelock") from the January 2002 PIIX4 specification update.
-	 * Applies to all PIIX4 models.
-	 *
-	 * Also, make sure that all interrupts cause a "Stop Break"
-	 * event to exit from C2 state.
-	 * Also, BRLD_EN_BM (ACPI_BITREG_BUS_MASTER_RLD in ACPI-speak)
-	 * should be set to zero, otherwise it causes C2 to short-sleep.
-	 * PIIX4 doesn't properly support C3 and bus master activity
-	 * need not break out of C2.
-	 */
-	case PCI_REVISION_A_STEP:
-	case PCI_REVISION_B_STEP:
-	case PCI_REVISION_4E:
-	case PCI_REVISION_4M:
-	    cpu_quirks |= CPU_QUIRK_NO_C3;
-	    ACPI_DEBUG_PRINT((ACPI_DB_INFO,
-		"acpi_cpu: working around PIIX4 bug, disabling C3\n"));
-
-	    val = pci_read_config(acpi_dev, PIIX4_DEVACTB_REG, 4);
-	    if ((val & PIIX4_STOP_BREAK_MASK) != PIIX4_STOP_BREAK_MASK) {
-		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
-		    "acpi_cpu: PIIX4: enabling IRQs to generate Stop Break\n"));
-	    	val |= PIIX4_STOP_BREAK_MASK;
-		pci_write_config(acpi_dev, PIIX4_DEVACTB_REG, val, 4);
-	    }
-	    status = AcpiReadBitRegister(ACPI_BITREG_BUS_MASTER_RLD, &val);
-	    if (ACPI_SUCCESS(status) && val != 0) {
-		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
-		    "acpi_cpu: PIIX4: reset BRLD_EN_BM\n"));
-		AcpiWriteBitRegister(ACPI_BITREG_BUS_MASTER_RLD, 0);
-	    }
-	    break;
-	default:
-	    break;
-	}
-    }
-#endif
 }
 
 static int
@@ -1495,7 +1432,7 @@ acpi_cpu_duration_counters_sysctl(SYSCTL_HANDLER_ARGS)
 }
 
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static int
 acpi_cpu_method_sysctl(SYSCTL_HANDLER_ARGS)
 {

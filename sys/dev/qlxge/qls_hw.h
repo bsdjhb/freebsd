@@ -885,7 +885,7 @@ typedef struct _q81_bq_addr_e {
  * Macros for reading and writing registers
  */
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define Q8_MB()    __asm volatile("mfence" ::: "memory")
 #define Q8_WMB()   __asm volatile("sfence" ::: "memory")
 #define Q8_RMB()   __asm volatile("lfence" ::: "memory")

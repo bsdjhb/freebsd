@@ -78,7 +78,7 @@
 #include <vm/vm_phys.h>
 #include <machine/bus.h>
 #include <machine/resource.h>
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/specialreg.h>
 #endif
 #include <machine/sysarch.h>

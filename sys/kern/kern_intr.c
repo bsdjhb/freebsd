@@ -1092,7 +1092,7 @@ swi_sched(void *cookie, int flags)
 		return;
 
 	if (flags & SWI_FROMNMI) {
-#if defined(SMP) && (defined(__i386__) || defined(__amd64__))
+#if defined(SMP) && defined(__amd64__)
 		KASSERT(ie == clk_intr_event,
 		    ("SWI_FROMNMI used not with clk_intr_event"));
 		ipi_self_from_nmi(IPI_SWI);

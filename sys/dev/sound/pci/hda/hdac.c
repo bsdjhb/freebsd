@@ -1226,7 +1226,7 @@ hdac_attach(device_t dev)
 		);
 	}
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	sc->flags |= HDAC_F_DMA_NOCACHE;
 
 	if (resource_int_value(device_get_name(dev),
@@ -1265,13 +1265,13 @@ hdac_attach(device_t dev)
 					    "WARNING: Failed to enable PCIe "
 					    "snoop!\n");
 				);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 				sc->flags |= HDAC_F_DMA_NOCACHE;
 #endif
 			}
 			break;
 		}
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	}
 #endif
 

@@ -153,7 +153,7 @@ typedef void			irqreturn_t;
 	    (vm_offset_t)(offset)) = htole64(val)
 
 #if !defined(__arm__)
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__)
 #define DRM_MSG "WARNING! drm2 module is deprecated.  Install the graphics/drm-kmod pkg\n"
 #else
 #define DRM_MSG "WARNING! drm2 module is deprecated.\n"
@@ -555,9 +555,6 @@ typedef struct drm_pci_id_list
 	char *name;
 } drm_pci_id_list_t;
 
-#ifdef __i386__
-#define	CONFIG_X86	1
-#endif
 #ifdef __amd64__
 #define	CONFIG_X86	1
 #define	CONFIG_X86_64	1
@@ -566,7 +563,7 @@ typedef struct drm_pci_id_list
 #define	CONFIG_IA64	1
 #endif
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define	CONFIG_ACPI
 #define	CONFIG_DRM_I915_KMS
 #undef	CONFIG_INTEL_IOMMU

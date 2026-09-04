@@ -51,6 +51,65 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Removal of i386 kernel and i386-only drivers
+.if ${MACHINE} == "i386"
+OLD_FILES+=usr/include/acpica_machdep.h
+OLD_FILES+=usr/include/apm_segments.h
+OLD_FILES+=usr/include/bus.h
+OLD_FILES+=usr/include/bus_dma.h
+OLD_FILES+=usr/include/clock.h
+OLD_FILES+=usr/include/cputypes.h
+OLD_FILES+=usr/include/db_machdep.h
+OLD_FILES+=usr/include/dump.h
+OLD_FILES+=usr/include/elan_mmcr.h
+OLD_FILES+=usr/include/fdt.h
+OLD_FILES+=usr/include/fpu.h
+OLD_FILES+=usr/include/frame.h
+OLD_FILES+=usr/include/gdb_machdep.h
+OLD_FILES+=usr/include/in_cksum.h
+OLD_FILES+=usr/include/intr_machdep.h
+OLD_FILES+=usr/include/iodev.h
+OLD_FILES+=usr/include/iommu.h
+OLD_FILES+=usr/include/kdb.h
+OLD_FILES+=usr/include/kexec.h
+OLD_FILES+=usr/include/md_var.h
+OLD_FILES+=usr/include/memdev.h
+OLD_FILES+=usr/include/nexusvar.h
+OLD_FILES+=usr/include/ofw_machdep.h
+OLD_FILES+=usr/include/pcb_ext.h
+OLD_FILES+=usr/include/pci_cfgreg.h
+OLD_FILES+=usr/include/pmap_base.h
+OLD_FILES+=usr/include/pmap_nopae.h
+OLD_FILES+=usr/include/resource.h
+OLD_FILES+=usr/include/sf_buf.h
+OLD_FILES+=usr/include/smapi.h
+OLD_FILES+=usr/include/smp.h
+.endif
+OLD_FILES+=usr/include/i386/md_var.h
+OLD_FILES+=usr/share/man/man4/i386/CPU_ELAN.4.gz
+OLD_FILES+=usr/share/man/man4/i386/CPU_SOEKRIS.4.gz
+OLD_FILES+=usr/share/man/man4/i386/PAE.4.gz
+OLD_FILES+=usr/share/man/man4/i386/glxiic.4.gz
+OLD_FILES+=usr/share/man/man4/i386/glxsb.4.gz
+OLD_FILES+=usr/share/man/man4/i386/longrun.4.gz
+OLD_FILES+=usr/share/man/man4/i386/npx.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pae.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pnp.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pnpbios.4.gz
+OLD_FILES+=usr/share/man/man4/i386/smapi.4.gz
+OLD_DIRS+=usr/share/man/man4/i386
+OLD_FILES+=usr/share/man/man4/CPU_ELAN.4.gz
+OLD_FILES+=usr/share/man/man4/CPU_SOEKRIS.4.gz
+OLD_FILES+=usr/share/man/man4/PAE.4.gz
+OLD_FILES+=usr/share/man/man4/glxiic.4.gz
+OLD_FILES+=usr/share/man/man4/glxsb.4.gz
+OLD_FILES+=usr/share/man/man4/longrun.4.gz
+OLD_FILES+=usr/share/man/man4/npx.4.gz
+OLD_FILES+=usr/share/man/man4/pae.4.gz
+OLD_FILES+=usr/share/man/man4/pnp.4.gz
+OLD_FILES+=usr/share/man/man4/pnpbios.4.gz
+OLD_FILES+=usr/share/man/man4/smapi.4.gz
+
 # 2026xxxx: Retire vpd(4)
 OLD_FILES+=usr/share/man/man4/i386/vpd.4.gz
 OLD_FILES+=usr/share/man/man4/vpd.4.gz

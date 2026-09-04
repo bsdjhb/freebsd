@@ -100,7 +100,7 @@ struct l_itimerspec {
 	struct l_timespec it_value;
 };
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 struct l_itimerspec64 {
 	struct l_timespec64 it_interval;
 	struct l_timespec64 it_value;
@@ -115,7 +115,7 @@ int linux_put_timespec(struct timespec *,
 				     struct l_timespec *);
 int linux_get_timespec(struct timespec *,
 				     const struct l_timespec *);
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int native_to_linux_timespec64(struct l_timespec64 *,
 				     struct timespec *);
 int linux_to_native_timespec64(struct timespec *,
@@ -130,7 +130,7 @@ int native_to_linux_itimerspec(struct l_itimerspec *,
 				     struct itimerspec *);
 int linux_to_native_itimerspec(struct itimerspec *,
 				     struct l_itimerspec *);
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int native_to_linux_itimerspec64(struct l_itimerspec64 *,
 				     struct itimerspec *);
 int linux_to_native_itimerspec64(struct itimerspec *,

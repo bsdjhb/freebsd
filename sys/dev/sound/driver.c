@@ -60,7 +60,7 @@ MODULE_DEPEND(snd_driver, snd_ai2s, 1, 1, 1);
 #endif
 MODULE_DEPEND(snd_driver, snd_als4000, 1, 1, 1);
 MODULE_DEPEND(snd_driver, snd_atiixp, 1, 1, 1);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 MODULE_DEPEND(snd_driver, snd_cmi, 1, 1, 1);
 #endif
 MODULE_DEPEND(snd_driver, snd_cs4281, 1, 1, 1);
