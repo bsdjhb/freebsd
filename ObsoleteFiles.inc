@@ -51,6 +51,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Retire tdfx(4)
+OLD_FILES+=usr/share/man/man4/tdfx.4.gz
+OLD_FILES+=usr/share/man/man4/tdfx_linux.4.gz
+
 # 20261012: Removed <sys/kpilite.h>
 OLD_FILES+=usr/include/sys/kpilite.h
 
