@@ -1746,7 +1746,7 @@ linux_dma_trie_free(struct pctrie *ptree, void *node)
 PCTRIE_DEFINE(LINUX_DMA, linux_dma_obj, dma_addr, linux_dma_trie_alloc,
     linux_dma_trie_free);
 
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 static dma_addr_t
 linux_dma_map_phys_common(struct device *dev, vm_paddr_t phys, size_t len,
     bus_dma_tag_t dmat)
@@ -1845,7 +1845,7 @@ linux_dma_map_phys(struct device *dev, vm_paddr_t phys, size_t len)
 	return (lkpi_dma_map_phys(dev, phys, len, DMA_NONE, 0));
 }
 
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 void
 lkpi_dma_unmap(struct device *dev, dma_addr_t dma_addr, size_t len,
     enum dma_data_direction direction, unsigned long attrs)

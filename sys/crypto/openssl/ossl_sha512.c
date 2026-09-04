@@ -22,7 +22,7 @@ void sha512_block_data_order(SHA512_CTX *c, const void *in, size_t num);
 
 /* From crypto/sha/sha512.c */
 
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 # define SHA512_BLOCK_CAN_MANAGE_UNALIGNED_DATA
 #endif
 

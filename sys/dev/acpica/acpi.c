@@ -56,7 +56,7 @@
 #include <sys/timetc.h>
 #include <sys/uuid.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/clock.h>
 #include <machine/intr_machdep.h>
 #include <machine/pci_cfgreg.h>
@@ -346,7 +346,7 @@ int acpi_susp_bounce;
 SYSCTL_INT(_debug_acpi, OID_AUTO, suspend_bounce, CTLFLAG_RW,
     &acpi_susp_bounce, 0, "Don't actually suspend, just test devices.");
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 int acpi_override_isa_irq_polarity;
 #endif
 
@@ -613,7 +613,7 @@ acpi_attach(device_t dev)
 	goto out;
     }
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     /*
      * Enable workaround for incorrect ISA IRQ polarity by default on
      * systems with Intel CPUs.
@@ -652,7 +652,7 @@ acpi_attach(device_t dev)
      */
     sc->acpi_supported_sstates[ACPI_STATE_S0] = true;
     sc->acpi_supported_stypes[POWER_STYPE_AWAKE] = true;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     sc->acpi_supported_stypes[POWER_STYPE_SUSPEND_TO_IDLE] = true;
 #endif
     for (state = ACPI_STATE_S1; state <= ACPI_STATE_S5; state++) {
@@ -797,7 +797,7 @@ acpi_attach(device_t dev)
     SYSCTL_ADD_INT(&sc->acpi_sysctl_ctx, SYSCTL_CHILDREN(sc->acpi_sysctl_tree),
 	OID_AUTO, "handle_reboot", CTLFLAG_RW,
 	&sc->acpi_handle_reboot, 0, "Use ACPI Reset Register to reboot");
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     SYSCTL_ADD_INT(&sc->acpi_sysctl_ctx, SYSCTL_CHILDREN(sc->acpi_sysctl_tree),
 	OID_AUTO, "override_isa_irq_polarity", CTLFLAG_RDTUN,
 	&acpi_override_isa_irq_polarity, 0,
@@ -1406,7 +1406,7 @@ int
 acpi_pxm_parse(device_t dev)
 {
 #ifdef NUMA
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 	ACPI_HANDLE handle;
 	ACPI_STATUS status;
 	int pxm;
@@ -2375,7 +2375,7 @@ acpi_isa_pnp_probe(device_t bus, device_t child, struct isa_pnp_id *ids)
 static void
 acpi_enable_pcie(void)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	ACPI_TABLE_HEADER *hdr;
 	ACPI_MCFG_ALLOCATION *alloc, *end;
 	ACPI_STATUS status;
@@ -3339,7 +3339,7 @@ acpi_SetSleepState(struct acpi_softc *sc, int state)
     return (acpi_EnterSleepState(sc, state));
 }
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 static void
 acpi_sleep_force_task(void *context)
 {
@@ -3376,7 +3376,7 @@ acpi_sleep_force(void *arg)
 int
 acpi_ReqSleepState(struct acpi_softc *sc, enum power_stype stype)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     ACPI_STATUS status;
 
     if (stype < POWER_STYPE_AWAKE || stype >= POWER_STYPE_COUNT)
@@ -3445,7 +3445,7 @@ acpi_ReqSleepState(struct acpi_softc *sc, enum power_stype stype)
 static int
 acpi_AckSleepState(struct acpi_softc *sc, int error)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     int ret;
 
     /* If no pending sleep type, return an error. */
@@ -3596,7 +3596,7 @@ do_sleep(struct acpi_softc *sc, enum acpi_sleep_state *slp_state,
     *slp_state |= ACPI_SS_SLEPT;
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static void
 do_idle(struct acpi_softc *sc, enum acpi_sleep_state *slp_state,
     register_t rflags)
@@ -3765,7 +3765,7 @@ acpi_EnterSleepState(struct acpi_softc *sc, enum power_stype stype)
 	do_sleep(sc, &slp_state, intr, acpi_sstate);
 	break;
     case POWER_STYPE_SUSPEND_TO_IDLE:
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	do_idle(sc, &slp_state, intr);
 	break;
 #endif
@@ -3803,7 +3803,7 @@ backout:
 	slp_state &= ~ACPI_SS_SLP_PREP;
     }
     if ((slp_state & ACPI_SS_SLEPT) != 0) {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	/* NB: we are still using ACPI timecounter at this point. */
 	resume_TSC();
 #endif
@@ -4231,7 +4231,7 @@ acpi_event_power_button_sleep(struct acpi_softc *sc)
 {
     ACPI_FUNCTION_TRACE((char *)(uintptr_t)__func__);
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     if (acpi_button_resume_replay(sc, "power"))
 	return_VALUE (ACPI_INTERRUPT_HANDLED);
     if (ACPI_FAILURE(AcpiOsExecute(OSL_NOTIFY_HANDLER,

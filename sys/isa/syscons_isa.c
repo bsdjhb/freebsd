@@ -39,7 +39,7 @@
 #include <sys/consio.h>
 #include <sys/sysctl.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 
 #include <machine/clock.h>
 #include <machine/md_var.h>
@@ -185,7 +185,7 @@ sc_get_cons_priority(int *unit, int *flags)
 void
 sc_get_bios_values(bios_values_t *values)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	uint8_t shift;
 
 	shift = *(uint8_t *)BIOS_PADDRTOVADDR(0x417);

@@ -395,11 +395,11 @@ iowrite32be(uint32_t v, volatile void *addr)
 }
 #define	iowrite32be(v, addr)	iowrite32be(v, addr)
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define	_outb(data, port) outb((data), (port))
 #endif
 
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
+#if defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
 void *_ioremap_attr(vm_paddr_t phys_addr, unsigned long size, int attr);
 #else
 static __inline void *

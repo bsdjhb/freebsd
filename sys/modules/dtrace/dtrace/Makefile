@@ -15,7 +15,7 @@ SRCS=		dtrace.c \
 		dtrace_isa.c \
 		dtrace_subr.c
 
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "amd64"
 .PATH: ${SYSDIR}/cddl/dev/dtrace/x86
 SRCS+=		dis_tables.c \
 		instr_size.c
@@ -39,10 +39,6 @@ SRCS+=		opt_kstack_pages.h opt_nfs.h opt_hwpmc_hooks.h
 
 #This is needed for dtrace.c
 SRCS += 	opensolaris_taskq.c
-
-.if ${MACHINE_CPUARCH} == "i386"
-SRCS+=		opt_apic.h
-.endif
 
 CFLAGS+=	-I${SYSDIR}/cddl/compat/opensolaris \
 		-I${SYSDIR}/cddl/dev/dtrace \

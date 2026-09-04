@@ -51,15 +51,6 @@ SRCS.amd64= \
 	ossl_aes_gcm_avx512.c \
 	ossl_x86.c
 
-SRCS.i386= \
-	aesni-x86.S \
-	chacha-x86.S \
-	poly1305-x86.S \
-	sha1-586.S \
-	sha256-586.S \
-	sha512-586.S \
-	ossl_x86.c
-
 SRCS.powerpc64le= \
 	aes-gcm-ppc.S \
 	ossl_aes_gcm.c \

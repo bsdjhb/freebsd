@@ -72,14 +72,6 @@
 #include <xen/xen-os.h>
 #endif
 
-#ifdef __i386__
-#define	IDENTBLUE_CYRIX486	0
-#define	IDENTBLUE_IBMCPU	1
-#define	IDENTBLUE_CYRIXM2	2
-
-static void identifycyrix(void);
-static void print_transmeta_info(void);
-#endif
 static u_int find_cpu_vendor_id(void);
 static void print_AMD_info(void);
 static void print_INTEL_info(void);
@@ -89,10 +81,6 @@ static void print_svm_info(void);
 static void print_via_padlock_info(void);
 static void print_vmx_info(void);
 
-#ifdef __i386__
-int	cpu;			/* Are we 386, 386sx, 486, etc? */
-int	cpu_class;
-#endif
 u_int	cpu_feature;		/* Feature flags */
 u_int	cpu_feature2;		/* Feature flags */
 u_int	amd_feature;		/* AMD feature flags */
@@ -138,7 +126,6 @@ SYSCTL_UINT(_hw, OID_AUTO, via_feature_xcrypt, CTLFLAG_RD,
     &via_feature_xcrypt, 0,
     "VIA xcrypt feature available in CPU");
 
-#ifdef __amd64__
 #ifdef SCTL_MASK32
 extern int adaptive_machine_arch;
 #endif
@@ -162,10 +149,6 @@ sysctl_hw_machine(SYSCTL_HANDLER_ARGS)
 }
 SYSCTL_PROC(_hw, HW_MACHINE, machine, CTLTYPE_STRING | CTLFLAG_RD |
     CTLFLAG_CAPRD | CTLFLAG_MPSAFE, NULL, 0, sysctl_hw_machine, "A", "Machine class");
-#else
-SYSCTL_CONST_STRING(_hw, HW_MACHINE, machine, CTLFLAG_RD | CTLFLAG_CAPRD,
-    machine, "Machine class");
-#endif
 
 char cpu_model[128];
 SYSCTL_STRING(_hw, HW_MODEL, model, CTLFLAG_RD | CTLFLAG_CAPRD,
@@ -185,45 +168,6 @@ static eventhandler_tag tsc_post_tag;
 
 static char cpu_brand[48];
 
-#ifdef __i386__
-#define	MAX_BRAND_INDEX	8
-
-static const char *cpu_brandtable[MAX_BRAND_INDEX + 1] = {
-	NULL,			/* No brand */
-	"Intel Celeron",
-	"Intel Pentium III",
-	"Intel Pentium III Xeon",
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	"Intel Pentium 4"
-};
-
-static struct {
-	char	*cpu_name;
-	int	cpu_class;
-} cpus[] = {
-	{ "Intel 80286",	CPUCLASS_286 },		/* CPU_286   */
-	{ "i386SX",		CPUCLASS_386 },		/* CPU_386SX */
-	{ "i386DX",		CPUCLASS_386 },		/* CPU_386   */
-	{ "i486SX",		CPUCLASS_486 },		/* CPU_486SX */
-	{ "i486DX",		CPUCLASS_486 },		/* CPU_486   */
-	{ "Pentium",		CPUCLASS_586 },		/* CPU_586   */
-	{ "Cyrix 486",		CPUCLASS_486 },		/* CPU_486DLC */
-	{ "Pentium Pro",	CPUCLASS_686 },		/* CPU_686 */
-	{ "Cyrix 5x86",		CPUCLASS_486 },		/* CPU_M1SC */
-	{ "Cyrix 6x86",		CPUCLASS_486 },		/* CPU_M1 */
-	{ "Blue Lightning",	CPUCLASS_486 },		/* CPU_BLUE */
-	{ "Cyrix 6x86MX",	CPUCLASS_686 },		/* CPU_M2 */
-	{ "NexGen 586",		CPUCLASS_386 },		/* CPU_NX586 (XXX) */
-	{ "Cyrix 486S/DX",	CPUCLASS_486 },		/* CPU_CY486DX */
-	{ "Pentium II",		CPUCLASS_686 },		/* CPU_PII */
-	{ "Pentium III",	CPUCLASS_686 },		/* CPU_PIII */
-	{ "Pentium 4",		CPUCLASS_686 },		/* CPU_P4 */
-};
-#endif
-
 static struct {
 	char	*vendor;
 	u_int	vendor_id;
@@ -232,19 +176,6 @@ static struct {
 	{ AMD_VENDOR_ID,	CPU_VENDOR_AMD },	/* AuthenticAMD */
 	{ HYGON_VENDOR_ID,	CPU_VENDOR_HYGON },	/* HygonGenuine */
 	{ CENTAUR_VENDOR_ID,	CPU_VENDOR_CENTAUR },	/* CentaurHauls */
-#ifdef __i386__
-	{ NSC_VENDOR_ID,	CPU_VENDOR_NSC },	/* Geode by NSC */
-	{ CYRIX_VENDOR_ID,	CPU_VENDOR_CYRIX },	/* CyrixInstead */
-	{ TRANSMETA_VENDOR_ID,	CPU_VENDOR_TRANSMETA },	/* GenuineTMx86 */
-	{ SIS_VENDOR_ID,	CPU_VENDOR_SIS },	/* SiS SiS SiS  */
-	{ UMC_VENDOR_ID,	CPU_VENDOR_UMC },	/* UMC UMC UMC  */
-	{ NEXGEN_VENDOR_ID,	CPU_VENDOR_NEXGEN },	/* NexGenDriven */
-	{ RISE_VENDOR_ID,	CPU_VENDOR_RISE },	/* RiseRiseRise */
-#if 0
-	/* XXX CPUID 8000_0000h and 8086_0000h, not 0000_0000h */
-	{ "TransmetaCPU",	CPU_VENDOR_TRANSMETA },
-#endif
-#endif
 };
 
 void
@@ -254,12 +185,7 @@ printcpuinfo(void)
 	char *brand;
 
 	printf("CPU: ");
-#ifdef __i386__
-	cpu_class = cpus[cpu].cpu_class;
-	strncpy(cpu_model, cpus[cpu].cpu_name, sizeof (cpu_model));
-#else
 	strncpy(cpu_model, "Hammer", sizeof (cpu_model));
-#endif
 
 	/* Check for extended CPUID information and a processor name. */
 	if (cpu_exthigh >= 0x80000004) {
@@ -273,143 +199,8 @@ printcpuinfo(void)
 
 	switch (cpu_vendor_id) {
 	case CPU_VENDOR_INTEL:
-#ifdef __i386__
-		if ((cpu_id & 0xf00) > 0x300) {
-			u_int brand_index;
-
-			cpu_model[0] = '\0';
-
-			switch (cpu_id & 0x3000) {
-			case 0x1000:
-				strcpy(cpu_model, "Overdrive ");
-				break;
-			case 0x2000:
-				strcpy(cpu_model, "Dual ");
-				break;
-			}
-
-			switch (cpu_id & 0xf00) {
-			case 0x400:
-				strcat(cpu_model, "i486 ");
-				/* Check the particular flavor of 486 */
-				switch (cpu_id & 0xf0) {
-				case 0x00:
-				case 0x10:
-					strcat(cpu_model, "DX");
-					break;
-				case 0x20:
-					strcat(cpu_model, "SX");
-					break;
-				case 0x30:
-					strcat(cpu_model, "DX2");
-					break;
-				case 0x40:
-					strcat(cpu_model, "SL");
-					break;
-				case 0x50:
-					strcat(cpu_model, "SX2");
-					break;
-				case 0x70:
-					strcat(cpu_model,
-					    "DX2 Write-Back Enhanced");
-					break;
-				case 0x80:
-					strcat(cpu_model, "DX4");
-					break;
-				}
-				break;
-			case 0x500:
-				/* Check the particular flavor of 586 */
-				strcat(cpu_model, "Pentium");
-				switch (cpu_id & 0xf0) {
-				case 0x00:
-					strcat(cpu_model, " A-step");
-					break;
-				case 0x10:
-					strcat(cpu_model, "/P5");
-					break;
-				case 0x20:
-					strcat(cpu_model, "/P54C");
-					break;
-				case 0x30:
-					strcat(cpu_model, "/P24T");
-					break;
-				case 0x40:
-					strcat(cpu_model, "/P55C");
-					break;
-				case 0x70:
-					strcat(cpu_model, "/P54C");
-					break;
-				case 0x80:
-					strcat(cpu_model, "/P55C (quarter-micron)");
-					break;
-				default:
-					/* nothing */
-					break;
-				}
-#if defined(I586_CPU) && !defined(NO_F00F_HACK)
-				/*
-				 * XXX - If/when Intel fixes the bug, this
-				 * should also check the version of the
-				 * CPU, not just that it's a Pentium.
-				 */
-				has_f00f_bug = 1;
-#endif
-				break;
-			case 0x600:
-				/* Check the particular flavor of 686 */
-				switch (cpu_id & 0xf0) {
-				case 0x00:
-					strcat(cpu_model, "Pentium Pro A-step");
-					break;
-				case 0x10:
-					strcat(cpu_model, "Pentium Pro");
-					break;
-				case 0x30:
-				case 0x50:
-				case 0x60:
-					strcat(cpu_model,
-				"Pentium II/Pentium II Xeon/Celeron");
-					cpu = CPU_PII;
-					break;
-				case 0x70:
-				case 0x80:
-				case 0xa0:
-				case 0xb0:
-					strcat(cpu_model,
-					"Pentium III/Pentium III Xeon/Celeron");
-					cpu = CPU_PIII;
-					break;
-				default:
-					strcat(cpu_model, "Unknown 80686");
-					break;
-				}
-				break;
-			case 0xf00:
-				strcat(cpu_model, "Pentium 4");
-				cpu = CPU_P4;
-				break;
-			default:
-				strcat(cpu_model, "unknown");
-				break;
-			}
-
-			/*
-			 * If we didn't get a brand name from the extended
-			 * CPUID, try to look it up in the brand table.
-			 */
-			if (cpu_high > 0 && *cpu_brand == '\0') {
-				brand_index = cpu_procinfo & CPUID_BRAND_INDEX;
-				if (brand_index <= MAX_BRAND_INDEX &&
-				    cpu_brandtable[brand_index] != NULL)
-					strcpy(cpu_brand,
-					    cpu_brandtable[brand_index]);
-			}
-		}
-#else
 		/* Please make up your mind folks! */
 		strcat(cpu_model, "EM64T");
-#endif
 		break;
 	case CPU_VENDOR_AMD:
 		/*
@@ -418,288 +209,24 @@ printcpuinfo(void)
 		 * (also describes ``Features'' encodings.
 		 */
 		strcpy(cpu_model, "AMD ");
-#ifdef __i386__
-		switch (cpu_id & 0xFF0) {
-		case 0x410:
-			strcat(cpu_model, "Standard Am486DX");
-			break;
-		case 0x430:
-			strcat(cpu_model, "Enhanced Am486DX2 Write-Through");
-			break;
-		case 0x470:
-			strcat(cpu_model, "Enhanced Am486DX2 Write-Back");
-			break;
-		case 0x480:
-			strcat(cpu_model, "Enhanced Am486DX4/Am5x86 Write-Through");
-			break;
-		case 0x490:
-			strcat(cpu_model, "Enhanced Am486DX4/Am5x86 Write-Back");
-			break;
-		case 0x4E0:
-			strcat(cpu_model, "Am5x86 Write-Through");
-			break;
-		case 0x4F0:
-			strcat(cpu_model, "Am5x86 Write-Back");
-			break;
-		case 0x500:
-			strcat(cpu_model, "K5 model 0");
-			break;
-		case 0x510:
-			strcat(cpu_model, "K5 model 1");
-			break;
-		case 0x520:
-			strcat(cpu_model, "K5 PR166 (model 2)");
-			break;
-		case 0x530:
-			strcat(cpu_model, "K5 PR200 (model 3)");
-			break;
-		case 0x560:
-			strcat(cpu_model, "K6");
-			break;
-		case 0x570:
-			strcat(cpu_model, "K6 266 (model 1)");
-			break;
-		case 0x580:
-			strcat(cpu_model, "K6-2");
-			break;
-		case 0x590:
-			strcat(cpu_model, "K6-III");
-			break;
-		case 0x5a0:
-			strcat(cpu_model, "Geode LX");
-			break;
-		default:
-			strcat(cpu_model, "Unknown");
-			break;
-		}
-#else
 		if ((cpu_id & 0xf00) == 0xf00)
 			strcat(cpu_model, "AMD64 Processor");
 		else
 			strcat(cpu_model, "Unknown");
-#endif
 		break;
-#ifdef __i386__
-	case CPU_VENDOR_CYRIX:
-		strcpy(cpu_model, "Cyrix ");
-		switch (cpu_id & 0xff0) {
-		case 0x440:
-			strcat(cpu_model, "MediaGX");
-			break;
-		case 0x520:
-			strcat(cpu_model, "6x86");
-			break;
-		case 0x540:
-			cpu_class = CPUCLASS_586;
-			strcat(cpu_model, "GXm");
-			break;
-		case 0x600:
-			strcat(cpu_model, "6x86MX");
-			break;
-		default:
-			/*
-			 * Even though CPU supports the cpuid
-			 * instruction, it can be disabled.
-			 * Therefore, this routine supports all Cyrix
-			 * CPUs.
-			 */
-			switch (cyrix_did & 0xf0) {
-			case 0x00:
-				switch (cyrix_did & 0x0f) {
-				case 0x00:
-					strcat(cpu_model, "486SLC");
-					break;
-				case 0x01:
-					strcat(cpu_model, "486DLC");
-					break;
-				case 0x02:
-					strcat(cpu_model, "486SLC2");
-					break;
-				case 0x03:
-					strcat(cpu_model, "486DLC2");
-					break;
-				case 0x04:
-					strcat(cpu_model, "486SRx");
-					break;
-				case 0x05:
-					strcat(cpu_model, "486DRx");
-					break;
-				case 0x06:
-					strcat(cpu_model, "486SRx2");
-					break;
-				case 0x07:
-					strcat(cpu_model, "486DRx2");
-					break;
-				case 0x08:
-					strcat(cpu_model, "486SRu");
-					break;
-				case 0x09:
-					strcat(cpu_model, "486DRu");
-					break;
-				case 0x0a:
-					strcat(cpu_model, "486SRu2");
-					break;
-				case 0x0b:
-					strcat(cpu_model, "486DRu2");
-					break;
-				default:
-					strcat(cpu_model, "Unknown");
-					break;
-				}
-				break;
-			case 0x10:
-				switch (cyrix_did & 0x0f) {
-				case 0x00:
-					strcat(cpu_model, "486S");
-					break;
-				case 0x01:
-					strcat(cpu_model, "486S2");
-					break;
-				case 0x02:
-					strcat(cpu_model, "486Se");
-					break;
-				case 0x03:
-					strcat(cpu_model, "486S2e");
-					break;
-				case 0x0a:
-					strcat(cpu_model, "486DX");
-					break;
-				case 0x0b:
-					strcat(cpu_model, "486DX2");
-					break;
-				case 0x0f:
-					strcat(cpu_model, "486DX4");
-					break;
-				default:
-					strcat(cpu_model, "Unknown");
-					break;
-				}
-				break;
-			case 0x20:
-				if ((cyrix_did & 0x0f) < 8)
-					strcat(cpu_model, "6x86");	/* Where did you get it? */
-				else
-					strcat(cpu_model, "5x86");
-				break;
-			case 0x30:
-				strcat(cpu_model, "6x86");
-				break;
-			case 0x40:
-				if ((cyrix_did & 0xf000) == 0x3000) {
-					cpu_class = CPUCLASS_586;
-					strcat(cpu_model, "GXm");
-				} else
-					strcat(cpu_model, "MediaGX");
-				break;
-			case 0x50:
-				strcat(cpu_model, "6x86MX");
-				break;
-			case 0xf0:
-				switch (cyrix_did & 0x0f) {
-				case 0x0d:
-					strcat(cpu_model, "Overdrive CPU");
-					break;
-				case 0x0e:
-					strcpy(cpu_model, "Texas Instruments 486SXL");
-					break;
-				case 0x0f:
-					strcat(cpu_model, "486SLC/DLC");
-					break;
-				default:
-					strcat(cpu_model, "Unknown");
-					break;
-				}
-				break;
-			default:
-				strcat(cpu_model, "Unknown");
-				break;
-			}
-			break;
-		}
-		break;
-	case CPU_VENDOR_RISE:
-		strcpy(cpu_model, "Rise ");
-		switch (cpu_id & 0xff0) {
-		case 0x500:	/* 6401 and 6441 (Kirin) */
-		case 0x520:	/* 6510 (Lynx) */
-			strcat(cpu_model, "mP6");
-			break;
-		default:
-			strcat(cpu_model, "Unknown");
-		}
-		break;
-#endif
 	case CPU_VENDOR_CENTAUR:
-#ifdef __i386__
-		switch (cpu_id & 0xff0) {
-		case 0x540:
-			strcpy(cpu_model, "IDT WinChip C6");
-			break;
-		case 0x580:
-			strcpy(cpu_model, "IDT WinChip 2");
-			break;
-		case 0x590:
-			strcpy(cpu_model, "IDT WinChip 3");
-			break;
-		case 0x660:
-			strcpy(cpu_model, "VIA C3 Samuel");
-			break;
-		case 0x670:
-			if (cpu_id & 0x8)
-				strcpy(cpu_model, "VIA C3 Ezra");
-			else
-				strcpy(cpu_model, "VIA C3 Samuel 2");
-			break;
-		case 0x680:
-			strcpy(cpu_model, "VIA C3 Ezra-T");
-			break;
-		case 0x690:
-			strcpy(cpu_model, "VIA C3 Nehemiah");
-			break;
-		case 0x6a0:
-		case 0x6d0:
-			strcpy(cpu_model, "VIA C7 Esther");
-			break;
-		case 0x6f0:
-			strcpy(cpu_model, "VIA Nano");
-			break;
-		default:
-			strcpy(cpu_model, "VIA/IDT Unknown");
-		}
-#else
 		strcpy(cpu_model, "VIA ");
 		if ((cpu_id & 0xff0) == 0x6f0)
 			strcat(cpu_model, "Nano Processor");
 		else
 			strcat(cpu_model, "Unknown");
-#endif
 		break;
-#ifdef __i386__
-	case CPU_VENDOR_IBM:
-		strcpy(cpu_model, "Blue Lightning CPU");
-		break;
-	case CPU_VENDOR_NSC:
-		switch (cpu_id & 0xff0) {
-		case 0x540:
-			strcpy(cpu_model, "Geode SC1100");
-			cpu = CPU_GEODE1100;
-			break;
-		default:
-			strcpy(cpu_model, "Geode/NSC unknown");
-			break;
-		}
-		break;
-#endif
 	case CPU_VENDOR_HYGON:
 		strcpy(cpu_model, "Hygon ");
-#ifdef __i386__
-		strcat(cpu_model, "Unknown");
-#else
 		if ((cpu_id & 0xf00) == 0xf00)
 			strcat(cpu_model, "AMD64 Processor");
 		else
 			strcat(cpu_model, "Unknown");
-#endif
 		break;
 
 	default:
@@ -724,36 +251,7 @@ printcpuinfo(void)
 		    (intmax_t)(tsc_freq + 4999) / 1000000,
 		    (u_int)((tsc_freq + 4999) / 10000) % 100);
 	}
-#ifdef __i386__
-	switch(cpu_class) {
-	case CPUCLASS_286:
-		printf("286");
-		break;
-	case CPUCLASS_386:
-		printf("386");
-		break;
-#if defined(I486_CPU)
-	case CPUCLASS_486:
-		printf("486");
-		break;
-#endif
-#if defined(I586_CPU)
-	case CPUCLASS_586:
-		printf("586");
-		break;
-#endif
-#if defined(I686_CPU)
-	case CPUCLASS_686:
-		printf("686");
-		break;
-#endif
-	default:
-		printf("Unknown");	/* will panic below... */
-	}
-#else
-	printf("K8");
-#endif
-	printf("-class CPU)\n");
+	printf("K8-class CPU)\n");
 	if (*cpu_vendor)
 		printf("  Origin=\"%s\"", cpu_vendor);
 	if (cpu_id)
@@ -762,21 +260,10 @@ printcpuinfo(void)
 	if (cpu_vendor_id == CPU_VENDOR_INTEL ||
 	    cpu_vendor_id == CPU_VENDOR_AMD ||
 	    cpu_vendor_id == CPU_VENDOR_HYGON ||
-	    cpu_vendor_id == CPU_VENDOR_CENTAUR ||
-#ifdef __i386__
-	    cpu_vendor_id == CPU_VENDOR_TRANSMETA ||
-	    cpu_vendor_id == CPU_VENDOR_RISE ||
-	    cpu_vendor_id == CPU_VENDOR_NSC ||
-	    (cpu_vendor_id == CPU_VENDOR_CYRIX && ((cpu_id & 0xf00) > 0x500)) ||
-#endif
-	    0) {
+	    cpu_vendor_id == CPU_VENDOR_CENTAUR) {
 		printf("  Family=0x%x", CPUID_TO_FAMILY(cpu_id));
 		printf("  Model=0x%x", CPUID_TO_MODEL(cpu_id));
 		printf("  Stepping=%u", cpu_id & CPUID_STEPPING);
-#ifdef __i386__
-		if (cpu_vendor_id == CPU_VENDOR_CYRIX)
-			printf("\n  DIR=0x%04x", cyrix_did);
-#endif
 
 		/*
 		 * AMD CPUID Specification
@@ -1161,16 +648,6 @@ printcpuinfo(void)
 					printf(", performance statistics");
 			}
 		}
-#ifdef __i386__
-	} else if (cpu_vendor_id == CPU_VENDOR_CYRIX) {
-		printf("  DIR=0x%04x", cyrix_did);
-		printf("  Stepping=%u", (cyrix_did & 0xf000) >> 12);
-		printf("  Revision=%u", (cyrix_did & 0x0f00) >> 8);
-#ifndef CYRIX_CACHE_REALLY_WORKS
-		if (cpu == CPU_M1 && (cyrix_did & 0xff00) < 0x1700)
-			printf("\n  CPU cache: write-through mode");
-#endif
-#endif
 	}
 
 	/* Avoid ugly blank lines: only print newline when we have to. */
@@ -1183,172 +660,10 @@ printcpuinfo(void)
 			print_AMD_info();
 		else if (cpu_vendor_id == CPU_VENDOR_INTEL)
 			print_INTEL_info();
-#ifdef __i386__
-		else if (cpu_vendor_id == CPU_VENDOR_TRANSMETA)
-			print_transmeta_info();
-#endif
 	}
 
 	print_hypervisor_info();
 }
-
-#ifdef __i386__
-void
-panicifcpuunsupported(void)
-{
-
-#if !defined(lint)
-#if !defined(I486_CPU) && !defined(I586_CPU) && !defined(I686_CPU)
-#error This kernel is not configured for one of the supported CPUs
-#endif
-#else /* lint */
-#endif /* lint */
-	/*
-	 * Now that we have told the user what they have,
-	 * let them know if that machine type isn't configured.
-	 */
-	switch (cpu_class) {
-	case CPUCLASS_286:	/* a 286 should not make it this far, anyway */
-	case CPUCLASS_386:
-#if !defined(I486_CPU)
-	case CPUCLASS_486:
-#endif
-#if !defined(I586_CPU)
-	case CPUCLASS_586:
-#endif
-#if !defined(I686_CPU)
-	case CPUCLASS_686:
-#endif
-		panic("CPU class not configured");
-	default:
-		break;
-	}
-}
-
-static	volatile u_int trap_by_rdmsr;
-
-/*
- * Special exception 6 handler.
- * The rdmsr instruction generates invalid opcodes fault on 486-class
- * Cyrix CPU.  Stacked eip register points the rdmsr instruction in the
- * function identblue() when this handler is called.  Stacked eip should
- * be advanced.
- */
-inthand_t	bluetrap6;
-__asm
-("									\n\
-	.text								\n\
-	.p2align 2,0x90							\n\
-	.type	" __XSTRING(CNAME(bluetrap6)) ",@function		\n\
-" __XSTRING(CNAME(bluetrap6)) ":					\n\
-	ss								\n\
-	movl	$0xa8c1d," __XSTRING(CNAME(trap_by_rdmsr)) "		\n\
-	addl	$2, (%esp)	/* rdmsr is a 2-byte instruction */	\n\
-	iret								\n\
-");
-
-/*
- * Special exception 13 handler.
- * Accessing non-existent MSR generates general protection fault.
- */
-inthand_t	bluetrap13;
-__asm
-("									\n\
-	.text								\n\
-	.p2align 2,0x90							\n\
-	.type	" __XSTRING(CNAME(bluetrap13)) ",@function		\n\
-" __XSTRING(CNAME(bluetrap13)) ":					\n\
-	ss								\n\
-	movl	$0xa89c4," __XSTRING(CNAME(trap_by_rdmsr)) "		\n\
-	popl	%eax		/* discard error code */		\n\
-	addl	$2, (%esp)	/* rdmsr is a 2-byte instruction */	\n\
-	iret								\n\
-");
-
-/*
- * Distinguish IBM Blue Lightning CPU from Cyrix CPUs that does not
- * support cpuid instruction.  This function should be called after
- * loading interrupt descriptor table register.
- *
- * I don't like this method that handles fault, but I couldn't get
- * information for any other methods.  Does blue giant know?
- */
-static int
-identblue(void)
-{
-
-	trap_by_rdmsr = 0;
-
-	/*
-	 * Cyrix 486-class CPU does not support rdmsr instruction.
-	 * The rdmsr instruction generates invalid opcode fault, and exception
-	 * will be trapped by bluetrap6() on Cyrix 486-class CPU.  The
-	 * bluetrap6() set the magic number to trap_by_rdmsr.
-	 */
-	setidt(IDT_UD, bluetrap6, SDT_SYS386TGT, SEL_KPL,
-	    GSEL(GCODE_SEL, SEL_KPL));
-
-	/*
-	 * Certain BIOS disables cpuid instruction of Cyrix 6x86MX CPU.
-	 * In this case, rdmsr generates general protection fault, and
-	 * exception will be trapped by bluetrap13().
-	 */
-	setidt(IDT_GP, bluetrap13, SDT_SYS386TGT, SEL_KPL,
-	    GSEL(GCODE_SEL, SEL_KPL));
-
-	rdmsr(0x1002);		/* Cyrix CPU generates fault. */
-
-	if (trap_by_rdmsr == 0xa8c1d)
-		return IDENTBLUE_CYRIX486;
-	else if (trap_by_rdmsr == 0xa89c4)
-		return IDENTBLUE_CYRIXM2;
-	return IDENTBLUE_IBMCPU;
-}
-
-/*
- * identifycyrix() set lower 16 bits of cyrix_did as follows:
- *
- *  F E D C B A 9 8 7 6 5 4 3 2 1 0
- * +-------+-------+---------------+
- * |  SID  |  RID  |   Device ID   |
- * |    (DIR 1)    |    (DIR 0)    |
- * +-------+-------+---------------+
- */
-static void
-identifycyrix(void)
-{
-	register_t saveintr;
-	int	ccr2_test = 0, dir_test = 0;
-	u_char	ccr2, ccr3;
-
-	saveintr = intr_disable();
-
-	ccr2 = read_cyrix_reg(CCR2);
-	write_cyrix_reg(CCR2, ccr2 ^ CCR2_LOCK_NW);
-	read_cyrix_reg(CCR2);
-	if (read_cyrix_reg(CCR2) != ccr2)
-		ccr2_test = 1;
-	write_cyrix_reg(CCR2, ccr2);
-
-	ccr3 = read_cyrix_reg(CCR3);
-	write_cyrix_reg(CCR3, ccr3 ^ CCR3_MAPEN3);
-	read_cyrix_reg(CCR3);
-	if (read_cyrix_reg(CCR3) != ccr3)
-		dir_test = 1;					/* CPU supports DIRs. */
-	write_cyrix_reg(CCR3, ccr3);
-
-	if (dir_test) {
-		/* Device ID registers are available. */
-		cyrix_did = read_cyrix_reg(DIR1) << 8;
-		cyrix_did += read_cyrix_reg(DIR0);
-	} else if (ccr2_test)
-		cyrix_did = 0x0010;		/* 486S A-step */
-	else
-		cyrix_did = 0x00ff;		/* Old 486SLC/DLC and TI486SXLC/SXL */
-
-	intr_restore(saveintr);
-}
-#endif
 
 /* Update TSC freq with the value indicated by the caller. */
 static void
@@ -1652,9 +967,6 @@ void
 finishidentcpu(void)
 {
 	u_int regs[4];
-#ifdef __i386__
-	u_char ccr3;
-#endif
 
 	identify_cpu_fixup_bsp();
 
@@ -1668,19 +980,6 @@ finishidentcpu(void)
 
 	identify_cpu2();
 
-#ifdef __i386__
-	if (cpu_high > 0 &&
-	    (cpu_vendor_id == CPU_VENDOR_INTEL ||
-	     cpu_vendor_id == CPU_VENDOR_AMD ||
-	     cpu_vendor_id == CPU_VENDOR_HYGON ||
-	     cpu_vendor_id == CPU_VENDOR_TRANSMETA ||
-	     cpu_vendor_id == CPU_VENDOR_CENTAUR ||
-	     cpu_vendor_id == CPU_VENDOR_NSC)) {
-		do_cpuid(0x80000000, regs);
-		if (regs[0] >= 0x80000000)
-			cpu_exthigh = regs[0];
-	}
-#else
 	if (cpu_vendor_id == CPU_VENDOR_INTEL ||
 	    cpu_vendor_id == CPU_VENDOR_AMD ||
 	    cpu_vendor_id == CPU_VENDOR_HYGON ||
@@ -1688,7 +987,6 @@ finishidentcpu(void)
 		do_cpuid(0x80000000, regs);
 		cpu_exthigh = regs[0];
 	}
-#endif
 	if (cpu_exthigh >= 0x80000001) {
 		do_cpuid(0x80000001, regs);
 		amd_feature = regs[3] & ~(cpu_feature & 0x0183f3ff);
@@ -1708,96 +1006,6 @@ finishidentcpu(void)
 	} else {
 		cpu_maxphyaddr = (cpu_feature & CPUID_PAE) != 0 ? 36 : 32;
 	}
-
-#ifdef __i386__
-	if (cpu_vendor_id == CPU_VENDOR_CYRIX) {
-		if (cpu == CPU_486) {
-			/*
-			 * These conditions are equivalent to:
-			 *     - CPU does not support cpuid instruction.
-			 *     - Cyrix/IBM CPU is detected.
-			 */
-			if (identblue() == IDENTBLUE_IBMCPU) {
-				strcpy(cpu_vendor, "IBM");
-				cpu_vendor_id = CPU_VENDOR_IBM;
-				cpu = CPU_BLUE;
-				return;
-			}
-		}
-		switch (cpu_id & 0xf00) {
-		case 0x600:
-			/*
-			 * Cyrix's datasheet does not describe DIRs.
-			 * Therefor, I assume it does not have them
-			 * and use the result of the cpuid instruction.
-			 * XXX they seem to have it for now at least. -Peter
-			 */
-			identifycyrix();
-			cpu = CPU_M2;
-			break;
-		default:
-			identifycyrix();
-			/*
-			 * This routine contains a trick.
-			 * Don't check (cpu_id & 0x00f0) == 0x50 to detect M2, now.
-			 */
-			switch (cyrix_did & 0x00f0) {
-			case 0x00:
-			case 0xf0:
-				cpu = CPU_486DLC;
-				break;
-			case 0x10:
-				cpu = CPU_CY486DX;
-				break;
-			case 0x20:
-				if ((cyrix_did & 0x000f) < 8)
-					cpu = CPU_M1;
-				else
-					cpu = CPU_M1SC;
-				break;
-			case 0x30:
-				cpu = CPU_M1;
-				break;
-			case 0x40:
-				/* MediaGX CPU */
-				cpu = CPU_M1SC;
-				break;
-			default:
-				/* M2 and later CPUs are treated as M2. */
-				cpu = CPU_M2;
-
-				/*
-				 * enable cpuid instruction.
-				 */
-				ccr3 = read_cyrix_reg(CCR3);
-				write_cyrix_reg(CCR3, CCR3_MAPEN0);
-				write_cyrix_reg(CCR4, read_cyrix_reg(CCR4) | CCR4_CPUID);
-				write_cyrix_reg(CCR3, ccr3);
-
-				do_cpuid(0, regs);
-				cpu_high = regs[0];	/* eax */
-				do_cpuid(1, regs);
-				cpu_id = regs[0];	/* eax */
-				cpu_feature = regs[3];	/* edx */
-				break;
-			}
-		}
-	} else if (cpu == CPU_486 && *cpu_vendor == '\0') {
-		/*
-		 * There are BlueLightning CPUs that do not change
-		 * undefined flags by dividing 5 by 2.  In this case,
-		 * the CPU identification routine in locore.s leaves
-		 * cpu_vendor null string and puts CPU_486 into the
-		 * cpu.
-		 */
-		if (identblue() == IDENTBLUE_IBMCPU) {
-			strcpy(cpu_vendor, "IBM");
-			cpu_vendor_id = CPU_VENDOR_IBM;
-			cpu = CPU_BLUE;
-			return;
-		}
-	}
-#endif
 }
 
 int
@@ -1850,9 +1058,6 @@ print_AMD_l2_assoc(int i)
 static void
 print_AMD_info(void)
 {
-#ifdef __i386__
-	uint64_t amd_whcr;
-#endif
 	u_int regs[4];
 
 	if (cpu_exthigh >= 0x80000005) {
@@ -1913,37 +1118,6 @@ print_AMD_info(void)
 		print_AMD_l2_assoc((regs[2] >> 12) & 0x0f);
 	}
 
-#ifdef __i386__
-	if (((cpu_id & 0xf00) == 0x500)
-	    && (((cpu_id & 0x0f0) > 0x80)
-		|| (((cpu_id & 0x0f0) == 0x80)
-		    && (cpu_id & 0x00f) > 0x07))) {
-		/* K6-2(new core [Stepping 8-F]), K6-III or later */
-		amd_whcr = rdmsr(0xc0000082);
-		if (!(amd_whcr & (0x3ff << 22))) {
-			printf("Write Allocate Disable\n");
-		} else {
-			printf("Write Allocate Enable Limit: %dM bytes\n",
-			    (u_int32_t)((amd_whcr & (0x3ff << 22)) >> 22) * 4);
-			printf("Write Allocate 15-16M bytes: %s\n",
-			    (amd_whcr & (1 << 16)) ? "Enable" : "Disable");
-		}
-	} else if (((cpu_id & 0xf00) == 0x500)
-		   && ((cpu_id & 0x0f0) > 0x50)) {
-		/* K6, K6-2(old core) */
-		amd_whcr = rdmsr(0xc0000082);
-		if (!(amd_whcr & (0x7f << 1))) {
-			printf("Write Allocate Disable\n");
-		} else {
-			printf("Write Allocate Enable Limit: %dM bytes\n",
-			    (u_int32_t)((amd_whcr & (0x7f << 1)) >> 1) * 4);
-			printf("Write Allocate 15-16M bytes: %s\n",
-			    (amd_whcr & 0x0001) ? "Enable" : "Disable");
-			printf("Hardware Write Allocate Control: %s\n",
-			    (amd_whcr & 0x0100) ? "Enable" : "Disable");
-		}
-	}
-#endif
 	/*
 	 * Opteron Rev E shows a bug as in very rare occasions a read memory
 	 * barrier is not performed as expected if it is followed by a
@@ -2425,43 +1599,6 @@ print_svm_info(void)
 	printf("\nRevision=%d, ASIDs=%d", regs[0] & 0xff, regs[1]);
 }
 
-#ifdef __i386__
-static void
-print_transmeta_info(void)
-{
-	u_int regs[4], nreg = 0;
-
-	do_cpuid(0x80860000, regs);
-	nreg = regs[0];
-	if (nreg >= 0x80860001) {
-		do_cpuid(0x80860001, regs);
-		printf("  Processor revision %u.%u.%u.%u\n",
-		       (regs[1] >> 24) & 0xff,
-		       (regs[1] >> 16) & 0xff,
-		       (regs[1] >> 8) & 0xff,
-		       regs[1] & 0xff);
-	}
-	if (nreg >= 0x80860002) {
-		do_cpuid(0x80860002, regs);
-		printf("  Code Morphing Software revision %u.%u.%u-%u-%u\n",
-		       (regs[1] >> 24) & 0xff,
-		       (regs[1] >> 16) & 0xff,
-		       (regs[1] >> 8) & 0xff,
-		       regs[1] & 0xff,
-		       regs[2]);
-	}
-	if (nreg >= 0x80860006) {
-		char info[65];
-		do_cpuid(0x80860003, (u_int*) &info[0]);
-		do_cpuid(0x80860004, (u_int*) &info[16]);
-		do_cpuid(0x80860005, (u_int*) &info[32]);
-		do_cpuid(0x80860006, (u_int*) &info[48]);
-		info[64] = 0;
-		printf("  %s\n", info);
-	}
-}
-#endif
-
 static void
 print_via_padlock_info(void)
 {
@@ -2687,11 +1824,6 @@ print_hypervisor_info(void)
 vm_paddr_t
 cpu_getmaxphyaddr(void)
 {
-
-#if defined(__i386__)
-	if (!pae_mode)
-		return (0xffffffff);
-#endif
 	return ((1ULL << cpu_maxphyaddr) - 1);
 }
 

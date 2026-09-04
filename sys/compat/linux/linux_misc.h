@@ -105,7 +105,7 @@
 #endif
 
 /* Linux sets the i387 to extended precision. */
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define	__LINUX_NPXCW__		0x37f
 #endif
 

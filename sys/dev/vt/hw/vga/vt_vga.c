@@ -45,7 +45,7 @@
 #include <dev/pci/pcivar.h>
 
 #include <machine/bus.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <contrib/dev/acpica/include/acpi.h>
 #include <machine/md_var.h>
 #endif
@@ -1266,7 +1266,7 @@ vga_initialize(struct vt_device *vd, int textmode)
 static bool
 vga_acpi_disabled(void)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	uint16_t flags;
 	int ignore;
 
@@ -1304,7 +1304,7 @@ vga_init(struct vt_device *vd)
 	if (vd->vd_flags & VDF_DOWNGRADE && vd->vd_video_dev != NULL)
 		vga_pci_repost(vd->vd_video_dev);
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	sc->vga_fb_tag = X86_BUS_SPACE_MEM;
 	sc->vga_reg_tag = X86_BUS_SPACE_IO;
 #else

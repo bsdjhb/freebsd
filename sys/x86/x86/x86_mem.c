@@ -175,7 +175,6 @@ mem_range_match(struct mem_range_softc *sc, struct mem_range_desc *mrd)
 static void
 x86_mr_split_dmap(struct mem_range_softc *sc __unused)
 {
-#ifdef __amd64__
 	struct mem_range_desc *mrd;
 	int i;
 
@@ -185,7 +184,6 @@ x86_mr_split_dmap(struct mem_range_softc *sc __unused)
 		if ((mrd->mr_flags & (MDF_ACTIVE | MDF_BOGUS)) == MDF_ACTIVE)
 			pmap_demote_DMAP(mrd->mr_base, mrd->mr_len, true);
 	}
-#endif
 }
 
 /*

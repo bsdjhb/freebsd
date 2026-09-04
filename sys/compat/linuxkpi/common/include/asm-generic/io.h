@@ -27,7 +27,7 @@
 #ifndef _LINUXKPI_ASMGENERIC_IO_H_
 #define	_LINUXKPI_ASMGENERIC_IO_H_
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 
 #include <machine/cpufunc.h>
 

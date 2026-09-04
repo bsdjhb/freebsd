@@ -210,7 +210,7 @@ int MPPC_Compress(u_char **src, u_char **dst, u_long *srcCnt, u_long *dstCnt, ch
 	}
 
 	/* Find length of the matching fragment */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	/* Optimization for CPUs without strict data aligning requirements */
 	while ((*((uint32_t*)p) == *((uint32_t*)s)) && (s < (r - 3))) {
 	    p+=4;

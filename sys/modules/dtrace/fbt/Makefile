@@ -7,7 +7,7 @@ SRCS=		fbt.c fbt_isa.c
 SRCS+=		vnode_if.h
 
 
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "amd64"
 CFLAGS+=	-I${SYSDIR}/cddl/dev/fbt/x86
 .PATH:		${SYSDIR}/cddl/dev/fbt/x86
 .else

@@ -476,7 +476,7 @@ linux_epoll_pwait(struct thread *td, struct linux_epoll_pwait_args *args)
 	    args->maxevents, args->timeout, pmask));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_epoll_pwait2_64(struct thread *td, struct linux_epoll_pwait2_64_args *args)
 {
@@ -524,7 +524,7 @@ linux_epoll_pwait2(struct thread *td, struct linux_epoll_pwait2_args *args)
 	return (linux_epoll_wait_ts(td, args->epfd, args->events,
 	    args->maxevents, tsa, pmask));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 static int
 epoll_register_kevent(struct thread *td, struct file *epfp, int fd, int filter,
@@ -669,7 +669,7 @@ linux_timerfd_settime(struct thread *td, struct linux_timerfd_settime_args *args
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_timerfd_gettime64(struct thread *td, struct linux_timerfd_gettime64_args *args)
 {

@@ -58,7 +58,7 @@
 #include <dev/kbd/kbdreg.h>
 #include <dev/vt/vt.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/psl.h>
 #include <machine/frame.h>
 #endif
@@ -2938,16 +2938,12 @@ skip_thunk:
 		error = securelevel_gt(td->td_ucred, 0);
 		if (error != 0)
 			return (error);
-#if defined(__i386__)
-		td->td_frame->tf_eflags |= PSL_IOPL;
-#elif defined(__amd64__)
+#if defined(__amd64__)
 		td->td_frame->tf_rflags |= PSL_IOPL;
 #endif
 		return (0);
 	case KDDISABIO:		/* disallow io operations (default) */
-#if defined(__i386__)
-		td->td_frame->tf_eflags &= ~PSL_IOPL;
-#elif defined(__amd64__)
+#if defined(__amd64__)
 		td->td_frame->tf_rflags &= ~PSL_IOPL;
 #endif
 		return (0);

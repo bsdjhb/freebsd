@@ -134,7 +134,7 @@ smr_enter(smr_t smr)
 	 * the load.  See smr_poll() for details on how this condition
 	 * is detected and handled there.
 	 */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	atomic_add_acq_int(&smr->c_seq, smr_shared_current(smr->c_shared));
 #else
 	atomic_store_int(&smr->c_seq, smr_shared_current(smr->c_shared));

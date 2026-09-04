@@ -246,20 +246,6 @@ acpi_pcib_producer_handler(ACPI_RESOURCE *res, void *context)
 			device_printf(sc->ap_dev,
 			    "Length mismatch for %d range: %jx vs %jx\n", type,
 			    (uintmax_t)(max - min + 1), (uintmax_t)length);
-#ifdef __i386__
-		if (min > ULONG_MAX) {
-			device_printf(sc->ap_dev,
-			    "Ignoring %d range above 4GB (%#jx-%#jx)\n",
-			    type, (uintmax_t)min, (uintmax_t)max);
-			break;
-		}
-		if (max > ULONG_MAX) {
-			device_printf(sc->ap_dev,
-       		    "Truncating end of %d range above 4GB (%#jx-%#jx)\n",
-			    type, (uintmax_t)min, (uintmax_t)max);
-			max = ULONG_MAX;
-		}
-#endif
 		error = pcib_host_res_decodes(&sc->ap_host_res, type, min, max,
 		    flags);
 		if (error)
@@ -611,7 +597,7 @@ acpi_pcib_acpi_alloc_resource(device_t dev, device_t child, int type, int rid,
     struct acpi_hpcib_softc *sc;
     struct resource *res;
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
     start = hostb_alloc_start(type, start, end, count);
 #endif
 

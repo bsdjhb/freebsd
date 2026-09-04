@@ -241,7 +241,7 @@ linux_sigaltstack(struct thread *td, struct linux_sigaltstack_args *uap)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_signal(struct thread *td, struct linux_signal_args *args)
 {
@@ -257,7 +257,7 @@ linux_signal(struct thread *td, struct linux_signal_args *args)
 
 	return (error);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_rt_sigaction(struct thread *td, struct linux_rt_sigaction_args *args)
@@ -313,7 +313,7 @@ linux_do_sigprocmask(struct thread *td, int how, sigset_t *new,
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_sigprocmask(struct thread *td, struct linux_sigprocmask_args *args)
 {
@@ -350,7 +350,7 @@ linux_sigprocmask(struct thread *td, struct linux_sigprocmask_args *args)
 
 	return (error);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_rt_sigprocmask(struct thread *td, struct linux_rt_sigprocmask_args *args)
@@ -378,7 +378,7 @@ linux_rt_sigprocmask(struct thread *td, struct linux_rt_sigprocmask_args *args)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_sgetmask(struct thread *td, struct linux_sgetmask_args *args)
 {
@@ -441,7 +441,7 @@ linux_sigpending(struct thread *td, struct linux_sigpending_args *args)
 	mask = lset.__mask;
 	return (copyout(&mask, args->mask, sizeof(mask)));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 /*
  * MPSAFE
@@ -520,7 +520,7 @@ linux_common_rt_sigtimedwait(struct thread *td, l_sigset_t *mask,
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_rt_sigtimedwait_time64(struct thread *td,
 	struct linux_rt_sigtimedwait_time64_args *args)
@@ -539,7 +539,7 @@ linux_rt_sigtimedwait_time64(struct thread *td,
 	return (linux_common_rt_sigtimedwait(td, args->mask, tsa,
 	    args->ptr, args->sigsetsize));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_kill(struct thread *td, struct linux_kill_args *args)

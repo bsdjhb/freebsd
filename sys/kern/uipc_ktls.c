@@ -52,7 +52,7 @@
 #include <sys/kthread.h>
 #include <sys/uio.h>
 #include <sys/vmmeter.h>
-#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
+#if defined(__aarch64__) || defined(__amd64__)
 #include <machine/pcb.h>
 #endif
 #include <machine/vmparam.h>
@@ -3300,7 +3300,7 @@ ktls_work_thread(void *ctx)
 			printf("Unable to bind KTLS worker thread for CPU %d: error %d\n",
 				cpu, error);
 	}
-#if defined(__aarch64__) || defined(__amd64__) || defined(__i386__)
+#if defined(__aarch64__) || defined(__amd64__)
 	fpu_kern_thread(0);
 #endif
 	for (;;) {

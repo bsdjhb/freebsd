@@ -691,7 +691,7 @@
 /* Define if host toolchain supports SHA512EXT */
 #define HAVE_TOOLCHAIN_SHA512EXT 1
 
-#if defined(__amd64__) || defined(__i386__)
+#ifdef __amd64__
 /* Define if host toolchain supports SSE2 */
 #define HAVE_TOOLCHAIN_SSE2 1
 
@@ -700,9 +700,7 @@
 
 /* Define if host toolchain supports SSSE3 */
 #define HAVE_TOOLCHAIN_SSSE3 1
-#endif
 
-#ifdef __amd64__
 /* Define if host toolchain supports VAES */
 #define HAVE_TOOLCHAIN_VAES 1
 

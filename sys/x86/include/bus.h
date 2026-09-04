@@ -109,19 +109,11 @@
 
 #define BUS_SPACE_MAXSIZE_24BIT	0xFFFFFF
 #define BUS_SPACE_MAXSIZE_32BIT 0xFFFFFFFF
-#if defined(__amd64__)
 #define BUS_SPACE_MAXSIZE	0xFFFFFFFFFFFFFFFFULL
-#else
-#define BUS_SPACE_MAXSIZE	0xFFFFFFFF
-#endif
 #define BUS_SPACE_MAXADDR_24BIT	0xFFFFFF
 #define BUS_SPACE_MAXADDR_32BIT 0xFFFFFFFF
-#if defined(__amd64__) || defined(PAE)
 #define BUS_SPACE_MAXADDR_48BIT	0xFFFFFFFFFFFFULL
 #define BUS_SPACE_MAXADDR	0xFFFFFFFFFFFFFFFFULL
-#else
-#define BUS_SPACE_MAXADDR	0xFFFFFFFF
-#endif
 
 #define BUS_SPACE_INVALID_DATA	(~0)
 #define BUS_SPACE_UNRESTRICTED	(~0)
@@ -204,11 +196,9 @@ static __inline u_int32_t bus_space_read_4(bus_space_tag_t tag,
 					   bus_space_handle_t handle,
 					   bus_size_t offset);
 
-#ifdef __amd64__
 static __inline uint64_t bus_space_read_8(bus_space_tag_t tag,
 					  bus_space_handle_t handle,
 					  bus_size_t offset);
-#endif
 
 static __inline u_int8_t
 bus_space_read_1(bus_space_tag_t tag, bus_space_handle_t handle,
@@ -240,7 +230,6 @@ bus_space_read_4(bus_space_tag_t tag, bus_space_handle_t handle,
 	return (*(volatile u_int32_t *)(handle + offset));
 }
 
-#ifdef __amd64__
 static __inline uint64_t
 bus_space_read_8(bus_space_tag_t tag, bus_space_handle_t handle,
 		 bus_size_t offset)
@@ -250,7 +239,6 @@ bus_space_read_8(bus_space_tag_t tag, bus_space_handle_t handle,
 		return (BUS_SPACE_INVALID_DATA);
 	return (*(volatile uint64_t *)(handle + offset));
 }
-#endif
 
 /*
  * Read `count' 1, 2, 4, or 8 byte quantities from bus space
@@ -448,11 +436,9 @@ static __inline void bus_space_write_4(bus_space_tag_t tag,
 				       bus_space_handle_t bsh,
 				       bus_size_t offset, u_int32_t value);
 
-#ifdef __amd64__
 static __inline void bus_space_write_8(bus_space_tag_t tag,
 				       bus_space_handle_t bsh,
 				       bus_size_t offset, uint64_t value);
-#endif
 
 static __inline void
 bus_space_write_1(bus_space_tag_t tag, bus_space_handle_t bsh,
@@ -487,7 +473,6 @@ bus_space_write_4(bus_space_tag_t tag, bus_space_handle_t bsh,
 		*(volatile u_int32_t *)(bsh + offset) = value;
 }
 
-#ifdef __amd64__
 static __inline void
 bus_space_write_8(bus_space_tag_t tag, bus_space_handle_t bsh,
 		  bus_size_t offset, uint64_t value)
@@ -498,7 +483,6 @@ bus_space_write_8(bus_space_tag_t tag, bus_space_handle_t bsh,
 	else
 		*(volatile uint64_t *)(bsh + offset) = value;
 }
-#endif
 
 /*
  * Write `count' 1, 2, 4, or 8 byte quantities from the buffer
@@ -961,11 +945,7 @@ bus_space_barrier(bus_space_tag_t tag __unused, bus_space_handle_t bsh __unused,
 		  bus_size_t offset __unused, bus_size_t len __unused, int flags)
 {
 	if (flags & BUS_SPACE_BARRIER_READ)
-#ifdef __amd64__
 		__asm __volatile("lock; addl $0,0(%%rsp)" : : : "memory");
-#else
-		__asm __volatile("lock; addl $0,0(%%esp)" : : : "memory");
-#endif
 	else
 		__compiler_membar();
 }
@@ -1058,9 +1038,7 @@ bus_space_barrier(bus_space_tag_t tag __unused, bus_space_handle_t bsh __unused,
 BUS_PEEK_FUNC(1, uint8_t)
 BUS_PEEK_FUNC(2, uint16_t)
 BUS_PEEK_FUNC(4, uint32_t)
-#ifdef __amd64__
 BUS_PEEK_FUNC(8, uint64_t)
-#endif
 
 #define BUS_POKE_FUNC(width, type)					\
 	static inline int						\
@@ -1073,9 +1051,7 @@ BUS_PEEK_FUNC(8, uint64_t)
 BUS_POKE_FUNC(1, uint8_t)
 BUS_POKE_FUNC(2, uint16_t)
 BUS_POKE_FUNC(4, uint32_t)
-#ifdef __amd64__
 BUS_POKE_FUNC(8, uint64_t)
-#endif
 
 #endif /* !SAN_NEEDS_INTERCEPTORS && SAN_RUNTIME */
 

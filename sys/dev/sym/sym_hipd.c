@@ -120,7 +120,7 @@ typedef	u_int32_t u32;
  * Other architectures may implement weaker ordering guarantees and, thus,
  * require memory barriers (and also IO barriers) to be used.
  */
-#if	defined	__i386__ || defined __amd64__
+#if	defined __amd64__
 #define	MEMORY_BARRIER()	__compiler_membar()
 #elif	defined	__powerpc__
 #define MEMORY_BARRIER()	__asm__ volatile("eieio; sync" : : : "memory")

@@ -32,7 +32,7 @@
 #include <sys/libkern.h>
 #include <sys/endian.h>
 #include <sys/pcpu.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/cpufunc.h>
 #include <machine/cputypes.h>
 #include <machine/fpu.h>

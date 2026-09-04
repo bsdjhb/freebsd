@@ -1548,7 +1548,7 @@ iflib_netmap_timer(void *arg)
 #define netmap_rx_irq(ifp, qid, budget) (0)
 #endif
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static __inline void
 prefetch(void *x)
 {

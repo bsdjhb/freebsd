@@ -30,23 +30,12 @@
 #include "bxe.h"
 #include "bxe_stats.h"
 
-#ifdef __i386__
-#define BITS_PER_LONG 32
-#else
-#define BITS_PER_LONG 64
-#endif
-
-
 static inline long
 bxe_hilo(uint32_t *hiref)
 {
     uint32_t lo = *(hiref + 1);
-#if (BITS_PER_LONG == 64)
     uint32_t hi = *hiref;
     return (HILO_U64(hi, lo));
-#else
-    return (lo);
-#endif
 }
 
 static inline uint16_t

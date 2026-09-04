@@ -502,9 +502,6 @@ static int w_max_used_index = 0;
 static unsigned int w_generation = 0;
 static const char w_notrunning[] = "Witness not running\n";
 static const char w_stillcold[] = "Witness is still cold\n";
-#ifdef __i386__
-static const char w_notallowed[] = "The sysctl is disabled on the arch\n";
-#endif
 
 static struct witness_order_list_entry order_lists[] = {
 	/*
@@ -684,9 +681,6 @@ static struct witness_order_list_entry order_lists[] = {
 	{ "ap boot", &lock_class_mtx_spin },
 #endif
 	{ "rm.mutex_mtx", &lock_class_mtx_spin },
-#ifdef __i386__
-	{ "cy", &lock_class_mtx_spin },
-#endif
 	{ "scc_hwmtx", &lock_class_mtx_spin },
 	{ "uart_hwmtx", &lock_class_mtx_spin },
 	{ "fast_taskqueue", &lock_class_mtx_spin },
@@ -718,16 +712,12 @@ static struct witness_order_list_entry order_lists[] = {
 	 */
 	{ "intrcnt", &lock_class_mtx_spin },
 	{ "icu", &lock_class_mtx_spin },
-#ifdef __i386__
-	{ "allpmaps", &lock_class_mtx_spin },
-	{ "descriptor tables", &lock_class_mtx_spin },
-#endif
 	{ "clk", &lock_class_mtx_spin },
 	{ "cpuset", &lock_class_mtx_spin },
 	{ "mprof lock", &lock_class_mtx_spin },
 	{ "zombie lock", &lock_class_mtx_spin },
 	{ "ALD Queue", &lock_class_mtx_spin },
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	{ "pcicfg", &lock_class_mtx_spin },
 	{ "NDIS thread lock", &lock_class_mtx_spin },
 #endif
@@ -3269,11 +3259,6 @@ sysctl_debug_witness_fullgraph(SYSCTL_HANDLER_ARGS)
 	struct witness *w;
 	struct sbuf *sb;
 	int error;
-
-#ifdef __i386__
-	error = SYSCTL_OUT(req, w_notallowed, sizeof(w_notallowed));
-	return (error);
-#endif
 
 	if (witness_watch < 1) {
 		error = SYSCTL_OUT(req, w_notrunning, sizeof(w_notrunning));

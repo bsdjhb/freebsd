@@ -42,7 +42,7 @@
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #endif
@@ -168,7 +168,7 @@ vga_pci_map_bios(device_t dev, size_t *size)
 	volatile unsigned char *bios;
 	int i, rid, found;
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	if (vga_pci_is_boot_display(dev)) {
 		/*
 		 * On x86, the System BIOS copy the default display
@@ -276,7 +276,7 @@ vga_pci_unmap_bios(device_t dev, void *bios)
 		return;
 	}
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	if (vga_pci_is_boot_display(dev)) {
 		/* We mapped the BIOS shadow copy located at 0xC0000. */
 		pmap_unmapdev(bios, VGA_PCI_BIOS_SHADOW_SIZE);
@@ -311,7 +311,7 @@ vga_pci_unmap_bios(device_t dev, void *bios)
 int
 vga_pci_repost(device_t dev)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	x86regs_t regs;
 
 	if (!vga_pci_is_boot_display(dev))

@@ -63,7 +63,7 @@
 #include <dev/pci/pci_private.h>
 #include <dev/pci/pcib_private.h>
 #include "pcib_if.h"
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/intr_machdep.h>
 #include <x86/apicreg.h>
 #include <x86/apicvar.h>
@@ -1816,7 +1816,7 @@ static int
 vmbus_pcib_alloc_msi(device_t pcib, device_t dev, int count,
     int maxcount, int *irqs)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	return (PCIB_ALLOC_MSI(device_get_parent(pcib), dev, count, maxcount,
 	    irqs));
 #endif
@@ -1829,7 +1829,7 @@ vmbus_pcib_alloc_msi(device_t pcib, device_t dev, int count,
 static int
 vmbus_pcib_release_msi(device_t pcib, device_t dev, int count, int *irqs)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	return (PCIB_RELEASE_MSI(device_get_parent(pcib), dev, count, irqs));
 #endif
 #if defined(__aarch64__)
@@ -1867,7 +1867,7 @@ vmbus_pcib_release_msix(device_t pcib, device_t dev, int irq)
 #define	MSI_INTEL_ADDR_DEST	0x00000000
 #define	MSI_INTEL_DATA_DELFIXED 0x0
 #endif
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #define MSI_INTEL_ADDR_DEST 0x000ff000
 #define MSI_INTEL_DATA_INTVEC   IOART_INTVEC    /* Interrupt vector. */
 #define MSI_INTEL_DATA_DELFIXED IOART_DELFIXED

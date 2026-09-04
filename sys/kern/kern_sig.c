@@ -1028,14 +1028,12 @@ osigaction(struct thread *td, struct osigaction_args *uap)
 	return (error);
 }
 
-#if !defined(__i386__)
 /* Avoid replicating the same stub everywhere */
 int
 osigreturn(struct thread *td, struct osigreturn_args *uap)
 {
 	return (kern_nosys(td, 0));
 }
-#endif
 #endif /* COMPAT_43 */
 
 /*

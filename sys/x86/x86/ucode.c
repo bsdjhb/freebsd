@@ -133,14 +133,12 @@ ucode_intel_load(const void *data, ucode_load_how how, uint64_t *nrevp,
 		wrmsr_safe(MSR_BIOS_UPDT_TRIG, (uint64_t)(uintptr_t)data);
 		break;
 	case EARLY:
-#ifdef __amd64__
 		wrmsr_early_safe_start();
 		if (wrmsr_early_safe(MSR_BIOS_UPDT_TRIG,
 		    (uint64_t)(uintptr_t)data) != 0)
 			ucode_error = LOAD_FAILED;
 		wrmsr_early_safe_end();
 		break;
-#endif
 	case UNSAFE:
 		wrmsr(MSR_BIOS_UPDT_TRIG, (uint64_t)(uintptr_t)data);
 		break;
@@ -281,14 +279,12 @@ ucode_amd_load(const void *data, ucode_load_how how, uint64_t *nrevp,
 		wrmsr_safe(MSR_K8_UCODE_UPDATE, (uint64_t)(uintptr_t)data);
 		break;
 	case EARLY:
-#ifdef __amd64__
 		wrmsr_early_safe_start();
 		if (wrmsr_early_safe(MSR_K8_UCODE_UPDATE,
 		    (uint64_t)(uintptr_t)data) != 0)
 			ucode_error = LOAD_FAILED;
 		wrmsr_early_safe_end();
 		break;
-#endif
 	case UNSAFE:
 		wrmsr(MSR_K8_UCODE_UPDATE, (uint64_t)(uintptr_t)data);
 		break;
@@ -377,36 +373,6 @@ ucode_load_ap(int cpu)
 		(void)ucode_loader->load(ucode_data, UNSAFE, NULL, NULL);
 }
 
-static const void *
-map_ucode(const void *match, uintptr_t free, size_t len)
-{
-#ifdef __i386__
-	uintptr_t va;
-
-	for (va = free; va < free + len; va += PAGE_SIZE)
-		pmap_kenter(va, (vm_paddr_t)va);
-	memcpy_early((void *)free, match, len);
-	return ((const void *)free);
-#else
-	(void)len;
-	return (match);
-#endif
-}
-
-static void
-unmap_ucode(uintptr_t free, size_t len)
-{
-#ifdef __i386__
-	uintptr_t va;
-
-	for (va = free; va < free + len; va += PAGE_SIZE)
-		pmap_kremove(va);
-#else
-	(void)free;
-	(void)len;
-#endif
-}
-
 /*
  * Search for an applicable microcode update, and load it.  APs will load the
  * selected update once they come online.
@@ -423,7 +389,6 @@ ucode_load_bsp(uintptr_t free)
 		char vendor[13];
 	} cpuid;
 	const uint8_t *fileaddr, *match;
-	const uint8_t *addr;
 	char *type;
 	uint64_t nrev, orev;
 	caddr_t file;
@@ -458,15 +423,13 @@ ucode_load_bsp(uintptr_t free)
 		len = preload_fetch_size(file);
 		match = ucode_loader->match(fileaddr, &len);
 		if (match != NULL) {
-			addr = map_ucode(match, free, len);
-			error = ucode_loader->load(addr, EARLY, &nrev, &orev);
+			error = ucode_loader->load(match, EARLY, &nrev, &orev);
 			if (error == 0) {
-				ucode_data = early_ucode_data = addr;
+				ucode_data = early_ucode_data = match;
 				ucode_nrev = nrev;
 				ucode_orev = orev;
 				return (len);
 			}
-			unmap_ucode(free, len);
 		}
 	}
 	if (fileaddr != NULL && ucode_error == NO_ERROR)

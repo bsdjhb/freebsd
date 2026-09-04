@@ -37,12 +37,10 @@
 #include <vm/vm.h>
 #include <vm/pmap.h>
 
-#ifdef __amd64__
 #include <machine/elf.h>
 #include <machine/vmparam.h>
 #include <machine/md_var.h>
 #include <machine/dump.h>
-#endif
 
 int do_minidump = 1;
 SYSCTL_INT(_debug, OID_AUTO, minidump, CTLFLAG_RWTUN, &do_minidump, 0,
@@ -60,7 +58,6 @@ dumpsys_map_chunk(vm_paddr_t pa, size_t chunk, void **va)
 	}
 }
 
-#ifdef __amd64__
 int
 dumpsys_write_aux_headers(struct dumperinfo *di)
 {
@@ -77,4 +74,3 @@ dumpsys_write_aux_headers(struct dumperinfo *di)
 
 	return (dumpsys_buf_write(di, (char *)&phdr, sizeof(phdr)));
 }
-#endif

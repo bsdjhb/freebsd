@@ -837,7 +837,7 @@ linux_sys_futex(struct thread *td, struct linux_sys_futex_args *args)
 	return (linux_futex(td, &fargs));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_sys_futex_time64(struct thread *td,
     struct linux_sys_futex_time64_args *args)

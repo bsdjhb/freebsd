@@ -43,14 +43,6 @@
 #include <netinet/in.h>
 #endif
 
-#ifndef __i386__
-#define BPF_ALIGN
-#endif
-
-#ifndef BPF_ALIGN
-#define EXTRACT_SHORT(p)	((u_int16_t)ntohs(*(u_int16_t *)p))
-#define EXTRACT_LONG(p)		(ntohl(*(u_int32_t *)p))
-#else
 #define EXTRACT_SHORT(p)\
 	((u_int16_t)\
 		((u_int16_t)*((u_char *)p+0)<<8|\
@@ -60,7 +52,6 @@
 		 (u_int32_t)*((u_char *)p+1)<<16|\
 		 (u_int32_t)*((u_char *)p+2)<<8|\
 		 (u_int32_t)*((u_char *)p+3)<<0)
-#endif
 
 #ifdef _KERNEL
 #include <sys/mbuf.h>

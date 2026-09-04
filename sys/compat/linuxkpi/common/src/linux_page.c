@@ -66,12 +66,6 @@
 #include <linux/io.h>
 #include <linux/io-mapping.h>
 
-#ifdef __i386__
-DEFINE_IDR(mtrr_idr);
-static MALLOC_DEFINE(M_LKMTRR, "idr", "Linux MTRR compat");
-extern int pat_works;
-#endif
-
 void
 si_meminfo(struct sysinfo *si)
 {
@@ -391,7 +385,7 @@ vmmap_remove(void *addr)
 	return (vmmap);
 }
 
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
+#if defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
 void *
 _ioremap_attr(vm_paddr_t phys_addr, unsigned long size, int attr)
 {
@@ -414,7 +408,7 @@ iounmap(void *addr)
 	vmmap = vmmap_remove(addr);
 	if (vmmap == NULL)
 		return;
-#if defined(__i386__) || defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
+#if defined(__amd64__) || defined(__powerpc__) || defined(__aarch64__) || defined(__riscv)
 	pmap_unmapdev(addr, vmmap->vm_size);
 #endif
 	kfree(vmmap);
@@ -654,63 +648,12 @@ lkpi_unmap_mapping_range(void *obj, loff_t const holebegin __unused,
 int
 lkpi_arch_phys_wc_add(unsigned long base, unsigned long size)
 {
-#ifdef __i386__
-	struct mem_range_desc *mrdesc;
-	int error, id, act;
-
-	/* If PAT is available, do nothing */
-	if (pat_works)
-		return (0);
-
-	mrdesc = malloc(sizeof(*mrdesc), M_LKMTRR, M_WAITOK);
-	mrdesc->mr_base = base;
-	mrdesc->mr_len = size;
-	mrdesc->mr_flags = MDF_WRITECOMBINE;
-	strlcpy(mrdesc->mr_owner, "drm", sizeof(mrdesc->mr_owner));
-	act = MEMRANGE_SET_UPDATE;
-	error = mem_range_attr_set(mrdesc, &act);
-	if (error == 0) {
-		error = idr_get_new(&mtrr_idr, mrdesc, &id);
-		MPASS(idr_find(&mtrr_idr, id) == mrdesc);
-		if (error != 0) {
-			act = MEMRANGE_SET_REMOVE;
-			mem_range_attr_set(mrdesc, &act);
-		}
-	}
-	if (error != 0) {
-		free(mrdesc, M_LKMTRR);
-		pr_warn(
-		    "Failed to add WC MTRR for [%p-%p]: %d; "
-		    "performance may suffer\n",
-		    (void *)base, (void *)(base + size - 1), error);
-	} else
-		pr_warn("Successfully added WC MTRR for [%p-%p]\n",
-		    (void *)base, (void *)(base + size - 1));
-
-	return (error != 0 ? -error : id + __MTRR_ID_BASE);
-#else
 	return (0);
-#endif
 }
 
 void
 lkpi_arch_phys_wc_del(int reg)
 {
-#ifdef __i386__
-	struct mem_range_desc *mrdesc;
-	int act;
-
-	/* Check if arch_phys_wc_add() failed. */
-	if (reg < __MTRR_ID_BASE)
-		return;
-
-	mrdesc = idr_find(&mtrr_idr, reg - __MTRR_ID_BASE);
-	MPASS(mrdesc != NULL);
-	idr_remove(&mtrr_idr, reg - __MTRR_ID_BASE);
-	act = MEMRANGE_SET_REMOVE;
-	mem_range_attr_set(mrdesc, &act);
-	free(mrdesc, M_LKMTRR);
-#endif
 }
 
 int

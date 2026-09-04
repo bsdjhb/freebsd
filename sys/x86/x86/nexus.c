@@ -39,11 +39,6 @@
  * and I/O memory address space.
  */
 
-#ifdef __amd64__
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
 #include "opt_isa.h"
 #include "opt_pci.h"
 
@@ -72,9 +67,7 @@
 #include <machine/pc/bios.h>
 #include <machine/resource.h>
 
-#ifdef DEV_APIC
 #include "pcib_if.h"
-#endif
 
 #ifdef DEV_ISA
 #include <isa/isavar.h>
@@ -113,7 +106,7 @@ static bus_teardown_intr_t	nexus_teardown_intr;
 
 static bus_get_cpus_t		nexus_get_cpus;
 
-#if defined(DEV_APIC) && defined(DEV_PCI)
+#ifdef DEV_PCI
 static pcib_alloc_msi_t		nexus_alloc_msi;
 static pcib_release_msi_t	nexus_release_msi;
 static pcib_alloc_msix_t	nexus_alloc_msix;
@@ -157,7 +150,7 @@ static device_method_t nexus_methods[] = {
 	DEVMETHOD(bus_get_cpus,		nexus_get_cpus),
 
 	/* pcib interface */
-#if defined(DEV_APIC) && defined(DEV_PCI)
+#ifdef DEV_PCI
 	DEVMETHOD(pcib_alloc_msi,	nexus_alloc_msi),
 	DEVMETHOD(pcib_release_msi,	nexus_release_msi),
 	DEVMETHOD(pcib_alloc_msix,	nexus_alloc_msix),
@@ -581,7 +574,7 @@ nexus_add_irq(u_long irq)
 		panic("%s: failed", __func__);
 }
 
-#if defined(DEV_APIC) && defined(DEV_PCI)
+#ifdef DEV_PCI
 static int
 nexus_alloc_msix(device_t pcib, device_t dev, int *irq)
 {
@@ -616,7 +609,7 @@ nexus_map_msi(device_t pcib, device_t dev, int irq, uint64_t *addr, uint32_t *da
 
 	return (msi_map(irq, addr, data));
 }
-#endif /* DEV_APIC && DEV_PCI */
+#endif /* DEV_PCI */
 
 /* Placeholder for system RAM. */
 static void

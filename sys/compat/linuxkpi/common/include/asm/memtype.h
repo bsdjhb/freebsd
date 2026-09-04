@@ -3,7 +3,7 @@
 #ifndef _LINUXKPI_ASM_MEMTYPE_H_
 #define _LINUXKPI_ASM_MEMTYPE_H_
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 
 #include <asm/cpufeature.h>
 

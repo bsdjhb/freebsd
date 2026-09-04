@@ -85,7 +85,7 @@ retry:
 		*nsegs = 1;
 		return (0);
 	}
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	while (m != NULL && seg_count < maxsegs) {
 		/*
 		 * firmware doesn't like empty segments

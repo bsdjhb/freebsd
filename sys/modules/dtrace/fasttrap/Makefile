@@ -9,7 +9,7 @@ SRCS+=		vnode_if.h  opt_global.h
 CFLAGS+= 	-include ${.OBJDIR}/opt_global.h
 CFLAGS+=	${OPENZFS_CFLAGS}
 
-.if ${MACHINE_CPUARCH} == "amd64" ||  ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "amd64"
 CFLAGS+=	-I${SYSDIR}/cddl/contrib/opensolaris/uts/intel
 .PATH:		${SYSDIR}/cddl/contrib/opensolaris/uts/intel/dtrace
 .elif ${MACHINE_CPUARCH} == "powerpc"

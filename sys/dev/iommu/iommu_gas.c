@@ -113,7 +113,7 @@ iommu_gas_free_entry(struct iommu_map_entry *entry)
 	int n __unused;
 
 	n = vm_page_free_pages_toq(&entry->pgtbl_free, false);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	atomic_subtract_int(&iommu_tbl_pagecnt, n);
 #endif
 	domain = entry->domain;

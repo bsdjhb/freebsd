@@ -47,9 +47,6 @@
 #include "opt_kstack_pages.h"
 #include "opt_maxmem.h"
 #include "opt_platform.h"
-#ifdef __i386__
-#include "opt_apic.h"
-#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -80,9 +77,6 @@
 #include <machine/tss.h>
 #ifdef SMP
 #include <machine/smp.h>
-#endif
-#ifdef CPU_ELAN
-#include <machine/elan_mmcr.h>
 #endif
 #include <x86/acpica_machdep.h>
 #include <x86/ifunc.h>
@@ -429,10 +423,6 @@ cpu_est_clockrate(int cpu_id, uint64_t *rate)
 
 	if (pcpu_find(cpu_id) == NULL || rate == NULL)
 		return (EINVAL);
-#ifdef __i386__
-	if ((cpu_feature & CPUID_TSC) == 0)
-		return (EOPNOTSUPP);
-#endif
 
 	/*
 	 * If TSC is P-state invariant and APERF/MPERF MSRs do not exist,
@@ -505,17 +495,6 @@ cpu_reset_real(void)
 	int b;
 
 	disable_intr();
-#ifdef CPU_ELAN
-	if (elan_mmcr != NULL)
-		elan_mmcr->RESCFG = 1;
-#endif
-#ifdef __i386__
-	if (cpu == CPU_GEODE1100) {
-		/* Attempt Geode's own reset */
-		outl(0xcf8, 0x80009044ul);
-		outl(0xcfc, 0xf);
-	}
-#endif
 #if !defined(BROKEN_KEYBOARD_RESET)
 	/*
 	 * Attempt to do a CPU reset via the keyboard controller,

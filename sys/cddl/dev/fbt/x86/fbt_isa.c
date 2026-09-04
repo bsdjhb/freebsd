@@ -48,11 +48,7 @@
 #define	FBT_RET_IMM16		0xc2
 #define	FBT_LEAVE		0xc9
 
-#ifdef __amd64__
 #define	FBT_PATCHVAL		0xcc
-#else
-#define	FBT_PATCHVAL		0xf0
-#endif
 
 #define FBT_AFRAMES 3
 
@@ -65,14 +61,8 @@ fbt_invop(uintptr_t addr, struct trapframe *frame, uintptr_t scratch __unused)
 	fbt_probe_t *fbt;
 	int8_t fbtrval;
 
-#ifdef __amd64__
 	stack = (uintptr_t *)frame->tf_rsp;
 	rval = frame->tf_rax;
-#else
-	/* Skip hardware-saved registers. */
-	stack = (uintptr_t *)frame->tf_isp + 3;
-	rval = frame->tf_eax;
-#endif
 
 	cpu = &solaris_cpu[curcpu];
 	fbt = fbt_probetab[FBT_ADDR2NDX(addr)];
@@ -85,15 +75,10 @@ fbt_invop(uintptr_t addr, struct trapframe *frame, uintptr_t scratch __unused)
 		 * Report the address of the breakpoint for the benefit
 		 * of consumers fetching register values with regs[].
 		 */
-#ifdef __i386__
-		frame->tf_eip--;
-#else
 		frame->tf_rip--;
-#endif
 		for (; fbt != NULL; fbt = fbt->fbtp_tracenext) {
 			ASSERT(fbt->fbtp_rval == fbtrval);
 			if (fbt->fbtp_roffset == 0) {
-#ifdef __amd64__
 				/* fbt->fbtp_rval == DTRACE_INVOP_PUSHQ_RBP */
 				DTRACE_CPUFLAG_SET(CPU_DTRACE_NOFAULT);
 				cpu->cpu_dtrace_caller = stack[0];
@@ -105,33 +90,12 @@ fbt_invop(uintptr_t addr, struct trapframe *frame, uintptr_t scratch __unused)
 				arg2 = frame->tf_rdx;
 				arg3 = frame->tf_rcx;
 				arg4 = frame->tf_r8;
-#else
-				int i = 0;
-
-				/*
-				 * When accessing the arguments on the stack,
-				 * we must protect against accessing beyond
-				 * the stack.  We can safely set NOFAULT here
-				 * -- we know that interrupts are already
-				 * disabled.
-				 */
-				DTRACE_CPUFLAG_SET(CPU_DTRACE_NOFAULT);
-				cpu->cpu_dtrace_caller = stack[i++];
-				arg0 = stack[i++];
-				arg1 = stack[i++];
-				arg2 = stack[i++];
-				arg3 = stack[i++];
-				arg4 = stack[i++];
-				DTRACE_CPUFLAG_CLEAR(CPU_DTRACE_NOFAULT |
-				    CPU_DTRACE_BADADDR);
-#endif
 
 				dtrace_probe(fbt->fbtp_id, arg0, arg1,
 				    arg2, arg3, arg4);
 
 				cpu->cpu_dtrace_caller = 0;
 			} else {
-#ifdef __amd64__
 				/*
 				 * On amd64, we instrument the ret, not the
 				 * leave.  We therefore need to set the caller
@@ -142,7 +106,6 @@ fbt_invop(uintptr_t addr, struct trapframe *frame, uintptr_t scratch __unused)
 				cpu->cpu_dtrace_caller = stack[0];
 				DTRACE_CPUFLAG_CLEAR(CPU_DTRACE_NOFAULT |
 				    CPU_DTRACE_BADADDR);
-#endif
 
 				dtrace_probe(fbt->fbtp_id, fbt->fbtp_roffset,
 				    rval, 0, 0, 0);
@@ -150,11 +113,7 @@ fbt_invop(uintptr_t addr, struct trapframe *frame, uintptr_t scratch __unused)
 			}
 		}
 		/* Advance to the instruction following the breakpoint. */
-#ifdef __i386__
-		frame->tf_eip++;
-#else
 		frame->tf_rip++;
-#endif
 		return (fbtrval);
 	}
 
@@ -200,7 +159,6 @@ fbt_provide_module_function(linker_file_t lf, int symindx,
 	instr = (uint8_t *) symval->value;
 	limit = (uint8_t *) symval->value + symval->size;
 
-#ifdef __amd64__
 	while (instr < limit) {
 		if (*instr == FBT_PUSHL_EBP)
 			break;
@@ -219,16 +177,6 @@ fbt_provide_module_function(linker_file_t lf, int symindx,
 		 */
 		return (0);
 	}
-#else
-	if (instr[0] != FBT_PUSHL_EBP)
-		return (0);
-
-	if (!(instr[1] == FBT_MOVL_ESP_EBP0_V0 &&
-	    instr[2] == FBT_MOVL_ESP_EBP1_V0) &&
-	    !(instr[1] == FBT_MOVL_ESP_EBP0_V1 &&
-	    instr[2] == FBT_MOVL_ESP_EBP1_V1))
-		return (0);
-#endif
 
 	fbt = malloc(sizeof (fbt_probe_t), M_FBT, M_WAITOK | M_ZERO);
 	fbt->fbtp_name = name;
@@ -270,7 +218,6 @@ again:
 	if ((size = dtrace_instr_size(instr)) <= 0)
 		return (0);
 
-#ifdef __amd64__
 	/*
 	 * We only instrument "ret" on amd64 -- we don't yet instrument
 	 * ret imm16, largely because the compiler doesn't seem to
@@ -280,15 +227,6 @@ again:
 		instr += size;
 		goto again;
 	}
-#else
-	if (!(size == 1 &&
-	    (*instr == FBT_POPL_EBP || *instr == FBT_LEAVE) &&
-	    (*(instr + 1) == FBT_RET ||
-	    *(instr + 1) == FBT_RET_IMM16))) {
-		instr += size;
-		goto again;
-	}
-#endif
 
 	/*
 	 * We (desperately) want to avoid erroneously instrumenting a
@@ -339,22 +277,10 @@ again:
 	fbt->fbtp_loadcnt = lf->loadcnt;
 	fbt->fbtp_symindx = symindx;
 
-#ifndef __amd64__
-	if (*instr == FBT_POPL_EBP) {
-		fbt->fbtp_rval = DTRACE_INVOP_POPL_EBP;
-	} else {
-		ASSERT(*instr == FBT_LEAVE);
-		fbt->fbtp_rval = DTRACE_INVOP_LEAVE;
-	}
-	fbt->fbtp_roffset =
-	    (uintptr_t)(instr - (uint8_t *) symval->value) + 1;
-
-#else
 	ASSERT(*instr == FBT_RET);
 	fbt->fbtp_rval = DTRACE_INVOP_RET;
 	fbt->fbtp_roffset =
 	    (uintptr_t)(instr - (uint8_t *) symval->value);
-#endif
 
 	fbt->fbtp_savedval = *instr;
 	fbt->fbtp_patchval = FBT_PATCHVAL;

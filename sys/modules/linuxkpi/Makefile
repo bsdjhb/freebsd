@@ -46,10 +46,6 @@ SRCS=	linux_compat.c \
 SRCS+=	opt_acpi.h acpi_if.h linux_acpi.c
 .endif
 
-.if ${MACHINE_CPUARCH} == "i386"
-SRCS+=	opt_apic.h
-.endif
-
 SRCS+=	opt_ddb.h
 SRCS+=	${LINUXKPI_GENSRCS}
 

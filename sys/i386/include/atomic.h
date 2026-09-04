@@ -30,36 +30,12 @@
 
 #include <sys/atomic_common.h>
 
-#ifdef _KERNEL
-#include <machine/md_var.h>
-#include <machine/specialreg.h>
-#endif
-
-#ifndef __OFFSETOF_MONITORBUF
-/*
- * __OFFSETOF_MONITORBUF == __pcpu_offset(pc_monitorbuf).
- *
- * The open-coded number is used instead of the symbolic expression to
- * avoid a dependency on sys/pcpu.h in machine/atomic.h consumers.
- * An assertion in i386/vm_machdep.c ensures that the value is correct.
- */
-#define	__OFFSETOF_MONITORBUF	0x80
-
-static __inline void
-__mbk(void)
-{
-
-	__asm __volatile("lock; addl $0,%%fs:%c0"
-	    : : "i" (__OFFSETOF_MONITORBUF) : "memory", "cc");
-}
-
 static __inline void
 __mbu(void)
 {
 
 	__asm __volatile("lock; addl $0,(%%esp)" : : : "memory", "cc");
 }
-#endif
 
 /*
  * Various simple operations on memory, each of which is atomic in the
@@ -241,11 +217,7 @@ atomic_testandclear_int(volatile u_int *p, u_int v)
  * and release.
  */
 
-#if defined(_KERNEL)
-#define	__storeload_barrier()	__mbk()
-#else /* !_KERNEL */
 #define	__storeload_barrier()	__mbu()
-#endif /* _KERNEL*/
 
 #define	ATOMIC_LOAD(TYPE)					\
 static __inline u_##TYPE					\
@@ -296,282 +268,6 @@ atomic_thread_fence_seq_cst(void)
 
 	__storeload_barrier();
 }
-
-#ifdef _KERNEL
-
-/* I486 does not support SMP or CMPXCHG8B. */
-static __inline int
-atomic_cmpset_64_i386(volatile uint64_t *dst, uint64_t expect, uint64_t src)
-{
-	volatile uint32_t *p;
-	u_char res;
-
-	p = (volatile uint32_t *)dst;
-	__asm __volatile(
-	"	pushfl ;		"
-	"	cli ;			"
-	"	xorl	%1,%%eax ;	"
-	"	xorl	%2,%%edx ;	"
-	"	orl	%%edx,%%eax ;	"
-	"	jne	1f ;		"
-	"	movl	%4,%1 ;		"
-	"	movl	%5,%2 ;		"
-	"1:				"
-	"	sete	%3 ;		"
-	"	popfl"
-	: "+A" (expect),		/* 0 */
-	  "+m" (*p),			/* 1 */
-	  "+m" (*(p + 1)),		/* 2 */
-	  "=q" (res)			/* 3 */
-	: "r" ((uint32_t)src),		/* 4 */
-	  "r" ((uint32_t)(src >> 32))	/* 5 */
-	: "memory", "cc");
-	return (res);
-}
-
-static __inline int
-atomic_fcmpset_64_i386(volatile uint64_t *dst, uint64_t *expect, uint64_t src)
-{
-
-	if (atomic_cmpset_64_i386(dst, *expect, src)) {
-		return (1);
-	} else {
-		*expect = *dst;
-		return (0);
-	}
-}
-
-static __inline uint64_t
-atomic_load_acq_64_i386(const volatile uint64_t *p)
-{
-	const volatile uint32_t *q;
-	uint64_t res;
-
-	q = (const volatile uint32_t *)p;
-	__asm __volatile(
-	"	pushfl ;		"
-	"	cli ;			"
-	"	movl	%1,%%eax ;	"
-	"	movl	%2,%%edx ;	"
-	"	popfl"
-	: "=&A" (res)			/* 0 */
-	: "m" (*q),			/* 1 */
-	  "m" (*(q + 1))		/* 2 */
-	: "memory");
-	return (res);
-}
-
-static __inline void
-atomic_store_rel_64_i386(volatile uint64_t *p, uint64_t v)
-{
-	volatile uint32_t *q;
-
-	q = (volatile uint32_t *)p;
-	__asm __volatile(
-	"	pushfl ;		"
-	"	cli ;			"
-	"	movl	%%eax,%0 ;	"
-	"	movl	%%edx,%1 ;	"
-	"	popfl"
-	: "=m" (*q),			/* 0 */
-	  "=m" (*(q + 1))		/* 1 */
-	: "A" (v)			/* 2 */
-	: "memory");
-}
-
-static __inline uint64_t
-atomic_swap_64_i386(volatile uint64_t *p, uint64_t v)
-{
-	volatile uint32_t *q;
-	uint64_t res;
-
-	q = (volatile uint32_t *)p;
-	__asm __volatile(
-	"	pushfl ;		"
-	"	cli ;			"
-	"	movl	%1,%%eax ;	"
-	"	movl	%2,%%edx ;	"
-	"	movl	%4,%2 ;		"
-	"	movl	%3,%1 ;		"
-	"	popfl"
-	: "=&A" (res),			/* 0 */
-	  "+m" (*q),			/* 1 */
-	  "+m" (*(q + 1))		/* 2 */
-	: "r" ((uint32_t)v),		/* 3 */
-	  "r" ((uint32_t)(v >> 32)));	/* 4 */
-	return (res);
-}
-
-static __inline int
-atomic_cmpset_64_i586(volatile uint64_t *dst, uint64_t expect, uint64_t src)
-{
-	u_char res;
-
-	__asm __volatile(
-	"	lock; cmpxchg8b %1 ;	"
-	"	sete	%0"
-	: "=q" (res),			/* 0 */
-	  "+m" (*dst),			/* 1 */
-	  "+A" (expect)			/* 2 */
-	: "b" ((uint32_t)src),		/* 3 */
-	  "c" ((uint32_t)(src >> 32))	/* 4 */
-	: "memory", "cc");
-	return (res);
-}
-
-static __inline int
-atomic_fcmpset_64_i586(volatile uint64_t *dst, uint64_t *expect, uint64_t src)
-{
-	u_char res;
-
-	__asm __volatile(
-	"	lock; cmpxchg8b %1 ;	"
-	"	sete	%0"
-	: "=q" (res),			/* 0 */
-	  "+m" (*dst),			/* 1 */
-	  "+A" (*expect)		/* 2 */
-	: "b" ((uint32_t)src),		/* 3 */
-	  "c" ((uint32_t)(src >> 32))	/* 4 */
-	: "memory", "cc");
-	return (res);
-}
-
-/*
- * Architecturally always writes back some value to '*p' so will trigger
- * a #GP(0) on read-only mappings.
- */
-static __inline uint64_t
-atomic_load_acq_64_i586(const volatile uint64_t *p)
-{
-	uint64_t res;
-
-	__asm __volatile(
-	"	movl	%%ebx,%%eax ;	"
-	"	movl	%%ecx,%%edx ;	"
-	"	lock; cmpxchg8b %1"
-	: "=&A" (res)			/* 0 */
-	: "m" (*p)			/* 1 */
-	: "memory", "cc");
-	return (res);
-}
-
-static __inline void
-atomic_store_rel_64_i586(volatile uint64_t *p, uint64_t v)
-{
-
-	__asm __volatile(
-	"	movl	%%eax,%%ebx ;	"
-	"	movl	%%edx,%%ecx ;	"
-	"1:				"
-	"	lock; cmpxchg8b %0 ;	"
-	"	jne	1b"
-	: "+m" (*p),			/* 0 */
-	  "+A" (v)			/* 1 */
-	: : "ebx", "ecx", "memory", "cc");
-}
-
-static __inline uint64_t
-atomic_swap_64_i586(volatile uint64_t *p, uint64_t v)
-{
-
-	__asm __volatile(
-	"	movl	%%eax,%%ebx ;	"
-	"	movl	%%edx,%%ecx ;	"
-	"1:				"
-	"	lock; cmpxchg8b %0 ;	"
-	"	jne	1b"
-	: "+m" (*p),			/* 0 */
-	  "+A" (v)			/* 1 */
-	: : "ebx", "ecx", "memory", "cc");
-	return (v);
-}
-
-static __inline int
-atomic_cmpset_64(volatile uint64_t *dst, uint64_t expect, uint64_t src)
-{
-
-	if ((cpu_feature & CPUID_CX8) == 0)
-		return (atomic_cmpset_64_i386(dst, expect, src));
-	else
-		return (atomic_cmpset_64_i586(dst, expect, src));
-}
-
-static __inline int
-atomic_fcmpset_64(volatile uint64_t *dst, uint64_t *expect, uint64_t src)
-{
-
-  	if ((cpu_feature & CPUID_CX8) == 0)
-		return (atomic_fcmpset_64_i386(dst, expect, src));
-	else
-		return (atomic_fcmpset_64_i586(dst, expect, src));
-}
-
-static __inline uint64_t
-atomic_load_acq_64(const volatile uint64_t *p)
-{
-
-	if ((cpu_feature & CPUID_CX8) == 0)
-		return (atomic_load_acq_64_i386(p));
-	else
-		return (atomic_load_acq_64_i586(p));
-}
-
-static __inline void
-atomic_store_rel_64(volatile uint64_t *p, uint64_t v)
-{
-
-	if ((cpu_feature & CPUID_CX8) == 0)
-		atomic_store_rel_64_i386(p, v);
-	else
-		atomic_store_rel_64_i586(p, v);
-}
-
-static __inline uint64_t
-atomic_swap_64(volatile uint64_t *p, uint64_t v)
-{
-
-	if ((cpu_feature & CPUID_CX8) == 0)
-		return (atomic_swap_64_i386(p, v));
-	else
-		return (atomic_swap_64_i586(p, v));
-}
-
-static __inline uint64_t
-atomic_fetchadd_64(volatile uint64_t *p, uint64_t v)
-{
-
-	for (;;) {
-		uint64_t t = *p;
-		if (atomic_cmpset_64(p, t, t + v))
-			return (t);
-	}
-}
-
-static __inline void
-atomic_add_64(volatile uint64_t *p, uint64_t v)
-{
-	uint64_t t;
-
-	for (;;) {
-		t = *p;
-		if (atomic_cmpset_64(p, t, t + v))
-			break;
-	}
-}
-
-static __inline void
-atomic_subtract_64(volatile uint64_t *p, uint64_t v)
-{
-	uint64_t t;
-
-	for (;;) {
-		t = *p;
-		if (atomic_cmpset_64(p, t, t - v))
-			break;
-	}
-}
-
-#endif /* _KERNEL */
 
 ATOMIC_ASM(set,	     char,  "orb %b1,%0",  "iq",  v);
 ATOMIC_ASM(clear,    char,  "andb %b1,%0", "iq", ~v);
@@ -791,22 +487,6 @@ atomic_swap_long(volatile u_long *p, u_long v)
 #define	atomic_testandset_32	atomic_testandset_int
 #define	atomic_testandclear_32	atomic_testandclear_int
 
-#ifdef _KERNEL
-/* Operations on 64-bit quad words. */
-#define	atomic_cmpset_acq_64 atomic_cmpset_64
-#define	atomic_cmpset_rel_64 atomic_cmpset_64
-#define	atomic_fcmpset_acq_64 atomic_fcmpset_64
-#define	atomic_fcmpset_rel_64 atomic_fcmpset_64
-#define	atomic_fetchadd_acq_64	atomic_fetchadd_64
-#define	atomic_fetchadd_rel_64	atomic_fetchadd_64
-#define	atomic_add_acq_64 atomic_add_64
-#define	atomic_add_rel_64 atomic_add_64
-#define	atomic_subtract_acq_64 atomic_subtract_64
-#define	atomic_subtract_rel_64 atomic_subtract_64
-#define	atomic_load_64 atomic_load_acq_64
-#define	atomic_store_64 atomic_store_rel_64
-#endif
-
 /* Operations on pointers. */
 #define	atomic_set_ptr(p, v) \
 	atomic_set_int((volatile u_int *)(p), (u_int)(v))
@@ -861,14 +541,8 @@ atomic_swap_long(volatile u_long *p, u_long v)
 #define	atomic_testandset_ptr(p, val) \
 	atomic_testandset_int((volatile u_int *)(p), (val))
 
-#if defined(_KERNEL)
-#define	mb()	__mbk()
-#define	wmb()	__mbk()
-#define	rmb()	__mbk()
-#else
 #define	mb()	__mbu()
 #define	wmb()	__mbu()
 #define	rmb()	__mbu()
-#endif
 
 #endif /* !_MACHINE_ATOMIC_H_ */

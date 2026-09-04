@@ -30,7 +30,7 @@
 #ifndef	_LINUXKPI_ASM_TOPOLOGY_H_
 #define	_LINUXKPI_ASM_TOPOLOGY_H_
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <sys/smp.h>
 
 /*

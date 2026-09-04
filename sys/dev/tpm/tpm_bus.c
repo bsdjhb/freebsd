@@ -47,10 +47,6 @@ tpm_read_4(device_t dev, bus_size_t off)
 	return (bus_read_4(sc->mem_res, off));
 }
 
-/*
- * Only i386 is missing bus_space_read_8.
- */
-#ifndef __i386__
 static uint64_t
 tpm_read_8(device_t dev, bus_size_t off)
 {
@@ -58,7 +54,6 @@ tpm_read_8(device_t dev, bus_size_t off)
 
 	return (bus_read_8(sc->mem_res, off));
 }
-#endif
 
 static void
 tpm_write_1(device_t dev, bus_size_t off, uint8_t val)
@@ -87,9 +82,7 @@ tpm_write_barrier(device_t dev, bus_size_t off, bus_size_t length)
 static device_method_t tpm_bus_methods[] = {
 	DEVMETHOD(tpm_read_1,	tpm_read_1),
 	DEVMETHOD(tpm_read_4,	tpm_read_4),
-#ifndef __i386__
 	DEVMETHOD(tpm_read_8,	tpm_read_8),
-#endif
 	DEVMETHOD(tpm_write_1,	tpm_write_1),
 	DEVMETHOD(tpm_write_4,	tpm_write_4),
 	DEVMETHOD(tpm_write_barrier,	tpm_write_barrier),
