@@ -51,6 +51,9 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Retire pst(4)
+OLD_FILES+=usr/share/man/man4/pst.4.gz
+
 # 2026xxxx: Retire pbio(4)
 OLD_FILES+=usr/include/dev/pbio/pbioio.h
 OLD_DIRS+=usr/include/dev/pbio

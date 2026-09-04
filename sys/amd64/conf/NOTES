@@ -46,13 +46,6 @@ cpu		HAMMER			# aka K8, aka Opteron & Athlon64
 # vt(4) drivers.
 device		vt_efifb	# EFI framebuffer
 
-#
-# RAID adapters
-#
-
-#XXX this stores pointers in a 32bit field that is defined by the hardware
-#device	pst
-
 # Thunderbolt (USB 4.0) support
 device		thunderbolt
 options		THUNDERBOLT_DEBUG

@@ -163,7 +163,6 @@ device		ida			# Compaq Smart RAID
 device		mfi			# LSI MegaRAID SAS
 device		mlx			# Mylex DAC960 family
 device		mrsas			# LSI/Avago MegaRAID SAS/SATA, 6Gb/s and 12Gb/s
-device		pst			# Promise Supertrak SX6000
 
 # NVM Express (NVMe) support
 device		nvme			# base NVMe driver
