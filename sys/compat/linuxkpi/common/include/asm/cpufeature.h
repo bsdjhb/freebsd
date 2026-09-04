@@ -3,7 +3,7 @@
 #ifndef _LINUXKPI_ASM_CPUFEATURE_H
 #define _LINUXKPI_ASM_CPUFEATURE_H
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 
 #include <sys/types.h>
 #include <machine/md_var.h>

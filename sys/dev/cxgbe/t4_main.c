@@ -63,7 +63,7 @@
 #ifdef KERN_TLS
 #include <netinet/tcp_seq.h>
 #endif
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/md_var.h>
 #include <machine/cputypes.h>
 #include <vm/vm.h>
@@ -1442,14 +1442,6 @@ t4_attach(device_t dev)
 		device_printf(dev, "recovery mode.\n");
 		goto done;
 	}
-
-#if defined(__i386__)
-	if ((cpu_feature & CPUID_CX8) == 0) {
-		device_printf(dev, "64 bit atomics not available.\n");
-		rc = ENOTSUP;
-		goto done;
-	}
-#endif
 
 	/* Contact the firmware and try to become the master driver. */
 	rc = contact_firmware(sc);
@@ -4041,7 +4033,7 @@ t4_map_bar_2(struct adapter *sc)
 
 	if (chip_id(sc) >= CHELSIO_T5) {
 		setbit(&sc->doorbells, DOORBELL_UDB);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		if (t5_write_combine) {
 			int rc, mode;
 
@@ -13890,7 +13882,7 @@ tweak_tunables(void)
 
 	if (pcie_relaxed_ordering < 0 || pcie_relaxed_ordering > 2) {
 		pcie_relaxed_ordering = 1;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		if (cpu_vendor_id == CPU_VENDOR_INTEL)
 			pcie_relaxed_ordering = 0;
 #endif

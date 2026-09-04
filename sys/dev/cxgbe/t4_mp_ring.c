@@ -37,11 +37,6 @@
 
 #include "t4_mp_ring.h"
 
-#if defined(__i386__)
-#define atomic_cmpset_acq_64 atomic_cmpset_64
-#define atomic_cmpset_rel_64 atomic_cmpset_64
-#endif
-
 /*
  * mp_ring handles multiple threads (producers) enqueueing data to a tx queue.
  * The thread that is writing the hardware descriptors is the consumer and it

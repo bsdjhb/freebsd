@@ -56,14 +56,7 @@
 
 /*--------------------------- Forward Declarations ---------------------------*/
 static driver_filter_t xen_smp_rendezvous_action;
-#ifdef __amd64__
 static driver_filter_t xen_invlop;
-#else
-static driver_filter_t xen_invltlb;
-static driver_filter_t xen_invlpg;
-static driver_filter_t xen_invlrng;
-static driver_filter_t xen_invlcache;
-#endif
 static driver_filter_t xen_ipi_bitmap_handler;
 static driver_filter_t xen_cpustop_handler;
 static driver_filter_t xen_cpususpend_handler;
@@ -82,14 +75,7 @@ struct xen_ipi_handler
 static struct xen_ipi_handler xen_ipis[] = 
 {
 	[IPI_TO_IDX(IPI_RENDEZVOUS)]	= { xen_smp_rendezvous_action,	"r"   },
-#ifdef __amd64__
 	[IPI_TO_IDX(IPI_INVLOP)]	= { xen_invlop,			"itlb"},
-#else
-	[IPI_TO_IDX(IPI_INVLTLB)]	= { xen_invltlb,		"itlb"},
-	[IPI_TO_IDX(IPI_INVLPG)]	= { xen_invlpg,			"ipg" },
-	[IPI_TO_IDX(IPI_INVLRNG)]	= { xen_invlrng,		"irg" },
-	[IPI_TO_IDX(IPI_INVLCACHE)]	= { xen_invlcache,		"ic"  },
-#endif
 	[IPI_TO_IDX(IPI_BITMAP_VECTOR)] = { xen_ipi_bitmap_handler,	"b"   },
 	[IPI_TO_IDX(IPI_STOP)]		= { xen_cpustop_handler,	"st"  },
 	[IPI_TO_IDX(IPI_SUSPEND)]	= { xen_cpususpend_handler,	"sp"  },
@@ -232,7 +218,6 @@ xen_smp_rendezvous_action(void *arg)
 	return (FILTER_HANDLED);
 }
 
-#ifdef __amd64__
 static int
 xen_invlop(void *arg)
 {
@@ -240,41 +225,6 @@ xen_invlop(void *arg)
 	invlop_handler();
 	return (FILTER_HANDLED);
 }
-
-#else /* __i386__ */
-
-static int
-xen_invltlb(void *arg)
-{
-
-	invltlb_handler();
-	return (FILTER_HANDLED);
-}
-
-static int
-xen_invlpg(void *arg)
-{
-
-	invlpg_handler();
-	return (FILTER_HANDLED);
-}
-
-static int
-xen_invlrng(void *arg)
-{
-
-	invlrng_handler();
-	return (FILTER_HANDLED);
-}
-
-static int
-xen_invlcache(void *arg)
-{
-
-	invlcache_handler();
-	return (FILTER_HANDLED);
-}
-#endif /* __amd64__ */
 
 static int
 xen_cpustop_handler(void *arg)

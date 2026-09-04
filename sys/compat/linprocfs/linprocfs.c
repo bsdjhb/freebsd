@@ -100,10 +100,10 @@
 #include <geom/geom.h>
 #include <geom/geom_int.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/cputypes.h>
 #include <machine/md_var.h>
-#endif /* __i386__ || __amd64__ */
+#endif /* __amd64__ */
 
 #include <compat/linux/linux.h>
 #include <compat/linux/linux_common.h>
@@ -192,9 +192,9 @@ linprocfs_domeminfo(PFS_FILL_ARGS)
 	return (0);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 /*
- * Filler function for proc/cpuinfo (i386 & amd64 version)
+ * Filler function for proc/cpuinfo (amd64 version)
  */
 static int
 linprocfs_docpuinfo(PFS_FILL_ARGS)
@@ -299,17 +299,6 @@ linprocfs_docpuinfo(PFS_FILL_ARGS)
 		"acc_power",
 	};
 
-#ifdef __i386__
-	switch (cpu_vendor_id) {
-	case CPU_VENDOR_AMD:
-		if (cpu_class < CPUCLASS_686)
-			cpu_feature_names[16] = "fcmov";
-		break;
-	case CPU_VENDOR_CYRIX:
-		cpu_feature_names[24] = "cxmmx";
-		break;
-	}
-#endif
 	if (cpu_exthigh >= 0x80000006)
 		do_cpuid(0x80000006, cache_size);
 	else
@@ -397,11 +386,7 @@ linprocfs_docpuinfo(PFS_FILL_ARGS)
 		    "clflush size\t: %d\n"
 		    "cache_alignment\t: %d\n"
 		    "address sizes\t: %d bits physical, %d bits virtual\n",
-#if defined(I586_CPU) && !defined(NO_F00F_HACK)
-		    (has_f00f_bug) ? "Intel F00F" : "",
-#else
 		    "",
-#endif
 		    fqmhz * 2, fqkhz,
 		    cpu_clflush_line_size, cpu_clflush_line_size,
 		    cpu_maxphyaddr,
@@ -444,7 +429,7 @@ linprocfs_docpuinfo(PFS_FILL_ARGS)
 
 	return (0);
 }
-#endif /* __i386__ || __amd64__ */
+#endif /* __amd64__ */
 
 static int
 _mtab_helper(const struct pfs_node *pn, const struct statfs *sp,

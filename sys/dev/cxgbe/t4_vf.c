@@ -36,7 +36,7 @@
 #include <sys/module.h>
 #include <sys/priv.h>
 #include <dev/pci/pcivar.h>
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #endif
@@ -578,14 +578,6 @@ t4vf_attach(device_t dev)
 	if (rc != 0)
 		device_printf(dev, "failed to create nexus char device: %d.\n",
 		    rc);
-
-#if defined(__i386__)
-	if ((cpu_feature & CPUID_CX8) == 0) {
-		device_printf(dev, "64 bit atomics not available.\n");
-		rc = ENOTSUP;
-		goto done;
-	}
-#endif
 
 	/*
 	 * Some environments do not properly handle PCIE FLRs -- e.g. in Linux

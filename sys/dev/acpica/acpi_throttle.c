@@ -94,7 +94,6 @@ static void	acpi_throttle_identify(driver_t *driver, device_t parent);
 static int	acpi_throttle_probe(device_t dev);
 static int	acpi_throttle_attach(device_t dev);
 static int	acpi_throttle_evaluate(struct acpi_throttle_softc *sc);
-static void	acpi_throttle_quirks(struct acpi_throttle_softc *sc);
 static int	acpi_thr_settings(device_t dev, struct cf_setting *sets,
 		    int *count);
 static int	acpi_thr_set(device_t dev, const struct cf_setting *set);
@@ -208,10 +207,6 @@ acpi_throttle_attach(device_t dev)
 	sc->cpu_p_blk_len = obj->Processor.PblkLength;
 	AcpiOsFree(obj);
 
-	/* If this is the first device probed, check for quirks. */
-	if (device_get_unit(dev) == 0)
-		acpi_throttle_quirks(sc);
-
 	/* Attempt to attach the actual throttling register. */
 	error = acpi_throttle_evaluate(sc);
 	if (error)
@@ -309,35 +304,6 @@ acpi_throttle_evaluate(struct acpi_throttle_softc *sc)
 	thr_rid++;
 
 	return (0);
-}
-
-static void
-acpi_throttle_quirks(struct acpi_throttle_softc *sc)
-{
-#ifdef __i386__
-	device_t acpi_dev;
-
-	/* Look for various quirks of the PIIX4 part. */
-	acpi_dev = pci_find_device(PCI_VENDOR_INTEL, PCI_DEVICE_82371AB_3);
-	if (acpi_dev) {
-		switch (pci_get_revid(acpi_dev)) {
-		/*
-		 * Disable throttling control on PIIX4 A and B-step.
-		 * See specification changes #13 ("Manual Throttle Duty Cycle")
-		 * and #14 ("Enabling and Disabling Manual Throttle"), plus
-		 * erratum #5 ("STPCLK# Deassertion Time") from the January
-		 * 2002 PIIX4 specification update.  Note that few (if any)
-		 * mobile systems ever used this part.
-		 */
-		case PCI_REVISION_A_STEP:
-		case PCI_REVISION_B_STEP:
-			thr_quirks |= CPU_QUIRK_NO_THROTTLE;
-			break;
-		default:
-			break;
-		}
-	}
-#endif
 }
 
 static int

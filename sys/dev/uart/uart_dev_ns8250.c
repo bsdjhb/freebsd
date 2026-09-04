@@ -89,7 +89,7 @@ SYSCTL_INT(_hw, OID_AUTO, uart_noise_threshold, CTLFLAG_RWTUN,
  * options EARLY_PRINTF=ns8250
 */
 #if CHECK_EARLY_PRINTF(ns8250)
-#if (defined(__amd64__) || defined(__i386__))
+#ifdef __amd64__
 static void
 uart_ns8250_early_putc(int c)
 {

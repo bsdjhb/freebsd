@@ -1152,34 +1152,17 @@ typedef bus_addr_t dma_addr_t;
         _softs->pci_mem_handle.pqi_bhandle, _offset)
 
 
-#if defined(__i386__)
-#define PCI_MEM_GET64( _softs, _absaddr, _offset ) ({ \
-	(uint64_t)bus_space_read_4(_softs->pci_mem_handle.pqi_btag, \
-		_softs->pci_mem_handle.pqi_bhandle, _offset) + \
-		((uint64_t)bus_space_read_4(_softs->pci_mem_handle.pqi_btag, \
-		_softs->pci_mem_handle.pqi_bhandle, _offset + 4) << 32); \
-	})
-#else
 #define PCI_MEM_GET64(_softs, _absaddr, _offset ) \
     	bus_space_read_8(_softs->pci_mem_handle.pqi_btag, \
         	_softs->pci_mem_handle.pqi_bhandle, _offset)
-#endif
 
 #define PCI_MEM_PUT32( _softs, _absaddr, _offset, _val ) \
     bus_space_write_4(_softs->pci_mem_handle.pqi_btag, \
         _softs->pci_mem_handle.pqi_bhandle, _offset, _val)
 
-#if defined(__i386__)
-#define PCI_MEM_PUT64( _softs, _absaddr, _offset, _val ) \
-	bus_space_write_4(_softs->pci_mem_handle.pqi_btag, \
-		_softs->pci_mem_handle.pqi_bhandle, _offset, _val); \
-	bus_space_write_4(_softs->pci_mem_handle.pqi_btag, \
-		_softs->pci_mem_handle.pqi_bhandle, _offset + 4, _val >> 32);
-#else
 #define PCI_MEM_PUT64( _softs, _absaddr, _offset, _val ) \
     	bus_space_write_8(_softs->pci_mem_handle.pqi_btag, \
         	_softs->pci_mem_handle.pqi_bhandle, _offset, _val)
-#endif
 
 
 #define PCI_MEM_GET_BUF(_softs, _absaddr, _offset, buf, size) \

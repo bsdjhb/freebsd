@@ -147,7 +147,7 @@ SYSCTL_INT(ELF_NODE_OID, OID_AUTO,
 static int __elfN(vdso) = 0;
 #endif
 
-#if __ELF_WORD_SIZE == 32 && (defined(__amd64__) || defined(__i386__))
+#if __ELF_WORD_SIZE == 32 && defined(__amd64__)
 int i386_read_exec = 0;
 SYSCTL_INT(ELF_NODE_OID, OID_AUTO, read_exec, CTLFLAG_RW, &i386_read_exec, 0,
     "enable execution from readable segments");
@@ -3019,7 +3019,7 @@ __elfN(trans_prot)(Elf_Word flags)
 		prot |= VM_PROT_WRITE;
 	if (flags & PF_R)
 		prot |= VM_PROT_READ;
-#if __ELF_WORD_SIZE == 32 && (defined(__amd64__) || defined(__i386__))
+#if __ELF_WORD_SIZE == 32 && defined(__amd64__)
 	if (i386_read_exec && (flags & PF_R))
 		prot |= VM_PROT_EXECUTE;
 #endif

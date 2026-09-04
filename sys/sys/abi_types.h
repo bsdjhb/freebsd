@@ -25,7 +25,7 @@ typedef struct {
 #endif
 } freebsd32_uint64_t;
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 typedef	__int32_t	time32_t;
 #define	__SIZEOF_TIME32_T	__SIZEOF_INT32_T
 #else

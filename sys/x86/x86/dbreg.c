@@ -41,11 +41,7 @@
 #include <ddb/db_sym.h>
 
 #define NDBREGS		4
-#ifdef __amd64__
 #define	MAXWATCHSIZE	8
-#else
-#define	MAXWATCHSIZE	4
-#endif
 
 /*
  * Set a watchpoint in the debug register denoted by 'watchnum'.
@@ -114,7 +110,6 @@ dbreg_clr_watchreg(int watchnum, struct dbreg *d)
 static void
 dbreg_sync(struct dbreg *dp)
 {
-#ifdef __amd64__
 	struct pcpu *pc;
 	int cpu, c;
 
@@ -126,7 +121,6 @@ dbreg_sync(struct dbreg *dp)
 		memcpy(pc->pc_dbreg, dp, sizeof(*dp));
 		pc->pc_dbreg_cmd = PC_DBREG_CMD_LOAD;
 	}
-#endif
 }
 
 int
@@ -135,13 +129,7 @@ dbreg_set_watchpoint(vm_offset_t addr, vm_size_t size, int access)
 	struct dbreg *d;
 	int avail, i, wsize;
 
-#ifdef __amd64__
 	d = (struct dbreg *)PCPU_PTR(dbreg);
-#else
-	/* debug registers aren't stored in PCPU on i386. */
-	struct dbreg d_temp;
-	d = &d_temp;
-#endif
 
 	/* Validate the access type */
 	if (access != DBREG_DR7_EXEC && access != DBREG_DR7_WRONLY &&
@@ -191,13 +179,7 @@ dbreg_clr_watchpoint(vm_offset_t addr, vm_size_t size)
 	struct dbreg *d;
 	int i;
 
-#ifdef __amd64__
 	d = (struct dbreg *)PCPU_PTR(dbreg);
-#else
-	/* debug registers aren't stored in PCPU on i386. */
-	struct dbreg d_temp;
-	d = &d_temp;
-#endif
 	fill_dbregs(NULL, d);
 
 	for (i = 0; i < NDBREGS; i++) {
@@ -257,7 +239,6 @@ dbreg_list_watchpoints(void)
 }
 #endif
 
-#ifdef __amd64__
 /* Sync debug registers when resuming from debugger. */
 void
 amd64_db_resume_dbreg(void)
@@ -272,7 +253,6 @@ amd64_db_resume_dbreg(void)
 		break;
 	}
 }
-#endif
 
 int
 kdb_cpu_set_watchpoint(vm_offset_t addr, vm_size_t size, int access)

@@ -118,7 +118,7 @@ struct l_pselect6arg {
 
 static int	linux_utimensat_lts_to_ts(struct l_timespec *,
 			struct timespec *);
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 static int	linux_utimensat_lts64_to_ts(struct l_timespec64 *,
 			struct timespec *);
 #endif
@@ -512,8 +512,6 @@ linux_newuname(struct thread *td, struct linux_newuname_args *args)
 	strlcpy(utsname.machine, "x86_64", LINUX_MAX_UTSNAME);
 #elif defined(__aarch64__)
 	strlcpy(utsname.machine, "aarch64", LINUX_MAX_UTSNAME);
-#elif defined(__i386__)
-	strlcpy(utsname.machine, "i686", LINUX_MAX_UTSNAME);
 #endif
 
 	return (copyout(&utsname, args->buf, sizeof(utsname)));
@@ -657,7 +655,7 @@ linux_utimensat(struct thread *td, struct linux_utimensat_args *args)
 	    timesp, args->flags));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 static int
 linux_utimensat_lts64_to_ts(struct l_timespec64 *l_times, struct timespec *times)
 {
@@ -711,7 +709,7 @@ linux_utimensat_time64(struct thread *td, struct linux_utimensat_time64_args *ar
 	return (linux_common_utimensat(td, args->dfd, args->pathname,
 	    timesp, args->flags));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #ifdef LINUX_LEGACY_SYSCALLS
 int
@@ -781,7 +779,7 @@ linux_common_wait(struct thread *td, idtype_t idtype, int id, int *statusp,
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_waitpid(struct thread *td, struct linux_waitpid_args *args)
 {
@@ -794,7 +792,7 @@ linux_waitpid(struct thread *td, struct linux_waitpid_args *args)
 
 	return (linux_wait4(td, &wait4_args));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_wait4(struct thread *td, struct linux_wait4_args *args)
@@ -1041,14 +1039,14 @@ linux_getitimer(struct thread *td, struct linux_getitimer_args *uap)
 	return (copyout(&ls, uap->itv, sizeof(ls)));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_nice(struct thread *td, struct linux_nice_args *args)
 {
 
 	return (kern_setpriority(td, PRIO_PROCESS, 0, args->inc));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_setgroups(struct thread *td, struct linux_setgroups_args *args)
@@ -1191,7 +1189,7 @@ linux_setrlimit(struct thread *td, struct linux_setrlimit_args *args)
 	return (kern_setrlimit(td, which, &bsd_rlim));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_old_getrlimit(struct thread *td, struct linux_old_getrlimit_args *args)
 {
@@ -1231,7 +1229,7 @@ linux_old_getrlimit(struct thread *td, struct linux_old_getrlimit_args *args)
 #endif
 	return (copyout(&rlim, args->rlim, sizeof(rlim)));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_getrlimit(struct thread *td, struct linux_getrlimit_args *args)
@@ -2236,7 +2234,7 @@ linux_common_pselect6(struct thread *td, l_int nfds, l_fd_set *readfds,
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_pselect6_time64(struct thread *td,
     struct linux_pselect6_time64_args *args)
@@ -2259,7 +2257,7 @@ linux_pselect6_time64(struct thread *td,
 		linux_put_timespec64(&ts, args->tsp);
 	return (error);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_ppoll(struct thread *td, struct linux_ppoll_args *args)
@@ -2333,7 +2331,7 @@ out:
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_ppoll_time64(struct thread *td, struct linux_ppoll_time64_args *args)
 {
@@ -2353,7 +2351,7 @@ linux_ppoll_time64(struct thread *td, struct linux_ppoll_time64_args *args)
 		error = linux_put_timespec64(&uts, args->tsp);
 	return (error);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 static int
 linux_pollin(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int nfd)
@@ -2433,7 +2431,7 @@ linux_sched_rr_get_interval(struct thread *td,
 	return (linux_put_timespec(&ts, uap->interval));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_sched_rr_get_interval_time64(struct thread *td,
     struct linux_sched_rr_get_interval_time64_args *uap)
@@ -2628,7 +2626,7 @@ linux_getcpu(struct thread *td, struct linux_getcpu_args *args)
 	return (error);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 int
 linux_poll(struct thread *td, struct linux_poll_args *args)
 {
@@ -2646,7 +2644,7 @@ linux_poll(struct thread *td, struct linux_poll_args *args)
 	return (linux_common_ppoll(td, args->fds, args->nfds,
 	    tsp, NULL, 0));
 }
-#endif /* __i386__ || __amd64__ */
+#endif /* __amd64__ */
 
 int
 linux_seccomp(struct thread *td, struct linux_seccomp_args *args)

@@ -298,7 +298,7 @@ dcons_cnputc(struct consdev *cp, int c)
 static int
 dcons_drv_init(int stage)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	quad_t addr, size;
 #endif
 
@@ -313,25 +313,11 @@ dcons_drv_init(int stage)
 	dg.buf = NULL;
 	dg.size = DCONS_BUF_SIZE;
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	if (getenv_quad("dcons.addr", &addr) > 0 &&
 	    getenv_quad("dcons.size", &size) > 0) {
-#ifdef __i386__
-		vm_paddr_t pa;
-		/*
-		 * Allow read/write access to dcons buffer.
-		 */
-		for (pa = trunc_page(addr); pa < addr + size; pa += PAGE_SIZE)
-			pmap_ksetrw(PMAP_MAP_LOW + pa);
-		invltlb();
-#endif
 		/* XXX P to V */
-#ifdef __amd64__
 		dg.buf = (struct dcons_buf *)(vm_offset_t)(KERNBASE + addr);
-#else /* __i386__ */
-		dg.buf = (struct dcons_buf *)(vm_offset_t)(PMAP_MAP_LOW +
-		    addr);
-#endif
 		dg.size = size;
 		if (dcons_load_buffer(dg.buf, dg.size, sc) < 0)
 			dg.buf = NULL;

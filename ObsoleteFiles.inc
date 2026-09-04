@@ -51,6 +51,31 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Removal of i386 kernel and i386-only drivers
+OLD_FILES+=usr/share/man/man4/i386/CPU_ELAN.4.gz
+OLD_FILES+=usr/share/man/man4/i386/CPU_SOEKRIS.4.gz
+OLD_FILES+=usr/share/man/man4/i386/PAE.4.gz
+OLD_FILES+=usr/share/man/man4/i386/glxiic.4.gz
+OLD_FILES+=usr/share/man/man4/i386/glxsb.4.gz
+OLD_FILES+=usr/share/man/man4/i386/longrun.4.gz
+OLD_FILES+=usr/share/man/man4/i386/npx.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pae.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pnp.4.gz
+OLD_FILES+=usr/share/man/man4/i386/pnpbios.4.gz
+OLD_FILES+=usr/share/man/man4/i386/smapi.4.gz
+OLD_DIRS+=usr/share/man/man4/i386
+OLD_FILES+=usr/share/man/man4/CPU_ELAN.4.gz
+OLD_FILES+=usr/share/man/man4/CPU_SOEKRIS.4.gz
+OLD_FILES+=usr/share/man/man4/PAE.4.gz
+OLD_FILES+=usr/share/man/man4/glxiic.4.gz
+OLD_FILES+=usr/share/man/man4/glxsb.4.gz
+OLD_FILES+=usr/share/man/man4/longrun.4.gz
+OLD_FILES+=usr/share/man/man4/npx.4.gz
+OLD_FILES+=usr/share/man/man4/pae.4.gz
+OLD_FILES+=usr/share/man/man4/pnp.4.gz
+OLD_FILES+=usr/share/man/man4/pnpbios.4.gz
+OLD_FILES+=usr/share/man/man4/smapi.4.gz
+
 # 2026xxxx: Retire vpd(4)
 OLD_FILES+=usr/share/man/man4/i386/vpd.4.gz
 OLD_FILES+=usr/share/man/man4/vpd.4.gz

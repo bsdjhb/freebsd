@@ -81,7 +81,7 @@
 #define	LINUX_IPC_64	0x0100	/* New version (support 32-bit UIDs, bigger
 				   message sizes, etc. */
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 struct linux_semtimedop_args
 {
 	l_int		semid;
@@ -91,6 +91,6 @@ struct linux_semtimedop_args
 };
 
 int linux_semtimedop(struct thread *, struct linux_semtimedop_args *);
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #endif /* _LINUX_IPC_H_ */

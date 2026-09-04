@@ -39,7 +39,7 @@
 #if defined(clang) && __has_builtin(__builtin_readcyclecounter)
 #define	rdtsc __builtin_readcyclecounter
 #else /* !clang */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 static __inline uint64_t
 rdtsc(void)
 {
@@ -48,9 +48,9 @@ rdtsc(void)
 	__asm __volatile("rdtsc" : "=a" (low), "=d" (high));
 	return (low | ((uint64_t)high << 32));
 }
-#else /* __amd64__ || __i386__ */
+#else /* __amd64__ */
 #error "No rdtsc() implementation available."
-#endif /* __amd64__ || __i386__ */
+#endif /* __amd64__ */
 #endif /* !clang */
 
 static __inline uint64_t

@@ -2372,7 +2372,7 @@ pcib_enable_ari(struct pcib_softc *sc, uint32_t pcie_pos)
 int
 pcib_maxslots(device_t dev)
 {
-#if !defined(__amd64__) && !defined(__i386__)
+#if !defined(__amd64__)
 	uint32_t pcie_pos;
 	uint16_t val;
 

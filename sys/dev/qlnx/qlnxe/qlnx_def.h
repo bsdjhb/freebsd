@@ -719,7 +719,7 @@ extern int qlnx_alloc_mem_sb(qlnx_host_t *ha, struct ecore_sb_info *sb_info,
                 << PARSING_AND_ERR_FLAGS_TAG8021QEXIST_SHIFT))
 
 #ifndef QLNX_RDMA
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 
 static __inline
 void prefetch(void *x)

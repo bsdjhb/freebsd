@@ -885,9 +885,7 @@ CSAN_BUS_SET_FUNC(region_stream, 8, uint64_t)
 CSAN_BUS_PEEK_FUNC(1, uint8_t)
 CSAN_BUS_PEEK_FUNC(2, uint16_t)
 CSAN_BUS_PEEK_FUNC(4, uint32_t)
-#if !defined(__i386__)
 CSAN_BUS_PEEK_FUNC(8, uint64_t)
-#endif
 
 #define CSAN_BUS_POKE_FUNC(width, type)					\
 	int kcsan_bus_space_poke_##width(bus_space_tag_t tag,		\
@@ -899,6 +897,4 @@ CSAN_BUS_PEEK_FUNC(8, uint64_t)
 CSAN_BUS_POKE_FUNC(1, uint8_t)
 CSAN_BUS_POKE_FUNC(2, uint16_t)
 CSAN_BUS_POKE_FUNC(4, uint32_t)
-#if !defined(__i386__)
 CSAN_BUS_POKE_FUNC(8, uint64_t)
-#endif

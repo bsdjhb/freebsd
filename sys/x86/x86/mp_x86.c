@@ -26,9 +26,6 @@
 
 #include <sys/cdefs.h>
 #include "opt_acpi.h"
-#ifdef __i386__
-#include "opt_apic.h"
-#endif
 #include "opt_cpu.h"
 #include "opt_ddb.h"
 #include "opt_gdb.h"
@@ -1064,11 +1061,7 @@ init_secondary_tail(void)
 	initializecpu();
 
 	/* set up FPU state on the AP */
-#ifdef __amd64__
 	fpuinit();
-#else
-	npxinit(false);
-#endif
 
 	if (cpu_ops.cpu_init)
 		cpu_ops.cpu_init();
@@ -1127,13 +1120,11 @@ init_secondary_tail(void)
 
 	atomic_store_rel_int(&ap_boot_lock, 0);
 
-#ifdef __amd64__
 	if (pmap_pcid_enabled)
 		load_cr4(rcr4() | CR4_PCIDE);
 	load_ds(_udatasel);
 	load_es(_udatasel);
 	load_fs(_ufssel);
-#endif
 
 	/* Wait until all the AP's are up. */
 	while (atomic_load_acq_int(&smp_started) == 0)
@@ -1582,7 +1573,7 @@ cpustop_handler_post(u_int cpu)
 	 */
 	invltlb_glob();
 
-#if defined(__amd64__) && (defined(DDB) || defined(GDB))
+#if defined(DDB) || defined(GDB)
 	amd64_db_resume_dbreg();
 #endif
 
@@ -1603,10 +1594,8 @@ cpususpend_handler(void)
 
 	mtx_assert(&smp_ipi_mtx, MA_NOTOWNED);
 
-#ifdef __amd64__
 	if (vmm_suspend_p)
 		vmm_suspend_p();
-#endif
 
 	cpu = PCPU_GET(cpuid);
 
@@ -1628,11 +1617,8 @@ cpususpend_handler(void)
 	} else
 #endif
 	if (savectx(&susppcbs[cpu]->sp_pcb)) {
-#ifdef __amd64__
 		fpususpend(susppcbs[cpu]->sp_fpususpend);
-#else
-		npxsuspend(susppcbs[cpu]->sp_fpususpend);
-#endif
+
 		/*
 		 * suspended_cpus is cleared shortly after each AP is restarted
 		 * by a Startup IPI, so that the BSP can proceed to restarting
@@ -1661,11 +1647,7 @@ cpususpend_handler(void)
 		 */
 		wbinvd();
 	} else {
-#ifdef __amd64__
 		fpuresume(susppcbs[cpu]->sp_fpususpend);
-#else
-		npxresume(susppcbs[cpu]->sp_fpususpend);
-#endif
 		pmap_init_pat();
 		initializecpu();
 		PCPU_SET(switchtime, 0);
@@ -1682,17 +1664,10 @@ cpususpend_handler(void)
 	/* Re-apply microcode updates. */
 	ucode_reload();
 
-#ifdef __i386__
-	/* Finish removing the identity mapping of low memory for this AP. */
-	invltlb_glob();
-#endif
-
 	if (cpu_ops.cpu_resume)
 		cpu_ops.cpu_resume();
-#ifdef __amd64__
 	if (vmm_resume_p)
 		vmm_resume_p();
-#endif
 
 	/* Resume MCA and local APIC */
 	lapic_xapic_mode();

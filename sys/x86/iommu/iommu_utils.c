@@ -29,11 +29,6 @@
  */
 
 #include "opt_acpi.h"
-#if defined(__amd64__)
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
 #include "opt_ddb.h"
 
 #include <sys/systm.h>
@@ -62,17 +57,16 @@
 #include <machine/atomic.h>
 #include <machine/bus.h>
 #include <machine/cpu.h>
+#include <machine/intr_machdep.h>
+#include <x86/apicreg.h>
+#include <x86/apicvar.h>
 #include <x86/include/busdma_impl.h>
 #include <dev/iommu/busdma_iommu.h>
 #include <dev/iommu/iommu.h>
 #include <x86/iommu/x86_iommu.h>
 #include <x86/iommu/iommu_intrmap.h>
-#ifdef DEV_APIC
+
 #include "pcib_if.h"
-#include <machine/intr_machdep.h>
-#include <x86/apicreg.h>
-#include <x86/apicvar.h>
-#endif
 
 vm_page_t
 iommu_pgalloc(vm_object_t obj, vm_pindex_t idx, int flags)

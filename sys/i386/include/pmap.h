@@ -136,20 +136,6 @@
 /*
  * Address of current address space page table maps and directories.
  */
-#ifdef _KERNEL
-
-/*
- * Translate a virtual address to its physical address.
- *
- * This macro may be used before pmap_bootstrap() is called.
- */
-#define	vtophys(va)	pmap_kextract((vm_offset_t)(va))
-
-#define	pte_clear(ptep)			pte_store(ptep, 0)
-
-#define	pde_store(pdep, pde)		pte_store(pdep, pde)
-
-#endif /* _KERNEL */
 
 /*
  * Pmap stuff
@@ -173,99 +159,6 @@ struct pmap {
 };
 
 typedef struct pmap	*pmap_t;
-
-#ifdef _KERNEL
-extern struct pmap	kernel_pmap_store;
-#define kernel_pmap	(&kernel_pmap_store)
-
-#define	PMAP_LOCK(pmap)		mtx_lock(&(pmap)->pm_mtx)
-#define	PMAP_LOCK_ASSERT(pmap, type) \
-				mtx_assert(&(pmap)->pm_mtx, (type))
-#define	PMAP_LOCK_DESTROY(pmap)	mtx_destroy(&(pmap)->pm_mtx)
-#define	PMAP_LOCK_INIT(pmap)	mtx_init(&(pmap)->pm_mtx, "pmap", \
-				    NULL, MTX_DEF | MTX_DUPOK)
-#define	PMAP_LOCKED(pmap)	mtx_owned(&(pmap)->pm_mtx)
-#define	PMAP_MTX(pmap)		(&(pmap)->pm_mtx)
-#define	PMAP_TRYLOCK(pmap)	mtx_trylock(&(pmap)->pm_mtx)
-#define	PMAP_UNLOCK(pmap)	mtx_unlock(&(pmap)->pm_mtx)
-
-extern char *ptvmmap;		/* poor name! */
-extern vm_offset_t virtual_avail;
-extern vm_offset_t virtual_end;
-
-#define	pmap_page_get_memattr(m)	((vm_memattr_t)(m)->md.pat_mode)
-#define	pmap_page_is_write_mapped(m)	(((m)->a.flags & PGA_WRITEABLE) != 0)
-#define	pmap_unmapbios(va, sz)	pmap_unmapdev((va), (sz))
-
-static inline int
-pmap_vmspace_copy(pmap_t dst_pmap __unused, pmap_t src_pmap __unused)
-{
-
-	return (0);
-}
-
-struct sf_buf;
-
-#define	pmap_vm_page_alloc_check(m)
-
-/*
- * Only the following functions or macros may be used before pmap_bootstrap()
- * is called: pmap_kenter(), pmap_kextract(), pmap_kremove(), vtophys(), and
- * vtopte().
- */
-void	pmap_activate_boot(pmap_t pmap);
-void	pmap_basemem_setup(u_int basemem);
-void	*pmap_bios16_enter(void);
-void	pmap_bios16_leave(void *handle);
-void	pmap_bootstrap(vm_paddr_t);
-int	pmap_cache_bits(pmap_t, int mode, bool is_pde);
-int	pmap_change_attr(void *, vm_size_t, int);
-caddr_t	pmap_cmap3(vm_paddr_t pa, u_int pte_bits);
-void	pmap_cp_slow0_map(vm_offset_t kaddr, int plen, vm_page_t *ma);
-void	pmap_flush_page(vm_page_t m);
-u_int	pmap_get_kcr3(void);
-u_int	pmap_get_cr3(pmap_t);
-vm_offset_t pmap_get_map_low(void);
-vm_offset_t pmap_get_vm_maxuser_address(void);
-void	pmap_init_pat(void);
-void	pmap_kenter(vm_offset_t va, vm_paddr_t pa);
-void	*pmap_kenter_temporary(vm_paddr_t pa, int i);
-vm_paddr_t pmap_kextract(vm_offset_t va);
-void	pmap_kremove(vm_offset_t);
-void	pmap_ksetrw(vm_offset_t va);
-void	*pmap_mapbios(vm_paddr_t, vm_size_t);
-void	*pmap_mapdev(vm_paddr_t, vm_size_t);
-void	*pmap_mapdev_attr(vm_paddr_t, vm_size_t, int);
-bool	pmap_page_is_mapped(vm_page_t m);
-void	pmap_page_set_memattr(vm_page_t m, vm_memattr_t ma);
-vm_paddr_t pmap_pg_frame(vm_paddr_t pa);
-bool	pmap_ps_enabled(pmap_t pmap);
-void	pmap_remap_lower(bool);
-void	pmap_remap_lowptdi(bool);
-void	pmap_set_nx(void);
-void	pmap_sf_buf_map(struct sf_buf *sf);
-void	pmap_unmapdev(void *, vm_size_t);
-void	pmap_invalidate_page(pmap_t, vm_offset_t);
-void	pmap_invalidate_range(pmap_t, vm_offset_t, vm_offset_t);
-void	pmap_invalidate_all(pmap_t);
-void	pmap_invalidate_cache(void);
-void	pmap_invalidate_cache_pages(vm_page_t *pages, int count);
-void	pmap_invalidate_cache_range(vm_offset_t sva, vm_offset_t eva);
-void	pmap_force_invalidate_cache_range(vm_offset_t sva, vm_offset_t eva);
-void	*pmap_trm_alloc(size_t size, int flags);
-void	pmap_trm_free(void *addr, size_t size);
-#define	pmap_map_delete(pmap, sva, eva)	pmap_remove(pmap, sva, eva)
-
-void	invltlb_glob(void);
-
-struct thread;
-
-extern int pae_mode;
-extern int i386_pmap_VM_NFREEORDER;
-extern int i386_pmap_VM_LEVEL_0_ORDER;
-extern int i386_pmap_PDRSHIFT;
-
-#endif /* _KERNEL */
 
 #endif /* !LOCORE */
 

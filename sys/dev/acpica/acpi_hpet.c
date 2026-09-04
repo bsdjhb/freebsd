@@ -28,11 +28,6 @@
 #include <sys/cdefs.h>
 #include "opt_acpi.h"
 
-#if defined(__amd64__)
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
 #include <sys/param.h>
 #include <sys/conf.h>
 #include <sys/bus.h>
@@ -54,9 +49,7 @@
 #include <dev/acpica/acpivar.h>
 #include <dev/acpica/acpi_hpet.h>
 
-#ifdef DEV_APIC
 #include "pcib_if.h"
-#endif
 
 #define HPET_VENDID_AMD		0x4353
 #define HPET_VENDID_AMD2	0x1022
@@ -660,10 +653,9 @@ hpet_attach(device_t dev)
 		dvectors &= 0x0000fefe;
 	for (i = 0; i < num_timers; i++) {
 		t = &sc->t[i];
-		if (sc->legacy_route && i < 2)
+		if (sc->legacy_route && i < 2) {
 			t->irq = (i == 0) ? 0 : 8;
-#ifdef DEV_APIC
-		else if (t->caps & HPET_TCAP_FSB_INT_DEL) {
+		} else if (t->caps & HPET_TCAP_FSB_INT_DEL) {
 			if ((j = PCIB_ALLOC_MSIX(
 			    device_get_parent(device_get_parent(dev)), dev,
 			    &t->irq))) {
@@ -671,9 +663,7 @@ hpet_attach(device_t dev)
 				    "Can't allocate interrupt for t%d: %d\n",
 				    i, j);
 			}
-		}
-#endif
-		else if (dvectors & t->vectors) {
+		} else if (dvectors & t->vectors) {
 			t->irq = ffs(dvectors & t->vectors) - 1;
 			dvectors &= ~(1 << t->irq);
 		}
@@ -756,9 +746,7 @@ hpet_attach(device_t dev)
 		t->caps |= HPET_TCNF_32MODE;
 		if (t->irq >= 0 && sc->legacy_route && i < 2) {
 			/* Legacy route doesn't need more configuration. */
-		} else
-#ifdef DEV_APIC
-		if ((t->caps & HPET_TCAP_FSB_INT_DEL) && t->irq >= 0) {
+		} else if ((t->caps & HPET_TCAP_FSB_INT_DEL) && t->irq >= 0) {
 			uint64_t addr;
 			uint32_t data;
 
@@ -772,9 +760,7 @@ hpet_attach(device_t dev)
 				t->caps |= HPET_TCNF_FSB_EN;
 			} else
 				t->irq = -2;
-		} else
-#endif
-		if (t->irq >= 0)
+		} else if (t->irq >= 0)
 			t->caps |= (t->irq << 9);
 		else if (sc->irq >= 0 && (t->vectors & (1 << sc->irq)))
 			t->caps |= (sc->irq << 9) | HPET_TCNF_INT_TYPE;
@@ -883,7 +869,6 @@ hpet_resume(device_t dev)
 	/* Restart event timers that were running on suspend. */
 	for (i = 0; i < sc->num_timers; i++) {
 		t = &sc->t[i];
-#ifdef DEV_APIC
 		if (t->irq >= 0 && (sc->legacy_route == 0 || i >= 2)) {
 			uint64_t addr;
 			uint32_t data;
@@ -897,7 +882,6 @@ hpet_resume(device_t dev)
 				    HPET_TIMER_FSB_VAL(i), data);
 			}
 		}
-#endif
 		if (t->mode == TIMER_STOPPED)
 			continue;
 		t->next = bus_read_4(sc->mem_res, HPET_MAIN_COUNTER);
@@ -952,7 +936,6 @@ hpet_test(struct hpet_softc *sc)
 	device_printf(sc->dev, "time per call: %ld ns\n", ts.tv_nsec / 1000);
 }
 
-#ifdef DEV_APIC
 static int
 hpet_remap_intr(device_t dev, device_t child, u_int irq)
 {
@@ -979,7 +962,6 @@ hpet_remap_intr(device_t dev, device_t child, u_int irq)
 	}
 	return (ENOENT);
 }
-#endif
 
 static device_method_t hpet_methods[] = {
 	/* Device interface */
@@ -990,9 +972,7 @@ static device_method_t hpet_methods[] = {
 	DEVMETHOD(device_suspend, hpet_suspend),
 	DEVMETHOD(device_resume, hpet_resume),
 
-#ifdef DEV_APIC
 	DEVMETHOD(bus_remap_intr, hpet_remap_intr),
-#endif
 
 	DEVMETHOD_END
 };

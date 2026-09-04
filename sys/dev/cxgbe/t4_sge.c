@@ -564,7 +564,7 @@ t4_sge_modload(void)
 	if (spg_len != 64 && spg_len != 128) {
 		int len;
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		len = cpu_clflush_line_size > 64 ? 128 : 64;
 #else
 		len = 64;
@@ -3156,7 +3156,7 @@ set_txupdate_flags(struct sge_txq *txq, u_int avail,
 	}
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 extern uint64_t tsc_freq;
 #endif
 
@@ -3165,7 +3165,7 @@ record_eth_tx_time(struct sge_txq *txq)
 {
 	const uint64_t cycles = get_cyclecount();
 	const uint64_t last_tx = txq->last_tx;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	const uint64_t itg = tsc_freq * t4_tx_coalesce_gap / 1000000;
 #else
 	const uint64_t itg = 0;

@@ -94,7 +94,7 @@ struct t3_mbuf_hdr {
 
 #define prefetch(x) __builtin_prefetch(x)
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define smp_mb() mb()
 #define WARN_ON(condition) do { \
 	if (__predict_false((condition)!=0)) {  \

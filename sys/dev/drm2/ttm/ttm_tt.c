@@ -61,7 +61,7 @@ static void ttm_dma_tt_alloc_page_directory(struct ttm_dma_tt *ttm)
 	    sizeof(*ttm->dma_address), M_TTM_PD, M_WAITOK);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static inline int ttm_tt_set_page_caching(vm_page_t p,
 					  enum ttm_caching_state c_old,
 					  enum ttm_caching_state c_new)

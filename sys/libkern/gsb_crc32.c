@@ -49,7 +49,7 @@
 #include <sys/libkern.h>
 #include <sys/systm.h>
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/md_var.h>
 #include <machine/specialreg.h>
 #include <x86/ifunc.h>
@@ -770,7 +770,7 @@ DEFINE_IFUNC(, uint32_t, calculate_crc32c,
 
 	return (table_crc32c);
 }
-#elif defined(_KERNEL) && (defined(__amd64__) || defined(__i386__))
+#elif defined(_KERNEL) && defined(__amd64__)
 DEFINE_IFUNC(, uint32_t, calculate_crc32c,
     (uint32_t crc32c, const unsigned char *buffer, unsigned int length))
 {

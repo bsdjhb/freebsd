@@ -32,7 +32,7 @@
 #include <sys/rwlock.h>
 #include <sys/malloc.h>
 #include <sys/libkern.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/cpufunc.h>
 #include <machine/cputypes.h>
 #include <machine/fpu.h>
@@ -79,7 +79,7 @@ padlock_identify(driver_t *drv, device_t parent)
 static int
 padlock_probe(device_t dev)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	/* If there is no AES support, we has nothing to do here. */
 	if (!(via_feature_xcrypt & VIA_HAS_AES)) {
 		device_printf(dev, "No ACE support.\n");

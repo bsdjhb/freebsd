@@ -32,7 +32,7 @@
 #include <machine/cpufunc.h>
 #include <machine/cpu.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define	X86_VENDOR_INTEL	0
 #define	X86_VENDOR_CYRIX	1
 #define	X86_VENDOR_AMD		2
