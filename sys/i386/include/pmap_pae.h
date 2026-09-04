@@ -109,21 +109,4 @@ do {						\
 } while (0)
 #define	pte_load(ptep)			atomic_load_acq_64_i586(ptep)
 
-extern pdpt_entry_t *IdlePDPT;
-extern pt_entry_t pg_nx;
-extern pd_entry_t *IdlePTD_pae;	/* physical address of "Idle" state directory */
-
-/*
- * KPTmap is a linear mapping of the kernel page table.  It differs from the
- * recursive mapping in two ways: (1) it only provides access to kernel page
- * table pages, and not user page table pages, and (2) it provides access to
- * a kernel page table page after the corresponding virtual addresses have
- * been promoted to a 2/4MB page mapping.
- *
- * KPTmap is first initialized by pmap_cold() to support just NPKT page table
- * pages.  Later, it is reinitialized by pmap_bootstrap() to allow for
- * expansion of the kernel page table.
- */
-extern pt_entry_t *KPTmap_pae;
-
 #endif

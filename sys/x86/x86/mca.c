@@ -31,13 +31,6 @@
  * Support for x86 machine check architecture.
  */
 
-#include <sys/cdefs.h>
-#ifdef __amd64__
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
-
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/interrupt.h>
@@ -68,7 +61,6 @@ enum scan_mode {
 	CMCI,
 };
 
-#ifdef DEV_APIC
 /*
  * State maintained for each monitored MCx bank to control the
  * corrected machine check interrupt threshold.
@@ -82,7 +74,6 @@ struct amd_et_state {
 	int	cur_threshold;
 	time_t	last_intr;
 };
-#endif
 
 struct mca_internal {
 	struct mca_record rec;
@@ -243,7 +234,6 @@ static struct mca_enumerator_ops mca_msr_ops = {
         .misc   = mca_ia32_misc_reg
 };
 
-#ifdef DEV_APIC
 static struct cmc_state **cmc_state;		/* Indexed by cpuid, bank. */
 static struct amd_et_state **amd_et_state;	/* Indexed by cpuid, bank. */
 static int cmc_throttle = 60;	/* Time in seconds to throttle CMCI. */
@@ -269,7 +259,6 @@ amd_thresholding_supported(void)
 		return ((amd_rascap & AMDRAS_SCALABLE_MCA) != 0);
 	return (false);
 }
-#endif
 
 static inline bool
 cmci_supported(uint64_t mcg_cap)
@@ -940,7 +929,6 @@ mca_record_entry(enum scan_mode mode, const struct mca_record *record)
 	mtx_unlock_spin(&mca_lock);
 }
 
-#ifdef DEV_APIC
 /*
  * Update the interrupt threshold for a CMCI.  The strategy is to use
  * a low trigger that interrupts as soon as the first event occurs.
@@ -1051,7 +1039,6 @@ amd_thresholding_update(enum scan_mode mode, int bank, int valid)
 	if (mode == CMCI && valid)
 		cc->last_intr = time_uptime;
 }
-#endif
 
 /*
  * This scans all the machine check banks of the current CPU to see if
@@ -1070,14 +1057,12 @@ mca_scan(enum scan_mode mode, bool *recoverablep)
 
 	mcg_cap = rdmsr(MSR_MCG_CAP);
 	for (i = 0; i < (mcg_cap & MCG_CAP_COUNT); i++) {
-#ifdef DEV_APIC
 		/*
 		 * For a CMCI, only check banks this CPU is
 		 * responsible for.
 		 */
 		if (mode == CMCI && !(PCPU_GET(cmci_mask) & 1 << i))
 			continue;
-#endif
 
 		valid = mca_check_status(mode, mcg_cap, i, &rec, recoverablep);
 		if (valid) {
@@ -1088,7 +1073,6 @@ mca_scan(enum scan_mode mode, bool *recoverablep)
 				mca_log(mode, &rec, true);
 		}
 
-#ifdef DEV_APIC
 		/*
 		 * If this is a bank this CPU monitors via CMCI,
 		 * update the threshold.
@@ -1099,7 +1083,6 @@ mca_scan(enum scan_mode mode, bool *recoverablep)
 			else
 				amd_thresholding_update(mode, i, valid);
 		}
-#endif
 	}
 	return (count);
 }
@@ -1285,7 +1268,6 @@ mca_startup(void *dummy)
 }
 SYSINIT(mca_startup, SI_SUB_KICK_SCHEDULER, SI_ORDER_ANY, mca_startup, NULL);
 
-#ifdef DEV_APIC
 static void
 cmci_setup(void)
 {
@@ -1317,7 +1299,6 @@ amd_thresholding_setup(void)
 	    &cmc_throttle, 0, sysctl_positive_int, "I",
 	    "Interval in seconds to throttle corrected MC interrupts");
 }
-#endif
 
 static void
 mca_setup(uint64_t mcg_cap)
@@ -1361,15 +1342,12 @@ mca_setup(uint64_t mcg_cap)
 	SYSCTL_ADD_PROC(NULL, SYSCTL_STATIC_CHILDREN(_hw_mca), OID_AUTO,
 	    "force_scan", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, NULL, 0,
 	    sysctl_mca_scan, "I", "Force an immediate scan for machine checks");
-#ifdef DEV_APIC
 	if (cmci_supported(mcg_cap))
 		cmci_setup();
 	else if (amd_thresholding_supported())
 		amd_thresholding_setup();
-#endif
 }
 
-#ifdef DEV_APIC
 /*
  * See if we should monitor CMCI for this bank.  If CMCI_EN is already
  * set in MC_CTL2, then another CPU is responsible for this bank, so
@@ -1562,7 +1540,6 @@ amd_thresholding_resume(int i)
 	cc->cur_threshold = 1;
 	amd_thresholding_start(cc, i);
 }
-#endif
 
 /*
  * Initializes per-CPU machine check registers and enables corrected
@@ -1649,7 +1626,6 @@ _mca_init(int boot)
 			if (!skip)
 				wrmsr(mca_msr_ops.ctl(i), ctl);
 
-#ifdef DEV_APIC
 			if (cmci_supported(mcg_cap)) {
 				if (boot)
 					cmci_monitor(i);
@@ -1661,7 +1637,6 @@ _mca_init(int boot)
 				else
 					amd_thresholding_resume(i);
 			}
-#endif
 
 			/* Clear all errors. */
 			wrmsr(mca_msr_ops.status(i), 0);
@@ -1669,11 +1644,9 @@ _mca_init(int boot)
 		if (boot)
 			mtx_unlock_spin(&mca_lock);
 
-#ifdef DEV_APIC
 		if (cmci_supported(mcg_cap) &&
 		    PCPU_GET(cmci_mask) != 0 && boot)
 			lapic_enable_cmc();
-#endif
 	}
 
 	load_cr4(rcr4() | CR4_MCE);
@@ -1753,7 +1726,6 @@ mca_intr(void)
 	wrmsr(MSR_MCG_STATUS, mcg_status & ~MCG_STATUS_MCIP);
 }
 
-#ifdef DEV_APIC
 /* Called for a CMCI (correctable machine check interrupt). */
 void
 cmc_intr(void)
@@ -1769,4 +1741,3 @@ cmc_intr(void)
 	if (mca_scan(CMCI, &recoverable) != 0)
 		mca_process_records(CMCI);
 }
-#endif

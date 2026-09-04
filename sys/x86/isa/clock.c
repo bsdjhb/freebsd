@@ -38,11 +38,6 @@
  * Routines to handle clock hardware.
  */
 
-#ifdef __amd64__
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
 #include "opt_clock.h"
 #include "opt_isa.h"
 
@@ -415,9 +410,7 @@ cpu_initclocks(void)
 	td = curthread;
 
 	tsc_calibrate();
-#ifdef DEV_APIC
 	lapic_calibrate_timer();
-#endif
 	cpu_initclocks_bsp();
 	CPU_FOREACH(i) {
 		if (i == 0)
@@ -474,11 +467,7 @@ i8254_get_timecount(struct timecounter *tc)
 	if (sc->period == 0)
 		return (i8254_max_count - getit());
 
-#ifdef __amd64__
 	flags = read_rflags();
-#else
-	flags = read_eflags();
-#endif
 	mtx_lock_spin(&clock_lock);
 
 	/* Select timer0 and latch counter value. */

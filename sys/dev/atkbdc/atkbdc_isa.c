@@ -100,7 +100,7 @@ atkbdc_isa_probe(device_t dev)
 	rman_res_t	count;
 	int		error;
 	int		rid;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	bus_space_tag_t	tag;
 	bus_space_handle_t ioh1;
 	volatile int	i;
@@ -147,7 +147,7 @@ atkbdc_isa_probe(device_t dev)
 		return ENXIO;
 	}
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	/*
 	 * Check if we really have AT keyboard controller. Poll status
 	 * register until we get "all clear" indication. If no such

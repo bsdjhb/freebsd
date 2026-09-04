@@ -1070,11 +1070,9 @@ pci_bar_io(device_t pcidev, struct pci_bar_ioreq *pbi)
 		case 4:
 			pbi->pbi_value = bus_read_4(res, offset);
 			break;
-#ifndef __i386__
 		case 8:
 			pbi->pbi_value = bus_read_8(res, offset);
 			break;
-#endif
 		default:
 			error = EINVAL;
 			break;
@@ -1091,11 +1089,9 @@ pci_bar_io(device_t pcidev, struct pci_bar_ioreq *pbi)
 		case 4:
 			bus_write_4(res, offset, pbi->pbi_value);
 			break;
-#ifndef __i386__
 		case 8:
 			bus_write_8(res, offset, pbi->pbi_value);
 			break;
-#endif
 		default:
 			error = EINVAL;
 			break;

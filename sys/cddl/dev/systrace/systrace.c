@@ -61,13 +61,8 @@
 #include <amd64/linux/linux_proto.h>
 #include <amd64/linux/linux_syscalls.c>
 #include <amd64/linux/linux_systrace_args.c>
-#elif defined(__i386__)
-#include <i386/linux/linux.h>
-#include <i386/linux/linux_proto.h>
-#include <i386/linux/linux_syscalls.c>
-#include <i386/linux/linux_systrace_args.c>
 #else
-#error Only i386 and amd64 are supported.
+#error Only amd64 is supported.
 #endif
 #define	MODNAME		"linux"
 extern struct sysent linux_sysent[];

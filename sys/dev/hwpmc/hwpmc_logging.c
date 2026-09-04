@@ -60,7 +60,7 @@
 #include <sys/vnode.h>
 #include <sys/syslog.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/clock.h>
 #endif
 
@@ -721,7 +721,7 @@ pmclog_configure_log(struct pmc_mdep *md, struct pmc_owner *po, int logfd)
 	    sizeof(struct pmclog_initialize));
 	PMCLOG_EMIT32(PMC_VERSION);
 	PMCLOG_EMIT32(md->pmd_cputype);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	PMCLOG_EMIT64(tsc_freq);
 #else
 	/* other architectures will need to fill this in */

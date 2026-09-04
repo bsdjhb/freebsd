@@ -480,7 +480,7 @@ linux_shminfo_pushdown(l_int ver, struct l_shminfo64 *linux_shminfo64,
 	return (copyout(&linux_shminfo, uaddr, sizeof(linux_shminfo)));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_semtimedop_time64(struct thread *td, struct linux_semtimedop_time64_args *args)
 {
@@ -498,7 +498,7 @@ linux_semtimedop_time64(struct thread *td, struct linux_semtimedop_time64_args *
 	return (kern_semop(td, args->semid, PTRIN(args->tsops),
 	    args->nsops, tsa));
 }
-#endif /* __i386__) || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_semtimedop(struct thread *td, struct linux_semtimedop_args *args)

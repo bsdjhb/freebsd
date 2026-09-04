@@ -279,7 +279,7 @@ extern int linuxkpi_debug;
 #define	num_possible_cpus()	mp_ncpus
 #define	num_online_cpus()	mp_ncpus
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 extern bool linux_cpu_has_clflush;
 #define	cpu_has_clflush		linux_cpu_has_clflush
 #endif

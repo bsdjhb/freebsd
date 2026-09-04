@@ -257,7 +257,7 @@ forward_signal(struct thread *td)
  *   1: ok
  *
  */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #define	X86	1
 #else
 #define	X86	0

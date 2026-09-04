@@ -15,9 +15,9 @@ INCS=	\
 # This should be fixed.
 INCS+=	\
 	counter.h \
-	md_var.h \
 	pcpu.h \
 	pcpu_aux.h
+
 INCSDIR=	${INCLUDEDIR}/i386
 
 beforeinstall: i386dir

@@ -34,7 +34,7 @@
 #define V_MAX_ADAPTERS		8		/* XXX */
 
 /* some macros */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 
 static __inline void
 copyw(uint16_t *src, uint16_t *dst, size_t size)
@@ -83,7 +83,7 @@ fillw(int val, uint16_t *buf, size_t size)
 #define	readw(a)		(*(uint16_t*)(a))
 #define	writew(a, v)		(*(uint16_t*)(a) = (v))
 
-#else /* !__i386__ && !__amd64__ && !__powerpc__ */
+#else /* !__amd64__ && !__powerpc__ && !__arm__ */
 #define bcopy_io(s, d, c)	memcpy_io((d), (s), (c))
 #define bcopy_toio(s, d, c)	memcpy_toio((d), (void *)(s), (c))
 #define bcopy_fromio(s, d, c)	memcpy_fromio((void *)(d), (s), (c))
@@ -91,7 +91,7 @@ fillw(int val, uint16_t *buf, size_t size)
 #define fill_io(p, d, c)	memset_io((d), (p), (c))
 #define fillw(p, d, c)		memsetw((d), (p), (c))
 #define fillw_io(p, d, c)	memsetw_io((d), (p), (c))
-#endif /* !__i386__ */
+#endif /* !__amd64__ && !__powerpc__ && !__arm__ */
 
 /* video function table */
 typedef int vi_probe_t(int unit, video_adapter_t **adpp, void *arg, int flags);

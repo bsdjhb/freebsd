@@ -34,7 +34,7 @@
 #include <sys/malloc.h>
 #include <sys/module.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/pci_cfgreg.h>
 #endif
 #include <machine/bus.h>
@@ -177,7 +177,7 @@ acpi_config_intr(device_t dev, ACPI_RESOURCE *res)
 	panic("%s: bad resource type %u", __func__, res->Type);
     }
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
     if (irq < 16 && trig == ACPI_EDGE_SENSITIVE && pol == ACPI_ACTIVE_LOW &&
 	acpi_override_isa_irq_polarity) {
 	device_printf(dev, "forcing active-hi polarity for IRQ %u\n", irq);
@@ -419,16 +419,6 @@ acpi_parse_resource(ACPI_RESOURCE *res, void *context)
 	    break;
 	}
 
-#ifdef __i386__
-	if (min > ULONG_MAX || (res->Data.Address.MaxAddressFixed && max >
-	    ULONG_MAX)) {
-	    ACPI_DEBUG_PRINT((ACPI_DB_RESOURCES, "ignored %s above 4G\n",
-		name));
-	    break;
-	}
-	if (max > ULONG_MAX)
-		max = ULONG_MAX;
-#endif
 	if (res->Data.Address.MinAddressFixed == ACPI_ADDRESS_FIXED &&
 	    res->Data.Address.MaxAddressFixed == ACPI_ADDRESS_FIXED) {
 	    if (res->Data.Address.ResourceType == ACPI_MEMORY_RANGE) {
@@ -637,7 +627,7 @@ acpi_res_ignore(device_t dev, int type, rman_res_t start, rman_res_t count)
 
 	if (ACPI_SUCCESS(AcpiGetObjectInfo(ad->ad_handle, &devinfo))) {
 	    if ((devinfo->Flags & ACPI_PCI_ROOT_BRIDGE) != 0) {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		allow = (type == SYS_RES_IOPORT && start == CONF1_ADDR_PORT);
 #else
 		allow = false;

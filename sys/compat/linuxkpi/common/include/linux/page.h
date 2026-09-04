@@ -39,7 +39,7 @@
 #include <vm/vm_page.h>
 #include <vm/pmap.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/md_var.h>
 #endif
 
@@ -103,7 +103,7 @@ pgprot2cachemode(pgprot_t prot)
 #undef	trunc_page
 #define	trunc_page(x)	((uintptr_t)(x) & ~(PAGE_SIZE - 1))
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #undef clflush
 #undef clflushopt
 static inline void

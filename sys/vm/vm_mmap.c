@@ -73,7 +73,7 @@
 #include <sys/syscallsubr.h>
 #include <sys/sysent.h>
 #include <sys/vmmeter.h>
-#if defined(__amd64__) || defined(__i386__) /* for i386_read_exec */
+#if defined(__amd64__) /* for i386_read_exec */
 #include <machine/md_var.h>
 #endif
 
@@ -485,7 +485,7 @@ kern_ommap(struct thread *td, uintptr_t hint, int len, int oprot,
 #define	OMAP_FIXED	0x0100
 
 	prot = cvtbsdprot[oprot & 0x7];
-#if (defined(COMPAT_FREEBSD32) && defined(__amd64__)) || defined(__i386__)
+#if defined(COMPAT_FREEBSD32) && defined(__amd64__)
 	if (i386_read_exec && SV_PROC_FLAG(td->td_proc, SV_ILP32) &&
 	    prot != 0)
 		prot |= PROT_EXEC;

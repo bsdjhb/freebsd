@@ -45,13 +45,6 @@
 #include <machine/resource.h>
 #include <sys/rman.h>
 
-#ifdef __i386__
-#include <vm/vm.h>
-#include <vm/pmap.h>
-#include <machine/vmparam.h>
-#include <machine/pc/bios.h>
-#endif
-
 #include <dev/ppbus/ppbconf.h>
 #include <dev/ppbus/ppb_msq.h>
 
@@ -113,15 +106,6 @@ static char *ppc_modes[] = {
 };
 
 static char *ppc_epp_protocol[] = { " (EPP 1.9)", " (EPP 1.7)", 0 };
-
-#ifdef __i386__
-/*
- * BIOS printer list - used by BIOS probe.
- */
-#define	BIOS_PPC_PORTS	0x408
-#define	BIOS_PORTS	((short *)BIOS_PADDRTOVADDR(BIOS_PPC_PORTS))
-#define	BIOS_MAX_PPC	4
-#endif
 
 /*
  * ppc_ecp_sync()		XXX
@@ -1655,11 +1639,6 @@ int
 ppc_probe(device_t dev, int rid)
 {
 	struct ppc_data *ppc;
-#ifdef __i386__
-	static short next_bios_ppc = 0;
-	int error;
-	rman_res_t port;
-#endif
 
 	/*
 	 * Allocate the ppc_data structure.
@@ -1668,29 +1647,6 @@ ppc_probe(device_t dev, int rid)
 	bzero(ppc, sizeof(struct ppc_data));
 
 	ppc->rid_ioport = rid;
-
-#ifdef __i386__
-	/* retrieve ISA parameters */
-	error = bus_get_resource(dev, SYS_RES_IOPORT, rid, &port, NULL);
-
-	/*
-	 * If port not specified, use bios list.
-	 */
-	if (error) {
-		if ((next_bios_ppc < BIOS_MAX_PPC) &&
-		    (*(BIOS_PORTS + next_bios_ppc) != 0)) {
-			port = *(BIOS_PORTS + next_bios_ppc++);
-			if (bootverbose)
-				device_printf(dev,
-				    "parallel port found at 0x%jx\n", port);
-		} else {
-			device_printf(dev, "parallel port not found.\n");
-			return (ENXIO);
-		}
-		bus_set_resource(dev, SYS_RES_IOPORT, rid, port,
-				 IO_LPTSIZE_EXTENDED);
-	}
-#endif
 
 	/* IO port is mandatory */
 

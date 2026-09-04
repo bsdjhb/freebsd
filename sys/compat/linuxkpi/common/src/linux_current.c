@@ -27,8 +27,6 @@
 #include <sys/cdefs.h>
 #ifdef __amd64__
 #define	DEV_APIC
-#elif defined(__i386__)
-#include "opt_apic.h"
 #endif
 
 #include <linux/compat.h>

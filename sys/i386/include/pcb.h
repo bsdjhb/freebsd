@@ -38,9 +38,7 @@
 /*
  * Intel 386 process control block
  */
-#ifndef _KERNEL
 #include <machine/segments.h>
-#endif
 #include <machine/npx.h>
 
 /*
@@ -96,21 +94,5 @@ struct pcb {
 
 	uint32_t pcb_pad[10];
 };
-
-/* Per-CPU state saved during suspend and resume. */
-struct susppcb {
-	struct pcb	sp_pcb;
-
-	/* fpu context for suspend/resume */
-	void		*sp_fpususpend;
-};
-
-#ifdef _KERNEL
-struct trapframe;
-
-void	makectx(struct trapframe *, struct pcb *);
-int	savectx(struct pcb *) __returns_twice;
-void	resumectx(struct pcb *) __fastcall;
-#endif
 
 #endif /* _I386_PCB_H_ */

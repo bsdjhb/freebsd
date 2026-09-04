@@ -342,7 +342,7 @@ sis_read_eeprom(struct sis_softc *sc, caddr_t dest, int off, int cnt, int swap)
 	}
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static device_t
 sis_find_bridge(device_t dev)
 {
@@ -395,7 +395,7 @@ sis_read_cmos(struct sis_softc *sc, device_t dev, caddr_t dest, int off, int cnt
 	pci_write_config(bridge, 0x48, reg|0x40, 1);
 
 	/* XXX */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	btag = X86_BUS_SPACE_IO;
 #endif
 
@@ -995,7 +995,7 @@ sis_attach(device_t dev)
 		break;
 	case SIS_VENDORID:
 	default:
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		/*
 		 * If this is a SiS 630E chipset with an embedded
 		 * SiS 900 controller, we have to read the MAC address

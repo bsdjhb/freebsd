@@ -915,7 +915,7 @@ iflib_num_tx_descs(if_ctx_t ctx)
 static inline void
 prefetch(void *x)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	__asm volatile("prefetcht0 %0" :: "m" (*(unsigned long *)x));
 #else
 	__builtin_prefetch(x);

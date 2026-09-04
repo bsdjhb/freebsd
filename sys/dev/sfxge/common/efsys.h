@@ -103,7 +103,7 @@ extern "C" {
 MALLOC_DECLARE(M_SFXGE);
 
 /* Machine dependend prefetch wrappers */
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static __inline void
 prefetch_read_many(void *addr)
 {
@@ -137,7 +137,7 @@ prefetch_read_once(void *addr)
 }
 #endif
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #endif
@@ -145,7 +145,7 @@ static __inline void
 sfxge_map_mbuf_fast(bus_dma_tag_t tag, bus_dmamap_t map,
 		    struct mbuf *m, bus_dma_segment_t *seg)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	seg->ds_addr = pmap_kextract(mtod(m, vm_offset_t));
 	seg->ds_len = m->m_len;
 #else

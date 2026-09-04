@@ -158,11 +158,7 @@ early_init_vtop(void *addr)
 		halt();
 	}
 
-	return ((uintptr_t)addr - KERNBASE
-#ifdef __amd64__
-	    + kernphys - KERNLOAD
-#endif
-	    );
+	return ((uintptr_t)addr - KERNBASE + kernphys - KERNLOAD);
 }
 
 static int

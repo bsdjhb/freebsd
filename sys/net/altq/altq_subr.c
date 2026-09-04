@@ -68,11 +68,11 @@
 #include <sys/cpu.h>
 #include <sys/eventhandler.h>
 #include <machine/clock.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/cpufunc.h>		/* for pentium tsc */
 #include <machine/specialreg.h>		/* for CPUID_TSC */
 #include <machine/md_var.h>		/* for cpu_feature */
-#endif /* __amd64 || __i386__ */
+#endif /* __amd64__ */
 
 /*
  * internal function prototypes
@@ -869,7 +869,7 @@ tsc_freq_changed(void *arg, const struct cf_level *level, int status)
 	if (status != 0)
 		return;
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	/* If TSC is P-state invariant, don't do anything. */
 	if (tsc_is_invariant)
 		return;
@@ -888,7 +888,7 @@ init_machclk_setup(void)
 
 	machclk_usepcc = 1;
 
-#if (!defined(__amd64__) && !defined(__i386__)) || defined(ALTQ_NOPCC)
+#if !defined(__amd64__) || defined(ALTQ_NOPCC)
 	machclk_usepcc = 0;
 #endif
 #if defined(__FreeBSD__) && defined(SMP)
@@ -897,7 +897,7 @@ init_machclk_setup(void)
 #if defined(__NetBSD__) && defined(MULTIPROCESSOR)
 	machclk_usepcc = 0;
 #endif
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	/* check if TSC is available */
 	if ((cpu_feature & CPUID_TSC) == 0 ||
 	    atomic_load_acq_64(&tsc_freq) == 0)
@@ -930,7 +930,7 @@ init_machclk(void)
 	 * if the clock frequency (of Pentium TSC or Alpha PCC) is
 	 * accessible, just use it.
 	 */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	machclk_freq = atomic_load_acq_64(&tsc_freq);
 #endif
 
@@ -978,7 +978,7 @@ read_machclk(void)
 	u_int64_t val;
 
 	if (machclk_usepcc) {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 		val = rdtsc();
 #else
 		panic("read_machclk");
