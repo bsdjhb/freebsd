@@ -318,9 +318,6 @@ struct user {
 #if defined(__amd64__)
 #define	KINFO_OFILE_SIZE	1328
 #endif
-#if defined(__i386__)
-#define	KINFO_OFILE_SIZE	1324
-#endif
 
 struct kinfo_ofile {
 	int	kf_structsize;			/* Size of kinfo_file. */
@@ -559,9 +556,6 @@ struct kinfo_lockf {
 
 #if defined(__amd64__)
 #define	KINFO_OVMENTRY_SIZE	1168
-#endif
-#if defined(__i386__)
-#define	KINFO_OVMENTRY_SIZE	1128
 #endif
 
 struct kinfo_ovmentry {

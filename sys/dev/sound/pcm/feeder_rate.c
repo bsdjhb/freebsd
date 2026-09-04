@@ -295,39 +295,7 @@ SYSCTL_PROC(_hw_snd, OID_AUTO, feeder_rate_quality,
  */
 #define _Z_GCAST(x)		((uint64_t)(x))
 
-#if defined(__i386__)
-/*
- * This is where i386 being beaten to a pulp. Fortunately this function is
- * rarely being called and if it is, it will decide the best (hopefully)
- * fastest way to do the division. If we can ensure that everything is dword
- * aligned, letting the compiler to call udivdi3 to do the division can be
- * faster compared to this.
- *
- * amd64 is the clear winner here, no question about it.
- */
-static __inline uint32_t
-Z_DIV(uint64_t v, uint32_t d)
-{
-	uint32_t hi, lo, quo, rem;
-
-	hi = v >> 32;
-	lo = v & 0xffffffff;
-
-	/*
-	 * As much as we can, try to avoid long division like a plague.
-	 */
-	if (hi == 0)
-		quo = lo / d;
-	else
-		__asm("divl %2"
-		    : "=a" (quo), "=d" (rem)
-		    : "r" (d), "0" (lo), "1" (hi));
-
-	return (quo);
-}
-#else
 #define Z_DIV(x, y)		((x) / (y))
-#endif
 
 #define _Z_GY2GX(i, a, v)						\
 	Z_DIV(((_Z_GCAST((i)->z_gx) * (v)) + ((i)->z_gy - (a) - 1)),	\

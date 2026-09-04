@@ -9,7 +9,7 @@
 
 #ifdef _KERNEL
 /*
- * i386 to clock driver interface.
+ * x86 to clock driver interface.
  * XXX large parts of the driver and its interface are misplaced.
  */
 extern int	clkintr_pending;

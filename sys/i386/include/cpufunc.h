@@ -90,15 +90,6 @@ disable_intr(void)
 	__asm __volatile("cli" : : : "memory");
 }
 
-#ifdef _KERNEL
-static __inline void
-cpuid_count(u_int ax, u_int cx, u_int *p)
-{
-	__asm __volatile("cpuid"
-	    : "=a" (p[0]), "=b" (p[1]), "=c" (p[2]), "=d" (p[3])
-	    :  "0" (ax), "c" (cx));
-}
-#else
 static __inline void
 cpuid_count(u_int ax, u_int cx, u_int *p)
 {
@@ -110,7 +101,6 @@ cpuid_count(u_int ax, u_int cx, u_int *p)
 	    : "=a" (p[0]), "=DS" (p[1]), "=c" (p[2]), "=d" (p[3])
 	    :  "0" (ax), "c" (cx));
 }
-#endif
 
 static __inline void
 do_cpuid(u_int ax, u_int *p)
@@ -693,12 +683,5 @@ wrpkru(uint32_t mask)
 
 	__asm __volatile("wrpkru" :  : "a" (mask),  "c" (0), "d" (0));
 }
-
-void    reset_dbregs(void);
-
-#ifdef _KERNEL
-int	rdmsr_safe(u_int msr, uint64_t *val);
-int	wrmsr_safe(u_int msr, uint64_t newval);
-#endif
 
 #endif /* !_MACHINE_CPUFUNC_H_ */

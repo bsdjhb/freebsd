@@ -4,7 +4,7 @@ CFLAGS+=-DCOMPAT_FREEBSD32 -DCOMPAT_LINUX32
 .endif
 
 .PATH: ${SRCTOP}/sys/compat/linux ${SRCTOP}/sys/${MACHINE_CPUARCH}/linux${SFX}
-.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+.if ${MACHINE_CPUARCH} == "amd64"
 .PATH: ${SRCTOP}/sys/x86/linux
 .endif
 
@@ -41,7 +41,7 @@ SRCS=	linux${SFX}_dummy_machdep.c \
 	bus_if.h \
 	device_if.h \
 	vnode_if.h
-.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+.if ${MACHINE_CPUARCH} == "amd64"
 SRCS+=	linux_dummy_x86.c
 VDSODEPS=linux_vdso_gettc_x86.inc
 .endif
@@ -52,37 +52,8 @@ DPSRCS=	assym.inc linux${SFX}_genassym.c
 
 # XXX: for assym.inc
 SRCS+=  opt_kstack_pages.h opt_nfs.h opt_hwpmc_hooks.h
-.if ${MACHINE_CPUARCH} == "i386"
-SRCS+=	opt_apic.h opt_cpu.h
-.endif
 
 OBJS=	linux${SFX}_vdso.so
-
-.if ${MACHINE_CPUARCH} == "i386"
-SRCS+=	imgact_linux.c \
-	linux.c \
-	linux_dummy.c \
-	linux_emul.c \
-	linux_emul_md.c \
-	linux_errno.c \
-	linux_mib.c \
-	linux_mmap.c \
-	linux_ptrace_machdep.c \
-	linux_util.c \
-	linux_vdso_selector_x86.c \
-	linux_x86.c \
-	linux_copyout.c \
-	linux_netlink.c
-.endif
-
-.if ${MACHINE_CPUARCH} == "i386"
-EXPORT_SYMS=
-EXPORT_SYMS+=	linux_device_register_handler
-EXPORT_SYMS+=	linux_get_osname
-EXPORT_SYMS+=	linux_get_osrelease
-EXPORT_SYMS+=	linux_ioctl_register_handler
-EXPORT_SYMS+=	linux_ioctl_unregister_handler
-.endif
 
 CLEANFILES=	linux${SFX}_assym.h linux${SFX}_genassym.o linux${SFX}_locore.o \
 		genassym.o linux${SFX}_vdso_gtod.o linux${SFX}_vdso.so.o
@@ -120,8 +91,6 @@ linux${SFX}_vdso.so.o: linux${SFX}_locore.o linux${SFX}_vdso_gtod.o
 
 .if ${MACHINE_CPUARCH} == "amd64"
 OBJCOPY_TARGET=--output-target elf64-x86-64-freebsd --binary-architecture i386
-.elif ${MACHINE_CPUARCH} == "i386"
-OBJCOPY_TARGET=--output-target elf32-i386-freebsd --binary-architecture i386
 .else
 .error ${MACHINE_CPUARCH} not yet supported by linux
 .endif

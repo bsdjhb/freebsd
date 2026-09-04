@@ -138,7 +138,7 @@ typedef int8_t		s8;
 #define ASSERT_CTX_LOCK_HELD(hw)
 #endif
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static __inline
 void prefetch(void *x)
 {

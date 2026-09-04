@@ -1057,11 +1057,7 @@ bd_speedup(void)
 	mtx_unlock(&bdlock);
 }
 
-#ifdef __i386__
-#define	TRANSIENT_DENOM	5
-#else
 #define	TRANSIENT_DENOM 10
-#endif
 
 /*
  * Calculating buffer cache scaling values and reserve space for buffer

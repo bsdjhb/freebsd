@@ -22,18 +22,14 @@
 bool
 sdt_tracepoint_valid(uintptr_t patchpoint, uintptr_t target)
 {
-#ifdef __amd64__
 	if (patchpoint < KERNSTART || target < KERNSTART)
 		return (false);
-#endif
 	if (patchpoint == target ||
 	    patchpoint + SDT_PATCH_SIZE < patchpoint)
 		return (false);
-#ifdef __amd64__
 	int64_t offset = target - (patchpoint + SDT_PATCH_SIZE);
 	if (offset < -(1l << 31) || offset > (1l << 31))
 		return (false);
-#endif
 	return (true);
 }
 
@@ -70,10 +66,8 @@ sdt_tracepoint_restore(uintptr_t patchpoint)
 	uint8_t instr[SDT_PATCH_SIZE];
 	bool old_wp;
 
-#ifdef __amd64__
 	KASSERT(patchpoint >= KERNSTART,
 	    ("%s: invalid patchpoint %#lx", __func__, patchpoint));
-#endif
 
 	for (int i = 0; i < SDT_PATCH_SIZE; i++)
 		instr[i] = 0x90;

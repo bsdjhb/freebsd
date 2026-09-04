@@ -261,7 +261,7 @@ sge_get_mac_addr_eeprom(struct sge_softc *sc, uint8_t *dest)
 static int
 sge_get_mac_addr_apc(struct sge_softc *sc, uint8_t *dest)
 {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	devclass_t pci;
 	device_t bus, dev = NULL;
 	device_t *kids;

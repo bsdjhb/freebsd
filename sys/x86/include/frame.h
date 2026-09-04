@@ -41,75 +41,6 @@
  * struct trapframe is known to and used by kernel debuggers.
  */
 
-#ifdef __i386__
-/*
- * Exception/Trap Stack Frame
- */
-
-struct trapframe {
-	int	tf_fs;
-	int	tf_es;
-	int	tf_ds;
-	int	tf_edi;
-	int	tf_esi;
-	int	tf_ebp;
-	int	tf_isp;
-	int	tf_ebx;
-	int	tf_edx;
-	int	tf_ecx;
-	int	tf_eax;
-	int	tf_trapno;
-	/* below portion defined in 386 hardware */
-	int	tf_err;
-	int	tf_eip;
-	int	tf_cs;
-	int	tf_eflags;
-	/* below only when crossing rings (user to kernel) */
-	int	tf_esp;
-	int	tf_ss;
-};
-
-/* Superset of trap frame, for traps from virtual-8086 mode */
-
-struct trapframe_vm86 {
-	int	tf_fs;
-	int	tf_es;
-	int	tf_ds;
-	int	tf_edi;
-	int	tf_esi;
-	int	tf_ebp;
-	int	tf_isp;
-	int	tf_ebx;
-	int	tf_edx;
-	int	tf_ecx;
-	int	tf_eax;
-	int	tf_trapno;
-	/* below portion defined in 386 hardware */
-	int	tf_err;
-	int	tf_eip;
-	int	tf_cs;
-	int	tf_eflags;
-	/* below only when crossing rings (user (including vm86) to kernel) */
-	int	tf_esp;
-	int	tf_ss;
-	/* below only when crossing from vm86 mode to kernel */
-	int	tf_vm86_es;
-	int	tf_vm86_ds;
-	int	tf_vm86_fs;
-	int	tf_vm86_gs;
-};
-
-/*
- * This alias for the MI TRAPF_USERMODE() should be used when we don't
- * care about user mode itself, but need to know if a frame has stack
- * registers.  The difference is only logical, but on i386 the logic
- * for using TRAPF_USERMODE() is complicated by sometimes treating vm86
- * bioscall mode (which is a special ring 3 user mode) as kernel mode.
- */
-#define	TF_HAS_STACKREGS(tf)	TRAPF_USERMODE(tf)
-#endif /* __i386__ */
-
-#ifdef __amd64__
 /*
  * Exception/Trap Stack Frame
  *
@@ -200,6 +131,5 @@ struct trapframe_fred {
 #define	TF_HASBASES	0x00000002
 #define	TF_HASFPXSTATE	0x00000004
 #define	TF_RESERV0	0x00000008 /* no tlsbase in the trapframe */
-#endif /* __amd64__ */
 
 #endif /* _MACHINE_FRAME_H_ */

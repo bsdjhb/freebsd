@@ -145,21 +145,4 @@ struct vm86_intcall_args {
 	struct 	vm86frame vmf;
 };
 
-#ifdef _KERNEL
-extern 	int vm86paddr;
-
-struct thread;
-extern	int vm86_emulate(struct vm86frame *);
-extern	int vm86_sysarch(struct thread *, char *);
-extern void vm86_trap(struct vm86frame *);
-extern 	int vm86_intcall(int, struct vm86frame *);
-extern 	int vm86_datacall(int, struct vm86frame *, struct vm86context *);
-extern void vm86_initialize(void);
-extern vm_offset_t vm86_getpage(struct vm86context *, int);
-extern vm_offset_t vm86_addpage(struct vm86context *, int, vm_offset_t);
-extern int vm86_getptr(struct vm86context *, vm_offset_t, u_short *, u_short *);
-
-extern vm_offset_t vm86_getaddr(struct vm86context *, u_short, u_short);
-#endif /* _KERNEL */
-
 #endif /* _MACHINE_VM86_H_ */

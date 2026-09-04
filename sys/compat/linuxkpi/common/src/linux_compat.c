@@ -63,7 +63,7 @@
 #include <vm/vm_pager.h>
 #include <vm/vm_radix.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/cputypes.h>
 #include <machine/md_var.h>
 #endif
@@ -102,7 +102,7 @@
 #include <linux/uuid.h>
 #include <linux/mod_devicetable.h>
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <asm/cpu_device_id.h>
 #include <asm/cpufeature.h>
 #include <asm/smp.h>
@@ -2683,7 +2683,7 @@ list_sort(void *priv, struct list_head *head, int (*cmp)(void *priv,
 	free(ar, M_KMALLOC);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 int
 linux_wbinvd_on_all_cpus(void)
 {
@@ -2869,7 +2869,7 @@ lkpi_devm_device_add_group(struct device *dev,
 	return (ret);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 bool linux_cpu_has_clflush;
 struct cpuinfo_x86 boot_cpu_data;
 struct cpuinfo_x86 *__cpu_data;
@@ -2913,7 +2913,7 @@ linux_compat_init(void *arg)
 	struct sysctl_oid *rootoid;
 	int i;
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	static const uint32_t x86_vendors[X86_VENDOR_NUM] = {
 		[X86_VENDOR_INTEL] = CPU_VENDOR_INTEL,
 		[X86_VENDOR_CYRIX] = CPU_VENDOR_CYRIX,
@@ -3072,7 +3072,7 @@ linux_compat_uninit(void *arg)
 
 	free(static_single_cpu_mask_lcs, M_KMALLOC);
 	free(static_single_cpu_mask, M_KMALLOC);
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	free(__cpu_data, M_KMALLOC);
 #endif
 
@@ -3080,7 +3080,7 @@ linux_compat_uninit(void *arg)
 }
 SYSUNINIT(linux_compat, SI_SUB_DRIVERS, SI_ORDER_SECOND, linux_compat_uninit, NULL);
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 const struct x86_cpu_id *
 linuxkpi_x86_match_cpu(const struct x86_cpu_id *match_array)
 {

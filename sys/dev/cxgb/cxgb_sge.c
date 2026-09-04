@@ -678,7 +678,7 @@ t3_update_qset_coalesce(struct sge_qset *qs, const struct qset_params *p)
 	qs->rspq.polling = 0 /* p->polling */;
 }
 
-#if !defined(__i386__) && !defined(__amd64__)
+#if !defined(__amd64__)
 static void
 refill_fl_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 {
@@ -735,7 +735,7 @@ refill_fl(adapter_t *sc, struct sge_fl *q, int n)
 			}
 			sd->flags |= RX_SW_DESC_MAP_CREATED;
 		}
-#if !defined(__i386__) && !defined(__amd64__)
+#if !defined(__amd64__)
 		err = bus_dmamap_load(q->entry_tag, sd->map,
 		    cl, q->buf_size, refill_fl_cb, &cb_arg, 0);
 		

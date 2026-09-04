@@ -29,11 +29,6 @@
  */
 
 #include "opt_acpi.h"
-#if defined(__amd64__)
-#define	DEV_APIC
-#else
-#include "opt_apic.h"
-#endif
 #include "opt_ddb.h"
 
 #include <sys/param.h>
@@ -64,21 +59,19 @@
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <machine/bus.h>
+#include <machine/intr_machdep.h>
 #include <machine/pci_cfgreg.h>
 #include <machine/md_var.h>
 #include <machine/cputypes.h>
+#include <x86/apicreg.h>
+#include <x86/apicvar.h>
 #include <x86/include/busdma_impl.h>
 #include <dev/iommu/busdma_iommu.h>
 #include <x86/iommu/intel_reg.h>
 #include <x86/iommu/x86_iommu.h>
 #include <x86/iommu/intel_dmar.h>
 
-#ifdef DEV_APIC
 #include "pcib_if.h"
-#include <machine/intr_machdep.h>
-#include <x86/apicreg.h>
-#include <x86/apicvar.h>
-#endif
 
 #define	DMAR_FAULT_IRQ_RID	0
 #define	DMAR_QI_IRQ_RID		1
@@ -291,7 +284,6 @@ dmar_release_resources(device_t dev, struct dmar_unit *unit)
 	sysctl_ctx_free(&unit->iommu.sysctl_ctx);
 }
 
-#ifdef DEV_APIC
 static int
 dmar_remap_intr(device_t dev, device_t child, u_int irq)
 {
@@ -325,7 +317,6 @@ dmar_remap_intr(device_t dev, device_t child, u_int irq)
 	}
 	return (ENOENT);
 }
-#endif
 
 static void
 dmar_print_caps(device_t dev, struct dmar_unit *unit,
@@ -573,9 +564,7 @@ static device_method_t dmar_methods[] = {
 	DEVMETHOD(device_detach, dmar_detach),
 	DEVMETHOD(device_suspend, dmar_suspend),
 	DEVMETHOD(device_resume, dmar_resume),
-#ifdef DEV_APIC
 	DEVMETHOD(bus_remap_intr, dmar_remap_intr),
-#endif
 	DEVMETHOD_END
 };
 
@@ -800,10 +789,7 @@ dmar_find_nonpci(u_int id, u_int entry_type, uint16_t *rid)
 	ACPI_DMAR_DEVICE_SCOPE *devscope;
 	ACPI_DMAR_PCI_PATH *path;
 	char *ptr, *ptrend;
-#ifdef DEV_APIC
-	int error;
-#endif
-	int i;
+	int error, i;
 
 	for (i = 0; i < dmar_devcnt; i++) {
 		dmar_dev = dmar_devs[i];
@@ -824,7 +810,6 @@ dmar_find_nonpci(u_int id, u_int entry_type, uint16_t *rid)
 				continue;
 			if (devscope->EnumerationId != id)
 				continue;
-#ifdef DEV_APIC
 			if (entry_type == ACPI_DMAR_SCOPE_TYPE_IOAPIC) {
 				error = ioapic_get_rid(id, rid);
 				/*
@@ -834,7 +819,6 @@ dmar_find_nonpci(u_int id, u_int entry_type, uint16_t *rid)
 				if (error == 0)
 					return (unit);
 			}
-#endif
 			if (devscope->Length - sizeof(ACPI_DMAR_DEVICE_SCOPE)
 			    == 2) {
 				if (rid != NULL) {

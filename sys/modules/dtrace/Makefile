@@ -10,10 +10,8 @@ SUBDIR=		dtaudit		\
 		sdt		\
 		systrace
 
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
-SUBDIR+=	fasttrap systrace_linux
-.endif
 .if ${MACHINE_CPUARCH} == "amd64"
+SUBDIR+=	fasttrap systrace_linux
 SUBDIR+=	systrace_linux32
 SUBDIR+=	kinst
 .endif

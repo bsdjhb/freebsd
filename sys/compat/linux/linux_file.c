@@ -318,7 +318,7 @@ linux_lseek(struct thread *td, struct linux_lseek_args *args)
 	return (kern_lseek(td, args->fdes, args->off, args->whence));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_llseek(struct thread *td, struct linux_llseek_args *args)
 {
@@ -338,7 +338,7 @@ linux_llseek(struct thread *td, struct linux_llseek_args *args)
 	td->td_retval[0] = 0;
 	return (0);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 /*
  * Note that linux_getdents(2) and linux_getdents64(2) have the same
@@ -590,7 +590,7 @@ out1:
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_readdir(struct thread *td, struct linux_readdir_args *args)
 {
@@ -633,7 +633,7 @@ out:
 	free(bufsav, M_LINUX);
 	return (error);
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 /*
  * These exist mainly for hooks for doing /compat/linux translation.
@@ -925,21 +925,16 @@ linux_truncate(struct thread *td, struct linux_truncate_args *args)
 	return (kern_truncate(td, args->path, UIO_USERSPACE, args->length));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_truncate64(struct thread *td, struct linux_truncate64_args *args)
 {
 	off_t length;
 
-#if defined(__amd64__) && defined(COMPAT_LINUX32)
 	length = PAIR32TO64(off_t, args->length);
-#else
-	length = args->length;
-#endif
-
 	return (kern_truncate(td, args->path, UIO_USERSPACE, length));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_ftruncate(struct thread *td, struct linux_ftruncate_args *args)
@@ -948,18 +943,13 @@ linux_ftruncate(struct thread *td, struct linux_ftruncate_args *args)
 	return (kern_ftruncate(td, args->fd, args->length));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_ftruncate64(struct thread *td, struct linux_ftruncate64_args *args)
 {
 	off_t length;
 
-#if defined(__amd64__) && defined(COMPAT_LINUX32)
 	length = PAIR32TO64(off_t, args->length);
-#else
-	length = args->length;
-#endif
-
 	return (kern_ftruncate(td, args->fd, length));
 }
 #endif
@@ -1211,14 +1201,14 @@ out:
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_oldumount(struct thread *td, struct linux_oldumount_args *args)
 {
 
 	return (kern_unmount(td, args->path, 0));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #ifdef LINUX_LEGACY_SYSCALLS
 int
@@ -1300,18 +1290,14 @@ bsd_to_linux_flock(struct flock *bsd_flock, struct l_flock *linux_flock)
 	linux_flock->l_pid = (l_pid_t)bsd_flock->l_pid;
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 struct l_flock64 {
 	l_short		l_type;
 	l_short		l_whence;
 	l_loff_t	l_start;
 	l_loff_t	l_len;
 	l_pid_t		l_pid;
-}
-#if defined(__amd64__) && defined(COMPAT_LINUX32)
-__packed
-#endif
-;
+} __packed;
 
 static void
 linux_to_bsd_flock64(struct l_flock64 *linux_flock, struct flock *bsd_flock)
@@ -1356,7 +1342,7 @@ bsd_to_linux_flock64(struct flock *bsd_flock, struct l_flock64 *linux_flock)
 	linux_flock->l_len = (l_loff_t)bsd_flock->l_len;
 	linux_flock->l_pid = (l_pid_t)bsd_flock->l_pid;
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 static int
 fcntl_common(struct thread *td, struct linux_fcntl_args *args)
@@ -1531,7 +1517,7 @@ linux_fcntl(struct thread *td, struct linux_fcntl_args *args)
 	return (fcntl_common(td, args));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_fcntl64(struct thread *td, struct linux_fcntl64_args *args)
 {
@@ -1578,7 +1564,7 @@ linux_fcntl64(struct thread *td, struct linux_fcntl64_args *args)
 	fcntl_args.arg = args->arg;
 	return (fcntl_common(td, &fcntl_args));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #ifdef LINUX_LEGACY_SYSCALLS
 int
@@ -1660,7 +1646,7 @@ linux_fadvise64(struct thread *td, struct linux_fadvise64_args *args)
 	return (kern_posix_fadvise(td, args->fd, offset, args->len, advice));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_fadvise64_64(struct thread *td, struct linux_fadvise64_64_args *args)
 {
@@ -1680,7 +1666,7 @@ linux_fadvise64_64(struct thread *td, struct linux_fadvise64_64_args *args)
 		return (EINVAL);
 	return (kern_posix_fadvise(td, args->fd, offset, len, advice));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #ifdef LINUX_LEGACY_SYSCALLS
 int
@@ -1967,7 +1953,7 @@ inotify_init_common(struct thread *td, int flags)
 	return (kern_specialfd(td, SPECIALFD_INOTIFY, &si));
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 int
 linux_inotify_init(struct thread *td, struct linux_inotify_init_args *args)
 {

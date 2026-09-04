@@ -540,13 +540,12 @@ SUBDIR+=	fdt
 .endif
 
 # Linuxulator
-.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
-    ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64"
 SUBDIR+=	linprocfs
 SUBDIR+=	linsysfs
 SUBDIR+=	linux_ntsync
 .endif
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "amd64"
 SUBDIR+=	linux
 .endif
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64"
@@ -556,7 +555,7 @@ SUBDIR+=	linux_common
 
 # LinuxKPI based wireless drivers.
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
-    ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "riscv"
+    ${MACHINE_CPUARCH} == "riscv"
 _iwlwifi=	iwlwifi
 _rtw88=		rtw88
 # rtw89 currently cannot be compiled without ACPI (seems also broken in Linux).
@@ -576,7 +575,7 @@ _rdma=		rdma
 .endif
 
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
-    ${MACHINE_CPUARCH} == "i386" || ${MACHINE_ARCH:Mpowerpc64*} != ""
+    ${MACHINE_ARCH:Mpowerpc64*} != ""
 _ipmi=		ipmi
 _mlx4=		mlx4
 _mlx5=		mlx5
@@ -591,8 +590,7 @@ _mlx5ib=	mlx5ib
 .endif
 .endif
 
-.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
-    ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64"
 _acpi=		acpi
 _ena=		ena
 _gve=		gve
@@ -601,8 +599,7 @@ _vmware=	vmware
 .endif
 
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
-    ${MACHINE_CPUARCH} == "i386" || ${MACHINE_ARCH} == "armv7" || \
-	${MACHINE_ARCH:Mpowerpc64*} != ""
+    ${MACHINE_ARCH} == "armv7" || ${MACHINE_ARCH:Mpowerpc64*} != ""
 _ossl=		ossl
 .endif
 
@@ -751,10 +748,10 @@ _rockchip=	rockchip
 _imx=		imx
 .endif
 
-.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+.if ${MACHINE_CPUARCH} == "amd64"
 _aq=		aq
 _agp=		agp
-.if ${MACHINE_CPUARCH} == "i386" || !empty(COMPAT_FREEBSD32_ENABLED)
+.if ${MACHINE_CPUARCH} == "amd64" && !empty(COMPAT_FREEBSD32_ENABLED)
 _aout=		aout
 .endif
 _bios=		bios
@@ -909,11 +906,6 @@ _hwt=		hwt
 _vmm=		vmm
 .endif
 .endif
-.endif
-
-.if ${MACHINE_CPUARCH} == "i386"
-# XXX some of these can move to the general case when de-i386'ed
-# XXX some of these can move now, but are untested on other architectures.
 .endif
 
 .if ${MACHINE_ARCH} == "armv7"

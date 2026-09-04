@@ -219,10 +219,6 @@ cpuctl_do_cpuid_count(int cpu, cpuctl_cpuid_count_args_t *data,
 	bzero(data->data, sizeof(data->data));
 	DPRINTF("[cpuctl,%d]: retrieving cpuid lev %#0x type %#0x for %d cpu\n",
 	    __LINE__, data->level, data->level_type, cpu);
-#ifdef __i386__
-	if (cpu_id == 0)
-		return (ENODEV);
-#endif
 	oldcpu = td->td_oncpu;
 	is_bound = cpu_sched_is_bound(td);
 	set_cpu(cpu, td);
@@ -265,10 +261,6 @@ cpuctl_do_msr(int cpu, cpuctl_msr_args_t *data, u_long cmd, struct thread *td)
 	 */
 	DPRINTF("[cpuctl,%d]: operating on MSR %#0x for %d cpu\n", __LINE__,
 	    data->msr, cpu);
-#ifdef __i386__
-	if ((cpu_feature & CPUID_MSR) == 0)
-		return (ENODEV);
-#endif
 	oldcpu = td->td_oncpu;
 	is_bound = cpu_sched_is_bound(td);
 	set_cpu(cpu, td);
@@ -526,10 +518,6 @@ cpuctl_do_eval_cpu_features(int cpu, struct thread *td)
 	KASSERT(cpu >= 0 && cpu <= mp_maxid,
 	    ("[cpuctl,%d]: bad cpu number %d", __LINE__, cpu));
 
-#ifdef __i386__
-	if (cpu_id == 0)
-		return (ENODEV);
-#endif
 	oldcpu = td->td_oncpu;
 	is_bound = cpu_sched_is_bound(td);
 	set_cpu(cpu, td);
@@ -538,10 +526,8 @@ cpuctl_do_eval_cpu_features(int cpu, struct thread *td)
 	restore_cpu(oldcpu, is_bound, td);
 	hw_ibrs_recalculate(true);
 	hw_ssb_recalculate(true);
-#ifdef __amd64__
 	amd64_syscall_ret_flush_l1d_recalc();
 	pmap_allow_2m_x_ept_recalculate();
-#endif
 	hw_mds_recalculate();
 	x86_taa_recalculate();
 	x86_rngds_mitg_recalculate(true);

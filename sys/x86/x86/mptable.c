@@ -58,11 +58,7 @@
 /* string defined by the Intel MP Spec as identifying the MP table */
 #define	MP_SIG			0x5f504d5f	/* _MP_ */
 
-#ifdef __amd64__
 #define	MAX_LAPIC_ID		63	/* Max local APIC ID for HTT fixup */
-#else
-#define	MAX_LAPIC_ID		31	/* Max local APIC ID for HTT fixup */
-#endif
 
 #define BIOS_BASE		(0xf0000)
 #define BIOS_SIZE		(0x10000)
@@ -1215,20 +1211,6 @@ mptable_host_res_handler(ext_entry_ptr entry, void *arg)
 		}
 		start = sas->address_base;
 		end = sas->address_base + sas->address_length - 1;
-#ifdef __i386__
-		if (start > ULONG_MAX) {
-			device_printf(args->dev,
-			    "Ignoring %d range above 4GB (%#jx-%#jx)\n",
-			    type, (uintmax_t)start, (uintmax_t)end);
-			break;
-		}
-		if (end > ULONG_MAX) {
-			device_printf(args->dev,
-		    "Truncating end of %d range above 4GB (%#jx-%#jx)\n",
-			    type, (uintmax_t)start, (uintmax_t)end);
-			end = ULONG_MAX;
-		}
-#endif
 		error = pcib_host_res_decodes(&args->sc->sc_host_res, type,
 		    start, end, flags);
 		if (error)

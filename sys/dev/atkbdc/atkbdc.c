@@ -212,7 +212,7 @@ atkbdc_configure(void)
 	bus_space_tag_t tag;
 	bus_space_handle_t h0;
 	bus_space_handle_t h1;
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	volatile int i;
 	register_t flags;
 #endif
@@ -220,7 +220,7 @@ atkbdc_configure(void)
 	int port1;
 
 	/* XXX: tag should be passed from the caller */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	tag = X86_BUS_SPACE_IO;
 #else
 #error "define tag!"
@@ -237,7 +237,7 @@ atkbdc_configure(void)
 	h1 = (bus_space_handle_t)port1;
 #endif
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	/*
 	 * Check if we really have AT keyboard controller. Poll status
 	 * register until we get "all clear" indication. If no such

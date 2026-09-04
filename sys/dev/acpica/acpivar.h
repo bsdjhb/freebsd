@@ -231,7 +231,7 @@ extern int	acpi_quirks;
 #define ACPI_Q_CLEAR_PME_ON_DETACH	(1 << 4)
 #define ACPI_Q_DELAY_BEFORE_EJECT_RESCAN	(1 << 5)
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 /*
  * Certain Intel BIOSes have buggy AML that specify an IRQ that is
  * edge-sensitive and active-lo.  Normally, edge-sensitive IRQs should

@@ -917,9 +917,6 @@ static struct syscall_helper_data shm_syscalls[] = {
     defined(COMPAT_FREEBSD6) || defined(COMPAT_FREEBSD7)
 	SYSCALL_INIT_HELPER_COMPAT(freebsd7_shmctl),
 #endif
-#if defined(__i386__) && (defined(COMPAT_FREEBSD4) || defined(COMPAT_43))
-	SYSCALL_INIT_HELPER(shmsys),
-#endif
 	SYSCALL_INIT_LAST
 };
 
@@ -1331,103 +1328,6 @@ shm_prison_cleanup(struct prison *pr)
 }
 
 SYSCTL_JAIL_PARAM_SYS_NODE(sysvshm, CTLFLAG_RW, "SYSV shared memory");
-
-#if defined(__i386__) && (defined(COMPAT_FREEBSD4) || defined(COMPAT_43))
-struct oshmid_ds {
-	struct	ipc_perm_old shm_perm;	/* operation perms */
-	int	shm_segsz;		/* size of segment (bytes) */
-	u_short	shm_cpid;		/* pid, creator */
-	u_short	shm_lpid;		/* pid, last operation */
-	short	shm_nattch;		/* no. of current attaches */
-	time_t	shm_atime;		/* last attach time */
-	time_t	shm_dtime;		/* last detach time */
-	time_t	shm_ctime;		/* last change time */
-	void	*shm_handle;		/* internal handle for shm segment */
-};
-
-struct oshmctl_args {
-	int shmid;
-	int cmd;
-	struct oshmid_ds *ubuf;
-};
-
-static int
-oshmctl(struct thread *td, struct oshmctl_args *uap)
-{
-#ifdef COMPAT_43
-	int error = 0;
-	struct prison *rpr;
-	struct shmid_kernel *shmseg;
-	struct oshmid_ds outbuf;
-
-	rpr = shm_find_prison(td->td_ucred);
-	if (rpr == NULL)
-		return (ENOSYS);
-	if (uap->cmd != IPC_STAT) {
-		return (freebsd7_shmctl(td,
-		    (struct freebsd7_shmctl_args *)uap));
-	}
-	SYSVSHM_LOCK();
-	shmseg = shm_find_segment(rpr, uap->shmid, true);
-	if (shmseg == NULL) {
-		SYSVSHM_UNLOCK();
-		return (EINVAL);
-	}
-	error = ipcperm(td, &shmseg->u.shm_perm, IPC_R);
-	if (error != 0) {
-		SYSVSHM_UNLOCK();
-		return (error);
-	}
-#ifdef MAC
-	error = mac_sysvshm_check_shmctl(td->td_ucred, shmseg, uap->cmd);
-	if (error != 0) {
-		SYSVSHM_UNLOCK();
-		return (error);
-	}
-#endif
-	ipcperm_new2old(&shmseg->u.shm_perm, &outbuf.shm_perm);
-	outbuf.shm_segsz = shmseg->u.shm_segsz;
-	outbuf.shm_cpid = shmseg->u.shm_cpid;
-	outbuf.shm_lpid = shmseg->u.shm_lpid;
-	outbuf.shm_nattch = shmseg->u.shm_nattch;
-	outbuf.shm_atime = shmseg->u.shm_atime;
-	outbuf.shm_dtime = shmseg->u.shm_dtime;
-	outbuf.shm_ctime = shmseg->u.shm_ctime;
-	outbuf.shm_handle = shmseg->object;
-	SYSVSHM_UNLOCK();
-	return (copyout(&outbuf, uap->ubuf, sizeof(outbuf)));
-#else
-	return (EINVAL);
-#endif
-}
-
-/* XXX casting to (sy_call_t *) is bogus, as usual. */
-static sy_call_t *shmcalls[] = {
-	(sy_call_t *)sys_shmat, (sy_call_t *)oshmctl,
-	(sy_call_t *)sys_shmdt, (sy_call_t *)sys_shmget,
-	(sy_call_t *)freebsd7_shmctl
-};
-
-#ifndef _SYS_SYSPROTO_H_
-/* XXX actually varargs. */
-struct shmsys_args {
-	int	which;
-	int	a2;
-	int	a3;
-	int	a4;
-};
-#endif
-int
-sys_shmsys(struct thread *td, struct shmsys_args *uap)
-{
-
-	AUDIT_ARG_SVIPC_WHICH(uap->which);
-	if (uap->which < 0 || uap->which >= nitems(shmcalls))
-		return (EINVAL);
-	return ((*shmcalls[uap->which])(td, &uap->a2));
-}
-
-#endif	/* i386 && (COMPAT_FREEBSD4 || COMPAT_43) */
 
 #ifdef COMPAT_FREEBSD32
 
