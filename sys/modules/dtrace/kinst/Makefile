@@ -10,7 +10,7 @@ CFLAGS+=	${OPENZFS_CFLAGS} \
 .PATH:		${SYSDIR}/cddl/dev/kinst \
 		${SYSDIR}/cddl/dev/kinst/${MACHINE_CPUARCH}
 
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "amd64"
 CFLAGS+=	-I${SYSDIR}/cddl/dev/dtrace/x86
 .PATH:		${SYSDIR}/cddl/dev/dtrace/x86
 .else

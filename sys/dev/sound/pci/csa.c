@@ -105,31 +105,6 @@ amp_voyetra(void)
 {
 }
 
-static int
-clkrun_hack(int run)
-{
-#ifdef __i386__
-	device_t		child;
-	int			port;
-	uint16_t		control;
-	bus_space_tag_t		btag;
-
-	child = pci_find_device(0x8086, 0x7113);
-	if (child == NULL)
-		return (ENXIO);
-
-	port = (pci_read_config(child, 0x41, 1) << 8) + 0x10;
-	/* XXX */
-	btag = X86_BUS_SPACE_IO;
-
-	control = bus_space_read_2(btag, 0x0, port);
-	control &= ~0x2000;
-	control |= run? 0 : 0x2000;
-	bus_space_write_2(btag, 0x0, port, control);
-#endif
-	return (0);
-}
-
 static struct csa_card cards_4610[] = {
 	{0, 0, "Unknown/invalid SSID (CS4610)", NULL, NULL, NULL, 0},
 };
@@ -141,7 +116,7 @@ static struct csa_card cards_4614[] = {
 	{0x14AF, 0x0050, "Hercules Game Theatre XP", NULL, NULL, NULL, 0},
 	{0x1681, 0x0050, "Hercules Game Theatre XP", NULL, NULL, NULL, 0},
 	{0x1014, 0x0132, "Thinkpad 570", amp_none, NULL, NULL, 0},
-	{0x1014, 0x0153, "Thinkpad 600X/A20/T20", amp_none, NULL, clkrun_hack, 0},
+	{0x1014, 0x0153, "Thinkpad 600X/A20/T20", amp_none, NULL, NULL, 0},
 	{0x1014, 0x1010, "Thinkpad 600E (unsupported)", NULL, NULL, NULL, 0},
 	{0x153b, 0x1136, "Terratec SiXPack 5.1+", NULL, NULL, NULL, 0},
 	{0, 0, "Unknown/invalid SSID (CS4614)", NULL, NULL, NULL, 0},

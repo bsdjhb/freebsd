@@ -249,7 +249,7 @@ linux_newfstat(struct thread *td, struct linux_newfstat_args *args)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 
 static __inline uint16_t
 linux_old_encode_dev(dev_t _dev)
@@ -311,7 +311,7 @@ linux_lstat(struct thread *td, struct linux_lstat_args *args)
 	}
 	return (old_stat_copyout(&buf, args->up));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 struct l_statfs {
 	l_long		f_type;
@@ -396,7 +396,7 @@ static int
 bsd_to_linux_statfs(struct statfs *bsd_statfs, struct l_statfs *linux_statfs)
 {
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 	statfs_scale_blocks(bsd_statfs, INT32_MAX);
 #endif
 	linux_statfs->f_type = bsd_to_linux_ftype(bsd_statfs->f_fstypename);
@@ -404,7 +404,7 @@ bsd_to_linux_statfs(struct statfs *bsd_statfs, struct l_statfs *linux_statfs)
 	linux_statfs->f_blocks = bsd_statfs->f_blocks;
 	linux_statfs->f_bfree = bsd_statfs->f_bfree;
 	linux_statfs->f_bavail = bsd_statfs->f_bavail;
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 	linux_statfs->f_ffree = MIN(bsd_statfs->f_ffree, INT32_MAX);
 	linux_statfs->f_files = MIN(bsd_statfs->f_files, INT32_MAX);
 #else
@@ -438,7 +438,7 @@ linux_statfs(struct thread *td, struct linux_statfs_args *args)
 	return (copyout(&linux_statfs, args->buf, sizeof(linux_statfs)));
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 static void
 bsd_to_linux_statfs64(struct statfs *bsd_statfs, struct l_statfs64 *linux_statfs)
 {
@@ -497,7 +497,7 @@ linux_fstatfs64(struct thread *td, struct linux_fstatfs64_args *args)
 		return (error);
 	return (copyout(&linux_statfs, args->buf, sizeof(linux_statfs)));
 }
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_fstatfs(struct thread *td, struct linux_fstatfs_args *args)
@@ -558,7 +558,7 @@ linux_to_bsd_stat_flags(int linux_flags, int *out_flags)
 	return (true);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 
 static int
 stat64_copyout(struct stat *buf, void *ubuf)
@@ -673,7 +673,7 @@ linux_newfstatat(struct thread *td, struct linux_newfstatat_args *args)
 	return (error);
 }
 
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 int
 linux_syncfs(struct thread *td, struct linux_syncfs_args *args)

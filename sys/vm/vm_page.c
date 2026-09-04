@@ -587,9 +587,6 @@ vm_page_startup(vm_offset_t vaddr)
 	void *mapped;
 	u_long witness_size;
 #endif
-#if defined(__i386__) && defined(VM_PHYSSEG_DENSE)
-	long ii;
-#endif
 	int pool;
 #ifdef VM_FREEPOOL_LAZYINIT
 	int lazyinit;
@@ -632,10 +629,6 @@ vm_page_startup(vm_offset_t vaddr)
 	 *
 	 * The amd64 port needs this to indicate which direct map pages
 	 * need to be dumped, via calls to dump_add_page()/dump_drop_page().
-	 *
-	 * However, i386 still needs this workspace internally within the
-	 * minidump code.  In theory, they are not needed on i386, but are
-	 * included should the sf_buf code decide to use them.
 	 */
 	last_pa = 0;
 	vm_page_dump_pages = 0;
@@ -791,14 +784,6 @@ vm_page_startup(vm_offset_t vaddr)
 	 * Initialize the page structures and add every available page to the
 	 * physical memory allocator's free lists.
 	 */
-#if defined(__i386__) && defined(VM_PHYSSEG_DENSE)
-	for (ii = 0; ii < vm_page_array_size; ii++) {
-		m = &vm_page_array[ii];
-		vm_page_init_page(m, (first_page + ii) << PAGE_SHIFT, 0,
-		    VM_FREEPOOL_DEFAULT);
-		m->flags = PG_FICTITIOUS;
-	}
-#endif
 	vm_cnt.v_page_count = 0;
 	for (segind = 0; segind < vm_phys_nsegs; segind++) {
 		seg = &vm_phys_segs[segind];

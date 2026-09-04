@@ -3,7 +3,7 @@
 #ifndef _LINUXKPI_ASM_HYPERVISOR_H
 #define _LINUXKPI_ASM_HYPERVISOR_H
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 
 #define X86_HYPER_NATIVE	1
 #define X86_HYPER_MS_HYPERV	2

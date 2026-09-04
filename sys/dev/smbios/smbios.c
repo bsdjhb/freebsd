@@ -44,7 +44,7 @@
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 #include <machine/md_var.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/pc/bios.h>
 #endif
 #include <dev/smbios/smbios.h>
@@ -101,7 +101,7 @@ smbios_identify (driver_t *driver, device_t parent)
 
 #endif
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	if (addr == 0) {
 		addr = bios_sigsearch(SMBIOS_START, SMBIOS3_SIG, SMBIOS3_LEN,
 		    SMBIOS_STEP, SMBIOS_OFF);

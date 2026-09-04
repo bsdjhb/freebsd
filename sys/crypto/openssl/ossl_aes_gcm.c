@@ -29,7 +29,7 @@ _Static_assert(
     sizeof(struct ossl_gcm_context) <= sizeof(struct ossl_cipher_context),
     "ossl_gcm_context too large");
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #define	AES_set_encrypt_key	aesni_set_encrypt_key
 #define	AES_gcm_encrypt	aesni_gcm_encrypt
 #define	AES_gcm_decrypt	aesni_gcm_decrypt

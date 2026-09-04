@@ -65,15 +65,10 @@ ioat_bus_space_write_8_lower_first(bus_space_tag_t tag,
 	bus_space_write_4(tag, handle, offset + 4, val >> 32);
 }
 
-#ifdef __i386__
-#define ioat_bus_space_read_8 ioat_bus_space_read_8_lower_first
-#define ioat_bus_space_write_8 ioat_bus_space_write_8_lower_first
-#else
 #define ioat_bus_space_read_8(tag, handle, offset) \
 	bus_space_read_8((tag), (handle), (offset))
 #define ioat_bus_space_write_8(tag, handle, offset, val) \
 	bus_space_write_8((tag), (handle), (offset), (val))
-#endif
 
 #define ioat_read_1(ioat, offset) \
 	bus_space_read_1((ioat)->pci_bus_tag, (ioat)->pci_bus_handle, \

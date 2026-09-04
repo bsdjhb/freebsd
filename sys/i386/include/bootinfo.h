@@ -65,10 +65,6 @@ struct bootinfo {
 	u_int32_t	bi_modulep;		/* preloaded modules */
 };
 
-#ifdef _KERNEL
-extern struct bootinfo	bootinfo;
-#endif
-
 /*
  * Constants for converting boot-style device number to type,
  * adaptor (uba, mba, etc), unit number and partition number.

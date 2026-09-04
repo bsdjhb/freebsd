@@ -164,7 +164,7 @@ typedef boolean_t	bool;
 
 #define le16_to_cpu
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 static __inline
 void prefetch(void *x)
 {

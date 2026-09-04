@@ -55,13 +55,8 @@
 #include <isa/isareg.h>
 #include <isa/isavar.h>
 
-#ifdef __amd64__
 #define	SDT_ATPIC	SDT_SYSIGT
 #define	GSEL_ATPIC	0
-#else
-#define	SDT_ATPIC	SDT_SYS386IGT
-#define	GSEL_ATPIC	GSEL(GCODE_SEL, SEL_KPL)
-#endif
 
 #define	MASTER	0
 #define	SLAVE	1

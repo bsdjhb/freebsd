@@ -39,31 +39,4 @@
 #error "Do not include machine/pcpu_aux.h directly"
 #endif
 
-/* Required for counters(9) to work on x86. */
-_Static_assert(sizeof(struct pcpu) == UMA_PCPU_ALLOC_SIZE, "fix pcpu size");
-
-extern struct pcpu __pcpu[];
-
-static __inline __pure2 struct thread *
-__curthread(void)
-{
-	struct thread *td;
-
-	__asm("movl %%fs:%c1,%0" : "=r" (td)
-	    : "i" (offsetof(struct pcpu, pc_curthread)));
-	return (td);
-}
-#define	curthread		(__curthread())
-
-static __inline __pure2 struct pcb *
-__curpcb(void)
-{
-	struct pcb *pcb;
-
-	__asm("movl %%fs:%c1,%0" : "=r" (pcb)
-	    : "i" (offsetof(struct pcpu, pc_curpcb)));
-	return (pcb);
-}
-#define	curpcb		(__curpcb())
-
 #endif	/* _MACHINE_PCPU_AUX_H_ */

@@ -56,7 +56,7 @@ typedef	ACPI_RESOURCE_SPI_SERIALBUS	ACPI_SPIBUS_RESOURCE_SPI_SERIALBUS;
 #define	_COMPONENT	ACPI_BUS
 ACPI_MODULE_NAME("SPI")
 
-#if defined (__amd64__) || defined (__i386__)
+#if defined (__amd64__)
 static bool is_apple;
 #endif
 
@@ -162,7 +162,7 @@ acpi_spibus_get_acpi_res(device_t spibus, ACPI_HANDLE dev,
 	return (0);
 }
 
-#if defined (__amd64__) || defined (__i386__)
+#if defined (__amd64__)
 static int
 acpi_spibus_get_apple_res(device_t spibus, ACPI_HANDLE dev,
     struct spibus_ivar *ivar)
@@ -290,7 +290,7 @@ acpi_spibus_enumerate_child(ACPI_HANDLE handle, UINT32 level,
 	bzero(&res, sizeof(res));
 	if (acpi_spibus_get_acpi_res(spibus, handle, &res) == 0)
 		found = true;
-#if defined (__amd64__) || defined (__i386__)
+#if defined (__amd64__)
 	if (!found && is_apple &&
 	    acpi_spibus_get_apple_res(spibus, handle, &res) == 0)
 		found = true;
@@ -374,7 +374,7 @@ static int
 acpi_spibus_attach(device_t dev)
 {
 
-#if defined (__amd64__) || defined (__i386__)
+#if defined (__amd64__)
 	char *vendor = kern_getenv("smbios.bios.vendor");
 	if (vendor != NULL &&
 	    (strcmp(vendor, "Apple Inc.") == 0 ||

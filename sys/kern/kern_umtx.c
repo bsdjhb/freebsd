@@ -4740,7 +4740,7 @@ __umtx_op_set_min_timeout(struct thread *td, struct _umtx_op_args *uap,
 	return (0);
 }
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 /*
  * Provide the standard 32-bit definitions for x86, since native/compat32 use a
  * 32-bit time_t there.  Other architectures just need the i386 definitions
@@ -4757,11 +4757,9 @@ struct umtx_timex32 {
 	uint32_t		_clockid;
 };
 
-#ifndef __i386__
 #define	timespeci386	timespec32
 #define	umtx_timei386	umtx_time32
-#endif
-#else /* !__i386__ && !__amd64__ */
+#else /* !__amd64__ */
 /* 32-bit architectures can emulate i386, so define these almost everywhere. */
 struct timespeci386 {
 	int32_t			tv_sec;
@@ -4799,7 +4797,6 @@ umtx_copyin_robust_lists32(const void *uaddr, size_t size,
 	return (0);
 }
 
-#ifndef __i386__
 static inline int
 umtx_copyin_timeouti386(const void *uaddr, struct timespec *tsp)
 {
@@ -4858,9 +4855,8 @@ umtx_copyout_timeouti386(void *uaddr, size_t sz, struct timespec *tsp)
 
 	return (copyout(&remain32, uaddr, sizeof(remain32)));
 }
-#endif /* !__i386__ */
 
-#if defined(__i386__) || defined(__LP64__)
+#if defined(__LP64__)
 static inline int
 umtx_copyin_timeoutx32(const void *uaddr, struct timespec *tsp)
 {
@@ -4919,7 +4915,7 @@ umtx_copyout_timeoutx32(void *uaddr, size_t sz, struct timespec *tsp)
 
 	return (copyout(&remain32, uaddr, sizeof(remain32)));
 }
-#endif /* __i386__ || __LP64__ */
+#endif /* __LP64__ */
 
 typedef int (*_umtx_op_func)(struct thread *td, struct _umtx_op_args *uap,
     const struct umtx_copyops *umtx_ops);
@@ -4975,7 +4971,6 @@ static const struct umtx_copyops umtx_native_ops = {
 	.umtx_time_sz = sizeof(struct _umtx_time),
 };
 
-#ifndef __i386__
 static const struct umtx_copyops umtx_native_opsi386 = {
 	.copyin_timeout = umtx_copyin_timeouti386,
 	.copyin_umtx_time = umtx_copyin_umtx_timei386,
@@ -4985,10 +4980,8 @@ static const struct umtx_copyops umtx_native_opsi386 = {
 	.umtx_time_sz = sizeof(struct umtx_timei386),
 	.compat32 = true,
 };
-#endif
 
-#if defined(__i386__) || defined(__LP64__)
-/* i386 can emulate other 32-bit archs, too! */
+#if defined(__LP64__)
 static const struct umtx_copyops umtx_native_opsx32 = {
 	.copyin_timeout = umtx_copyin_timeoutx32,
 	.copyin_umtx_time = umtx_copyin_umtx_timex32,
@@ -5006,7 +4999,7 @@ static const struct umtx_copyops umtx_native_opsx32 = {
 #define	umtx_native_ops32	umtx_native_opsx32
 #endif
 #endif /* COMPAT_FREEBSD32 */
-#endif /* __i386__ || __LP64__ */
+#endif /* __LP64__ */
 
 #define	UMTX_OP__FLAGS	(UMTX_OP__32BIT | UMTX_OP__I386)
 
@@ -5040,14 +5033,10 @@ sys__umtx_op(struct thread *td, struct _umtx_op_args *uap)
 		else
 			umtx_ops = &umtx_native_opsx32;
 	}
-#elif !defined(__i386__)
-	/* We consider UMTX_OP__32BIT a nop on !i386 ILP32. */
+#else
+	/* We consider UMTX_OP__32BIT a nop on ILP32. */
 	if ((uap->op & UMTX_OP__I386) != 0)
 		umtx_ops = &umtx_native_opsi386;
-#else
-	/* Likewise, UMTX_OP__I386 is a nop on i386. */
-	if ((uap->op & UMTX_OP__32BIT) != 0)
-		umtx_ops = &umtx_native_opsx32;
 #endif
 	return (kern__umtx_op(td, uap->obj, uap->op, uap->val, uap->uaddr1,
 	    uap->uaddr2, umtx_ops));

@@ -90,10 +90,6 @@
 #include <vm/redzone.h>
 #endif
 
-#if defined(INVARIANTS) && defined(__i386__)
-#include <machine/cpu.h>
-#endif
-
 #include <ddb/ddb.h>
 
 #ifdef KDTRACE_HOOKS

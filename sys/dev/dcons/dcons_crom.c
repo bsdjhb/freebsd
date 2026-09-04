@@ -56,7 +56,7 @@
 
 #include <sys/cons.h>
 
-#if (defined(__i386__) || defined(__amd64__))
+#if defined(__amd64__)
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
@@ -102,18 +102,14 @@ dcons_crom_probe(device_t dev)
 	return (0);
 }
 
-#if (defined(__i386__) || defined(__amd64__))
+#if defined(__amd64__)
 static void
 dcons_crom_expose_idt(struct dcons_crom_softc *sc)
 {
 	static off_t idt_paddr;
 
 	/* XXX */
-#ifdef __amd64__
 	idt_paddr = (char *)idt - (char *)KERNBASE;
-#else /* __i386__ */
-	idt_paddr = (off_t)pmap_kextract((vm_offset_t)idt);
-#endif
 
 	crom_add_entry(&sc->unit, DCONS_CSR_KEY_RESET_HI, ADDR_HI(idt_paddr));
 	crom_add_entry(&sc->unit, DCONS_CSR_KEY_RESET_LO, ADDR_LO(idt_paddr));
@@ -140,7 +136,7 @@ dcons_crom_post_busreset(void *arg)
 	crom_add_simple_text(src, &sc->unit, &sc->ver, "dcons");
 	crom_add_entry(&sc->unit, DCONS_CSR_KEY_HI, ADDR_HI(dcons_paddr));
 	crom_add_entry(&sc->unit, DCONS_CSR_KEY_LO, ADDR_LO(dcons_paddr));
-#if (defined(__i386__) || defined(__amd64__))
+#if defined(__amd64__)
 	dcons_crom_expose_idt(sc);
 #endif
 }

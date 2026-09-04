@@ -83,13 +83,8 @@
 #include <ddb/ddb.h>
 #endif
 
-#ifdef __amd64__
 #define	SDT_APIC	SDT_SYSIGT
 #define	GSEL_APIC	0
-#else
-#define	SDT_APIC	SDT_SYS386IGT
-#define	GSEL_APIC	GSEL(GCODE_SEL, SEL_KPL)
-#endif
 
 static MALLOC_DEFINE(M_LAPIC, "local_apic", "Local APIC items");
 
@@ -2126,15 +2121,6 @@ apic_init(void *dummy __unused)
 		printf("APIC: Using the %s enumerator.\n",
 		    best_enum->apic_name);
 
-#ifdef I686_CPU
-	/*
-	 * To work around an errata, we disable the local APIC on some
-	 * CPUs during early startup.  We need to turn the local APIC back
-	 * on on such CPUs now.
-	 */
-	ppro_reenable_apic();
-#endif
-
 	/* Probe the CPU's in the system. */
 	retval = best_enum->apic_probe_cpus();
 	if (retval != 0)
@@ -2449,9 +2435,6 @@ lapic_ipi_free(int vector)
 	if (!fred) {
 		ip = &idt[vector];
 		func = (ip->gd_hioffset << 16) | ip->gd_looffset;
-#ifdef __i386__
-		func -= setidt_disp;
-#endif
 		KASSERT(func != (uintptr_t)&IDTVEC(rsvd) &&
 		    func != (uintptr_t)&IDTVEC(rsvd_pti),
 		    ("invalid idtfunc %d %#lx", vector, func));

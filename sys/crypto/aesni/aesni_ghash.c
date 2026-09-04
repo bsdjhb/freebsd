@@ -84,23 +84,6 @@ m128icmp(__m128i a, __m128i b)
 	return _mm_movemask_epi8(cmp) == 0xffff;
 }
 
-#ifdef __i386__
-static inline __m128i
-_mm_insert_epi64(__m128i a, int64_t b, const int ndx)
-{  
-
-	if (!ndx) {
-		a = _mm_insert_epi32(a, b, 0);
-		a = _mm_insert_epi32(a, b >> 32, 1);
-	} else {
-		a = _mm_insert_epi32(a, b, 2);
-		a = _mm_insert_epi32(a, b >> 32, 3);
-	}
-
-	return a;
-}
-#endif
-
 /* some code from carry-less-multiplication-instruction-in-gcm-mode-paper.pdf */
 
 /* Figure 5. Code Sample - Performing Ghash Using Algorithms 1 and 5 (C) */

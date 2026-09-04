@@ -52,7 +52,7 @@
 	X86_STEPPING_ANY,						\
 	X86_FEATURE_ANY)
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 const struct x86_cpu_id *linuxkpi_x86_match_cpu(const struct x86_cpu_id *match_array);
 #define	x86_match_cpu(match_array) linuxkpi_x86_match_cpu(match_array)
 #endif

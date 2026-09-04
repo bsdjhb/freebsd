@@ -51,7 +51,7 @@
 #include <vm/pmap.h>
 
 #include <machine/md_var.h>
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/pc/bios.h>
 #endif
 #include <machine/bus.h>
@@ -106,9 +106,6 @@ vga_attach_unit(int unit, vga_softc_t *sc, int flags)
 /* LOW-LEVEL */
 
 #include <isa/rtc.h>
-#ifdef __i386__
-#include <dev/fb/vesa.h>
-#endif
 
 #define probe_done(adp)		((adp)->va_flags & V_ADP_PROBED)
 #define init_done(adp)		((adp)->va_flags & V_ADP_INITIALIZED)
@@ -128,7 +125,7 @@ vga_attach_unit(int unit, vga_softc_t *sc, int flags)
 #endif
 
 /* architecture dependent option */
-#if !defined(__i386__) && !defined(__amd64__)
+#if !defined(__amd64__)
 #define VGA_NO_BIOS		1
 #endif
 
@@ -1326,7 +1323,7 @@ set_display_start(video_adapter_t *adp, int x, int y)
 }
 
 #ifndef VGA_NO_MODE_CHANGE
-#if defined(__i386__) || defined(__amd64__)	/* XXX */
+#if defined(__amd64__)	/* XXX */
 static void
 fill(int val, void *d, size_t size)
 {
@@ -1335,7 +1332,7 @@ fill(int val, void *d, size_t size)
     while (size-- > 0)
 	*p++ = val;
 }
-#endif /* __i386__ */
+#endif /* __amd64__ */
 
 static void
 filll_io(int val, vm_offset_t d, size_t size)

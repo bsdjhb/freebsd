@@ -133,15 +133,8 @@ static struct linux_ioctl_handler linux_ioctls[] = {
 	    .high = LINUX_IOCTL_TERMIO_MAX },
 };
 
-#ifdef __i386__
-static TAILQ_HEAD(, linux_ioctl_handler_element) linux_ioctl_handlers =
-    TAILQ_HEAD_INITIALIZER(linux_ioctl_handlers);
-static struct sx linux_ioctl_sx;
-SX_SYSINIT(linux_ioctl, &linux_ioctl_sx, "Linux ioctl handlers");
-#else
 extern TAILQ_HEAD(, linux_ioctl_handler_element) linux_ioctl_handlers;
 extern struct sx linux_ioctl_sx;
-#endif
 #ifdef COMPAT_LINUX32
 static TAILQ_HEAD(, linux_ioctl_handler_element) linux32_ioctl_handlers =
     TAILQ_HEAD_INITIALIZER(linux32_ioctl_handlers);

@@ -96,7 +96,7 @@
 #include <geom/geom.h>
 
 #include <machine/_inttypes.h>
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/intr_machdep.h>
 
 #include <x86/apicvar.h>
@@ -162,13 +162,13 @@ xctrl_reboot(void)
 	shutdown_nice(0);
 }
 
-#if !defined(__amd64__) && !defined(__i386__)
+#if !defined(__amd64__)
 static void
 xctrl_suspend(void)
 {
 	printf("WARNING: xen/control: Suspend not supported!\n");
 }
-#else /* __amd64__ || __i386__ */
+#else /* __amd64__ */
 static void
 xctrl_suspend(void)
 {
@@ -263,7 +263,7 @@ xctrl_suspend(void)
 		 * resume CPUs.
 		 */
 		resume_cpus(cpu_suspend_map);
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 		/* Send an IPI_BITMAP in case there are pending bitmap IPIs. */
 		lapic_ipi_vectored(IPI_BITMAP_VECTOR, APIC_IPI_DEST_ALL);
 #endif
@@ -304,7 +304,7 @@ xctrl_suspend(void)
 		printf("System resumed after suspension\n");
 
 }
-#endif /* __amd64__ || __i386__ */
+#endif /* __amd64__ */
 
 static void
 xctrl_crash(void)

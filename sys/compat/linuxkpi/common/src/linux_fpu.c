@@ -36,7 +36,7 @@
 #include <asm/fpu/api.h>
 
 #if defined(__aarch64__) || defined(__arm__) || defined(__amd64__) ||	\
-    defined(__i386__) || defined(__powerpc64__)
+    defined(__powerpc64__)
 
 #include <machine/fpu.h>
 

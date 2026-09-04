@@ -40,7 +40,7 @@ typedef struct page *pgtable_t;
 
 #define	pgprot_decrypted(prot)	(prot)
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #define	_PAGE_BIT_PRESENT	0
 #define	_PAGE_BIT_RW		1
 #define	_PAGE_BIT_USER		2

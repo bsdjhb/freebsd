@@ -79,18 +79,4 @@ struct region_descriptor {
 				/* other bits are affected descriptor index */
 #define SEGEX_IDX(s)	(((s)>>3)&0x1fff)
 
-#ifdef _KERNEL
-extern int	_default_ldt;
-extern union descriptor *gdt;
-extern union descriptor *ldt;
-extern struct soft_segment_descriptor gdt_segs[];
-extern struct gate_descriptor *idt;
-
-void	lgdt(struct region_descriptor *rdp);
-void	sdtossd(struct segment_descriptor *sdp,
-	    struct soft_segment_descriptor *ssdp);
-void	ssdtosd(struct soft_segment_descriptor *ssdp,
-	    struct segment_descriptor *sdp);
-#endif /* _KERNEL */
-
 #endif /* !_MACHINE_SEGMENTS_H_ */

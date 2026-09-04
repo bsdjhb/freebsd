@@ -50,7 +50,7 @@
 #include <sys/sysent.h>
 #include <sys/sysproto.h>
 #include <sys/systm.h>
-#if defined(__amd64__) || defined(__i386__) /* for i386_read_exec */
+#if defined(__amd64__) /* for i386_read_exec */
 #include <machine/md_var.h>
 #endif
 
@@ -173,7 +173,7 @@ kern_break(struct thread *td, uintptr_t *addr)
 		}
 #endif
 		prot = VM_PROT_RW;
-#if (defined(COMPAT_FREEBSD32) && defined(__amd64__)) || defined(__i386__)
+#if defined(COMPAT_FREEBSD32) && defined(__amd64__)
 		if (i386_read_exec && SV_PROC_FLAG(td->td_proc, SV_ILP32))
 			prot |= VM_PROT_EXECUTE;
 #endif

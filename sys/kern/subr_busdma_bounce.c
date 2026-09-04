@@ -52,7 +52,7 @@ struct bounce_page {
 	char		*vaddr;		/* kva of bounce buffer */
 	bus_addr_t	busaddr;	/* Physical address */
 	char		*datavaddr;	/* kva of client data */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	vm_page_t	datapage[2];	/* physical page(s) of client data */
 #else
 	vm_page_t	datapage;	/* physical page of client data */
@@ -325,7 +325,7 @@ reserve_bounce_pages(bus_dma_tag_t dmat, bus_dmamap_t map, int commit)
 	return (pages);
 }
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 static bus_addr_t
 add_bounce_page(bus_dma_tag_t dmat, bus_dmamap_t map, void *vaddr,
     vm_paddr_t addr1, vm_paddr_t addr2, bus_size_t size)
@@ -340,7 +340,7 @@ add_bounce_page(bus_dma_tag_t dmat, bus_dmamap_t map, void *vaddr,
 
 	KASSERT(dmat->bounce_zone != NULL, ("no bounce zone in dma tag"));
 	KASSERT(map != NULL, ("add_bounce_page: bad map %p", map));
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	KASSERT(map != &nobounce_dmamap, ("add_bounce_page: bad map %p", map));
 #endif
 #ifdef __riscv
@@ -369,7 +369,7 @@ add_bounce_page(bus_dma_tag_t dmat, bus_dmamap_t map, void *vaddr,
 
 	if (dmat_flags(dmat) & BUS_DMA_KEEP_PG_OFFSET) {
 		/* Page offset needs to be preserved. */
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 		bpage->vaddr += addr1 & PAGE_MASK;
 		bpage->busaddr += addr1 & PAGE_MASK;
 		KASSERT(addr2 == 0,
@@ -380,7 +380,7 @@ add_bounce_page(bus_dma_tag_t dmat, bus_dmamap_t map, void *vaddr,
 #endif
 	}
 	bpage->datavaddr = vaddr;
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 	bpage->datapage[0] = PHYS_TO_VM_PAGE(addr1);
 	KASSERT((addr2 & PAGE_MASK) == 0, ("Second page is not aligned"));
 	bpage->datapage[1] = PHYS_TO_VM_PAGE(addr2);

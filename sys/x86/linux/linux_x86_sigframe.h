@@ -47,7 +47,7 @@ struct l_fpx_sw_bytes {
 	uint32_t	padding[7];
 };
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 
 /* The Linux sigcontext, pretty much a standard 386 trapframe. */
 struct l_sigcontext {
@@ -213,6 +213,6 @@ struct l_rt_sigframe {
 	struct l_siginfo	sf_si;
 };
 
-#endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
+#endif /* __amd64__ && COMPAT_LINUX32 */
 
 #endif /* !_X86_LINUX_SIGFRAME_H_ */

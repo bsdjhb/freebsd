@@ -86,10 +86,6 @@
 
 #define	CONFIG_PGTABLE_LEVELS	4
 
-#elif defined(__i386__)
-
-#define	CONFIG_PGTABLE_LEVELS	2
-
 #elif defined(__powerpc__)
 
 #if defined(__powerpc64__)

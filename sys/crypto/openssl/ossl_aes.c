@@ -35,7 +35,7 @@
 #include <crypto/openssl/ossl_aes_gcm.h>
 #include <crypto/openssl/ossl_cipher.h>
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <crypto/openssl/ossl_x86.h>
 #elif defined (__aarch64__)
 #include <crypto/openssl/ossl_aarch64.h>

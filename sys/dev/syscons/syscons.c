@@ -69,13 +69,13 @@
 #else
 #include <machine/pc/display.h>
 #endif
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 #include <machine/psl.h>
 #include <machine/frame.h>
 #include <machine/md_var.h>
 #endif
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 #include <machine/vmparam.h>
 
 #include <vm/vm.h>
@@ -286,18 +286,14 @@ ec_putc(int c)
 	if (c < 0 || c > 0xff || c == '\a')
 		return;
 	if (sc_console == NULL) {
-#if !defined(__amd64__) && !defined(__i386__)
+#if !defined(__amd64__)
 		return;
 #else
 		/*
 		 * This is enough for ec_putc() to work very early on x86
 		 * if the kernel starts in normal color text mode.
 		 */
-#ifdef __amd64__
 		fb = KERNBASE + 0xb8000;
-#else /* __i386__ */
-		fb = pmap_get_map_low() + 0xb8000;
-#endif
 		xsize = 80;
 		ysize = 25;
 #endif
@@ -1336,9 +1332,7 @@ sctty_ioctl(struct tty *tp, u_long cmd, caddr_t data, struct thread *td)
 		error = securelevel_gt(td->td_ucred, 0);
 		if (error != 0)
 			return error;
-#ifdef __i386__
-		td->td_frame->tf_eflags |= PSL_IOPL;
-#elif defined(__amd64__)
+#ifdef __amd64__
 		if (fred)
 			return (EINVAL);
 		td->td_frame->tf_rflags |= PSL_IOPL;
@@ -1346,9 +1340,7 @@ sctty_ioctl(struct tty *tp, u_long cmd, caddr_t data, struct thread *td)
 		return 0;
 
 	case KDDISABIO: /* disallow io operations (default) */
-#ifdef __i386__
-		td->td_frame->tf_eflags &= ~PSL_IOPL;
-#elif defined(__amd64__)
+#ifdef __amd64__
 		td->td_frame->tf_rflags &= ~PSL_IOPL;
 #endif
 		return 0;

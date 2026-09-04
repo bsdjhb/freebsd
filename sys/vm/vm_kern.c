@@ -990,7 +990,7 @@ kmem_init(vm_offset_t start, vm_offset_t end)
 void
 kmem_bootstrap_free(vm_offset_t start, vm_size_t size)
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 	struct vm_domain *vmd;
 	vm_offset_t end, va;
 	vm_paddr_t pa;

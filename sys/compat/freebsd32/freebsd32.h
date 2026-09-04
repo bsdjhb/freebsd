@@ -72,7 +72,7 @@ struct ffclock_estimate32 {
 };
 _Static_assert(sizeof(ffcounter) == sizeof(freebsd32_uint64_t),
     "'ffcounter' size discrepancy'");
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 _Static_assert(sizeof(struct ffclock_estimate32) == 52, "ffclock_estimate32 size");
 #else
 _Static_assert(sizeof(struct ffclock_estimate32) == 56, "ffclock_estimate32 size");

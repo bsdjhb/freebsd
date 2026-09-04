@@ -407,7 +407,7 @@ fb_commonioctl(video_adapter_t *adp, u_long cmd, caddr_t arg)
 		((video_adapter_info_t *)arg)->va_mem_base = adp->va_mem_base;
 		((video_adapter_info_t *)arg)->va_mem_size = adp->va_mem_size;
 		((video_adapter_info_t *)arg)->va_window
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 			= vtophys(adp->va_window);
 #else
 			= adp->va_window;
@@ -419,7 +419,7 @@ fb_commonioctl(video_adapter_t *adp, u_long cmd, caddr_t arg)
 		((video_adapter_info_t *)arg)->va_window_orig
 			= adp->va_window_orig;
 		((video_adapter_info_t *)arg)->va_unused0
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__)
 			= adp->va_buffer != 0 ? vtophys(adp->va_buffer) : 0;
 #else
 			= adp->va_buffer;

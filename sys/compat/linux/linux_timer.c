@@ -138,7 +138,7 @@ linux_timer_settime(struct thread *td, struct linux_timer_settime_args *uap)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_timer_settime64(struct thread *td, struct linux_timer_settime64_args *uap)
 {
@@ -181,7 +181,7 @@ linux_timer_gettime(struct thread *td, struct linux_timer_gettime_args *uap)
 	return (error);
 }
 
-#if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
+#if defined(__amd64__) && defined(COMPAT_LINUX32)
 int
 linux_timer_gettime64(struct thread *td, struct linux_timer_gettime64_args *uap)
 {

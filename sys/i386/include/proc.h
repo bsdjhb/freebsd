@@ -59,16 +59,4 @@ struct mdproc {
 
 #define	KINFO_PROC_SIZE 768
 
-#ifdef	_KERNEL
-
-#include <machine/md_var.h>
-
-void 	set_user_ldt(struct mdproc *);
-struct 	proc_ldt *user_ldt_alloc(struct mdproc *, int);
-void 	user_ldt_free(struct thread *);
-void	user_ldt_deref(struct proc_ldt *pldt);
-
-extern struct mtx dt_lock;
-#endif	/* _KERNEL */
-
 #endif /* !_MACHINE_PROC_H_ */

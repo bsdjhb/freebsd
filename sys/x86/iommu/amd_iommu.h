@@ -150,15 +150,7 @@ amdiommu_read4(const struct amdiommu_unit *unit, int reg)
 static inline uint64_t
 amdiommu_read8(const struct amdiommu_unit *unit, int reg)
 {
-#ifdef __i386__
-	uint32_t high, low;
-
-	low = bus_read_4(unit->mmio_res, reg);
-	high = bus_read_4(unit->mmio_res, reg + 4);
-	return (low | ((uint64_t)high << 32));
-#else
 	return (bus_read_8(unit->mmio_res, reg));
-#endif
 }
 
 static inline void
@@ -170,16 +162,7 @@ amdiommu_write4(const struct amdiommu_unit *unit, int reg, uint32_t val)
 static inline void
 amdiommu_write8(const struct amdiommu_unit *unit, int reg, uint64_t val)
 {
-#ifdef __i386__
-	uint32_t high, low;
-
-	low = val;
-	high = val >> 32;
-	bus_write_4(unit->mmio_res, reg, low);
-	bus_write_4(unit->mmio_res, reg + 4, high);
-#else
 	bus_write_8(unit->mmio_res, reg, val);
-#endif
 }
 
 int amdiommu_find_unit(device_t dev, struct amdiommu_unit **unitp,

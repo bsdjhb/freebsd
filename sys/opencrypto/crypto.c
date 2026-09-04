@@ -92,7 +92,7 @@
 #include <sys/bus.h>
 #include "cryptodev_if.h"
 
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 #include <machine/pcb.h>
 #endif
 
@@ -1771,7 +1771,7 @@ crypto_dispatch_thread(void *arg __unused)
 	struct cryptocap *cap;
 	int result, hint;
 
-#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
+#if defined(__amd64__) || defined(__aarch64__)
 	fpu_kern_thread(FPU_KERN_NORMAL);
 #endif
 

@@ -1039,7 +1039,7 @@ mvs_crbq_intr(device_t dev)
 		 * Handle only successful completions here.
 		 * Errors will be handled by main intr handler.
 		 */
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 		if (crpb->id == 0xffff && crpb->rspflg == 0xffff) {
 			device_printf(dev, "Unfilled CRPB "
 			    "%d (%d->%d) tag %d flags %04x rs %08x\n",
@@ -1048,7 +1048,7 @@ mvs_crbq_intr(device_t dev)
 #endif
 		if (ch->numtslots != 0 ||
 		    (flags & EDMA_IE_EDEVERR) == 0) {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__amd64__)
 			crpb->id = 0xffff;
 			crpb->rspflg = 0xffff;
 #endif

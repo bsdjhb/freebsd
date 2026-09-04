@@ -36,20 +36,4 @@ struct resource_map *apei_map_memory(device_t dev, rman_res_t start,
     rman_res_t len);
 int	apei_unmap_register(device_t dev, struct resource_map *map);
 
-#ifdef __i386__
-static __inline uint64_t
-bus_space_read_8(bus_space_tag_t tag, bus_space_handle_t bsh, bus_size_t offset)
-{
-	return (bus_space_read_4(tag, bsh, offset) |
-	    ((uint64_t)bus_space_read_4(tag, bsh, offset + 4)) << 32);
-}
-static __inline void
-bus_space_write_8(bus_space_tag_t tag, bus_space_handle_t bsh,
-    bus_size_t offset, uint64_t val)
-{
-	bus_space_write_4(tag, bsh, offset, val);
-	bus_space_write_4(tag, bsh, offset + 4, val >> 32);
-}
-#endif
-
 #endif /* !__APEIVAR_H__ */

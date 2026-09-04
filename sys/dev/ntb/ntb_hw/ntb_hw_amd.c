@@ -130,26 +130,6 @@ SYSCTL_UINT(_hw_ntb, OID_AUTO, debug_level, CTLFLAG_RWTUN,
                 device_printf(ntb->device, __VA_ARGS__);	\
 } while (0)
 
-#ifdef __i386__
-static __inline uint64_t
-bus_space_read_8(bus_space_tag_t tag, bus_space_handle_t handle,
-    bus_size_t offset)
-{
-
-	return (bus_space_read_4(tag, handle, offset) |
-	    ((uint64_t)bus_space_read_4(tag, handle, offset + 4)) << 32);
-}
-
-static __inline void
-bus_space_write_8(bus_space_tag_t tag, bus_space_handle_t handle,
-    bus_size_t offset, uint64_t val)
-{
-
-	bus_space_write_4(tag, handle, offset, val);
-	bus_space_write_4(tag, handle, offset + 4, val >> 32);
-}
-#endif
-
 /*
  * AMD NTB INTERFACE ROUTINES
  */

@@ -364,13 +364,11 @@ proto_read(struct cdev *cdev, struct uio *uio, int ioflag)
 		buf.x4[0] = (r->r_type == PROTO_RES_PCICFG) ?
 		    pci_read_config(dev, ofs, 4) : bus_read_4(r->r_d.res, ofs);
 		break;
-#ifndef __i386__
 	case 8:
 		if (r->r_type == PROTO_RES_PCICFG)
 			return (EINVAL);
 		buf.x8[0] = bus_read_8(r->r_d.res, ofs);
 		break;
-#endif
 	default:
 		return (EIO);
 	}
@@ -429,13 +427,11 @@ proto_write(struct cdev *cdev, struct uio *uio, int ioflag)
 		else
 			bus_write_4(r->r_d.res, ofs, buf.x4[0]);
 		break;
-#ifndef __i386__
 	case 8:
 		if (r->r_type == PROTO_RES_PCICFG)
 			return (EINVAL);
 		bus_write_8(r->r_d.res, ofs, buf.x8[0]);
 		break;
-#endif
 	default:
 		return (EIO);
 	}
