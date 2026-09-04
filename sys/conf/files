@@ -2816,9 +2816,6 @@ dev/proto/proto_bus_isa.c	optional proto acpi | proto isa
 dev/proto/proto_bus_pci.c	optional proto pci
 dev/proto/proto_busdma.c	optional proto
 dev/proto/proto_core.c		optional proto
-dev/pst/pst-iop.c		optional pst
-dev/pst/pst-pci.c		optional pst pci
-dev/pst/pst-raid.c		optional pst
 dev/pty/pty.c			optional pty
 dev/puc/puc.c			optional puc
 dev/puc/puc_cfg.c		optional puc

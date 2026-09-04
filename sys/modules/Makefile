@@ -331,7 +331,6 @@ SUBDIR=	\
 	procfs \
 	proto \
 	pseudofs \
-	${_pst} \
 	${_pt} \
 	pty  \
 	puc \
@@ -920,7 +919,6 @@ _vmm=		vmm
 # XXX some of these can move now, but are untested on other architectures.
 _glxiic=	glxiic
 _glxsb=		glxsb
-_pst=		pst
 _sbni=		sbni
 .endif
 

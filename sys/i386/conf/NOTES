@@ -211,7 +211,6 @@ envvar		hint.npx.0.irq="13"
 #
 # RAID adapters
 #
-device		pst
 
 #
 # Adaptec by PMC RAID controllers, Series 6/7/8 and upcoming families
