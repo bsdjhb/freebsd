@@ -502,7 +502,6 @@ MAN=	aac.4 \
 	ps4dshock.4 \
 	ps5dsense.4 \
 	psm.4 \
-	pst.4 \
 	pt.4 \
 	ptnet.4 \
 	pts.4 \
