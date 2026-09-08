@@ -246,11 +246,7 @@ ccp_hw_attach_queue(device_t dev, uint64_t lsbmask, unsigned queue)
 	 */
 	error = bus_dma_tag_create(bus_get_dma_tag(dev),
 	    1 << (5 + sc->ring_size_order),
-#if defined(__i386__) && !defined(PAE)
-	    0, BUS_SPACE_MAXADDR,
-#else
 	    (bus_addr_t)1 << 32, BUS_SPACE_MAXADDR_48BIT,
-#endif
 	    BUS_SPACE_MAXADDR, NULL, NULL, ringsz, 1,
 	    ringsz, 0, NULL, NULL, &qp->ring_desc_tag);
 	if (error != 0)
