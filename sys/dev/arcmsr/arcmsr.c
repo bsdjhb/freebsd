@@ -4917,11 +4917,7 @@ static int arcmsr_alloc_srb(device_t dev, struct AdapterControlBlock *acb)
 	if(bus_dma_tag_create(  /*parent_dmat*/		acb->parent_dmat,
 				/*alignment*/		1,
 				/*boundary*/		0,
-#ifdef PAE
-				/*lowaddr*/		BUS_SPACE_MAXADDR_32BIT,
-#else
 				/*lowaddr*/		BUS_SPACE_MAXADDR,
-#endif
 				/*highaddr*/		BUS_SPACE_MAXADDR,
 				/*filter*/		NULL,
 				/*filterarg*/		NULL,
