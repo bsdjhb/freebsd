@@ -954,13 +954,8 @@ storvsc_init_requests(device_t dev)
 		bus_get_dma_tag(dev),		/* parent */
 		1,				/* alignment */
 		PAGE_SIZE,			/* boundary */
-#if defined(__i386__) && defined(PAE)
-		BUS_SPACE_MAXADDR_48BIT,	/* lowaddr */
-		BUS_SPACE_MAXADDR_48BIT,	/* highaddr */
-#else
 		BUS_SPACE_MAXADDR,		/* lowaddr */
 		BUS_SPACE_MAXADDR,		/* highaddr */
-#endif
 		NULL, NULL,			/* filter, filterarg */
 		STORVSC_DATA_SIZE_MAX,		/* maxsize */
 		STORVSC_DATA_SEGCNT_MAX,	/* nsegments */
