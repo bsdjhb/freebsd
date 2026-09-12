@@ -339,7 +339,7 @@ struct kinfo_ofile {
 	struct sockaddr_storage	kf_sa_peer;	/* Peer address. */
 };
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__) || defined(__arm__)
 /*
  * This size should never be changed. If you really need to, you must provide
  * backward ABI compatibility by allocating a new sysctl MIB that will return
@@ -583,7 +583,7 @@ struct kinfo_ovmentry {
 	int	 _kve_ispare[3];		/* Space for more stuff. */
 };
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__) || defined(__arm__)
 #define	KINFO_VMENTRY_SIZE	1160
 #endif
 
@@ -664,7 +664,7 @@ struct kinfo_vmobject {
 #define	KKST_STATE_SWAPPED	1		/* Stack swapped out, obsolete. */
 #define	KKST_STATE_RUNNING	2		/* Stack ephemeral. */
 
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__) || defined(__arm__)
 #define	KINFO_KSTACK_SIZE	1096
 #endif
 
