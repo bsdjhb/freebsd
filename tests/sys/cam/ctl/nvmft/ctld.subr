@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Copyright (c) 2026 Chelsio Communications, Inc.
+
+requires_ctld()
+{
+	atf_set "require.user" "root"
+	atf_set "require.progs" "ctld"
+}
+
+start_ctld()
+{
+	atf_check ctld -f $(atf_get_srcdir)/ctl.conf
+
+	# Wait for the PID file
+	atf_check -r 1 [ -s /var/run/ctld.pid ]
+
+	# Wait for the socket
+	atf_check -r 1 -o match:"ctld" sockstat -4lp 4420
+}
+
+cleanup_ctld()
+{
+	if [ -s /var/run/ctld.pid ]; then
+		kill `cat /var/run/ctld.pid`
+	fi
+}
