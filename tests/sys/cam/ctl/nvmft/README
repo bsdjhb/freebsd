@@ -1,0 +1,17 @@
+The tests in this directory are specialized NVMeoF hosts which must be
+run against an NVMeoF controller.  The address of the controller is
+specified via FreeBSD Test Suite configuration variables which can be
+passed to kyua(1) or set in configuration variable as described in
+tests(7).
+
+A sample ctl.conf file is included in this directory which can be used
+with ctld(8) to provide a suitable test controller.  To use this file,
+start ctld(8) by running the following as root:
+
+# ctld -f /usr/tests/sys/cam/ctl/nvmft/ctl.conf
+
+Then set the following configuration variables:
+
+test_suites.FreeBSD.nvmft.address = "127.0.0.1"
+test_suites.FreeBSD.nvmft.port = "4420"
+test_suites.FreeBSD.nvmft.nqn = "nqn.1994-09.org.freebsd:test"

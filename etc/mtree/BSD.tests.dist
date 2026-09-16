@@ -567,6 +567,8 @@
         ..
         cam
             ctl
+                nvmft
+                ..
             ..
         ..
         capsicum
