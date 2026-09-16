@@ -3,6 +3,8 @@ PACKAGE=	tests
 TESTSDIR=	${TESTSBASE}/sys/cam/ctl
 BINDIR=${TESTSDIR}
 
+TESTS_SUBDIRS+=		nvmft
+
 ${PACKAGE}FILES+=	all-supported-opcodes.txt
 ${PACKAGE}FILES+=	ctl.subr
 
