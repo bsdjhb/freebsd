@@ -51,6 +51,13 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: apmd(8) removed
+OLD_FILES+=etc/apmd.conf
+OLD_FILES+=etc/rc.d/apmd
+OLD_FILES+=usr/share/examples/etc/apmd.conf
+OLD_FILES+=usr/share/man/man8/apmd.8.gz
+OLD_FILES+=usr/sbin/apmd
+
 # 20260813: lib9p.so becomes a private library
 OLD_LIBS+=usr/lib/lib9p.so.1
 
