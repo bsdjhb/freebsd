@@ -4,7 +4,6 @@ MAN=	CPU_ELAN.4 \
 	longrun.4 \
 	npx.4 \
 	pae.4 \
-	pbio.4 \
 	pnp.4 \
 	pnpbios.4 \
 	sbni.4 \
