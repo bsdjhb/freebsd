@@ -70,11 +70,6 @@
 #include <isa/isavar.h>
 #include <isa/isa_common.h>
 
-void
-isa_init(device_t dev)
-{
-}
-
 /*
  * This implementation simply passes the request up to the parent
  * bus, which in our case is the special i386 nexus, substituting any
