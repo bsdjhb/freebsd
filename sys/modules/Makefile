@@ -365,7 +365,6 @@ SUBDIR=	\
 	${_s3} \
 	${_safe} \
 	safexcel \
-	${_sbni} \
 	scc \
 	${_sctp} \
 	sdhci \
@@ -919,7 +918,6 @@ _vmm=		vmm
 # XXX some of these can move now, but are untested on other architectures.
 _glxiic=	glxiic
 _glxsb=		glxsb
-_sbni=		sbni
 .endif
 
 .if ${MACHINE_ARCH} == "armv7"
