@@ -3848,8 +3848,6 @@ fs/ext2fs/ext2_vnops.c		optional ext2fs
 isa/isa_if.m			standard
 isa/isa_common.c		optional isa
 isa/isahint.c			optional isa
-isa/pnp.c			optional isa isapnp
-isa/pnpparse.c			optional isa isapnp
 fs/cd9660/cd9660_bmap.c	optional cd9660
 fs/cd9660/cd9660_lookup.c	optional cd9660
 fs/cd9660/cd9660_node.c	optional cd9660

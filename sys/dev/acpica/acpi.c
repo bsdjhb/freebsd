@@ -1209,8 +1209,6 @@ acpi_read_ivar(device_t dev, device_t child, int index, uintptr_t *result)
 	*(int *)result = ad->ad_domain;
 	break;
     case ISA_IVAR_VENDORID:
-    case ISA_IVAR_SERIAL:
-    case ISA_IVAR_COMPATID:
 	*(int *)result = -1;
 	break;
     case ISA_IVAR_LOGICALID:

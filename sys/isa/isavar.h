@@ -29,10 +29,6 @@
 #ifndef _ISA_ISAVAR_H_
 #define _ISA_ISAVAR_H_
 
-struct isa_config;
-struct isa_pnp_id;
-typedef void isa_config_cb(void *arg, struct isa_config *config, int enable);
-
 #include "isa_if.h"
 #include <isa/pnpvar.h>
 
@@ -69,30 +65,6 @@ typedef void isa_config_cb(void *arg, struct isa_config *config, int enable);
 #define ISADMA_READ	0x00100000
 #define ISADMA_WRITE	0
 #define ISADMA_RAW	0x00080000
-/*
- * Plug and play cards can support a range of resource
- * configurations. This structure is used by the isapnp parser to
- * inform the isa bus about the resource possibilities of the
- * device. Each different alternative should be supplied by calling
- * ISA_ADD_CONFIG().
- */
-struct isa_range {
-	uint32_t		ir_start;
-	uint32_t		ir_end;
-	uint32_t		ir_size;
-	uint32_t		ir_align;
-};
-
-struct isa_config {
-	struct isa_range	ic_mem[ISA_NMEM];
-	struct isa_range	ic_port[ISA_NPORT];
-	uint32_t		ic_irqmask[ISA_NIRQ];
-	uint32_t		ic_drqmask[ISA_NDRQ];
-	int			ic_nmem;
-	int			ic_nport;
-	int			ic_nirq;
-	int			ic_ndrq;
-};
 
 /*
  * Used to build lists of IDs and description strings for PnP drivers.
@@ -122,22 +94,9 @@ enum isa_device_ivars {
 	ISA_IVAR_DRQ_0 = ISA_IVAR_DRQ,
 	ISA_IVAR_DRQ_1,
 	ISA_IVAR_VENDORID,
-	ISA_IVAR_SERIAL,
 	ISA_IVAR_LOGICALID,
-	ISA_IVAR_COMPATID,
-	ISA_IVAR_CONFIGATTR,
-	ISA_IVAR_PNP_CSN,
-	ISA_IVAR_PNP_LDN,
-	ISA_IVAR_PNPBIOS_HANDLE,
 	ISA_IVAR_LAST
 };
-
-/*
- * ISA_IVAR_CONFIGATTR bits
- */
-#define ISACFGATTR_CANDISABLE	(1 << 0)	/* can be disabled */
-#define ISACFGATTR_DYNAMIC	(1 << 1)	/* dynamic configuration */
-#define ISACFGATTR_HINTS	(1 << 3)	/* source of config is hints */
 
 #define	ISA_PNP_DESCR "E:pnpid;D:#"
 #define ISA_PNP_INFO(t) \
@@ -156,13 +115,7 @@ ISA_ACCESSOR(drq, DRQ, int)
 ISA_ACCESSOR(maddr, MADDR, int)
 ISA_ACCESSOR(msize, MEMSIZE, int)
 ISA_ACCESSOR(vendorid, VENDORID, int)
-ISA_ACCESSOR(serial, SERIAL, int)
 ISA_ACCESSOR(logicalid, LOGICALID, int)
-ISA_ACCESSOR(compatid, COMPATID, int)
-ISA_ACCESSOR(configattr, CONFIGATTR, int)
-ISA_ACCESSOR(pnp_csn, PNP_CSN, int)
-ISA_ACCESSOR(pnp_ldn, PNP_LDN, int)
-ISA_ACCESSOR(pnpbios_handle, PNPBIOS_HANDLE, int)
 
 extern void	isa_probe_children(device_t dev);
 

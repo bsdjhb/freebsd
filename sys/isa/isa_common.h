@@ -34,31 +34,12 @@
  */
 
 /*
- * PNP configurations are kept in a tailq.
- */
-TAILQ_HEAD(isa_config_list, isa_config_entry);
-struct isa_config_entry {
-	TAILQ_ENTRY(isa_config_entry) ice_link;
-	int			ice_priority;
-	struct isa_config	ice_config;
-};
-
-/*
  * The structure used to attach devices to the isa bus.
  */
 struct isa_device {
 	struct resource_list	id_resources;
 	uint32_t		id_vendorid; /* pnp vendor id */
-	uint32_t		id_serial; /* pnp serial */
 	uint32_t		id_logicalid; /* pnp logical device id */
-	uint32_t		id_compatid; /* pnp compat device id */
-	struct isa_config_list	id_configs; /* pnp config alternatives */
-	isa_config_cb		*id_config_cb; /* callback function */
-	void			*id_config_arg;	/* callback argument */
-	int			id_config_attr;	/* pnp config attributes */
-	int			id_pnpbios_handle; /* pnp handle, if any */
-	int			id_pnp_csn; /* pnp Card Number */
-	int			id_pnp_ldn; /* pnp Logical device on card */
 	int			id_order;
 };
 
