@@ -51,6 +51,9 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: apm(8) only displays ACPI status
+OLD_FILES+=etc/rc.d/apm
+
 # 2026xxxx: apm(4) not i386-specific
 OLD_FILES+=usr/share/man/man4/i386/apm.4.gz
 
