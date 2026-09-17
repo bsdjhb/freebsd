@@ -1,6 +1,6 @@
 #
 
-SUBDIR=	smbios vpd
+SUBDIR=	smbios
 
 .if ${MACHINE_ARCH} == "i386"
 SUBDIR+=	smapi

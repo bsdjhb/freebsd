@@ -531,12 +531,10 @@ device		ntb_hw_plx	# PLX NTB hardware driver
 #
 # ipmi: Intelligent Platform Management Interface
 # smbios: DMI/SMBIOS entry point (requires EFIRT option)
-# vpd: Vital Product Data kernel interface
 # tpm: Trusted Platform Module
 
 device		ipmi
 device		smbios
-device		vpd
 device		tpm
 device		padlock_rng	# VIA Padlock RNG
 device		rdrand_rng	# Intel Bull Mountain RNG
