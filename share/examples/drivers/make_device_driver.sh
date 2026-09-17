@@ -333,8 +333,6 @@ ${1}_isa_identify (driver_t *driver, device_t parent)
 		printf("${UPPER}: already attached\n");
 		return;
 	}
-/* XXX Look at dev/acpica/acpi_isa.c for use of ISA_ADD_CONFIG() macro. */
-/* XXX What is ISA_SET_CONFIG_CALLBACK(parent, child, pnpbios_set_config, 0)? */
 	for (i = 0; i < MAXHINTS; i++) {
 
 		ioport = res[i].ioport;
