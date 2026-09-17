@@ -6,8 +6,7 @@ MAN=	CPU_ELAN.4 \
 	pae.4 \
 	pnp.4 \
 	pnpbios.4 \
-	smapi.4 \
-	vpd.4
+	smapi.4
 
 MLINKS=	CPU_ELAN.4 CPU_SOEKRIS.4
 MLINKS+=pae.4 PAE.4
