@@ -38,11 +38,6 @@
 #include <isa/isavar.h>
 #include <isa/isa_common.h>
 
-void
-isa_init(device_t dev)
-{
-}
-
 struct resource *
 isa_alloc_resource(device_t bus, device_t child, int type, int rid,
     u_long start, u_long end, u_long count, u_int flags)
