@@ -51,6 +51,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Retire vpd(4)
+OLD_FILES+=usr/share/man/man4/i386/vpd.4.gz
+OLD_FILES+=usr/share/man/man4/vpd.4.gz
+
 # 2026xxxx: Retire sbni(4)
 OLD_FILES+=usr/share/man/man4/i386/if_sbni.4.gz
 OLD_FILES+=usr/share/man/man4/i386/sbni.4.gz
