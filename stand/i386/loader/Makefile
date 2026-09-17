@@ -150,8 +150,4 @@ LDFLAGS+= -Wl,-z,max-page-size=0x1000
 DPADD=	${LDR_INTERP32} ${LIBI386} ${LIBSA32}
 LDADD=	${LDR_INTERP32} ${LIBI386} ${LIBSA32}
 
-.if ${MACHINE_CPUARCH} == "amd64"
-CFLAGS+=	-DLOADER_PREFER_AMD64
-.endif
-
 .include <bsd.prog.mk>
