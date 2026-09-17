@@ -30,28 +30,8 @@
 
 INTERFACE isa;
 
-#
-# Add a Plug-and-play configuration to the device. Configurations with 
-# a lower priority are preferred.
-#
-METHOD int add_config {
-	device_t	dev;
-	device_t	child;
-	int		priority;
-	struct isa_config *config;
-};
-
-#
-# Register a function which can be called to configure a device with
-# a given set of resources. The function will be called with a struct
-# isa_config representing the desired configuration and a flag to
-# state whether the device should be enabled.
-#
-METHOD void set_config_callback {
-	device_t	dev;
-	device_t	child;
-	isa_config_cb	*fn;
-	void		*arg;
+HEADER {
+	struct isa_pnp_id;
 };
 
 #
