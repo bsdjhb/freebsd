@@ -724,11 +724,13 @@ universe_${target}_${target_arch}: universe_${target}_prologue .MAKE .PHONY
 .endif # ${__DO_WORLDS} == "yes"
 
 .if ${__DO_KERNELS} == "yes"
+.if exists(${KERNSRCDIR}/${target}/conf)
 universe_${target}_done: universe_${target}_kernels .PHONY
 universe_${target}_kernels: universe_${target}_worlds .PHONY
 universe_${target}_kernels: universe_${target}_prologue .MAKE .PHONY
 	@cd ${.CURDIR}; ${SUB_MAKE} ${.MAKEFLAGS} TARGET=${target} \
 	    universe_kernels
+.endif
 .endif # ${__DO_KERNELS} == "yes"
 
 # Tell the user the worlds and kernels have completed
