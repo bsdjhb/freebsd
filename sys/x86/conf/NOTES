@@ -530,15 +530,11 @@ device		ntb_hw_plx	# PLX NTB hardware driver
 # Miscellaneous hardware:
 #
 # ipmi: Intelligent Platform Management Interface
-# pbio: Parallel (8255 PPI) basic I/O (mode 0) port (e.g. Advantech PCL-724)
 # smbios: DMI/SMBIOS entry point (requires EFIRT option)
 # vpd: Vital Product Data kernel interface
 # tpm: Trusted Platform Module
 
 device		ipmi
-device		pbio
-envvar		hint.pbio.0.at="isa"
-envvar		hint.pbio.0.port="0x360"
 device		smbios
 device		vpd
 device		tpm
