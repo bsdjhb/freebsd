@@ -27,14 +27,12 @@ SRCS+=		biossmap.c
 .endif
 .if ${USERBOOT_KERNEL_SUPPORT} == "yes"
 SRCS+=		bootinfo.c
-SRCS+=		bootinfo32.c
 SRCS+=		bootinfo64.c
 .endif
 SRCS+=		conf.c
 SRCS+=		copy.c
 SRCS+=		devicename.c
 .if ${USERBOOT_KERNEL_SUPPORT} == "yes"
-SRCS+=		elf32_freebsd.c
 SRCS+=		elf64_freebsd.c
 .endif
 SRCS+=		host.c
