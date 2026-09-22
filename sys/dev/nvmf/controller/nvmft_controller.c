@@ -563,7 +563,7 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 	numd = le32toh(cmd->cdw10) >> 16 | le32toh(cmd->cdw11) << 16;
 	offset = le32toh(cmd->cdw12) | (uint64_t)le32toh(cmd->cdw13) << 32;
 
-	if (offset % 3 != 0) {
+	if ((offset & 3) != 0) {
 		status = NVME_SC_INVALID_FIELD;
 		goto done;
 	}
