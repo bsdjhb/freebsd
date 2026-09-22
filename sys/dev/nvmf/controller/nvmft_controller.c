@@ -281,7 +281,7 @@ nvmft_handoff_io_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
-	if (cmd->qid > ctrlr->num_io_queues) {
+	if (qid > ctrlr->num_io_queues) {
 		mtx_unlock(&ctrlr->lock);
 		mtx_unlock(&np->lock);
 		nvmft_printf(ctrlr,
