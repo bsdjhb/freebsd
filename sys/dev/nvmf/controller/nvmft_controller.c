@@ -856,8 +856,10 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			nvmft_printf(ctrlr, "reset requested\n");
 			ctrlr->shutdown = true;
 			*need_shutdown = true;
-		} else
+		} else {
+			ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
 			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
+		}
 	}
 	mtx_unlock(&ctrlr->lock);
 
