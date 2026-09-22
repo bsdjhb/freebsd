@@ -27,6 +27,7 @@ struct nvmf_qpair;
  */
 struct nvmf_association_params {
 	bool sq_flow_control;		/* SQ flow control required. */
+	bool delete_io_queues;		/* Support for deleting I/O queues. */
 	bool dynamic_controller_model;	/* Controller only */
 	uint16_t max_admin_qsize;	/* Controller only */
 	uint32_t max_io_qsize;		/* Controller only, 0 for discovery */
