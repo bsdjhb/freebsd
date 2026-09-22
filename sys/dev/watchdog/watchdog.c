@@ -167,6 +167,11 @@ wdog_kern_pat_sbt(sbintime_t sbt)
 		EVENTHANDLER_INVOKE(watchdog_sbt_list, sbt, &error_sbt, &error);
 		EVENTHANDLER_INVOKE(watchdog_list, pow2ns, &error);
 	}
+
+	/* If dumping, nothing further to do here. */
+	if (dumping)
+		return (error);
+
 	/*
 	 * If no hardware watchdog responded, we have not tried to
 	 * attach an external software watchdog, and one is available,
