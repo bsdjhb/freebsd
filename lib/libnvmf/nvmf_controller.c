@@ -255,6 +255,16 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 			    offsetof(struct nvmf_fabric_connect_cmd, sqsize));
 			goto error;
 		}
+
+		/* Connection attributes. */
+		if ((cmd->cattr & ~(NVMF_CONNECT_ATTR_IO_QUEUE_DELETION |
+		    NVMF_CONNECT_ATTR_DISABLE_SQ_FC)) != 0) {
+			na_error(na, "Reserved connect attributes set");
+			nvmf_connect_invalid_parameters(cc, false,
+			    offsetof(struct nvmf_fabric_connect_cmd, cattr));
+			goto error;
+		}
+
 		qp->nq_admin = true;
 	} else {
 		/* I/O queues not allowed for discovery. */
@@ -272,6 +282,16 @@ nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
 			na_error(na, "Invalid queue size %u", qsize);
 			nvmf_connect_invalid_parameters(cc, false,
 			    offsetof(struct nvmf_fabric_connect_cmd, sqsize));
+			goto error;
+		}
+
+		/* Connection attributes. */
+		if ((cmd->cattr & ~(NVMF_CONNECT_ATTR_IO_QUEUE_DELETION |
+		    NVMF_CONNECT_ATTR_DISABLE_SQ_FC |
+		    NVMF_CONNECT_ATTR_PRIORITY_CLASS)) != 0) {
+			na_error(na, "Reserved connect attributes set");
+			nvmf_connect_invalid_parameters(cc, false,
+			    offsetof(struct nvmf_fabric_connect_cmd, cattr));
 			goto error;
 		}
 

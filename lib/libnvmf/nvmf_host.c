@@ -96,6 +96,8 @@ nvmf_connect(struct nvmf_association *na,
 	cmd.sqsize = htole16(queue_size - 1);
 	if (!na->na_params.sq_flow_control)
 		cmd.cattr |= NVMF_CONNECT_ATTR_DISABLE_SQ_FC;
+	if (na->na_params.delete_io_queues)
+		cmd.cattr |= NVMF_CONNECT_ATTR_IO_QUEUE_DELETION;
 	cmd.kato = htole32(kato);
 
 	cc = nvmf_allocate_command(qp, &cmd);
