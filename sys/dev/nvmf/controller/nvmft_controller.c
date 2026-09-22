@@ -820,7 +820,9 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 {
 	struct nvmft_port *np = ctrlr->np;
 	uint32_t changes;
+	bool cancel_terminate;
 
+	cancel_terminate = false;
 	*need_shutdown = false;
 
 	mtx_lock(&ctrlr->lock);
@@ -858,12 +860,24 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			*need_shutdown = true;
 		} else if (!ctrlr->shutdown) {
 			/* Controller enable. */
+			cancel_terminate = true;
 			ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
 			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
 		}
 	}
 	mtx_unlock(&ctrlr->lock);
 
+	if (cancel_terminate) {
+		/*
+		 * If a controller has been re-enabled after a
+		 * shutdown, the terminate task from the shutdown
+		 * might still be scheduled.
+		 */
+		taskqueue_cancel_timeout(taskqueue_thread,
+		    &ctrlr->terminate_task, NULL);
+		taskqueue_drain_timeout(taskqueue_thread,
+		    &ctrlr->terminate_task);
+	}
 	return (true);
 }
 
