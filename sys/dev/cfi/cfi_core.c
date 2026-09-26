@@ -202,8 +202,7 @@ cfi_probe(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->sc_rid = 0;
-	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rid,
+	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_res == NULL)
 		return (ENXIO);
@@ -281,7 +280,7 @@ cfi_probe(device_t dev)
 	device_set_descf(dev, "%s - %s", vend_str, cfi_fmtsize(sc->sc_size));
 
  out:
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid, sc->sc_res);
+	bus_release_resource(dev, sc->sc_res);
 	return (error);
 }
 
@@ -300,8 +299,7 @@ cfi_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->sc_rid = 0;
-	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rid,
+	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 #ifndef ATSE_CFI_HACK
 	    RF_ACTIVE);
 #else
@@ -499,7 +497,7 @@ cfi_detach(device_t dev)
 
 	destroy_dev(sc->sc_nod);
 	free(sc->sc_region, M_TEMP);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid, sc->sc_res);
+	bus_release_resource(dev, sc->sc_res);
 	return (0);
 }
 

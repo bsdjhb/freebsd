@@ -388,7 +388,6 @@ amdsmu_attach(device_t dev)
 	int err;
 	uint32_t physbase_addr_lo, physbase_addr_hi;
 	uint64_t physbase_addr;
-	int rid = 0;
 	struct sysctl_oid *node;
 
 	/*
@@ -405,7 +404,7 @@ amdsmu_attach(device_t dev)
 	physbase_addr = (uint64_t)physbase_addr_hi << 32 | physbase_addr_lo;
 
 	/* Map memory for SMU and its registers. */
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate resource\n");
 		return (ENXIO);
@@ -535,7 +534,7 @@ err_dump:
 err_reg_space:
 	bus_space_unmap(sc->bus_tag, sc->smu_space, SMU_MEM_SIZE);
 err_smu_space:
-	bus_release_resource(dev, SYS_RES_MEMORY, rid, sc->res);
+	bus_release_resource(dev, sc->res);
 	return (err);
 }
 
@@ -543,7 +542,6 @@ static int
 amdsmu_detach(device_t dev)
 {
 	struct amdsmu_softc *sc = device_get_softc(dev);
-	int rid = 0;
 
 #if defined(DEV_ACPI)
 	EVENTHANDLER_DEREGISTER(acpi_post_dev_suspend, sc->eh_suspend);
@@ -554,7 +552,7 @@ amdsmu_detach(device_t dev)
 	bus_space_unmap(sc->bus_tag, sc->smu_space, SMU_MEM_SIZE);
 	bus_space_unmap(sc->bus_tag, sc->reg_space, SMU_MEM_SIZE);
 
-	bus_release_resource(dev, SYS_RES_MEMORY, rid, sc->res);
+	bus_release_resource(dev, sc->res);
 	return (0);
 }
 

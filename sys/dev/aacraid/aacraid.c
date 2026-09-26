@@ -700,8 +700,7 @@ aacraid_free(struct aac_softc *sc)
 			bus_teardown_intr(sc->aac_dev, 
 				sc->aac_irq[i], sc->aac_intr[i]);
 		if (sc->aac_irq[i])
-			bus_release_resource(sc->aac_dev, SYS_RES_IRQ, 
-				sc->aac_irq_rid[i], sc->aac_irq[i]);
+			bus_release_resource(sc->aac_dev, sc->aac_irq[i]);
 		else
 			break;
 	}
@@ -718,11 +717,9 @@ aacraid_free(struct aac_softc *sc)
 
 	/* release the register window mapping */
 	if (sc->aac_regs_res0 != NULL)
-		bus_release_resource(sc->aac_dev, SYS_RES_MEMORY,
-				     sc->aac_regs_rid0, sc->aac_regs_res0);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res0);
 	if (sc->aac_regs_res1 != NULL)
-		bus_release_resource(sc->aac_dev, SYS_RES_MEMORY,
-				     sc->aac_regs_rid1, sc->aac_regs_res1);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res1);
 }
 
 /*
@@ -1659,16 +1656,12 @@ aac_check_firmware(struct aac_softc *sc)
 
 	/* Remap mem. resource, if required */
 	if (atu_size > rman_get_size(sc->aac_regs_res0)) {
-		bus_release_resource(
-			sc->aac_dev, SYS_RES_MEMORY,
-			sc->aac_regs_rid0, sc->aac_regs_res0);
-		sc->aac_regs_res0 = bus_alloc_resource_anywhere(
-			sc->aac_dev, SYS_RES_MEMORY, &sc->aac_regs_rid0,
-			atu_size, RF_ACTIVE);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res0);
+		sc->aac_regs_res0 = bus_alloc_resource_anywhere(sc->aac_dev,
+		    SYS_RES_MEMORY, PCIR_BAR(0), atu_size, RF_ACTIVE);
 		if (sc->aac_regs_res0 == NULL) {
-			sc->aac_regs_res0 = bus_alloc_resource_any(
-				sc->aac_dev, SYS_RES_MEMORY,
-				&sc->aac_regs_rid0, RF_ACTIVE);
+			sc->aac_regs_res0 = bus_alloc_resource_any(sc->aac_dev,
+			    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE);
 			if (sc->aac_regs_res0 == NULL) {
 				device_printf(sc->aac_dev,
 					"couldn't allocate register window\n");
@@ -1981,12 +1974,11 @@ aac_setup_intr(struct aac_softc *sc)
 	rid = ((sc->msi_enabled || sc->msi_tupelo)? 1:0);
 
 	for (i = 0; i < msi_count; i++, rid++) {
-		if ((res = bus_alloc_resource_any(sc->aac_dev,SYS_RES_IRQ, &rid,
+		if ((res = bus_alloc_resource_any(sc->aac_dev,SYS_RES_IRQ, rid,
 			RF_SHAREABLE | RF_ACTIVE)) == NULL) {
 			device_printf(sc->aac_dev,"can't allocate interrupt\n");
 			return (EINVAL);
 		}
-		sc->aac_irq_rid[i] = rid;
 		sc->aac_irq[i] = res;
 		if (aac_bus_setup_intr(sc->aac_dev, res, 
 			INTR_MPSAFE | INTR_TYPE_BIO, NULL, 

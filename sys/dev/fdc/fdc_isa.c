@@ -76,7 +76,7 @@ int
 fdc_isa_alloc_resources(device_t dev, struct fdc_data *fdc)
 {
 	struct resource *res;
-	int i, j, rid, newrid, nport;
+	int i, j, rid, nport;
 	u_long port;
 
 	fdc->fdc_dev = dev;
@@ -86,8 +86,7 @@ fdc_isa_alloc_resources(device_t dev, struct fdc_data *fdc)
 
 	nport = isa_get_logicalid(dev) ? 1 : 6;
 	for (rid = 0; ; rid++) {
-		newrid = rid;
-		res = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, &newrid,
+		res = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, rid,
 		    rid == 0 ? nport : 1, RF_ACTIVE);
 		if (res == NULL)
 			break;
@@ -97,12 +96,11 @@ fdc_isa_alloc_resources(device_t dev, struct fdc_data *fdc)
 		 */
 		i = rman_get_start(res) & 0x7;
 		if (i + rman_get_size(res) - 1 > FDC_MAXREG) {
-			bus_release_resource(dev, SYS_RES_IOPORT, newrid, res);
+			bus_release_resource(dev, res);
 			return (ENXIO);
 		}
 		for (j = 0; j < rman_get_size(res); j++) {
 			fdc->resio[i + j] = res;
-			fdc->ridio[i + j] = newrid;
 			fdc->ioff[i + j] = j;
 			fdc->ioh[i + j] = rman_get_bushandle(res);
 		}
@@ -114,24 +112,21 @@ fdc_isa_alloc_resources(device_t dev, struct fdc_data *fdc)
 	fdc->iot = rman_get_bustag(fdc->resio[2]);
 	if (fdc->resio[7] == NULL) {
 		port = (rman_get_start(fdc->resio[2]) & ~0x7) + 7;
-		newrid = rid;
-		res = bus_alloc_resource(dev, SYS_RES_IOPORT, &newrid, port,
+		res = bus_alloc_resource(dev, SYS_RES_IOPORT, rid, port,
 		    port, 1, RF_ACTIVE);
 		if (res == NULL) {
 			device_printf(dev, "Faking up FDCTL\n");
 			fdc->resio[7] = fdc->resio[2];
-			fdc->ridio[7] = fdc->ridio[2];
 			fdc->ioff[7] = fdc->ioff[2] + 5;
 			fdc->ioh[7] = fdc->ioh[2];
 		} else {
 			fdc->resio[7] = res;
-			fdc->ridio[7] = newrid;
 			fdc->ioff[7] = rman_get_start(res) & 7;
 			fdc->ioh[7] = rman_get_bushandle(res);
 		}
 	}
 
-	fdc->res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &fdc->rid_irq,
+	fdc->res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (fdc->res_irq == NULL) {
 		device_printf(dev, "cannot reserve interrupt line\n");
@@ -139,8 +134,8 @@ fdc_isa_alloc_resources(device_t dev, struct fdc_data *fdc)
 	}
 
 	if ((fdc->flags & FDC_NODMA) == 0) {
-		fdc->res_drq = bus_alloc_resource_any(dev, SYS_RES_DRQ,
-		    &fdc->rid_drq, RF_ACTIVE | RF_SHAREABLE);
+		fdc->res_drq = bus_alloc_resource_any(dev, SYS_RES_DRQ, 0,
+		    RF_ACTIVE | RF_SHAREABLE);
 		if (fdc->res_drq == NULL) {
 			device_printf(dev, "cannot reserve DMA request line\n");
 			/* This is broken and doesn't work for ISA case */

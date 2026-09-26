@@ -1491,7 +1491,6 @@ vmbus_pcib_attach(device_t dev)
 	struct vmbus_channel *channel;
 	struct vmbus_pcib_softc *sc;
 	struct hv_pcibus *hbus;
-	int rid = 0;
 	int ret;
 
 	hbus = malloc(sizeof(*hbus), M_DEVBUF, M_WAITOK | M_ZERO);
@@ -1507,7 +1506,7 @@ vmbus_pcib_attach(device_t dev)
 	TAILQ_INIT(&hbus->children);
 	TAILQ_INIT(&hbus->dr_list);
 
-	hbus->cfg_res = bus_alloc_resource(dev, SYS_RES_MEMORY, &rid,
+	hbus->cfg_res = bus_alloc_resource(dev, SYS_RES_MEMORY, 0,
 	    0, RM_MAX_END, PCI_CONFIG_MMIO_LENGTH,
 	    RF_ACTIVE | rman_make_alignment_flags(PAGE_SIZE));
 
@@ -1585,7 +1584,7 @@ free_res:
 	taskqueue_free(sc->taskq);
 	free_completion(&hbus->query_completion);
 	free(sc->rx_buf, M_DEVBUF);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, hbus->cfg_res);
+	bus_release_resource(dev, hbus->cfg_res);
 free_bus:
 	mtx_destroy(&hbus->device_list_lock);
 	mtx_destroy(&hbus->config_lock);
@@ -1630,7 +1629,7 @@ vmbus_pcib_detach(device_t dev)
 
 	free_completion(&hbus->query_completion);
 	free(sc->rx_buf, M_DEVBUF);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, hbus->cfg_res);
+	bus_release_resource(dev, hbus->cfg_res);
 
 	mtx_destroy(&hbus->device_list_lock);
 	mtx_destroy(&hbus->config_lock);

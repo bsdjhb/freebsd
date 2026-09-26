@@ -856,8 +856,7 @@ bhndb_alloc_intr_isrc(device_t owner, int rid, rman_res_t start, rman_res_t end,
 		return (NULL);
 
 	isrc->is_owner = owner;
-	isrc->is_rid = rid;
-	isrc->is_res = bus_alloc_resource(owner, SYS_RES_IRQ, &isrc->is_rid,
+	isrc->is_res = bus_alloc_resource(owner, SYS_RES_IRQ, rid,
 	    start, end, count, flags);
 	if (isrc->is_res == NULL) {
 		free(isrc, M_BHND);
@@ -875,8 +874,7 @@ bhndb_alloc_intr_isrc(device_t owner, int rid, rman_res_t start, rman_res_t end,
 void
 bhndb_free_intr_isrc(struct bhndb_intr_isrc *isrc)
 {
-	bus_release_resource(isrc->is_owner, SYS_RES_IRQ, isrc->is_rid,
-	    isrc->is_res);
+	bus_release_resource(isrc->is_owner, isrc->is_res);
 	free(isrc, M_BHND);
 }
 

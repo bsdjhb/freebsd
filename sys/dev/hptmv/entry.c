@@ -1298,9 +1298,8 @@ init_adapter(IAL_ADAPTER_T *pAdapter)
 	}
 
 	/* also map EPROM address */
-	rid = 0x10;
 	if (!(pAdapter->mem_res = bus_alloc_resource_any(pAdapter->hpt_dev,
-			SYS_RES_MEMORY, &rid, RF_ACTIVE))
+			SYS_RES_MEMORY, 0x10, RF_ACTIVE))
 		||
 		!(pMvSataAdapter->adapterIoBaseAddress = rman_get_virtual(pAdapter->mem_res)))
 	{
@@ -1333,7 +1332,7 @@ init_adapter(IAL_ADAPTER_T *pAdapter)
 		MV_ERROR("RR18xx[%d]: core failed to initialize the adapter\n",
 				 pMvSataAdapter->adapterId);
 unregister:
-		bus_release_resource(pAdapter->hpt_dev, SYS_RES_MEMORY, rid, pAdapter->mem_res);
+		bus_release_resource(pAdapter->hpt_dev, pAdapter->mem_res);
 		hptmv_free_edma_queues(pAdapter);
 		return ENXIO;
 	}
@@ -1971,7 +1970,7 @@ static int
 hpt_attach(device_t dev)
 {
 	IAL_ADAPTER_T * pAdapter = device_get_softc(dev);
-	int rid;
+	int error;
 	union ccb *ccb;
 	struct cam_devq *devq;
 	struct cam_sim *hpt_vsim;
@@ -1980,12 +1979,11 @@ hpt_attach(device_t dev)
 
 	pAdapter->hpt_dev = dev;
 	
-	rid = init_adapter(pAdapter);
-	if (rid)
-		return rid;
+	error = init_adapter(pAdapter);
+	if (error)
+		return (error);
 
-	rid = 0;
-	if ((pAdapter->hpt_irq = bus_alloc_resource_any(pAdapter->hpt_dev, SYS_RES_IRQ, &rid, RF_SHAREABLE | RF_ACTIVE)) == NULL)
+	if ((pAdapter->hpt_irq = bus_alloc_resource_any(pAdapter->hpt_dev, SYS_RES_IRQ, 0, RF_SHAREABLE | RF_ACTIVE)) == NULL)
 	{
 		hpt_printk(("can't allocate interrupt\n"));
 		return(ENXIO);

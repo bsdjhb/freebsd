@@ -284,16 +284,14 @@ qman_attach(device_t dev)
 	qman_sc = sc;
 
 	/* Allocate resources */
-	sc->sc_rrid = 0;
 	sc->sc_rres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->sc_rres == NULL) {
 		device_printf(dev, "could not allocate memory.\n");
 		goto err;
 	}
 
-	sc->sc_irid = 0;
-	sc->sc_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irid, RF_ACTIVE | RF_SHAREABLE);
+	sc->sc_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sc_ires == NULL) {
 		device_printf(dev, "could not allocate error interrupt.\n");
 		goto err;
@@ -393,12 +391,10 @@ qman_detach(device_t dev)
 		bus_teardown_intr(dev, sc->sc_ires, sc->sc_intr_cookie);
 
 	if (sc->sc_ires != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    sc->sc_irid, sc->sc_ires);
+		bus_release_resource(dev, sc->sc_ires);
 
 	if (sc->sc_rres != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_rrid, sc->sc_rres);
+		bus_release_resource(dev, sc->sc_rres);
 
 	free(qman_fq_list, M_QMAN);
 	qman_fq_list = NULL;

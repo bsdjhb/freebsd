@@ -417,8 +417,7 @@ sec_attach(device_t dev)
 	cd = ofw_bus_search_compatible(dev, compats);
 	sc->sc_version = cd->ocd_data;
 
-	sc->sc_rrid = 0;
-	sc->sc_rres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rrid,
+	sc->sc_rres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_rres == NULL) {
 		device_printf(dev, "could not allocate register resource\n");
@@ -426,8 +425,7 @@ sec_attach(device_t dev)
 	}
 
 	/* TODO: Error IRQ handling. */
-	sc->sc_irid = 0;
-	sc->sc_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->sc_irid,
+	sc->sc_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->sc_ires == NULL) {
 		device_printf(dev, "could not allocate error interrupt\n");
@@ -501,8 +499,7 @@ sec_detach(device_t dev)
 		if (jr->jr_icookie != NULL)
 			bus_teardown_intr(dev, jr->jr_ires, jr->jr_icookie);
 		if (jr->jr_ires != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ, jr->jr_irid,
-			    jr->jr_ires);
+			bus_release_resource(dev, jr->jr_ires);
 		sec_jr_teardown(sc, jr);
 	}
 	free(sc->sc_jr, M_SEC);
@@ -512,11 +509,9 @@ sec_detach(device_t dev)
 	if (sc->sc_icookie != NULL)
 		bus_teardown_intr(dev, sc->sc_ires, sc->sc_icookie);
 	if (sc->sc_ires != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irid,
-		    sc->sc_ires);
+		bus_release_resource(dev, sc->sc_ires);
 	if (sc->sc_rres != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rrid,
-		    sc->sc_rres);
+		bus_release_resource(dev, sc->sc_rres);
 
 	return (0);
 }

@@ -390,12 +390,10 @@ struct hpt_iop_hba {
 	struct resource       *bar0_res;
 	bus_space_tag_t       bar0t;
 	bus_space_handle_t    bar0h;
-	int                   bar0_rid;
 
 	struct resource       *bar2_res;
 	bus_space_tag_t	      bar2t;
 	bus_space_handle_t    bar2h;
-	int                   bar2_rid;
 	
 	/* to release */
 	u_int8_t              *uncached_ptr;

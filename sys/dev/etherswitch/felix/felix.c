@@ -353,7 +353,7 @@ static int
 felix_attach(device_t dev)
 {
 	phandle_t child, ports, node;
-	int error, port, rid;
+	int error, port;
 	felix_softc_t sc;
 	uint32_t phy_addr;
 	ssize_t size;
@@ -363,17 +363,15 @@ felix_attach(device_t dev)
 	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q;
 	strlcpy(sc->info.es_name, "Felix TSN Switch", sizeof(sc->info.es_name));
 
-	rid = PCIR_BAR(FELIX_BAR_MDIO);
-	sc->mdio = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
+	sc->mdio = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(FELIX_BAR_MDIO), RF_ACTIVE);
 	if (sc->mdio == NULL) {
 		device_printf(dev, "Failed to allocate MDIO registers.\n");
 		return (ENXIO);
 	}
 
-	rid = PCIR_BAR(FELIX_BAR_REGS);
-	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
+	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(FELIX_BAR_REGS), RF_ACTIVE);
 	if (sc->regs == NULL) {
 		device_printf(dev, "Failed to allocate registers BAR.\n");
 		error = ENXIO;
@@ -505,12 +503,10 @@ felix_detach(device_t dev)
 	}
 
 	if (sc->regs != NULL)
-		error = bus_release_resource(sc->dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->regs), sc->regs);
+		error = bus_release_resource(sc->dev, sc->regs);
 
 	if (sc->mdio != NULL)
-		error = bus_release_resource(sc->dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->mdio), sc->mdio);
+		error = bus_release_resource(sc->dev, sc->mdio);
 
 	return (error);
 }

@@ -349,9 +349,8 @@ aq_if_attach_pre(if_ctx_t ctx)
 	mtx_init(&softc->hw.fw_mtx, device_get_nameunit(softc->dev),
 	    "aq firmware", MTX_DEF);
 
-	softc->mmio_rid = PCIR_BAR(0);
 	softc->mmio_res = bus_alloc_resource_any(softc->dev, SYS_RES_MEMORY,
-	    &softc->mmio_rid, RF_ACTIVE|RF_SHAREABLE);
+	    PCIR_BAR(0), RF_ACTIVE|RF_SHAREABLE);
 	if (softc->mmio_res == NULL) {
 		device_printf(softc->dev,
 		    "failed to allocate MMIO resources\n");
@@ -458,8 +457,7 @@ aq_if_attach_pre(if_ctx_t ctx)
 
 fail:
 	if (softc->mmio_res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-		    softc->mmio_rid, softc->mmio_res);
+		bus_release_resource(softc->dev, softc->mmio_res);
 	/* iflib skips ifdi_detach when ifdi_attach_pre fails. */
 	mtx_destroy(&softc->hw.fw_mtx);
 
@@ -540,8 +538,7 @@ aq_if_detach(if_ctx_t ctx)
 
 
 	if (softc->mmio_res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-		    softc->mmio_rid, softc->mmio_res);
+		bus_release_resource(softc->dev, softc->mmio_res);
 
 	free(softc->vlan_tags, M_AQ);
 

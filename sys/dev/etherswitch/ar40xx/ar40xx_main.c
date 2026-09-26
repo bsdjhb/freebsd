@@ -325,9 +325,8 @@ ar40xx_attach(device_t dev)
 	}
 
 	/* get switch base address */
-	sc->sc_ess_mem_rid = 0;
-	sc->sc_ess_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_ess_mem_rid, RF_ACTIVE);
+	sc->sc_ess_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_ess_mem_res == NULL) {
 		device_printf(dev, "%s: failed to find memory resource\n",
 		    __func__);

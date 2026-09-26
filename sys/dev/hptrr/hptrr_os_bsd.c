@@ -90,16 +90,17 @@ void *os_map_pci_bar(
 )
 {
 	PHBA hba = (PHBA)osext;
+	int rid, type;
 
-    hba->pcibar[index].rid = 0x10 + index * 4;
+    rid = 0x10 + index * 4;
     
     if (pci_read_config(hba->pcidev, hba->pcibar[index].rid, 4) & 1)
-    	hba->pcibar[index].type = SYS_RES_IOPORT;
+    	type = SYS_RES_IOPORT;
     else
-    	hba->pcibar[index].type = SYS_RES_MEMORY;
+    	type = SYS_RES_MEMORY;
 
     hba->pcibar[index].res = bus_alloc_resource_any(hba->pcidev,
-		hba->pcibar[index].type, &hba->pcibar[index].rid, RF_ACTIVE);
+		type, rid, RF_ACTIVE);
 	
 	hba->pcibar[index].base = (char *)rman_get_virtual(hba->pcibar[index].res) + offset;
 	return hba->pcibar[index].base;
@@ -112,8 +113,7 @@ void os_unmap_pci_bar(void *osext, void *base)
 	
 	for (index=0; index<6; index++) {
 		if (hba->pcibar[index].base==base) {
-			bus_release_resource(hba->pcidev, hba->pcibar[index].type,
-				hba->pcibar[index].rid, hba->pcibar[index].res);
+			bus_release_resource(hba->pcidev, hba->pcibar[index].res);
 			hba->pcibar[index].base = 0;
 			return;
 		}

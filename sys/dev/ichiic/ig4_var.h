@@ -81,9 +81,7 @@ struct ig4iic_softc {
 	device_t	dev;
 	device_t	iicbus;
 	struct resource	*regs_res;
-	int		regs_rid;
 	struct resource	*intr_res;
-	int		intr_rid;
 	void		*intr_handle;
 	int		intr_type;
 	enum ig4_vers	version;
@@ -93,6 +91,7 @@ struct ig4iic_softc {
 	bool		platform_attached : 1;
 	bool		use_10bit : 1;
 	bool		slave_valid : 1;
+	bool		msi : 1;
 
 	/*
 	 * Locking semantics:

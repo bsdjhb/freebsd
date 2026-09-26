@@ -439,7 +439,7 @@ cardbus_read_tuple_finish(device_t cbdev, device_t child, int rid,
     struct resource *res)
 {
 	if (res != CIS_CONFIG_SPACE) {
-		bus_release_resource(child, SYS_RES_MEMORY, rid, res);
+		bus_release_resource(child, res);
 		bus_delete_resource(child, SYS_RES_MEMORY, rid);
 	}
 }

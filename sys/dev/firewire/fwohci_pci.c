@@ -242,13 +242,12 @@ fwohci_pci_attach(device_t self)
 {
 	fwohci_softc_t *sc = device_get_softc(self);
 	int err;
-	int rid;
 
 	mtx_init(FW_GMTX(&sc->fc), "firewire", NULL, MTX_DEF);
 	fwohci_pci_init(self);
 
-	rid = PCI_CBMEM;
-	sc->bsr = bus_alloc_resource_any(self, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->bsr = bus_alloc_resource_any(self, SYS_RES_MEMORY, PCI_CBMEM,
+	    RF_ACTIVE);
 	if (!sc->bsr) {
 		device_printf(self, "Could not map memory\n");
 		return ENXIO;
@@ -257,8 +256,7 @@ fwohci_pci_attach(device_t self)
 	sc->bst = rman_get_bustag(sc->bsr);
 	sc->bsh = rman_get_bushandle(sc->bsr);
 
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(self, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(self, SYS_RES_IRQ, 0,
 				     RF_SHAREABLE | RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(self, "Could not allocate irq\n");
@@ -341,12 +339,12 @@ fwohci_pci_detach(device_t self)
 					 "Could not tear down irq, %d\n", err);
 			sc->ih = NULL;
 		}
-		bus_release_resource(self, SYS_RES_IRQ, 0, sc->irq_res);
+		bus_release_resource(self, sc->irq_res);
 		sc->irq_res = NULL;
 	}
 
 	if (sc->bsr) {
-		bus_release_resource(self, SYS_RES_MEMORY, PCI_CBMEM, sc->bsr);
+		bus_release_resource(self, sc->bsr);
 		sc->bsr = NULL;
 		sc->bst = 0;
 		sc->bsh = 0;

@@ -55,7 +55,6 @@ struct cfi_softc {
 	struct resource	*sc_res;
 	bus_space_handle_t sc_handle;
 	bus_space_tag_t	sc_tag;
-	int		sc_rid;
 
 	u_int		sc_size;	/* Flash size. */
 	u_int		sc_width;	/* Interface width. */

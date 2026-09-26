@@ -84,7 +84,6 @@ atkbdprobe(device_t dev)
 	struct resource *res;
 	u_long irq;
 	int flags;
-	int rid;
 
 	device_set_desc(dev, "AT Keyboard");
 
@@ -92,15 +91,14 @@ atkbdprobe(device_t dev)
 	flags = device_get_flags(dev);
 
 	/* see if IRQ is available */
-	rid = KBDC_RID_KBD;
-	res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	res = bus_alloc_resource_any(dev, SYS_RES_IRQ, KBDC_RID_KBD, RF_ACTIVE);
 	if (res == NULL) {
 		if (bootverbose)
 			device_printf(dev, "unable to allocate IRQ\n");
 		return ENXIO;
 	}
 	irq = rman_get_start(res);
-	bus_release_resource(dev, SYS_RES_IRQ, rid, res);
+	bus_release_resource(dev, res);
 
 	/* probe the device */
 	return atkbd_probe_unit(dev, irq, flags);
@@ -113,7 +111,6 @@ atkbdattach(device_t dev)
 	keyboard_t *kbd;
 	u_long irq;
 	int flags;
-	int rid;
 	int error;
 
 	sc = device_get_softc(dev);
@@ -126,13 +123,13 @@ atkbdattach(device_t dev)
 		return error;
 
 	/* declare our interrupt handler */
-	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid, RF_ACTIVE);
 	if (sc->intr == NULL)
 		return ENXIO;
 	error = bus_setup_intr(dev, sc->intr, INTR_TYPE_TTY, NULL, atkbdintr,
 			       kbd, &sc->ih);
 	if (error)
-		bus_release_resource(dev, SYS_RES_IRQ, rid, sc->intr);
+		bus_release_resource(dev, sc->intr);
 
 	return error;
 }

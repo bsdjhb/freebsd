@@ -28,7 +28,6 @@ struct enic_bar_info {
 	bus_space_tag_t		tag;
 	bus_space_handle_t	handle;
 	bus_size_t		size;
-	int			rid;
 	int			offset;
 };
 

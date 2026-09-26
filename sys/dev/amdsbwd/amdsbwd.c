@@ -93,8 +93,6 @@ struct amdsbwd_softc {
 	eventhandler_tag	ev_tag;
 	struct resource		*res_ctrl;
 	struct resource		*res_count;
-	int			rid_ctrl;
-	int			rid_count;
 	int			ms_per_tick;
 	int			max_ticks;
 	int			active;
@@ -424,7 +422,6 @@ amdsbwd_probe(device_t dev)
 	struct resource		*res;
 	device_t		smb_dev;
 	uint32_t		addr;
-	int			rid;
 	int			rc;
 	uint32_t		devid;
 	uint8_t			revid;
@@ -439,8 +436,7 @@ amdsbwd_probe(device_t dev)
 		device_printf(dev, "bus_set_resource for IO failed\n");
 		return (ENXIO);
 	}
-	rid = 0;
-	res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (res == NULL) {
 		device_printf(dev, "bus_alloc_resource for IO failed\n");
@@ -460,8 +456,8 @@ amdsbwd_probe(device_t dev)
 	else
 		amdsbwd_probe_fch41(dev, res, &addr);
 
-	bus_release_resource(dev, SYS_RES_IOPORT, rid, res);
-	bus_delete_resource(dev, SYS_RES_IOPORT, rid);
+	bus_release_resource(dev, res);
+	bus_delete_resource(dev, SYS_RES_IOPORT, 0);
 
 	amdsbwd_verbose_printf(dev, "memory base address = %#010x\n", addr);
 	rc = bus_set_resource(dev, SYS_RES_MEMORY, 0, addr + AMDSB_WD_CTRL,
@@ -485,19 +481,16 @@ amdsbwd_attach_sb(device_t dev, struct amdsbwd_softc *sc)
 {
 
 	sc->max_ticks = UINT16_MAX;
-	sc->rid_ctrl = 0;
-	sc->rid_count = 1;
-
 	sc->ms_per_tick = 1000;
 
-	sc->res_ctrl = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->rid_ctrl, RF_ACTIVE);
+	sc->res_ctrl = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->res_ctrl == NULL) {
 		device_printf(dev, "bus_alloc_resource for ctrl failed\n");
 		return (ENXIO);
 	}
-	sc->res_count = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->rid_count, RF_ACTIVE);
+	sc->res_count = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
+	    RF_ACTIVE);
 	if (sc->res_count == NULL) {
 		device_printf(dev, "bus_alloc_resource for count failed\n");
 		return (ENXIO);
@@ -554,12 +547,10 @@ amdsbwd_detach(device_t dev)
 		amdsbwd_tmr_disable(sc);
 
 	if (sc->res_ctrl != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->rid_ctrl,
-		    sc->res_ctrl);
+		bus_release_resource(dev, sc->res_ctrl);
 
 	if (sc->res_count != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->rid_count,
-		    sc->res_count);
+		bus_release_resource(dev, sc->res_count);
 
 	return (0);
 }

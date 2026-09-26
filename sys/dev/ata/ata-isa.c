@@ -60,15 +60,13 @@ ata_isa_probe(device_t dev)
 {
     struct resource *io = NULL, *ctlio = NULL;
     rman_res_t tmp;
-    int rid;
 
     /* check isapnp ids */
     if (ISA_PNP_PROBE(device_get_parent(dev), dev, ata_ids) == ENXIO)
 	return ENXIO;
 
     /* allocate the io port range */
-    rid = ATA_IOADDR_RID;
-    if (!(io = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, &rid,
+    if (!(io = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, ATA_IOADDR_RID,
 					   ATA_IOSIZE, RF_ACTIVE)))
 	return ENXIO;
 
@@ -79,16 +77,15 @@ ata_isa_probe(device_t dev)
     }
 
     /* allocate the altport range */
-    rid = ATA_CTLADDR_RID; 
-    if (!(ctlio = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, &rid,
-					      ATA_CTLIOSIZE, RF_ACTIVE))) {
-	bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID, io);
+    if (!(ctlio = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT,
+	ATA_CTLADDR_RID, ATA_CTLIOSIZE, RF_ACTIVE))) {
+	bus_release_resource(dev, io);
 	return ENXIO;
     }
 
     /* Release resources to reallocate on attach. */
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_CTLADDR_RID, ctlio);
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID, io);
+    bus_release_resource(dev, ctlio);
+    bus_release_resource(dev, io);
 
     device_set_desc(dev, "ATA channel");
     return (ata_probe(dev));
@@ -100,15 +97,14 @@ ata_isa_attach(device_t dev)
     struct ata_channel *ch = device_get_softc(dev);
     struct resource *io = NULL, *ctlio = NULL;
     rman_res_t tmp;
-    int i, rid;
+    int i;
 
     if (ch->attached)
 	return (0);
     ch->attached = 1;
 
     /* allocate the io port range */
-    rid = ATA_IOADDR_RID;
-    if (!(io = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, &rid,
+    if (!(io = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, ATA_IOADDR_RID,
 					   ATA_IOSIZE, RF_ACTIVE)))
 	return ENXIO;
 
@@ -119,10 +115,9 @@ ata_isa_attach(device_t dev)
     }
 
     /* allocate the altport range */
-    rid = ATA_CTLADDR_RID; 
-    if (!(ctlio = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT, &rid,
-					      ATA_CTLIOSIZE, RF_ACTIVE))) {
-	bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID, io);
+    if (!(ctlio = bus_alloc_resource_anywhere(dev, SYS_RES_IOPORT,
+	ATA_CTLADDR_RID, ATA_CTLIOSIZE, RF_ACTIVE))) {
+	bus_release_resource(dev, io);
 	return ENXIO;
     }
 
@@ -155,10 +150,8 @@ ata_isa_detach(device_t dev)
 
     error = ata_detach(dev);
 
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_CTLADDR_RID,
-	ch->r_io[ATA_CONTROL].res);
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID,
-	ch->r_io[ATA_IDX_ADDR].res);
+    bus_release_resource(dev, ch->r_io[ATA_CONTROL].res);
+    bus_release_resource(dev, ch->r_io[ATA_IDX_ADDR].res);
     return (error);
 }
 

@@ -1470,9 +1470,8 @@ em_if_attach_pre(if_ctx_t ctx)
 	    (hw->mac.type == e1000_pchlan) ||
 	    (hw->mac.type == e1000_pch2lan) ||
 	    (hw->mac.type == e1000_pch_lpt)) {
-		int rid = EM_BAR_TYPE_FLASH;
 		sc->flash = bus_alloc_resource_any(dev,
-		    SYS_RES_MEMORY, &rid, RF_ACTIVE);
+		    SYS_RES_MEMORY, EM_BAR_TYPE_FLASH, RF_ACTIVE);
 		if (sc->flash == NULL) {
 			device_printf(dev, "Mapping of Flash failed\n");
 			error = ENXIO;
@@ -4230,8 +4229,7 @@ em_allocate_pci_resources(if_ctx_t ctx)
 	device_t dev = iflib_get_dev(ctx);
 	int rid, val;
 
-	rid = PCIR_BAR(0);
-	sc->memory = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->memory = bus_alloc_resource_any(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 	    RF_ACTIVE);
 	if (sc->memory == NULL) {
 		device_printf(dev,
@@ -4263,7 +4261,7 @@ em_allocate_pci_resources(if_ctx_t ctx)
 			return (ENXIO);
 		}
 		sc->ioport = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-		    &rid, RF_ACTIVE);
+		    rid, RF_ACTIVE);
 		if (sc->ioport == NULL) {
 			device_printf(dev,
 			    "Unable to allocate bus resource: ioport\n");
@@ -4584,20 +4582,17 @@ em_free_pci_resources(if_ctx_t ctx)
 	}
 
 	if (sc->memory != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->memory), sc->memory);
+		bus_release_resource(dev, sc->memory);
 		sc->memory = NULL;
 	}
 
 	if (sc->flash != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->flash), sc->flash);
+		bus_release_resource(dev, sc->flash);
 		sc->flash = NULL;
 	}
 
 	if (sc->ioport != NULL) {
-		bus_release_resource(dev, SYS_RES_IOPORT,
-		    rman_get_rid(sc->ioport), sc->ioport);
+		bus_release_resource(dev, sc->ioport);
 		sc->ioport = NULL;
 	}
 }

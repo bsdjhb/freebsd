@@ -117,7 +117,7 @@ acpi_timer_identify(driver_t *driver, device_t parent)
 {
     device_t dev;
     rman_res_t rlen, rstart;
-    int rid, rtype;
+    int rtype;
 
     ACPI_FUNCTION_TRACE((char *)(uintptr_t)__func__);
 
@@ -141,10 +141,9 @@ acpi_timer_identify(driver_t *driver, device_t parent)
     default:
 	return_VOID;
     }
-    rid = 0;
     rlen = AcpiGbl_FADT.PmTimerLength;
     rstart = AcpiGbl_FADT.XPmTimerBlock.Address;
-    if (bus_set_resource(dev, rtype, rid, rstart, rlen))
+    if (bus_set_resource(dev, rtype, 0, rstart, rlen))
 	device_printf(dev, "couldn't set resource (%s 0x%jx+0x%jx)\n",
 	    (rtype == SYS_RES_IOPORT) ? "port" : "mem", rstart, rlen);
     return_VOID;
@@ -153,7 +152,7 @@ acpi_timer_identify(driver_t *driver, device_t parent)
 static int
 acpi_timer_probe(device_t dev)
 {
-    int rid, rtype;
+    int rtype;
 
     ACPI_FUNCTION_TRACE((char *)(uintptr_t)__func__);
 
@@ -170,8 +169,7 @@ acpi_timer_probe(device_t dev)
     default:
 	return (ENXIO);
     }
-    rid = 0;
-    acpi_timer_reg = bus_alloc_resource_any(dev, rtype, &rid, RF_ACTIVE);
+    acpi_timer_reg = bus_alloc_resource_any(dev, rtype, 0, RF_ACTIVE);
     if (acpi_timer_reg == NULL) {
 	device_printf(dev, "couldn't allocate resource (%s 0x%lx)\n",
 	    (rtype == SYS_RES_IOPORT) ? "port" : "mem",
@@ -197,14 +195,14 @@ acpi_timer_probe(device_t dev)
 	acpi_timer_frequency / 1000000, acpi_timer_frequency % 1000000);
 
     /* Release the resource, we'll allocate it again during attach. */
-    bus_release_resource(dev, rtype, rid, acpi_timer_reg);
+    bus_release_resource(dev, acpi_timer_reg);
     return (0);
 }
 
 static int
 acpi_timer_attach(device_t dev)
 {
-    int rid, rtype;
+    int rtype;
 
     ACPI_FUNCTION_TRACE((char *)(uintptr_t)__func__);
 
@@ -218,8 +216,7 @@ acpi_timer_attach(device_t dev)
     default:
 	return (ENXIO);
     }
-    rid = 0;
-    acpi_timer_reg = bus_alloc_resource_any(dev, rtype, &rid, RF_ACTIVE);
+    acpi_timer_reg = bus_alloc_resource_any(dev, rtype, 0, RF_ACTIVE);
     if (acpi_timer_reg == NULL)
 	return (ENXIO);
     acpi_timer_bsh = rman_get_bushandle(acpi_timer_reg);

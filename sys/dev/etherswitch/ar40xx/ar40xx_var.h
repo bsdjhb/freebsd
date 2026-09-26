@@ -62,7 +62,6 @@ struct ar40xx_softc {
 
 	/* ess-switch memory resource */
 	struct resource	*sc_ess_mem_res;
-	int		sc_ess_mem_rid;
 	size_t		sc_ess_mem_size;
 
 	/* ess-switch clock resource */

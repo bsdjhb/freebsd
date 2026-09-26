@@ -201,9 +201,8 @@ aacraid_pci_attach(device_t dev)
 	/*
 	 * Allocate the PCI register window.
 	 */
-	sc->aac_regs_rid0 = PCIR_BAR(0);
 	if ((sc->aac_regs_res0 = bus_alloc_resource_any(sc->aac_dev,
-	    SYS_RES_MEMORY, &sc->aac_regs_rid0, RF_ACTIVE)) == NULL) {
+	    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE)) == NULL) {
 		device_printf(sc->aac_dev,
 		    "couldn't allocate register window 0\n");
 		goto out;
@@ -211,9 +210,8 @@ aacraid_pci_attach(device_t dev)
 	sc->aac_btag0 = rman_get_bustag(sc->aac_regs_res0);
 	sc->aac_bhandle0 = rman_get_bushandle(sc->aac_regs_res0);
 
-	sc->aac_regs_rid1 = PCIR_BAR(2);
 	if ((sc->aac_regs_res1 = bus_alloc_resource_any(sc->aac_dev,
-	    SYS_RES_MEMORY, &sc->aac_regs_rid1, RF_ACTIVE)) == NULL) {
+	    SYS_RES_MEMORY, PCIR_BAR(2), RF_ACTIVE)) == NULL) {
 		device_printf(sc->aac_dev,
 		    "couldn't allocate register window 1\n");
 		goto out;

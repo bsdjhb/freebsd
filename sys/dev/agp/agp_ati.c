@@ -166,7 +166,7 @@ static int
 agp_ati_attach(device_t dev)
 {
 	struct agp_ati_softc *sc = device_get_softc(dev);
-	int error, rid;
+	int error;
 	u_int32_t temp;
 	u_int32_t apsize_reg, agpmode_reg;
 
@@ -196,8 +196,8 @@ agp_ati_attach(device_t dev)
 		return EINVAL;
 	}
 
-	rid = ATI_GART_MMADDR;
-	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, ATI_GART_MMADDR,
+	    RF_ACTIVE);
 	if (!sc->regs) {
 		agp_generic_detach(dev);
 		return ENOMEM;
@@ -262,7 +262,7 @@ agp_ati_detach(device_t dev)
 	kmem_free(sc->ag_vdir, AGP_PAGE_SIZE);
 	kmem_free(sc->ag_virtual, sc->ag_entries * sizeof(uint32_t));
 
-	bus_release_resource(dev, SYS_RES_MEMORY, ATI_GART_MMADDR, sc->regs);
+	bus_release_resource(dev, sc->regs);
 	agp_free_res(dev);
 
 	return 0;

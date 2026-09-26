@@ -128,10 +128,8 @@ ata_serverworks_chipinit(device_t dev)
 	return ENXIO;
 
     if (ctlr->chip->cfg1 == SWKS_MIO) {
-	ctlr->r_type2 = SYS_RES_MEMORY;
-	ctlr->r_rid2 = PCIR_BAR(5);
-	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						    &ctlr->r_rid2, RF_ACTIVE)))
+	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(5), RF_ACTIVE)))
 	    return ENXIO;
 
 	ctlr->channels = ctlr->chip->cfg2;

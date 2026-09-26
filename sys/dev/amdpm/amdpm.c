@@ -119,8 +119,6 @@ static int amdpm_debug = 0;
 #define AMDSMB_SNPADDR  (0x0F)
 
 struct amdpm_softc {
-	int base;
-	int rid;
 	struct resource *res;
 	device_t smbus;
 	struct mtx lock;
@@ -191,6 +189,7 @@ static int
 amdpm_attach(device_t dev)
 {
 	struct amdpm_softc *amdpm_sc = device_get_softc(dev);
+	int rid;
 	u_char val_b;
 
 	/* Enable I/O block access */
@@ -200,11 +199,11 @@ amdpm_attach(device_t dev)
 	/* Allocate I/O space */
 	if (pci_get_vendor(dev) == AMDPM_VENDORID_AMD ||
 	    pci_get_vendor(dev) == AMDPM_VENDORID_HYGON)
-		amdpm_sc->rid = AMDPCI_PMBASE;
+		rid = AMDPCI_PMBASE;
 	else
-		amdpm_sc->rid = NFPCI_PMBASE;
-	amdpm_sc->res = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-		&amdpm_sc->rid, RF_ACTIVE);
+		rid = NFPCI_PMBASE;
+	amdpm_sc->res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, rid,
+	    RF_ACTIVE);
 
 	if (amdpm_sc->res == NULL) {
 		device_printf(dev, "could not map i/o space\n");
@@ -237,8 +236,7 @@ amdpm_detach(device_t dev)
 
 	mtx_destroy(&amdpm_sc->lock);
 	if (amdpm_sc->res)
-		bus_release_resource(dev, SYS_RES_IOPORT, amdpm_sc->rid,
-				     amdpm_sc->res);
+		bus_release_resource(dev, amdpm_sc->res);
 
 	return (0);
 }

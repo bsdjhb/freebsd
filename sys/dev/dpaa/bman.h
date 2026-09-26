@@ -46,9 +46,7 @@
 
 struct bman_softc {
 	device_t	sc_dev;			/* device handle */
-	int		sc_rrid;		/* register rid */
 	struct resource	*sc_rres;		/* register resource */
-	int		sc_irid;		/* interrupt rid */
 	struct resource	*sc_ires;		/* interrupt resource */
 	void		*sc_icookie;
 	vmem_t		*sc_vmem;		/* resource pool */

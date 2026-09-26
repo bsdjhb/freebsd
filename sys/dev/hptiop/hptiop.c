@@ -1404,9 +1404,8 @@ static	bus_dmamap_callback_t	hptiop_mvfrey_map_ctlcfg;
 
 static int hptiop_alloc_pci_res_itl(struct hpt_iop_hba *hba)
 {
-	hba->bar0_rid = 0x10;
 	hba->bar0_res = bus_alloc_resource_any(hba->pcidev,
-			SYS_RES_MEMORY, &hba->bar0_rid, RF_ACTIVE);
+			SYS_RES_MEMORY, 0x10, RF_ACTIVE);
 
 	if (hba->bar0_res == NULL) {
 		device_printf(hba->pcidev,
@@ -1419,8 +1418,7 @@ static int hptiop_alloc_pci_res_itl(struct hpt_iop_hba *hba)
 				rman_get_virtual(hba->bar0_res);
 
 	if (!hba->u.itl.mu) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 		device_printf(hba->pcidev, "alloc mem res failed\n");
 		return -1;
 	}
@@ -1430,9 +1428,8 @@ static int hptiop_alloc_pci_res_itl(struct hpt_iop_hba *hba)
 
 static int hptiop_alloc_pci_res_mv(struct hpt_iop_hba *hba)
 {
-	hba->bar0_rid = 0x10;
 	hba->bar0_res = bus_alloc_resource_any(hba->pcidev,
-			SYS_RES_MEMORY, &hba->bar0_rid, RF_ACTIVE);
+			SYS_RES_MEMORY, 0x10, RF_ACTIVE);
 
 	if (hba->bar0_res == NULL) {
 		device_printf(hba->pcidev, "failed to get iop bar0.\n");
@@ -1444,19 +1441,16 @@ static int hptiop_alloc_pci_res_mv(struct hpt_iop_hba *hba)
 				rman_get_virtual(hba->bar0_res);
 
 	if (!hba->u.mv.regs) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 		device_printf(hba->pcidev, "alloc bar0 mem res failed\n");
 		return -1;
 	}
 
-	hba->bar2_rid = 0x18;
 	hba->bar2_res = bus_alloc_resource_any(hba->pcidev,
-			SYS_RES_MEMORY, &hba->bar2_rid, RF_ACTIVE);
+			SYS_RES_MEMORY, 0x18, RF_ACTIVE);
 
 	if (hba->bar2_res == NULL) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 		device_printf(hba->pcidev, "failed to get iop bar2.\n");
 		return -1;
 	}
@@ -1466,10 +1460,8 @@ static int hptiop_alloc_pci_res_mv(struct hpt_iop_hba *hba)
 	hba->u.mv.mu = (struct hpt_iopmu_mv *)rman_get_virtual(hba->bar2_res);
 
 	if (!hba->u.mv.mu) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar2_rid, hba->bar2_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar2_res);
 		device_printf(hba->pcidev, "alloc mem bar2 res failed\n");
 		return -1;
 	}
@@ -1479,9 +1471,8 @@ static int hptiop_alloc_pci_res_mv(struct hpt_iop_hba *hba)
 
 static int hptiop_alloc_pci_res_mvfrey(struct hpt_iop_hba *hba)
 {
-	hba->bar0_rid = 0x10;
 	hba->bar0_res = bus_alloc_resource_any(hba->pcidev,
-			SYS_RES_MEMORY, &hba->bar0_rid, RF_ACTIVE);
+			SYS_RES_MEMORY, 0x10, RF_ACTIVE);
 
 	if (hba->bar0_res == NULL) {
 		device_printf(hba->pcidev, "failed to get iop bar0.\n");
@@ -1493,19 +1484,16 @@ static int hptiop_alloc_pci_res_mvfrey(struct hpt_iop_hba *hba)
 				rman_get_virtual(hba->bar0_res);
 
 	if (!hba->u.mvfrey.config) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 		device_printf(hba->pcidev, "alloc bar0 mem res failed\n");
 		return -1;
 	}
 
-	hba->bar2_rid = 0x18;
 	hba->bar2_res = bus_alloc_resource_any(hba->pcidev,
-			SYS_RES_MEMORY, &hba->bar2_rid, RF_ACTIVE);
+			SYS_RES_MEMORY, 0x18, RF_ACTIVE);
 
 	if (hba->bar2_res == NULL) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 		device_printf(hba->pcidev, "failed to get iop bar2.\n");
 		return -1;
 	}
@@ -1516,10 +1504,8 @@ static int hptiop_alloc_pci_res_mvfrey(struct hpt_iop_hba *hba)
 					(struct hpt_iopmu_mvfrey *)rman_get_virtual(hba->bar2_res);
 
 	if (!hba->u.mvfrey.mu) {
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar2_rid, hba->bar2_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar2_res);
 		device_printf(hba->pcidev, "alloc mem bar2 res failed\n");
 		return -1;
 	}
@@ -1530,28 +1516,23 @@ static int hptiop_alloc_pci_res_mvfrey(struct hpt_iop_hba *hba)
 static void hptiop_release_pci_res_itl(struct hpt_iop_hba *hba)
 {
 	if (hba->bar0_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-			hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 }
 
 static void hptiop_release_pci_res_mv(struct hpt_iop_hba *hba)
 {
 	if (hba->bar0_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-			hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 	if (hba->bar2_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-			hba->bar2_rid, hba->bar2_res);
+		bus_release_resource(hba->pcidev, hba->bar2_res);
 }
 
 static void hptiop_release_pci_res_mvfrey(struct hpt_iop_hba *hba)
 {
 	if (hba->bar0_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-			hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 	if (hba->bar2_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-			hba->bar2_rid, hba->bar2_res);
+		bus_release_resource(hba->pcidev, hba->bar2_res);
 }
 
 static int hptiop_internal_memalloc_mv(struct hpt_iop_hba *hba)
@@ -1867,7 +1848,6 @@ static int hptiop_attach(device_t dev)
 	struct hpt_iop_hba *hba = (struct hpt_iop_hba *)device_get_softc(dev);
 	struct hpt_iop_request_get_config  iop_config;
 	struct hpt_iop_request_set_config  set_config;
-	int rid = 0;
 	struct cam_devq *devq;
 	struct ccb_setasync ccb;
 	u_int32_t unit = device_get_unit(dev);
@@ -2039,9 +2019,8 @@ static int hptiop_attach(device_t dev)
 	ccb.callback_arg = hba->sim;
 	xpt_action((union ccb *)&ccb);
 
-	rid = 0;
 	if ((hba->irq_res = bus_alloc_resource_any(hba->pcidev, SYS_RES_IRQ,
-			&rid, RF_SHAREABLE | RF_ACTIVE)) == NULL) {
+			0, RF_SHAREABLE | RF_ACTIVE)) == NULL) {
 		device_printf(dev, "allocate irq failed!\n");
 		goto free_hba_path;
 	}
@@ -2834,14 +2813,11 @@ static void hptiop_release_resource(struct hpt_iop_hba *hba)
 		bus_dma_tag_destroy(hba->parent_dmat);
 
 	if (hba->irq_res)
-		bus_release_resource(hba->pcidev, SYS_RES_IRQ,
-					0, hba->irq_res);
+		bus_release_resource(hba->pcidev, hba->irq_res);
 
 	if (hba->bar0_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar0_rid, hba->bar0_res);
+		bus_release_resource(hba->pcidev, hba->bar0_res);
 	if (hba->bar2_res)
-		bus_release_resource(hba->pcidev, SYS_RES_MEMORY,
-					hba->bar2_rid, hba->bar2_res);
+		bus_release_resource(hba->pcidev, hba->bar2_res);
 	mtx_destroy(&hba->lock);
 }

@@ -960,12 +960,9 @@ struct adapter {
 	const struct devnames *names;
 
 	/* PCIe register resources */
-	int regs_rid;
 	struct resource *regs_res;
-	int msix_rid;
 	struct resource *msix_res;
 	bus_size_t mmio_len;
-	int udbs_rid;
 	struct resource *udbs_res;
 	volatile uint8_t *udbs_base;
 
@@ -979,7 +976,6 @@ struct adapter {
 	int intr_count;
 	struct irq {
 		struct resource *res;
-		int rid;
 		void *tag;
 		struct sge_rxq *rxq;
 		struct sge_nm_rxq *nm_rxq;

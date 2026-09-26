@@ -239,16 +239,12 @@ ata_promise_chipinit(device_t dev)
 	return 0;
 
     case PR_MIO:
-	ctlr->r_type1 = SYS_RES_MEMORY;
-	ctlr->r_rid1 = PCIR_BAR(4);
-	if (!(ctlr->r_res1 = bus_alloc_resource_any(dev, ctlr->r_type1,
-						    &ctlr->r_rid1, RF_ACTIVE)))
+	if (!(ctlr->r_res1 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(4), RF_ACTIVE)))
 	    goto failnfree;
 
-	ctlr->r_type2 = SYS_RES_MEMORY;
-	ctlr->r_rid2 = PCIR_BAR(3);
-	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						    &ctlr->r_rid2, RF_ACTIVE)))
+	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(3), RF_ACTIVE)))
 	    goto failnfree;
 
 	if (ctlr->chip->cfg2 == PR_SX4X) {
@@ -346,9 +342,9 @@ sataii:
 
 failnfree:
     if (ctlr->r_res2)
-	bus_release_resource(dev, ctlr->r_type2, ctlr->r_rid2, ctlr->r_res2);
+	bus_release_resource(dev, ctlr->r_res2);
     if (ctlr->r_res1)
-	bus_release_resource(dev, ctlr->r_type1, ctlr->r_rid1, ctlr->r_res1);
+	bus_release_resource(dev, ctlr->r_res1);
     return ENXIO;
 }
 

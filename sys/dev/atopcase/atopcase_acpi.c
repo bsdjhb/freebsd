@@ -269,7 +269,7 @@ atopcase_acpi_attach(device_t dev)
 
 	err = ENXIO;
 	sc->sc_irq_res = bus_alloc_resource_any(sc->sc_dev,
-	    SYS_RES_IRQ, &sc->sc_irq_rid, RF_ACTIVE);
+	    SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->sc_irq_res != NULL) {
 		if (bus_setup_intr(dev, sc->sc_irq_res,
 		      INTR_TYPE_MISC | INTR_MPSAFE, NULL,
@@ -350,8 +350,7 @@ atopcase_acpi_detach(device_t dev)
 	if (sc->sc_irq_ih)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_irq_ih);
 	if (sc->sc_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 
 	if (sc->sc_tq != NULL) {
 		while (taskqueue_cancel_timeout(sc->sc_tq, &sc->sc_task, NULL))

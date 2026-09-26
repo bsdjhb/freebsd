@@ -94,7 +94,7 @@ int
 ata_attach(device_t dev)
 {
     struct ata_channel *ch = device_get_softc(dev);
-    int error, rid;
+    int error;
     struct cam_devq *devq;
     const char *res;
     char buf[64];
@@ -155,8 +155,7 @@ ata_attach(device_t dev)
 	ch->dma.alloc(dev);
 
     /* setup interrupt delivery */
-    rid = ATA_IRQ_RID;
-    ch->r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+    ch->r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, ATA_IRQ_RID,
 				       RF_SHAREABLE | RF_ACTIVE);
     if (!ch->r_irq) {
 	device_printf(dev, "unable to allocate interrupt\n");
@@ -164,7 +163,7 @@ ata_attach(device_t dev)
     }
     if ((error = bus_setup_intr(dev, ch->r_irq, ATA_INTR_FLAGS, NULL,
 				ata_interrupt, ch, &ch->ih))) {
-	bus_release_resource(dev, SYS_RES_IRQ, rid, ch->r_irq);
+	bus_release_resource(dev, ch->r_irq);
 	device_printf(dev, "unable to setup interrupt\n");
 	return error;
     }
@@ -208,7 +207,7 @@ err2:
 	cam_sim_free(ch->sim, /*free_devq*/TRUE);
 	ch->sim = NULL;
 err1:
-	bus_release_resource(dev, SYS_RES_IRQ, rid, ch->r_irq);
+	bus_release_resource(dev, ch->r_irq);
 	mtx_unlock(&ch->state_mtx);
 	if (ch->flags & ATA_PERIODIC_POLL)
 		callout_drain(&ch->poll_callout);
@@ -243,7 +242,7 @@ ata_detach(device_t dev)
 
     /* release resources */
     bus_teardown_intr(dev, ch->r_irq, ch->ih);
-    bus_release_resource(dev, SYS_RES_IRQ, ATA_IRQ_RID, ch->r_irq);
+    bus_release_resource(dev, ch->r_irq);
     ch->r_irq = NULL;
 
     /* free DMA resources if DMA HW present*/

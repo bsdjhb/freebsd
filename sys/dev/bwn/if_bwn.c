@@ -571,17 +571,15 @@ bwn_attach(device_t dev)
 	}
 
 	/* Allocate our D11 register block and PMU state */
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(sc->sc_dev, "couldn't allocate registers\n");
 		return (error);
 	}
 
 	if ((error = bhnd_alloc_pmu(sc->sc_dev))) {
-		bus_release_resource(sc->sc_dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(sc->sc_dev, sc->sc_mem_res);
 		return (error);
 	}
 
@@ -646,9 +644,8 @@ bwn_attach(device_t dev)
 	    "Note: compiled with BWN_GPL_PHY; includes GPLv2 code\n");
 #endif
 
-	mac->mac_rid_irq = 0;
-	mac->mac_res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &mac->mac_rid_irq, RF_ACTIVE | RF_SHAREABLE);
+	mac->mac_res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE | RF_SHAREABLE);
 
 	if (mac->mac_res_irq == NULL) {
 		device_printf(sc->sc_dev, "couldn't allocate IRQ resource\n");
@@ -676,8 +673,7 @@ bwn_attach(device_t dev)
 	return (0);
 fail:
 	if (mac != NULL && mac->mac_res_irq != NULL) {
-		bus_release_resource(dev, SYS_RES_IRQ, mac->mac_rid_irq,
-		    mac->mac_res_irq);
+		bus_release_resource(dev, mac->mac_res_irq);
 	}
 
 	free(mac, M_DEVBUF);
@@ -685,8 +681,7 @@ fail:
 	bwn_release_bus_providers(sc);
 
 	if (sc->sc_mem_res != NULL) {
-		bus_release_resource(sc->sc_dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(sc->sc_dev, sc->sc_mem_res);
 	}
 
 	return (error);
@@ -875,10 +870,8 @@ bwn_detach(device_t dev)
 	}
 
 	bhnd_release_pmu(dev);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-	    sc->sc_mem_res);
-	bus_release_resource(dev, SYS_RES_IRQ, mac->mac_rid_irq,
-	    mac->mac_res_irq);
+	bus_release_resource(dev, sc->sc_mem_res);
+	bus_release_resource(dev, mac->mac_res_irq);
 	mbufq_drain(&sc->sc_snd);
 	bwn_release_firmware(mac);
 	BWN_LOCK_DESTROY(sc);

@@ -246,9 +246,8 @@ et_attach(device_t dev)
 	/*
 	 * Allocate IO memory
 	 */
-	sc->sc_mem_rid = PCIR_BAR(0);
 	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	    PCIR_BAR(0), RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "can't allocate IO memory\n");
 		return (ENXIO);
@@ -278,13 +277,11 @@ et_attach(device_t dev)
 	 * Allocate IRQ
 	 */
 	if ((sc->sc_flags & ET_FLAG_MSI) == 0) {
-		sc->sc_irq_rid = 0;
-		sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &sc->sc_irq_rid, RF_SHAREABLE | RF_ACTIVE);
+		sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+		    RF_SHAREABLE | RF_ACTIVE);
 	} else {
-		sc->sc_irq_rid = 1;
-		sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &sc->sc_irq_rid, RF_ACTIVE);
+		sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1,
+		    RF_ACTIVE);
 	}
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "can't allocate irq\n");
@@ -375,13 +372,11 @@ et_detach(device_t dev)
 	if (sc->sc_irq_handle != NULL)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_irq_handle);
 	if (sc->sc_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->sc_irq_res), sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if ((sc->sc_flags & ET_FLAG_MSI) != 0)
 		pci_release_msi(dev);
 	if (sc->sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->sc_mem_res), sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	if (sc->ifp != NULL)
 		if_free(sc->ifp);

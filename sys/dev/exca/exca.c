@@ -897,8 +897,8 @@ exca_alloc_resource(struct exca_softc *sc, device_t child, int type, int rid,
 		return (NULL);
 	cbb_insert_res(sc, res, type, rid);
 	if (flags & RF_ACTIVE) {
-		if (bus_activate_resource(child, type, rid, res) != 0) {
-			bus_release_resource(child, type, rid, res);
+		if (bus_activate_resource(child, res) != 0) {
+			bus_release_resource(child, res);
 			return (NULL);
 		}
 	}
@@ -907,19 +907,19 @@ exca_alloc_resource(struct exca_softc *sc, device_t child, int type, int rid,
 }
 
 static int
-exca_release_resource(struct exca_softc *sc, device_t child, int type,
-    int rid, struct resource *res)
+exca_release_resource(struct exca_softc *sc, device_t child,
+    struct resource *res)
 {
 	int error;
 
 	if (rman_get_flags(res) & RF_ACTIVE) {
-		error = bus_deactivate_resource(child, type, rid, res);
+		error = bus_deactivate_resource(child, res);
 		if (error != 0)
 			return (error);
 	}
 	cbb_remove_res(sc, res);
 	return (BUS_RELEASE_RESOURCE(device_get_parent(brdev), child,
-	    type, rid, res));
+	    res));
 }
 #endif
 

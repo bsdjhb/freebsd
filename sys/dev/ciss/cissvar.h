@@ -187,12 +187,10 @@ struct ciss_softc
     struct cdev			*ciss_dev_t;		/* control device */
 
     struct resource		*ciss_regs_resource;	/* register interface window */
-    int				ciss_regs_rid;		/* resource ID */
     bus_space_handle_t		ciss_regs_bhandle;	/* bus space handle */
     bus_space_tag_t		ciss_regs_btag;		/* bus space tag */
 
     struct resource		*ciss_cfg_resource;	/* config struct interface window */
-    int				ciss_cfg_rid;		/* resource ID */
     struct ciss_config_table	*ciss_cfg;		/* config table in adapter memory */
     struct ciss_perf_config	*ciss_perf;		/* config table for the performant */
     struct ciss_bmic_id_table	*ciss_id;		/* ID table in host memory */

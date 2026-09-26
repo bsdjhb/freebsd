@@ -1379,7 +1379,6 @@ psmprobe(device_t dev)
 	int stat[3];
 	int command_byte;
 	int mask;
-	int rid;
 	int i;
 
 #if 0
@@ -1387,14 +1386,14 @@ psmprobe(device_t dev)
 #endif
 
 	/* see if IRQ is available */
-	rid = KBDC_RID_AUX;
-	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, KBDC_RID_AUX,
+	    RF_ACTIVE);
 	if (sc->intr == NULL) {
 		if (bootverbose)
 			device_printf(dev, "unable to allocate IRQ\n");
 		return (ENXIO);
 	}
-	bus_release_resource(dev, SYS_RES_IRQ, rid, sc->intr);
+	bus_release_resource(dev, sc->intr);
 
 	sc->dev = dev;
 	sc->kbdc = atkbdc_open(device_get_unit(device_get_parent(dev)));
@@ -1957,7 +1956,6 @@ psmattach(device_t dev)
 	int unit = device_get_unit(dev);
 	struct psm_softc *sc = device_get_softc(dev);
 	int error;
-	int rid;
 
 	/* Setup initial state */
 	sc->state = PSM_VALID;
@@ -1966,8 +1964,8 @@ psmattach(device_t dev)
 	knlist_init_mtx(&sc->rsel.si_note, &Giant);
 
 	/* Setup our interrupt handler */
-	rid = KBDC_RID_AUX;
-	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->intr = bus_alloc_resource_any(dev, SYS_RES_IRQ, KBDC_RID_AUX,
+	    RF_ACTIVE);
 	if (sc->intr == NULL)
 		return (ENXIO);
 	error = bus_setup_intr(dev, sc->intr, INTR_TYPE_TTY, NULL, psmintr, sc,
@@ -2044,7 +2042,7 @@ psmattach(device_t dev)
 
 out:
 	if (error != 0) {
-		bus_release_resource(dev, SYS_RES_IRQ, rid, sc->intr);
+		bus_release_resource(dev, sc->intr);
 		if (sc->dev != NULL)
 			destroy_dev(sc->cdev);
 		if (sc->bdev != NULL)
@@ -2057,7 +2055,6 @@ static int
 psmdetach(device_t dev)
 {
 	struct psm_softc *sc;
-	int rid;
 
 	sc = device_get_softc(dev);
 	if (sc->state & PSM_OPEN)
@@ -2068,9 +2065,8 @@ psmdetach(device_t dev)
 	evdev_free(sc->evdev_a);
 #endif
 
-	rid = KBDC_RID_AUX;
 	bus_teardown_intr(dev, sc->intr, sc->ih);
-	bus_release_resource(dev, SYS_RES_IRQ, rid, sc->intr);
+	bus_release_resource(dev, sc->intr);
 
 	destroy_dev(sc->cdev);
 	destroy_dev(sc->bdev);
@@ -7643,7 +7639,6 @@ psmcpnp_probe(device_t dev)
 	struct psmcpnp_softc *sc = device_get_softc(dev);
 	struct resource *res;
 	u_long irq;
-	int rid;
 
 	if (ISA_PNP_PROBE(device_get_parent(dev), dev, forcepad_ids) == 0)
 		sc->type = PSMCPNP_FORCEPAD;
@@ -7661,18 +7656,17 @@ psmcpnp_probe(device_t dev)
 	 * If this happens, we shall refer to device hints.
 	 * If we still don't find it there, use a hardcoded value... XXX
 	 */
-	rid = 0;
-	irq = bus_get_resource_start(dev, SYS_RES_IRQ, rid);
+	irq = bus_get_resource_start(dev, SYS_RES_IRQ, 0);
 	if (irq <= 0) {
 		if (resource_long_value(PSM_DRIVER_NAME,
 		    device_get_unit(dev),"irq", &irq) != 0)
 			irq = 12;	/* XXX */
 		device_printf(dev, "irq resource info is missing; "
 		    "assuming irq %ld\n", irq);
-		bus_set_resource(dev, SYS_RES_IRQ, rid, irq, 1);
+		bus_set_resource(dev, SYS_RES_IRQ, 0, irq, 1);
 	}
-	res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, 0);
-	bus_release_resource(dev, SYS_RES_IRQ, rid, res);
+	res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, 0);
+	bus_release_resource(dev, res);
 
 	/* keep quiet */
 	if (!bootverbose)

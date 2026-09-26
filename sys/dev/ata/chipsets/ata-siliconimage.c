@@ -109,10 +109,8 @@ ata_sii_chipinit(device_t dev)
 
     switch (ctlr->chip->cfg1) {
     case SII_MEMIO:
-	ctlr->r_type2 = SYS_RES_MEMORY;
-	ctlr->r_rid2 = PCIR_BAR(5);
-	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						    &ctlr->r_rid2, RF_ACTIVE))){
+	if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(5), RF_ACTIVE))){
 	    if (ctlr->chip->chipid != ATA_SII0680 ||
 			    (pci_read_config(dev, 0x8a, 1) & 1))
 		return ENXIO;

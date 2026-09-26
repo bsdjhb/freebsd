@@ -295,10 +295,6 @@ struct et_softc {
 	uint32_t		sc_flags;	/* ET_FLAG_ */
 	int			sc_expcap;
 
-	int			sc_mem_rid;
-
-	int			sc_irq_rid;
-
 	struct callout		sc_tick;
 
 	int			watchdog_timer;

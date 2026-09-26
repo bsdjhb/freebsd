@@ -365,7 +365,7 @@ enetc_attach_pre(if_ctx_t ctx)
 {
 	if_softc_ctx_t scctx;
 	struct enetc_softc *sc;
-	int error, rid;
+	int error;
 
 	sc = iflib_get_softc(ctx);
 	scctx = iflib_get_softc_ctx(ctx);
@@ -379,8 +379,8 @@ enetc_attach_pre(if_ctx_t ctx)
 	pcie_flr(sc->dev, 1000, false);
 	pci_restore_state(sc->dev);
 
-	rid = PCIR_BAR(ENETC_BAR_REGS);
-	sc->regs = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->regs = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
+	    PCIR_BAR(ENETC_BAR_REGS), RF_ACTIVE);
 	if (sc->regs == NULL) {
 		device_printf(sc->dev,
 		    "Failed to allocate BAR %d\n", ENETC_BAR_REGS);
@@ -465,8 +465,7 @@ enetc_detach(if_ctx_t ctx)
 	bus_generic_detach(sc->dev);
 
 	if (sc->regs != NULL) {
-		error = bus_release_resource(sc->dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->regs), sc->regs);
+		error = bus_release_resource(sc->dev, sc->regs);
 		sc->regs = NULL;
 	}
 

@@ -70,9 +70,7 @@ struct qman_portal;
 
 struct qman_softc {
 	device_t	sc_dev;			/* device handle */
-	int		sc_rrid;		/* register rid */
 	struct resource	*sc_rres;		/* register resource */
-	int		sc_irid;		/* interrupt rid */
 	struct resource	*sc_ires;		/* interrupt resource */
 	vmem_t		*sc_fqalloc;
 	vmem_t		*sc_qpalloc;

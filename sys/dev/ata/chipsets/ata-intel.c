@@ -225,11 +225,8 @@ ata_intel_chipinit(device_t dev)
     /* the intel 31244 needs special care if in DPA mode */
     else if (ctlr->chip->chipid == ATA_I31244) {
 	if (pci_get_subclass(dev) != PCIS_STORAGE_IDE) {
-	    ctlr->r_type2 = SYS_RES_MEMORY;
-	    ctlr->r_rid2 = PCIR_BAR(0);
-	    if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-							&ctlr->r_rid2,
-							RF_ACTIVE)))
+	    if (!(ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+		PCIR_BAR(0), RF_ACTIVE)))
 		return ENXIO;
 	    ctlr->channels = 4;
 	    ctlr->ch_attach = ata_intel_31244_ch_attach;
@@ -265,10 +262,8 @@ ata_intel_chipinit(device_t dev)
 
 	/* BAR(5) may point to SATA interface registers */
 	if ((ctlr->chip->cfg1 & INTEL_ICH7)) {
-		ctlr->r_type2 = SYS_RES_MEMORY;
-		ctlr->r_rid2 = PCIR_BAR(5);
-		ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-		    &ctlr->r_rid2, RF_ACTIVE);
+		ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+		    PCIR_BAR(5), RF_ACTIVE);
 		if (ctlr->r_res2 != NULL) {
 			/* Set SCRAE bit to enable registers access. */
 			pci_write_config(dev, 0x94,
@@ -280,10 +275,8 @@ ata_intel_chipinit(device_t dev)
 	/* Skip BAR(5) on ICH8M Apples, system locks up on access. */
 	} else if (ctlr->chip->chipid != ATA_I82801HBM_S1 ||
 	    pci_get_subvendor(dev) != 0x106b) {
-		ctlr->r_type2 = SYS_RES_IOPORT;
-		ctlr->r_rid2 = PCIR_BAR(5);
-		ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-		    &ctlr->r_rid2, RF_ACTIVE);
+		ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
+		    PCIR_BAR(5), RF_ACTIVE);
 	}
 	if (ctlr->r_res2 != NULL ||
 	    (ctlr->chip->cfg1 & INTEL_ICH5))

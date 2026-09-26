@@ -633,8 +633,7 @@ aac_free(struct aac_softc *sc)
 	if (sc->aac_intr)
 		bus_teardown_intr(sc->aac_dev, sc->aac_irq, sc->aac_intr);
 	if (sc->aac_irq != NULL) {
-		bus_release_resource(sc->aac_dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->aac_irq), sc->aac_irq);
+		bus_release_resource(sc->aac_dev, sc->aac_irq);
 		pci_release_msi(sc->aac_dev);
 	}
 
@@ -648,11 +647,9 @@ aac_free(struct aac_softc *sc)
 
 	/* release the register window mapping */
 	if (sc->aac_regs_res0 != NULL)
-		bus_release_resource(sc->aac_dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->aac_regs_res0), sc->aac_regs_res0);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res0);
 	if (sc->aac_hwif == AAC_HWIF_NARK && sc->aac_regs_res1 != NULL)
-		bus_release_resource(sc->aac_dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->aac_regs_res1), sc->aac_regs_res1);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res1);
 }
 
 /*
@@ -1775,13 +1772,12 @@ aac_check_firmware(struct aac_softc *sc)
 	if ((sc->flags & AAC_FLAGS_NEW_COMM) &&
 	    atu_size > rman_get_size(sc->aac_regs_res1)) {
 		rid = rman_get_rid(sc->aac_regs_res1);
-		bus_release_resource(sc->aac_dev, SYS_RES_MEMORY, rid,
-		    sc->aac_regs_res1);
+		bus_release_resource(sc->aac_dev, sc->aac_regs_res1);
 		sc->aac_regs_res1 = bus_alloc_resource_anywhere(sc->aac_dev,
-		    SYS_RES_MEMORY, &rid, atu_size, RF_ACTIVE);
+		    SYS_RES_MEMORY, rid, atu_size, RF_ACTIVE);
 		if (sc->aac_regs_res1 == NULL) {
 			sc->aac_regs_res1 = bus_alloc_resource_any(
-			    sc->aac_dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+			    sc->aac_dev, SYS_RES_MEMORY, rid, RF_ACTIVE);
 			if (sc->aac_regs_res1 == NULL) {
 				device_printf(sc->aac_dev,
 				    "couldn't allocate register window\n");

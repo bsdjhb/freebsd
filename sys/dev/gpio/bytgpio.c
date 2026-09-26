@@ -73,7 +73,6 @@ struct bytgpio_softc {
 	device_t		sc_dev;
 	device_t		sc_busdev;
 	struct mtx		sc_mtx;
-	int			sc_mem_rid;
 	struct resource		*sc_mem_res;
 	int			sc_npins;
 	const char*		sc_bank_prefix;
@@ -594,9 +593,8 @@ bytgpio_attach(device_t dev)
 	sc->sc_pad_funcs = malloc(sizeof(int)*sc->sc_npins, M_DEVBUF,
 	    M_WAITOK | M_ZERO);
 
-	sc->sc_mem_rid = 0;
 	sc->sc_mem_res = bus_alloc_resource_any(sc->sc_dev,
-	    SYS_RES_MEMORY, &sc->sc_mem_rid, RF_ACTIVE);
+	    SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "can't allocate resource\n");
 		goto error;
@@ -611,8 +609,7 @@ bytgpio_attach(device_t dev)
 	sc->sc_busdev = gpiobus_add_bus(dev);
 	if (sc->sc_busdev == NULL) {
 		BYTGPIO_LOCK_DESTROY(sc);
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		return (ENXIO);
 	}
 
@@ -642,8 +639,7 @@ bytgpio_detach(device_t dev)
 		free(sc->sc_pad_funcs, M_DEVBUF);
 
 	if (sc->sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }

@@ -1596,21 +1596,18 @@ fdc_release_resources(struct fdc_data *fdc)
 		bus_teardown_intr(dev, fdc->res_irq, fdc->fdc_intr);
 	fdc->fdc_intr = NULL;
 	if (fdc->res_irq != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, fdc->rid_irq,
-		    fdc->res_irq);
+		bus_release_resource(dev, fdc->res_irq);
 	fdc->res_irq = NULL;
 	last = NULL;
 	for (i = 0; i < FDC_MAXREG; i++) {
 		if (fdc->resio[i] != NULL && fdc->resio[i] != last) {
-			bus_release_resource(dev, SYS_RES_IOPORT,
-			    fdc->ridio[i], fdc->resio[i]);
+			bus_release_resource(dev, fdc->resio[i]);
 			last = fdc->resio[i];
 			fdc->resio[i] = NULL;
 		}
 	}
 	if (fdc->res_drq != NULL)
-		bus_release_resource(dev, SYS_RES_DRQ, fdc->rid_drq,
-		    fdc->res_drq);
+		bus_release_resource(dev, fdc->res_drq);
 	fdc->res_drq = NULL;
 }
 

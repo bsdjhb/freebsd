@@ -1024,23 +1024,19 @@ static void
 gve_free_sys_res_mem(struct gve_priv *priv)
 {
 	if (priv->msix_table != NULL)
-		bus_release_resource(priv->dev, SYS_RES_MEMORY,
-		    rman_get_rid(priv->msix_table), priv->msix_table);
+		bus_release_resource(priv->dev, priv->msix_table);
 
 	if (priv->db_bar != NULL)
-		bus_release_resource(priv->dev, SYS_RES_MEMORY,
-		    rman_get_rid(priv->db_bar), priv->db_bar);
+		bus_release_resource(priv->dev, priv->db_bar);
 
 	if (priv->reg_bar != NULL)
-		bus_release_resource(priv->dev, SYS_RES_MEMORY,
-		    rman_get_rid(priv->reg_bar), priv->reg_bar);
+		bus_release_resource(priv->dev, priv->reg_bar);
 }
 
 static int
 gve_attach(device_t dev)
 {
 	struct gve_priv *priv;
-	int rid;
 	int err;
 
 	snprintf(gve_version, sizeof(gve_version), "%d.%d.%d",
@@ -1052,27 +1048,24 @@ gve_attach(device_t dev)
 
 	pci_enable_busmaster(dev);
 
-	rid = PCIR_BAR(GVE_REGISTER_BAR);
 	priv->reg_bar = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	    PCIR_BAR(GVE_REGISTER_BAR), RF_ACTIVE);
 	if (priv->reg_bar == NULL) {
 		device_printf(dev, "Failed to allocate BAR0\n");
 		err = ENXIO;
 		goto abort;
 	}
 
-	rid = PCIR_BAR(GVE_DOORBELL_BAR);
 	priv->db_bar = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	    PCIR_BAR(GVE_DOORBELL_BAR), RF_ACTIVE);
 	if (priv->db_bar == NULL) {
 		device_printf(dev, "Failed to allocate BAR2\n");
 		err = ENXIO;
 		goto abort;
 	}
 
-	rid = pci_msix_table_bar(priv->dev);
 	priv->msix_table = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	    pci_msix_table_bar(priv->dev), RF_ACTIVE);
 	if (priv->msix_table == NULL) {
 		device_printf(dev, "Failed to allocate msix table\n");
 		err = ENXIO;

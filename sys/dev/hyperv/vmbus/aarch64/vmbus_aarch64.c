@@ -113,7 +113,7 @@ vmbus_setup_intr1(struct vmbus_softc *sc)
 
 	dev =  devclass_get_device(devclass_find("vmbus_res"), 0);
 	sc->ires = bus_alloc_resource_any(dev,
-	    SYS_RES_IRQ, &sc->vector, RF_ACTIVE | RF_SHAREABLE);
+	    SYS_RES_IRQ, sc->vector, RF_ACTIVE | RF_SHAREABLE);
 	if (sc->ires == NULL) {
 		device_printf(sc->vmbus_dev, "bus_alloc_resouce_any failed\n");
 		return (ENXIO);

@@ -1945,16 +1945,13 @@ t4_detach_common(device_t dev)
 		pci_release_msi(dev);
 
 	if (sc->regs_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->regs_rid,
-		    sc->regs_res);
+		bus_release_resource(dev, sc->regs_res);
 
 	if (sc->udbs_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->udbs_rid,
-		    sc->udbs_res);
+		bus_release_resource(dev, sc->udbs_res);
 
 	if (sc->msix_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->msix_rid,
-		    sc->msix_res);
+		bus_release_resource(dev, sc->msix_res);
 
 	if (sc->l2t)
 		t4_free_l2t(sc);
@@ -3998,9 +3995,8 @@ t4_add_adapter(struct adapter *sc)
 int
 t4_map_bars_0_and_4(struct adapter *sc)
 {
-	sc->regs_rid = PCIR_BAR(0);
 	sc->regs_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->regs_rid, RF_ACTIVE);
+	    PCIR_BAR(0), RF_ACTIVE);
 	if (sc->regs_res == NULL) {
 		device_printf(sc->dev, "cannot map registers.\n");
 		return (ENXIO);
@@ -4008,9 +4004,8 @@ t4_map_bars_0_and_4(struct adapter *sc)
 	sc->mmio_len = rman_get_size(sc->regs_res);
 	setbit(&sc->doorbells, DOORBELL_KDB);
 
-	sc->msix_rid = PCIR_BAR(4);
 	sc->msix_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->msix_rid, RF_ACTIVE);
+	    PCIR_BAR(4), RF_ACTIVE);
 	if (sc->msix_res == NULL) {
 		device_printf(sc->dev, "cannot map MSI-X BAR.\n");
 		return (ENXIO);
@@ -4030,9 +4025,8 @@ t4_map_bar_2(struct adapter *sc)
 	if (is_t4(sc) && sc->rdmacaps == 0)
 		return (0);
 
-	sc->udbs_rid = PCIR_BAR(2);
 	sc->udbs_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &sc->udbs_rid, RF_ACTIVE);
+	    PCIR_BAR(2), RF_ACTIVE);
 	if (sc->udbs_res == NULL) {
 		device_printf(sc->dev, "cannot map doorbell BAR.\n");
 		return (ENXIO);
@@ -7533,8 +7527,7 @@ t4_alloc_irq(struct adapter *sc, struct irq *irq, int rid,
 {
 	int rc;
 
-	irq->rid = rid;
-	irq->res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &irq->rid,
+	irq->res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, rid,
 	    RF_SHAREABLE | RF_ACTIVE);
 	if (irq->res == NULL) {
 		device_printf(sc->dev,
@@ -7560,7 +7553,7 @@ t4_free_irq(struct adapter *sc, struct irq *irq)
 	if (irq->tag)
 		bus_teardown_intr(sc->dev, irq->res, irq->tag);
 	if (irq->res)
-		bus_release_resource(sc->dev, SYS_RES_IRQ, irq->rid, irq->res);
+		bus_release_resource(sc->dev, irq->res);
 
 	bzero(irq, sizeof(*irq));
 

@@ -642,7 +642,7 @@ ciss_init_pci(struct ciss_softc *sc)
 {
     uintptr_t		cbase, csize, cofs;
     uint32_t		method, supported_methods;
-    int			error, sqmask, i;
+    int			error, rid, sqmask, i;
     void		*intr;
 
     debug_called(1);
@@ -674,10 +674,9 @@ ciss_init_pci(struct ciss_softc *sc)
      * struct).
      */
     error = ENXIO;
-    sc->ciss_regs_rid = CISS_TL_SIMPLE_BAR_REGS;
     if ((sc->ciss_regs_resource =
 	 bus_alloc_resource_any(sc->ciss_dev, SYS_RES_MEMORY,
-				&sc->ciss_regs_rid, RF_ACTIVE)) == NULL) {
+				CISS_TL_SIMPLE_BAR_REGS, RF_ACTIVE)) == NULL) {
 	ciss_printf(sc, "can't allocate register window\n");
 	return(ENXIO);
     }
@@ -688,11 +687,11 @@ ciss_init_pci(struct ciss_softc *sc)
      * Find the BAR holding the config structure.  If it's not the one
      * we already mapped for registers, map it too.
      */
-    sc->ciss_cfg_rid = CISS_TL_SIMPLE_READ(sc, CISS_TL_SIMPLE_CFG_BAR) & 0xffff;
-    if (sc->ciss_cfg_rid != sc->ciss_regs_rid) {
+    rid = CISS_TL_SIMPLE_READ(sc, CISS_TL_SIMPLE_CFG_BAR) & 0xffff;
+    if (rid != CISS_TL_SIMPLE_BAR_REGS) {
 	if ((sc->ciss_cfg_resource =
 	     bus_alloc_resource_any(sc->ciss_dev, SYS_RES_MEMORY,
-				    &sc->ciss_cfg_rid, RF_ACTIVE)) == NULL) {
+				    rid, RF_ACTIVE)) == NULL) {
 	    ciss_printf(sc, "can't allocate config window\n");
 	    return(ENXIO);
 	}
@@ -852,7 +851,7 @@ setup:
      * Allocate and set up our interrupt.
      */
     if ((sc->ciss_irq_resource =
-	 bus_alloc_resource_any(sc->ciss_dev, SYS_RES_IRQ, &sc->ciss_irq_rid[0],
+	 bus_alloc_resource_any(sc->ciss_dev, SYS_RES_IRQ, sc->ciss_irq_rid[0],
 				RF_ACTIVE | RF_SHAREABLE)) == NULL) {
 	ciss_printf(sc, "can't allocate interrupt\n");
 	return(ENXIO);
@@ -2044,16 +2043,13 @@ ciss_free(struct ciss_softc *sc)
 
     /* release I/O resources */
     if (sc->ciss_regs_resource != NULL)
-	bus_release_resource(sc->ciss_dev, SYS_RES_MEMORY,
-			     sc->ciss_regs_rid, sc->ciss_regs_resource);
+	bus_release_resource(sc->ciss_dev, sc->ciss_regs_resource);
     if (sc->ciss_cfg_resource != NULL)
-	bus_release_resource(sc->ciss_dev, SYS_RES_MEMORY,
-			     sc->ciss_cfg_rid, sc->ciss_cfg_resource);
+	bus_release_resource(sc->ciss_dev, sc->ciss_cfg_resource);
     if (sc->ciss_intr != NULL)
 	bus_teardown_intr(sc->ciss_dev, sc->ciss_irq_resource, sc->ciss_intr);
     if (sc->ciss_irq_resource != NULL)
-	bus_release_resource(sc->ciss_dev, SYS_RES_IRQ,
-			     sc->ciss_irq_rid[0], sc->ciss_irq_resource);
+	bus_release_resource(sc->ciss_dev, sc->ciss_irq_resource);
     if (sc->ciss_msi)
 	pci_release_msi(sc->ciss_dev);
 

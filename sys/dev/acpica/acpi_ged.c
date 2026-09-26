@@ -46,7 +46,6 @@ static MALLOC_DEFINE(M_ACPIGED, "acpiged", "ACPI Generic event data");
 struct acpi_ged_event {
 	device_t dev;
 	struct resource *r;
-	int rid;
 	void *cookie;
 	ACPI_HANDLE ah;
 	ACPI_OBJECT_LIST args;
@@ -174,9 +173,8 @@ acpi_ged_attach(device_t dev)
 	    M_WAITOK | M_ZERO);
 	for (i = 0; i < sc->numevts; i++) {
 		sc->evts[i].dev = dev;
-		sc->evts[i].rid = i;
-		sc->evts[i].r = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		    &sc->evts[i].rid,  RF_ACTIVE | RF_SHAREABLE);
+		sc->evts[i].r = bus_alloc_resource_any(dev, SYS_RES_IRQ, i,
+		    RF_ACTIVE | RF_SHAREABLE);
 		if (sc->evts[i].r == NULL) {
 			device_printf(dev, "Cannot alloc %dth irq\n", i);
 			continue;
@@ -190,9 +188,8 @@ acpi_ged_attach(device_t dev)
 					      " non-intrng?\n");
 				rawirq = rman_get_start(sc->evts[i].r);
 				trig = INTR_TRIGGER_LEVEL;
-				if (ACPI_SUCCESS(acpi_lookup_irq_resource
-					(dev, sc->evts[i].rid,
-					 sc->evts[i].r, &ares))) {
+				if (ACPI_SUCCESS(acpi_lookup_irq_resource(dev,
+				    i, sc->evts[i].r, &ares))) {
 					trig = acpi_get_trigger(&ares);
 				}
 			} else if (ima->hdr.type == INTR_MAP_DATA_ACPI) {
@@ -208,9 +205,8 @@ acpi_ged_attach(device_t dev)
 #else
 		rawirq = rman_get_start(sc->evts[i].r);
 		trig = INTR_TRIGGER_LEVEL;
-		if (ACPI_SUCCESS(acpi_lookup_irq_resource
-				(dev, sc->evts[i].rid,
-				 sc->evts[i].r, &ares))) {
+		if (ACPI_SUCCESS(acpi_lookup_irq_resource(dev, i,
+		    sc->evts[i].r, &ares))) {
 			trig = acpi_get_trigger(&ares);
 		}
 #endif
@@ -266,8 +262,7 @@ acpi_ged_detach(device_t dev)
 			    sc->evts[i].cookie);
 		}
 		if (sc->evts[i].r) {
-			bus_release_resource(dev, SYS_RES_IRQ, sc->evts[i].rid,
-			    sc->evts[i].r);
+			bus_release_resource(dev, sc->evts[i].r);
 		}
 	}
 	free(sc->evts, M_ACPIGED);

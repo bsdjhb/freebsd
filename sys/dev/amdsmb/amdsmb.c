@@ -105,7 +105,6 @@ static int amdsmb_debug = 0;
 #define	SMB_PRTCL_PEC			0x80
 
 struct amdsmb_softc {
-	int rid;
 	struct resource *res;
 	device_t smbus;
 	struct mtx lock;
@@ -146,10 +145,8 @@ amdsmb_attach(device_t dev)
 	struct amdsmb_softc *amdsmb_sc = device_get_softc(dev);
 
 	/* Allocate I/O space */
-	amdsmb_sc->rid = PCIR_BAR(0);
-
 	amdsmb_sc->res = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-		&amdsmb_sc->rid, RF_ACTIVE);
+	    PCIR_BAR(0), RF_ACTIVE);
 
 	if (amdsmb_sc->res == NULL) {
 		device_printf(dev, "could not map i/o space\n");
@@ -182,8 +179,7 @@ amdsmb_detach(device_t dev)
 
 	mtx_destroy(&amdsmb_sc->lock);
 	if (amdsmb_sc->res)
-		bus_release_resource(dev, SYS_RES_IOPORT, amdsmb_sc->rid,
-		    amdsmb_sc->res);
+		bus_release_resource(dev, amdsmb_sc->res);
 
 	return (0);
 }

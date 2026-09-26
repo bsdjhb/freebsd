@@ -940,7 +940,6 @@ struct bwn_mac {
 #define	BWN_MAC_FLAG_HWCRYPTO		(1 << 5)
 
 	struct resource			*mac_res_irq;
-	int				 mac_rid_irq;
 	void				*mac_intrhand;
 
 	struct bwn_noise		mac_noise;
@@ -1018,7 +1017,6 @@ struct bwn_softc {
 	struct bhnd_chipid		sc_cid;
 	uint32_t			sc_quirks;	/**< @see bwn_quirk */
 	struct resource			*sc_mem_res;
-	int				sc_mem_rid;
 
 	device_t			sc_chipc;	/**< ChipCommon device */
 	device_t			sc_gpio;	/**< GPIO device */

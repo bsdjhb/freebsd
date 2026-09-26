@@ -65,7 +65,6 @@ struct atopcase_softc {
 	ACPI_HANDLE		sc_handle;
 	int			sc_gpe_bit;
 
-	int			sc_irq_rid;
 	struct resource		*sc_irq_res;
 	void			*sc_irq_ih;
 	volatile unsigned int	sc_intr_cnt;

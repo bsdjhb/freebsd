@@ -3299,8 +3299,7 @@ bge_attach(device_t dev)
 	/*
 	 * Allocate control/status registers.
 	 */
-	rid = PCIR_BAR(0);
-	sc->bge_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->bge_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 	    RF_ACTIVE);
 
 	if (sc->bge_res == NULL) {
@@ -3430,9 +3429,8 @@ bge_attach(device_t dev)
 
 	/* Chips with APE need BAR2 access for APE registers/memory. */
 	if ((sc->bge_flags & BGE_FLAG_APE) != 0) {
-		rid = PCIR_BAR(2);
-		sc->bge_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-		    RF_ACTIVE);
+		sc->bge_res2 = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+		    PCIR_BAR(2), RF_ACTIVE);
 		if (sc->bge_res2 == NULL) {
 			device_printf (sc->bge_dev,
 			    "couldn't map BAR2 memory\n");
@@ -3625,7 +3623,7 @@ bge_attach(device_t dev)
 		sc->bge_flags |= BGE_FLAG_TAGGED_STATUS;
 #endif
 
-	sc->bge_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->bge_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
 	    RF_ACTIVE | (rid != 0 ? 0 : RF_SHAREABLE));
 
 	if (sc->bge_irq == NULL) {
@@ -3983,18 +3981,15 @@ bge_release_resources(struct bge_softc *sc)
 		bus_teardown_intr(dev, sc->bge_irq, sc->bge_intrhand);
 
 	if (sc->bge_irq != NULL) {
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->bge_irq), sc->bge_irq);
+		bus_release_resource(dev, sc->bge_irq);
 		pci_release_msi(dev);
 	}
 
 	if (sc->bge_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->bge_res), sc->bge_res);
+		bus_release_resource(dev, sc->bge_res);
 
 	if (sc->bge_res2 != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->bge_res2), sc->bge_res2);
+		bus_release_resource(dev, sc->bge_res2);
 
 	if (sc->bge_ifp != NULL)
 		if_free(sc->bge_ifp);

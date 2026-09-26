@@ -468,7 +468,7 @@ s3pci_attach(device_t dev)
 #if 0
 	unsigned char tmp;
 #endif
-	int rid, i;
+	int i;
 
 	if (s3pci_dev) {
 		printf("%s: driver already attached!\n", __func__);
@@ -477,8 +477,7 @@ s3pci_attach(device_t dev)
 
 	/* Allocate resources
 	 */
-	rid = 0;
-	if (!(sc->port_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	if (!(sc->port_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0,
 				RF_ACTIVE | RF_SHAREABLE))) {
 		printf("%s: port resource allocation failed!\n", __func__);
 		goto error;
@@ -486,8 +485,7 @@ s3pci_attach(device_t dev)
 	sc->st = rman_get_bustag(sc->port_res);
 	sc->sh = rman_get_bushandle(sc->port_res);
 
-	rid = 1;
-	if (!(sc->enh_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	if (!(sc->enh_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 1,
 				RF_ACTIVE | RF_SHAREABLE))) {
 		printf("%s: enhanced port resource allocation failed!\n",
 			__func__);
@@ -496,9 +494,8 @@ s3pci_attach(device_t dev)
 	sc->enh_st = rman_get_bustag(sc->enh_res);
 	sc->enh_sh = rman_get_bushandle(sc->enh_res);
 
-	rid = PCI_BASE_MEMORY;
-	if (!(sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-				 RF_ACTIVE))) {
+	if (!(sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCI_BASE_MEMORY, RF_ACTIVE))) {
 
 		printf("%s: mem resource allocation failed!\n", __func__);
 		goto error;
@@ -538,13 +535,13 @@ s3pci_attach(device_t dev)
 
 error:
 	if (sc->mem_res)
-		bus_release_resource(dev, SYS_RES_MEMORY, PCI_BASE_MEMORY, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	if (sc->enh_res)
-		bus_release_resource(dev, SYS_RES_IOPORT, 1, sc->enh_res);
+		bus_release_resource(dev, sc->enh_res);
 
 	if (sc->port_res)
-		bus_release_resource(dev, SYS_RES_IOPORT, 0, sc->port_res);
+		bus_release_resource(dev, sc->port_res);
 
 	return ENXIO;
 };

@@ -430,7 +430,7 @@ bfe_attach(device_t dev)
 {
 	if_t ifp = NULL;
 	struct bfe_softc *sc;
-	int error = 0, rid;
+	int error = 0;
 
 	sc = device_get_softc(dev);
 	mtx_init(&sc->bfe_mtx, device_get_nameunit(dev), MTX_NETWORK_LOCK,
@@ -444,8 +444,7 @@ bfe_attach(device_t dev)
 	 */
 	pci_enable_busmaster(dev);
 
-	rid = PCIR_BAR(0);
-	sc->bfe_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->bfe_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 			RF_ACTIVE);
 	if (sc->bfe_res == NULL) {
 		device_printf(dev, "couldn't map memory\n");
@@ -454,9 +453,7 @@ bfe_attach(device_t dev)
 	}
 
 	/* Allocate interrupt */
-	rid = 0;
-
-	sc->bfe_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->bfe_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 			RF_SHAREABLE | RF_ACTIVE);
 	if (sc->bfe_irq == NULL) {
 		device_printf(dev, "couldn't map interrupt\n");
@@ -1133,11 +1130,10 @@ bfe_release_resources(struct bfe_softc *sc)
 		bus_teardown_intr(sc->bfe_dev, sc->bfe_irq, sc->bfe_intrhand);
 
 	if (sc->bfe_irq != NULL)
-		bus_release_resource(sc->bfe_dev, SYS_RES_IRQ, 0, sc->bfe_irq);
+		bus_release_resource(sc->bfe_dev, sc->bfe_irq);
 
 	if (sc->bfe_res != NULL)
-		bus_release_resource(sc->bfe_dev, SYS_RES_MEMORY, PCIR_BAR(0),
-		    sc->bfe_res);
+		bus_release_resource(sc->bfe_dev, sc->bfe_res);
 
 	if (sc->bfe_ifp != NULL)
 		if_free(sc->bfe_ifp);

@@ -52,7 +52,6 @@
 
 struct cferes_softc {
 	int		 rnum;
-	int		 rid[MAX_CFE_RESERVATIONS];
 	struct resource	*res[MAX_CFE_RESERVATIONS];
 };
 
@@ -77,7 +76,6 @@ cferes_identify(driver_t* driver, device_t parent)
 	int			 i;
 	struct resource		*res;
 	int			 result;
-	int			 rid;
 	struct cferes_softc	*sc;
 	uint64_t		 addr, len, type;
 
@@ -99,13 +97,11 @@ cferes_identify(driver_t* driver, device_t parent)
 		}
 
 		bus_set_resource(child, SYS_RES_MEMORY, sc->rnum, addr, len);
-		rid = sc->rnum;
-		res = bus_alloc_resource_any(child, SYS_RES_MEMORY, &rid, 0);
+		res = bus_alloc_resource_any(child, SYS_RES_MEMORY, sc->rnum, 0);
 		if (res == NULL) {
 			bus_delete_resource(child, SYS_RES_MEMORY, sc->rnum);
 			continue;
 		}
-		sc->rid[sc->rnum] = rid;
 		sc->res[sc->rnum] = res;
 
 		sc->rnum++;
@@ -128,8 +124,7 @@ cferes_detach(device_t dev)
 	struct cferes_softc	*sc = device_get_softc(dev);
 
 	for (i = 0; i < sc->rnum; i++) {
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->rid[i],
-		    sc->res[i]);
+		bus_release_resource(dev, sc->res[i]);
 	}
 
 	return (0);

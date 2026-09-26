@@ -47,7 +47,6 @@
 static int drm_alloc_resource(struct drm_device *dev, int resource)
 {
 	struct resource *res;
-	int rid;
 
 	if (resource >= DRM_MAX_PCI_RESOURCE) {
 		DRM_ERROR("Resource %d too large\n", resource);
@@ -58,16 +57,14 @@ static int drm_alloc_resource(struct drm_device *dev, int resource)
 		return 0;
 	}
 
-	rid = PCIR_BAR(resource);
-	res = bus_alloc_resource_any(dev->dev, SYS_RES_MEMORY, &rid,
-	    RF_SHAREABLE);
+	res = bus_alloc_resource_any(dev->dev, SYS_RES_MEMORY,
+	    PCIR_BAR(resource), RF_SHAREABLE);
 	if (res == NULL) {
 		DRM_ERROR("Couldn't find resource 0x%x\n", resource);
 		return 1;
 	}
 
 	if (dev->pcir[resource] == NULL) {
-		dev->pcirid[resource] = rid;
 		dev->pcir[resource] = res;
 	}
 

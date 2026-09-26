@@ -115,7 +115,6 @@ dtsec_fdt_attach(device_t dev)
 	phandle_t fman_rxtx_node[2];
 	char phy_type[6];
 	pcell_t fman_tx_cell, mac_id;
-	int rid;
 
 	sc = device_get_softc(dev);
 	enet_node = ofw_bus_get_node(dev);
@@ -156,8 +155,8 @@ dtsec_fdt_attach(device_t dev)
 	sc->sc_base.sc_mdio = phy_dev;
 
 	/* Get MAC memory offset in SoC */
-	rid = 0;
-	sc->sc_base.sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->sc_base.sc_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_base.sc_mem == NULL)
 		return (ENXIO);
 

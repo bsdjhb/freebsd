@@ -133,12 +133,9 @@ struct glxiic_softc {
 	struct callout	 callout;	/* Driver state timeout callout. */
 	int		 timeout;	/* Driver state timeout (ms). */
 
-	int		 smb_rid;	/* SMB controller resource ID. */
 	struct resource *smb_res;	/* SMB controller resource. */
-	int		 gpio_rid;	/* GPIO resource ID. */
 	struct resource *gpio_res;	/* GPIO resource. */
 
-	int		 irq_rid;	/* IRQ resource ID. */
 	struct resource *irq_res;	/* IRQ resource. */
 	void		*irq_handler;	/* IRQ handler cookie. */
 	int		 old_irq;	/* IRQ mapped by board firmware. */
@@ -322,8 +319,7 @@ glxiic_attach(device_t dev)
 	GLXIIC_LOCK_INIT(sc);
 	callout_init_mtx(&sc->callout, &sc->mtx, 0);
 
-	sc->smb_rid = PCIR_BAR(0);
-	sc->smb_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &sc->smb_rid,
+	sc->smb_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, PCIR_BAR(0),
 	    RF_ACTIVE);
 	if (sc->smb_res == NULL) {
 		device_printf(dev, "Could not allocate SMBus I/O port\n");
@@ -331,9 +327,8 @@ glxiic_attach(device_t dev)
 		goto out;
 	}
 
-	sc->gpio_rid = PCIR_BAR(1);
-	sc->gpio_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-	    &sc->gpio_rid, RF_SHAREABLE | RF_ACTIVE);
+	sc->gpio_res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, PCIR_BAR(1),
+	    RF_SHAREABLE | RF_ACTIVE);
 	if (sc->gpio_res == NULL) {
 		device_printf(dev, "Could not allocate GPIO I/O port\n");
 		error = ENXIO;
@@ -373,8 +368,7 @@ glxiic_attach(device_t dev)
 	/* Map the SMBus interrupt to the requested legacy IRQ. */
 	glxiic_smb_map_interrupt(irq);
 
-	sc->irq_rid = 0;
-	sc->irq_res = bus_alloc_resource(dev, SYS_RES_IRQ, &sc->irq_rid,
+	sc->irq_res = bus_alloc_resource(dev, SYS_RES_IRQ, 0,
 	    irq, irq, 1, RF_SHAREABLE | RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "Could not allocate IRQ %d\n", irq);
@@ -419,19 +413,16 @@ out:
 			device_delete_child(dev, sc->iicbus);
 		if (sc->smb_res != NULL) {
 			glxiic_smb_disable(sc);
-			bus_release_resource(dev, SYS_RES_IOPORT, sc->smb_rid,
-			    sc->smb_res);
+			bus_release_resource(dev, sc->smb_res);
 		}
 		if (sc->gpio_res != NULL) {
 			glxiic_gpio_disable(sc);
-			bus_release_resource(dev, SYS_RES_IOPORT, sc->gpio_rid,
-			    sc->gpio_res);
+			bus_release_resource(dev, sc->gpio_res);
 		}
 		if (sc->irq_handler != NULL)
 			bus_teardown_intr(dev, sc->irq_res, sc->irq_handler);
 		if (sc->irq_res != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ, sc->irq_rid,
-			    sc->irq_res);
+			bus_release_resource(dev, sc->irq_res);
 
 		/* Restore the old SMBus interrupt mapping. */
 		glxiic_smb_map_interrupt(sc->old_irq);
@@ -458,19 +449,16 @@ glxiic_detach(device_t dev)
 
 	if (sc->smb_res != NULL) {
 		glxiic_smb_disable(sc);
-		bus_release_resource(dev, SYS_RES_IOPORT, sc->smb_rid,
-		    sc->smb_res);
+		bus_release_resource(dev, sc->smb_res);
 	}
 	if (sc->gpio_res != NULL) {
 		glxiic_gpio_disable(sc);
-		bus_release_resource(dev, SYS_RES_IOPORT, sc->gpio_rid,
-		    sc->gpio_res);
+		bus_release_resource(dev, sc->gpio_res);
 	}
 	if (sc->irq_handler != NULL)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_handler);
 	if (sc->irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->irq_rid,
-		    sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 
 	/* Restore the old SMBus interrupt mapping. */
 	glxiic_smb_map_interrupt(sc->old_irq);

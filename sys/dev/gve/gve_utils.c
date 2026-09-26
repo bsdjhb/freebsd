@@ -248,8 +248,7 @@ gve_free_irqs(struct gve_priv *priv)
 			device_printf(priv->dev, "Failed to teardown irq num %d\n",
 			    rid);
 
-		rc = bus_release_resource(priv->dev, SYS_RES_IRQ,
-		    rid, irq->res);
+		rc = bus_release_resource(priv->dev, irq->res);
 		if (rc != 0)
 			device_printf(priv->dev, "Failed to release irq num %d\n",
 			    rid);
@@ -305,7 +304,7 @@ gve_alloc_irqs(struct gve_priv *priv)
 		rid = i + 1;
 
 		irq->res = bus_alloc_resource_any(priv->dev, SYS_RES_IRQ,
-		    &rid, RF_ACTIVE);
+		    rid, RF_ACTIVE);
 		if (irq->res == NULL) {
 			device_printf(priv->dev, "Failed to alloc irq %d for Tx queue %d\n",
 			    rid, i);
@@ -333,7 +332,7 @@ gve_alloc_irqs(struct gve_priv *priv)
 		rid = i + j + 1;
 
 		irq->res = bus_alloc_resource_any(priv->dev, SYS_RES_IRQ,
-		    &rid, RF_ACTIVE);
+		    rid, RF_ACTIVE);
 		if (irq->res == NULL) {
 			device_printf(priv->dev,
 			    "Failed to alloc irq %d for Rx queue %d", rid, j);
@@ -359,7 +358,7 @@ gve_alloc_irqs(struct gve_priv *priv)
 	irq = &priv->irq_tbl[m];
 
 	irq->res = bus_alloc_resource_any(priv->dev, SYS_RES_IRQ,
-	    &rid, RF_ACTIVE);
+	    rid, RF_ACTIVE);
 	if (irq->res == NULL) {
 		device_printf(priv->dev, "Failed to allocate irq %d for mgmnt queue\n", rid);
 		err = ENOMEM;

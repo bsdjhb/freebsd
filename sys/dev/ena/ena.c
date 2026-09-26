@@ -281,18 +281,15 @@ ena_free_pci_resources(struct ena_adapter *adapter)
 	device_t pdev = adapter->pdev;
 
 	if (adapter->memory != NULL) {
-		bus_release_resource(pdev, SYS_RES_MEMORY,
-		    PCIR_BAR(ENA_MEM_BAR), adapter->memory);
+		bus_release_resource(pdev, adapter->memory);
 	}
 
 	if (adapter->registers != NULL) {
-		bus_release_resource(pdev, SYS_RES_MEMORY,
-		    PCIR_BAR(ENA_REG_BAR), adapter->registers);
+		bus_release_resource(pdev, adapter->registers);
 	}
 
 	if (adapter->msix != NULL) {
-		bus_release_resource(pdev, SYS_RES_MEMORY, adapter->msix_rid,
-		    adapter->msix);
+		bus_release_resource(pdev, adapter->msix);
 	}
 }
 
@@ -1889,7 +1886,7 @@ ena_request_mgmnt_irq(struct ena_adapter *adapter)
 
 	irq = &adapter->irq_tbl[ENA_MGMNT_IRQ_IDX];
 	irq->res = bus_alloc_resource_any(adapter->pdev, SYS_RES_IRQ,
-	    &irq->vector, flags);
+	    irq->vector, flags);
 
 	if (unlikely(irq->res == NULL)) {
 		ena_log(pdev, ERR, "could not allocate irq vector: %d\n",
@@ -1912,8 +1909,7 @@ ena_request_mgmnt_irq(struct ena_adapter *adapter)
 
 err_res_free:
 	ena_log(pdev, INFO, "releasing resource for irq %d\n", irq->vector);
-	rcc = bus_release_resource(adapter->pdev, SYS_RES_IRQ, irq->vector,
-	    irq->res);
+	rcc = bus_release_resource(adapter->pdev, irq->res);
 	if (unlikely(rcc != 0))
 		ena_log(pdev, ERR,
 		    "dev has no parent while releasing res for irq: %d\n",
@@ -1946,7 +1942,7 @@ ena_request_io_irq(struct ena_adapter *adapter)
 			continue;
 
 		irq->res = bus_alloc_resource_any(adapter->pdev, SYS_RES_IRQ,
-		    &irq->vector, flags);
+		    irq->vector, flags);
 		if (unlikely(irq->res == NULL)) {
 			rc = ENOMEM;
 			ena_log(pdev, ERR,
@@ -2003,8 +1999,7 @@ err:
 		   this iteration */
 		rcc = 0;
 		if (irq->res != NULL) {
-			rcc = bus_release_resource(adapter->pdev, SYS_RES_IRQ,
-			    irq->vector, irq->res);
+			rcc = bus_release_resource(adapter->pdev, irq->res);
 		}
 		if (unlikely(rcc != 0))
 			ena_log(pdev, ERR,
@@ -2036,8 +2031,7 @@ ena_free_mgmnt_irq(struct ena_adapter *adapter)
 
 	if (irq->res != NULL) {
 		ena_log(pdev, DBG, "release resource irq: %d\n", irq->vector);
-		rc = bus_release_resource(adapter->pdev, SYS_RES_IRQ,
-		    irq->vector, irq->res);
+		rc = bus_release_resource(adapter->pdev, irq->res);
 		irq->res = NULL;
 		if (unlikely(rc != 0))
 			ena_log(pdev, ERR,
@@ -2070,8 +2064,7 @@ ena_free_io_irq(struct ena_adapter *adapter)
 		if (irq->res != NULL) {
 			ena_log(pdev, DBG, "release resource irq: %d\n",
 			    irq->vector);
-			rc = bus_release_resource(adapter->pdev, SYS_RES_IRQ,
-			    irq->vector, irq->res);
+			rc = bus_release_resource(adapter->pdev, irq->res);
 			irq->res = NULL;
 			if (unlikely(rc != 0)) {
 				ena_log(pdev, ERR,
@@ -2737,12 +2730,11 @@ static int
 ena_map_llq_mem_bar(device_t pdev, struct ena_com_dev *ena_dev)
 {
 	struct ena_adapter *adapter = device_get_softc(pdev);
-	int rc, rid;
+	int rc;
 
 	/* Try to allocate resources for LLQ bar */
-	rid = PCIR_BAR(ENA_MEM_BAR);
-	adapter->memory = bus_alloc_resource_any(pdev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
+	adapter->memory = bus_alloc_resource_any(pdev, SYS_RES_MEMORY,
+	    PCIR_BAR(ENA_MEM_BAR), RF_ACTIVE);
 	if (unlikely(adapter->memory == NULL)) {
 		ena_log(pdev, WARN,
 		    "Unable to allocate LLQ bar resource. LLQ mode won't be used.\n");
@@ -3827,7 +3819,7 @@ ena_attach(device_t pdev)
 
 	rid = PCIR_BAR(ENA_REG_BAR);
 	adapter->memory = NULL;
-	adapter->registers = bus_alloc_resource_any(pdev, SYS_RES_MEMORY, &rid,
+	adapter->registers = bus_alloc_resource_any(pdev, SYS_RES_MEMORY, rid,
 	    RF_ACTIVE);
 	if (unlikely(adapter->registers == NULL)) {
 		ena_log(pdev, ERR,
@@ -3840,14 +3832,13 @@ ena_attach(device_t pdev)
 	msix_rid = pci_msix_table_bar(pdev);
 	if (msix_rid != rid) {
 		adapter->msix = bus_alloc_resource_any(pdev, SYS_RES_MEMORY,
-		    &msix_rid, RF_ACTIVE);
+		    msix_rid, RF_ACTIVE);
 		if (unlikely(adapter->msix == NULL)) {
 			ena_log(pdev, ERR,
 			    "unable to allocate bus resource: msix!\n");
 			rc = ENOMEM;
 			goto err_pci_free;
 		}
-		adapter->msix_rid = msix_rid;
 	}
 
 	ena_dev->bus = malloc(sizeof(struct ena_bus), M_DEVBUF,

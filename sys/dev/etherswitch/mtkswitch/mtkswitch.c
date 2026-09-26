@@ -165,7 +165,7 @@ mtkswitch_attach(device_t dev)
 {
 	struct mtkswitch_softc *sc;
 	int err = 0;
-	int port, rid;
+	int port;
 
 	sc = device_get_softc(dev);
 
@@ -188,8 +188,7 @@ mtkswitch_attach(device_t dev)
 		mtk_attach_switch_rt3050(sc);
 
 	/* Allocate resources */
-	rid = 0;
-	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->sc_res == NULL) {
 		device_printf(dev, "could not map memory\n");

@@ -1457,7 +1457,7 @@ ffec_detach(device_t dev)
 	bus_release_resources(dev, irq_res_spec, sc->irq_res);
 
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	FFEC_LOCK_DESTROY(sc);
 	return (0);
@@ -1473,7 +1473,7 @@ ffec_attach(device_t dev)
 	uintptr_t typeflags;
 	phandle_t ofw_node;
 	uint32_t idx, mscr;
-	int error, phynum, rid, irq;
+	int error, phynum, irq;
 	uint8_t eaddr[ETHER_ADDR_LEN];
 
 	sc = device_get_softc(dev);
@@ -1517,8 +1517,7 @@ ffec_attach(device_t dev)
 	callout_init_mtx(&sc->ffec_callout, &sc->mtx, 0);
 
 	/* Allocate bus resources for accessing the hardware. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, 
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, 
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resources.\n");

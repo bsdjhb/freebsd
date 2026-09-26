@@ -483,7 +483,7 @@ dpaa2_io_setup_irqs(device_t dev)
 		return (error);
 	}
 	if ((sc->irq_resource = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->irq_rid[0], RF_ACTIVE | RF_SHAREABLE)) == NULL) {
+	    sc->irq_rid[0], RF_ACTIVE | RF_SHAREABLE)) == NULL) {
 		device_printf(dev, "%s: failed to allocate IRQ resource\n",
 		    __func__);
 		return (ENXIO);
@@ -527,8 +527,7 @@ dpaa2_io_release_irqs(device_t dev)
 	if (sc->intr != NULL)
 		bus_teardown_intr(dev, sc->irq_resource, &sc->intr);
 	if (sc->irq_resource != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->irq_rid[0],
-		    sc->irq_resource);
+		bus_release_resource(dev, sc->irq_resource);
 
 	(void)dpaa2_io_release_msi(device_get_softc(dev));
 

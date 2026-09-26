@@ -173,7 +173,6 @@ struct glxsb_taskop {
 struct glxsb_softc {
 	device_t		sc_dev;		/* device backpointer */
 	struct resource		*sc_sr;		/* resource */
-	int			sc_rid;		/* resource rid */
 	struct callout		sc_rngco;	/* RNG callout */
 	int			sc_rnghz;	/* RNG callout ticks */
 	bus_dma_tag_t		sc_dmat;	/* DMA tag */
@@ -269,8 +268,7 @@ glxsb_attach(device_t dev)
 	pci_enable_busmaster(dev);
 
 	/* Map in the security block configuration/control registers */
-	sc->sc_rid = PCIR_BAR(0);
-	sc->sc_sr = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rid,
+	sc->sc_sr = bus_alloc_resource_any(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 	    RF_ACTIVE);
 	if (sc->sc_sr == NULL) {
 		device_printf(dev, "cannot map register space\n");
@@ -331,7 +329,7 @@ glxsb_attach(device_t dev)
 fail1:
 	taskqueue_free(sc->sc_tq);
 fail0:
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid, sc->sc_sr);
+	bus_release_resource(dev, sc->sc_sr);
 	return (ENXIO);
 }
 
@@ -346,7 +344,7 @@ glxsb_detach(device_t dev)
 	taskqueue_drain(sc->sc_tq, &sc->sc_cryptotask);
 	bus_generic_detach(dev);
 	glxsb_dma_free(sc, &sc->sc_dma);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid, sc->sc_sr);
+	bus_release_resource(dev, sc->sc_sr);
 	taskqueue_free(sc->sc_tq);
 	mtx_destroy(&sc->sc_task_mtx);
 	return (0);

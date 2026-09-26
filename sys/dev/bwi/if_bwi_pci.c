@@ -135,9 +135,8 @@ bwi_pci_attach(device_t dev)
 	/* 
 	 * Setup memory-mapping of PCI registers.
 	 */
-	sc->sc_mem_rid = BWI_PCIR_BAR;
 	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		&sc->sc_mem_rid, RF_ACTIVE);
+	    BWI_PCIR_BAR, RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "cannot map register space\n");
 		goto bad;
@@ -153,9 +152,7 @@ bwi_pci_attach(device_t dev)
 	/*
 	 * Arrange interrupt line.
 	 */
-	sc->sc_irq_rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-						&sc->sc_irq_rid,
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 						RF_SHAREABLE|RF_ACTIVE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "could not map interrupt\n");
@@ -180,9 +177,9 @@ bwi_pci_attach(device_t dev)
 	return (0);
 
 bad2:
-	bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+	bus_release_resource(dev, sc->sc_irq_res);
 bad1:
-	bus_release_resource(dev, SYS_RES_MEMORY, BS_BAR, sc->sc_mem_res);
+	bus_release_resource(dev, sc->sc_mem_res);
 bad:
 	return (error);
 }
@@ -200,9 +197,9 @@ bwi_pci_detach(device_t dev)
 
 	bus_generic_detach(dev);
 	bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_irq_handle);
-	bus_release_resource(dev, SYS_RES_IRQ, 0, sc->sc_irq_res);
+	bus_release_resource(dev, sc->sc_irq_res);
 
-	bus_release_resource(dev, SYS_RES_MEMORY, BS_BAR, sc->sc_mem_res);
+	bus_release_resource(dev, sc->sc_mem_res);
 
 	return (0);
 }

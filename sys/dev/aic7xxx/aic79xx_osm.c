@@ -1287,20 +1287,15 @@ ahd_platform_free(struct ahd_softc *ahd)
 	if (pdata != NULL) {
 		if (pdata->regs[0] != NULL)
 			bus_release_resource(ahd->dev_softc,
-					     pdata->regs_res_type[0],
-					     pdata->regs_res_id[0],
 					     pdata->regs[0]);
 
 		if (pdata->regs[1] != NULL)
 			bus_release_resource(ahd->dev_softc,
-					     pdata->regs_res_type[1],
-					     pdata->regs_res_id[1],
 					     pdata->regs[1]);
 
 		if (pdata->irq != NULL)
 			bus_release_resource(ahd->dev_softc,
-					     pdata->irq_res_type,
-					     0, pdata->irq);
+					     pdata->irq);
 
 		if (pdata->sim != NULL) {
 			xpt_async(AC_LOST_DEVICE, pdata->path, NULL);

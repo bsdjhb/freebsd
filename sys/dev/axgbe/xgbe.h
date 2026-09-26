@@ -527,7 +527,6 @@ struct xgbe_channel {
 	unsigned int queue_index;
 	bus_space_tag_t dma_tag;
 	bus_space_handle_t dma_handle;
-	int	dma_irq_rid;
 
 	/* Per channel interrupt irq number */
 	struct resource *dma_irq_res;
@@ -1072,10 +1071,6 @@ struct xgbe_prv_data {
 	struct resource	*ecc_irq_res;
 	struct resource	*i2c_irq_res;
 	struct resource	*an_irq_res;
-
-	int ecc_rid;
-	int i2c_rid;
-	int an_rid;
 
 	void *dev_irq_tag;
 	void *ecc_irq_tag;

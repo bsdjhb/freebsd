@@ -444,7 +444,6 @@ struct bxe_device_type
 
 struct bxe_bar {
     struct resource    *resource;
-    int                rid;
     bus_space_tag_t    tag;
     bus_space_handle_t handle;
     vm_offset_t        kva;
@@ -452,7 +451,6 @@ struct bxe_bar {
 
 struct bxe_intr {
     struct resource *resource;
-    int             rid;
     void            *tag;
 };
 

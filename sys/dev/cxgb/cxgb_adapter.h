@@ -306,9 +306,7 @@ struct adapter {
 	int			flags;
 
 	/* PCI register resources */
-	int			regs_rid;
 	struct resource		*regs_res;
-	int			udbs_rid;
 	struct resource		*udbs_res;
 	bus_space_handle_t	bh;
 	bus_space_tag_t		bt;
@@ -323,14 +321,11 @@ struct adapter {
 
 	/* Interrupt resources */
 	struct resource		*irq_res;
-	int			irq_rid;
 	void			*intr_tag;
 
-	uint32_t		msix_regs_rid;
 	struct resource		*msix_regs_res;
 
 	struct resource		*msix_irq_res[SGE_QSETS];
-	int			msix_irq_rid[SGE_QSETS];
 	void			*msix_intr_tag[SGE_QSETS];
 	uint8_t                 rxpkt_map[8]; /* maps RX_PKT interface values to port ids */
 	uint8_t                 rrss_map[SGE_QSETS]; /* revers RSS map table */

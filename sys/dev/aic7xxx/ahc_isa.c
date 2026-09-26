@@ -87,11 +87,9 @@ ahc_isa_identify(driver_t *driver, device_t parent)
 		bus_space_handle_t  bsh;
 		struct resource	   *regs;
 		uint32_t	    iobase;
-		int		    rid;
 
-		rid = 0;
 		iobase = (slot * AHC_EISA_SLOT_SIZE) + AHC_EISA_SLOT_OFFSET;
-		regs = bus_alloc_resource(parent, SYS_RES_IOPORT, &rid,
+		regs = bus_alloc_resource(parent, SYS_RES_IOPORT, 0,
 					  iobase, iobase, AHC_EISA_IOSIZE,
 					  RF_ACTIVE);
 		if (regs == NULL) {
@@ -116,7 +114,7 @@ ahc_isa_identify(driver_t *driver, device_t parent)
 						 0, iobase, AHC_EISA_IOSIZE);
 			}
 		}
-		bus_release_resource(parent, SYS_RES_IOPORT, rid, regs);
+		bus_release_resource(parent, regs);
 	}
 }
 
@@ -133,10 +131,8 @@ ahc_isa_probe(device_t dev)
 	u_int	  hcntrl;
 	int	  irq_num;
 	int	  error;
-	int	  zero;
 
 	error = ENXIO;
-	zero = 0;
 	regs = NULL;
 	irq = NULL;
 
@@ -144,7 +140,7 @@ ahc_isa_probe(device_t dev)
 	if (isa_get_logicalid(dev) != 0)
 		return (error);
 
-	regs = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &zero, RF_ACTIVE);
+	regs = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0, RF_ACTIVE);
 	if (regs == NULL) {
 		device_printf(dev, "No resources allocated.\n");
 		return (ENOMEM);
@@ -181,14 +177,14 @@ ahc_isa_probe(device_t dev)
 		goto cleanup;
 	}
 
-	if (bus_set_resource(dev, SYS_RES_IRQ, zero, irq_num, 1) != 0)
+	if (bus_set_resource(dev, SYS_RES_IRQ, 0, irq_num, 1) != 0)
 		goto cleanup;
 
 	/*
 	 * The 284X only supports edge triggered interrupts,
 	 * so do not claim RF_SHAREABLE.
 	 */
-	irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &zero,
+	irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 				     0 /*!(RF_ACTIVE|RF_SHAREABLE)*/);
 	if (irq != NULL) {
 		error = 0;
@@ -199,12 +195,12 @@ ahc_isa_probe(device_t dev)
 
 cleanup:
 	if (regs != NULL) {
-		bus_release_resource(dev, SYS_RES_IOPORT, zero, regs);
+		bus_release_resource(dev, regs);
 		regs = NULL;
 	}
 
 	if (irq != NULL) {
-		bus_release_resource(dev, SYS_RES_IRQ, zero, irq);
+		bus_release_resource(dev, irq);
 		irq = NULL;
 	}
 
@@ -220,18 +216,16 @@ ahc_isa_attach(device_t dev)
 	struct	  resource *regs;
 	struct	  ahc_softc *ahc;
 	char	 *name;
-	int	  zero;
 	int	  error;
 
-	zero = 0;
-	regs = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &zero, RF_ACTIVE);
+	regs = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0, RF_ACTIVE);
 	if (regs == NULL)
 		return (ENOMEM);
 
 	tag = rman_get_bustag(regs);
 	bsh = rman_get_bushandle(regs);
 	entry = ahc_isa_find_device(tag, bsh);
-	bus_release_resource(dev, SYS_RES_IOPORT, zero, regs);
+	bus_release_resource(dev, regs);
 	if (entry == NULL)
 		return (ENODEV);
 

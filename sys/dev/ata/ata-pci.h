@@ -41,19 +41,15 @@ struct ata_chip_id {
 /* structure describing a PCI ATA controller */
 struct ata_pci_controller {
     device_t            dev;
-    int                 r_type1;
-    int                 r_rid1;
     struct resource     *r_res1;
-    int                 r_type2;
-    int                 r_rid2;
     struct resource     *r_res2;
-    int                 r_irq_rid;
     struct resource     *r_irq;
     void                *handle;
     const struct ata_chip_id *chip;
     int			legacy;
     int                 channels;
     int			ichannels;
+    bool		msi;
     int                 (*chipinit)(device_t);
     int                 (*chipdeinit)(device_t);
     int                 (*suspend)(device_t);

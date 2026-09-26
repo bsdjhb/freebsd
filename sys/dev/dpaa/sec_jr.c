@@ -94,7 +94,7 @@ sec_jr_irq_setup(struct sec_softc *sc, struct sec_jr *jr, u_int idx)
 	struct resource_list *rl;
 	phandle_t iparent;
 	pcell_t *cells;
-	int ncells, irqnum;
+	int ncells, irqnum, rid;
 
 	if (jr->jr_node == 0)
 		return (ENXIO);
@@ -108,11 +108,10 @@ sec_jr_irq_setup(struct sec_softc *sc, struct sec_jr *jr, u_int idx)
 		return (ENXIO);
 
 	rl = BUS_GET_RESOURCE_LIST(device_get_parent(dev), dev);
-	jr->jr_irid = 1 + idx;	/* rid 0 is the SEC top-level error IRQ */
-	resource_list_add(rl, SYS_RES_IRQ, jr->jr_irid, irqnum, irqnum, 1);
+	rid = 1 + idx;		/* rid 0 is the SEC top-level error IRQ */
+	resource_list_add(rl, SYS_RES_IRQ, rid, irqnum, irqnum, 1);
 
-	jr->jr_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &jr->jr_irid, RF_ACTIVE);
+	jr->jr_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid, RF_ACTIVE);
 	if (jr->jr_ires == NULL)
 		return (ENXIO);
 

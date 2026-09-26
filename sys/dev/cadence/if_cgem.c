@@ -1731,7 +1731,7 @@ cgem_attach(device_t dev)
 {
 	struct cgem_softc *sc = device_get_softc(dev);
 	if_t ifp = NULL;
-	int rid, err;
+	int err;
 	u_char eaddr[ETHER_ADDR_LEN];
 	int hwquirks;
 	phandle_t node;
@@ -1792,8 +1792,7 @@ cgem_attach(device_t dev)
 	sc->phy_contype = mii_fdt_get_contype(node);
 
 	/* Get memory resource. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL) {
 		device_printf(dev, "could not allocate memory resources.\n");
@@ -1802,8 +1801,7 @@ cgem_attach(device_t dev)
 	}
 
 	/* Get IRQ resource. */
-	rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_ACTIVE);
 	if (sc->irq_res == NULL) {
 		device_printf(dev, "could not allocate interrupt resource.\n");
@@ -1913,15 +1911,13 @@ cgem_detach(device_t dev)
 
 	/* Release resources. */
 	if (sc->mem_res != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 		sc->mem_res = NULL;
 	}
 	if (sc->irq_res != NULL) {
 		if (sc->intrhand)
 			bus_teardown_intr(dev, sc->irq_res, sc->intrhand);
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->irq_res), sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 		sc->irq_res = NULL;
 	}
 

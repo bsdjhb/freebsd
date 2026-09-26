@@ -188,6 +188,7 @@ static int
 ata_nvidia_chipinit(device_t dev)
 {
     struct ata_pci_controller *ctlr = device_get_softc(dev);
+    int type;
 
     if (ata_setup_interrupt(dev, ata_generic_intr))
 	return ENXIO;
@@ -197,12 +198,11 @@ ata_nvidia_chipinit(device_t dev)
 	ctlr->setmode = ata_sata_setmode;
     } else if (ctlr->chip->max_dma >= ATA_SA150) {
 	if (pci_read_config(dev, PCIR_BAR(5), 1) & 1)
-	    ctlr->r_type2 = SYS_RES_IOPORT;
+	    type = SYS_RES_IOPORT;
 	else
-	    ctlr->r_type2 = SYS_RES_MEMORY;
-	ctlr->r_rid2 = PCIR_BAR(5);
-	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						   &ctlr->r_rid2, RF_ACTIVE))) {
+	    type = SYS_RES_MEMORY;
+	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, type, PCIR_BAR(5),
+	    RF_ACTIVE))) {
 	    int offset = ctlr->chip->cfg1 & NV4 ? 0x0440 : 0x0010;
 
 	    ctlr->ch_attach = ata_nvidia_ch_attach;

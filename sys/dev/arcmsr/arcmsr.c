@@ -4564,34 +4564,10 @@ static void arcmsr_free_resource(struct AdapterControlBlock *acb)
 		bus_dma_tag_destroy(acb->dm_segs_dmat);
 	if (acb->parent_dmat)
 		bus_dma_tag_destroy(acb->parent_dmat);
-	switch(acb->adapter_type) {
-		case ACB_ADAPTER_TYPE_A:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(0), acb->sys_res_arcmsr[0]);
-			break;
-		case ACB_ADAPTER_TYPE_B:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(0), acb->sys_res_arcmsr[0]);
-			if (acb->sys_res_arcmsr[1])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(2), acb->sys_res_arcmsr[1]);
-			break;
-		case ACB_ADAPTER_TYPE_C:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(1), acb->sys_res_arcmsr[0]);
-			break;
-		case ACB_ADAPTER_TYPE_D:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(0), acb->sys_res_arcmsr[0]);
-			break;
-		case ACB_ADAPTER_TYPE_E:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(1), acb->sys_res_arcmsr[0]);
-			break;
-		case ACB_ADAPTER_TYPE_F:
-			if (acb->sys_res_arcmsr[0])
-				bus_release_resource(acb->pci_dev, SYS_RES_MEMORY, PCIR_BAR(0), acb->sys_res_arcmsr[0]);
-			break;
-	}
+	if (acb->sys_res_arcmsr[0])
+		bus_release_resource(acb->pci_dev, acb->sys_res_arcmsr[0]);
+	if (acb->sys_res_arcmsr[1])
+		bus_release_resource(acb->pci_dev, acb->sys_res_arcmsr[1]);
 }
 /*
 ************************************************************************
@@ -4710,10 +4686,10 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 {
 	switch(acb->adapter_type) {
 	case ACB_ADAPTER_TYPE_A: {
-		u_int32_t rid0 = PCIR_BAR(0);
 		vm_offset_t	mem_base0;
 
-		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,SYS_RES_MEMORY, &rid0, RF_ACTIVE);
+		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,
+		    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE);
 		if(acb->sys_res_arcmsr[0] == NULL) {
 			arcmsr_free_resource(acb);
 			printf("arcmsr%d: bus_alloc_resource failure!\n", acb->pci_unit);
@@ -4733,7 +4709,6 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		acb->btag[0] = rman_get_bustag(acb->sys_res_arcmsr[0]);
 		acb->bhandle[0] = rman_get_bushandle(acb->sys_res_arcmsr[0]);
 		acb->pmu = (struct MessageUnit_UNION *)mem_base0;
-		acb->rid[0] = rid0;
 		}
 		break;
 	case ACB_ADAPTER_TYPE_B: {
@@ -4742,7 +4717,8 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		u_int16_t i;
 
 		for(i=0; i < 2; i++) {
-			acb->sys_res_arcmsr[i] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid[i], RF_ACTIVE);
+			acb->sys_res_arcmsr[i] = bus_alloc_resource_any(dev,
+			    SYS_RES_MEMORY, rid[i], RF_ACTIVE);
 			if(acb->sys_res_arcmsr[i] == NULL) {
 				arcmsr_free_resource(acb);
 				printf("arcmsr%d: bus_alloc_resource %d failure!\n", acb->pci_unit, i);
@@ -4764,15 +4740,13 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		}
 		acb->mem_base0 = mem_base[0];
 		acb->mem_base1 = mem_base[1];
-		acb->rid[0] = rid[0];
-		acb->rid[1] = rid[1];
 		}
 		break;
 	case ACB_ADAPTER_TYPE_C: {
-		u_int32_t rid0 = PCIR_BAR(1);
 		vm_offset_t	mem_base0;
 
-		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid0, RF_ACTIVE);
+		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,
+		    SYS_RES_MEMORY, PCIR_BAR(1), RF_ACTIVE);
 		if(acb->sys_res_arcmsr[0] == NULL) {
 			arcmsr_free_resource(acb);
 			printf("arcmsr%d: bus_alloc_resource failure!\n", acb->pci_unit);
@@ -4792,14 +4766,13 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		acb->btag[0] = rman_get_bustag(acb->sys_res_arcmsr[0]);
 		acb->bhandle[0] = rman_get_bushandle(acb->sys_res_arcmsr[0]);
 		acb->pmu = (struct MessageUnit_UNION *)mem_base0;
-		acb->rid[0] = rid0;
 		}
 		break;
 	case ACB_ADAPTER_TYPE_D: {
-		u_int32_t rid0 = PCIR_BAR(0);
 		vm_offset_t	mem_base0;
 
-		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid0, RF_ACTIVE);
+		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,
+		    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE);
 		if(acb->sys_res_arcmsr[0] == NULL) {
 			arcmsr_free_resource(acb);
 			printf("arcmsr%d: bus_alloc_resource failure!\n", acb->pci_unit);
@@ -4819,14 +4792,13 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		acb->btag[0] = rman_get_bustag(acb->sys_res_arcmsr[0]);
 		acb->bhandle[0] = rman_get_bushandle(acb->sys_res_arcmsr[0]);
 		acb->mem_base0 = mem_base0;
-		acb->rid[0] = rid0;
 		}
 		break;
 	case ACB_ADAPTER_TYPE_E: {
-		u_int32_t rid0 = PCIR_BAR(1);
 		vm_offset_t	mem_base0;
 
-		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid0, RF_ACTIVE);
+		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,
+		    SYS_RES_MEMORY, PCIR_BAR(1), RF_ACTIVE);
 		if(acb->sys_res_arcmsr[0] == NULL) {
 			arcmsr_free_resource(acb);
 			printf("arcmsr%d: bus_alloc_resource failure!\n", acb->pci_unit);
@@ -4849,16 +4821,15 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		acb->doneq_index = 0;
 		acb->in_doorbell = 0;
 		acb->out_doorbell = 0;
-		acb->rid[0] = rid0;
 		CHIP_REG_WRITE32(HBE_MessageUnit, 0, host_int_status, 0); /*clear interrupt*/
 		CHIP_REG_WRITE32(HBE_MessageUnit, 0, iobound_doorbell, ARCMSR_HBEMU_DOORBELL_SYNC); /* synchronize doorbell to 0 */
 		}
 		break;
 	case ACB_ADAPTER_TYPE_F: {
-		u_int32_t rid0 = PCIR_BAR(0);
 		vm_offset_t	mem_base0;
 
-		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid0, RF_ACTIVE);
+		acb->sys_res_arcmsr[0] = bus_alloc_resource_any(dev,
+		    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE);
 		if(acb->sys_res_arcmsr[0] == NULL) {
 			arcmsr_free_resource(acb);
 			printf("arcmsr%d: bus_alloc_resource failure!\n", acb->pci_unit);
@@ -4881,7 +4852,6 @@ static int arcmsr_map_pcireg(device_t dev, struct AdapterControlBlock *acb)
 		acb->doneq_index = 0;
 		acb->in_doorbell = 0;
 		acb->out_doorbell = 0;
-		acb->rid[0] = rid0;
 		CHIP_REG_WRITE32(HBF_MessageUnit, 0, host_int_status, 0); /*clear interrupt*/
 		CHIP_REG_WRITE32(HBF_MessageUnit, 0, iobound_doorbell, ARCMSR_HBEMU_DOORBELL_SYNC); /* synchronize doorbell to 0 */
 		}
@@ -5104,9 +5074,8 @@ static int arcmsr_setup_msix(struct AdapterControlBlock *acb)
 	int i;
 
 	for (i = 0; i < acb->msix_vectors; i++) {
-		acb->irq_id[i] = 1 + i;
 		acb->irqres[i] = bus_alloc_resource_any(acb->pci_dev,
-		    SYS_RES_IRQ, &acb->irq_id[i], RF_ACTIVE);
+		    SYS_RES_IRQ, 1 + i, RF_ACTIVE);
 		if (acb->irqres[i] == NULL) {
 			printf("arcmsr: Can't allocate MSI-X resource\n");
 			goto irq_alloc_failed;
@@ -5157,8 +5126,8 @@ static int arcmsr_attach(device_t dev)
 		if (arcmsr_setup_msix(acb) == TRUE)
 			goto irqx;
 	}
-	acb->irq_id[0] = 0;
-	irqres = bus_alloc_resource_any(dev, SYS_RES_IRQ, &acb->irq_id[0], RF_SHAREABLE | RF_ACTIVE);
+	irqres = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_SHAREABLE |
+	    RF_ACTIVE);
 	if(irqres == NULL || 
 		bus_setup_intr(dev, irqres, INTR_TYPE_CAM|INTR_ENTROPY|INTR_MPSAFE, NULL, arcmsr_intr_handler, acb, &acb->ih[0])) {
 		printf("arcmsr%d: unable to register interrupt handler!\n", unit);
@@ -5370,8 +5339,7 @@ static void arcmsr_teardown_intr(device_t dev, struct AdapterControlBlock *acb)
 			if (acb->ih[i])
 				bus_teardown_intr(dev, acb->irqres[i], acb->ih[i]);
 			if (acb->irqres[i] != NULL)
-				bus_release_resource(dev, SYS_RES_IRQ,
-				    acb->irq_id[i], acb->irqres[i]);
+				bus_release_resource(dev, acb->irqres[i]);
 
 			acb->ih[i] = NULL;
 		}
@@ -5380,8 +5348,7 @@ static void arcmsr_teardown_intr(device_t dev, struct AdapterControlBlock *acb)
 		if (acb->ih[0])
 			bus_teardown_intr(dev, acb->irqres[0], acb->ih[0]);
 		if (acb->irqres[0] != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ,
-			    acb->irq_id[0], acb->irqres[0]);
+			bus_release_resource(dev, acb->irqres[0]);
 		acb->ih[0] = NULL;
 	}
 

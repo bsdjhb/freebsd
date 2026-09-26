@@ -93,12 +93,10 @@ static int
 cardbus_attach(device_t cbdev)
 {
 	struct cardbus_softc *sc;
-	int rid;
 
 	sc = device_get_softc(cbdev);
 	sc->sc_dev = cbdev;
-	rid = 0;
-	sc->sc_bus = bus_alloc_resource(cbdev, PCI_RES_BUS, &rid,
+	sc->sc_bus = bus_alloc_resource(cbdev, PCI_RES_BUS, 0,
 	    pcib_get_bus(cbdev), pcib_get_bus(cbdev), 1, 0);
 	if (sc->sc_bus == NULL) {
 		device_printf(cbdev, "failed to allocate bus number\n");
@@ -115,7 +113,7 @@ cardbus_detach(device_t cbdev)
 	cardbus_detach_card(cbdev);
 	sc = device_get_softc(cbdev);
 	device_printf(cbdev, "Freeing up the allocatd bus\n");
-	(void)bus_release_resource(cbdev, PCI_RES_BUS, 0, sc->sc_bus);
+	(void)bus_release_resource(cbdev, sc->sc_bus);
 	return (0);
 }
 

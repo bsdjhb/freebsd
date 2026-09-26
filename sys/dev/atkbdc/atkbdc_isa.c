@@ -99,7 +99,6 @@ atkbdc_isa_probe(device_t dev)
 	rman_res_t	start;
 	rman_res_t	count;
 	int		error;
-	int		rid;
 #if defined(__i386__) || defined(__amd64__)
 	bus_space_tag_t	tag;
 	bus_space_handle_t ioh1;
@@ -125,25 +124,23 @@ atkbdc_isa_probe(device_t dev)
 	 * in correct order.
 	 */
 	device_quiet(dev);
-	rid = 0;
-	if (bus_get_resource(dev, SYS_RES_IOPORT, rid, &start, &count) != 0)
+	if (bus_get_resource(dev, SYS_RES_IOPORT, 0, &start, &count) != 0)
 		return ENXIO;
 	if (start == IO_KBD + KBD_STATUS_PORT) {
 		start = IO_KBD;
 		count++;
 	}
 	if (count > 1)	/* adjust the count and/or start port */
-		bus_set_resource(dev, SYS_RES_IOPORT, rid, start, 1);
-	port0 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid, RF_ACTIVE);
+		bus_set_resource(dev, SYS_RES_IOPORT, 0, start, 1);
+	port0 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0, RF_ACTIVE);
 	if (port0 == NULL)
 		return ENXIO;
-	rid = 1;
-	if (bus_get_resource(dev, SYS_RES_IOPORT, rid, NULL, NULL) != 0)
+	if (bus_get_resource(dev, SYS_RES_IOPORT, 1, NULL, NULL) != 0)
 		bus_set_resource(dev, SYS_RES_IOPORT, 1,
 				 start + KBD_STATUS_PORT, 1);
-	port1 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid, RF_ACTIVE);
+	port1 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 1, RF_ACTIVE);
 	if (port1 == NULL) {
-		bus_release_resource(dev, SYS_RES_IOPORT, 0, port0);
+		bus_release_resource(dev, port0);
 		return ENXIO;
 	}
 
@@ -165,8 +162,8 @@ atkbdc_isa_probe(device_t dev)
 	}
 	intr_restore(flags);
 	if (i == 65535) {
-		bus_release_resource(dev, SYS_RES_IOPORT, 0, port0);
-		bus_release_resource(dev, SYS_RES_IOPORT, 1, port1);
+		bus_release_resource(dev, port0);
+		bus_release_resource(dev, port1);
 		if (bootverbose)
 			device_printf(dev, "AT keyboard controller not found\n");
 		return ENXIO;
@@ -177,8 +174,8 @@ atkbdc_isa_probe(device_t dev)
 
 	error = atkbdc_probe_unit(device_get_unit(dev), port0, port1);
 
-	bus_release_resource(dev, SYS_RES_IOPORT, 0, port0);
-	bus_release_resource(dev, SYS_RES_IOPORT, 1, port1);
+	bus_release_resource(dev, port0);
+	bus_release_resource(dev, port1);
 
 	return error;
 }
@@ -189,7 +186,6 @@ atkbdc_isa_attach(device_t dev)
 	atkbdc_softc_t	*sc;
 	int		unit;
 	int		error;
-	int		rid;
 
 	unit = device_get_unit(dev);
 	sc = *(atkbdc_softc_t **)device_get_softc(dev);
@@ -206,17 +202,15 @@ atkbdc_isa_attach(device_t dev)
 			return ENOMEM;
 	}
 
-	rid = 0;
 	sc->retry = 5000;
-	sc->port0 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	sc->port0 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0,
 					   RF_ACTIVE);
 	if (sc->port0 == NULL)
 		return ENXIO;
-	rid = 1;
-	sc->port1 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	sc->port1 = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 1,
 					   RF_ACTIVE);
 	if (sc->port1 == NULL) {
-		bus_release_resource(dev, SYS_RES_IOPORT, 0, sc->port0);
+		bus_release_resource(dev, sc->port0);
 		return ENXIO;
 	}
 
@@ -225,15 +219,14 @@ atkbdc_isa_attach(device_t dev)
 	 * the hint for the IRQ is on the child atkbd device, not the
 	 * keyboard controller, so this can fail.
 	 */
-	rid = 0;
-	sc->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid, RF_ACTIVE);
+	sc->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 
 	error = atkbdc_attach_unit(unit, sc, sc->port0, sc->port1);
 	if (error) {
-		bus_release_resource(dev, SYS_RES_IOPORT, 0, sc->port0);
-		bus_release_resource(dev, SYS_RES_IOPORT, 1, sc->port1);
+		bus_release_resource(dev, sc->port0);
+		bus_release_resource(dev, sc->port1);
 		if (sc->irq != NULL)
-			bus_release_resource(dev, SYS_RES_IRQ, 0, sc->irq);
+			bus_release_resource(dev, sc->irq);
 		return error;
 	}
 	*(atkbdc_softc_t **)device_get_softc(dev) = sc;

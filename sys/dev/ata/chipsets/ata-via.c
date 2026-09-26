@@ -159,10 +159,8 @@ ata_via_chipinit(device_t dev)
     }
     /* Legacy SATA/SATA+PATA with SATA registers in BAR(5). */
     if (ctlr->chip->max_dma >= ATA_SA150) {
-	ctlr->r_type2 = SYS_RES_IOPORT;
-	ctlr->r_rid2 = PCIR_BAR(5);
-	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						   &ctlr->r_rid2, RF_ACTIVE))) {
+	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
+	    PCIR_BAR(5), RF_ACTIVE))) {
 	    ctlr->ch_attach = ata_via_ch_attach;
 	    ctlr->ch_detach = ata_via_ch_detach;
 	    ctlr->reset = ata_via_reset;
@@ -212,14 +210,13 @@ ata_via_ch_attach(device_t dev)
     /* newer SATA chips has resources in one BAR for each channel */
     if (ctlr->chip->cfg2 & VIABAR) {
 	struct resource *r_io;
-	int i, rid;
+	int i;
 		
 	ata_pci_dmainit(dev);
 
 	rid = PCIR_BAR(ch->unit);
 	if (!(r_io = bus_alloc_resource_any(device_get_parent(dev),
-					    SYS_RES_IOPORT,
-					    &rid, RF_ACTIVE)))
+	    SYS_RES_IOPORT, PCIR_BAR(ch->unit), RF_ACTIVE)))
 	    return ENXIO;
 
 	for (i = ATA_DATA; i <= ATA_COMMAND; i ++) {
@@ -268,11 +265,8 @@ ata_via_ch_detach(device_t dev)
 
     /* newer SATA chips has resources in one BAR for each channel */
     if (ctlr->chip->cfg2 & VIABAR) {
-	int rid;
-		
-	rid = PCIR_BAR(ch->unit);
 	bus_release_resource(device_get_parent(dev),
-	    SYS_RES_IOPORT, rid, ch->r_io[ATA_CONTROL].res);
+	    ch->r_io[ATA_CONTROL].res);
 
 	ata_pci_dmafini(dev);
     }

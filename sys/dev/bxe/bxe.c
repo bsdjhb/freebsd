@@ -8867,8 +8867,6 @@ bxe_interrupt_free(struct bxe_softc *sc)
         BLOGD(sc, DBG_LOAD, "Releasing legacy INTx vector\n");
         if (sc->intr[0].resource != NULL) {
             bus_release_resource(sc->dev,
-                                 SYS_RES_IRQ,
-                                 sc->intr[0].rid,
                                  sc->intr[0].resource);
         }
         break;
@@ -8877,8 +8875,6 @@ bxe_interrupt_free(struct bxe_softc *sc)
             BLOGD(sc, DBG_LOAD, "Releasing MSI vector %d\n", i);
             if (sc->intr[i].resource && sc->intr[i].rid) {
                 bus_release_resource(sc->dev,
-                                     SYS_RES_IRQ,
-                                     sc->intr[i].rid,
                                      sc->intr[i].resource);
             }
         }
@@ -8889,8 +8885,6 @@ bxe_interrupt_free(struct bxe_softc *sc)
             BLOGD(sc, DBG_LOAD, "Releasing MSI-X vector %d\n", i);
             if (sc->intr[i].resource && sc->intr[i].rid) {
                 bus_release_resource(sc->dev,
-                                     SYS_RES_IRQ,
-                                     sc->intr[i].rid,
                                      sc->intr[i].resource);
             }
         }
@@ -8984,20 +8978,16 @@ bxe_interrupt_alloc(struct bxe_softc *sc)
 
         /* allocate the MSI-X vectors */
         for (i = 0; i < num_allocated; i++) {
-            sc->intr[i].rid = (rid + i);
-
             if ((sc->intr[i].resource =
                  bus_alloc_resource_any(sc->dev,
                                         SYS_RES_IRQ,
-                                        &sc->intr[i].rid,
+                                        rid + i,
                                         RF_ACTIVE)) == NULL) {
                 BLOGE(sc, "Failed to map MSI-X[%d] (rid=%d)!\n",
                       i, (rid + i));
 
                 for (j = (i - 1); j >= 0; j--) {
                     bus_release_resource(sc->dev,
-                                         SYS_RES_IRQ,
-                                         sc->intr[j].rid,
                                          sc->intr[j].resource);
                 }
 
@@ -9051,12 +9041,10 @@ bxe_interrupt_alloc(struct bxe_softc *sc)
 
         rid = 1; /* initial resource identifier */
 
-        sc->intr[0].rid = rid;
-
         if ((sc->intr[0].resource =
              bus_alloc_resource_any(sc->dev,
                                     SYS_RES_IRQ,
-                                    &sc->intr[0].rid,
+                                    rid,
                                     RF_ACTIVE)) == NULL) {
             BLOGE(sc, "Failed to map MSI[0] (rid=%d)!\n", rid);
             sc->intr_count = 0;
@@ -9082,12 +9070,10 @@ bxe_interrupt_alloc(struct bxe_softc *sc)
 
         rid = 0; /* initial resource identifier */
 
-        sc->intr[0].rid = rid;
-
         if ((sc->intr[0].resource =
              bus_alloc_resource_any(sc->dev,
                                     SYS_RES_IRQ,
-                                    &sc->intr[0].rid,
+                                    rid,
                                     (RF_ACTIVE | RF_SHAREABLE))) == NULL) {
             BLOGE(sc, "Failed to map INTx (rid=%d)!\n", rid);
             sc->intr_count = 0;
@@ -13051,8 +13037,6 @@ bxe_deallocate_bars(struct bxe_softc *sc)
     for (i = 0; i < MAX_BARS; i++) {
         if (sc->bar[i].resource != NULL) {
             bus_release_resource(sc->dev,
-                                 SYS_RES_MEMORY,
-                                 sc->bar[i].rid,
                                  sc->bar[i].resource);
             BLOGD(sc, DBG_LOAD, "Released PCI BAR%d [%02x] memory\n",
                   i, PCIR_BAR(i));
@@ -13076,8 +13060,6 @@ bxe_allocate_bars(struct bxe_softc *sc)
             continue;
         }
 
-        sc->bar[i].rid = PCIR_BAR(i);
-
         flags = RF_ACTIVE;
         if (i == 0) {
             flags |= RF_SHAREABLE;
@@ -13086,7 +13068,7 @@ bxe_allocate_bars(struct bxe_softc *sc)
         if ((sc->bar[i].resource =
              bus_alloc_resource_any(sc->dev,
                                     SYS_RES_MEMORY,
-                                    &sc->bar[i].rid,
+                                    PCIR_BAR(i),
                                     flags)) == NULL) {
             return (0);
         }

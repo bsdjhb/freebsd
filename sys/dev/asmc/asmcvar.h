@@ -48,8 +48,6 @@ struct asmc_softc {
 	struct sysctl_oid 	*sc_temp_tree;
 	struct sysctl_oid 	*sc_sms_tree;
 	struct sysctl_oid 	*sc_light_tree;
-	int 			sc_rid_port;
-	int 			sc_rid_irq;
 	struct resource 	*sc_ioport;
 	struct resource 	*sc_irq;
 	void 			*sc_cookie;

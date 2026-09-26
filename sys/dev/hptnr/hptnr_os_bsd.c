@@ -100,19 +100,18 @@ void *os_map_pci_bar(
 {
 	PHBA hba = (PHBA)osext;
 	HPT_U32 base;
+	int rid;
 
-	hba->pcibar[index].rid = 0x10 + index * 4;
-	base = pci_read_config(hba->pcidev, hba->pcibar[index].rid, 4);
+	rid = 0x10 + index * 4;
+	base = pci_read_config(hba->pcidev, rid, 4);
 
 	if (base & 1) {
-		hba->pcibar[index].type = SYS_RES_IOPORT;
 		hba->pcibar[index].res = bus_alloc_resource_any(hba->pcidev,
-			hba->pcibar[index].type, &hba->pcibar[index].rid, RF_ACTIVE);
+			SYS_RES_IOPORT, rid, RF_ACTIVE);
 		hba->pcibar[index].base = (void *)(unsigned long)(base & ~0x1);
 	} else {
-		hba->pcibar[index].type = SYS_RES_MEMORY;
 		hba->pcibar[index].res = bus_alloc_resource_any(hba->pcidev,
-			hba->pcibar[index].type, &hba->pcibar[index].rid, RF_ACTIVE);
+			SYS_RES_MEMORY, rid, RF_ACTIVE);
 		hba->pcibar[index].base = (char *)rman_get_virtual(hba->pcibar[index].res) + offset;
 	}
 
@@ -126,8 +125,7 @@ void os_unmap_pci_bar(void *osext, void *base)
 	
 	for (index=0; index<6; index++) {
 		if (hba->pcibar[index].base==base) {
-			bus_release_resource(hba->pcidev, hba->pcibar[index].type,
-				hba->pcibar[index].rid, hba->pcibar[index].res);
+			bus_release_resource(hba->pcidev, hba->pcibar[index].res);
 			hba->pcibar[index].base = 0;
 			return;
 		}

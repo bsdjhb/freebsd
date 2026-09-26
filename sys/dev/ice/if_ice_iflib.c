@@ -1023,9 +1023,7 @@ ice_if_detach(if_ctx_t ctx)
 	pci_release_msi(sc->dev);
 
 	if (sc->msix_table != NULL) {
-		bus_release_resource(sc->dev, SYS_RES_MEMORY,
-				     rman_get_rid(sc->msix_table),
-				     sc->msix_table);
+		bus_release_resource(sc->dev, sc->msix_table);
 		sc->msix_table = NULL;
 	}
 
@@ -1434,13 +1432,13 @@ ice_allocate_msix(struct ice_softc *sc)
 	if_softc_ctx_t scctx = sc->scctx;
 	device_t dev = sc->dev;
 	cpuset_t cpus;
-	int bar, queues, vectors, requested;
+	int queues, vectors, requested;
 	int err = 0;
 	int rdma;
 
 	/* Allocate the MSI-X bar */
-	bar = scctx->isc_msix_bar;
-	sc->msix_table = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &bar, RF_ACTIVE);
+	sc->msix_table = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    scctx->isc_msix_bar, RF_ACTIVE);
 	if (!sc->msix_table) {
 		device_printf(dev, "Unable to map MSI-X table\n");
 		return (ENOMEM);
@@ -1615,9 +1613,7 @@ err_pci_release_msi:
 	pci_release_msi(dev);
 err_free_msix_table:
 	if (sc->msix_table != NULL) {
-		bus_release_resource(sc->dev, SYS_RES_MEMORY,
-				rman_get_rid(sc->msix_table),
-				sc->msix_table);
+		bus_release_resource(sc->dev, sc->msix_table);
 		sc->msix_table = NULL;
 	}
 

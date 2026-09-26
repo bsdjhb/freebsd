@@ -119,9 +119,6 @@ struct ahd_platform_data {
 	struct	cam_sim		*sim;
 	struct	cam_path	*path;
 
-	int			 regs_res_type[2];
-	int			 regs_res_id[2];
-	int			 irq_res_type;
 	struct resource		*regs[2];
 	struct resource		*irq;
 	void			*ih;

@@ -117,9 +117,6 @@ struct ahc_platform_data {
 	struct	cam_path	*path;
 	struct	cam_path	*path_b;
 
-	int			 regs_res_type;
-	int			 regs_res_id;
-	int			 irq_res_type;
 	struct resource		*regs;
 	struct resource		*irq;
 	void			*ih;

@@ -275,9 +275,6 @@ al_attach(device_t dev)
 	if_t ifp;
 	uint32_t dev_id;
 	uint32_t rev_id;
-	int bar_udma;
-	int bar_mac;
-	int bar_ec;
 	int err;
 
 	err = 0;
@@ -300,9 +297,8 @@ al_attach(device_t dev)
 
 	g_adapters[g_adapters_count] = adapter;
 
-	bar_udma = PCIR_BAR(AL_ETH_UDMA_BAR);
 	adapter->udma_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &bar_udma, RF_ACTIVE);
+	    PCIR_BAR(AL_ETH_UDMA_BAR), RF_ACTIVE);
 	if (adapter->udma_res == NULL) {
 		device_printf(adapter->dev,
 		    "could not allocate memory resources for DMA.\n");
@@ -311,9 +307,8 @@ al_attach(device_t dev)
 	}
 	adapter->udma_base = al_bus_dma_to_va(rman_get_bustag(adapter->udma_res),
 	    rman_get_bushandle(adapter->udma_res));
-	bar_mac = PCIR_BAR(AL_ETH_MAC_BAR);
 	adapter->mac_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &bar_mac, RF_ACTIVE);
+	    PCIR_BAR(AL_ETH_MAC_BAR), RF_ACTIVE);
 	if (adapter->mac_res == NULL) {
 		device_printf(adapter->dev,
 		    "could not allocate memory resources for MAC.\n");
@@ -323,9 +318,8 @@ al_attach(device_t dev)
 	adapter->mac_base = al_bus_dma_to_va(rman_get_bustag(adapter->mac_res),
 	    rman_get_bushandle(adapter->mac_res));
 
-	bar_ec = PCIR_BAR(AL_ETH_EC_BAR);
-	adapter->ec_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &bar_ec,
-	    RF_ACTIVE);
+	adapter->ec_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(AL_ETH_EC_BAR), RF_ACTIVE);
 	if (adapter->ec_res == NULL) {
 		device_printf(adapter->dev,
 		    "could not allocate memory resources for EC.\n");
@@ -440,11 +434,11 @@ al_attach(device_t dev)
 	return (err);
 
 err:
-	bus_release_resource(dev, SYS_RES_MEMORY, bar_ec, adapter->ec_res);
+	bus_release_resource(dev, adapter->ec_res);
 err_res_ec:
-	bus_release_resource(dev, SYS_RES_MEMORY, bar_mac, adapter->mac_res);
+	bus_release_resource(dev, adapter->mac_res);
 err_res_mac:
-	bus_release_resource(dev, SYS_RES_MEMORY, bar_udma, adapter->udma_res);
+	bus_release_resource(dev, adapter->udma_res);
 err_res_dma:
 	return (err);
 }
@@ -462,10 +456,10 @@ al_detach(device_t dev)
 
 	al_eth_down(adapter);
 
-	bus_release_resource(dev, SYS_RES_IRQ,    0, adapter->irq_res);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, adapter->ec_res);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, adapter->mac_res);
-	bus_release_resource(dev, SYS_RES_MEMORY, 0, adapter->udma_res);
+	bus_release_resource(dev, adapter->irq_res);
+	bus_release_resource(dev, adapter->ec_res);
+	bus_release_resource(dev, adapter->mac_res);
+	bus_release_resource(dev, adapter->udma_res);
 
 	return (0);
 }
@@ -2175,8 +2169,7 @@ al_eth_free_irq(struct al_eth_adapter *adapter)
 			continue;
 		device_printf_dbg(adapter->dev, "release resource irq: %d\n",
 		    irq->vector);
-		rc = bus_release_resource(adapter->dev, SYS_RES_IRQ, irq->vector,
-		    irq->res);
+		rc = bus_release_resource(adapter->dev, irq->res);
 		irq->res = NULL;
 		if (rc != 0)
 			device_printf(adapter->dev, "dev has no parent while "
@@ -2211,7 +2204,7 @@ al_eth_request_irq(struct al_eth_adapter *adapter)
 			continue;
 
 		irq->res = bus_alloc_resource_any(adapter->dev, SYS_RES_IRQ,
-		    &irq->vector, flags);
+		    irq->vector, flags);
 		if (irq->res == NULL) {
 			device_printf(adapter->dev, "could not allocate "
 			    "irq vector=%d\n", irq->vector);
@@ -2254,8 +2247,7 @@ exit_res:
 		irq = &adapter->irq_tbl[v];
 		device_printf_dbg(adapter->dev, "exit_res: releasing resource"
 		    " for irq %d\n", irq->vector);
-		brr = bus_release_resource(adapter->dev, SYS_RES_IRQ,
-		    irq->vector, irq->res);
+		brr = bus_release_resource(adapter->dev, irq->res);
 		if (brr != 0)
 			device_printf(adapter->dev, "dev has no parent while "
 			    "releasing res for irq: %d\n", irq->vector);

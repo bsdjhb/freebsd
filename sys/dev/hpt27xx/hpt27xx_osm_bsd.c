@@ -1156,9 +1156,8 @@ static void hpt_final_init(void *dummy)
 		hpt_unlock_vbus(vbus_ext);
 
 		for (hba = vbus_ext->hba_list; hba; hba = hba->next) {
-			int rid = 0;
 			if ((hba->irq_res = bus_alloc_resource_any(hba->pcidev,
-				SYS_RES_IRQ, &rid, RF_SHAREABLE | RF_ACTIVE)) == NULL)
+				SYS_RES_IRQ, 0, RF_SHAREABLE | RF_ACTIVE)) == NULL)
 			{
 				os_printk("can't allocate interrupt");
 				return ;

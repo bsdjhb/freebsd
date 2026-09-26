@@ -1347,14 +1347,11 @@ ahc_platform_free(struct ahc_softc *ahc)
 	if (pdata != NULL) {
 		if (pdata->regs != NULL)
 			bus_release_resource(ahc->dev_softc,
-					     pdata->regs_res_type,
-					     pdata->regs_res_id,
 					     pdata->regs);
 
 		if (pdata->irq != NULL)
 			bus_release_resource(ahc->dev_softc,
-					     pdata->irq_res_type,
-					     0, pdata->irq);
+					     pdata->irq);
 
 		if (pdata->sim_b != NULL) {
 			xpt_async(AC_LOST_DEVICE, pdata->path_b, NULL);

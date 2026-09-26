@@ -153,7 +153,6 @@ struct bhndb_devinfo {
 struct bhndb_intr_isrc {
 	device_t	 is_owner;	/**< host device (e.g. the pci device). */
 	struct resource	*is_res;	/**< irq resource */
-	int		 is_rid;	/**< irq resource ID */
 };
 
 /**

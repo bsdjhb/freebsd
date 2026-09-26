@@ -69,9 +69,6 @@ struct fman_softc {
 	struct resource *err_irq_res;
 	struct rman	rman;
 	vmem_t	*muram_vmem;
-	int mem_rid;
-	int irq_rid;
-	int err_irq_rid;
 	void *irq_cookie;
 	int qman_chan_base;
 	int qman_chan_count;

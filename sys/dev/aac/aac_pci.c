@@ -393,9 +393,8 @@ aac_pci_attach(device_t dev)
 	/*
 	 * Allocate the PCI register window(s).
 	 */
-	rid = PCIR_BAR(0);
 	if ((sc->aac_regs_res0 = bus_alloc_resource_any(dev,
-	    SYS_RES_MEMORY, &rid, RF_ACTIVE)) == NULL) {
+	    SYS_RES_MEMORY, PCIR_BAR(0), RF_ACTIVE)) == NULL) {
 		device_printf(dev, "can't allocate register window 0\n");
 		goto out;
 	}
@@ -403,9 +402,8 @@ aac_pci_attach(device_t dev)
 	sc->aac_bhandle0 = rman_get_bushandle(sc->aac_regs_res0);
 
 	if (sc->aac_hwif == AAC_HWIF_NARK) {
-		rid = PCIR_BAR(1);
 		if ((sc->aac_regs_res1 = bus_alloc_resource_any(dev,
-		    SYS_RES_MEMORY, &rid, RF_ACTIVE)) == NULL) {
+		    SYS_RES_MEMORY, PCIR_BAR(1), RF_ACTIVE)) == NULL) {
 			device_printf(dev,
 			    "can't allocate register window 1\n");
 			goto out;
@@ -428,7 +426,7 @@ aac_pci_attach(device_t dev)
 			rid = 1;
 	}
 	if ((sc->aac_irq = bus_alloc_resource_any(sc->aac_dev, SYS_RES_IRQ,
-	    &rid, RF_ACTIVE | (rid != 0 ? 0 : RF_SHAREABLE))) == NULL) {
+	    rid, RF_ACTIVE | (rid != 0 ? 0 : RF_SHAREABLE))) == NULL) {
 		device_printf(dev, "can't allocate interrupt\n");
 		goto out;
 	}

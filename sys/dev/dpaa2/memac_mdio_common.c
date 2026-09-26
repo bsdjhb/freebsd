@@ -275,11 +275,8 @@ memac_mdio_read_ivar(device_t dev, device_t child, int index, uintptr_t *result)
 int
 memac_mdio_generic_attach(struct memac_mdio_softc_common *sc)
 {
-	int rid;
-
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE | RF_SHAREABLE);
+	sc->mem_res = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE | RF_SHAREABLE);
 	if (sc->mem_res == NULL) {
 		device_printf(sc->dev, "%s: cannot allocate mem resource\n",
 		    __func__);
@@ -296,8 +293,7 @@ memac_mdio_generic_detach(struct memac_mdio_softc_common *sc)
 {
 
 	if (sc->mem_res != NULL)
-		bus_release_resource(sc->dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(sc->dev, sc->mem_res);
 
 	return (0);
 }

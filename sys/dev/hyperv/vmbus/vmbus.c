@@ -1694,8 +1694,7 @@ vmbus_detach(device_t dev)
 	vmbus_free_mmio_res(dev);
 
 #if defined(__aarch64__)
-	bus_release_resource(device_get_parent(dev), SYS_RES_IRQ, sc->vector,
-	    sc->ires);
+	bus_release_resource(device_get_parent(dev), sc->ires);
 #endif
 	return (0);
 }

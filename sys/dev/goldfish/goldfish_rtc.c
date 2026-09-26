@@ -56,7 +56,6 @@
 
 struct goldfish_rtc_softc {
 	struct resource	*res;
-	int		rid;
 	struct mtx	mtx;
 };
 
@@ -82,9 +81,7 @@ goldfish_rtc_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 
-	sc->rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->rid,
-	    RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "could not allocate resource\n");
 		return (ENXIO);
@@ -110,7 +107,7 @@ goldfish_rtc_detach(device_t dev)
 
 	clock_unregister(dev);
 	mtx_destroy(&sc->mtx);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->rid, sc->res);
+	bus_release_resource(dev, sc->res);
 
 	return (0);
 }

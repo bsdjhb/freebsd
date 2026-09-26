@@ -450,8 +450,7 @@ dpaa2_cons_detach(device_t dev)
 		dpaa2_cons_detach_common(&sc->mc_cd);
 
 	if (sc->res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, rman_get_rid(sc->res),
-		    sc->res);
+		bus_release_resource(dev, sc->res);
 
 	return (0);
 }
@@ -474,12 +473,11 @@ dpaa2_cons_acpi_attach(device_t dev)
 {
 	struct dpaa2_cons_softc *sc;
 	uint32_t val;
-	int error, rid;
+	int error;
 
 	sc = device_get_softc(dev);
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "Could not allocate memory\n");
 		return (ENXIO);
@@ -540,12 +538,11 @@ dpaa2_cons_fdt_attach(device_t dev)
 {
 	struct dpaa2_cons_softc *sc;
 	uint32_t val;
-	int error, rid;
+	int error;
 
 	sc = device_get_softc(dev);
 
-	rid = 0;
-	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	sc->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->res == NULL) {
 		device_printf(dev, "Could not allocate memory\n");
 		return (ENXIO);

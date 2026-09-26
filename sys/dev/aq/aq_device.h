@@ -110,7 +110,6 @@ struct aq_dev {
 	struct if_irq	irq;
 	int				msix;
 
-	int			mmio_rid;
 	struct resource *	mmio_res;
 	bus_space_tag_t		mmio_tag;
 	bus_space_handle_t	mmio_handle;

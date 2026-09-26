@@ -164,7 +164,6 @@ ath_pci_attach(device_t dev)
 	struct ath_pci_softc *psc = device_get_softc(dev);
 	struct ath_softc *sc = &psc->sc_sc;
 	int error = ENXIO;
-	int rid;
 #ifdef	ATH_EEPROM_FIRMWARE
 	const struct firmware *fw = NULL;
 	const char *buf;
@@ -191,8 +190,7 @@ ath_pci_attach(device_t dev)
 	/* 
 	 * Setup memory-mapping of PCI registers.
 	 */
-	rid = BS_BAR;
-	psc->sc_sr = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	psc->sc_sr = bus_alloc_resource_any(dev, SYS_RES_MEMORY, BS_BAR,
 					    RF_ACTIVE);
 	if (psc->sc_sr == NULL) {
 		device_printf(dev, "cannot map register space\n");
@@ -215,8 +213,7 @@ ath_pci_attach(device_t dev)
 	/*
 	 * Arrange interrupt line.
 	 */
-	rid = 0;
-	psc->sc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	psc->sc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 					     RF_SHAREABLE|RF_ACTIVE);
 	if (psc->sc_irq == NULL) {
 		device_printf(dev, "could not map interrupt\n");
@@ -285,9 +282,9 @@ bad4:
 bad3:
 	bus_teardown_intr(dev, psc->sc_irq, psc->sc_ih);
 bad2:
-	bus_release_resource(dev, SYS_RES_IRQ, 0, psc->sc_irq);
+	bus_release_resource(dev, psc->sc_irq);
 bad1:
-	bus_release_resource(dev, SYS_RES_MEMORY, BS_BAR, psc->sc_sr);
+	bus_release_resource(dev, psc->sc_sr);
 
 	ATH_TXSTATUS_LOCK_DESTROY(sc);
 	ATH_PCU_LOCK_DESTROY(sc);
@@ -317,10 +314,10 @@ ath_pci_detach(device_t dev)
 
 	bus_generic_detach(dev);
 	bus_teardown_intr(dev, psc->sc_irq, psc->sc_ih);
-	bus_release_resource(dev, SYS_RES_IRQ, 0, psc->sc_irq);
+	bus_release_resource(dev, psc->sc_irq);
 
 	bus_dma_tag_destroy(sc->sc_dmat);
-	bus_release_resource(dev, SYS_RES_MEMORY, BS_BAR, psc->sc_sr);
+	bus_release_resource(dev, psc->sc_sr);
 
 	if (sc->sc_eepromdata)
 		free(sc->sc_eepromdata, M_TEMP);

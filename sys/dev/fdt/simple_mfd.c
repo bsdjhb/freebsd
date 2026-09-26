@@ -168,13 +168,11 @@ simple_mfd_attach(device_t dev)
 {
 	struct simple_mfd_softc *sc;
 	phandle_t node, child;
-	int rid;
 
 	sc = device_get_softc(dev);
 	node = ofw_bus_get_node(dev);
 
 	sc->dev = dev;
-	rid = 0;
 
 	/* Parse address-cells and size-cells from the parent node as a fallback */
 	if (OF_getencprop(node, "#address-cells", &sc->sc.acells,
@@ -206,7 +204,7 @@ simple_mfd_attach(device_t dev)
 	}
 
 	if (ofw_bus_is_compatible(dev, "syscon")) {
-		sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+		sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 		    RF_ACTIVE | RF_SHAREABLE);
 		if (sc->mem_res == NULL) {
 			device_printf(dev,
@@ -242,8 +240,7 @@ simple_mfd_detach(device_t dev)
 		SYSCON_LOCK_DESTROY(sc);
 
 		if (sc->mem_res != NULL)
-			bus_release_resource(dev, SYS_RES_MEMORY, 0,
-			    sc->mem_res);
+			bus_release_resource(dev, sc->mem_res);
 	}
 	return (0);
 }

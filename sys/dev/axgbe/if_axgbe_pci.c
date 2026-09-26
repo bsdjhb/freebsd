@@ -1507,14 +1507,13 @@ axgbe_if_attach_post(if_ctx_t ctx)
 } /* axgbe_if_attach_post */
 
 static void
-xgbe_free_intr(struct xgbe_prv_data *pdata, struct resource *res, void *tag,
-		int rid)
+xgbe_free_intr(struct xgbe_prv_data *pdata, struct resource *res, void *tag)
 {
 	if (tag)
 		bus_teardown_intr(pdata->dev, res, tag);
 
 	if (res)
-		bus_release_resource(pdata->dev, SYS_RES_IRQ, rid, res);
+		bus_release_resource(pdata->dev, res);
 }
 
 static void
@@ -1533,23 +1532,20 @@ axgbe_interrupts_free(if_ctx_t ctx)
 	iflib_irq_free(ctx, &pdata->dev_irq);
 
 	/* Free ecc_irq */
-	xgbe_free_intr(pdata, pdata->ecc_irq_res, pdata->ecc_irq_tag,
-	    pdata->ecc_rid);
+	xgbe_free_intr(pdata, pdata->ecc_irq_res, pdata->ecc_irq_tag);
 
 	/* Free i2c_irq */	
-	xgbe_free_intr(pdata, pdata->i2c_irq_res, pdata->i2c_irq_tag,
-	    pdata->i2c_rid);
+	xgbe_free_intr(pdata, pdata->i2c_irq_res, pdata->i2c_irq_tag);
 
 	/* Free an_irq */
-	xgbe_free_intr(pdata, pdata->an_irq_res, pdata->an_irq_tag,
-	    pdata->an_rid);
+	xgbe_free_intr(pdata, pdata->an_irq_res, pdata->an_irq_tag);
 
 	for (i = 0; i < scctx->isc_nrxqsets; i++) {
 
 		channel = pdata->channel[i];
 		if (channel == NULL)
 			continue;
-		axgbe_printf(2, "%s: rid %d\n", __func__, channel->dma_irq_rid);
+		axgbe_printf(2, "%s: channel %d\n", __func__, i);
 		irq.ii_res = channel->dma_irq_res;
 		irq.ii_tag = channel->dma_irq_tag;
 		iflib_irq_free(ctx, &irq);
@@ -1966,9 +1962,8 @@ axgbe_if_msix_intr_assign(if_ctx_t ctx, int msix)
 
 	/* ECC INTR SETUP */
 	rid++;
-	pdata->ecc_rid = rid;
 	pdata->ecc_irq_res = bus_alloc_resource_any(pdata->dev, SYS_RES_IRQ,
-	    &rid, flags);
+	    rid, flags);
 	if (!pdata->ecc_irq_res) {
 		axgbe_error("failed to allocate IRQ for rid %d, name %s.\n",
 		    rid, "ecc_irq");
@@ -1985,9 +1980,8 @@ axgbe_if_msix_intr_assign(if_ctx_t ctx, int msix)
 
 	/* I2C INTR SETUP */
 	rid++;
-	pdata->i2c_rid = rid;
         pdata->i2c_irq_res = bus_alloc_resource_any(pdata->dev, SYS_RES_IRQ,
-	    &rid, flags);
+	    rid, flags);
         if (!pdata->i2c_irq_res) {
                 axgbe_error("failed to allocate IRQ for rid %d, name %s.\n",
 		    rid, "i2c_irq");
@@ -2004,9 +1998,8 @@ axgbe_if_msix_intr_assign(if_ctx_t ctx, int msix)
 
 	/* AN INTR SETUP */
 	rid++;
-	pdata->an_rid = rid;
         pdata->an_irq_res = bus_alloc_resource_any(pdata->dev, SYS_RES_IRQ,
-	    &rid, flags);
+	    rid, flags);
         if (!pdata->an_irq_res) {
                 axgbe_error("failed to allocate IRQ for rid %d, name %s.\n",
 		    rid, "an_irq");
@@ -2038,7 +2031,6 @@ axgbe_if_msix_intr_assign(if_ctx_t ctx, int msix)
 			return (error);
 		}
 
-		channel->dma_irq_rid = rid;
 		channel->dma_irq_res = irq.ii_res;
 		channel->dma_irq_tag = irq.ii_tag;
 		axgbe_printf(1, "%s: channel count %d idx %d irq %d\n",

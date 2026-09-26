@@ -1060,9 +1060,8 @@ bce_attach(device_t dev)
 	pci_enable_busmaster(dev);
 
 	/* Allocate PCI memory resources. */
-	rid = PCIR_BAR(0);
 	sc->bce_res_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		&rid, RF_ACTIVE);
+		PCIR_BAR(0), RF_ACTIVE);
 
 	if (sc->bce_res_mem == NULL) {
 		BCE_PRINTF("%s(%d): PCI memory allocation failed\n",
@@ -1085,7 +1084,7 @@ bce_attach(device_t dev)
 	if ((sc->bce_cap_flags & BCE_MSIX_CAPABLE_FLAG) &&
 		(bce_msi_enable >= 2) &&
 		((sc->bce_res_irq = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		&rid, RF_ACTIVE)) != NULL)) {
+		rid, RF_ACTIVE)) != NULL)) {
 		msi_needed = count = 1;
 
 		if (((error = pci_alloc_msix(dev, &count)) != 0) ||
@@ -1095,8 +1094,7 @@ bce_attach(device_t dev)
 				msi_needed, count, error);
 			count = 0;
 			pci_release_msi(dev);
-			bus_release_resource(dev, SYS_RES_MEMORY, rid,
-				sc->bce_res_irq);
+			bus_release_resource(dev, sc->bce_res_irq);
 			sc->bce_res_irq = NULL;
 		} else {
 			DBPRINT(sc, BCE_INFO_LOAD, "%s(): Using MSI-X interrupt.\n",
@@ -1133,7 +1131,7 @@ bce_attach(device_t dev)
 	}
 
 	sc->bce_res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &rid, RF_ACTIVE | (count != 0 ? 0 : RF_SHAREABLE));
+	    rid, RF_ACTIVE | (count != 0 ? 0 : RF_SHAREABLE));
 
 	/* Report any IRQ allocation errors. */
 	if (sc->bce_res_irq == NULL) {
@@ -3821,8 +3819,7 @@ bce_release_resources(struct bce_softc *sc)
 
 	if (sc->bce_res_irq != NULL) {
 		DBPRINT(sc, BCE_INFO_RESET, "Releasing IRQ.\n");
-		bus_release_resource(dev, SYS_RES_IRQ,
-		    rman_get_rid(sc->bce_res_irq), sc->bce_res_irq);
+		bus_release_resource(dev, sc->bce_res_irq);
 	}
 
 	if (sc->bce_flags & (BCE_USING_MSI_FLAG | BCE_USING_MSIX_FLAG)) {
@@ -3832,8 +3829,7 @@ bce_release_resources(struct bce_softc *sc)
 
 	if (sc->bce_res_mem != NULL) {
 		DBPRINT(sc, BCE_INFO_RESET, "Releasing PCI memory.\n");
-		    bus_release_resource(dev, SYS_RES_MEMORY, PCIR_BAR(0),
-		    sc->bce_res_mem);
+		    bus_release_resource(dev, sc->bce_res_mem);
 	}
 
 	if (sc->bce_ifp != NULL) {

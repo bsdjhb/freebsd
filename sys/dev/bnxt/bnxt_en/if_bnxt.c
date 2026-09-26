@@ -5015,7 +5015,6 @@ bnxt_map_bar(struct bnxt_softc *softc, struct bnxt_bar_info *bar, int bar_num, b
 		return EDOOFUS;
 	}
 
-	bar->rid = PCIR_BAR(bar_num);
 	flag = RF_ACTIVE;
 	if (shareable)
 		flag |= RF_SHAREABLE;
@@ -5023,7 +5022,7 @@ bnxt_map_bar(struct bnxt_softc *softc, struct bnxt_bar_info *bar, int bar_num, b
 	if ((bar->res =
 		bus_alloc_resource_any(softc->dev,
 			   SYS_RES_MEMORY,
-			   &bar->rid,
+			   PCIR_BAR(bar_num),
 			   flag)) == NULL) {
 		device_printf(softc->dev,
 		    "PCI BAR%d mapping failure\n", bar_num);
@@ -5054,13 +5053,11 @@ static void
 bnxt_pci_mapping_free(struct bnxt_softc *softc)
 {
 	if (softc->hwrm_bar.res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-		    softc->hwrm_bar.rid, softc->hwrm_bar.res);
+		bus_release_resource(softc->dev, softc->hwrm_bar.res);
 	softc->hwrm_bar.res = NULL;
 
 	if (softc->doorbell_bar.res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-		    softc->doorbell_bar.rid, softc->doorbell_bar.res);
+		bus_release_resource(softc->dev, softc->doorbell_bar.res);
 	softc->doorbell_bar.res = NULL;
 }
 

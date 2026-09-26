@@ -219,7 +219,7 @@ dpaa2_mac_setup_irq(device_t dev)
 		goto err_exit;
 	}
 	if ((sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->irq_rid[0], RF_ACTIVE | RF_SHAREABLE)) == NULL) {
+	    sc->irq_rid[0], RF_ACTIVE | RF_SHAREABLE)) == NULL) {
 		device_printf(dev, "%s: failed to allocate IRQ resource\n",
 		    __func__);
 		error = ENXIO;

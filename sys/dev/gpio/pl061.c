@@ -443,17 +443,15 @@ pl061_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "can't allocate memory resource\n");
 		return (ENXIO);
 	}
 
-	sc->sc_irq_rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "can't allocate IRQ resource\n");
@@ -512,8 +510,7 @@ free_isrc:
 	 *	intr_isrc_deregister(PIC_INTR_ISRC(sc, irq));
 	*/
 	bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_irq_hdlr);
-	bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid,
-	    sc->sc_irq_res);
+	bus_release_resource(dev, sc->sc_irq_res);
 free_pic:
         /*
 	 * XXX intr_pic_deregister: not implemented
@@ -521,8 +518,7 @@ free_pic:
          */
 
 free_mem:
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-	    sc->sc_mem_res);
+	bus_release_resource(dev, sc->sc_mem_res);
 
 	return (ENXIO);
 
@@ -541,12 +537,10 @@ pl061_detach(device_t dev)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_irq_hdlr);
 
 	if (sc->sc_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid,
-		    sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 
 	if (sc->sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-		    sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	PL061_LOCK_DESTROY(sc);
 	return (0);
 }

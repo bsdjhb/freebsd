@@ -133,7 +133,7 @@ struct vmbus_softc {
 #if defined(__aarch64__)
 	struct resource *ires;
 	void *icookie;
-	int vector;
+	//int vector;
 #endif
 	bus_dma_tag_t   dmat;
 };

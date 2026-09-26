@@ -835,8 +835,7 @@ acpi_cpu_cx_cst_free_plvlx(device_t cpu_dev, struct acpi_cx *cx_ptr)
 
 	if (cx_ptr->p_lvlx == NULL)
 		return;
-	bus_release_resource(cpu_dev, cx_ptr->res_type, cx_ptr->res_rid,
-	    cx_ptr->p_lvlx);
+	bus_release_resource(cpu_dev, cx_ptr->p_lvlx);
 	cx_ptr->p_lvlx = NULL;
 	bus_delete_resource(cpu_dev, cx_ptr->res_type, cx_ptr->res_rid);
 }
@@ -925,7 +924,7 @@ acpi_cpu_cx_cst(struct acpi_cpu_softc *sc)
 		    bus_set_resource(sc->cpu_dev, SYS_RES_IOPORT,
 		      cx_ptr->res_rid, address, 1);
 		    cx_ptr->p_lvlx = bus_alloc_resource_any(sc->cpu_dev,
-		      SYS_RES_IOPORT, &cx_ptr->res_rid, RF_ACTIVE |
+		      SYS_RES_IOPORT, cx_ptr->res_rid, RF_ACTIVE |
 		      RF_SHAREABLE);
 		    if (cx_ptr->p_lvlx == NULL) {
 			bus_delete_resource(sc->cpu_dev, SYS_RES_IOPORT,

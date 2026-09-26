@@ -1533,7 +1533,7 @@ acpi_sysres_alloc(device_t dev)
 
 	/* Pre-allocate resource and add to our rman pool. */
 	res = bus_alloc_resource(dev, rle->type,
-	    &rle->rid, rle->start, rle->start + rle->count - 1, rle->count,
+	    rle->rid, rle->start, rle->start + rle->count - 1, rle->count,
 	    RF_ACTIVE | RF_UNMAPPED);
 	if (res != NULL) {
 	    rman_manage_region(rm, rman_get_start(res), rman_get_end(res));

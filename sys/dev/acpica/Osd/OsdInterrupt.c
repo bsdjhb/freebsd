@@ -95,7 +95,7 @@ acpi_intr_destroy(device_t dev, struct acpi_intr *ai)
 	if (ai->ai_handle != NULL)
 		bus_teardown_intr(dev, ai->ai_irq, ai->ai_handle);
 	if (ai->ai_irq != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, ai->ai_rid, ai->ai_irq);
+		bus_release_resource(dev, ai->ai_irq);
 	bus_delete_resource(dev, SYS_RES_IRQ, ai->ai_rid);
 	free(ai, M_ACPIINTR);
 }
@@ -151,7 +151,7 @@ AcpiOsInstallInterruptHandler(UINT32 InterruptNumber,
 	bus_set_resource(sc->acpi_dev, SYS_RES_IRQ, ai->ai_rid,
 	    InterruptNumber, 1);
 	ai->ai_irq = bus_alloc_resource_any(sc->acpi_dev, SYS_RES_IRQ,
-	    &ai->ai_rid, RF_SHAREABLE | RF_ACTIVE);
+	    ai->ai_rid, RF_SHAREABLE | RF_ACTIVE);
 	if (ai->ai_irq == NULL) {
 		device_printf(sc->acpi_dev, "could not allocate interrupt\n");
 		goto error;

@@ -1569,13 +1569,11 @@ static void
 enic_pci_mapping_free(struct enic_softc *softc)
 {
 	if (softc->mem.res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-				     softc->mem.rid, softc->mem.res);
+		bus_release_resource(softc->dev, softc->mem.res);
 	softc->mem.res = NULL;
 
 	if (softc->io.res != NULL)
-		bus_release_resource(softc->dev, SYS_RES_MEMORY,
-				     softc->io.rid, softc->io.res);
+		bus_release_resource(softc->dev, softc->io.res);
 	softc->io.res = NULL;
 }
 
@@ -1614,13 +1612,12 @@ enic_map_bar(struct enic_softc *softc, struct enic_bar_info *bar, int bar_num,
 		return (EDOOFUS);
 	}
 
-	bar->rid = PCIR_BAR(bar_num);
 	flag = RF_ACTIVE;
 	if (shareable)
 		flag |= RF_SHAREABLE;
 
 	if ((bar->res = bus_alloc_resource_any(softc->dev,
-	   SYS_RES_MEMORY, &bar->rid, flag)) == NULL) {
+	   SYS_RES_MEMORY, PCIR_BAR(bar_num), flag)) == NULL) {
 		device_printf(softc->dev,
 			      "PCI BAR%d mapping failure\n", bar_num);
 		return (ENXIO);

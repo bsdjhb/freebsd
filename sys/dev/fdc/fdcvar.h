@@ -55,9 +55,7 @@ struct fdc_data {
 	struct	bio_queue_head head;
 	struct	bio *bp;	/* active buffer */
 	struct	resource *res_irq, *res_drq;
-	int	rid_irq, rid_drq;
 #define FDC_MAXREG	8
-	int	ridio[FDC_MAXREG];
 	struct	resource *resio[FDC_MAXREG];
 	bus_space_tag_t iot;
 	bus_space_handle_t ioh[FDC_MAXREG];

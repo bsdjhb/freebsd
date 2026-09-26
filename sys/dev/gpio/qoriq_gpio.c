@@ -350,16 +350,15 @@ int
 qoriq_gpio_attach(device_t dev)
 {
 	struct qoriq_gpio_softc *sc = device_get_softc(dev);
-	int i, rid;
+	int i;
 
 	sc->dev = dev;
 
 	GPIO_LOCK_INIT(sc);
 
 	/* Allocate memory. */
-	rid = 0;
 	sc->sc_mem = bus_alloc_resource_any(dev,
-		     SYS_RES_MEMORY, &rid, RF_ACTIVE);
+		     SYS_RES_MEMORY, 0, RF_ACTIVE);
 	if (sc->sc_mem == NULL) {
 		device_printf(dev, "Can't allocate memory for device output port");
 		qoriq_gpio_detach(dev);
@@ -398,8 +397,7 @@ qoriq_gpio_detach(device_t dev)
 
 	if (sc->sc_mem != NULL) {
 		/* Release output port resource. */
-		bus_release_resource(dev, SYS_RES_MEMORY,
-				     rman_get_rid(sc->sc_mem), sc->sc_mem);
+		bus_release_resource(dev, sc->sc_mem);
 	}
 
 	GPIO_LOCK_DESTROY(sc);

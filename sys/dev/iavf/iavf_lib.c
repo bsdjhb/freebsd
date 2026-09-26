@@ -72,12 +72,10 @@ iavf_allocate_pci_resources_common(struct iavf_sc *sc)
 {
 	struct iavf_hw *hw = &sc->hw;
 	device_t dev = sc->dev;
-	int rid;
 
 	/* Map PCI BAR0 */
-	rid = PCIR_BAR(0);
 	sc->pci_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &rid, RF_ACTIVE);
+	    PCIR_BAR(0), RF_ACTIVE);
 
 	if (!(sc->pci_mem)) {
 		device_printf(dev, "Unable to allocate bus resource: PCI memory\n");

@@ -138,15 +138,10 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 {
 	struct	resource *regs;
 	struct	resource *regs2;
-	int	regs_type;
-	int	regs_id;
-	int	regs_id2;
 	int	allow_memio;
 
 	regs = NULL;
 	regs2 = NULL;
-	regs_type = 0;
-	regs_id = 0;
 
 	/* Retrieve the per-device 'allow_memio' hint */
 	if (resource_int_value(device_get_name(ahd->dev_softc),
@@ -160,10 +155,8 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 
 	if ((ahd->bugs & AHD_PCIX_MMAPIO_BUG) == 0
 	 && allow_memio != 0) {
-		regs_type = SYS_RES_MEMORY;
-		regs_id = AHD_PCI_MEMADDR;
-		regs = bus_alloc_resource_any(ahd->dev_softc, regs_type,
-					      &regs_id, RF_ACTIVE);
+		regs = bus_alloc_resource_any(ahd->dev_softc, SYS_RES_MEMORY,
+		    AHD_PCI_MEMADDR, RF_ACTIVE);
 		if (regs != NULL) {
 			int error;
 
@@ -186,18 +179,15 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 				       aic_get_pci_bus(ahd->dev_softc),
 				       aic_get_pci_slot(ahd->dev_softc),
 				       aic_get_pci_function(ahd->dev_softc));
-				bus_release_resource(ahd->dev_softc, regs_type,
-						     regs_id, regs);
+				bus_release_resource(ahd->dev_softc, regs);
 				regs = NULL;
 				AHD_CORRECTABLE_ERROR(ahd);
 			}
 		}
 	}
 	if (regs == NULL) {
-		regs_type = SYS_RES_IOPORT;
-		regs_id = AHD_PCI_IOADDR0;
-		regs = bus_alloc_resource_any(ahd->dev_softc, regs_type,
-					      &regs_id, RF_ACTIVE);
+		regs = bus_alloc_resource_any(ahd->dev_softc, SYS_RES_IOPORT,
+		    AHD_PCI_IOADDR0, RF_ACTIVE);
 		if (regs == NULL) {
 			device_printf(ahd->dev_softc,
 				      "can't allocate register resources\n");
@@ -208,9 +198,8 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 		ahd->bshs[0] = rman_get_bushandle(regs);
 
 		/* And now the second BAR */
-		regs_id2 = AHD_PCI_IOADDR1;
-		regs2 = bus_alloc_resource_any(ahd->dev_softc, regs_type,
-					       &regs_id2, RF_ACTIVE);
+		regs2 = bus_alloc_resource_any(ahd->dev_softc, SYS_RES_IOPORT,
+		    AHD_PCI_IOADDR1, RF_ACTIVE);
 		if (regs2 == NULL) {
 			device_printf(ahd->dev_softc,
 				      "can't allocate register resources\n");
@@ -219,12 +208,8 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 		}
 		ahd->tags[1] = rman_get_bustag(regs2);
 		ahd->bshs[1] = rman_get_bushandle(regs2);
-		ahd->platform_data->regs_res_type[1] = regs_type;
-		ahd->platform_data->regs_res_id[1] = regs_id2;
 		ahd->platform_data->regs[1] = regs2;
 	}
-	ahd->platform_data->regs_res_type[0] = regs_type;
-	ahd->platform_data->regs_res_id[0] = regs_id;
 	ahd->platform_data->regs[0] = regs;
 	return (0);
 }
@@ -232,14 +217,10 @@ ahd_pci_map_registers(struct ahd_softc *ahd)
 int
 ahd_pci_map_int(struct ahd_softc *ahd)
 {
-	int zero;
-
-	zero = 0;
 	ahd->platform_data->irq =
-	    bus_alloc_resource_any(ahd->dev_softc, SYS_RES_IRQ, &zero,
+	    bus_alloc_resource_any(ahd->dev_softc, SYS_RES_IRQ, 0,
 				   RF_ACTIVE | RF_SHAREABLE);
 	if (ahd->platform_data->irq == NULL)
 		return (ENOMEM);
-	ahd->platform_data->irq_res_type = SYS_RES_IRQ;
 	return (ahd_map_int(ahd));
 }

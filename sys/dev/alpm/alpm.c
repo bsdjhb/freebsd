@@ -154,7 +154,6 @@ alpm_probe(device_t dev)
 static int
 alpm_attach(device_t dev)
 {
-	int rid;
 	u_int32_t l;
 	struct alpm_softc *alpm;
 
@@ -205,8 +204,7 @@ alpm_attach(device_t dev)
 		printf("\n");
 	}
 
-	rid = SMBBA;
-	alpm->res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+	alpm->res = bus_alloc_resource_any(dev, SYS_RES_IOPORT, SMBBA,
 	    RF_ACTIVE);
 
 	if (alpm->res == NULL) {
@@ -241,7 +239,7 @@ alpm_detach(device_t dev)
 	mtx_destroy(&alpm->lock);
 
 	if (alpm->res)
-		bus_release_resource(dev, SYS_RES_IOPORT, SMBBA, alpm->res);
+		bus_release_resource(dev, alpm->res);
 
 	return (0);
 }

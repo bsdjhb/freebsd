@@ -76,8 +76,6 @@ struct dwwdt_softc {
 	clk_t			 sc_clk;
 	uint64_t		 sc_clk_freq;
 	eventhandler_tag	 sc_evtag;
-	int 			 sc_mem_rid;
-	int			 sc_irq_rid;
 	enum {
 		DWWDT_STOPPED,
 		DWWDT_RUNNING,
@@ -246,17 +244,15 @@ dwwdt_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		device_printf(dev, "cannot allocate memory resource\n");
 		goto err_no_mem;
 	}
 
-	sc->sc_irq_rid = 0;
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_ACTIVE);
 	if (sc->sc_irq_res == NULL) {
 		device_printf(dev, "cannot allocate ireq resource\n");
 		goto err_no_irq;
@@ -298,10 +294,9 @@ err_no_freq:
 err_no_clock:
 	bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intr_cookie);
 err_no_intr:
-	bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid, sc->sc_irq_res);
+	bus_release_resource(dev, sc->sc_irq_res);
 err_no_irq:
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-	    sc->sc_mem_res);
+	bus_release_resource(dev, sc->sc_mem_res);
 err_no_mem:
 	return (ENXIO);
 }
@@ -334,13 +329,11 @@ dwwdt_detach(device_t dev)
 		bus_teardown_intr(dev, sc->sc_irq_res, sc->sc_intr_cookie);
 
 	if (sc->sc_irq_res) {
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid,
-		    sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	}
 
 	if (sc->sc_mem_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid,
-		    sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 	}
 
 	return (0);

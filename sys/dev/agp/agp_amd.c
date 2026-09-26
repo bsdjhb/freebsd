@@ -212,15 +212,14 @@ agp_amd_attach(device_t dev)
 {
 	struct agp_amd_softc *sc = device_get_softc(dev);
 	struct agp_amd_gatt *gatt;
-	int error, rid;
+	int error;
 
 	error = agp_generic_attach(dev);
 	if (error)
 		return error;
 
-	rid = AGP_AMD751_REGISTERS;
-	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-					  RF_ACTIVE);
+	sc->regs = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    AGP_AMD751_REGISTERS, RF_ACTIVE);
 	if (!sc->regs) {
 		agp_generic_detach(dev);
 		return ENOMEM;
@@ -289,8 +288,7 @@ agp_amd_detach(device_t dev)
 	agp_amd_free_gatt(sc->gatt);
 	agp_free_res(dev);
 
-	bus_release_resource(dev, SYS_RES_MEMORY,
-			     AGP_AMD751_REGISTERS, sc->regs);
+	bus_release_resource(dev, sc->regs);
 
 	return 0;
 }

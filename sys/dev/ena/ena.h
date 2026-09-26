@@ -434,7 +434,6 @@ struct ena_adapter {
 	struct resource *memory;
 	struct resource *registers;
 	struct resource *msix;
-	int msix_rid;
 
 	/* MSI-X */
 	struct msix_entry *msix_entries;

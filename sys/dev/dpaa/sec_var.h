@@ -84,7 +84,6 @@ struct sec_jr {
 
 	/* Completion IRQ, separate from the SEC top-level error IRQ. */
 	struct resource		*jr_ires;
-	int			 jr_irid;
 	void			*jr_icookie;
 
 	/*
@@ -113,9 +112,7 @@ struct sec_jr {
 struct sec_softc {
 	device_t		 sc_dev;
 	struct resource		*sc_rres;	/* CCSR MMIO for SEC */
-	int			 sc_rrid;
 	struct resource		*sc_ires;	/* SEC error IRQ */
-	int			 sc_irid;
 	void			*sc_icookie;
 	bus_dma_tag_t		 sc_dmatag;	/* for crypto payloads */
 	int32_t			 sc_cid;	/* opencrypto driver id */

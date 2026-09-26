@@ -709,7 +709,6 @@ flex_spi_attach(device_t dev)
 {
 	struct flex_spi_softc *sc;
 	phandle_t node;
-	int rid;
 	uint32_t reg;
 
 	node = ofw_bus_get_node(dev);
@@ -719,12 +718,10 @@ flex_spi_attach(device_t dev)
 	mtx_init(&sc->disk_mtx, "flex_spi_DISK", "QSPI disk mtx", MTX_DEF);
 
 	/* Get memory resources. */
-	rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 
-	rid = 1;
-	sc->ahb_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	sc->ahb_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE | RF_SHAREABLE);
 
 	if (sc->mem_res == NULL || sc->ahb_mem_res == NULL) {
@@ -846,12 +843,10 @@ flex_spi_detach(device_t dev)
 free_resources:
 	/* Release memory resource. */
 	if (sc->mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->mem_res), sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 
 	if (sc->ahb_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->ahb_mem_res), sc->ahb_mem_res);
+		bus_release_resource(dev, sc->ahb_mem_res);
 
 	/* Disable clocks */
 	if (sc->fspi_clk_en_hz)

@@ -335,8 +335,7 @@ intelgpio_detach(device_t dev)
 
 	for (i = 0; i < sc->sc_plat->ncommunities; i++) {
 		if (sc->sc_mem_res[i] != NULL)
-			bus_release_resource(dev, SYS_RES_MEMORY, i,
-			    sc->sc_mem_res[i]);
+			bus_release_resource(dev, sc->sc_mem_res[i]);
 	}
 
 	INTELGPIO_LOCK_DESTROY(sc);
@@ -363,7 +362,7 @@ intelgpio_attach(device_t dev, const struct intelgpio_platform *plat)
 	have_res = false;
 	for (i = 0; i < plat->ncommunities; i++) {
 		sc->sc_mem_res[i] = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &i, RF_ACTIVE);
+		    i, RF_ACTIVE);
 		if (sc->sc_mem_res[i] == NULL) {
 			device_printf(dev,
 			    "failed to allocate memory resource "

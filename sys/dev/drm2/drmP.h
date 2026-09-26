@@ -1108,7 +1108,6 @@ struct drm_device {
 	/* Storage of resource pointers for drm_get_resource_* */
 #define	DRM_MAX_PCI_RESOURCE	6
 	struct resource   *pcir[DRM_MAX_PCI_RESOURCE];
-	int		  pcirid[DRM_MAX_PCI_RESOURCE];
 	struct mtx	  pcir_lock;
 
 	int		  pci_domain;

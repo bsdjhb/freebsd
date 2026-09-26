@@ -89,10 +89,8 @@ struct chvgpio_softc {
 
 	ACPI_HANDLE	sc_handle;
 
-	int		sc_mem_rid;
 	struct resource *sc_mem_res;
 
-	int		sc_irq_rid;
 	struct resource *sc_irq_res;
 	void		*intr_handle;
 
@@ -403,22 +401,20 @@ chvgpio_attach(device_t dev)
 		sc->sc_ngroups++;
 	}
 
-	sc->sc_mem_rid = 0;
-	sc->sc_mem_res = bus_alloc_resource_any(sc->sc_dev, SYS_RES_MEMORY,
-		&sc->sc_mem_rid, RF_ACTIVE);
+	sc->sc_mem_res = bus_alloc_resource_any(sc->sc_dev, SYS_RES_MEMORY, 0,
+		RF_ACTIVE);
 	if (sc->sc_mem_res == NULL) {
 		CHVGPIO_LOCK_DESTROY(sc);
 		device_printf(dev, "can't allocate memory resource\n");
 		return (ENOMEM);
 	}
 
-	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		&sc->sc_irq_rid, RF_ACTIVE);
+	sc->sc_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+		RF_ACTIVE);
 
 	if (!sc->sc_irq_res) {
 		CHVGPIO_LOCK_DESTROY(sc);
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 		device_printf(dev, "can't allocate irq resource\n");
 		return (ENOMEM);
 	}
@@ -430,10 +426,8 @@ chvgpio_attach(device_t dev)
 	if (error) {
 		device_printf(sc->sc_dev, "unable to setup irq: error %d\n", error);
 		CHVGPIO_LOCK_DESTROY(sc);
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			sc->sc_mem_rid, sc->sc_mem_res);
-		bus_release_resource(dev, SYS_RES_IRQ,
-			sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 		return (ENXIO);
 	}
 
@@ -444,10 +438,8 @@ chvgpio_attach(device_t dev)
 	sc->sc_busdev = gpiobus_add_bus(dev);
 	if (sc->sc_busdev == NULL) {
 		CHVGPIO_LOCK_DESTROY(sc);
-		bus_release_resource(dev, SYS_RES_MEMORY,
-			sc->sc_mem_rid, sc->sc_mem_res);
-		bus_release_resource(dev, SYS_RES_IRQ,
-			sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 		return (ENXIO);
 	}
 
@@ -482,9 +474,9 @@ chvgpio_detach(device_t dev)
 	if (sc->intr_handle != NULL)
 	    bus_teardown_intr(sc->sc_dev, sc->sc_irq_res, sc->intr_handle);
 	if (sc->sc_irq_res != NULL)
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irq_rid, sc->sc_irq_res);
+		bus_release_resource(dev, sc->sc_irq_res);
 	if (sc->sc_mem_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_mem_rid, sc->sc_mem_res);
+		bus_release_resource(dev, sc->sc_mem_res);
 
 	CHVGPIO_LOCK_DESTROY(sc);
 

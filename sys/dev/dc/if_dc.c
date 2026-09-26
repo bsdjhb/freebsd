@@ -2030,7 +2030,7 @@ dc_attach(device_t dev)
 	struct dc_mediainfo *m;
 	uint32_t reg, revision;
 	uint16_t *srom;
-	int error, mac_offset, n, phy, rid, tmp;
+	int error, mac_offset, n, phy, tmp;
 	uint8_t *mac;
 
 	sc = device_get_softc(dev);
@@ -2044,8 +2044,7 @@ dc_attach(device_t dev)
 	 */
 	pci_enable_busmaster(dev);
 
-	rid = DC_RID;
-	sc->dc_res = bus_alloc_resource_any(dev, DC_RES, &rid, RF_ACTIVE);
+	sc->dc_res = bus_alloc_resource_any(dev, DC_RES, DC_RID, RF_ACTIVE);
 
 	if (sc->dc_res == NULL) {
 		device_printf(dev, "couldn't map ports/memory\n");
@@ -2057,8 +2056,7 @@ dc_attach(device_t dev)
 	sc->dc_bhandle = rman_get_bushandle(sc->dc_res);
 
 	/* Allocate interrupt. */
-	rid = 0;
-	sc->dc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+	sc->dc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
 	    RF_SHAREABLE | RF_ACTIVE);
 
 	if (sc->dc_irq == NULL) {
@@ -2544,9 +2542,9 @@ dc_detach(device_t dev)
 	if (sc->dc_intrhand)
 		bus_teardown_intr(dev, sc->dc_irq, sc->dc_intrhand);
 	if (sc->dc_irq)
-		bus_release_resource(dev, SYS_RES_IRQ, 0, sc->dc_irq);
+		bus_release_resource(dev, sc->dc_irq);
 	if (sc->dc_res)
-		bus_release_resource(dev, DC_RES, DC_RID, sc->dc_res);
+		bus_release_resource(dev, sc->dc_res);
 
 	if (ifp != NULL)
 		if_free(ifp);

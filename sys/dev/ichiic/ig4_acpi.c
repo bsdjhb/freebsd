@@ -109,17 +109,15 @@ ig4iic_acpi_attach(device_t dev)
 	 */
 	acpi_set_powerstate(dev, ACPI_STATE_D0);
 
-	sc->regs_rid = 0;
-	sc->regs_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-					  &sc->regs_rid, RF_ACTIVE);
+	sc->regs_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->regs_res == NULL) {
 		device_printf(dev, "unable to map registers\n");
 		ig4iic_acpi_detach(dev);
 		return (ENXIO);
 	}
-	sc->intr_rid = 0;
-	sc->intr_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-					  &sc->intr_rid, RF_SHAREABLE | RF_ACTIVE);
+	sc->intr_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0,
+	    RF_SHAREABLE | RF_ACTIVE);
 	if (sc->intr_res == NULL) {
 		device_printf(dev, "unable to map interrupt\n");
 		ig4iic_acpi_detach(dev);
@@ -148,13 +146,11 @@ ig4iic_acpi_detach(device_t dev)
 	}
 
 	if (sc->intr_res) {
-		bus_release_resource(dev, SYS_RES_IRQ,
-				     sc->intr_rid, sc->intr_res);
+		bus_release_resource(dev, sc->intr_res);
 		sc->intr_res = NULL;
 	}
 	if (sc->regs_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-				     sc->regs_rid, sc->regs_res);
+		bus_release_resource(dev, sc->regs_res);
 		sc->regs_res = NULL;
 	}
 

@@ -1349,7 +1349,6 @@ struct AdapterControlBlock {
 	struct resource		*sys_res_arcmsr[2];
 	struct resource		*irqres[ARCMSR_NUM_MSIX_VECTORS];
 	void			*ih[ARCMSR_NUM_MSIX_VECTORS]; /* interrupt handle */
-	int			irq_id[ARCMSR_NUM_MSIX_VECTORS];
 
 	/* Hooks into the CAM XPT */
 	struct			cam_sim *psim;
@@ -1423,7 +1422,6 @@ struct AdapterControlBlock {
 	pCompletion_Q		pCompletionQ;
 	int			xor_mega;
 	int			msix_vectors;
-	int			rid[2];
 	unsigned long		completeQ_phys;
 	u_int32_t		max_coherent_size;
 	u_int8_t		*xortable;

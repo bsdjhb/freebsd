@@ -695,17 +695,14 @@ fman_attach(device_t dev)
 	}
 	sc->qman_chan_base = qchan_range[0];
 	sc->qman_chan_count = qchan_range[1];
-	sc->mem_rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->mem_rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (!sc->mem_res) {
 		device_printf(dev, "could not allocate memory.\n");
 		return (ENXIO);
 	}
 
-	sc->irq_rid = 0;
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->irq_rid,
-	    RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (!sc->irq_res) {
 		device_printf(dev, "could not allocate interrupt.\n");
 		goto err;
@@ -717,9 +714,8 @@ fman_attach(device_t dev)
 		goto err;
 	}
 
-	sc->err_irq_rid = 1;
-	sc->err_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-	    &sc->err_irq_rid, RF_ACTIVE | RF_SHAREABLE);
+	sc->err_irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, 1
+	    RF_ACTIVE | RF_SHAREABLE);
 	if (!sc->err_irq_res) {
 		device_printf(dev, "could not allocate error interrupt.\n");
 		goto err;
@@ -761,18 +757,15 @@ fman_detach(device_t dev)
 	sc = device_get_softc(dev);
 
 	if (sc->mem_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->mem_rid,
-		    sc->mem_res);
+		bus_release_resource(dev, sc->mem_res);
 	}
 
 	if (sc->irq_res) {
-		bus_release_resource(dev, SYS_RES_IRQ, sc->irq_rid,
-		    sc->irq_res);
+		bus_release_resource(dev, sc->irq_res);
 	}
 
 	if (sc->irq_res) {
-		bus_release_resource(dev, SYS_RES_IRQ, sc->err_irq_rid,
-		    sc->err_irq_res);
+		bus_release_resource(dev, sc->err_irq_res);
 	}
 
 	if (sc->muram_vmem != NULL)

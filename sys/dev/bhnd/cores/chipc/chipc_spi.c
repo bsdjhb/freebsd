@@ -83,8 +83,7 @@ chipc_spi_attach(device_t dev)
 	sc = device_get_softc(dev);
 
 	/* Allocate SPI controller registers */
-	sc->sc_rid = 1;
-	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rid,
+	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 1,
 	    RF_ACTIVE);
 	if (sc->sc_res == NULL) {
 		device_printf(dev, "failed to allocate device registers\n");
@@ -92,9 +91,8 @@ chipc_spi_attach(device_t dev)
 	}
 
 	/* Allocate flash shadow region */
-	sc->sc_flash_rid = 0;
-	sc->sc_flash_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_flash_rid, RF_ACTIVE);
+	sc->sc_flash_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_flash_res == NULL) {
 		device_printf(dev, "failed to allocate flash region\n");
 		error = ENXIO;
@@ -145,12 +143,10 @@ failed:
 	device_delete_children(dev);
 
 	if (sc->sc_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid,
-		    sc->sc_res);
+		bus_release_resource(dev, sc->sc_res);
 
 	if (sc->sc_flash_res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_flash_rid,
-		    sc->sc_flash_res);
+		bus_release_resource(dev, sc->sc_flash_res);
 
 	return (error);
 }
@@ -166,9 +162,8 @@ chipc_spi_detach(device_t dev)
 	if ((error = bus_generic_detach(dev)))
 		return (error);
 
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_rid, sc->sc_res);
-	bus_release_resource(dev, SYS_RES_MEMORY, sc->sc_flash_rid,
-	    sc->sc_flash_res);
+	bus_release_resource(dev, sc->sc_res);
+	bus_release_resource(dev, sc->sc_flash_res);
 	return (0);
 }
 

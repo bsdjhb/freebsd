@@ -436,9 +436,8 @@ asmc_try_probe(device_t dev)
 {
 	struct asmc_softc *sc = device_get_softc(dev);
 
-	sc->sc_rid_mem = 0;
-	sc->sc_iomem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->sc_rid_mem, RF_ACTIVE);
+	sc->sc_iomem = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
+	    RF_ACTIVE);
 	if (sc->sc_iomem != NULL) {
 		if (asmc_mmio_probe(dev) == 0) {
 			sc->sc_is_mmio = true;
@@ -446,13 +445,12 @@ asmc_try_probe(device_t dev)
 				device_printf(dev, "using MMIO backend\n");
 			return (0);
 		}
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    sc->sc_rid_mem, sc->sc_iomem);
+		bus_release_resource(dev, sc->sc_iomem);
 		sc->sc_iomem = NULL;
 	}
 
-	sc->sc_ioport = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-	    &sc->sc_rid_port, RF_ACTIVE);
+	sc->sc_ioport = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0,
+	    RF_ACTIVE);
 	if (sc->sc_ioport != NULL)
 		return (0);
 
@@ -791,9 +789,7 @@ asmc_attach(device_t dev)
 	/*
 	 * Allocate an IRQ for the SMS.
 	 */
-	sc->sc_rid_irq = 0;
-	sc->sc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->sc_rid_irq,
-	    RF_ACTIVE);
+	sc->sc_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, 0, RF_ACTIVE);
 	if (sc->sc_irq == NULL) {
 		device_printf(dev, "unable to allocate IRQ resource\n");
 		ret = ENXIO;
@@ -848,13 +844,11 @@ asmc_detach(device_t dev)
 		sc->sc_cookie = NULL;
 	}
 	if (sc->sc_irq) {
-		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_rid_irq,
-		    sc->sc_irq);
+		bus_release_resource(dev, sc->sc_irq);
 		sc->sc_irq = NULL;
 	}
 	if (sc->sc_ioport) {
-		bus_release_resource(dev, SYS_RES_IOPORT, sc->sc_rid_port,
-		    sc->sc_ioport);
+		bus_release_resource(dev, sc->sc_ioport);
 		sc->sc_ioport = NULL;
 	}
 	asmc_mmio_detach(dev, sc);

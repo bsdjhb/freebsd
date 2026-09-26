@@ -326,14 +326,12 @@ struct aac_softc
 	/* bus connections */
 	device_t		aac_dev;
 	struct resource		*aac_regs_res0, *aac_regs_res1; /* reg. if. window */
-	int			aac_regs_rid0, aac_regs_rid1;		/* resource ID */
 	bus_space_handle_t	aac_bhandle0, aac_bhandle1;		/* bus space handle */
 	bus_space_tag_t		aac_btag0, aac_btag1;		/* bus space tag */
 	bus_dma_tag_t		aac_parent_dmat;	/* parent DMA tag */
 	bus_dma_tag_t		aac_buffer_dmat;	/* data buffer/command
 							 * DMA tag */
 	struct resource		*aac_irq[AAC_MAX_MSIX];	 /* interrupt */
-	int			aac_irq_rid[AAC_MAX_MSIX];
 	void			*aac_intr[AAC_MAX_MSIX]; /* interrupt handle */
 	struct aac_msix_ctx	aac_msix[AAC_MAX_MSIX]; /* context */
 	eventhandler_tag	eh;

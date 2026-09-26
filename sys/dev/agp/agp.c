@@ -217,7 +217,7 @@ agp_generic_attach(device_t dev)
 			sc->as_aperture_rid = AGP_APBASE;
 
 		sc->as_aperture = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-		    &sc->as_aperture_rid, RF_SHAREABLE);
+		    sc->as_aperture_rid, RF_SHAREABLE);
 		if (!sc->as_aperture)
 			return ENOMEM;
 	}
@@ -291,8 +291,7 @@ agp_free_res(device_t dev)
 	struct agp_softc *sc = device_get_softc(dev);
 
 	if (sc->as_aperture != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->as_aperture_rid,
-		    sc->as_aperture);
+		bus_release_resource(dev, sc->as_aperture);
 	mtx_destroy(&sc->as_lock);
 }
 

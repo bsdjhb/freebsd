@@ -138,12 +138,10 @@ struct acpi_ec_softc {
     ACPI_HANDLE		ec_gpehandle;
     UINT8		ec_gpebit;
 
-    int			ec_data_rid;
     struct resource	*ec_data_res;
     bus_space_tag_t	ec_data_tag;
     bus_space_handle_t	ec_data_handle;
 
-    int			ec_csr_rid;
     struct resource	*ec_csr_res;
     bus_space_tag_t	ec_csr_tag;
     bus_space_handle_t	ec_csr_handle;
@@ -477,9 +475,8 @@ acpi_ec_attach(device_t dev)
     free(params, M_TEMP);
 
     /* Attach bus resources for data and command/status ports. */
-    sc->ec_data_rid = 0;
-    sc->ec_data_res = bus_alloc_resource_any(sc->ec_dev, SYS_RES_IOPORT,
-			&sc->ec_data_rid, RF_ACTIVE);
+    sc->ec_data_res = bus_alloc_resource_any(sc->ec_dev, SYS_RES_IOPORT, 0,
+	RF_ACTIVE);
     if (sc->ec_data_res == NULL) {
 	device_printf(dev, "can't allocate data port\n");
 	goto error;
@@ -487,9 +484,8 @@ acpi_ec_attach(device_t dev)
     sc->ec_data_tag = rman_get_bustag(sc->ec_data_res);
     sc->ec_data_handle = rman_get_bushandle(sc->ec_data_res);
 
-    sc->ec_csr_rid = 1;
-    sc->ec_csr_res = bus_alloc_resource_any(sc->ec_dev, SYS_RES_IOPORT,
-			&sc->ec_csr_rid, RF_ACTIVE);
+    sc->ec_csr_res = bus_alloc_resource_any(sc->ec_dev, SYS_RES_IOPORT, 1,
+	RF_ACTIVE);
     if (sc->ec_csr_res == NULL) {
 	device_printf(dev, "can't allocate command/status port\n");
 	goto error;
@@ -538,11 +534,9 @@ error:
     AcpiRemoveAddressSpaceHandler(sc->ec_handle, ACPI_ADR_SPACE_EC,
 	EcSpaceHandler);
     if (sc->ec_csr_res)
-	bus_release_resource(sc->ec_dev, SYS_RES_IOPORT, sc->ec_csr_rid,
-			     sc->ec_csr_res);
+	bus_release_resource(sc->ec_dev, sc->ec_csr_res);
     if (sc->ec_data_res)
-	bus_release_resource(sc->ec_dev, SYS_RES_IOPORT, sc->ec_data_rid,
-			     sc->ec_data_res);
+	bus_release_resource(sc->ec_dev, sc->ec_data_res);
     return (ENXIO);
 }
 

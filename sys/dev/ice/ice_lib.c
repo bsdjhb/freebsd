@@ -311,9 +311,8 @@ ice_map_bar(device_t dev, struct ice_bar_info *bar, int bar_num)
 		return (EDOOFUS);
 	}
 
-	bar->rid = PCIR_BAR(bar_num);
-	bar->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &bar->rid,
-					  RF_ACTIVE);
+	bar->res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
+	    PCIR_BAR(bar_num), RF_ACTIVE);
 	if (!bar->res) {
 		device_printf(dev, "PCI BAR%d mapping failed\n", bar_num);
 		return (ENXIO);
@@ -337,7 +336,7 @@ void
 ice_free_bar(device_t dev, struct ice_bar_info *bar)
 {
 	if (bar->res != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY, bar->rid, bar->res);
+		bus_release_resource(dev, bar->res);
 	bar->res = NULL;
 }
 

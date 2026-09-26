@@ -103,7 +103,7 @@ ata_ali_chipinit(device_t dev)
 {
     struct ata_pci_controller *ctlr = device_get_softc(dev);
     struct ali_sata_resources *res;
-    int i, rid;
+    int i;
 
     if (ata_setup_interrupt(dev, ata_generic_intr))
 	return ENXIO;
@@ -119,14 +119,12 @@ ata_ali_chipinit(device_t dev)
 	/* Allocate resources for later use by channel attach routines. */
 	res = malloc(sizeof(struct ali_sata_resources), M_ATAPCI, M_WAITOK);
 	for (i = 0; i < 4; i++) {
-		rid = PCIR_BAR(i);
-		res->bars[i] = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
-		    RF_ACTIVE);
+		res->bars[i] = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
+		    PCIR_BAR(i), RF_ACTIVE);
 		if (res->bars[i] == NULL) {
 			device_printf(dev, "Failed to allocate BAR %d\n", i);
 			for (i--; i >=0; i--)
-				bus_release_resource(dev, SYS_RES_IOPORT,
-				    PCIR_BAR(i), res->bars[i]);
+				bus_release_resource(dev, res->bars[i]);
 			free(res, M_ATAPCI);
 			return ENXIO;
 		}
@@ -178,8 +176,7 @@ ata_ali_chipdeinit(device_t dev)
 		res = ctlr->chipset_data;
 		for (i = 0; i < 4; i++) {
 			if (res->bars[i] != NULL) {
-				bus_release_resource(dev, SYS_RES_IOPORT,
-				    PCIR_BAR(i), res->bars[i]);
+				bus_release_resource(dev, res->bars[i]);
 			}
 		}
 		free(res, M_ATAPCI);

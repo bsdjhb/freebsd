@@ -52,7 +52,6 @@ struct t4iov_softc {
 	bool sc_attached;
 
 	int pf;
-	int regs_rid;
 	struct resource *regs_res;
 };
 
@@ -240,9 +239,8 @@ t4iov_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 
-	sc->regs_rid = PCIR_BAR(0);
 	sc->regs_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-	    &sc->regs_rid, RF_ACTIVE);
+	    PCIR_BAR(0), RF_ACTIVE);
 	if (sc->regs_res == NULL) {
 		device_printf(dev, "cannot map registers.\n");
 		return (ENXIO);
@@ -258,15 +256,13 @@ t4iov_attach(device_t dev)
 	sc->sc_main = pci_find_dbsf(pci_get_domain(dev), pci_get_bus(dev),
 	    pci_get_slot(dev), 4);
 	if (sc->sc_main == NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->regs_rid,
-		    sc->regs_res);
+		bus_release_resource(dev, sc->regs_res);
 		return (ENXIO);
 	}
 	if (T4_IS_MAIN_READY(sc->sc_main) == 0) {
 		error = t4iov_attach_child(dev);
 		if (error != 0)
-			bus_release_resource(dev, SYS_RES_MEMORY, sc->regs_rid,
-			    sc->regs_res);
+			bus_release_resource(dev, sc->regs_res);
 		return (error);
 	}
 	return (0);
@@ -349,8 +345,7 @@ t4iov_detach(device_t dev)
 			return (error);
 	}
 	if (sc->regs_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY, sc->regs_rid,
-		    sc->regs_res);
+		bus_release_resource(dev, sc->regs_res);
 	}
 	return (0);
 }

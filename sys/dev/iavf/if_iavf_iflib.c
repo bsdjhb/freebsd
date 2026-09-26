@@ -1872,8 +1872,7 @@ iavf_free_pci_resources(struct iavf_sc *sc)
 
 early:
 	if (sc->pci_mem != NULL)
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(sc->pci_mem), sc->pci_mem);
+		bus_release_resource(dev, sc->pci_mem);
 }
 
 /**

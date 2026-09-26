@@ -104,16 +104,13 @@ ata_pci_attach(device_t dev)
 
     /* if busmastering mode "stuck" use it */
     if ((cmd & PCIM_CMD_BUSMASTEREN) == PCIM_CMD_BUSMASTEREN) {
-	ctlr->r_type1 = SYS_RES_IOPORT;
-	ctlr->r_rid1 = ATA_BMADDR_RID;
-	ctlr->r_res1 = bus_alloc_resource_any(dev, ctlr->r_type1, &ctlr->r_rid1,
-					      RF_ACTIVE);
+	ctlr->r_res1 = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
+	    ATA_BMADDR_RID, RF_ACTIVE);
     }
 
     if (ctlr->chipinit(dev)) {
 	if (ctlr->r_res1)
-	    bus_release_resource(dev, ctlr->r_type1, ctlr->r_rid1,
-				 ctlr->r_res1);
+	    bus_release_resource(dev, ctlr->r_res1);
 	return ENXIO;
     }
 
@@ -146,17 +143,17 @@ ata_pci_detach(device_t dev)
 
     if (ctlr->r_irq) {
 	bus_teardown_intr(dev, ctlr->r_irq, ctlr->handle);
-	bus_release_resource(dev, SYS_RES_IRQ, ctlr->r_irq_rid, ctlr->r_irq);
-	if (ctlr->r_irq_rid != ATA_IRQ_RID)
+	bus_release_resource(dev, ctlr->r_irq);
+	if (ctlr->msi)
 	    pci_release_msi(dev);
     }
     if (ctlr->chipdeinit != NULL)
 	ctlr->chipdeinit(dev);
     if (ctlr->r_res2) {
-	bus_release_resource(dev, ctlr->r_type2, ctlr->r_rid2, ctlr->r_res2);
+	bus_release_resource(dev, ctlr->r_res2);
     }
     if (ctlr->r_res1) {
-	bus_release_resource(dev, ctlr->r_type1, ctlr->r_rid1, ctlr->r_res1);
+	bus_release_resource(dev, ctlr->r_res1);
     }
 
     return 0;
@@ -392,15 +389,15 @@ ata_pci_ch_attach(device_t dev)
     struct ata_pci_controller *ctlr = device_get_softc(device_get_parent(dev));
     struct ata_channel *ch = device_get_softc(dev);
     struct resource *io = NULL, *ctlio = NULL;
-    int i, rid;
+    int i;
 
-    rid = ATA_IOADDR_RID;
-    if (!(io = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid, RF_ACTIVE)))
+    if (!(io = bus_alloc_resource_any(dev, SYS_RES_IOPORT, ATA_IOADDR_RID,
+	RF_ACTIVE)))
 	return ENXIO;
 
-    rid = ATA_CTLADDR_RID;
-    if (!(ctlio = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,RF_ACTIVE))){
-	bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID, io);
+    if (!(ctlio = bus_alloc_resource_any(dev, SYS_RES_IOPORT, ATA_CTLADDR_RID,
+	RF_ACTIVE))){
+	bus_release_resource(dev, io);
 	return ENXIO;
     }
 
@@ -432,10 +429,8 @@ ata_pci_ch_detach(device_t dev)
 
     ata_pci_dmafini(dev);
 
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_CTLADDR_RID,
-	ch->r_io[ATA_CONTROL].res);
-    bus_release_resource(dev, SYS_RES_IOPORT, ATA_IOADDR_RID,
-	ch->r_io[ATA_IDX_ADDR].res);
+    bus_release_resource(dev, ch->r_io[ATA_CONTROL].res);
+    bus_release_resource(dev, ch->r_io[ATA_IDX_ADDR].res);
 
     return (0);
 }
@@ -799,31 +794,31 @@ int
 ata_setup_interrupt(device_t dev, void *intr_func)
 {
     struct ata_pci_controller *ctlr = device_get_softc(dev);
-    int i, msi = 0;
+    int i, msi = 0, rid;
 
     if (!ctlr->legacy) {
 	if (resource_int_value(device_get_name(dev),
 		device_get_unit(dev), "msi", &i) == 0 && i != 0)
 	    msi = 1;
 	if (msi && pci_msi_count(dev) > 0 && pci_alloc_msi(dev, &msi) == 0) {
-	    ctlr->r_irq_rid = 0x1;
+	    ctlr->msi = true;
+	    rid = 0x1;
 	} else {
 	    msi = 0;
-	    ctlr->r_irq_rid = ATA_IRQ_RID;
+	    rid = ATA_IRQ_RID;
 	}
 	if (!(ctlr->r_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-		&ctlr->r_irq_rid, RF_SHAREABLE | RF_ACTIVE))) {
+		rid, RF_SHAREABLE | RF_ACTIVE))) {
 	    device_printf(dev, "unable to map interrupt\n");
-	    if (msi)
+	    if (ctlr->msi)
 		    pci_release_msi(dev);
 	    return ENXIO;
 	}
 	if ((bus_setup_intr(dev, ctlr->r_irq, ATA_INTR_FLAGS, NULL,
 			    intr_func, ctlr, &ctlr->handle))) {
 	    device_printf(dev, "unable to setup interrupt\n");
-	    bus_release_resource(dev,
-		SYS_RES_IRQ, ctlr->r_irq_rid, ctlr->r_irq);
-	    if (msi)
+	    bus_release_resource(dev, ctlr->r_irq);
+	    if (ctlr->msi)
 		    pci_release_msi(dev);
 	    return ENXIO;
 	}

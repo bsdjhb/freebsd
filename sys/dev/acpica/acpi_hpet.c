@@ -73,8 +73,6 @@ ACPI_MODULE_NAME("HPET")
 
 struct hpet_softc {
 	device_t		dev;
-	int			mem_rid;
-	int			intr_rid;
 	int			irq;
 	int			useirq;
 	int			legacy_route;
@@ -96,7 +94,6 @@ struct hpet_softc {
 #define	TIMER_STOPPED	0
 #define	TIMER_PERIODIC	1
 #define	TIMER_ONESHOT	2
-		int			intr_rid;
 		int			irq;
 		int			pcpu_cpu;
 		int			pcpu_misrouted;
@@ -470,7 +467,7 @@ hpet_attach(device_t dev)
 	struct hpet_timer *t;
 	struct make_dev_args mda;
 	int i, j, num_msi, num_timers, num_percpu_et, num_percpu_t, cur_cpu;
-	int pcpu_master, error;
+	int pcpu_master, error, rid;
 	rman_res_t hpet_region_size;
 	static int maxhpetet = 0;
 	uint32_t val, val2, cvectors, dvectors;
@@ -482,8 +479,7 @@ hpet_attach(device_t dev)
 	sc->dev = dev;
 	sc->handle = acpi_get_handle(dev);
 
-	sc->mem_rid = 0;
-	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->mem_rid,
+	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, 0,
 	    RF_ACTIVE);
 	if (sc->mem_res == NULL)
 		return (ENOMEM);
@@ -548,7 +544,6 @@ hpet_attach(device_t dev)
 		t->sc = sc;
 		t->num = i;
 		t->mode = TIMER_STOPPED;
-		t->intr_rid = -1;
 		t->irq = -1;
 		t->pcpu_cpu = -1;
 		t->pcpu_misrouted = 0;
@@ -678,9 +673,9 @@ hpet_attach(device_t dev)
 			dvectors &= ~(1 << t->irq);
 		}
 		if (t->irq >= 0) {
-			t->intr_rid = hpet_find_irq_rid(dev, t->irq, t->irq);
+			rid = hpet_find_irq_rid(dev, t->irq, t->irq);
 			t->intr_res = bus_alloc_resource(dev, SYS_RES_IRQ,
-			    &t->intr_rid, t->irq, t->irq, 1, RF_ACTIVE);
+			    rid, t->irq, t->irq, 1, RF_ACTIVE);
 			if (t->intr_res == NULL) {
 				t->irq = -1;
 				device_printf(dev,
@@ -733,9 +728,9 @@ hpet_attach(device_t dev)
 		j = i = fls(cvectors) - 1;
 		while (j > 0 && (cvectors & (1 << (j - 1))) != 0)
 			j--;
-		sc->intr_rid = hpet_find_irq_rid(dev, j, i);
-		sc->intr_res = bus_alloc_resource(dev, SYS_RES_IRQ,
-		    &sc->intr_rid, j, i, 1, RF_SHAREABLE | RF_ACTIVE);
+		rid = hpet_find_irq_rid(dev, j, i);
+		sc->intr_res = bus_alloc_resource(dev, SYS_RES_IRQ, rid,
+		    j, i, 1, RF_SHAREABLE | RF_ACTIVE);
 		if (sc->intr_res == NULL)
 			device_printf(dev, "Can't map interrupt.\n");
 		else if (bus_setup_intr(dev, sc->intr_res, INTR_TYPE_CLK,

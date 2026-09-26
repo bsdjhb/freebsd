@@ -54,10 +54,8 @@
 
 struct ichss_softc {
 	device_t	 dev;
-	int		 bm_rid;	/* Bus-mastering control (PM2REG). */
-	struct resource	*bm_reg;
-	int		 ctrl_rid;	/* Control/status register. */
-	struct resource	*ctrl_reg;
+	struct resource	*bm_reg;	/* Bus-mastering control (PM2REG). */
+	struct resource	*ctrl_reg;	/* Control/status register. */
 	struct cf_setting sets[2];	/* Only two settings. */
 };
 
@@ -243,20 +241,17 @@ ichss_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	sc->bm_rid = 0;
-	sc->bm_reg = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &sc->bm_rid,
+	sc->bm_reg = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 0,
 	    RF_ACTIVE);
 	if (sc->bm_reg == NULL) {
 		device_printf(dev, "failed to alloc BM arb register\n");
 		return (ENXIO);
 	}
-	sc->ctrl_rid = 1;
-	sc->ctrl_reg = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
-	    &sc->ctrl_rid, RF_ACTIVE);
+	sc->ctrl_reg = bus_alloc_resource_any(dev, SYS_RES_IOPORT, 1,
+	    RF_ACTIVE);
 	if (sc->ctrl_reg == NULL) {
 		device_printf(dev, "failed to alloc control register\n");
-		bus_release_resource(dev, SYS_RES_IOPORT, sc->bm_rid,
-		    sc->bm_reg);
+		bus_release_resource(dev, sc->bm_reg);
 		return (ENXIO);
 	}
 

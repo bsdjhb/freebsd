@@ -179,10 +179,8 @@ ata_sis_chipinit(device_t dev)
 	pci_write_config(dev, 0x52, pci_read_config(dev, 0x52, 2) | 0x0008, 2);
 	break;
     case SIS_SATA:
-	ctlr->r_type2 = SYS_RES_IOPORT;
-	ctlr->r_rid2 = PCIR_BAR(5);
-	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, ctlr->r_type2,
-						   &ctlr->r_rid2, RF_ACTIVE))) {
+	if ((ctlr->r_res2 = bus_alloc_resource_any(dev, SYS_RES_IOPORT,
+	    PCIR_BAR(5), RF_ACTIVE))) {
 	    ctlr->ch_attach = ata_sis_ch_attach;
 	    ctlr->ch_detach = ata_pci_ch_detach;
 	    ctlr->reset = ata_sis_reset;

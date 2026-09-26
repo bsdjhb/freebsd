@@ -140,8 +140,6 @@ typedef struct _hba {
 	
 	struct {
 		struct resource *res;
-		int type;
-		int rid;
 		void *base;
 	}
 	pcibar[6];

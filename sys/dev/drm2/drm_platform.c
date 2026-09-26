@@ -32,8 +32,7 @@ static void drm_platform_free_irq(struct drm_device *dev)
 	if (dev->irqr == NULL)
 		return;
 
-	bus_release_resource(dev->dev, SYS_RES_IRQ,
-	    dev->irqrid, dev->irqr);
+	bus_release_resource(dev->dev, dev->irqr);
 
 	dev->irqr = NULL;
 	dev->irq = 0;
@@ -83,7 +82,7 @@ static int drm_platform_get_irq(struct drm_device *dev)
 		return (dev->irq);
 
 	dev->irqr = bus_alloc_resource_any(dev->dev, SYS_RES_IRQ,
-	    &dev->irqrid, RF_SHAREABLE);
+	    dev->irqrid, RF_SHAREABLE);
 	if (!dev->irqr) {
 		dev_err(dev->dev, "Failed to allocate IRQ\n");
 		return (0);

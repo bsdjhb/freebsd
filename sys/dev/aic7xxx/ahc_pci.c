@@ -136,13 +136,9 @@ int
 ahc_pci_map_registers(struct ahc_softc *ahc)
 {
 	struct	resource *regs;
-	int	regs_type;
-	int	regs_id;
 	int	allow_memio = 1;
 
 	regs = NULL;
-	regs_type = 0;
-	regs_id = 0;
 
 	/* Retrieve the per-device 'allow_memio' hint */
 	if (resource_int_value(device_get_name(ahc->dev_softc),
@@ -162,10 +158,8 @@ ahc_pci_map_registers(struct ahc_softc *ahc)
 	}
 
 	if (allow_memio != 0) {
-		regs_type = SYS_RES_MEMORY;
-		regs_id = AHC_PCI_MEMADDR;
-		regs = bus_alloc_resource_any(ahc->dev_softc, regs_type,
-					      &regs_id, RF_ACTIVE);
+		regs = bus_alloc_resource_any(ahc->dev_softc, SYS_RES_MEMORY,
+		    AHC_PCI_MEMADDR, RF_ACTIVE);
 		if (regs != NULL) {
 			ahc->tag = rman_get_bustag(regs);
 			ahc->bsh = rman_get_bushandle(regs);
@@ -181,18 +175,15 @@ ahc_pci_map_registers(struct ahc_softc *ahc)
 				       aic_get_pci_bus(ahc->dev_softc),
 				       aic_get_pci_slot(ahc->dev_softc),
 				       aic_get_pci_function(ahc->dev_softc));
-				bus_release_resource(ahc->dev_softc, regs_type,
-						     regs_id, regs);
+				bus_release_resource(ahc->dev_softc, regs);
 				regs = NULL;
 			}
 		}
 	}
 
 	if (regs == NULL) {
-		regs_type = SYS_RES_IOPORT;
-		regs_id = AHC_PCI_IOADDR;
-		regs = bus_alloc_resource_any(ahc->dev_softc, regs_type,
-					      &regs_id, RF_ACTIVE);
+		regs = bus_alloc_resource_any(ahc->dev_softc, SYS_RES_IOPORT,
+		    AHC_PCI_IOADDR, RF_ACTIVE);
 		if (regs != NULL) {
 			ahc->tag = rman_get_bustag(regs);
 			ahc->bsh = rman_get_bushandle(regs);
@@ -203,8 +194,7 @@ ahc_pci_map_registers(struct ahc_softc *ahc)
 				       aic_get_pci_bus(ahc->dev_softc),
 				       aic_get_pci_slot(ahc->dev_softc),
 				       aic_get_pci_function(ahc->dev_softc));
-				bus_release_resource(ahc->dev_softc, regs_type,
-						     regs_id, regs);
+				bus_release_resource(ahc->dev_softc, regs);
 				regs = NULL;
 			}
 		}
@@ -214,8 +204,6 @@ ahc_pci_map_registers(struct ahc_softc *ahc)
 			      "can't allocate register resources\n");
 		return (ENOMEM);
 	}
-	ahc->platform_data->regs_res_type = regs_type;
-	ahc->platform_data->regs_res_id = regs_id;
 	ahc->platform_data->regs = regs;
 	return (0);
 }

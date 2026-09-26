@@ -376,25 +376,25 @@ static int
 ig4iic_pci_attach(device_t dev)
 {
 	ig4iic_softc_t *sc = device_get_softc(dev);
-	int count, error;
+	int count, error, rid;
 
 	sc->dev = dev;
-	sc->regs_rid = PCIR_BAR(0);
-	sc->regs_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
-					  &sc->regs_rid, RF_ACTIVE);
+	sc->regs_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, PCIR_BAR(0),
+	    RF_ACTIVE);
 	if (sc->regs_res == NULL) {
 		device_printf(dev, "unable to map registers\n");
 		ig4iic_pci_detach(dev);
 		return (ENXIO);
 	}
-	sc->intr_rid = 0;
+	rid = 0;
 	count = 1;
 	if (pci_alloc_msi(dev, &count) == 0) {
 		device_printf(dev, "Using MSI\n");
-		sc->intr_rid = 1;
+		rid = 1;
+		sc->msi = true;
 	}
-	sc->intr_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
-					  &sc->intr_rid, RF_SHAREABLE | RF_ACTIVE);
+	sc->intr_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, rid,
+	    RF_SHAREABLE | RF_ACTIVE);
 	if (sc->intr_res == NULL) {
 		device_printf(dev, "unable to map interrupt\n");
 		ig4iic_pci_detach(dev);
@@ -423,15 +423,13 @@ ig4iic_pci_detach(device_t dev)
 	}
 
 	if (sc->intr_res) {
-		bus_release_resource(dev, SYS_RES_IRQ,
-				     sc->intr_rid, sc->intr_res);
+		bus_release_resource(dev, sc->intr_res);
 		sc->intr_res = NULL;
 	}
-	if (sc->intr_rid != 0)
+	if (sc->msi)
 		pci_release_msi(dev);
 	if (sc->regs_res) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-				     sc->regs_rid, sc->regs_res);
+		bus_release_resource(dev, sc->regs_res);
 		sc->regs_res = NULL;
 	}
 
