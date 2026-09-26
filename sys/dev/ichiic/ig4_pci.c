@@ -376,7 +376,7 @@ static int
 ig4iic_pci_attach(device_t dev)
 {
 	ig4iic_softc_t *sc = device_get_softc(dev);
-	int error;
+	int count, error;
 
 	sc->dev = dev;
 	sc->regs_rid = PCIR_BAR(0);
@@ -388,8 +388,10 @@ ig4iic_pci_attach(device_t dev)
 		return (ENXIO);
 	}
 	sc->intr_rid = 0;
-	if (pci_alloc_msi(dev, &sc->intr_rid)) {
+	count = 1;
+	if (pci_alloc_msi(dev, &count) == 0) {
 		device_printf(dev, "Using MSI\n");
+		sc->intr_rid = 1;
 	}
 	sc->intr_res = bus_alloc_resource_any(dev, SYS_RES_IRQ,
 					  &sc->intr_rid, RF_SHAREABLE | RF_ACTIVE);
