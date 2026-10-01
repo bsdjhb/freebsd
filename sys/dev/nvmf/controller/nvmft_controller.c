@@ -8,6 +8,7 @@
 #include <sys/param.h>
 #include <sys/callout.h>
 #include <sys/kernel.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
@@ -19,6 +20,8 @@
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_subr.h>
 #include <dev/nvmf/controller/nvmft_var.h>
+
+#define	KTR_NVMFT	KTR_SPARE4
 
 static void	nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
     struct nvmft_qpair *qp, int error);
@@ -356,6 +359,8 @@ nvmft_controller_shutdown(void *arg, int pending)
 
 	MPASS(pending == 1);
 
+	CTR(KTR_NVMFT, "%s: %p", __func__, ctrlr);
+
 	/*
 	 * Wait for any pending connects to finish before shutting
 	 * down I/O queues.
@@ -420,12 +425,17 @@ nvmft_controller_shutdown(void *arg, int pending)
 	 * association immediately, otherwise wait up to 2 minutes
 	 * (NVMe-over-Fabrics 1.1 4.6).
 	 */
-	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0)
+	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0) {
+		MPASS(!callout_pending(&ctrlr->terminate_task.c));
+		CTR(KTR_NVMFT, "%s: %p immediate terminate", __func__, ctrlr);
 		taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, 0);
-	else
+	} else {
+		CTR(KTR_NVMFT, "%s: %p scheduling delayed terminate", __func__,
+		    ctrlr);
 		taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, hz * 60 * 2);
+	}
 	mtx_unlock(&ctrlr->lock);
 }
 
@@ -435,6 +445,8 @@ nvmft_controller_terminate(void *arg, int pending)
 	struct nvmft_controller *ctrlr = arg;
 	struct nvmft_port *np;
 	bool wakeup_np;
+
+	CTR(KTR_NVMFT, "%s: %p", __func__, ctrlr);
 
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
@@ -478,6 +490,20 @@ static void
 nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
     struct nvmft_qpair *qp, int error)
 {
+	if (qp == NULL) {
+		CTR(KTR_NVMFT, "%s: %p controller error %d", __func__, ctrlr,
+		    error);
+	} else {
+		int qid = nvmft_qpair_id(qp);
+
+		if (qid == 0)
+			CTR(KTR_NVMFT, "%s: %p admin queue error %d", __func__,
+			    ctrlr, error);
+		else
+			CTR(KTR_NVMFT, "%s: %p I/O queue %d error %d", __func__,
+			    ctrlr, qid, error);
+	}
+
 	/*
 	 * If a queue pair is closed, that isn't an error per se.
 	 * That just means additional commands cannot be received on
@@ -506,6 +532,8 @@ nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
 			 * safe to skip nvmft_controller_shutdown and
 			 * just schedule nvmft_controller_terminate.
 			 */
+			CTR(KTR_NVMFT, "%s: %p scheduling immediate terminate",
+			    __func__, ctrlr);
 			if (taskqueue_cancel_timeout(nvmft_ctrlr_taskq,
 			    &ctrlr->terminate_task, NULL) == 0)
 				taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
@@ -525,6 +553,7 @@ nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
 	if (ctrlr->shutdown)
 		return;
 
+	CTR(KTR_NVMFT, "%s: %p setting CFS", __func__, ctrlr);
 	ctrlr->csts |= NVMEF(NVME_CSTS_REG_CFS, 1);
 	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
@@ -1200,8 +1229,13 @@ update_cc(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 		goto error;
 	}
 
+	CTR(KTR_NVMFT, "%s: %p CC %#x -> %#x", __func__, ctrlr, ctrlr->cc,
+	    new_cc);
 	changes = ctrlr->cc ^ new_cc;
 	ctrlr->cc = new_cc;
+#ifdef KTR
+	uint32_t old_csts = ctrlr->csts;
+#endif
 
 	/* Handle shutdown requests. */
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
@@ -1241,6 +1275,9 @@ update_cc(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 
 	if (need_shutdown)
 		callout_stop(&ctrlr->ka_timer);
+
+	CTR(KTR_NVMFT, "%s: %p CSTS %#x -> %#x", __func__, ctrlr, old_csts,
+	    ctrlr->csts);
 	mtx_unlock(&ctrlr->lock);
 
 	if (cancel_terminate) {
@@ -1249,6 +1286,8 @@ update_cc(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 		 * shutdown, the terminate task from the shutdown
 		 * might still be scheduled.
 		 */
+		CTR(KTR_NVMFT, "%s: %p draining terminate task", __func__,
+		    ctrlr);
 		taskqueue_cancel_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, NULL);
 		taskqueue_drain_timeout(nvmft_ctrlr_taskq,
