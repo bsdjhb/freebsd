@@ -8,6 +8,7 @@
 #include <sys/param.h>
 #include <sys/callout.h>
 #include <sys/kernel.h>
+#include <sys/ktr.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
@@ -19,6 +20,8 @@
 #include <dev/nvmf/nvmf_transport.h>
 #include <dev/nvmf/controller/nvmft_subr.h>
 #include <dev/nvmf/controller/nvmft_var.h>
+
+#define	KTR_NVMFT	KTR_SPARE4
 
 static void	nvmft_controller_shutdown(void *arg, int pending);
 static void	nvmft_controller_terminate(void *arg, int pending);
@@ -319,6 +322,8 @@ nvmft_controller_shutdown(void *arg, int pending)
 
 	MPASS(pending == 1);
 
+	CTR(KTR_NVMFT, "%s: %p", __func__, ctrlr);
+
 	/*
 	 * Shutdown all I/O queues to terminate pending datamoves and
 	 * stop receiving new commands.
@@ -373,11 +378,16 @@ nvmft_controller_shutdown(void *arg, int pending)
 	 * association immediately, otherwise wait up to 2 minutes
 	 * (NVMe-over-Fabrics 1.1 4.6).
 	 */
-	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0)
+	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0) {
+		MPASS(!callout_pending(&ctrlr->terminate_task.c));
+		CTR(KTR_NVMFT, "%s: %p immediate terminate", __func__, ctrlr);
 		nvmft_controller_terminate(ctrlr, 0);
-	else
+	} else {
+		CTR(KTR_NVMFT, "%s: %p scheduling delayed terminate", __func__,
+		    ctrlr);
 		taskqueue_enqueue_timeout(taskqueue_thread,
 		    &ctrlr->terminate_task, hz * 60 * 2);
+	}
 }
 
 static void
@@ -386,6 +396,8 @@ nvmft_controller_terminate(void *arg, int pending)
 	struct nvmft_controller *ctrlr = arg;
 	struct nvmft_port *np;
 	bool wakeup_np;
+
+	CTR(KTR_NVMFT, "%s: %p", __func__, ctrlr);
 
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
@@ -425,6 +437,13 @@ void
 nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
     int error)
 {
+	if (qp == ctrlr->admin)
+		CTR(KTR_NVMFT, "%s: %p admin queue error %d", __func__, ctrlr,
+		    error);
+	else
+		CTR(KTR_NVMFT, "%s: %p I/O queue %d error %d", __func__, ctrlr,
+		    nvmft_qpair_id(qp), error);
+
 	/*
 	 * If a queue pair is closed, that isn't an error per se.
 	 * That just means additional commands cannot be received on
@@ -465,6 +484,8 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 			 * might deadlock waiting for the current
 			 * thread to exit.
 			 */
+			CTR(KTR_NVMFT, "%s: %p scheduling immediate terminate",
+			    __func__, ctrlr);
 			if (taskqueue_cancel_timeout(taskqueue_thread,
 			    &ctrlr->terminate_task, NULL) == 0)
 				taskqueue_enqueue_timeout(taskqueue_thread,
@@ -487,6 +508,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 		return;
 	}
 
+	CTR(KTR_NVMFT, "%s: %p setting CFS", __func__, ctrlr);
 	ctrlr->csts |= NVMEF(NVME_CSTS_REG_CFS, 1);
 	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
@@ -838,8 +860,13 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		return (false);
 	}
 
+	CTR(KTR_NVMFT, "%s: %p CC %#x -> %#x", __func__, ctrlr, ctrlr->cc,
+	    new_cc);
 	changes = ctrlr->cc ^ new_cc;
 	ctrlr->cc = new_cc;
+#ifdef KTR
+	uint32_t old_csts = ctrlr->csts;
+#endif
 
 	/* Handle shutdown requests. */
 	if (NVMEV(NVME_CC_REG_SHN, changes) != 0 &&
@@ -865,6 +892,8 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
 		}
 	}
+	CTR(KTR_NVMFT, "%s: %p CSTS %#x -> %#x", __func__, ctrlr, old_csts,
+	    ctrlr->csts);
 	mtx_unlock(&ctrlr->lock);
 
 	if (cancel_terminate) {
@@ -873,6 +902,8 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		 * shutdown, the terminate task from the shutdown
 		 * might still be scheduled.
 		 */
+		CTR(KTR_NVMFT, "%s: %p draining terminate task", __func__,
+		    ctrlr);
 		taskqueue_cancel_timeout(taskqueue_thread,
 		    &ctrlr->terminate_task, NULL);
 		taskqueue_drain_timeout(taskqueue_thread,
