@@ -373,11 +373,15 @@ nvmft_controller_shutdown(void *arg, int pending)
 	 * association immediately, otherwise wait up to 2 minutes
 	 * (NVMe-over-Fabrics 1.1 4.6).
 	 */
-	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0)
+	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0) {
+		MPASS(!callout_pending(&ctrlr->terminate_task.c));
+		nvmft_printf(ctrlr, "immediate terminate\n");
 		nvmft_controller_terminate(ctrlr, 0);
-	else
+	} else {
+		nvmft_printf(ctrlr, "scheduling delayed terminate\n");
 		taskqueue_enqueue_timeout(taskqueue_thread,
 		    &ctrlr->terminate_task, hz * 60 * 2);
+	}
 }
 
 static void
@@ -465,6 +469,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 			 * might deadlock waiting for the current
 			 * thread to exit.
 			 */
+			nvmft_printf(ctrlr, "scheduling immediate terminate\n");
 			if (taskqueue_cancel_timeout(taskqueue_thread,
 			    &ctrlr->terminate_task, NULL) == 0)
 				taskqueue_enqueue_timeout(taskqueue_thread,
@@ -487,6 +492,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 		return;
 	}
 
+	nvmft_printf(ctrlr, "setting CFS\n");
 	ctrlr->csts |= NVMEF(NVME_CSTS_REG_CFS, 1);
 	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
@@ -873,6 +879,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		 * shutdown, the terminate task from the shutdown
 		 * might still be scheduled.
 		 */
+		nvmft_printf(ctrlr, "draining terminate task\n");
 		taskqueue_cancel_timeout(taskqueue_thread,
 		    &ctrlr->terminate_task, NULL);
 		taskqueue_drain_timeout(taskqueue_thread,
