@@ -6,6 +6,7 @@ BINDIR=${TESTSDIR}
 ${PACKAGE}FILES+=	ctl.conf
 ${PACKAGE}FILESMODE_ctl.conf= 440
 
+ATF_TESTS_C+=	nvmft
 ATF_TESTS_SH+=	shutdown
 
 PROGS+=		nvmf_shutdown
