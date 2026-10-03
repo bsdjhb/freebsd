@@ -15,3 +15,16 @@ Then set the following configuration variables:
 test_suites.FreeBSD.nvmft.address = "127.0.0.1"
 test_suites.FreeBSD.nvmft.port = "4420"
 test_suites.FreeBSD.nvmft.nqn = "nqn.1994-09.org.freebsd:test"
+
+In addition, the following optional configuration variables may also
+be set (Note that the variable names all require a prefix of
+'test_suites.FreeBSD.'):
+
+Name			Type	Default		Description
+nvmft.transport		string	"tcp"		Transport type
+nvmft.flow_control	bool	false		Request SQ flow_control
+nvmft.cntlid		string	"dynamic"	Controller ID, can be
+						"dynamic", "static", or
+						a numeric value
+nvmft.header_digests	bool	false		Request TCP header digests
+nvmft.data_digests	bool	false		Request TCP data digests

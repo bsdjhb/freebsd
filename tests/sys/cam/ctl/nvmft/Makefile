@@ -6,7 +6,10 @@ BINDIR=${TESTSDIR}
 ${PACKAGE}FILES+=	README ctl.conf
 ${PACKAGE}FILESMODE_ctl.conf= 440
 
+ATF_TESTS_C+=	nvmft
 ATF_TESTS_SH+=	shutdown
+
+SRCS.nvmft=	nvmft.c nvmft_subr.c
 
 PROGS+=		nvmf_shutdown
 LIBADD+=	nvmf
