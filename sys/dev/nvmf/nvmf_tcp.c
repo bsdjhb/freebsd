@@ -1306,7 +1306,7 @@ nvmf_tcp_send(void *arg)
 
 	m = NULL;
 	SOCKBUF_LOCK(&so->so_snd);
-	while (!qp->tx_shutdown) {
+	for (;;) {
 		if (so->so_error != 0) {
 			error = so->so_error;
 			SOCKBUF_UNLOCK(&so->so_snd);
@@ -1325,6 +1325,8 @@ nvmf_tcp_send(void *arg)
 		}
 		if (m == NULL) {
 			if (STAILQ_EMPTY(&qp->tx_capsules)) {
+				if (qp->tx_shutdown)
+					break;
 				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 				continue;
 			}
