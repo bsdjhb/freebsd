@@ -91,6 +91,7 @@ struct nvmf_tcp_qpair {
 	bool	tx_shutdown;
 	struct mbufq tx_pdus;
 	STAILQ_HEAD(, nvmf_tcp_capsule) tx_capsules;
+	sbintime_t tx_shutdown_sbt;
 
 	struct nvmf_tcp_command_buffer_list tx_buffers;
 	struct nvmf_tcp_command_buffer_list rx_buffers;
@@ -1306,7 +1307,7 @@ nvmf_tcp_send(void *arg)
 
 	m = NULL;
 	SOCKBUF_LOCK(&so->so_snd);
-	while (!qp->tx_shutdown) {
+	for (;;) {
 		if (so->so_error != 0) {
 			error = so->so_error;
 			SOCKBUF_UNLOCK(&so->so_snd);
@@ -1325,6 +1326,8 @@ nvmf_tcp_send(void *arg)
 		}
 		if (m == NULL) {
 			if (STAILQ_EMPTY(&qp->tx_capsules)) {
+				if (qp->tx_shutdown)
+					break;
 				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 				continue;
 			}
@@ -1349,7 +1352,17 @@ nvmf_tcp_send(void *arg)
 		 */
 		space = sbspace(&so->so_snd);
 		if (space < m->m_len && sbused(&so->so_snd) != 0) {
-			cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
+			if (qp->tx_shutdown) {
+				error = cv_timedwait_sbt(&qp->tx_cv,
+				    SOCKBUF_MTX(&so->so_snd),
+				    qp->tx_shutdown_sbt, 0, C_ABSOLUTE |
+				    C_HARDCLOCK);
+				if (error != 0) {
+					m_freem(m);
+					break;
+				}
+			} else
+				cv_wait(&qp->tx_cv, SOCKBUF_MTX(&so->so_snd));
 			continue;
 		}
 		SOCKBUF_UNLOCK(&so->so_snd);
@@ -1531,9 +1544,14 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	struct nvmf_tcp_capsule *ntc, *tc;
 	struct socket *so = qp->so;
 
-	/* Shut down kthreads and clear upcalls */
+	/*
+	 * Shut down kthreads and clear upcalls.  Wait for up to 2
+	 * minutes for any pending transmit data to drain before
+	 * terminating the transmit thread.
+	 */
 	SOCKBUF_LOCK(&so->so_snd);
 	qp->tx_shutdown = true;
+	qp->tx_shutdown_sbt = sbinuptime() + (SBT_1S * 60 * 2);
 	if (qp->tx_thread != NULL) {
 		cv_signal(&qp->tx_cv);
 		mtx_sleep(qp->tx_thread, SOCKBUF_MTX(&so->so_snd), 0,
