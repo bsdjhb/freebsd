@@ -1,5 +1,4 @@
 # mptable: broken (not 64 bit clean)
-# pnpinfo: crashes (not really useful anyway)
 .if ${MK_ACPI} != "no"
 SUBDIR+=	acpi
 .endif
