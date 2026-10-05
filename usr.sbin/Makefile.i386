@@ -11,6 +11,5 @@ SUBDIR+=	btxld
 SUBDIR+=	cpucontrol
 SUBDIR+=	lptcontrol
 SUBDIR+=	mptable
-SUBDIR+=	pnpinfo
 SUBDIR+=	spkrtest
 SUBDIR+=	zzz

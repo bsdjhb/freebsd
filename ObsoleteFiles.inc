@@ -51,6 +51,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Removal of pnpinfo(8)
+OLD_FILES+=usr/share/man/man8/pnpinfo.8.gz
+OLD_FILES+=usr/sbin/pnpinfo
+
 # 2026xxxx: Removal of i386 kernel and i386-only drivers
 .if ${MACHINE} == "i386"
 OLD_FILES+=usr/include/acpica_machdep.h
