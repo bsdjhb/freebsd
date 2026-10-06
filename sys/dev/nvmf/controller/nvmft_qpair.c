@@ -26,8 +26,9 @@ struct nvmft_qpair {
 	struct nvmf_qpair *qp;
 	struct cidset *cids;
 
-	bool	admin;
-	bool	sq_flow_control;
+	bool	admin:1;
+	bool	sq_flow_control:1;
+	bool	early_error:1;
 	uint16_t qid;
 	u_int	qsize;
 	uint16_t sqhd;
@@ -50,6 +51,21 @@ nvmft_qpair_error(void *arg, int error)
 {
 	struct nvmft_qpair *qp = arg;
 	struct nvmft_controller *ctrlr = qp->ctrlr;
+
+	/*
+	 * Ignore errors on qpairs which are not yet associated with a
+	 * conroller.
+	 */
+	if (ctrlr == NULL) {
+		mtx_lock(&qp->lock);
+		ctrlr = qp->ctrlr;
+		if (ctrlr == NULL) {
+			qp->early_error = true;
+			mtx_unlock(&qp->lock);
+			return;
+		}
+		mtx_unlock(&qp->lock);
+	}
 
 	/*
 	 * XXX: The Linux TCP initiator sends a RST immediately after
@@ -129,6 +145,19 @@ nvmft_qpair_init(enum nvmf_trtype trtype, const nvlist_t *params, uint16_t qid,
 
 	refcount_init(&qp->qp_refs, 1);
 	return (qp);
+}
+
+bool
+nvmft_qpair_set_ctrlr(struct nvmft_qpair *qp, struct nvmft_controller *ctrlr)
+{
+	mtx_lock(&qp->lock);
+	if (qp->early_error) {
+		mtx_unlock(&qp->lock);
+		return (false);
+	}
+	qp->ctrlr = ctrlr;
+	mtx_unlock(&qp->lock);
+	return (true);
 }
 
 void
@@ -366,17 +395,16 @@ nvmft_connect_invalid_parameters(struct nvmft_qpair *qp,
 
 int
 nvmft_finish_accept(struct nvmft_qpair *qp,
-    const struct nvmf_fabric_connect_cmd *cmd, struct nvmft_controller *ctrlr)
+    const struct nvmf_fabric_connect_cmd *cmd, uint16_t cntlid)
 {
 	struct nvmf_fabric_connect_rsp rsp;
 
-	qp->ctrlr = ctrlr;
 	nvmft_init_connect_rsp(&rsp, cmd, 0);
 	if (qp->sq_flow_control)
 		rsp.sqhd = htole16(qp->sqhd);
 	else
 		rsp.sqhd = htole16(0xffff);
-	rsp.status_code_specific.success.cntlid = htole16(ctrlr->cntlid);
+	rsp.status_code_specific.success.cntlid = htole16(cntlid);
 	return (nvmft_send_connect_response(qp, &rsp));
 }
 
