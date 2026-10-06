@@ -571,6 +571,46 @@ ATF_TC_BODY(fetch_hip_offset_beyond_end, tc)
 	    LEN_TO_NUMD(16), true);
 }
 
+ATF_TC(fetch_reserved_log_page);
+ATF_TC_HEAD(fetch_reserved_log_page, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_reserved_log_page, tc)
+{
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	char buf[4];
+	int s;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	s = open_socket(tc, NULL, NULL);
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = s;
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	status = fetch_log_page(admin, 0x00, 0, 0, buf, sizeof(buf));
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_LOG_PAGE);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+	close(s);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
@@ -582,6 +622,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_2);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
+	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
 
 	return (atf_no_error());
 }

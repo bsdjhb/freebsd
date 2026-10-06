@@ -704,8 +704,10 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 	default:
 		nvmft_printf(ctrlr, "Unsupported page %#x for GET_LOG_PAGE\n",
 		    lid);
-		status = NVME_SC_INVALID_FIELD;
-		break;
+		nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVME_SC_INVALID_LOG_PAGE);
+		nvmf_free_capsule(nc);
+		return;
 	}
 
 done:
