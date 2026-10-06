@@ -370,6 +370,27 @@ ATF_TC_BODY(fetch_hip_offset_beyond_end, tc)
 	    LEN_TO_NUMD(16), true);
 }
 
+ATF_TC(fetch_reserved_log_page);
+ATF_TC_HEAD(fetch_reserved_log_page, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(fetch_reserved_log_page, tc)
+{
+	struct nvmf_qpair *admin;
+	char buf[4];
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	status = fetch_log_page(admin, 0x00, 0, 0, buf, sizeof(buf));
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_LOG_PAGE);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
@@ -381,6 +402,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_2);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
+	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
 
 	return (atf_no_error());
 }
