@@ -162,7 +162,9 @@ nvmft_handoff_admin_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 	ctrlr = nvmft_controller_alloc(np, cntlid, data);
 
 	mtx_lock(&np->lock);
-	if (!np->online) {
+	mtx_lock(&ctrlr->lock);
+	if (!np->online || !nvmft_qpair_set_ctrlr(qp, ctrlr)) {
+		mtx_unlock(&ctrlr->lock);
 		mtx_unlock(&np->lock);
 		nvmft_controller_free(ctrlr);
 		free_unr(np->ids, cntlid);
@@ -192,9 +194,18 @@ nvmft_handoff_admin_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 		callout_reset_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
 		    nvmft_keep_alive_timer, ctrlr, C_HARDCLOCK);
 	}
+
+	ctrlr->pending_connects++;
+	mtx_unlock(&ctrlr->lock);
 	mtx_unlock(&np->lock);
 
-	nvmft_finish_accept(qp, cmd, ctrlr);
+	nvmft_finish_accept(qp, cmd, cntlid);
+
+	mtx_lock(&ctrlr->lock);
+	ctrlr->pending_connects--;
+	if (ctrlr->pending_connects == 0)
+		wakeup(&ctrlr->pending_connects);
+	mtx_unlock(&ctrlr->lock);
 
 	return (0);
 }
@@ -306,11 +317,25 @@ nvmft_handoff_io_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 		nvmft_qpair_destroy(qp);
 		return (EINVAL);
 	}
+	if (!nvmft_qpair_set_ctrlr(qp, ctrlr)) {
+		mtx_unlock(&ctrlr->lock);
+		mtx_unlock(&np->lock);
+		nvmft_qpair_destroy(qp);
+		return (ENOTCONN);
+	}
 
 	ctrlr->io_qpairs[qid - 1].qp = qp;
+	ctrlr->pending_connects++;
 	mtx_unlock(&ctrlr->lock);
 	mtx_unlock(&np->lock);
-	nvmft_finish_accept(qp, cmd, ctrlr);
+
+	nvmft_finish_accept(qp, cmd, cntlid);
+
+	mtx_lock(&ctrlr->lock);
+	ctrlr->pending_connects--;
+	if (ctrlr->pending_connects == 0)
+		wakeup(&ctrlr->pending_connects);
+	mtx_unlock(&ctrlr->lock);
 
 	return (0);
 }
@@ -325,10 +350,17 @@ nvmft_controller_shutdown(void *arg, int pending)
 	CTR(KTR_NVMFT, "%s: %p", __func__, ctrlr);
 
 	/*
+	 * Wait for any pending connects to finish.
+	 */
+	mtx_lock(&ctrlr->lock);
+	while (ctrlr->pending_connects != 0)
+		mtx_sleep(&ctrlr->pending_connects, &ctrlr->lock, 0, "nvmftsh",
+		    0);
+
+	/*
 	 * Shutdown all I/O queues to terminate pending datamoves and
 	 * stop receiving new commands.
 	 */
-	mtx_lock(&ctrlr->lock);
 	for (u_int i = 0; i < ctrlr->num_io_queues; i++) {
 		if (ctrlr->io_qpairs[i].qp != NULL) {
 			ctrlr->io_qpairs[i].shutdown = true;
@@ -461,11 +493,13 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	 *
 	 * If an I/O queue pair is closed, just ignore it.
 	 */
+	mtx_lock(&ctrlr->lock);
 	if (error == 0) {
-		if (qp != ctrlr->admin)
+		if (qp != ctrlr->admin) {
+			mtx_unlock(&ctrlr->lock);
 			return;
+		}
 
-		mtx_lock(&ctrlr->lock);
 		if (ctrlr->shutdown) {
 			ctrlr->admin_closed = true;
 			mtx_unlock(&ctrlr->lock);
@@ -506,8 +540,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 		 * pair has been closed.
 		 */
 		ctrlr->admin_closed = true;
-	} else
-		mtx_lock(&ctrlr->lock);
+	}
 
 	/* Ignore transport errors if we are already shutting down. */
 	if (ctrlr->shutdown) {

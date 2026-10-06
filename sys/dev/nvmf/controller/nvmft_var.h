@@ -84,6 +84,8 @@ struct nvmft_controller {
 	 */
 	uint32_t pending_commands;
 
+	uint16_t pending_connects;
+
 	volatile int ka_active_traffic;
 	struct callout ka_timer;
 	sbintime_t ka_sbt;
@@ -139,6 +141,8 @@ int	nvmft_printf(struct nvmft_controller *ctrlr, const char *fmt, ...)
 /* nvmft_qpair.c */
 struct nvmft_qpair *nvmft_qpair_init(enum nvmf_trtype trtype,
     const nvlist_t *params, uint16_t qid, const char *name);
+bool	nvmft_qpair_set_ctrlr(struct nvmft_qpair *qp,
+    struct nvmft_controller *ctrlr);
 void	nvmft_qpair_shutdown(struct nvmft_qpair *qp);
 void	nvmft_qpair_destroy(struct nvmft_qpair *qp);
 struct nvmft_controller *nvmft_qpair_ctrlr(struct nvmft_qpair *qp);
@@ -162,7 +166,7 @@ void	nvmft_connect_error(struct nvmft_qpair *qp,
 void	nvmft_connect_invalid_parameters(struct nvmft_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd, bool data, uint16_t offset);
 int	nvmft_finish_accept(struct nvmft_qpair *qp,
-    const struct nvmf_fabric_connect_cmd *cmd, struct nvmft_controller *ctrlr);
+    const struct nvmf_fabric_connect_cmd *cmd, uint16_t ctlid);
 
 static __inline void
 nvmft_port_ref(struct nvmft_port *np)
