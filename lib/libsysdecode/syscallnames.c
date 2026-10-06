@@ -53,7 +53,8 @@ static
 #elif defined(__amd64__)
 #include <amd64/linux/linux_syscalls.c>
 #else
-#include <i386/linux/linux_syscalls.c>
+#include <amd64/linux32/linux32_syscalls.c>
+#define	linux_syscallnames	linux32_syscallnames
 #endif
 #endif
 
