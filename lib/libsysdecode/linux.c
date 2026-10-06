@@ -36,7 +36,7 @@
 #ifdef __aarch64__
 #include <arm64/linux/linux.h>
 #elif defined(__i386__)
-#include <i386/linux/linux.h>
+#include <amd64/linux32/linux.h>
 #elif defined(__amd64__)
 #include <amd64/linux/linux.h>
 #else
