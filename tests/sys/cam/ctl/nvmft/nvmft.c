@@ -379,9 +379,209 @@ ATF_TC_BODY(invalid_qid, tc)
 	close(as);
 }
 
+/* Fetch the HIP log page with a given offset and length. */
+static uint16_t
+fetch_log_page(struct nvmf_qpair *qp, uint8_t page, uint64_t offset,
+    uint32_t numd, void *buf, size_t len)
+{
+	struct nvme_command cmd;
+	const struct nvme_completion *cpl;
+	struct nvmf_capsule *cc, *rc;
+	int error;
+	uint16_t status;
+
+	nvmf_init_sqe(&cmd, NVME_OPC_GET_LOG_PAGE);
+	cmd.cdw10 = htole32(numd << 16 | page);
+	cmd.cdw11 = htole32(numd >> 16);
+	cmd.cdw12 = htole32(offset);
+	cmd.cdw13 = htole32(offset >> 32);
+
+	cc = nvmf_allocate_command(qp, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("failed to allocate command: %s",
+		    strerror(errno));
+
+	error = nvmf_capsule_append_data(cc, buf, len, false);
+	if (error != 0) {
+		nvmf_free_capsule(cc);
+		atf_tc_fail("failed to append data buffer to command: %s",
+		    strerror(error));
+	}
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0) {
+		nvmf_free_capsule(cc);
+		atf_tc_fail("failed to transmit command: %s", strerror(error));
+	}
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("failed to receive response: %s", strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	nvmf_free_capsule(rc);
+	return (status);
+}
+
+static void
+fetch_hip_log_page_test(const atf_tc_t *tc, uint64_t offset, uint32_t numd,
+    bool should_fail)
+{
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char *buf;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	size_t len;
+	int s;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	s = open_socket(tc, NULL, NULL);
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = s;
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	len = (numd + 1) * 4;
+	buf = malloc(len);
+
+	status = fetch_log_page(admin, NVME_LOG_HEALTH_INFORMATION, offset,
+	    numd, buf, len);
+	if (should_fail) {
+		ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+		ATF_REQUIRE(NVME_STATUS_GET_SC(status) ==
+		    NVME_SC_INVALID_FIELD);
+	} else {
+		ATF_REQUIRE(status == 0);
+	}
+
+	free(buf);
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+	close(s);
+}
+
+#define	LEN_TO_NUMD(len)	((len) / 4 - 1)
+
+/*
+ * Test various offsets and lengths for fetching a log page.
+ */
+ATF_TC(fetch_hip);
+ATF_TC_HEAD(fetch_hip, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip, tc)
+{
+	fetch_hip_log_page_test(tc, 0,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page)), false);
+}
+
+ATF_TC(fetch_hip_short);
+ATF_TC_HEAD(fetch_hip_short, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_short, tc)
+{
+	fetch_hip_log_page_test(tc, 0,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page) / 2),
+	    false);
+}
+
+ATF_TC(fetch_hip_middle);
+ATF_TC_HEAD(fetch_hip_middle, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_middle, tc)
+{
+	fetch_hip_log_page_test(tc,
+	    sizeof(struct nvme_health_information_page) / 4,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page) / 2),
+	    false);
+}
+
+ATF_TC(fetch_hip_long);
+ATF_TC_HEAD(fetch_hip_long, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_long, tc)
+{
+	fetch_hip_log_page_test(tc, 0,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page) + 64),
+	    false);
+}
+
+ATF_TC(fetch_hip_offset_1);
+ATF_TC_HEAD(fetch_hip_offset_1, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_offset_1, tc)
+{
+	fetch_hip_log_page_test(tc, 1,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page)), true);
+}
+
+ATF_TC(fetch_hip_offset_2);
+ATF_TC_HEAD(fetch_hip_offset_2, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_offset_2, tc)
+{
+	fetch_hip_log_page_test(tc, 2,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page)), true);
+}
+
+ATF_TC(fetch_hip_offset_3);
+ATF_TC_HEAD(fetch_hip_offset_3, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_offset_3, tc)
+{
+	fetch_hip_log_page_test(tc, 3,
+	    LEN_TO_NUMD(sizeof(struct nvme_health_information_page)), true);
+}
+
+ATF_TC(fetch_hip_offset_beyond_end);
+ATF_TC_HEAD(fetch_hip_offset_beyond_end, tc)
+{
+	require(tc);
+}
+ATF_TC_BODY(fetch_hip_offset_beyond_end, tc)
+{
+	fetch_hip_log_page_test(tc,
+	    sizeof(struct nvme_health_information_page),
+	    LEN_TO_NUMD(16), true);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
+	ATF_TP_ADD_TC(tp, fetch_hip);
+	ATF_TP_ADD_TC(tp, fetch_hip_short);
+	ATF_TP_ADD_TC(tp, fetch_hip_middle);
+	ATF_TP_ADD_TC(tp, fetch_hip_long);
+	ATF_TP_ADD_TC(tp, fetch_hip_offset_1);
+	ATF_TP_ADD_TC(tp, fetch_hip_offset_2);
+	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
+	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
 
 	return (atf_no_error());
 }
