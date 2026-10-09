@@ -171,6 +171,413 @@ ATF_TC_BODY(invalid_qid, tc)
 	nvmf_free_qpair(admin);
 }
 
+ATF_TC(invalid_connect_recfmt);
+ATF_TC_HEAD(invalid_connect_recfmt, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_connect_recfmt, tc)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, NVMF_MIN_ADMIN_MAX_SQ_SIZE, &cmd);
+	cmd.recfmt = htole16(1);
+
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) ==
+	    NVMF_FABRIC_SC_INCOMPATIBLE_FORMAT);
+
+	nvmf_free_qpair(admin);
+}
+
+static void
+invalid_admin_sqsize(const atf_tc_t *tc, uint32_t sqsize)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, sqsize, &cmd);
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 0);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_cmd, sqsize));
+
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(admin_sqsize_small);
+ATF_TC_HEAD(admin_sqsize_small, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(admin_sqsize_small, tc)
+{
+	invalid_admin_sqsize(tc, NVME_MIN_ADMIN_ENTRIES - 1);
+}
+
+ATF_TC(admin_sqsize_large);
+ATF_TC_HEAD(admin_sqsize_large, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(admin_sqsize_large, tc)
+{
+	invalid_admin_sqsize(tc, NVME_MAX_ADMIN_ENTRIES + 1);
+}
+
+ATF_TC(io_sqsize_small);
+ATF_TC_HEAD(io_sqsize_small, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(io_sqsize_small, tc)
+{
+	struct nvme_controller_data cdata;
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	int error, queues;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	error = nvmf_host_identify_controller(admin, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+	nvmf_update_assocation(na, &cdata);
+
+	error = nvmf_host_request_queues(admin, 1, &queues);
+	if (error != 0)
+		atf_tc_fail("Failed to request I/O queues: %s",
+		    strerror(error));
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = nvmf_allocate_qpair(na, &qparams);
+	if (io == NULL)
+		atf_tc_fail("Failed to create I/O queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 1, NVME_MIN_IO_ENTRIES - 1, &cmd);
+	init_connect_data(tc, nvmf_cntlid(admin), hostid, hostnqn, &data);
+	manual_connect(io, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 0);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_cmd, sqsize));
+
+	nvmf_free_qpair(io);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(io_kato_nonzero);
+ATF_TC_HEAD(io_kato_nonzero, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(io_kato_nonzero, tc)
+{
+	struct nvme_controller_data cdata;
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	int error, queues;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	error = nvmf_host_identify_controller(admin, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+	nvmf_update_assocation(na, &cdata);
+
+	error = nvmf_host_request_queues(admin, 1, &queues);
+	if (error != 0)
+		atf_tc_fail("Failed to request I/O queues: %s",
+		    strerror(error));
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = nvmf_allocate_qpair(na, &qparams);
+	if (io == NULL)
+		atf_tc_fail("Failed to create I/O queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 1, NVME_MIN_IO_ENTRIES, &cmd);
+	init_connect_data(tc, nvmf_cntlid(admin), hostid, hostnqn, &data);
+
+	cmd.kato = htole32(NVMF_KATO_DEFAULT);
+
+	manual_connect(io, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 0);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_cmd, kato));
+
+	nvmf_free_qpair(io);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(invalid_connect_hostid);
+ATF_TC_HEAD(invalid_connect_hostid, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_connect_hostid, tc)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, NVMF_MIN_ADMIN_MAX_SQ_SIZE, &cmd);
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+
+	/* Zero the hostid. */
+	memset(data.hostid, 0, sizeof(data.hostid));
+
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 1);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_data, hostid));
+
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(invalid_connect_subnqn);
+ATF_TC_HEAD(invalid_connect_subnqn, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_connect_subnqn, tc)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, NVMF_MIN_ADMIN_MAX_SQ_SIZE, &cmd);
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+
+	/* Replace the SubNQN with one that is not null terminated. */
+	memset(data.subnqn, 'a', sizeof(data.subnqn));
+
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 1);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_data, subnqn));
+
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(invalid_connect_hostnqn);
+ATF_TC_HEAD(invalid_connect_hostnqn, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_connect_hostnqn, tc)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, NVMF_MIN_ADMIN_MAX_SQ_SIZE, &cmd);
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+
+	/* Replace the HostNQN with one that is not null terminated. */
+	memset(data.hostnqn, 'a', sizeof(data.hostnqn));
+
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 1);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_data, hostnqn));
+
+	nvmf_free_qpair(admin);
+}
+
 static struct nvmf_qpair *
 connect_admin_only(const atf_tc_t *tc)
 {
@@ -394,6 +801,14 @@ ATF_TC_BODY(fetch_reserved_log_page, tc)
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
+	ATF_TP_ADD_TC(tp, invalid_connect_recfmt);
+	ATF_TP_ADD_TC(tp, admin_sqsize_small);
+	ATF_TP_ADD_TC(tp, admin_sqsize_large);
+	ATF_TP_ADD_TC(tp, io_sqsize_small);
+	ATF_TP_ADD_TC(tp, io_kato_nonzero);
+	ATF_TP_ADD_TC(tp, invalid_connect_hostid);
+	ATF_TP_ADD_TC(tp, invalid_connect_subnqn);
+	ATF_TP_ADD_TC(tp, invalid_connect_hostnqn);
 	ATF_TP_ADD_TC(tp, fetch_hip);
 	ATF_TP_ADD_TC(tp, fetch_hip_short);
 	ATF_TP_ADD_TC(tp, fetch_hip_middle);
