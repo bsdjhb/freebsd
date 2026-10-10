@@ -748,7 +748,7 @@ handle_identify_command(struct nvmft_controller *ctrlr,
 		    "Invalid length %zu for IDENTIFY with CNS %#x\n", data_len,
 		    cns);
 		nvmft_send_generic_error(ctrlr->admin, nc,
-		    NVME_SC_INVALID_OPCODE);
+		    NVME_SC_INVALID_FIELD);
 		nvmf_free_capsule(nc);
 		return;
 	}
