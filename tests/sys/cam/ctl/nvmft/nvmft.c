@@ -985,6 +985,74 @@ ATF_TC_BODY(fetch_reserved_log_page, tc)
 	nvmf_free_qpair(admin);
 }
 
+static void
+identify_bad_size(const atf_tc_t *tc, size_t len)
+{
+	struct nvme_command cmd;
+	const struct nvme_completion *cpl;
+	struct nvmf_qpair *admin;
+	struct nvmf_capsule *cc, *rc;
+	char *buf;
+	int error;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	buf = malloc(len);
+	nvmf_init_sqe(&cmd, NVME_OPC_IDENTIFY);
+	cmd.cdw10 = htole32(1);
+
+	cc = nvmf_allocate_command(admin, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("Failed to allocate command capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_capsule_append_data(cc, buf, len, false);
+	if (error != 0)
+		atf_tc_fail("Failed to append data to IDENTIFY capsule: %s",
+		    strerror(error));
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit IDENTIFY capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive IDENTIFY response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	nvmf_free_capsule(rc);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(identify_short);
+ATF_TC_HEAD(identify_short, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(identify_short, tc)
+{
+	identify_bad_size(tc, 4095);
+}
+
+ATF_TC(identify_long);
+ATF_TC_HEAD(identify_long, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(identify_long, tc)
+{
+	identify_bad_size(tc, 4097);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
@@ -1008,6 +1076,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
 	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
+	ATF_TP_ADD_TC(tp, identify_short);
+	ATF_TP_ADD_TC(tp, identify_long);
 
 	return (atf_no_error());
 }
