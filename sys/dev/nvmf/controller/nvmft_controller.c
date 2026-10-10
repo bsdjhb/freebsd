@@ -630,7 +630,13 @@ handle_get_log_page(struct nvmft_controller *ctrlr,
 		goto done;
 	}
 
-	len = (numd + 1) * 4;
+	if (ctrlr->np->max_data_xfer_size != 0 &&
+	    numd > ctrlr->np->max_data_xfer_size / 4 - 1) {
+		status = NVME_SC_INVALID_FIELD;
+		goto done;
+	}
+
+	len = ((size_t)numd + 1) * 4;
 
 	switch (lid) {
 	case NVME_LOG_ERROR:
@@ -1126,6 +1132,20 @@ nvmft_handle_io_command(struct nvmft_qpair *qp, uint16_t qid,
 	const struct nvme_command *cmd = nvmf_capsule_sqe(nc);
 
 	atomic_store_int(&ctrlr->ka_active_traffic, 1);
+
+	switch (cmd->opc) {
+	case NVME_OPC_WRITE:
+	case NVME_OPC_READ:
+	case NVME_OPC_COMPARE:
+	case NVME_OPC_DATASET_MANAGEMENT:
+		if (ctrlr->np->max_data_xfer_size != 0 &&
+		    nvmf_capsule_data_len(nc) > ctrlr->np->max_data_xfer_size) {
+			nvmft_send_generic_error(qp, nc, NVME_SC_INVALID_FIELD);
+			nvmf_free_capsule(nc);
+			return;
+		}
+		break;
+	}
 
 	switch (cmd->opc) {
 	case NVME_OPC_FLUSH:

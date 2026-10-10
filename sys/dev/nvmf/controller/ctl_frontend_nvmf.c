@@ -728,6 +728,7 @@ dnvlist_get_strnum(nvlist_t *nvl, const char *name, u_long default_value,
  * ioccsz: Maximum command capsule size
  * iorcsz: Maximum response capsule size
  * nn: Number of namespaces
+ * mdts: Maximum data transfer size (in bytes)
  */
 static void
 nvmft_port_create(struct ctl_req *req)
@@ -736,7 +737,10 @@ nvmft_port_create(struct ctl_req *req)
 	struct ctl_port *port;
 	const char *serial, *subnqn;
 	char serial_buf[NVME_SERIAL_NUMBER_LENGTH];
-	u_long enable_timeout, hostid, ioccsz, iorcsz, max_io_qsize, nn, portid;
+	uint64_t cap;
+	u_long enable_timeout, hostid, ioccsz, iorcsz, max_io_qsize;
+	u_long max_data_xfer_size, nn, portid;
+	u_int mps, max_mdts;
 	int error;
 
 	/* Required parameters. */
@@ -778,6 +782,25 @@ nvmft_port_create(struct ctl_req *req)
 		req->status = CTL_LUN_ERROR;
 		snprintf(req->error_str, sizeof(req->error_str),
 		    "Invalid enable timeout");
+		return;
+	}
+
+	/*
+	 * Compute the maximum MDTS value assuming the expanded value
+	 * has to fit in a size_t.
+	 */
+	cap = _nvmf_controller_cap(max_io_qsize, enable_timeout / 500);
+	mps = NVMEV(NVME_CAP_HI_REG_MPSMIN, cap >> 32);
+	max_mdts = ilog2(SIZE_MAX) - (mps + NVME_MPS_SHIFT);
+
+	if (!dnvlist_get_strnum(req->args_nvl, "mdts", NVMF_MDTS,
+	    &max_data_xfer_size) || !powerof2(max_data_xfer_size) ||
+	    (max_data_xfer_size != 0 &&
+	    max_data_xfer_size < (1ul << (mps + NVME_MPS_SHIFT))) ||
+	    max_data_xfer_size > (1ul << max_mdts)) {
+		req->status = CTL_LUN_ERROR;
+		snprintf(req->error_str, sizeof(req->error_str),
+		    "Invalid maximum data transfer size");
 		return;
 	}
 
@@ -829,6 +852,7 @@ nvmft_port_create(struct ctl_req *req)
 	refcount_init(&np->refs, 1);
 	np->portid = portid;
 	np->max_io_qsize = max_io_qsize;
+	np->max_data_xfer_size = max_data_xfer_size;
 	np->cap = _nvmf_controller_cap(max_io_qsize, enable_timeout / 500);
 	mtx_init(&np->lock, "nvmft port", NULL, MTX_DEF);
 	np->ids = new_unrhdr(0, MIN(CTL_MAX_INIT_PER_PORT - 1,
@@ -845,6 +869,10 @@ nvmft_port_create(struct ctl_req *req)
 	    NVMEF(NVME_CTRLR_DATA_ONCS_DSM, 1) |
 	    NVMEF(NVME_CTRLR_DATA_ONCS_COMPARE, 1));
 	np->cdata.fuses = NVMEF(NVME_CTRLR_DATA_FUSES_CNW, 1);
+	if (max_data_xfer_size != 0) {
+		np->cdata.mdts = ilog2(max_data_xfer_size) -
+		    (mps + NVME_MPS_SHIFT);
+	}
 
 	np->fp.afi = NVMEF(NVME_FIRMWARE_PAGE_AFI_SLOT, 1);
 	memcpy(np->fp.revision[0], np->cdata.fr, sizeof(np->cdata.fr));

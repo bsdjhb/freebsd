@@ -985,6 +985,61 @@ ATF_TC_BODY(fetch_reserved_log_page, tc)
 	nvmf_free_qpair(admin);
 }
 
+static size_t
+fetch_mdts(struct nvmf_qpair *qp)
+{
+	struct nvme_controller_data cdata;
+	uint64_t cap;
+	u_int mpsmin;
+	int error;
+
+	error = nvmf_host_identify_controller(qp, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+
+	if (cdata.mdts == 0)
+		return (0);
+
+	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch CAP: %s", strerror(error));
+
+	mpsmin = NVMEV(NVME_CAP_HI_REG_MPSMIN, cap >> 32);
+	return ((size_t)1 << (cdata.mdts + mpsmin + NVME_MPS_SHIFT));
+}
+
+ATF_TC(fetch_hip_longer_than_mdts);
+ATF_TC_HEAD(fetch_hip_longer_than_mdts, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(fetch_hip_longer_than_mdts, tc)
+{
+	struct nvmf_qpair *admin;
+	char *buf;
+	size_t mdts, len;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	mdts = fetch_mdts(admin);
+	if (mdts == 0)
+		atf_tc_skip("Controller does not set a limit on transfers");
+
+	len = mdts + 4;
+	buf = malloc(len);
+
+	status = fetch_log_page(admin, NVME_LOG_HEALTH_INFORMATION, 0,
+	    mdts / 4, buf, len);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	free(buf);
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
 static void
 identify_bad_size(const atf_tc_t *tc, size_t len)
 {
@@ -1421,6 +1476,89 @@ ATF_TC_BODY(compare_mismatch, tc)
 	nvmf_free_qpair(admin);
 }
 
+ATF_TC(read_longer_than_mdts);
+ATF_TC_HEAD(read_longer_than_mdts, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(read_longer_than_mdts, tc)
+{
+	const struct nvme_completion *cpl;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	char *buf;
+	size_t len, mdts, nlb;
+	u_int block_size, nsid;
+	int error;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	require_nvm(admin);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = connect_io_queue(tc, admin, na, &qparams, hostid, hostnqn);
+	nvmf_free_association(na);
+
+	nsid = validate_namespace(tc, admin, &block_size);
+
+	mdts = fetch_mdts(admin);
+	if (mdts == 0)
+		atf_tc_skip("Controller does not set a limit on transfers");
+
+	if (mdts < block_size)
+		atf_tc_skip("Controller MDTS less than namespace block size");
+
+	nlb = mdts / block_size;
+	if (nlb > UINT32_MAX)
+		atf_tc_skip("Cannot construct transfer larger than MDTS");
+
+	len = (nlb + 1) * block_size;
+	buf = malloc(len);
+	cc = create_read_command(io, nsid, 0, nlb + 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit READ capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive READ response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	nvmf_free_capsule(rc);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(io);
+	nvmf_free_qpair(admin);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
@@ -1444,11 +1582,13 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
 	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
+	ATF_TP_ADD_TC(tp, fetch_hip_longer_than_mdts);
 	ATF_TP_ADD_TC(tp, identify_short);
 	ATF_TP_ADD_TC(tp, identify_long);
 	ATF_TP_ADD_TC(tp, read_block);
 	ATF_TP_ADD_TC(tp, compare_block);
 	ATF_TP_ADD_TC(tp, compare_mismatch);
+	ATF_TP_ADD_TC(tp, read_longer_than_mdts);
 
 	return (atf_no_error());
 }
