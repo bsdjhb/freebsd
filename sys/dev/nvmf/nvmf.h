@@ -25,6 +25,7 @@
 #define	NVMF_IORCSZ		(sizeof(struct nvme_completion))
 
 #define	NVMF_NN			(1024)
+#define	NVMF_MDTS		(4 * 1024 * 1024)	/* In bytes */
 
 /*
  * Default settings for Fabrics hosts.  These match values used by

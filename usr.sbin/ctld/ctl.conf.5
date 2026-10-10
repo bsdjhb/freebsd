@@ -359,6 +359,9 @@ Enable PDU data digests if requested by a remote host.
 The maximum number of entries a remote host can request for an admin queue pair.
 .It max_io_qsize Ta 65536 Ta any Ta
 The maximum number of entries a remote host can request for an I/O queue pair.
+.It mdts Ta 4MiB Ta any Ta
+The maximum data transfer size for any command (admin or I/O).
+Must be a power of two that is at least 4KiB.
 .El
 .It Ic tag Ar value
 Unique 16-bit port ID for this
