@@ -257,10 +257,8 @@ options 	POWERFAIL_NMI	# make it beep instead of panicing
 # Requires 'device iicbus'.
 #
 # Supported interfaces:
-# glxiic: AMD Geode LX CS5536 System Management Bus
 # pcf:	Philips PCF8584 ISA-bus controller
 #
-device		glxiic		# AMD Geode LX CS5536 System Management Bus
 device		pcf
 envvar		hint.pcf.0.at="isa"
 envvar		hint.pcf.0.port="0x320"
