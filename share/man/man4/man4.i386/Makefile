@@ -1,5 +1,4 @@
 MAN=	CPU_ELAN.4 \
-	glxsb.4 \
 	longrun.4 \
 	npx.4 \
 	pae.4 \
