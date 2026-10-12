@@ -26,8 +26,6 @@ dev/agp/agp_ati.c		optional agp
 dev/agp/agp_intel.c		optional agp
 dev/agp/agp_nvidia.c		optional agp
 dev/agp/agp_sis.c		optional agp
-dev/glxsb/glxsb.c		optional glxsb
-dev/glxsb/glxsb_hash.c		optional glxsb
 dev/hyperv/vmbus/i386/hyperv_machdep.c			optional	hyperv
 dev/ofw/ofw_pcib.c		optional fdt pci
 dev/pcf/pcf_isa.c		optional pcf
