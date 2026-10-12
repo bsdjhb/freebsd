@@ -51,6 +51,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 2026xxxx: Retire glxsb(4)
+OLD_FILES+=usr/share/man/man4/i386/glxsb.4.gz
+OLD_FILES+=usr/share/man/man4/glxsb.4.gz
+
 # 2026xxxx: Retire glxiic(4)
 OLD_FILES+=usr/share/man/man4/i386/glxiic.4.gz
 OLD_FILES+=usr/share/man/man4/glxiic.4.gz

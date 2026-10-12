@@ -264,12 +264,6 @@ envvar		hint.pcf.0.at="isa"
 envvar		hint.pcf.0.port="0x320"
 envvar		hint.pcf.0.irq="5"
 
-#
-# glxsb is a driver for the Security Block in AMD Geode LX processors.
-# Requires 'device crypto'.
-#
-device		glxsb		# AMD Geode LX Security Block
-
 #####################################################################
 # ABI Emulation
 

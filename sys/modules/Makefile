@@ -132,7 +132,6 @@ SUBDIR=	\
 	${_fxp} \
 	gem \
 	geom \
-	${_glxsb} \
 	gpio \
 	${_gve} \
 	${_hfsts} \
@@ -915,7 +914,6 @@ _vmm=		vmm
 .if ${MACHINE_CPUARCH} == "i386"
 # XXX some of these can move to the general case when de-i386'ed
 # XXX some of these can move now, but are untested on other architectures.
-_glxsb=		glxsb
 .endif
 
 .if ${MACHINE_ARCH} == "armv7"
