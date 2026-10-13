@@ -985,6 +985,37 @@ ATF_TC_BODY(fetch_reserved_log_page, tc)
 	nvmf_free_qpair(admin);
 }
 
+ATF_TC(fetch_hip_length_overflow);
+ATF_TC_HEAD(fetch_hip_length_overflow, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(fetch_hip_length_overflow, tc)
+{
+	struct nvmf_qpair *admin;
+	char *buf;
+	size_t len;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	/*
+	 * NB: NUMD below is intentionally larger than the data
+	 * buffer.
+	 */
+	len = 8;
+	buf = malloc(len);
+
+	status = fetch_log_page(admin, NVME_LOG_HEALTH_INFORMATION, 0,
+	    0x1fffffff, buf, len);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	free(buf);
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
 static size_t
 fetch_mdts(struct nvmf_qpair *qp)
 {
@@ -1582,6 +1613,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_3);
 	ATF_TP_ADD_TC(tp, fetch_hip_offset_beyond_end);
 	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
+	ATF_TP_ADD_TC(tp, fetch_hip_length_overflow);
 	ATF_TP_ADD_TC(tp, fetch_hip_longer_than_mdts);
 	ATF_TP_ADD_TC(tp, identify_short);
 	ATF_TP_ADD_TC(tp, identify_long);
