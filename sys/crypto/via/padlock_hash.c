@@ -32,13 +32,11 @@
 #include <sys/libkern.h>
 #include <sys/endian.h>
 #include <sys/pcpu.h>
-#if defined(__amd64__) || defined(__i386__)
 #include <machine/cpufunc.h>
 #include <machine/cputypes.h>
 #include <machine/fpu.h>
 #include <machine/md_var.h>
 #include <machine/specialreg.h>
-#endif
 #include <machine/pcb.h>
 
 #include <opencrypto/cryptodev.h>
