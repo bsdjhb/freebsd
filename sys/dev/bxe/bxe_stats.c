@@ -30,11 +30,7 @@
 #include "bxe.h"
 #include "bxe_stats.h"
 
-#ifdef __i386__
-#define BITS_PER_LONG 32
-#else
-#define BITS_PER_LONG 64
-#endif
+#define BITS_PER_LONG (__SIZEOF_LONG__ * __CHAR_BIT__)
 
 
 static inline long
