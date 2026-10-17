@@ -121,7 +121,7 @@
 #define	IPI_RENDEZVOUS	(APIC_IPI_INTS)		/* Inter-CPU rendezvous. */
 #define	IPI_INVLOP	(APIC_IPI_INTS + 1)	/* TLB Shootdown IPI */
 /* Vector to handle bitmap based IPIs */
-#define	IPI_BITMAP_VECTOR	(APIC_IPI_INTS + 5) 
+#define	IPI_BITMAP_VECTOR	(APIC_IPI_INTS + 2)
 
 /* IPIs handled by IPI_BITMAP_VECTOR */
 #define	IPI_AST		0 	/* Generate software trap. */
