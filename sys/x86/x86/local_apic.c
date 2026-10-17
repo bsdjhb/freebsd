@@ -83,9 +83,6 @@
 #include <ddb/ddb.h>
 #endif
 
-#define	SDT_APIC	SDT_SYSIGT
-#define	GSEL_APIC	0
-
 static MALLOC_DEFINE(M_LAPIC, "local_apic", "Local APIC items");
 
 /* Sanity checks on IDT vectors. */
@@ -588,8 +585,7 @@ lapic_init(vm_paddr_t addr)
 	}
 
 	/* Setup the spurious interrupt handler. */
-	setidt(APIC_SPURIOUS_INT, IDTVEC(spuriousint), SDT_APIC, SEL_KPL,
-	    GSEL_APIC);
+	setidt(APIC_SPURIOUS_INT, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
 
 	/* Perform basic initialization of the BSP's local APIC. */
 	lapic_enable();
@@ -600,19 +596,19 @@ lapic_init(vm_paddr_t addr)
 
 	/* Local APIC timer interrupt. */
 	setidt(APIC_TIMER_INT, pti ? IDTVEC(timerint_pti) : IDTVEC(timerint),
-	    SDT_APIC, SEL_KPL, GSEL_APIC);
+	    SDT_SYSIGT, SEL_KPL, 0);
 
 	/* Local APIC error interrupt. */
 	setidt(APIC_ERROR_INT, pti ? IDTVEC(errorint_pti) : IDTVEC(errorint),
-	    SDT_APIC, SEL_KPL, GSEL_APIC);
+	    SDT_SYSIGT, SEL_KPL, 0);
 
 	/* Thermal interrupt */
 	setidt(APIC_THERMAL_INT, pti ? IDTVEC(thermalint_pti) : IDTVEC(thermalint),
-	    SDT_APIC, SEL_KPL, GSEL_APIC);
+	    SDT_SYSIGT, SEL_KPL, 0);
 
 	/* Local APIC CMCI. */
 	setidt(APIC_CMC_INT, pti ? IDTVEC(cmcint_pti) : IDTVEC(cmcint),
-	    SDT_APIC, SEL_KPL, GSEL_APIC);
+	    SDT_SYSIGT, SEL_KPL, 0);
 
 	if ((resource_int_value("apic", 0, "clock", &i) != 0 || i != 0)) {
 		/* Set if APIC timer runs in C3. */
@@ -1835,7 +1831,7 @@ apic_enable_vector(u_int apic_id, u_int vector)
 	    ("Attempt to overwrite DTrace entry"));
 #endif
 	setidt(vector, (pti ? ioint_pti_handlers : ioint_handlers)[vector / 32],
-	    SDT_APIC, SEL_KPL, GSEL_APIC);
+	    SDT_SYSIGT, SEL_KPL, 0);
 }
 
 void
@@ -1854,8 +1850,8 @@ apic_disable_vector(u_int apic_id, u_int vector)
 	 * We can not currently clear the idt entry because other cpus
 	 * may have a valid vector at this offset.
 	 */
-	setidt(vector, pti ? &IDTVEC(rsvd_pti) : &IDTVEC(rsvd), SDT_APIC,
-	    SEL_KPL, GSEL_APIC);
+	setidt(vector, pti ? &IDTVEC(rsvd_pti) : &IDTVEC(rsvd), SDT_SYSIGT,
+	    SEL_KPL, 0);
 #endif
 }
 
@@ -2411,7 +2407,7 @@ lapic_ipi_alloc(inthand_t *ipifunc, void (*fred_ipifunc)(struct trapframe *))
 		if (fip == NULL) {
 			vector = idx;
 			fred_ipi_handlers[idx - IPI_DYN_FIRST] = fred_ipifunc;
-			setidt(vector, ipifunc, SDT_APIC, SEL_KPL, GSEL_APIC);
+			setidt(vector, ipifunc, SDT_SYSIGT, SEL_KPL, 0);
 			break;
 		}
 	}
@@ -2439,7 +2435,7 @@ lapic_ipi_free(int vector)
 		    func != (uintptr_t)&IDTVEC(rsvd_pti),
 		    ("invalid idtfunc %d %#lx", vector, func));
 		setidt(vector, pti ? &IDTVEC(rsvd_pti) : &IDTVEC(rsvd),
-		    SDT_APIC, SEL_KPL, GSEL_APIC);
+		    SDT_SYSIGT, SEL_KPL, 0);
 	}
 	mtx_unlock_spin(&icu_lock);
 }
