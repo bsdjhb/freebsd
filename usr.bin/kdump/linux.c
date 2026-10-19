@@ -43,7 +43,7 @@
 #elif defined(__aarch64__)
 #include <arm64/linux/linux.h>
 #elif defined(__i386__)
-#include <i386/linux/linux.h>
+#include <amd64/linux32/linux.h>
 #endif
 
 #include <compat/linux/linux.h>
@@ -61,6 +61,7 @@ print_linux_signal(int signo)
 		printf("SIG %d", signo);
 }
 
+#ifndef __i386__
 void
 ktrsyscall_linux(struct ktr_syscall *ktr, register_t **resip,
     int *resnarg, char *resc)
@@ -282,11 +283,18 @@ ktrsyscall_linux(struct ktr_syscall *ktr, register_t **resip,
 	*resip = ip;
 	*resnarg = narg;
 }
+#endif
 
-#if defined(__amd64__)
+#if defined(__amd64__) || defined(__i386__)
+#ifdef __i386__
+void
+ktrsyscall_linux(struct ktr_syscall *ktr, register_t **resip,
+    int *resnarg, char *resc)
+#else
 void
 ktrsyscall_linux32(struct ktr_syscall *ktr, register_t **resip,
     int *resnarg, char *resc)
+#endif
 {
 	int narg = ktr->ktr_narg;
 	register_t *ip, *first;
