@@ -32,15 +32,7 @@
 #ifndef _MACHINE_PROC_H_
 #define	_MACHINE_PROC_H_
 
-#include <machine/segments.h>
-
-struct proc_ldt {
-        caddr_t ldt_base;
-        int     ldt_len;
-        int     ldt_refcnt;
-        u_long  ldt_active;
-        struct  segment_descriptor ldt_sd;
-};
+struct proc_ldt;
 
 /*
  * Machine-dependent part of the proc structure for i386.
