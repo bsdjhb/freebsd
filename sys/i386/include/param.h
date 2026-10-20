@@ -49,12 +49,8 @@
 #endif
 #define MID_MACHINE	MID_I386
 
-#ifdef SMP
 #ifndef MAXCPU
 #define MAXCPU		32
-#endif
-#else
-#define MAXCPU		1
 #endif
 
 #ifndef MAXMEMDOM
@@ -81,35 +77,7 @@
 #define PAGE_SHIFT	12		/* LOG2(PAGE_SIZE) */
 #define PAGE_SIZE	(1 << PAGE_SHIFT)	/* bytes/page */
 #define PAGE_MASK	(PAGE_SIZE - 1)
-#define NPTEPG		(PAGE_SIZE / sizeof(pt_entry_t))
-
-/* Size in bytes of the page directory */
-#define NBPTD		(NPGPTD << PAGE_SHIFT)
-/* Number of PDEs in page directory, 2048 for PAE, 1024 for non-PAE */
-#define NPDEPTD		(NBPTD / sizeof(pd_entry_t))
-/* Number of PDEs in one page of the page directory, 512 vs. 1024 */
-#define NPDEPG		(PAGE_SIZE / sizeof(pd_entry_t))
-#define PDRMASK		(NBPDR - 1)
-#ifndef PDRSHIFT
-#define	PDRSHIFT	i386_pmap_PDRSHIFT
-#endif
-#ifndef NBPDR
-#define NBPDR		(1 << PDRSHIFT)	/* bytes/page dir */
-#endif
 
 #define	MAXPAGESIZES	2	/* maximum number of supported page sizes */
-
-#define IOPAGES	2		/* pages of i/o permission bitmap */
-
-/*
- * Mach derived conversion macros
- */
-#define trunc_4mpage(x)		((x) & ~PDRMASK)
-#define round_4mpage(x)		((((x)) + PDRMASK) & ~PDRMASK)
-
-#define i386_btop(x)		((x) >> PAGE_SHIFT)
-#define i386_ptob(x)		((x) << PAGE_SHIFT)
-
-#define INKERNEL(va)		(TRUE)
 
 #endif /* !_I386_INCLUDE_PARAM_H_ */
