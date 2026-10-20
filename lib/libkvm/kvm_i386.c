@@ -48,10 +48,6 @@
 #include <vm/vm.h>
 #include <kvm.h>
 
-#ifdef __i386__
-#include <machine/vmparam.h>		/* For KERNBASE. */
-#endif
-
 #include <limits.h>
 
 #include "kvm_private.h"
@@ -135,12 +131,8 @@ _i386_initvtop(kvm_t *kd)
 	nl[1].n_name = NULL;
 
 	if (kvm_nlist2(kd, nl) != 0) {
-#ifdef __i386__
-		kernbase = KERNBASE;	/* for old kernels */
-#else
 		_kvm_err(kd, kd->program, "cannot resolve kernbase");
 		return (-1);
-#endif
 	} else
 		kernbase = nl[0].n_value;
 
