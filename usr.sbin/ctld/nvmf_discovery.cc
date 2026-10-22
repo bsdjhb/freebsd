@@ -34,7 +34,7 @@ private:
 };
 
 struct discovery_controller {
-	discovery_controller(freebsd::fd_up s, struct nvmf_qpair *qp,
+	discovery_controller(struct nvmf_qpair *qp,
 	    const discovery_log &discovery_log);
 
 	void handle_admin_commands();
@@ -63,7 +63,6 @@ private:
 	struct nvme_controller_data cdata;
 
 	const struct discovery_log &discovery_log;
-	freebsd::fd_up s;
 };
 
 discovery_log::discovery_log(const struct portal_group *pg) :
@@ -198,21 +197,15 @@ init_discovery_log_entry(struct nvme_discovery_log_entry *entry,
 }
 
 static discovery_log
-build_discovery_log_page(const struct portal_group *pg, int fd,
+build_discovery_log_page(const struct portal_group *pg,
+    const struct sockaddr *server_sa, socklen_t server_sa_len,
     const struct sockaddr *client_sa,
     const struct nvmf_fabric_connect_data &data)
 {
 	discovery_log discovery_log(pg);
 
-	struct sockaddr_storage ss;
-	socklen_t len = sizeof(ss);
-	if (getsockname(fd, (struct sockaddr *)&ss, &len) == -1) {
-		log_warn("build_discovery_log_page: getsockname");
-		return discovery_log;
-	}
-
 	char wildcard_host[NI_MAXHOST];
-	int error = getnameinfo((struct sockaddr *)&ss, len, wildcard_host,
+	int error = getnameinfo(server_sa, server_sa_len, wildcard_host,
 	    sizeof(wildcard_host), NULL, 0, NI_NUMERICHOST);
 	if (error != 0) {
 		log_warnx("build_discovery_log_page: getnameinfo: %s",
@@ -466,9 +459,9 @@ discovery_controller::handle_admin_commands()
 	}
 }
 
-discovery_controller::discovery_controller(freebsd::fd_up fd,
-    struct nvmf_qpair *qp, const struct discovery_log &discovery_log) :
-	qp(qp), discovery_log(discovery_log), s(std::move(fd))
+discovery_controller::discovery_controller(struct nvmf_qpair *qp,
+    const struct discovery_log &discovery_log) :
+	qp(qp), discovery_log(discovery_log)
 {
 	nvmf_init_discovery_controller_data(qp, &cdata);
 	cap = nvmf_controller_cap(qp);
@@ -479,9 +472,16 @@ void
 nvmf_discovery_portal::handle_connection(freebsd::fd_up fd,
     const char *host __unused, const struct sockaddr *client_sa)
 {
+	struct sockaddr_storage ss;
+	socklen_t len = sizeof(ss);
+	if (getsockname(fd, (struct sockaddr *)&ss, &len) == -1) {
+		log_warn("nvmf_discovery_portal: getsockname");
+		return;
+	}
+
 	struct nvmf_qpair_params qparams;
 	memset(&qparams, 0, sizeof(qparams));
-	qparams.tcp.fd = fd;
+	qparams.tcp.fd = fd.release();
 
 	struct nvmf_capsule *nc = NULL;
 	struct nvmf_fabric_connect_data data;
@@ -511,8 +511,8 @@ nvmf_discovery_portal::handle_connection(freebsd::fd_up fd,
 	nc_guard.reset();
 
 	discovery_log discovery_log = build_discovery_log_page(portal_group(),
-	    fd, client_sa, data);
+	    (struct sockaddr *)&ss, len, client_sa, data);
 
-	discovery_controller controller(std::move(fd), qp.get(), discovery_log);
+	discovery_controller controller(qp.get(), discovery_log);
 	controller.handle_admin_commands();
 }

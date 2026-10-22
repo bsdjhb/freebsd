@@ -107,6 +107,12 @@ nvmf_allocate_qpair(struct nvmf_association *na,
 }
 
 void
+nvmf_close_qpair(struct nvmf_qpair *qp)
+{
+	qp->nq_association->na_ops->close_qpair(qp);
+}
+
+void
 nvmf_free_qpair(struct nvmf_qpair *qp)
 {
 	struct nvmf_association *na;
@@ -119,6 +125,13 @@ nvmf_free_qpair(struct nvmf_qpair *qp)
 	na = qp->nq_association;
 	na->na_ops->free_qpair(qp);
 	nvmf_free_association(na);
+}
+
+void
+nvmf_close_transport(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params)
+{
+	na->na_ops->close_transport(params);
 }
 
 struct nvmf_capsule *

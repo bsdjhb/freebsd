@@ -272,7 +272,6 @@ discovery_thread(void *arg)
 
 	nvmf_free_qpair(dta->qp);
 
-	close(dta->s);
 	free(dta);
 	return (NULL);
 }
@@ -338,5 +337,4 @@ error:
 		nvmf_free_capsule(nc);
 	if (qp != NULL)
 		nvmf_free_qpair(qp);
-	close(s);
 }

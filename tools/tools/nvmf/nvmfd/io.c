@@ -23,7 +23,6 @@ struct io_controller {
 	u_int num_io_queues;
 	u_int active_io_queues;
 	struct nvmf_qpair **io_qpairs;
-	int *io_sockets;
 
 	struct nvme_firmware_page fp;
 	struct nvme_health_information_page hip;
@@ -219,7 +218,6 @@ handle_set_features(struct io_controller *ioc, const struct nvmf_capsule *nc,
 		pthread_mutex_lock(&io_na_mutex);
 		ioc->num_io_queues = num_queues;
 		ioc->io_qpairs = calloc(num_queues, sizeof(*ioc->io_qpairs));
-		ioc->io_sockets = calloc(num_queues, sizeof(*ioc->io_sockets));
 		pthread_mutex_unlock(&io_na_mutex);
 
 		nvmf_init_cqe(&cqe, nc, 0);
@@ -285,10 +283,9 @@ handle_admin_qpair(struct io_controller *ioc)
 
 	pthread_mutex_lock(&io_na_mutex);
 	for (u_int i = 0; i < ioc->num_io_queues; i++) {
-		if (ioc->io_qpairs[i] == NULL || ioc->io_sockets[i] == -1)
+		if (ioc->io_qpairs[i] == NULL)
 			continue;
-		close(ioc->io_sockets[i]);
-		ioc->io_sockets[i] = -1;
+		nvmf_close_qpair(ioc->io_qpairs[i]);
 	}
 
 	/* Wait for I/O threads to notice. */
@@ -397,7 +394,7 @@ handle_flush(const struct nvmf_capsule *nc, const struct nvme_command *cmd)
 	device_flush(le32toh(cmd->nsid), nc);
 }
 
-static bool
+static void
 handle_io_commands(struct io_controller *ioc, struct nvmf_qpair *qp)
 {
 	const struct nvme_command *cmd;
@@ -443,28 +440,20 @@ handle_io_commands(struct io_controller *ioc, struct nvmf_qpair *qp)
 		}
 		nvmf_free_capsule(nc);
 	}
-
-	return (disconnect);
 }
 
 static void
 handle_io_qpair(struct io_controller *ioc, struct nvmf_qpair *qp, int qid)
 {
 	char name[64];
-	bool disconnect;
 
 	snprintf(name, sizeof(name), "I/O queue %d", qid);
 	pthread_setname_np(pthread_self(), name);
 
-	disconnect = handle_io_commands(ioc, qp);
+	handle_io_commands(ioc, qp);
 
 	pthread_mutex_lock(&io_na_mutex);
-	if (disconnect)
-		ioc->io_qpairs[qid - 1] = NULL;
-	if (ioc->io_sockets[qid - 1] != -1) {
-		close(ioc->io_sockets[qid - 1]);
-		ioc->io_sockets[qid - 1] = -1;
-	}
+	ioc->io_qpairs[qid - 1] = NULL;
 	ioc->active_io_queues--;
 	if (ioc->active_io_queues == 0)
 		pthread_cond_broadcast(&io_cond);
@@ -472,7 +461,7 @@ handle_io_qpair(struct io_controller *ioc, struct nvmf_qpair *qp, int qid)
 }
 
 static void
-connect_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
+connect_admin_qpair(struct nvmf_qpair *qp, struct nvmf_capsule *nc,
     const struct nvmf_fabric_connect_data *data)
 {
 	struct nvme_controller_data cdata;
@@ -516,16 +505,14 @@ connect_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	nvmf_free_capsule(nc);
 
 	handle_admin_qpair(ioc);
-	close(s);
 	return;
 
 error:
 	nvmf_free_capsule(nc);
-	close(s);
 }
 
 static void
-connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
+connect_io_qpair(struct nvmf_qpair *qp, struct nvmf_capsule *nc,
     const struct nvmf_fabric_connect_data *data, uint16_t qid)
 {
 	struct io_controller *ioc;
@@ -593,7 +580,6 @@ connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	ioc = io_controller;
 	ioc->active_io_queues++;
 	ioc->io_qpairs[qid - 1] = qp;
-	ioc->io_sockets[qid - 1] = s;
 	pthread_mutex_unlock(&io_na_mutex);
 
 	nvmf_free_capsule(nc);
@@ -603,7 +589,6 @@ connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 
 error:
 	nvmf_free_capsule(nc);
-	close(s);
 }
 
 static void *
@@ -646,9 +631,9 @@ io_socket_thread(void *arg)
 	/* Is this an admin or I/O queue pair? */
 	cmd = nvmf_capsule_sqe(nc);
 	if (cmd->qid == 0)
-		connect_admin_qpair(s, qp, nc, &data);
+		connect_admin_qpair(qp, nc, &data);
 	else
-		connect_io_qpair(s, qp, nc, &data, le16toh(cmd->qid));
+		connect_io_qpair(qp, nc, &data, le16toh(cmd->qid));
 	nvmf_free_qpair(qp);
 	return (NULL);
 
@@ -657,7 +642,6 @@ error:
 		nvmf_free_capsule(nc);
 	if (qp != NULL)
 		nvmf_free_qpair(qp);
-	close(s);
 	return (NULL);
 }
 
