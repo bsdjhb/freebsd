@@ -2525,9 +2525,7 @@ __elfN(note_threadmd)(void *arg, struct sbuf *sb, size_t *sizep)
 	*sizep = size;
 }
 
-#ifdef KINFO_PROC_SIZE
 CTASSERT(sizeof(struct kinfo_proc) == KINFO_PROC_SIZE);
-#endif
 
 static void
 __elfN(note_procstat_proc)(void *arg, struct sbuf *sb, size_t *sizep)
@@ -2552,9 +2550,7 @@ __elfN(note_procstat_proc)(void *arg, struct sbuf *sb, size_t *sizep)
 	*sizep = size;
 }
 
-#ifdef KINFO_FILE_SIZE
 CTASSERT(sizeof(struct kinfo_file) == KINFO_FILE_SIZE);
-#endif
 
 static void
 note_procstat_files(void *arg, struct sbuf *sb, size_t *sizep)
@@ -2604,9 +2600,7 @@ note_procstat_files(void *arg, struct sbuf *sb, size_t *sizep)
 	}
 }
 
-#ifdef KINFO_VMENTRY_SIZE
 CTASSERT(sizeof(struct kinfo_vmentry) == KINFO_VMENTRY_SIZE);
-#endif
 
 static void
 note_procstat_vmmap(void *arg, struct sbuf *sb, size_t *sizep)

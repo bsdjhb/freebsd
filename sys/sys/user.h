@@ -315,10 +315,9 @@ struct user {
  * Old format.  Has variable hidden padding due to alignment.
  * This is a compatibility hack for pre-build 7.1 packages.
  */
-#if defined(__amd64__)
+#if __SIZEOF_LONG__ == 8
 #define	KINFO_OFILE_SIZE	1328
-#endif
-#if defined(__i386__)
+#else
 #define	KINFO_OFILE_SIZE	1324
 #endif
 
@@ -339,7 +338,6 @@ struct kinfo_ofile {
 	struct sockaddr_storage	kf_sa_peer;	/* Peer address. */
 };
 
-#if defined(__amd64__) || defined(__i386__)
 /*
  * This size should never be changed. If you really need to, you must provide
  * backward ABI compatibility by allocating a new sysctl MIB that will return
@@ -347,7 +345,6 @@ struct kinfo_ofile {
  * sysctl MIB. See how it is done for the kinfo_ofile structure.
  */
 #define	KINFO_FILE_SIZE	1392
-#endif
 
 struct kinfo_file {
 	int		kf_structsize;		/* Variable size of record. */
@@ -557,10 +554,9 @@ struct kinfo_lockf {
 #define	KVME_FLAG_SYSVSHM	0x00000080
 #define	KVME_FLAG_POSIXSHM	0x00000100
 
-#if defined(__amd64__)
+#if __SIZEOF_LONG__ == 8
 #define	KINFO_OVMENTRY_SIZE	1168
-#endif
-#if defined(__i386__)
+#else
 #define	KINFO_OVMENTRY_SIZE	1128
 #endif
 
@@ -583,9 +579,7 @@ struct kinfo_ovmentry {
 	int	 _kve_ispare[3];		/* Space for more stuff. */
 };
 
-#if defined(__amd64__) || defined(__i386__)
 #define	KINFO_VMENTRY_SIZE	1160
-#endif
 
 struct kinfo_vmentry {
 	int	 kve_structsize;		/* Variable size of record. */
@@ -664,9 +658,7 @@ struct kinfo_vmobject {
 #define	KKST_STATE_SWAPPED	1		/* Stack swapped out, obsolete. */
 #define	KKST_STATE_RUNNING	2		/* Stack ephemeral. */
 
-#if defined(__amd64__) || defined(__i386__)
 #define	KINFO_KSTACK_SIZE	1096
-#endif
 
 struct kinfo_kstack {
 	lwpid_t	 kkst_tid;			/* ID of thread. */

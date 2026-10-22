@@ -4811,9 +4811,7 @@ nextproc:
 SYSCTL_PROC(_kern, KERN_FILE, file, CTLTYPE_OPAQUE|CTLFLAG_RD|CTLFLAG_MPSAFE,
     0, 0, sysctl_kern_file, "S,xfile", "Entire file table");
 
-#ifdef KINFO_FILE_SIZE
 CTASSERT(sizeof(struct kinfo_file) == KINFO_FILE_SIZE);
-#endif
 
 static int
 xlate_fflags(int fflags)
@@ -5123,9 +5121,7 @@ sysctl_kern_proc_filedesc(SYSCTL_HANDLER_ARGS)
 }
 
 #ifdef COMPAT_FREEBSD7
-#ifdef KINFO_OFILE_SIZE
 CTASSERT(sizeof(struct kinfo_ofile) == KINFO_OFILE_SIZE);
-#endif
 
 static void
 kinfo_to_okinfo(struct kinfo_file *kif, struct kinfo_ofile *okif)
