@@ -186,6 +186,8 @@ error:
 		nvmf_free_capsule(cc);
 	if (qp != NULL)
 		nvmf_free_qpair(qp);
+	else
+		nvmf_close_transport(na, params);
 	return (NULL);
 }
 
