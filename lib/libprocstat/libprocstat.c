@@ -250,6 +250,9 @@ procstat_open_core(const char *filename)
 	return (procstat);
 }
 
+static_assert(sizeof(struct kinfo_proc) == KINFO_PROC_SIZE,
+    "kinfo_proc size mismatch");
+
 struct kinfo_proc *
 procstat_getprocs(struct procstat *procstat, int what, int arg,
     unsigned int *count)
@@ -792,6 +795,9 @@ kinfo_uflags2fst(int fd)
 	}
 	return (0);
 }
+
+static_assert(sizeof(struct kinfo_file) == KINFO_FILE_SIZE,
+    "kinfo_file size mismatch");
 
 static struct kinfo_file *
 kinfo_getfile_core(struct procstat_core *core, int *cntp)
@@ -1374,6 +1380,9 @@ kinfo_vtype2fst(int kfvtype)
 		return (PS_FST_VTYPE_UNKNOWN);
 	return (kfvtypes2fst[i].fst_vtype);
 }
+
+static_assert(sizeof(struct kinfo_vmentry) == KINFO_VMENTRY_SIZE,
+    "kinfo_vmentry size mismatch");
 
 static int
 procstat_get_vnode_info_sysctl(struct filestat *fst, struct vnstat *vn,
@@ -2569,6 +2578,9 @@ procstat_freeptlwpinfo(struct procstat *procstat __unused,
 {
 	free(pl);
 }
+
+static_assert(sizeof(struct kinfo_kstack) == KINFO_KSTACK_SIZE,
+    "kinfo_kstack size mismatch");
 
 static struct kinfo_kstack *
 procstat_getkstack_sysctl(pid_t pid, int *cntp)
