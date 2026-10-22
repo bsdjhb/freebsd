@@ -22,7 +22,9 @@ struct nvmf_transport_ops {
 	/* Queue pair management. */
 	struct nvmf_qpair *(*allocate_qpair)(struct nvmf_association *na,
 	    const struct nvmf_qpair_params *params);
+	void (*close_qpair)(struct nvmf_qpair *qp);
 	void (*free_qpair)(struct nvmf_qpair *qp);
+	void (*close_transport)(const struct nvmf_qpair_params *params);
 
 	/* Add params for kernel handoff. */
 	void (*kernel_handoff_params)(struct nvmf_qpair *qp, nvlist_t *nvl);
@@ -112,6 +114,8 @@ extern struct nvmf_transport_ops tcp_ops;
 void	na_clear_error(struct nvmf_association *na);
 void	na_error(struct nvmf_association *na, const char *fmt, ...);
 
+void	nvmf_close_transport(struct nvmf_association *na,
+    const struct nvmf_qpair_params *params);
 int	nvmf_kernel_handoff_params(struct nvmf_qpair *qp, nvlist_t **nvlp);
 int	nvmf_populate_dle(struct nvmf_qpair *qp,
     struct nvme_discovery_log_entry *dle);

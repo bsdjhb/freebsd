@@ -191,6 +191,17 @@ nvmf_tcp_write_pdu_iov(struct nvmf_tcp_qpair *qp, struct iovec *iov,
 }
 
 static void
+tcp_close_qpair(struct nvmf_qpair *nq)
+{
+	struct nvmf_tcp_qpair *qp = TQP(nq);
+
+	if (qp->s != -1) {
+		close(qp->s);
+		qp->s = -1;
+	}
+}
+
+static void
 nvmf_tcp_report_error(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
     uint16_t fes, uint32_t fei, const void *rx_pdu, size_t pdu_len, u_int hlen)
 {
@@ -217,8 +228,7 @@ nvmf_tcp_report_error(struct nvmf_association *na, struct nvmf_tcp_qpair *qp,
 	iov[1].iov_len = hlen;
 
 	(void)nvmf_tcp_write_pdu_iov(qp, iov, nitems(iov), sizeof(hdr) + hlen);
-	close(qp->s);
-	qp->s = -1;
+	tcp_close_qpair(&qp->qp);
 }
 
 static int
@@ -244,8 +254,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 	    qp->data_digests, qp->rxpda, &data_len, &fes, &fei);
 	if (error != 0) {
 		if (error == ECONNRESET) {
-			close(qp->s);
-			qp->s = -1;
+			tcp_close_qpair(&qp->qp);
 		} else {
 			nvmf_tcp_report_error(qp->qp.nq_association, qp,
 			    fes, fei, ch, pdu_len, hlen);
@@ -1091,6 +1100,7 @@ tcp_allocate_qpair(struct nvmf_association *na,
 
 	if (aparams->tcp.pda > NVME_TCP_CPDA_MAX) {
 		na_error(na, "Invalid PDA");
+		close(qparams->tcp.fd);
 		return (NULL);
 	}
 
@@ -1104,6 +1114,7 @@ tcp_allocate_qpair(struct nvmf_association *na,
 	else
 		error = tcp_connect(qp, na, qparams->admin);
 	if (error != 0) {
+		close(qparams->tcp.fd);
 		free(qp);
 		return (NULL);
 	}
@@ -1128,7 +1139,14 @@ tcp_free_qpair(struct nvmf_qpair *nq)
 	LIST_FOREACH_SAFE(cb, &qp->tx_buffers, link, ncb) {
 		tcp_free_command_buffer(cb);
 	}
+	tcp_close_qpair(nq);
 	free(qp);
+}
+
+static void
+tcp_close_transport(const struct nvmf_qpair_params *qparams)
+{
+	close(qparams->tcp.fd);
 }
 
 static void
@@ -1487,7 +1505,9 @@ struct nvmf_transport_ops tcp_ops = {
 	.update_association = tcp_update_association,
 	.free_association = tcp_free_association,
 	.allocate_qpair = tcp_allocate_qpair,
+	.close_qpair = tcp_close_qpair,
 	.free_qpair = tcp_free_qpair,
+	.close_transport = tcp_close_transport,
 	.kernel_handoff_params = tcp_kernel_handoff_params,
 	.populate_dle = tcp_populate_dle,
 	.allocate_capsule = tcp_allocate_capsule,

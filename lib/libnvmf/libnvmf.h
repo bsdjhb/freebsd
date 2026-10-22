@@ -80,15 +80,21 @@ const char *nvmf_association_error(const struct nvmf_association *na);
  * A queue pair represents either an Admin or I/O
  * submission/completion queue pair.
  *
- * Each open qpair holds a reference on its association.  Once queue
- * pairs are allocated, callers can safely free the association to
- * ease bookkeeping.
+ * Each qpair holds a reference on its association.  Once queue pairs
+ * are allocated, callers can safely free the association to ease
+ * bookkeeping.
  *
  * If nvmf_allocate_qpair fails, a detailed error message can be obtained
  * from nvmf_association_error.
+ *
+ * nvmf_close_qpair closes the underlying transport (e.g. socket for
+ * TCP queue pairs).
+ *
+ * nvmf_free_qpair also closes the underlying transport.
  */
 struct nvmf_qpair *nvmf_allocate_qpair(struct nvmf_association *na,
     const struct nvmf_qpair_params *params);
+void	nvmf_close_qpair(struct nvmf_qpair *qp);
 void	nvmf_free_qpair(struct nvmf_qpair *qp);
 
 /*
@@ -201,6 +207,9 @@ int	nvmf_send_success(const struct nvmf_capsule *nc);
  * nvmf_association_error.  On success, the command capsule is saved
  * in '*ccp' and the connect data is saved in 'data'.  The caller
  * must send an explicit response and free the the command capsule.
+ *
+ * The underlying transport in '*params' (e.g. socket for TCP queue
+ * pairs) will be closed if this fails.
  */
 struct nvmf_qpair *nvmf_accept(struct nvmf_association *na,
     const struct nvmf_qpair_params *params, struct nvmf_capsule **ccp,
@@ -265,6 +274,9 @@ int	nvmf_handoff_controller_qpair(struct nvmf_qpair *qp,
 /*
  * Connect to an admin or I/O queue.  If this fails, a detailed error
  * message can be obtained from nvmf_association_error.
+ *
+ * The underlying transport in '*params' (e.g. socket for TCP queue
+ * pairs) will be closed if this fails.
  */
 struct nvmf_qpair *nvmf_connect(struct nvmf_association *na,
     const struct nvmf_qpair_params *params, uint16_t qid, u_int queue_size,

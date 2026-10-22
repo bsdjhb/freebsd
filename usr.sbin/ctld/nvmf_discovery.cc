@@ -481,7 +481,7 @@ nvmf_discovery_portal::handle_connection(freebsd::fd_up fd,
 {
 	struct nvmf_qpair_params qparams;
 	memset(&qparams, 0, sizeof(qparams));
-	qparams.tcp.fd = fd;
+	qparams.tcp.fd = fd.release();
 
 	struct nvmf_capsule *nc = NULL;
 	struct nvmf_fabric_connect_data data;

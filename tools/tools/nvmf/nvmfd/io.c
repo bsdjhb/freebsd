@@ -23,7 +23,6 @@ struct io_controller {
 	u_int num_io_queues;
 	u_int active_io_queues;
 	struct nvmf_qpair **io_qpairs;
-	int *io_sockets;
 
 	struct nvme_firmware_page fp;
 	struct nvme_health_information_page hip;
@@ -219,7 +218,6 @@ handle_set_features(struct io_controller *ioc, const struct nvmf_capsule *nc,
 		pthread_mutex_lock(&io_na_mutex);
 		ioc->num_io_queues = num_queues;
 		ioc->io_qpairs = calloc(num_queues, sizeof(*ioc->io_qpairs));
-		ioc->io_sockets = calloc(num_queues, sizeof(*ioc->io_sockets));
 		pthread_mutex_unlock(&io_na_mutex);
 
 		nvmf_init_cqe(&cqe, nc, 0);
@@ -285,10 +283,9 @@ handle_admin_qpair(struct io_controller *ioc)
 
 	pthread_mutex_lock(&io_na_mutex);
 	for (u_int i = 0; i < ioc->num_io_queues; i++) {
-		if (ioc->io_qpairs[i] == NULL || ioc->io_sockets[i] == -1)
+		if (ioc->io_qpairs[i] == NULL)
 			continue;
-		close(ioc->io_sockets[i]);
-		ioc->io_sockets[i] = -1;
+		nvmf_close_qpair(ioc->io_qpairs[i]);
 	}
 
 	/* Wait for I/O threads to notice. */
@@ -461,10 +458,6 @@ handle_io_qpair(struct io_controller *ioc, struct nvmf_qpair *qp, int qid)
 	pthread_mutex_lock(&io_na_mutex);
 	if (disconnect)
 		ioc->io_qpairs[qid - 1] = NULL;
-	if (ioc->io_sockets[qid - 1] != -1) {
-		close(ioc->io_sockets[qid - 1]);
-		ioc->io_sockets[qid - 1] = -1;
-	}
 	ioc->active_io_queues--;
 	if (ioc->active_io_queues == 0)
 		pthread_cond_broadcast(&io_cond);
@@ -516,12 +509,10 @@ connect_admin_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	nvmf_free_capsule(nc);
 
 	handle_admin_qpair(ioc);
-	close(s);
 	return;
 
 error:
 	nvmf_free_capsule(nc);
-	close(s);
 }
 
 static void
@@ -593,7 +584,6 @@ connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 	ioc = io_controller;
 	ioc->active_io_queues++;
 	ioc->io_qpairs[qid - 1] = qp;
-	ioc->io_sockets[qid - 1] = s;
 	pthread_mutex_unlock(&io_na_mutex);
 
 	nvmf_free_capsule(nc);
@@ -603,7 +593,6 @@ connect_io_qpair(int s, struct nvmf_qpair *qp, struct nvmf_capsule *nc,
 
 error:
 	nvmf_free_capsule(nc);
-	close(s);
 }
 
 static void *
@@ -657,7 +646,6 @@ error:
 		nvmf_free_capsule(nc);
 	if (qp != NULL)
 		nvmf_free_qpair(qp);
-	close(s);
 	return (NULL);
 }
 
