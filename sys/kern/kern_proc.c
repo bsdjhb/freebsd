@@ -2410,11 +2410,9 @@ sysctl_kern_proc_sv_name(SYSCTL_HANDLER_ARGS)
 	return (sysctl_handle_string(oidp, sv_name, 0, req));
 }
 
-#ifdef KINFO_OVMENTRY_SIZE
-CTASSERT(sizeof(struct kinfo_ovmentry) == KINFO_OVMENTRY_SIZE);
-#endif
-
 #ifdef COMPAT_FREEBSD7
+CTASSERT(sizeof(struct kinfo_ovmentry) == KINFO_OVMENTRY_SIZE);
+
 static int
 sysctl_kern_proc_ovmmap(SYSCTL_HANDLER_ARGS)
 {
@@ -2560,9 +2558,7 @@ sysctl_kern_proc_ovmmap(SYSCTL_HANDLER_ARGS)
 }
 #endif	/* COMPAT_FREEBSD7 */
 
-#ifdef KINFO_VMENTRY_SIZE
 CTASSERT(sizeof(struct kinfo_vmentry) == KINFO_VMENTRY_SIZE);
-#endif
 
 void
 kern_proc_vmmap_resident(vm_map_t map, vm_map_entry_t entry,
