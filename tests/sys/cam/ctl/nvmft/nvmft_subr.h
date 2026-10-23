@@ -17,6 +17,8 @@ struct nvmf_qpair *connect_io_queue(const atf_tc_t *tc,
     const char *hostnqn);
 struct nvmf_association *create_association(const atf_tc_t *tc);
 void	enable_controller(struct nvmf_qpair *qp);
+enum nvmf_trtype init_association_params(const atf_tc_t *tc,
+    struct nvmf_association_params *aparams);
 void	init_hostid(uint8_t hostid[16], char hostnqn[NVMF_NQN_MAX_LEN]);
 int	open_socket(const atf_tc_t *tc, struct addrinfo **aip,
     struct addrinfo **listp);
