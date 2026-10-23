@@ -128,6 +128,18 @@ const char *nvmf_transport_type(uint8_t trtype);
 bool	nvmf_nqn_valid(const char *nqn);
 bool	nvmf_nqn_valid_strict(const char *nqn);
 
+/* Transport-specific APIs. */
+
+/*
+ * These TCP-specific queries are used by tests to verify if digests
+ * were negotiated.
+ */
+bool	nvmf_tcp_using_header_digests(const struct nvmf_qpair *qp);
+bool	nvmf_tcp_using_data_digests(const struct nvmf_qpair *qp);
+
+/* Compute the digest for a TCP PDU data buffer. */
+uint32_t nvmf_tcp_compute_digest(const void *buf, size_t len);
+
 /* Controller-specific APIs. */
 
 /*
