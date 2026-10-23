@@ -128,6 +128,21 @@ const char *nvmf_transport_type(uint8_t trtype);
 bool	nvmf_nqn_valid(const char *nqn);
 bool	nvmf_nqn_valid_strict(const char *nqn);
 
+/* Transport-specific APIs. */
+
+/*
+ * These TCP-specific queries are used by tests to verify if digests
+ * were negotiated and manually construct PDUs.
+ */
+size_t	nvmf_tcp_max_icd(const struct nvmf_qpair *qp);
+uint32_t nvmf_tcp_maxh2cdata(const struct nvmf_qpair *qp);
+u_int	nvmf_tcp_txpda(const struct nvmf_qpair *qp);
+bool	nvmf_tcp_using_header_digests(const struct nvmf_qpair *qp);
+bool	nvmf_tcp_using_data_digests(const struct nvmf_qpair *qp);
+
+/* Compute the digest for a TCP PDU data buffer. */
+uint32_t nvmf_tcp_compute_digest(const void *buf, size_t len);
+
 /* Controller-specific APIs. */
 
 /*
@@ -300,6 +315,14 @@ struct nvmf_qpair *nvmf_connect(struct nvmf_association *na,
 
 /* Return the CNTLID for a queue returned from CONNECT. */
 uint16_t nvmf_cntlid(struct nvmf_qpair *qp);
+
+/*
+ * Return the command ID to use for the next command.  This should
+ * only be used for transport-specific tests that manually construct
+ * and transmit command capsules.  The returned command ID is
+ * little-endian.
+ */
+uint16_t nvmf_host_next_cid(struct nvmf_qpair *qp);
 
 /*
  * Send a command to the controller.  This can fail with EBUSY if the

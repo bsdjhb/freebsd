@@ -199,6 +199,21 @@ nvmf_cntlid(struct nvmf_qpair *qp)
 	return (qp->nq_cntlid);
 }
 
+uint16_t
+nvmf_host_next_cid(struct nvmf_qpair *qp)
+{
+	uint16_t cid;
+
+	cid = htole16(qp->nq_cid);
+
+	/* 4.2 Skip CID of 0xFFFF. */
+	qp->nq_cid++;
+	if (qp->nq_cid == 0xFFFF)
+		qp->nq_cid = 0;
+
+	return (cid);
+}
+
 int
 nvmf_host_transmit_command(struct nvmf_capsule *nc)
 {
@@ -211,12 +226,7 @@ nvmf_host_transmit_command(struct nvmf_capsule *nc)
 	if (new_sqtail == qp->nq_sqhd)
 		return (EBUSY);
 
-	nc->nc_sqe.cid = htole16(qp->nq_cid);
-
-	/* 4.2 Skip CID of 0xFFFF. */
-	qp->nq_cid++;
-	if (qp->nq_cid == 0xFFFF)
-		qp->nq_cid = 0;
+	nc->nc_sqe.cid = nvmf_host_next_cid(qp);
 
 	error = nvmf_transmit_capsule(nc);
 	if (error != 0)
