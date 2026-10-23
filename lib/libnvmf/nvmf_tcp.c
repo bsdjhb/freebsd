@@ -82,11 +82,12 @@ struct nvmf_tcp_qpair {
 #define	TCAP(nc)	((struct nvmf_tcp_capsule *)(nc))
 #define	CTCAP(nc)	((const struct nvmf_tcp_capsule *)(nc))
 #define	TQP(qp)		((struct nvmf_tcp_qpair *)(qp))
+#define	CTQP(qp)	((const struct nvmf_tcp_qpair *)(qp))
 
 static const char zero_padding[NVME_TCP_PDU_PDO_MAX_OFFSET];
 
-static uint32_t
-compute_digest(const void *buf, size_t len)
+uint32_t
+nvmf_tcp_compute_digest(const void *buf, size_t len)
 {
 	return (calculate_crc32c(0xffffffff, buf, len) ^ 0xffffffff);
 }
@@ -264,7 +265,7 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 
 	/* Check header digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_HDGSTF) != 0) {
-		digest = compute_digest(ch, ch->hlen);
+		digest = nvmf_tcp_compute_digest(ch, ch->hlen);
 		memcpy(&rx_digest, (const char *)ch + ch->hlen,
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
@@ -278,7 +279,8 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 
 	/* Check data digest if present. */
 	if ((ch->flags & NVME_TCP_CH_FLAGS_DDGSTF) != 0) {
-		digest = compute_digest((const char *)ch + ch->pdo, data_len);
+		digest = nvmf_tcp_compute_digest((const char *)ch + ch->pdo,
+		    data_len);
 		memcpy(&rx_digest, (const char *)ch + plen - sizeof(rx_digest),
 		    sizeof(rx_digest));
 		if (digest != rx_digest) {
@@ -470,7 +472,7 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_qpair *qp, void *hdr, size_t hlen,
 
 	/* HDGST */
 	if (qp->header_digests) {
-		header_digest = compute_digest(hdr, hlen);
+		header_digest = nvmf_tcp_compute_digest(hdr, hlen);
 		iov[iovcnt].iov_base = &header_digest;
 		iov[iovcnt].iov_len = sizeof(header_digest);
 		iovcnt++;
@@ -491,7 +493,7 @@ nvmf_tcp_construct_pdu(struct nvmf_tcp_qpair *qp, void *hdr, size_t hlen,
 
 		/* DDGST */
 		if (qp->data_digests) {
-			data_digest = compute_digest(data, data_len);
+			data_digest = nvmf_tcp_compute_digest(data, data_len);
 			iov[iovcnt].iov_base = &data_digest;
 			iov[iovcnt].iov_len = sizeof(data_digest);
 			iovcnt++;
@@ -1519,3 +1521,21 @@ struct nvmf_transport_ops tcp_ops = {
 	.receive_controller_data = tcp_receive_controller_data,
 	.send_controller_data = tcp_send_controller_data,
 };
+
+bool
+nvmf_tcp_using_header_digests(const struct nvmf_qpair *nq)
+{
+	const struct nvmf_tcp_qpair *qp = CTQP(nq);
+
+	assert(nq->nq_association->na_ops == &tcp_ops);
+	return (qp->header_digests);
+}
+
+bool
+nvmf_tcp_using_data_digests(const struct nvmf_qpair *nq)
+{
+	const struct nvmf_tcp_qpair *qp = CTQP(nq);
+
+	assert(nq->nq_association->na_ops == &tcp_ops);
+	return (qp->data_digests);
+}
