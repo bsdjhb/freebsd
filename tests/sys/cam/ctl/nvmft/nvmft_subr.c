@@ -47,25 +47,35 @@ tcp_association_params(const atf_tc_t *tc,
 	params->tcp.maxr2t = 1;
 }
 
-struct nvmf_association *
-create_association(const atf_tc_t *tc)
+enum nvmf_trtype
+init_association_params(const atf_tc_t *tc,
+    struct nvmf_association_params *aparams)
 {
-	struct nvmf_association_params aparams;
-	struct nvmf_association *na;
 	const char *transport;
 	enum nvmf_trtype trtype;
 
 	transport = atf_tc_get_config_var_wd(tc, "nvmft.transport", "tcp");
 
-	memset(&aparams, 0, sizeof(aparams));
-	aparams.sq_flow_control =
+	memset(aparams, 0, sizeof(*aparams));
+	aparams->sq_flow_control =
 	    atf_tc_get_config_var_as_bool_wd(tc, "nvmft.flow_control", false);
 	if (strcasecmp(transport, "tcp") == 0) {
 		trtype = NVMF_TRTYPE_TCP;
-		tcp_association_params(tc, &aparams);
+		tcp_association_params(tc, aparams);
 	} else
 		atf_tc_fail("Invalid transport %s", transport);
 
+	return (trtype);
+}
+
+struct nvmf_association *
+create_association(const atf_tc_t *tc)
+{
+	struct nvmf_association_params aparams;
+	struct nvmf_association *na;
+	enum nvmf_trtype trtype;
+
+	trtype = init_association_params(tc, &aparams);
 	na = nvmf_allocate_association(trtype, false, &aparams);
 	if (na == NULL)
 		atf_tc_fail("Failed to create association: %s",
