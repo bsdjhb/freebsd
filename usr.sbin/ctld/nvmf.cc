@@ -451,15 +451,22 @@ nvmf_io_portal::handle_connection(freebsd::fd_up fd, const char *host __unused,
 	if (error != 0) {
 		log_warnc(error,
 		    "Failed to prepare NVMe I/O qpair for handoff");
+		nvmf_connect_generic_error(nc, NVME_SC_INTERNAL_DEVICE_ERROR);
 		return;
 	}
 
-	if (ioctl(ctl_fd, CTL_NVMF, &req) != 0)
+	if (ioctl(ctl_fd, CTL_NVMF, &req) != 0) {
 		log_warn("ioctl(CTL_NVMF/CTL_NVMF_HANDOFF)");
-	if (req.status == CTL_NVMF_ERROR)
+		nvmf_connect_generic_error(nc, NVME_SC_INTERNAL_DEVICE_ERROR);
+		return;
+	}
+	if (req.status == CTL_NVMF_ERROR) {
 		log_warnx("Failed to handoff NVMF connection: %s",
 		    req.error_str);
-	else if (req.status != CTL_NVMF_OK)
+		nvmf_connect_generic_error(nc, NVME_SC_INTERNAL_DEVICE_ERROR);
+	} else if (req.status != CTL_NVMF_OK) {
 		log_warnx("Failed to handoff NVMF connection with status %d",
 		    req.status);
+		nvmf_connect_generic_error(nc, NVME_SC_INTERNAL_DEVICE_ERROR);
+	}
 }
