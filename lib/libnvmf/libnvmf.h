@@ -225,6 +225,20 @@ struct nvmf_qpair *nvmf_accept(struct nvmf_association *na,
 void	nvmf_connect_invalid_parameters(const struct nvmf_capsule *cc,
     bool data, uint16_t offset);
 
+/*
+ * Construct and send an error response capsule for a Fabrics CONNECT
+ * command.
+ */
+void	nvmf_connect_error(const struct nvmf_capsule *cc, uint8_t sc_type,
+    uint8_t sc_status);
+
+/*
+ * Construct and send an error response capsule for a Fabrics CONNECT
+ * command using a generic status code.
+ */
+void	nvmf_connect_generic_error(const struct nvmf_capsule *cc,
+    uint8_t sc_status);
+
 /* Construct and send a response capsule for a successful CONNECT. */
 int	nvmf_finish_accept(const struct nvmf_capsule *cc, uint16_t cntlid);
 
