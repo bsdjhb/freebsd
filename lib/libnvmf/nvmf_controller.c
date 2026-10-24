@@ -184,6 +184,24 @@ nvmf_connect_invalid_parameters(const struct nvmf_capsule *cc, bool data,
 	nvmf_free_capsule(rc);
 }
 
+void
+nvmf_connect_error(const struct nvmf_capsule *cc, uint8_t sc_type,
+    uint8_t sc_status)
+{
+	struct nvmf_capsule *rc;
+
+	rc = nvmf_simple_response(cc, sc_type, sc_status);
+	nvmf_transmit_capsule(rc);
+	nvmf_free_capsule(rc);
+}
+
+void
+nvmf_connect_generic_error(const struct nvmf_capsule *cc, uint8_t sc_status)
+{
+	assert(sc_status != NVME_SC_SUCCESS);
+	nvmf_connect_error(cc, NVME_SCT_GENERIC, sc_status);
+}
+
 struct nvmf_qpair *
 nvmf_accept(struct nvmf_association *na, const struct nvmf_qpair_params *params,
     struct nvmf_capsule **ccp, struct nvmf_fabric_connect_data *data)
