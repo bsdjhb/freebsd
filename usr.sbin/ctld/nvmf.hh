@@ -49,6 +49,8 @@ struct nvmf_portal : public portal {
 
 protected:
 	struct nvmf_association *association() { return p_association.get(); }
+	bool host_permitted(const struct auth_group *ag, const char *subnqn,
+	    const char *hostnqn, const struct sockaddr *client_sa);
 
 private:
 	struct nvmf_association_params	p_aparams;

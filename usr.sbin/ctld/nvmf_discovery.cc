@@ -502,6 +502,14 @@ nvmf_discovery_portal::handle_connection(freebsd::fd_up fd,
 		return;
 	}
 
+	const struct auth_group *ag = portal_group()->discovery_auth_group();
+	if (!host_permitted(ag, (char *)data.subnqn, (char *)data.hostnqn,
+	    client_sa)) {
+		nvmf_connect_error(nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVMF_FABRIC_SC_INVALID_HOST);
+		return;
+	}
+
 	/* Just use a controller ID of 1 for all discovery controllers. */
 	int error = nvmf_finish_accept(nc, 1);
 	if (error != 0) {
