@@ -659,6 +659,62 @@ ATF_TC_BODY(invalid_connect_subnqn, tc)
 	nvmf_free_qpair(admin);
 }
 
+ATF_TC(unconfigured_connect_subnqn);
+ATF_TC_HEAD(unconfigured_connect_subnqn, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(unconfigured_connect_subnqn, tc)
+{
+	struct nvmf_fabric_connect_cmd cmd;
+	struct nvmf_fabric_connect_data data;
+	struct nvmf_fabric_connect_rsp rsp;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = nvmf_allocate_qpair(na, &qparams);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	init_connect_cmd(tc, 0, NVMF_MIN_ADMIN_MAX_SQ_SIZE, &cmd);
+	init_connect_data(tc, parse_cntlid(tc), hostid, hostnqn, &data);
+
+	/*
+	 * Replace the SubNQN with one that that is not enabled.
+	 *
+	 * NB: The strncpy() is on purpose to zero the rest of the
+	 * array to ensure the previous value is fully replaced.
+	 */
+	strncpy(data.subnqn, "nqn.1994-09.org.freebsd:nonexistent",
+	    sizeof(data.subnqn));
+
+	manual_connect(admin, &cmd, &data, &rsp);
+
+	status = le16toh(rsp.status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_COMMAND_SPECIFIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVMF_FABRIC_SC_INVALID_PARAM);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.iattr == 1);
+	ATF_REQUIRE(rsp.status_code_specific.invalid.ipo ==
+	    offsetof(struct nvmf_fabric_connect_data, subnqn));
+
+	nvmf_free_qpair(admin);
+}
+
 ATF_TC(invalid_connect_hostnqn);
 ATF_TC_HEAD(invalid_connect_hostnqn, tc)
 {
@@ -941,6 +997,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, io_kato_nonzero);
 	ATF_TP_ADD_TC(tp, invalid_connect_hostid);
 	ATF_TP_ADD_TC(tp, invalid_connect_subnqn);
+	ATF_TP_ADD_TC(tp, unconfigured_connect_subnqn);
 	ATF_TP_ADD_TC(tp, invalid_connect_hostnqn);
 	ATF_TP_ADD_TC(tp, fetch_hip);
 	ATF_TP_ADD_TC(tp, fetch_hip_short);
