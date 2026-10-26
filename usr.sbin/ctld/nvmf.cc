@@ -188,6 +188,35 @@ nvmf_portal::prepare()
 	return true;
 }
 
+bool
+nvmf_portal::host_permitted(const struct auth_group *ag, const char *subnqn,
+    const char *hostnqn, const struct sockaddr *client_sa)
+{
+	switch (ag->type()) {
+	case auth_type::UNKNOWN:
+		log_warn("auth-type not set, denying access to %s", subnqn);
+		return (false);
+	case auth_type::DENY:
+		log_warn("Connection to %s denied by auth-type", subnqn);
+		return (false);
+	default:
+		break;
+	}
+
+	if (!ag->host_permitted(hostnqn)) {
+		log_warn("Host %s does not match allowed names for %s",
+		    hostnqn, subnqn);
+		return (false);
+	}
+	if (!ag->host_permitted(client_sa)) {
+		log_warn("Host %s does not match allowed addresses for %s",
+		    hostnqn, subnqn);
+		return (false);
+	}
+
+	return (true);
+}
+
 portal_group_up
 nvmf_make_transport_group(struct conf *conf, std::string_view name)
 {
@@ -450,6 +479,16 @@ nvmf_io_portal::handle_connection(freebsd::fd_up fd, const char *host __unused,
 		    (int)sizeof(data.subnqn), data.subnqn);
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, subnqn));
+		return;
+	}
+
+	const struct auth_group *ag = port->auth_group();
+	if (ag == nullptr)
+		ag = port->target()->auth_group();
+	if (!host_permitted(ag, (char *)data.subnqn, (char *)data.hostnqn,
+	    client_sa)) {
+		nvmf_connect_error(nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVMF_FABRIC_SC_INVALID_HOST);
 		return;
 	}
 
