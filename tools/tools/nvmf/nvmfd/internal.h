@@ -58,7 +58,7 @@ void	device_flush(uint32_t nsid, const struct nvmf_capsule *nc);
 /* ctl.c */
 void	init_ctl_port(const char *subnqn,
     const struct nvmf_association_params *params);
-void	ctl_handoff_qpair(struct nvmf_qpair *qp,
+bool	ctl_handoff_qpair(struct nvmf_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd,
     const struct nvmf_fabric_connect_data *data);
 void	shutdown_ctl_port(const char *subnqn);

@@ -116,7 +116,7 @@ shutdown_ctl_port(const char *subnqn)
 	nvlist_destroy(nvl);
 }
 
-void
+bool
 ctl_handoff_qpair(struct nvmf_qpair *qp,
     const struct nvmf_fabric_connect_cmd *cmd,
     const struct nvmf_fabric_connect_data *data)
@@ -129,9 +129,20 @@ ctl_handoff_qpair(struct nvmf_qpair *qp,
 	error = nvmf_handoff_controller_qpair(qp, cmd, data, &req.data.handoff);
 	if (error != 0) {
 		warnc(error, "Failed to prepare qpair for handoff");
-		return;
+		return (false);
 	}
 
-	if (ioctl(ctl_fd, CTL_NVMF, &req) != 0)
+	if (ioctl(ctl_fd, CTL_NVMF, &req) != 0) {
 		warn("ioctl(CTL_NVMF/CTL_NVMF_HANDOFF)");
+		return (false);
+	}
+	if (req.status == CTL_NVMF_ERROR) {
+		warnx("Failed to handoff NVMF connection: %s", req.error_str);
+		return (false);
+	} else if (req.status != CTL_NVMF_OK) {
+		warnx("Failed to handoff NVMF connection with status %d",
+		    req.status);
+		return (false);
+	}
+	return (true);
 }

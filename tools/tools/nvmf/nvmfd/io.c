@@ -615,16 +615,18 @@ io_socket_thread(void *arg)
 		goto error;
 	}
 
-	if (kernel_io) {
-		ctl_handoff_qpair(qp, nvmf_capsule_sqe(nc), &data);
-		goto error;
-	}
-
 	if (strcmp(data.subnqn, nqn) != 0) {
-		warn("I/O qpair with invalid SubNQN: %.*s",
+		warnx("I/O qpair with invalid SubNQN: %.*s",
 		    (int)sizeof(data.subnqn), data.subnqn);
 		nvmf_connect_invalid_parameters(nc, true,
 		    offsetof(struct nvmf_fabric_connect_data, subnqn));
+		goto error;
+	}
+
+	if (kernel_io) {
+		if (!ctl_handoff_qpair(qp, nvmf_capsule_sqe(nc), &data))
+			nvmf_connect_generic_error(nc,
+			    NVME_SC_INTERNAL_DEVICE_ERROR);
 		goto error;
 	}
 
