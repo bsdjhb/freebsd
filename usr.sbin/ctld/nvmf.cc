@@ -443,6 +443,16 @@ nvmf_io_portal::handle_connection(freebsd::fd_up fd, const char *host __unused,
 	const struct nvmf_fabric_connect_cmd *cmd =
 	    (const struct nvmf_fabric_connect_cmd *)nvmf_capsule_sqe(nc);
 
+	const struct port *port =
+	    portal_group()->find_port((char *)data.subnqn);
+	if (port == nullptr) {
+		log_warn("Request to connect to unknown SubNQN: %.*s",
+		    (int)sizeof(data.subnqn), data.subnqn);
+		nvmf_connect_invalid_parameters(nc, true,
+		    offsetof(struct nvmf_fabric_connect_data, subnqn));
+		return;
+	}
+
 	struct ctl_nvmf req;
 	memset(&req, 0, sizeof(req));
 	req.type = CTL_NVMF_HANDOFF;
