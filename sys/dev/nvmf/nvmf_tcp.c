@@ -698,6 +698,7 @@ nvmf_tcp_handle_h2c_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	data_offset = le32toh(h2c->datao);
 	if (data_offset < cb->data_offset ||
+	    data_offset > UINT32_MAX - data_len ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
 		nvmf_tcp_report_error(qp,
@@ -790,6 +791,7 @@ nvmf_tcp_handle_c2h_data(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	data_offset = le32toh(c2h->datao);
 	if (data_offset < cb->data_offset ||
+	    data_offset > UINT32_MAX - data_len ||
 	    data_offset + data_len > cb->data_offset + cb->data_len) {
 		mtx_unlock(&qp->rx_buffers.lock);
 		nvmf_tcp_report_error(qp,
@@ -973,7 +975,7 @@ nvmf_tcp_handle_r2t(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	 * out of range of the original command.
 	 */
 	data_len = le32toh(r2t->r2tl);
-	if (data_offset + data_len > cb->data_len) {
+	if (data_len > cb->data_len - data_offset) {
 		mtx_unlock(&qp->tx_buffers.lock);
 		nvmf_tcp_report_error(qp,
 		    NVME_TCP_TERM_REQ_FES_DATA_TRANSFER_OUT_OF_RANGE, 0,
