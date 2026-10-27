@@ -245,10 +245,9 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu,
 
 	/* Determine how large of a PDU header to return for errors. */
 	ch = pdu->hdr;
-	hlen = ch->hlen;
 	plen = le32toh(ch->plen);
-	if (hlen < sizeof(*ch) || hlen > plen)
-		hlen = sizeof(*ch);
+	hlen = MIN(ch->hlen, plen);
+	hlen = MAX(hlen, sizeof(*ch));
 
 	error = nvmf_tcp_validate_pdu_header(ch,
 	    qp->qp.nq_association->na_controller, qp->header_digests,
@@ -331,10 +330,10 @@ nvmf_tcp_read_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 	plen = le32toh(ch.plen);
 
 	/*
-	 * Validate a header with garbage lengths to trigger
-	 * an error message without reading more.
+	 * Validate a header with too short plen to trigger an error
+	 * message without reading more.
 	 */
-	if (plen < sizeof(ch) || ch.hlen > plen) {
+	if (plen < sizeof(ch)) {
 		pdu->hdr = &ch;
 		error = nvmf_tcp_validate_pdu(qp, pdu, sizeof(ch));
 		pdu->hdr = NULL;
