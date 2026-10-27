@@ -239,3 +239,87 @@ shutdown_controller(struct nvmf_qpair *qp)
 		atf_tc_fail("Failed to set CC to trigger shutdown: %s",
 		    strerror(error));
 }
+
+void
+require_nvm(struct nvmf_qpair *qp)
+{
+	uint64_t cap;
+	int error;
+
+	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch CAP: %s", strerror(error));
+
+	if (NVME_CAP_HI_CSS_NVM(cap >> 32) == 0)
+		atf_tc_skip("Controller does not support the NVM command set");
+}
+
+struct nvmf_qpair *
+connect_io_queue(const atf_tc_t *tc, struct nvmf_qpair *admin,
+    struct nvmf_association *na, const struct nvmf_qpair_params *params,
+    const uint8_t hostid[16], const char *hostnqn)
+{
+	struct nvme_controller_data cdata;
+	struct nvmf_qpair *io;
+	int error, queues;
+
+	error = nvmf_host_identify_controller(admin, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+	nvmf_update_assocation(na, &cdata);
+
+	error = nvmf_host_request_queues(admin, 1, &queues);
+	if (error != 0)
+		atf_tc_fail("Failed to request I/O queues: %s",
+		    strerror(error));
+
+	io = nvmf_connect(na, params, 1, NVME_MIN_IO_ENTRIES, hostid,
+	    nvmf_cntlid(admin), atf_tc_get_config_var(tc, "nvmft.nqn"),
+	    hostnqn, 0);
+	if (io == NULL)
+		atf_tc_fail("Failed to create I/O queue: %s",
+		    nvmf_association_error(na));
+	return (io);
+}
+
+u_int
+validate_namespace(const atf_tc_t *tc, struct nvmf_qpair *qp, u_int *block_size)
+{
+	struct nvme_namespace_data nsdata;
+	long val;
+	uint32_t nsid;
+	int error;
+	uint8_t lbads, lbaf;
+
+	if (!atf_tc_has_config_var(tc, "nvmft.nsid"))
+		atf_tc_skip("requires nvmft.nsid config variable");
+
+	val = atf_tc_get_config_var_as_long(tc, "nvmft.nsid");
+	nsid = val;
+	if (val < 1 || nsid >= NVME_GLOBAL_NAMESPACE_TAG)
+		atf_tc_fail("Invalid nsid: %ld", val);
+
+	error = nvmf_host_identify_namespace(qp, nsid, &nsdata);
+	if (error != 0)
+		atf_tc_fail("IDENTIFY failed for nsid %u", nsid);
+
+	nvme_namespace_data_swapbytes(&nsdata);
+
+	if (NVMEV(NVME_NS_DATA_DPS_PIT, nsdata.dps) != 0)
+		atf_tc_fail("Namespace %u uses data protection", nsid);
+
+	lbaf = NVMEV(NVME_NS_DATA_FLBAS_FORMAT, nsdata.flbas);
+	if (lbaf > nsdata.nlbaf)
+		atf_tc_fail("Invalid LBA format index for namespace %u", nsid);
+
+	if (NVMEV(NVME_NS_DATA_LBAF_MS, nsdata.lbaf[lbaf]) != 0)
+		atf_tc_fail("Namespace %u uses metadata", nsid);
+
+	lbads = NVMEV(NVME_NS_DATA_LBAF_LBADS, nsdata.lbaf[lbaf]);
+	if (lbads == 0)
+		atf_tc_fail("Namespace %u block size is zero", nsid);
+
+	*block_size = 1 << lbads;
+	return (nsid);
+}

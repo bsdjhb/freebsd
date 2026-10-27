@@ -1053,6 +1053,374 @@ ATF_TC_BODY(identify_long, tc)
 	identify_bad_size(tc, 4097);
 }
 
+static void
+nvmf_init_read_sqe(void *sqe, uint32_t nsid, uint64_t lba, u_int nlb)
+{
+	struct nvme_command *cmd = sqe;
+
+	nvmf_init_sqe(cmd, NVME_OPC_READ);
+	cmd->nsid = htole32(nsid);
+	cmd->cdw10 = htole32(lba);
+	cmd->cdw11 = htole32(lba >> 32);
+	cmd->cdw12 = htole16(nlb - 1);
+}
+
+static struct nvmf_capsule *
+create_read_command(struct nvmf_qpair *io, uint32_t nsid, uint64_t lba,
+    u_int nlb, void *buf, size_t len)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *cc;
+	int error;
+
+	nvmf_init_read_sqe(&cmd, nsid, lba, nlb);
+	cc = nvmf_allocate_command(io, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("Failed to allocate command capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_capsule_append_data(cc, buf, len, false);
+	if (error != 0)
+		atf_tc_fail("Failed to append data to READ capsule: %s",
+		    strerror(error));
+
+	return (cc);
+}
+
+ATF_TC(read_block);
+ATF_TC_HEAD(read_block, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(read_block, tc)
+{
+	const struct nvme_completion *cpl;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	char *buf;
+	size_t len;
+	u_int block_size, nsid;
+	int error;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	require_nvm(admin);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = connect_io_queue(tc, admin, na, &qparams, hostid, hostnqn);
+	nvmf_free_association(na);
+
+	nsid = validate_namespace(tc, admin, &block_size);
+
+	len = block_size;
+	buf = malloc(len);
+	cc = create_read_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit READ capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive READ response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status == 0);
+	nvmf_free_capsule(rc);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(io);
+	nvmf_free_qpair(admin);
+}
+
+static void
+require_compare(struct nvmf_qpair *admin)
+{
+	struct nvme_controller_data cdata;
+	int error;
+
+	require_nvm(admin);
+
+	error = nvmf_host_identify_controller(admin, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+
+	if (NVMEV(NVME_CTRLR_DATA_ONCS_COMPARE, cdata.oncs) == 0)
+		atf_tc_skip("Controller does not support the COMPARE command");
+}
+
+static void
+nvmf_init_compare_sqe(void *sqe, uint32_t nsid, uint64_t lba, u_int nlb)
+{
+	struct nvme_command *cmd = sqe;
+
+	nvmf_init_sqe(cmd, NVME_OPC_COMPARE);
+	cmd->nsid = htole32(nsid);
+	cmd->cdw10 = htole32(lba);
+	cmd->cdw11 = htole32(lba >> 32);
+	cmd->cdw12 = htole16(nlb - 1);
+}
+
+static struct nvmf_capsule *
+create_compare_command(struct nvmf_qpair *io, uint32_t nsid, uint64_t lba,
+    u_int nlb, void *buf, size_t len)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *cc;
+	int error;
+
+	nvmf_init_compare_sqe(&cmd, nsid, lba, nlb);
+	cc = nvmf_allocate_command(io, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("Failed to allocate command capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_capsule_append_data(cc, buf, len, true);
+	if (error != 0)
+		atf_tc_fail("Failed to append data to COMPARE capsule: %s",
+		    strerror(error));
+
+	return (cc);
+}
+
+ATF_TC(compare_block);
+ATF_TC_HEAD(compare_block, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(compare_block, tc)
+{
+	const struct nvme_completion *cpl;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	char *buf;
+	size_t len;
+	u_int block_size, nsid;
+	int error;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	require_compare(admin);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = connect_io_queue(tc, admin, na, &qparams, hostid, hostnqn);
+	nvmf_free_association(na);
+
+	nsid = validate_namespace(tc, admin, &block_size);
+
+	/* First, read the first block. */
+	len = block_size;
+	buf = malloc(len);
+	cc = create_read_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit READ capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive READ response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status == 0);
+	nvmf_free_capsule(rc);
+
+	/* Second, compare that block with the value just read. */
+	cc = create_compare_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit COMPARE capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive COMPARE response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status == 0);
+	nvmf_free_capsule(rc);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(io);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(compare_mismatch);
+ATF_TC_HEAD(compare_mismatch, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(compare_mismatch, tc)
+{
+	const struct nvme_completion *cpl;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin, *io;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	struct addrinfo *ai, *list;
+	char *buf;
+	size_t len;
+	u_int block_size, nsid;
+	int error;
+	uint16_t status;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, &ai, &list);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+
+	require_compare(admin);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = false;
+	qparams.tcp.fd = open_socket_ai(ai);
+	freeaddrinfo(list);
+
+	io = connect_io_queue(tc, admin, na, &qparams, hostid, hostnqn);
+	nvmf_free_association(na);
+
+	nsid = validate_namespace(tc, admin, &block_size);
+
+	/* First, read the first block. */
+	len = block_size;
+	buf = malloc(len);
+	cc = create_read_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit READ capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive READ response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status == 0);
+	nvmf_free_capsule(rc);
+
+	/* Second, flip some bits in the first byte of the block. */
+	buf[0] ^= 0xaa;
+
+	/* Third, compare that block with the altered values. */
+	cc = create_compare_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit COMPARE capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive COMPARE response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_MEDIA_ERROR);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_COMPARE_FAILURE);
+	nvmf_free_capsule(rc);
+
+	/* Next, restore the first byte and flip some bits in the last byte. */
+	buf[0] ^= 0xaa;
+	buf[len - 1] ^= 0x55;
+
+	/* Last, one more compare. */
+	cc = create_compare_command(io, nsid, 0, 1, buf, len);
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to transmit COMPARE capsule: %s",
+		    strerror(errno));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("Failed to receive COMPARE response: %s",
+		    strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(status != 0);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_MEDIA_ERROR);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_COMPARE_FAILURE);
+	nvmf_free_capsule(rc);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(io);
+	nvmf_free_qpair(admin);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, invalid_qid);
@@ -1078,6 +1446,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_reserved_log_page);
 	ATF_TP_ADD_TC(tp, identify_short);
 	ATF_TP_ADD_TC(tp, identify_long);
+	ATF_TP_ADD_TC(tp, read_block);
+	ATF_TP_ADD_TC(tp, compare_block);
+	ATF_TP_ADD_TC(tp, compare_mismatch);
 
 	return (atf_no_error());
 }
