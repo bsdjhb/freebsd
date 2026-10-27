@@ -15,6 +15,7 @@ Then set the following configuration variables:
 test_suites.FreeBSD.nvmft.address = "127.0.0.1"
 test_suites.FreeBSD.nvmft.port = "4420"
 test_suites.FreeBSD.nvmft.nqn = "nqn.1994-09.org.freebsd:test"
+test_suites.FreeBSD.nvmft.nsid = "1"
 
 In addition, the following optional configuration variables may also
 be set (Note that the variable names all require a prefix of
