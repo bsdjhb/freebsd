@@ -229,7 +229,7 @@ nvmf_tcp_validate_pdu_header(const struct nvme_tcp_common_pdu_hdr *ch,
 	}
 
 	/* Validate plen. */
-	if (plen < ch->hlen) {
+	if (plen < full_hlen) {
 		printf("NVMe/TCP: Invalid PDU length %u\n", plen);
 		*fes = NVME_TCP_TERM_REQ_FES_INVALID_HEADER_FIELD;
 		*fei = offsetof(struct nvme_tcp_common_pdu_hdr, plen);
