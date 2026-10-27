@@ -43,7 +43,7 @@ nvmf_tcp_validate_pdu_header(const struct nvme_tcp_common_pdu_hdr *ch,
 	full_hlen = ch->hlen;
 	if ((ch->flags & NVME_TCP_CH_FLAGS_HDGSTF) != 0)
 		full_hlen += sizeof(uint32_t);
-	if (plen == full_hlen)
+	if (plen <= full_hlen)
 		data_len = 0;
 	else
 		data_len = plen - ch->pdo;
