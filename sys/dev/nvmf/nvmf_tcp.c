@@ -315,10 +315,9 @@ nvmf_tcp_validate_pdu(struct nvmf_tcp_qpair *qp, struct nvmf_tcp_rxpdu *pdu)
 
 	/* Determine how large of a PDU header to return for errors. */
 	ch = pdu->hdr;
-	hlen = ch->hlen;
 	plen = le32toh(ch->plen);
-	if (hlen < sizeof(*ch) || hlen > plen)
-		hlen = sizeof(*ch);
+	hlen = MIN(ch->hlen, plen);
+	hlen = MAX(hlen, sizeof(*ch));
 
 	error = nvmf_tcp_validate_pdu_header(ch, qp->qp.nq_controller,
 	    qp->header_digests, qp->data_digests, qp->rxpda, &data_len, &fes,
@@ -1146,9 +1145,9 @@ nvmf_tcp_receive(void *arg)
 			/*
 			 * Malformed PDUs will be reported as errors
 			 * by nvmf_tcp_validate_pdu.  Just pass along
-			 * garbage headers if the lengths mismatch.
+			 * garbage headers if the length is too short.
 			 */
-			if (needed < sizeof(ch) || ch.hlen > needed)
+			if (needed < sizeof(ch))
 				needed = sizeof(ch);
 
 			memset(&uio, 0, sizeof(uio));
