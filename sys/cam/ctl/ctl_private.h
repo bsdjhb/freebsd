@@ -478,6 +478,8 @@ int ctl_report_timestamp(struct ctl_scsiio *ctsio);
 int ctl_get_lba_status(struct ctl_scsiio *ctsio);
 
 int ctl_nvme_identify(struct ctl_nvmeio *ctnio);
+int ctl_nvme_set_features(struct ctl_nvmeio *ctnio);
+int ctl_nvme_get_features(struct ctl_nvmeio *ctnio);
 int ctl_nvme_flush(struct ctl_nvmeio *ctnio);
 int ctl_nvme_read_write(struct ctl_nvmeio *ctnio);
 int ctl_nvme_write_uncorrectable(struct ctl_nvmeio *ctnio);

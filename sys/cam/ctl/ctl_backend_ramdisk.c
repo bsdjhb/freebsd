@@ -668,6 +668,25 @@ ctl_backend_ramdisk_nvme_config_read(union ctl_io *io)
 			return (CTL_RETVAL_COMPLETE);
 		}
 	}
+	case NVME_OPC_GET_FEATURES:
+	{
+		uint8_t fid;
+
+		fid = NVMEV(NVME_FEAT_GET_FID, le32toh(io->nvmeio.cmd.cdw10));
+		switch (fid) {
+		case NVME_FEAT_ERROR_RECOVERY:
+			/* Always report no timeout for TLER. */
+			ctl_nvme_set_success(&io->nvmeio);
+			io->nvmeio.cpl.cdw0 = htole32(0);
+			ctl_config_read_done(io);
+			return (CTL_RETVAL_COMPLETE);
+		default:
+			ctl_nvme_set_invalid_field(&io->nvmeio);
+			ctl_config_read_done(io);
+			return (CTL_RETVAL_COMPLETE);
+		}
+		break;
+	}
 	default:
 		ctl_nvme_set_invalid_opcode(&io->nvmeio);
 		ctl_config_read_done(io);
@@ -975,6 +994,45 @@ ctl_backend_ramdisk_nvme_config_write(union ctl_io *io)
 }
 
 static int
+ctl_backend_ramdisk_nvme_admin_config_write(union ctl_io *io)
+{
+	switch (io->nvmeio.cmd.opc) {
+	case NVME_OPC_SET_FEATURES:
+	{
+		uint8_t fid;
+
+		fid = NVMEV(NVME_FEAT_GET_FID, le32toh(io->nvmeio.cmd.cdw10));
+		switch (fid) {
+		case NVME_FEAT_ERROR_RECOVERY:
+		{
+			uint32_t val;
+
+			val = le32toh(io->nvmeio.cmd.cdw11);
+			if ((val & 0xffffff00) != 0) {
+				ctl_nvme_set_invalid_field(&io->nvmeio);
+				break;
+			}
+
+			/* Ignore any timeout set for TLER. */
+			ctl_nvme_set_success(&io->nvmeio);
+			break;
+		}
+		default:
+			ctl_nvme_set_invalid_field(&io->nvmeio);
+			break;
+		}
+		ctl_config_write_done(io);
+		break;
+	}
+	default:
+		ctl_nvme_set_invalid_opcode(&io->nvmeio);
+		ctl_config_write_done(io);
+		break;
+	}
+	return (CTL_RETVAL_COMPLETE);
+}
+
+static int
 ctl_backend_ramdisk_config_write(union ctl_io *io)
 {
 	switch (io->io_hdr.io_type) {
@@ -982,6 +1040,8 @@ ctl_backend_ramdisk_config_write(union ctl_io *io)
 		return (ctl_backend_ramdisk_scsi_config_write(io));
 	case CTL_IO_NVME:
 		return (ctl_backend_ramdisk_nvme_config_write(io));
+	case CTL_IO_NVME_ADMIN:
+		return (ctl_backend_ramdisk_nvme_admin_config_write(io));
 	default:
 		__assert_unreachable();
 	}

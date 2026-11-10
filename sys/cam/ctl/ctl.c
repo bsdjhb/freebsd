@@ -10794,6 +10794,36 @@ ctl_nvme_identify(struct ctl_nvmeio *ctnio)
 }
 
 int
+ctl_nvme_set_features(struct ctl_nvmeio *ctnio)
+{
+	struct ctl_lun *lun = CTL_LUN(ctnio);
+	int retval;
+
+	CTL_DEBUG_PRINT(("ctl_nvme_set_features\n"));
+
+	CTL_IO_ASSERT(ctnio, NVME_ADMIN);
+	MPASS(ctnio->cmd.opc == NVME_OPC_SET_FEATURES);
+
+	retval = lun->backend->config_write((union ctl_io *)ctnio);
+	return (retval);
+}
+
+int
+ctl_nvme_get_features(struct ctl_nvmeio *ctnio)
+{
+	struct ctl_lun *lun = CTL_LUN(ctnio);
+	int retval;
+
+	CTL_DEBUG_PRINT(("ctl_nvme_get_features\n"));
+
+	CTL_IO_ASSERT(ctnio, NVME_ADMIN);
+	MPASS(ctnio->cmd.opc == NVME_OPC_GET_FEATURES);
+
+	retval = lun->backend->config_read((union ctl_io *)ctnio);
+	return (retval);
+}
+
+int
 ctl_nvme_flush(struct ctl_nvmeio *ctnio)
 {
 	struct ctl_lun *lun = CTL_LUN(ctnio);
