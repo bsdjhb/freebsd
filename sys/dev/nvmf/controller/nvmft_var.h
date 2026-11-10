@@ -86,6 +86,7 @@ struct nvmft_controller {
 	uint32_t pending_commands;
 
 	uint16_t pending_connects;
+	uint8_t	arb_burst;
 
 	volatile int ka_active_traffic;
 	struct callout ka_timer;

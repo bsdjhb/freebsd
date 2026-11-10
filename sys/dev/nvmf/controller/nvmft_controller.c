@@ -69,6 +69,7 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	memcpy(ctrlr->hostnqn, data->hostnqn, sizeof(ctrlr->hostnqn));
 	ctrlr->hip.power_cycles[0] = 1;
 	ctrlr->create_time = sbinuptime();
+	ctrlr->arb_burst = ctrlr->cdata.rab;
 
 	ctrlr->changed_ns = malloc(sizeof(*ctrlr->changed_ns), M_NVMFT,
 	    M_WAITOK | M_ZERO);
@@ -799,6 +800,90 @@ handle_set_features(struct nvmft_controller *ctrlr,
 
 	fid = NVMEV(NVME_FEAT_SET_FID, le32toh(cmd->cdw10));
 	switch (fid) {
+	case NVME_FEAT_ARBITRATION:
+	{
+		uint32_t attr;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		attr = le32toh(cmd->cdw11);
+		if ((attr & 0xfffffff8) != 0)
+			goto error;
+
+		/*
+		 * We don't actually honor this limit, just remember
+		 * it so it can be returned later.
+		 */
+		mtx_lock(&ctrlr->lock);
+		ctrlr->arb_burst = attr & 7;
+		mtx_unlock(&ctrlr->lock);
+
+		nvmft_send_success(ctrlr->admin, nc);
+		nvmf_free_capsule(nc);
+		return;
+	}
+	case NVME_FEAT_POWER_MANAGEMENT:
+	{
+		uint32_t val;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		val = le32toh(cmd->cdw11);
+		if ((val & 0xfffffff0) != 0)
+			goto error;
+
+		/* Only power state 0 is supported. */
+		if ((val & 0xf) != 0)
+			goto error;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = cmd->cdw11;
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	}
+	case NVME_FEAT_TEMPERATURE_THRESHOLD:
+	{
+		uint32_t val;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		val = le32toh(cmd->cdw11);
+		if ((val & 0xffc00000) != 0)
+			goto error;
+
+		/* Reserved THSEL. */
+		if ((val >> 20 & 0x3) >= 2)
+			goto error;
+
+		/* Treat the extra sensors as unimplemented. */
+		switch ((val >> 16) & 0xf) {
+		case 0:
+		case 0xf:
+			break;
+		default:
+			goto error;
+		}
+
+		nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
+		    NVME_SC_FEATURE_NOT_CHANGEABLE);
+		nvmf_free_capsule(nc);
+		return;
+	}
+	case NVME_FEAT_ERROR_RECOVERY:
+	{
+		uint32_t nsid;
+
+		nsid = le32toh(cmd->nsid);
+		if (nsid == NVME_GLOBAL_NAMESPACE_TAG)
+			goto error;
+
+		nvmft_dispatch_command(ctrlr->admin, nc, true);
+		return;
+	}
 	case NVME_FEAT_NUMBER_OF_QUEUES:
 	{
 		uint32_t num_queues;
@@ -843,6 +928,21 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		nvmf_free_capsule(nc);
 		return;
 	}
+	case NVME_FEAT_WRITE_ATOMICITY:
+	{
+		uint32_t val;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		val = le32toh(cmd->cdw11);
+		if ((val & 0xfffffffe) != 0)
+			goto error;
+
+		nvmft_send_success(ctrlr->admin, nc);
+		nvmf_free_capsule(nc);
+		return;
+	}
 	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
 	{
 		uint32_t aer_mask;
@@ -871,6 +971,14 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		nvmft_set_kato(ctrlr, le32toh(cmd->cdw11));
 		mtx_unlock(&ctrlr->lock);
 		nvmft_send_success(ctrlr->admin, nc);
+		nvmf_free_capsule(nc);
+		return;
+	case NVME_FEAT_HOST_IDENTIFIER:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		nvmft_send_generic_error(ctrlr->admin, nc,
+		    NVME_SC_COMMAND_SEQUENCE_ERROR);
 		nvmf_free_capsule(nc);
 		return;
 	default:
@@ -903,6 +1011,71 @@ handle_get_features(struct nvmft_controller *ctrlr,
 
 	fid = NVMEV(NVME_FEAT_GET_FID, le32toh(cmd->cdw10));
 	switch (fid) {
+	case NVME_FEAT_ARBITRATION:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(ctrlr->arb_burst);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	case NVME_FEAT_POWER_MANAGEMENT:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(0);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	case NVME_FEAT_TEMPERATURE_THRESHOLD:
+	{
+		uint32_t val;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		val = le32toh(cmd->cdw11);
+		if ((val & 0xffc00000) != 0)
+			goto error;
+
+		/* Reserved THSEL. */
+		if ((val >> 20 & 0x3) >= 2)
+			goto error;
+
+		/* Treat the extra sensors as unimplemented. */
+		switch ((val >> 16) & 0xf) {
+		case 0:
+			break;
+		default:
+			goto error;
+		}
+
+		/*
+		 * Use 0 as the under threshold and cdata.wctemp as
+		 * the over.
+		 */
+		nvmft_init_cqe(&cqe, nc, 0);
+		if ((val >> 20 & 0x3) == 0)
+			cqe.cdw0 = htole32(le16toh(ctrlr->cdata.wctemp));
+		else
+			cqe.cdw0 = htole32(0);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	}
+	case NVME_FEAT_ERROR_RECOVERY:
+	{
+		uint32_t nsid;
+
+		nsid = le32toh(cmd->nsid);
+		if (nsid == NVME_GLOBAL_NAMESPACE_TAG)
+			goto error;
+
+		nvmft_dispatch_command(ctrlr->admin, nc, true);
+		return;
+	}
 	case NVME_FEAT_NUMBER_OF_QUEUES:
 	{
 		uint32_t num_queues;
@@ -929,6 +1102,15 @@ handle_get_features(struct nvmft_controller *ctrlr,
 		nvmf_free_capsule(nc);
 		return;
 	}
+	case NVME_FEAT_WRITE_ATOMICITY:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(0);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
 	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
 		if (cmd->nsid != htole32(0))
 			goto not_ns_specific;
@@ -947,6 +1129,32 @@ handle_get_features(struct nvmft_controller *ctrlr,
 		nvmft_send_response(ctrlr->admin, &cqe);
 		nvmf_free_capsule(nc);
 		return;
+	case NVME_FEAT_HOST_IDENTIFIER:
+	{
+		struct mbuf *m;
+		u_int status;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specific;
+
+		if (le32toh(cmd->cdw11) != 1)
+			goto error;
+
+		if (nvmf_capsule_data_len(nc) != sizeof(ctrlr->hostid))
+			goto error;
+
+		m = m_getml(sizeof(ctrlr->hostid), M_WAITOK);
+		m_copyback(m, 0, sizeof(ctrlr->hostid), ctrlr->hostid);
+		status = nvmf_send_controller_data(nc, 0, m,
+		    sizeof(ctrlr->hostid));
+		MPASS(status != NVMF_MORE);
+		if (status == NVMF_SUCCESS_SENT)
+			nvmft_command_completed(ctrlr->admin, nc);
+		else
+			nvmft_send_generic_error(ctrlr->admin, nc, status);
+		nvmf_free_capsule(nc);
+		return;
+	}
 	default:
 		nvmft_printf(ctrlr,
 		    "Unsupported feature ID %u for GET_FEATURES\n", fid);

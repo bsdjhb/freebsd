@@ -153,6 +153,9 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	if (cp != NULL)
 		memset(cp, ' ', sizeof(cdata->fr) - (cp - (char *)cdata->fr));
 
+	/* No arbitration limit. */
+	cdata->rab = 7;
+
 	/* FreeBSD OUI */
 	cdata->ieee[0] = 0xfc;
 	cdata->ieee[1] = 0x9c;
