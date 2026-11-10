@@ -902,6 +902,71 @@ not_ns_specifc:
 	return;
 }
 
+static void
+handle_get_features(struct nvmft_controller *ctrlr,
+    struct nvmf_capsule *nc, const struct nvme_command *cmd)
+{
+	struct nvme_completion cqe;
+	uint8_t fid;
+
+	if (NVMEV(NVME_FEAT_GET_SEL, le32toh(cmd->cdw10)) != 0)
+		goto error;
+
+	fid = NVMEV(NVME_FEAT_GET_FID, le32toh(cmd->cdw10));
+	switch (fid) {
+	case NVME_FEAT_NUMBER_OF_QUEUES:
+	{
+		uint32_t num_queues;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
+
+		num_queues = ctrlr->num_io_queues;
+
+		/* No way to report 0 queues. */
+		if (num_queues == 0) {
+			nvmft_send_generic_error(ctrlr->admin, nc,
+			    NVME_SC_COMMAND_SEQUENCE_ERROR);
+			nvmf_free_capsule(nc);
+			return;
+		}
+
+		/* Convert to 0's based. */
+		num_queues--;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(num_queues << 16 | num_queues);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	}
+	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(ctrlr->aer_mask);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	default:
+		nvmft_printf(ctrlr,
+		    "Unsupported feature ID %u for GET_FEATURES\n", fid);
+		goto error;
+	}
+
+error:
+	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
+	nvmf_free_capsule(nc);
+	return;
+
+not_ns_specifc:
+	nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
+	    NVME_SC_FEATURE_NOT_NS_SPECIFIC);
+	nvmf_free_capsule(nc);
+	return;
+}
+
 static bool
 update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 {
@@ -1107,6 +1172,9 @@ nvmft_handle_admin_command(struct nvmft_controller *ctrlr,
 		break;
 	case NVME_OPC_SET_FEATURES:
 		handle_set_features(ctrlr, nc, cmd);
+		break;
+	case NVME_OPC_GET_FEATURES:
+		handle_get_features(ctrlr, nc, cmd);
 		break;
 	case NVME_OPC_ASYNC_EVENT_REQUEST:
 		mtx_lock(&ctrlr->lock);
