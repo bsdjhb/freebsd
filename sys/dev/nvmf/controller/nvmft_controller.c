@@ -119,6 +119,27 @@ nvmft_update_cdata(struct nvmft_controller *ctrlr)
 	}
 }
 
+static void
+nvmft_set_kato(struct nvmft_controller *ctrlr, uint32_t kato)
+{
+	/*
+	 * The TCP transport spec requires a non-zero KeepAlive timer,
+	 * but allow a zero KATO value to match Linux.
+	 */
+	if (kato == 0) {
+		callout_stop(&ctrlr->ka_timer);
+		ctrlr->ka_sbt = 0;
+	} else {
+		/*
+		 * Round up to 1 second matching granularity
+		 * advertised in cdata.
+		 */
+		ctrlr->ka_sbt = mstosbt(roundup(kato, 1000));
+		callout_reset_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
+		    nvmft_keep_alive_timer, ctrlr, C_HARDCLOCK);
+	}
+}
+
 int
 nvmft_handoff_admin_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
     const nvlist_t *params, const struct nvmf_fabric_connect_cmd *cmd,
@@ -126,7 +147,6 @@ nvmft_handoff_admin_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 {
 	struct nvmft_controller *ctrlr;
 	struct nvmft_qpair *qp;
-	uint32_t kato;
 	int cntlid;
 
 	if (cmd->qid != htole16(0))
@@ -179,21 +199,7 @@ nvmft_handoff_admin_queue(struct nvmft_port *np, enum nvmf_trtype trtype,
 	ctrlr->admin = qp;
 	ctrlr->trtype = trtype;
 	nvmft_update_cdata(ctrlr);
-
-	/*
-	 * The spec requires a non-zero KeepAlive timer, but allow a
-	 * zero KATO value to match Linux.
-	 */
-	kato = le32toh(cmd->kato);
-	if (kato != 0) {
-		/*
-		 * Round up to 1 second matching granularity
-		 * advertised in cdata.
-		 */
-		ctrlr->ka_sbt = mstosbt(roundup(kato, 1000));
-		callout_reset_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
-		    nvmft_keep_alive_timer, ctrlr, C_HARDCLOCK);
-	}
+	nvmft_set_kato(ctrlr, le32toh(cmd->kato));
 
 	ctrlr->pending_connects++;
 	mtx_unlock(&ctrlr->lock);
@@ -884,6 +890,16 @@ handle_set_features(struct nvmft_controller *ctrlr,
 		nvmf_free_capsule(nc);
 		return;
 	}
+	case NVME_FEAT_KEEP_ALIVE_TIMER:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
+
+		mtx_lock(&ctrlr->lock);
+		nvmft_set_kato(ctrlr, le32toh(cmd->cdw11));
+		mtx_unlock(&ctrlr->lock);
+		nvmft_send_success(ctrlr->admin, nc);
+		nvmf_free_capsule(nc);
+		return;
 	default:
 		nvmft_printf(ctrlr,
 		    "Unsupported feature ID %u for SET_FEATURES\n", fid);
@@ -946,6 +962,15 @@ handle_get_features(struct nvmft_controller *ctrlr,
 
 		nvmft_init_cqe(&cqe, nc, 0);
 		cqe.cdw0 = htole32(ctrlr->aer_mask);
+		nvmft_send_response(ctrlr->admin, &cqe);
+		nvmf_free_capsule(nc);
+		return;
+	case NVME_FEAT_KEEP_ALIVE_TIMER:
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
+
+		nvmft_init_cqe(&cqe, nc, 0);
+		cqe.cdw0 = htole32(sbttoms(ctrlr->ka_sbt));
 		nvmft_send_response(ctrlr->admin, &cqe);
 		nvmf_free_capsule(nc);
 		return;
