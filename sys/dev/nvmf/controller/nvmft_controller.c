@@ -815,12 +815,18 @@ handle_set_features(struct nvmft_controller *ctrlr,
 	struct nvme_completion cqe;
 	uint8_t fid;
 
+	if (NVMEV(NVME_FEAT_SET_SV, le32toh(cmd->cdw10)) != 0)
+		goto error;
+
 	fid = NVMEV(NVME_FEAT_SET_FID, le32toh(cmd->cdw10));
 	switch (fid) {
 	case NVME_FEAT_NUMBER_OF_QUEUES:
 	{
 		uint32_t num_queues;
 		struct nvmft_io_qpair *io_qpairs;
+
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
 
 		num_queues = le32toh(cmd->cdw11) & 0xffff;
 
@@ -862,6 +868,9 @@ handle_set_features(struct nvmft_controller *ctrlr,
 	{
 		uint32_t aer_mask;
 
+		if (cmd->nsid != htole32(0))
+			goto not_ns_specifc;
+
 		aer_mask = le32toh(cmd->cdw11);
 
 		/* Check for any reserved or unimplemented feature bits. */
@@ -884,6 +893,13 @@ handle_set_features(struct nvmft_controller *ctrlr,
 error:
 	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
 	nvmf_free_capsule(nc);
+	return;
+
+not_ns_specifc:
+	nvmft_send_error(ctrlr->admin, nc, NVME_SCT_COMMAND_SPECIFIC,
+	    NVME_SC_FEATURE_NOT_NS_SPECIFIC);
+	nvmf_free_capsule(nc);
+	return;
 }
 
 static bool
