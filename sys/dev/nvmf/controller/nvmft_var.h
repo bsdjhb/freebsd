@@ -100,8 +100,8 @@ struct nvmft_controller {
 	uint8_t aer_pidx;
 
 	/* Changed namespace IDs. */
-	struct nvme_ns_list *changed_ns;
 	bool	changed_ns_reported;
+	struct nvme_ns_list *changed_ns;
 
 	struct task shutdown_task;
 	struct timeout_task terminate_task;
