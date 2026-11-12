@@ -186,8 +186,8 @@ _nvmf_init_io_controller_data(uint16_t cntlid, uint32_t max_io_qsize,
 	cdata->wctemp = htole16(0x0157);
 	cdata->cctemp = cdata->wctemp;
 
-	/* 1 second granularity for KeepAlive */
-	cdata->kas = htole16(10);
+	/* 100 millisecond granularity for KeepAlive */
+	cdata->kas = htole16(1);
 
 	cdata->sqes = NVMEF(NVME_CTRLR_DATA_SQES_MAX, 6) |
 	    NVMEF(NVME_CTRLR_DATA_SQES_MIN, 6);
