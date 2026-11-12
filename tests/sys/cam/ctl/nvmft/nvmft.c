@@ -1140,6 +1140,378 @@ ATF_TC_BODY(identify_long, tc)
 }
 
 static void
+nvmf_init_set_features_sqe(void *sqe, uint32_t nsid, uint8_t fid,
+    uint32_t cdw11)
+{
+	struct nvme_command *cmd = sqe;
+
+	nvmf_init_sqe(cmd, NVME_OPC_SET_FEATURES);
+	cmd->nsid = htole32(nsid);
+	cmd->cdw10 = htole32(fid);
+	cmd->cdw11 = htole32(cdw11);
+}
+
+static struct nvmf_capsule *
+create_set_features_command(struct nvmf_qpair *admin, uint32_t nsid,
+    uint8_t fid, uint32_t cdw11)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *cc;
+
+	nvmf_init_set_features_sqe(&cmd, nsid, fid, cdw11);
+	cc = nvmf_allocate_command(admin, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("Failed to allocate command capsule: %s",
+		    strerror(errno));
+
+	return (cc);
+}
+
+static uint16_t
+set_simple_feature(struct nvmf_qpair *admin, uint8_t fid, uint32_t cdw11)
+{
+	struct nvmf_capsule *cc, *rc;
+	const struct nvme_completion *cpl;
+	int error;
+	uint16_t status;
+
+	cc = create_set_features_command(admin, 0, fid, cdw11);
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0) {
+		nvmf_free_capsule(cc);
+		atf_tc_fail("failed to transmit command: %s", strerror(error));
+	}
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("failed to receive response: %s", strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	nvmf_free_capsule(rc);
+	return (status);
+}
+
+static void
+test_bad_queue_count(const atf_tc_t *tc, uint32_t cdw11)
+{
+	struct nvmf_qpair *admin;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	status = set_simple_feature(admin, NVME_FEAT_NUMBER_OF_QUEUES, cdw11);
+
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(invalid_queue_count);
+ATF_TC_HEAD(invalid_queue_count, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_queue_count, tc)
+{
+	test_bad_queue_count(tc, 65535 << 16 | 65535);
+}
+
+ATF_TC(mismatched_queue_count);
+ATF_TC_HEAD(mismatched_queue_count, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(mismatched_queue_count, tc)
+{
+	test_bad_queue_count(tc, 0 << 16 | 1);
+}
+
+ATF_TC(invalid_aer_mask);
+ATF_TC_HEAD(invalid_aer_mask, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(invalid_aer_mask, tc)
+{
+	struct nvmf_qpair *admin;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	/*
+	 * XXX: This may prove invalid in the future if all reserved
+	 * bits are assigned meaning.
+	 */
+	status = set_simple_feature(admin, NVME_FEAT_ASYNC_EVENT_CONFIGURATION,
+	    0xffffffff);
+
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) == NVME_SC_INVALID_FIELD);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(set_hostid);
+ATF_TC_HEAD(set_hostid, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(set_hostid, tc)
+{
+	const struct nvme_completion *cpl;
+	struct nvmf_capsule *cc, *rc;
+	struct nvmf_qpair *admin;
+	uint8_t hostid[16];
+	int error;
+	uint16_t status;
+
+	memset(hostid, 'a', sizeof(hostid));
+
+	admin = connect_admin_only(tc);
+
+	cc = create_set_features_command(admin, 0, NVME_FEAT_HOST_IDENTIFIER,
+	    1);
+	error = nvmf_capsule_append_data(cc, hostid, sizeof(hostid), true);
+	if (error != 0)
+		atf_tc_fail("Failed to append data to command: %s",
+		    strerror(error));
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("failed to transmit command: %s", strerror(error));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("failed to receive response: %s", strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	status = le16toh(cpl->status);
+	ATF_REQUIRE(NVME_STATUS_GET_SCT(status) == NVME_SCT_GENERIC);
+	ATF_REQUIRE(NVME_STATUS_GET_SC(status) ==
+	    NVME_SC_COMMAND_SEQUENCE_ERROR);
+
+	nvmf_free_capsule(rc);
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+static void
+nvmf_init_get_features_sqe(void *sqe, uint32_t nsid, uint8_t fid,
+    uint32_t cdw11)
+{
+	struct nvme_command *cmd = sqe;
+
+	nvmf_init_sqe(cmd, NVME_OPC_GET_FEATURES);
+	cmd->nsid = htole32(nsid);
+	cmd->cdw10 = htole32(fid);
+	cmd->cdw11 = htole32(cdw11);
+}
+
+static struct nvmf_capsule *
+create_get_features_command(struct nvmf_qpair *admin, uint32_t nsid,
+    uint8_t fid, uint32_t cdw11)
+{
+	struct nvme_command cmd;
+	struct nvmf_capsule *cc;
+
+	nvmf_init_get_features_sqe(&cmd, nsid, fid, cdw11);
+	cc = nvmf_allocate_command(admin, &cmd);
+	if (cc == NULL)
+		atf_tc_fail("Failed to allocate command capsule: %s",
+		    strerror(errno));
+
+	return (cc);
+}
+
+static uint32_t
+get_simple_feature(struct nvmf_qpair *admin, uint8_t fid)
+{
+	struct nvmf_capsule *cc, *rc;
+	const struct nvme_completion *cpl;
+	uint32_t cdw0;
+	int error;
+
+	cc = create_get_features_command(admin, 0, fid, 0);
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0) {
+		nvmf_free_capsule(cc);
+		atf_tc_fail("failed to transmit command: %s", strerror(error));
+	}
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("failed to receive response: %s", strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	ATF_REQUIRE(le16toh(cpl->status) == 0);
+	cdw0 = le32toh(cpl->cdw0);
+	nvmf_free_capsule(rc);
+	return (cdw0);
+}
+
+ATF_TC(get_queue_count);
+ATF_TC_HEAD(get_queue_count, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(get_queue_count, tc)
+{
+	struct nvmf_qpair *admin;
+	uint32_t cdw0, raw_queues;
+	int error, queues;
+
+	admin = connect_admin_only(tc);
+
+	error = nvmf_host_request_queues(admin, 4, &queues);
+	if (error != 0)
+		atf_tc_fail("Failed to request I/O queues: %s",
+		    strerror(error));
+
+	/* Convert to 0s based. */
+	raw_queues = queues - 1;
+
+	cdw0 = get_simple_feature(admin, NVME_FEAT_NUMBER_OF_QUEUES);
+	ATF_REQUIRE(cdw0 == (raw_queues << 16 | raw_queues));
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(get_aer_mask);
+ATF_TC_HEAD(get_aer_mask, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(get_aer_mask, tc)
+{
+	struct nvmf_qpair *admin;
+	uint32_t cdw0, aer_mask;
+	uint16_t status;
+
+	admin = connect_admin_only(tc);
+
+	/* Just SMART errors which should always be supported. */
+	aer_mask = 0xff;
+	status = set_simple_feature(admin, NVME_FEAT_ASYNC_EVENT_CONFIGURATION,
+	    aer_mask);
+	ATF_REQUIRE(status == 0);
+
+	cdw0 = get_simple_feature(admin, NVME_FEAT_ASYNC_EVENT_CONFIGURATION);
+	ATF_REQUIRE(cdw0 == aer_mask);
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(get_kato);
+ATF_TC_HEAD(get_kato, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(get_kato, tc)
+{
+	struct nvme_controller_data cdata;
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	uint32_t kato;
+	int error;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	/* Request a keep alive timeout of 500ms. */
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn, 500);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	error = nvmf_host_identify_controller(admin, &cdata);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch controller data: %s",
+		    strerror(error));
+
+	/* Query the actual KATO after rounding. */
+	kato = get_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER);
+
+	ATF_REQUIRE(kato == roundup(500, le16toh(cdata.kas) * 100));
+
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+ATF_TC(get_hostid);
+ATF_TC_HEAD(get_hostid, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(get_hostid, tc)
+{
+	struct nvmf_qpair_params qparams;
+	const struct nvme_completion *cpl;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16], rx_hostid[16];
+	int error;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn, 0);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	cc = create_get_features_command(admin, 0, NVME_FEAT_HOST_IDENTIFIER,
+	    1);
+	error = nvmf_capsule_append_data(cc, rx_hostid, sizeof(rx_hostid),
+	    false);
+	if (error != 0)
+		atf_tc_fail("Failed to append data to command: %s",
+		    strerror(error));
+
+	error = nvmf_host_transmit_command(cc);
+	if (error != 0)
+		atf_tc_fail("failed to transmit command: %s", strerror(error));
+
+	error = nvmf_host_wait_for_response(cc, &rc);
+	nvmf_free_capsule(cc);
+	if (error != 0)
+		atf_tc_fail("failed to receive response: %s", strerror(error));
+
+	cpl = nvmf_capsule_cqe(rc);
+	ATF_REQUIRE(cpl->status == 0);
+	ATF_REQUIRE(memcmp(hostid, rx_hostid, sizeof(hostid)) == 0);
+
+	nvmf_free_capsule(rc);
+	shutdown_controller(admin);
+	nvmf_free_qpair(admin);
+}
+
+static void
 nvmf_init_read_sqe(void *sqe, uint32_t nsid, uint64_t lba, u_int nlb)
 {
 	struct nvme_command *cmd = sqe;
@@ -1600,6 +1972,14 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, fetch_hip_longer_than_mdts);
 	ATF_TP_ADD_TC(tp, identify_short);
 	ATF_TP_ADD_TC(tp, identify_long);
+	ATF_TP_ADD_TC(tp, invalid_queue_count);
+	ATF_TP_ADD_TC(tp, mismatched_queue_count);
+	ATF_TP_ADD_TC(tp, invalid_aer_mask);
+	ATF_TP_ADD_TC(tp, set_hostid);
+	ATF_TP_ADD_TC(tp, get_queue_count);
+	ATF_TP_ADD_TC(tp, get_aer_mask);
+	ATF_TP_ADD_TC(tp, get_kato);
+	ATF_TP_ADD_TC(tp, get_hostid);
 	ATF_TP_ADD_TC(tp, read_block);
 	ATF_TP_ADD_TC(tp, compare_block);
 	ATF_TP_ADD_TC(tp, compare_mismatch);
