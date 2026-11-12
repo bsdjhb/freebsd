@@ -120,13 +120,10 @@ nvmft_update_cdata(struct nvmft_controller *ctrlr)
 }
 
 static sbintime_t
-nvmft_kato_sbt(uint32_t kato)
+nvmft_kato_sbt(const struct nvmft_controller *ctrlr, uint32_t kato)
 {
-	/*
-	 * Round up to 1 second matching granularity advertised in
-	 * cdata.
-	 */
-	return (mstosbt(roundup(kato, 1000)));
+	/* Round up to granularity advertised in cdata. */
+	return (mstosbt(roundup(kato, le16toh(ctrlr->cdata.kas) * 100)));
 }
 
 static void
@@ -140,7 +137,7 @@ nvmft_set_kato(struct nvmft_controller *ctrlr, uint32_t kato)
 		callout_stop(&ctrlr->ka_timer);
 		ctrlr->ka_sbt = 0;
 	} else {
-		ctrlr->ka_sbt = nvmft_kato_sbt(kato);
+		ctrlr->ka_sbt = nvmft_kato_sbt(ctrlr, kato);
 		callout_reset_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
 		    nvmft_keep_alive_timer, ctrlr, C_HARDCLOCK);
 	}
@@ -404,7 +401,7 @@ nvmft_controller_shutdown(void *arg, int pending)
 	ctrlr->num_io_queues = 0;
 
 	if (ctrlr->ka_sbt != 0)
-		ctrlr->ka_sbt = nvmft_kato_sbt(NVMF_KATO_DEFAULT);
+		ctrlr->ka_sbt = nvmft_kato_sbt(ctrlr, NVMF_KATO_DEFAULT);
 
 	/* Mark shutdown complete. */
 	if (NVMEV(NVME_CSTS_REG_SHST, ctrlr->csts) == NVME_SHST_OCCURRING) {
