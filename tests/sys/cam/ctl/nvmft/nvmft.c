@@ -1511,6 +1511,72 @@ ATF_TC_BODY(get_hostid, tc)
 	nvmf_free_qpair(admin);
 }
 
+ATF_TC(keepalive_timeout);
+ATF_TC_HEAD(keepalive_timeout, tc)
+{
+	require_nvmft(tc);
+}
+ATF_TC_BODY(keepalive_timeout, tc)
+{
+	struct nvmf_qpair_params qparams;
+	struct nvmf_association *na;
+	struct nvmf_qpair *admin;
+	struct nvmf_capsule *cc, *rc;
+	char hostnqn[NVMF_NQN_MAX_LEN];
+	uint8_t hostid[16];
+	useconds_t delay;
+	uint32_t kato;
+	int error;
+
+	init_hostid(hostid, hostnqn);
+
+	na = create_association(tc);
+
+	memset(&qparams, 0, sizeof(qparams));
+	qparams.admin = true;
+	qparams.tcp.fd = open_socket(tc, NULL, NULL);
+
+	/* Request a keep alive timeout of 100ms. */
+	admin = connect_admin_queue(tc, na, &qparams, hostid, hostnqn, 100);
+	if (admin == NULL)
+		atf_tc_fail("Failed to create admin queue: %s",
+		    nvmf_association_error(na));
+	nvmf_free_association(na);
+
+	/* Query the actual KATO after rounding. */
+	kato = get_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER);
+	ATF_REQUIRE(kato >= 100);
+
+	/*
+	 * The commands sent while establishing the association are
+	 * sufficient to satisfy the first timeout, so wait for at
+	 * least two and a half timeouts to ensure timeout expiration.
+	 * The in-kernel terminate task might be delayed for a bit, so
+	 * wait for at least 500 milliseconds.
+	 */
+	delay = kato * 5 / 2;
+	if (delay < 500)
+		delay = 500;
+	usleep(delay * 1000);
+
+	/* Try to send a keep alive command. */
+	cc = nvmf_keepalive(admin);
+	ATF_REQUIRE(cc != NULL);
+
+	/*
+	 * This send can succeed as only the remote host has closed
+	 * the connection at this point, but the receive should
+	 * definitely fail.
+	 */
+	error = nvmf_host_transmit_command(cc);
+	if (error == 0)
+		error = nvmf_host_wait_for_response(cc, &rc);
+	ATF_REQUIRE(error == ECONNRESET);
+
+	nvmf_free_capsule(cc);
+	nvmf_free_qpair(admin);
+}
+
 static void
 nvmf_init_read_sqe(void *sqe, uint32_t nsid, uint64_t lba, u_int nlb)
 {
@@ -1980,6 +2046,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, get_aer_mask);
 	ATF_TP_ADD_TC(tp, get_kato);
 	ATF_TP_ADD_TC(tp, get_hostid);
+	ATF_TP_ADD_TC(tp, keepalive_timeout);
 	ATF_TP_ADD_TC(tp, read_block);
 	ATF_TP_ADD_TC(tp, compare_block);
 	ATF_TP_ADD_TC(tp, compare_mismatch);
