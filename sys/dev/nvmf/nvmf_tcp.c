@@ -1769,6 +1769,11 @@ tcp_receive_icd_data(struct nvmf_capsule *nc, uint32_t data_offset,
 {
 	struct nvmf_tcp_capsule *tc = TCAP(nc);
 
+	if (tc->rx_pdu.data_digest_mismatch) {
+		nvmf_complete_io_request(io, 0, EINTEGRITY);
+		return;
+	}
+
 	mbuf_copyto_io(tc->rx_pdu.m, tc->rx_pdu.hdr->pdo + data_offset,
 	    io->io_len, io, 0);
 	nvmf_complete_io_request(io, io->io_len, 0);
