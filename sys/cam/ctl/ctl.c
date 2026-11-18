@@ -14030,7 +14030,13 @@ bailout:
 			break;
 		case CTL_IO_NVME:
 		case CTL_IO_NVME_ADMIN:
-			ctl_nvme_set_command_aborted(&io->nvmeio);
+			/*
+			 * The command might have sent an embedded
+			 * completion prior to being aborted.  In that
+			 * case, leave its status alone.
+			 */
+			if (!io->nvmeio.success_sent)
+				ctl_nvme_set_command_aborted(&io->nvmeio);
 			break;
 		default:
 			__assert_unreachable();
