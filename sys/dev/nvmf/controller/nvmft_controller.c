@@ -20,6 +20,8 @@
 #include <dev/nvmf/controller/nvmft_subr.h>
 #include <dev/nvmf/controller/nvmft_var.h>
 
+static void	nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, int error);
 static void	nvmft_controller_shutdown(void *arg, int pending);
 static void	nvmft_controller_terminate(void *arg, int pending);
 
@@ -56,7 +58,7 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	ctrlr->cntlid = cntlid;
 	ctrlr->np = np;
 	mtx_init(&ctrlr->lock, "nvmft controller", NULL, MTX_DEF);
-	callout_init(&ctrlr->ka_timer, 1);
+	callout_init_mtx(&ctrlr->ka_timer, &ctrlr->lock, 0);
 	TASK_INIT(&ctrlr->shutdown_task, 0, nvmft_controller_shutdown, ctrlr);
 	TIMEOUT_TASK_INIT(nvmft_ctrlr_taskq, &ctrlr->terminate_task, 0,
 	    nvmft_controller_terminate, ctrlr);
@@ -96,7 +98,7 @@ nvmft_keep_alive_timer(void *arg)
 	if (traffic == 0) {
 		nvmft_printf(ctrlr,
 		    "disconnecting due to KeepAlive timeout\n");
-		nvmft_controller_error(ctrlr, NULL, ETIMEDOUT);
+		nvmft_controller_error_locked(ctrlr, NULL, ETIMEDOUT);
 		return;
 	}
 
@@ -424,11 +426,10 @@ nvmft_controller_terminate(void *arg, int pending)
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
 	if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) != 0) {
-		mtx_unlock(&ctrlr->lock);
-
 		if (ctrlr->ka_sbt != 0)
 			callout_schedule_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
 			    C_HARDCLOCK);
+		mtx_unlock(&ctrlr->lock);
 		return;
 	}
 
@@ -463,9 +464,9 @@ nvmft_controller_terminate(void *arg, int pending)
 	nvmft_port_rele(np);
 }
 
-void
-nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
-    int error)
+static void
+nvmft_controller_error_locked(struct nvmft_controller *ctrlr,
+    struct nvmft_qpair *qp, int error)
 {
 	/*
 	 * If a queue pair is closed, that isn't an error per se.
@@ -477,37 +478,23 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	 *
 	 * If an I/O queue pair is closed, just ignore it.
 	 */
-	mtx_lock(&ctrlr->lock);
 	if (error == 0) {
-		if (qp != ctrlr->admin) {
-			mtx_unlock(&ctrlr->lock);
+		if (qp != ctrlr->admin)
 			return;
-		}
 
 		if (ctrlr->shutdown) {
 			ctrlr->admin_closed = true;
-			mtx_unlock(&ctrlr->lock);
 			return;
 		}
 
 		if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) == 0) {
 			MPASS(ctrlr->num_io_queues == 0);
-			mtx_unlock(&ctrlr->lock);
 
 			/*
-			 * Ok to drop lock here since ctrlr->cc can't
-			 * change if the admin queue pair has closed.
-			 * This also means no new queues can be handed
-			 * off, etc.  Note that since there are no I/O
-			 * queues, only the admin queue needs to be
-			 * destroyed, so it is safe to skip
-			 * nvmft_controller_shutdown and just schedule
-			 * nvmft_controller_terminate.  Note that we
-			 * cannot call nvmft_controller_terminate from
-			 * here directly as this is called from the
-			 * transport layer and freeing the admin qpair
-			 * might deadlock waiting for the current
-			 * thread to exit.
+			 * Since there are no I/O queues, only the
+			 * admin queue needs to be destroyed so it is
+			 * safe to skip nvmft_controller_shutdown and
+			 * just schedule nvmft_controller_terminate.
 			 */
 			if (taskqueue_cancel_timeout(nvmft_ctrlr_taskq,
 			    &ctrlr->terminate_task, NULL) == 0)
@@ -525,18 +512,24 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	}
 
 	/* Ignore transport errors if we are already shutting down. */
-	if (ctrlr->shutdown) {
-		mtx_unlock(&ctrlr->lock);
+	if (ctrlr->shutdown)
 		return;
-	}
 
 	ctrlr->csts |= NVMEF(NVME_CSTS_REG_CFS, 1);
 	ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 	ctrlr->shutdown = true;
-	mtx_unlock(&ctrlr->lock);
 
 	callout_stop(&ctrlr->ka_timer);
 	taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
+}
+
+void
+nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
+    int error)
+{
+	mtx_lock(&ctrlr->lock);
+	nvmft_controller_error_locked(ctrlr, qp, error);
+	mtx_unlock(&ctrlr->lock);
 }
 
 /* Wrapper around m_getm2 that also sets m_len in the mbufs in the chain. */
@@ -997,6 +990,9 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
 		}
 	}
+
+	if (*need_shutdown)
+		callout_stop(&ctrlr->ka_timer);
 	mtx_unlock(&ctrlr->lock);
 
 	if (cancel_terminate) {
@@ -1072,10 +1068,8 @@ handle_property_set(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 	}
 
 	nvmft_send_success(ctrlr->admin, nc);
-	if (need_shutdown) {
-		callout_stop(&ctrlr->ka_timer);
+	if (need_shutdown)
 		taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
-	}
 	return;
 error:
 	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
