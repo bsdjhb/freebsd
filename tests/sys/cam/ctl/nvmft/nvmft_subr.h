@@ -16,6 +16,7 @@ struct nvmf_qpair *connect_io_queue(const atf_tc_t *tc,
     const struct nvmf_qpair_params *params, const uint8_t hostid[16],
     const char *hostnqn);
 struct nvmf_association *create_association(const atf_tc_t *tc);
+void	enable_controller(struct nvmf_qpair *qp);
 void	init_hostid(uint8_t hostid[16], char hostnqn[NVMF_NQN_MAX_LEN]);
 int	open_socket(const atf_tc_t *tc, struct addrinfo **aip,
     struct addrinfo **listp);
@@ -27,5 +28,6 @@ void	require_nvmft(atf_tc_t *tc);
 void	shutdown_controller(struct nvmf_qpair *qp);
 u_int	validate_namespace(const atf_tc_t *tc, struct nvmf_qpair *qp,
     u_int *block_size);
+void	wait_for_shutdown(struct nvmf_qpair *qp);
 
 #endif /* !__NVMFT_SUBR_H__ */
