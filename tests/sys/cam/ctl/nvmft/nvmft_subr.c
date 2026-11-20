@@ -148,9 +148,6 @@ connect_admin_queue(const atf_tc_t *tc, struct nvmf_association *na,
 {
 	struct nvmf_qpair *qp;
 	const char *subnqn;
-	uint64_t cap, cc, csts;
-	u_int mps, mpsmin, mpsmax;
-	int error, timo;
 	uint16_t cntlid;
 
 	cntlid = parse_cntlid(tc);
@@ -159,6 +156,17 @@ connect_admin_queue(const atf_tc_t *tc, struct nvmf_association *na,
 	    cntlid, subnqn, hostnqn, kato);
 	if (qp == NULL)
 		return (NULL);
+
+	enable_controller(qp);
+	return (qp);
+}
+
+void
+enable_controller(struct nvmf_qpair *qp)
+{
+	uint64_t cap, cc, csts;
+	u_int mps, mpsmin, mpsmax;
+	int error, timo;
 
 	/* Fetch Controller Capabilities Property */
 	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
@@ -217,8 +225,6 @@ connect_admin_queue(const atf_tc_t *tc, struct nvmf_association *na,
 		timo--;
 		usleep(500 * 1000);
 	}
-
-	return (qp);
 }
 
 void
@@ -237,6 +243,34 @@ shutdown_controller(struct nvmf_qpair *qp)
 	if (error != 0)
 		atf_tc_fail("Failed to set CC to trigger shutdown: %s",
 		    strerror(error));
+}
+
+void
+wait_for_shutdown(struct nvmf_qpair *qp)
+{
+	uint64_t cap, csts;
+	int error, timo;
+
+	error = nvmf_read_property(qp, NVMF_PROP_CAP, 8, &cap);
+	if (error != 0)
+		atf_tc_fail("Failed to fetch CAP: %s", strerror(error));
+
+	/* Wait for CSTS.RDY == 0 in Controller Status */
+	timo = NVME_CAP_LO_TO(cap);
+	for (;;) {
+		error = nvmf_read_property(qp, NVMF_PROP_CSTS, 4, &csts);
+		if (error != 0)
+			atf_tc_fail("Failed to fetch CSTS: %s",
+			    strerror(error));
+
+		if (NVMEV(NVME_CSTS_REG_RDY, csts) == 0)
+			break;
+
+		if (timo == 0)
+			atf_tc_fail("Controller failed to reset");
+		timo--;
+		usleep(500 * 1000);
+	}
 }
 
 void

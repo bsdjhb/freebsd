@@ -433,9 +433,6 @@ nvmft_controller_terminate(void *arg, int pending)
 	/* If the controller has been re-enabled, nothing to do. */
 	mtx_lock(&ctrlr->lock);
 	if (NVMEV(NVME_CC_REG_EN, ctrlr->cc) != 0) {
-		if (ctrlr->ka_sbt != 0)
-			callout_schedule_sbt(&ctrlr->ka_timer, ctrlr->ka_sbt, 0,
-			    C_HARDCLOCK);
 		mtx_unlock(&ctrlr->lock);
 		return;
 	}
@@ -1221,6 +1218,17 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			cancel_terminate = true;
 			ctrlr->csts &= ~NVMEM(NVME_CSTS_REG_SHST);
 			ctrlr->csts |= NVMEF(NVME_CSTS_REG_RDY, 1);
+
+			/*
+			 * If the KeepAlive timer was stopped by a
+			 * prior shutdown or reset, restart it now.
+			 */
+			if (ctrlr->ka_sbt != 0 &&
+			    !callout_active(&ctrlr->ka_timer)) {
+				callout_reset_sbt(&ctrlr->ka_timer,
+				    ctrlr->ka_sbt, 0, nvmft_keep_alive_timer,
+				    ctrlr, C_HARDCLOCK);
+			}
 		}
 	}
 
