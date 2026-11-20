@@ -105,6 +105,8 @@ struct nvmft_controller {
 
 MALLOC_DECLARE(M_NVMFT);
 
+extern struct taskqueue *nvmft_ctrlr_taskq;
+
 /* ctl_frontend_nvmf.c */
 void	nvmft_port_free(struct nvmft_port *np);
 void	nvmft_populate_active_nslist(struct nvmft_port *np, uint32_t nsid,

@@ -58,7 +58,7 @@ nvmft_controller_alloc(struct nvmft_port *np, uint16_t cntlid,
 	mtx_init(&ctrlr->lock, "nvmft controller", NULL, MTX_DEF);
 	callout_init(&ctrlr->ka_timer, 1);
 	TASK_INIT(&ctrlr->shutdown_task, 0, nvmft_controller_shutdown, ctrlr);
-	TIMEOUT_TASK_INIT(taskqueue_thread, &ctrlr->terminate_task, 0,
+	TIMEOUT_TASK_INIT(nvmft_ctrlr_taskq, &ctrlr->terminate_task, 0,
 	    nvmft_controller_terminate, ctrlr);
 
 	ctrlr->cdata = np->cdata;
@@ -373,10 +373,10 @@ nvmft_controller_shutdown(void *arg, int pending)
 	 * (NVMe-over-Fabrics 1.1 4.6).
 	 */
 	if (ctrlr->admin_closed || NVMEV(NVME_CSTS_REG_CFS, ctrlr->csts) != 0)
-		taskqueue_enqueue_timeout(taskqueue_thread,
+		taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, 0);
 	else
-		taskqueue_enqueue_timeout(taskqueue_thread,
+		taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, hz * 60 * 2);
 	mtx_unlock(&ctrlr->lock);
 }
@@ -466,9 +466,9 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 			 * might deadlock waiting for the current
 			 * thread to exit.
 			 */
-			if (taskqueue_cancel_timeout(taskqueue_thread,
+			if (taskqueue_cancel_timeout(nvmft_ctrlr_taskq,
 			    &ctrlr->terminate_task, NULL) == 0)
-				taskqueue_enqueue_timeout(taskqueue_thread,
+				taskqueue_enqueue_timeout(nvmft_ctrlr_taskq,
 				    &ctrlr->terminate_task, 0);
 			return;
 		}
@@ -494,7 +494,7 @@ nvmft_controller_error(struct nvmft_controller *ctrlr, struct nvmft_qpair *qp,
 	mtx_unlock(&ctrlr->lock);
 
 	callout_stop(&ctrlr->ka_timer);
-	taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
+	taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
 }
 
 /* Wrapper around m_getm2 that also sets m_len in the mbufs in the chain. */
@@ -874,9 +874,9 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		 * shutdown, the terminate task from the shutdown
 		 * might still be scheduled.
 		 */
-		taskqueue_cancel_timeout(taskqueue_thread,
+		taskqueue_cancel_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task, NULL);
-		taskqueue_drain_timeout(taskqueue_thread,
+		taskqueue_drain_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task);
 	}
 	return (true);
@@ -943,7 +943,7 @@ handle_property_set(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
 	nvmft_send_success(ctrlr->admin, nc);
 	if (need_shutdown) {
 		callout_stop(&ctrlr->ka_timer);
-		taskqueue_enqueue(taskqueue_thread, &ctrlr->shutdown_task);
+		taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
 	}
 	return;
 error:

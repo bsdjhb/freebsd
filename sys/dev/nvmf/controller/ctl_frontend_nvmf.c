@@ -51,7 +51,8 @@ static int	nvmft_ioctl(struct cdev *cdev, u_long cmd, caddr_t data,
     int flag, struct thread *td);
 static int	nvmft_shutdown(void);
 
-static struct taskqueue *nvmft_taskq;
+struct taskqueue *nvmft_ctrlr_taskq;
+static struct taskqueue *nvmft_datamove_taskq;
 static TAILQ_HEAD(, nvmft_port) nvmft_ports;
 static struct sx nvmft_ports_lock;
 
@@ -535,13 +536,13 @@ nvmft_datamove(union ctl_io *io)
 void
 nvmft_enqueue_task(struct task *task)
 {
-	taskqueue_enqueue(nvmft_taskq, task);
+	taskqueue_enqueue(nvmft_datamove_taskq, task);
 }
 
 void
 nvmft_drain_task(struct task *task)
 {
-	taskqueue_drain(nvmft_taskq, task);
+	taskqueue_drain(nvmft_datamove_taskq, task);
 }
 
 static void
@@ -629,12 +630,22 @@ nvmft_init(void)
 {
 	int error;
 
-	nvmft_taskq = taskqueue_create("nvmft", M_WAITOK,
-	    taskqueue_thread_enqueue, &nvmft_taskq);
-	error = taskqueue_start_threads_in_proc(&nvmft_taskq, mp_ncpus, PWAIT,
-	    control_softc->ctl_proc, "nvmft");
+	nvmft_ctrlr_taskq = taskqueue_create("nvmft ctrlr", M_WAITOK,
+	    taskqueue_thread_enqueue, &nvmft_ctrlr_taskq);
+	error = taskqueue_start_threads_in_proc(&nvmft_ctrlr_taskq, 1, PWAIT,
+	    control_softc->ctl_proc, "nvmft ctrlr");
 	if (error != 0) {
-		taskqueue_free(nvmft_taskq);
+		taskqueue_free(nvmft_ctrlr_taskq);
+		return (error);
+	}
+
+	nvmft_datamove_taskq = taskqueue_create("nvmft datamove", M_WAITOK,
+	    taskqueue_thread_enqueue, &nvmft_datamove_taskq);
+	error = taskqueue_start_threads_in_proc(&nvmft_datamove_taskq, mp_ncpus,
+	    PWAIT, control_softc->ctl_proc, "nvmft datamove");
+	if (error != 0) {
+		taskqueue_free(nvmft_datamove_taskq);
+		taskqueue_free(nvmft_ctrlr_taskq);
 		return (error);
 	}
 
@@ -1228,7 +1239,8 @@ nvmft_shutdown(void)
 	if (!TAILQ_EMPTY(&nvmft_ports))
 		return (EBUSY);
 
-	taskqueue_free(nvmft_taskq);
+	taskqueue_free(nvmft_datamove_taskq);
+	taskqueue_free(nvmft_ctrlr_taskq);
 	sx_destroy(&nvmft_ports_lock);
 	return (0);
 }
