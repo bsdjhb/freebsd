@@ -1592,6 +1592,7 @@ ATF_TC_BODY(keepalive_timeout_after_reenable, tc)
 	uint8_t hostid[16];
 	useconds_t delay;
 	uint32_t kato, kato_after;
+	uint16_t status;
 	int error;
 
 	init_hostid(hostid, hostnqn);
@@ -1613,14 +1614,20 @@ ATF_TC_BODY(keepalive_timeout_after_reenable, tc)
 	kato = get_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER);
 	ATF_REQUIRE(kato >= 100);
 
-	/* Shutdown and wait for the shutdown to complete. */
+	/* Shut down and wait for the shutdown to complete. */
 	shutdown_controller(admin);
 	wait_for_shutdown(admin);
 
 	/* Re-enable the controller. */
 	enable_controller(admin);
 
-	/* Verify the KATO is the same. */
+	/* Verify the KATO has been reset to the default. */
+	kato_after = get_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER);
+	ATF_REQUIRE(kato_after >= NVMF_KATO_DEFAULT);
+
+	/* Reset back to the original timeout. */
+	status = set_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER, kato);
+	ATF_REQUIRE(status == 0);
 	kato_after = get_simple_feature(admin, NVME_FEAT_KEEP_ALIVE_TIMER);
 	ATF_REQUIRE(kato == kato_after);
 
