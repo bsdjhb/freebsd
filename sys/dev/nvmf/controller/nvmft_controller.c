@@ -1179,27 +1179,28 @@ not_ns_specific:
 	return;
 }
 
-static bool
-update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
+static void
+update_cc(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
+    uint32_t new_cc)
 {
 	struct nvmft_port *np = ctrlr->np;
 	uint32_t changes;
-	bool cancel_terminate;
+	bool cancel_terminate, need_shutdown;
 
 	cancel_terminate = false;
-	*need_shutdown = false;
+	need_shutdown = false;
 
 	mtx_lock(&ctrlr->lock);
 
 	/* Don't allow any changes while shutting down. */
 	if (ctrlr->shutdown) {
 		mtx_unlock(&ctrlr->lock);
-		return (false);
+		goto error;
 	}
 
 	if (!_nvmf_validate_cc(np->max_io_qsize, np->cap, ctrlr->cc, new_cc)) {
 		mtx_unlock(&ctrlr->lock);
-		return (false);
+		goto error;
 	}
 
 	changes = ctrlr->cc ^ new_cc;
@@ -1212,7 +1213,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		ctrlr->csts |= NVMEF(NVME_CSTS_REG_SHST, NVME_SHST_OCCURRING);
 		ctrlr->cc &= ~NVMEM(NVME_CC_REG_EN);
 		ctrlr->shutdown = true;
-		*need_shutdown = true;
+		need_shutdown = true;
 		nvmft_printf(ctrlr, "shutdown requested\n");
 	}
 
@@ -1221,7 +1222,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 			/* Controller reset. */
 			nvmft_printf(ctrlr, "reset requested\n");
 			ctrlr->shutdown = true;
-			*need_shutdown = true;
+			need_shutdown = true;
 		} else if (!ctrlr->shutdown) {
 			/* Controller enable. */
 			cancel_terminate = true;
@@ -1241,7 +1242,7 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		}
 	}
 
-	if (*need_shutdown)
+	if (need_shutdown)
 		callout_stop(&ctrlr->ka_timer);
 	mtx_unlock(&ctrlr->lock);
 
@@ -1256,7 +1257,13 @@ update_cc(struct nvmft_controller *ctrlr, uint32_t new_cc, bool *need_shutdown)
 		taskqueue_drain_timeout(nvmft_ctrlr_taskq,
 		    &ctrlr->terminate_task);
 	}
-	return (true);
+
+	nvmft_send_success(ctrlr->admin, nc);
+	if (need_shutdown)
+		taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
+	return;
+error:
+	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
 }
 
 static void
@@ -1302,25 +1309,16 @@ static void
 handle_property_set(struct nvmft_controller *ctrlr, struct nvmf_capsule *nc,
     const struct nvmf_fabric_prop_set_cmd *pset)
 {
-	bool need_shutdown;
-
-	need_shutdown = false;
 	switch (le32toh(pset->ofst)) {
 	case NVMF_PROP_CC:
 		if (pset->attrib.size != NVMF_PROP_SIZE_4)
 			goto error;
-		if (!update_cc(ctrlr, le32toh(pset->value.u32.low),
-		    &need_shutdown))
-			goto error;
-		break;
+		update_cc(ctrlr, nc, le32toh(pset->value.u32.low));
+		return;
 	default:
 		goto error;
 	}
 
-	nvmft_send_success(ctrlr->admin, nc);
-	if (need_shutdown)
-		taskqueue_enqueue(nvmft_ctrlr_taskq, &ctrlr->shutdown_task);
-	return;
 error:
 	nvmft_send_generic_error(ctrlr->admin, nc, NVME_SC_INVALID_FIELD);
 }
