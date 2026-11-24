@@ -555,6 +555,7 @@ sglist_append_sglist(struct sglist *sg, struct sglist *source, size_t offset,
 {
 	struct sgsave save;
 	struct sglist_seg *ss;
+	vm_paddr_t paddr;
 	size_t seglen;
 	int error, i;
 
@@ -562,19 +563,29 @@ sglist_append_sglist(struct sglist *sg, struct sglist *source, size_t offset,
 		return (EINVAL);
 	SGLIST_SAVE(sg, save);
 	error = EINVAL;
-	ss = &sg->sg_segs[sg->sg_nseg - 1];
+	if (sg->sg_nseg == 0)
+		ss = NULL;
+	else
+		ss = &sg->sg_segs[sg->sg_nseg - 1];
 	for (i = 0; i < source->sg_nseg; i++) {
 		if (offset >= source->sg_segs[i].ss_len) {
 			offset -= source->sg_segs[i].ss_len;
 			continue;
 		}
+		paddr = source->sg_segs[i].ss_paddr + offset;
 		seglen = source->sg_segs[i].ss_len - offset;
 		if (seglen > length)
 			seglen = length;
-		error = _sglist_append_range(sg, &ss,
-		    source->sg_segs[i].ss_paddr + offset, seglen);
-		if (error)
-			break;
+		if (sg->sg_nseg == 0) {
+			ss = sg->sg_segs;
+			ss->ss_paddr = paddr;
+			ss->ss_len = seglen;
+			sg->sg_nseg = 1;
+		} else {
+			error = _sglist_append_range(sg, &ss, paddr, seglen);
+			if (error)
+				break;
+		}
 		offset = 0;
 		length -= seglen;
 		if (length == 0)
